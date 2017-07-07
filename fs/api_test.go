@@ -1,0 +1,694 @@
+package fs
+
+import (
+	"bytes"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"math"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/swiftstack/conf"
+
+	"syscall"
+
+	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/swiftclient"
+)
+
+// our global mountStruct to be used in tests
+var mS *mountStruct
+
+func testSetup() (err error) {
+	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_fs_")
+	if nil != err {
+		return
+	}
+
+	if platform.IsLinux {
+		cmd := exec.Command("sudo", "mount", "-t", "ramfs", "-o", "size=512m", "ext4", testDir)
+		err = cmd.Run()
+		if nil != err {
+			return
+		}
+
+		cmd = exec.Command("sudo", "chmod", "777", testDir)
+		err = cmd.Run()
+		if nil != err {
+			return
+		}
+	}
+
+	err = os.Chdir(testDir)
+	if nil != err {
+		return
+	}
+
+	err = os.Mkdir("TestVolume", os.ModePerm)
+
+	testConfMapStrings := []string{
+		"Stats.IPAddr=localhost",
+		"Stats.UDPPort=52184",
+		"Stats.BufferLength=100",
+		"Stats.MaxLatency=1s",
+		"Logging.LogFilePath=proxyfsd.log",
+		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.Timeout=10s",
+		"SwiftClient.RetryDelay=50ms",
+		"SwiftClient.RetryLimit=10",
+		"SwiftClient.ChunkedConnectionPoolSize=64",
+		"SwiftClient.NonChunkedConnectionPoolSize=32",
+		"TestFlowControl.MaxFlushSize=10000000",
+		"TestFlowControl.MaxFlushTime=10s",
+		"TestFlowControl.ReadCacheLineSize=1000000",
+		"TestFlowControl.ReadCacheTotalSize=100000000",
+		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
+		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
+		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
+		"Peer0.PrivateIPAddr=localhost",
+		"Cluster.Peers=Peer0",
+		"Cluster.WhoAmI=Peer0",
+		"TestVolume.FSID=1",
+		"TestVolume.PrimaryPeer=Peer0",
+		"TestVolume.AccountName=CommonAccount",
+		"TestVolume.CheckpointContainerName=.__checkpoint__",
+		"TestVolume.CheckpointInterval=10s",
+		"TestVolume.CheckpointIntervalsPerCompaction=100",
+		"TestVolume.PhysicalContainerLayoutList=PhysicalContainerLayoutReplicated3Way",
+		"TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
+		"TestVolume.FlowControl=TestFlowControl",
+		"TestVolume.NonceValuesToReserve=100",
+		"FSGlobals.VolumeList=TestVolume",
+		"RamSwiftInfo.MaxAccountNameLength=256",
+		"RamSwiftInfo.MaxContainerNameLength=256",
+		"RamSwiftInfo.MaxObjectNameLength=1024",
+	}
+
+	testConfMap, err := conf.MakeConfMapFromStrings(testConfMapStrings)
+	if nil != err {
+		return
+	}
+
+	signalHandlerIsArmed := false
+	doneChan := make(chan bool, 1)
+	go ramswift.Daemon(testConfMap, &signalHandlerIsArmed, doneChan)
+
+	err = stats.Up(testConfMap)
+	if nil != err {
+		return
+	}
+
+	err = logger.Up(testConfMap)
+	if nil != err {
+		return
+	}
+
+	err = swiftclient.Up(testConfMap)
+	if err != nil {
+		headhunter.Down()
+		stats.Down()
+		return err
+	}
+
+	err = headhunter.Up(testConfMap)
+	if nil != err {
+		stats.Down()
+		return
+	}
+
+	err = inode.Up(testConfMap)
+	if nil != err {
+		swiftclient.Down()
+		headhunter.Down()
+		stats.Down()
+		return
+	}
+
+	err = dlm.Up(testConfMap)
+	if nil != err {
+		inode.Down()
+		swiftclient.Down()
+		headhunter.Down()
+		stats.Down()
+		return
+	}
+
+	err = Up(testConfMap)
+	if nil != err {
+		dlm.Down()
+		inode.Down()
+		swiftclient.Down()
+		headhunter.Down()
+		stats.Down()
+		return
+	}
+
+	err = nil
+	return
+}
+
+func testTeardown() (err error) {
+	Down()
+	inode.Down()
+	swiftclient.Down()
+	headhunter.Down()
+	logger.Down()
+	stats.Down()
+
+	testDir, err := os.Getwd()
+	if nil != err {
+		return
+	}
+
+	err = os.Chdir("..")
+	if nil != err {
+		return
+	}
+
+	if platform.IsLinux {
+		cmd := exec.Command("sudo", "umount", testDir)
+		err = cmd.Run()
+		if nil != err {
+			return
+		}
+	} else {
+		err = os.RemoveAll(testDir)
+		if nil != err {
+			return
+		}
+	}
+
+	err = nil
+	return
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+
+	err := testSetup()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "fs test setup failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	mountHandle, err := Mount("TestVolume", MountOptions(0))
+	if err != nil {
+		logger.ErrorfWithError(err, "Expected to successfully mount TestVolume")
+		os.Exit(1)
+	}
+	mS = mountHandle.(*mountStruct)
+
+	testResults := m.Run()
+
+	err = testTeardown()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "fs test teardown failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Exit(testResults)
+}
+
+func TestCreateAndLookup(t *testing.T) {
+	rootDirInodeNumber := inode.RootDirInodeNumber
+	basename := "create_lookup.test"
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+
+	if err != nil {
+		t.Fatalf("Unexpectedly couldn't create file: %v", err)
+	}
+
+	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	if err != nil {
+		t.Fatalf("Unexpectedly failed to look up %v", basename)
+	}
+
+	if createdFileInodeNumber != foundFileInodeNumber {
+		t.Fatalf("Expected created inode number %v to equal found inode number %v", createdFileInodeNumber, foundFileInodeNumber)
+	}
+}
+
+func TestGetstat(t *testing.T) {
+	rootDirInodeNumber := inode.RootDirInodeNumber
+	basename := "getstat.test"
+	timeBeforeCreation := uint64(time.Now().UnixNano())
+
+	inodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("couldn't create file: %v", err)
+	}
+
+	stat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber)
+	if err != nil {
+		t.Fatalf("couldn't stat inode %v: %v", inodeNumber, err)
+	}
+
+	if !(math.Abs(float64(int64(timeBeforeCreation)-int64(stat[StatCRTime]))) < 0.1*1000000000) { // nanoseconds
+		t.Errorf("unexpectedly skewed StatCRTime %v is not close to %v", stat[StatCRTime], timeBeforeCreation)
+	}
+	if !(math.Abs(float64(int64(timeBeforeCreation)-int64(stat[StatMTime]))) < 0.1*1000000000) { // nanoseconds
+		t.Errorf("unexpectedly skewed StatMTime %v is not close to %v", stat[StatMTime], timeBeforeCreation)
+	}
+	if stat[StatSize] != 0 {
+		t.Errorf("expected size to be 0")
+	}
+	if stat[StatNLink] != 1 {
+		t.Errorf("expected number of links to be one, got %v", stat[StatNLink])
+	}
+
+	// TODO: perform a write, check that size has changed accordingly
+	// TODO: make and delete hardlinks, check that link count has changed accordingly
+}
+
+// TestAllAPIPositiveCases() follows the following "positive" test steps:
+//
+//    Mount          A                                    : mount the specified test Volume (must be empty)
+//    Mkdir          A/B/                                 : create a subdirectory within Volume directory
+//    Create      #1 A/C                                  : create and open a normal file within Volume directory
+//    Lookup      #1 A/C                                  : fetch the inode name of the just created normal file
+//    Write          A/C                                  : write something to normal file
+//    Read           A/C                                  : read back what was just written to normal file
+//    Getstat     #1 A/C                                  : check the current size of the normal file
+//    Resize         A/C                                  : truncate the file
+//    Getstat     #2 A/C                                  : verify the size of the normal file is now zero
+//    Symlink        A/D->A/C                             : create a symlink to the normal file
+//    Lookup      #2 A/D                                  : fetch the inode name of the just created symlink
+//    Readsymlink    A/D                                  : read the symlink to ensure it points to the normal file
+//    Lookup      #3 A/B/                                 : fetch the inode name of the subdirectory
+//    Create      #2 A/B/E                                : create a normal file within subdirectory
+//    Readdir     #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
+//    Statfs         A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
+//    Unlink      #1 A/B/E                                : delete the normal file within the subdirectory
+//    Readdir     #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
+//    Readdir     #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
+//    Unlink      #2 A/D                                  : delete the symlink
+//    Unlink      #3 A/C                                  : delete the normal file
+//    Unlink      #4 A/B                                  : delete the subdirectory
+//    Unmount        A                                    : unmount the Volume
+//
+// TODO: Since this will initially be tested against the FUSE ProxyFS Python POC code, hard links are not currently tested
+//       As such, Rename() also is not currently tested (as such requires a dir_entry->inode mapping also used for hardlinks)
+
+var tempVolumeName string // TODO: This is currently the local file system full path
+
+func TestAllAPIPositiveCases(t *testing.T) {
+	var err error
+
+	// Get root dir inode number
+	rootDirInodeNumber := inode.RootDirInodeNumber
+
+	//    Mkdir          A/B/                                 : create a subdirectory within Volume directory
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory", inode.PosixModePerm)
+	//	newDirInodeNum, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	if nil != err {
+		t.Fatalf("Mkdir() returned error: %v", err)
+	}
+
+	//    Create      #1 A/C                                  : create and open a normal file within Volume directory
+	basename := "TestNormalFile"
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() [#1] returned error: %v", err)
+	}
+
+	//    Lookup      #1 A/C                                  : fetch the inode name of the just created normal file
+	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	if err != nil {
+		t.Fatalf("Lookup() [#1] returned error: %v", err)
+	}
+	if createdFileInodeNumber != foundFileInodeNumber {
+		t.Fatalf("Expected created inode number %v to equal found inode number %v", createdFileInodeNumber, foundFileInodeNumber)
+	}
+
+	//    Write          A/C                                  : write something to normal file
+	bufToWrite := []byte{0x41, 0x42, 0x43}
+	write_rspSize, err := mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, bufToWrite, nil)
+	if nil != err {
+		t.Fatalf("Write() returned error: %v", err)
+	}
+	if uint64(len(bufToWrite)) != write_rspSize {
+		t.Fatalf("Write() expected to write %v bytes but actually wrote %v bytes", len(bufToWrite), write_rspSize)
+	}
+
+	// don't forget to flush
+	err = mS.Flush(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber)
+	if err != nil {
+		t.Fatalf("Flush() returned error: %v", err)
+	}
+
+	//    Read           A/C                                  : read back what was just written to normal file
+	read_buf, err := mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
+	if nil != err {
+		t.Fatalf("Read() returned error: %v", err)
+	}
+	if len(bufToWrite) != len(read_buf) {
+		t.Fatalf("Read() expected to read %v bytes but actually read %v bytes", len(bufToWrite), len(read_buf))
+	}
+	if 0 != bytes.Compare(bufToWrite, read_buf) {
+		t.Fatalf("Read() returned data different from what was written")
+	}
+
+	//    Getstat     #1 A/C                                  : check the current size of the normal file
+	getstat_1_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber)
+	if nil != err {
+		t.Fatalf("Getstat() returned error: %v", err)
+	}
+	getstat_1_size, getstat_1_size_ok := getstat_1_rspStat[StatSize]
+	if !getstat_1_size_ok {
+		t.Fatalf("Getstat() returned no StatSize")
+	}
+	if uint64(len(bufToWrite)) != getstat_1_size {
+		t.Fatalf("Getstat() returned StatSize == %v instead of the expected %v", getstat_1_size, len(bufToWrite))
+	}
+
+	//    Resize         A/C                                  : truncate the file
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber, 0)
+	if nil != err {
+		t.Fatalf("Resize() returned error: %v", err)
+	}
+
+	//    Getstat     #2 A/C                                  : verify the size of the normal file is now zero
+	getstat_2_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber)
+	if nil != err {
+		t.Fatalf("Getstat() [#2] returned error: %v", err)
+	}
+	getstat_2_size, getstat_2_size_ok := getstat_2_rspStat[StatSize]
+	if !getstat_2_size_ok {
+		t.Fatalf("Getstat() [#2] returned no StatSize")
+	}
+	if 0 != getstat_2_size {
+		t.Fatalf("Getstat() [#2] returned StatSize == %v instead of the expected %v", getstat_2_size, 0)
+	}
+
+	//    Symlink        A/D->A/C                             : create a symlink to the normal file
+	createdSymlinkInodeNumber, err := mS.Symlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink", "TestNormalFile")
+	if nil != err {
+		t.Fatalf("Symlink() returned error: %v", err)
+	}
+
+	//    Lookup      #2 A/D                                  : fetch the inode name of the just created symlink
+	lookup_2_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink")
+	if nil != err {
+		t.Fatalf("Lookup() [#2] returned error: %v", err)
+	}
+	if lookup_2_inodeHandle != createdSymlinkInodeNumber {
+		t.Fatalf("Lookup() [#2] returned unexpected InodeNumber")
+	}
+
+	//    Readsymlink    A/D                                  : read the symlink to ensure it points to the normal file
+	readsymlink_target, err := mS.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_2_inodeHandle)
+	if nil != err {
+		t.Fatalf("Readsymlink() returned error: %v", err)
+	}
+	if 0 != strings.Compare("TestNormalFile", readsymlink_target) {
+		t.Fatalf("Readsymlink() data different from what was written")
+	}
+
+	//    Lookup      #3 A/B/                                 : fetch the inode name of the subdirectory
+	lookup_3_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	if nil != err {
+		t.Fatalf("Lookup() [#3] returned error: %v", err)
+	}
+
+	//    Create      #2 A/B/E                                : create a normal file within subdirectory
+	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile", inode.PosixModePerm)
+	if nil != err {
+		t.Fatalf("Create() [#2] returned error: %v", err)
+	}
+
+	//    Readdir     #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
+	_, readdir_1_rspNumEntries, readdir_1_moreEntries, err := mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "", 0, 0)
+	if nil != err {
+		t.Fatalf("Readdir() [#1] returned error: %v", err)
+	}
+	if 3 != readdir_1_rspNumEntries {
+		t.Fatalf("Readdir() [#1] returned unexpected number of entries (%v) -  should have been %v", readdir_1_rspNumEntries, 3)
+	}
+	if readdir_1_moreEntries {
+		t.Fatalf("Readdir() [#1] returned moreEntries == true... should have been false")
+	}
+	//	if readdir_1_buf[0] != "." {
+	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [0]")
+	//	}
+	//	if readdir_1_buf[1] != ".." {
+	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [1]")
+	//	}
+	//	if readdir_1_buf[2] != "TestSubDirectoryFile" {
+	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [2]")
+	//	}
+
+	/* KM: This code needs some changes before it will work again...
+	    //    Statfs         A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
+		_, err = mount_mountHandle.Statfs()
+
+		if nil != err {
+			t.Fatalf("Statfs() returned error: %v", err)
+		}
+
+		// It is unexpected that the values returned are at all reliable, so no check is made here
+	*/
+
+	//    Unlink      #1 A/B/E                                : delete the normal file within the subdirectory
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile")
+	if nil != err {
+		t.Fatalf("Unlink() [#1] returned error: %v", err)
+	}
+	/*
+	       //    Readdir     #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
+	   	readdir_2_buf, readdir_2_rspNumEntries, _, readdir_2_moreEntries, err := mount_rootInodeHandle.Readdir("", 3, 0)
+
+	   	if nil != err {
+	   		t.Fatalf("Readdir() [#2] returned error: %v", err)
+	   	}
+	   	if 3 != readdir_2_rspNumEntries {
+	   		t.Fatalf("Readdir() [#2] returned unexpected number of entries (%v) -  should have been %v", readdir_2_rspNumEntries, 3)
+	   	}
+	   	if !readdir_2_moreEntries {
+	   		t.Fatalf("Readdir() [#2] returned moreEntries == false... should have been true")
+	   	}
+	   	if readdir_2_buf[0] != "." {
+	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [0]")
+	   	}
+	   	if readdir_2_buf[1] != ".." {
+	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [1]")
+	   	}
+	   	if readdir_2_buf[2] != "TestNormalFile" {
+	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [2]")
+	   	}
+
+	       //    Readdir     #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
+	   	readdir_3_buf, readdir_3_rspNumEntries, _, readdir_3_moreEntries, err := mount_rootInodeHandle.Readdir(readdir_2_buf[2], 3, 0)
+
+	   	if nil != err {
+	   		t.Fatalf("Readdir() [#3] returned error: %v", err)
+	   	}
+	   	if 2 != readdir_3_rspNumEntries {
+	   		t.Fatalf("Readdir() [#3] returned unexpected number of entries (%v) -  should have been %v", readdir_3_rspNumEntries, 2)
+	   	}
+	   	if readdir_3_moreEntries {
+	   		t.Fatalf("Readdir() [#3] returned moreEntries == true... should have been false")
+	   	}
+	   	if readdir_3_buf[0] != "TestSubDirectory" {
+	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [0]")
+	   	}
+	   	if readdir_3_buf[1] != "TestSymlink" {
+	   		t.Fatalf("Readdir() [#3] returned unexpected directory entry [1]")
+	   	}
+	*/
+
+	//    Unlink      #2 A/D                                  : delete the symlink
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink")
+
+	if nil != err {
+		t.Fatalf("Unlink() [#2] returned error: %v", err)
+	}
+
+	//    Unlink      #3 A/C                                  : delete the normal file
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestNormalFile")
+	if nil != err {
+		t.Fatalf("Unlink() [#3] returned error: %v", err)
+	}
+
+	//    Rmdir       #4 A/B                                  : delete the subdirectory
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	if nil != err {
+		t.Fatalf("Unlink() [#4] returned error: %v", err)
+	}
+
+	//    Unmount        A                                    : unmount the Volume
+	// => this is done by the main test loop.
+}
+
+func TestBadChownChmod(t *testing.T) {
+	var err error
+
+	// Get root dir inode number
+	rootDirInodeNumber := inode.RootDirInodeNumber
+
+	// Create file to play with
+	basename := "TestFile"
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() %v returned error: %v", basename, err)
+	}
+
+	// Since we are playing some games with size of mode/userid/groupid, make sure that we
+	// correctly handle cases where the value is > uint32
+	var tooBigForUint32 uint64 = math.MaxUint32 + 7<<48
+
+	// Validate too-big Mode
+	stat := make(Stat)
+	stat[StatMode] = tooBigForUint32
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	if blunder.IsNot(err, blunder.InvalidFileModeError) {
+		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
+	}
+	delete(stat, StatMode)
+
+	// Validate too-big UserID
+	stat[StatUserID] = tooBigForUint32
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	if blunder.Errno(err) != int(blunder.InvalidFileModeError) {
+		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
+	}
+	delete(stat, StatUserID)
+
+	// Validate too-big GroupID
+	stat[StatGroupID] = tooBigForUint32
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	if blunder.Errno(err) != int(blunder.InvalidFileModeError) {
+		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
+	}
+	delete(stat, StatGroupID)
+}
+
+func TestFlock(t *testing.T) {
+	var err error
+
+	rootDirInodeNumber := inode.RootDirInodeNumber
+
+	// Create file to play with
+	basename := "TestLockFile"
+	lockFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() %v returned error: %v", basename, err)
+	}
+
+	// Resize the file to a 1M so that we can apply byte range locks:
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, 1024*1024)
+	if err != nil {
+		t.Fatalf("Resize() %v returned error: %v", basename, err)
+	}
+
+	// Write lock test:
+	var lock FlockStruct
+	lock.Type = syscall.F_WRLCK
+	lock.Start = 0
+	lock.Len = 0
+	lock.Pid = 1
+
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Write lock on file failed: %v", err)
+	}
+
+	lock.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Unlock on file failed: %v", blunder.Errno(err))
+	}
+
+	lock.Type = syscall.F_WRLCK
+	lock.Pid = 1
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Write lock on file failed: %v", err)
+	}
+
+	// Try another write lock from a different pid, it should fail:
+	lock.Pid = 2
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if blunder.Errno(err) != int(blunder.TryAgainError) {
+		t.Fatalf("Write lock on a locked file should fail with EAGAIN instead got : %v", err)
+	}
+
+	// Lock again, it should succeed:
+	//lock.Pid = 1
+	//_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	//if err != nil {
+	//	t.Fatalf("Relocking from same PID on file failed: %v", err)
+	//}
+
+	lock.Type = syscall.F_UNLCK
+	lock.Pid = 1
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Unlock failed : %v", err)
+	}
+
+	// Read lock test:
+	lock.Type = syscall.F_RDLCK
+	lock.Pid = 1
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Read lock pid - 1 failed: %v", err)
+	}
+
+	lock.Pid = 2
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Read lock pid - 2 failed: %v", err)
+	}
+
+	// Try write lock it should fail:
+	lock.Type = syscall.F_WRLCK
+	lock.Pid = 3
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if blunder.Errno(err) != int(blunder.TryAgainError) {
+		t.Fatalf("Write lock should have failed with EAGAIN instead got - %v", err)
+	}
+
+	lock.Pid = 2
+	lock.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Unlock of (readlock) - 2 failed: %v", err)
+	}
+
+	lock.Pid = 1
+	lock.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Unlock of (readlock) - 1 failed: %v", err)
+	}
+
+	lock.Type = syscall.F_WRLCK
+	lock.Pid = 3
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Write lock should have succeeded instead got - %v", err)
+	}
+
+	lock.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Unlock of (write after read) failed: %v", err)
+	}
+
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	if err != nil {
+		t.Fatalf("Unlink() %v returned error: %v", basename, err)
+	}
+}

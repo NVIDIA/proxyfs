@@ -1,0 +1,215 @@
+# This is an attempt to re-write the Chef ProxyFS installer in Ansible
+# WORK IN PROGRESS, NOT PRODUCTION READY AT ALL!
+- hosts: all
+  name: Install and start ProxyFS
+  vars:
+    tarfile_name: "go1.8.3.linux-amd64.tar.gz"
+    tarfile_path: "/tmp/{{ tarfile_name }}"
+    tarfile_url: "https://storage.googleapis.com/golang/{{ tarfile_name }}"
+    source_root: "/home/swiftstack/provisioning"
+    proxyfs_user: "swiftstack"
+    proxyfs_group: "swiftstack"
+    is_dev: node['is_dev_environment']
+    GOROOT: "/usr/local/go"
+    HOME_DIR: "/home/{{ proxyfs_user }}"
+    BASH_DOT_PROFILE: "{{ ansible_env.HOME }}/.bash_profile"
+    REPO_CLONE_PARENT_DIR: "{{ source_root }}/src/github.com/swiftstack"
+    SAMBA_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/samba"
+    PROXYFS_SRC_DIR: "{{ REPO_CLONE_PARENT_DIR }}/ProxyFS"
+    dot_bashrc: "{{ HOME_DIR }}/.bashrc"
+    is_dev: False
+    rhel_packages:
+      # samba package
+      - ['samba']
+      # samba deps
+      - ['gcc', 'gcc-c++', 'python-devel', 'gnutls-devel', 'ibacl-devel', 'openldap-devel', 'samba', 'cifs-utils']
+      # ganesha dev packages. Unused?
+      # - ['gcc', 'git', 'cmake', 'autoconf', 'libtool', 'bison', 'flex', 'libgssglue-dev', 'libssl-dev', 'libnfs-dev', 'doxygen']
+      # proxyfs packages
+      - ['json-c-devel', 'fuse']
+      # nfs packages
+      - ['nfs-utils']
+    rhel_dev_packages:
+      # wireshark packages
+      - ['wireshark', 'libcap']
+    debian_packages:
+      # samba package
+      - ['samba']
+      # samba deps
+      - ['gcc', 'python-dev', 'libgnutls-dev', 'libacl1-dev', 'libldap2-dev', 'samba', 'pkg-config', 'cifs-utils']
+      # ganesha dev packages. Unused?
+      # - ['gcc', 'git', 'cmake', 'autoconf', 'libtool', 'bison', 'flex', 'libgssglue-dev', 'libssl-dev', 'libnfs-dev', 'doxygen']
+      # proxyfs packages
+      - ['libjson-c-dev', 'fuse']
+      # nfs packages
+      - ['nfs-kernel-server', 'nfs-common']
+    debian_dev_packages:
+      # wireshark packages
+      - ['wireshark', 'libcap2-bin']
+
+  tasks:
+  - name: Clone ProxyFS repo
+    git:
+      repo: https://github.com/swiftstack/ProxyFS.git
+      dest: "{{ PROXYFS_SRC_DIR }}/"
+      version: "{{ ansible_env.proxyfs_branch }}"
+
+  - name: Install pfs_middleware in development mode
+    shell: "python setup.py develop"
+    args:
+      chdir: "{{ ansible_env.HOME }}/provisioning/github.com/swiftstack/ProxyFS/pfs_middleware"
+
+  - stat: path={{GOROOT}}
+    register: go_installed
+
+  - name: Download Go tarfile
+    get_url:
+      url: {{tarfile_url}}
+      dest: {{tarfile_path}}
+      mode: 0440
+      owner: "root"
+      group: "root"
+    when: go_installed.stat.exists == False
+
+  - name: Untar golang
+    shell: "tar -C /usr/local -xzf {{tarfile_path}}"
+    when: go_installed.stat.exists == False
+
+  - name: Golang path
+    copy:
+      content: "export PATH=$PATH:{{GOROOT}}/bin"
+      dest: /etc/profile.d/golang_path.sh
+      mode: 0644
+
+  - name: ".bash_profile"
+    lineinfile:
+      dest: {{BASH_DOT_PROFILE}}
+      regexp: {{item.regexp}}
+      line: {{item.line}}
+      state: present
+      create: True
+      owner: {{proxyfs_user}}
+    with_items:
+      - {regexp: "/export GOPATH/",       line: "export GOPATH={{source_root}}"}
+      - {regexp: "%r{usr/local/go/bin}",  line: "export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin"}
+      - {regexp: "/ulimit/",              line: "ulimit -c unlimited"}
+      - {regexp: "/\. ~\/.bashrc/",       line: ". ~/.bashrc"}
+      - {regexp: "/\. ~\/.profile/",      line: "if [ -f ~/.profile ]; then . ~/.profile; fi"}
+
+  - name: ".bashrc"
+    lineinfile:
+      dest: {{dot_bashrc}}
+      regexp: {{item.regexp}}
+      line: {{item.line}}
+      state: present
+      create: True
+      owner: {{proxyfs_user}}
+    with_items:
+      - {regexp: "/cdpfs/",   line: "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'"}
+      - {regexp: "/cdsamba/", line: "alias cdsamba='cd {{SAMBA_SRC_DIR}}'"}
+
+  - name: "Disable SELinux"
+    replace:
+      path: "/etc/sysconfig/selinux"
+      regexp: "/^SELINUX=enforcing/"
+      replace: "SELINUX=permissive"
+    when: ansible_os_family == 'RedHat'
+
+  - name: "fuse_allow_other"
+    lineinfile:
+      path: "/etc/fuse.conf"
+      regexp: "/#user_allow_other/"
+      state: absent
+      mode: 0644
+    when: {{is_dev}}
+
+  - name: "fuse_allow_other"
+    lineinfile:
+      path: "/etc/fuse.conf"
+      regexp: "/^user_allow_other/"
+      line: "user_allow_other"
+      state: present
+      mode: 0644
+    when: {{is_dev}}
+
+  # perms/owner don't really matter since it gets mounted over, but
+  # this helps stop a developer from accidentally dumping stuff on the
+  # root filesystem
+  - name: "Create /CommonMountPoint"
+    file:
+      path: /CommonMountPoint
+      state: directory
+      owner: root
+
+  - name: "Create /var/lib/proxyfs and /var/log/proxyfsd"
+    file:
+      path: {{item}}
+      state: directory
+      owner: {{proxyfs_user}}
+      group: {{proxyfs_group}}
+      mode: 0755
+    with_items:
+      - "/var/lib/proxyfs"
+      - "/var/log/proxyfsd"
+
+  - name: "Link to proxyfsd"
+    file:
+      src: "{{source_root}}/src/github.com/swiftstack/ProxyFS/proxyfsd/"
+      dest: "/etc/proxyfsd"
+      state: link
+      owner: {{proxyfs_user}}
+      group: {{proxyfs_group}}
+
+  # TODO: Get start_and_mount_pfs file from somewhere
+  - name: "Copy start_and_mount_pfs"
+    file:
+      src: "bin/start_and_mount_pfs"
+      dest: "/usr/bin/start_and_mount_pfs"
+      mode: 0755
+
+  - name: "Provision pfs_stat"
+    shell: "install -m 0755 {{source_root}}/src/github.com/swiftstack/ProxyFS/bin/pfs_stat /usr/bin"
+
+  - stat: path=/usr/lib/systemd/system/
+    register: system_exists
+
+  # TODO: Get proxyfsd.service file from somewhere
+  - name: "Copy proxyfsd.service"
+    file:
+      src: "usr/lib/systemd/system/proxyfsd.service"
+      dest: "/usr/lib/systemd/system/proxyfsd.service"
+    when: system_exists.stat.isdir is defined and system_exists.stat.isdir
+
+  - stat: path=/etc/init
+    register: init_exists
+
+  # TODO: Get proxyfsd.upstart file from somewhere
+  - name: "Copy proxyfsd.conf"
+    file:
+      src: "etc/init/proxyfsd.upstart"
+      dest: "/etc/init/proxyfsd.conf"
+    when: init_exists.stat.isdir is defined and init_exists.stat.isdir
+
+  - name: yum install packages for proxyfs
+    yum: name={{ item }} state=present
+    with_items: {{rhel_packages}}
+    when: ansible_os_family == 'RedHat'
+
+  - name: yum install packages for proxyfs (only for dev environment)
+    yum: name={{ item }} state=present
+    with_items: {{rhel_dev_packages}}
+    when: ansible_os_family == 'RedHat' and {{is_dev}}
+
+  - name: apt install packages for proxyfs
+    apt: name={{ item }} state=present
+    with_items: {{debian_packages}}
+    when: ansible_os_family == 'Debian'
+
+  - name: apt install packages for proxyfs (only for dev environment)
+    apt: name={{ item }} state=present
+    with_items: {{debian_dev_packages}}
+    when: ansible_os_family == 'Debian' and {{is_dev}}
+
+  - name:
+    group:
+      name: wireshark

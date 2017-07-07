@@ -1,0 +1,22 @@
+package: github.com/swiftstack/ProxyFS
+import:
+- package: bazil.org/fuse
+  subpackages:
+  - fs
+- package: github.com/Sirupsen/logrus
+- package: github.com/ansel1/merry
+- package: github.com/droundy/goopt
+- package: golang.org/x/net
+  subpackages:
+  - context
+- package: golang.org/x/sys
+  subpackages:
+  - unix
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert
+- package: golang.org/x/tools
+  subpackages:
+  - cmd/stringer
+- package: github.com/swiftstack/cstruct
+- package: github.com/swiftstack/sortedmap

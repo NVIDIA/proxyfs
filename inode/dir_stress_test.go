@@ -1,0 +1,135 @@
+package inode
+
+import (
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/swiftstack/ProxyFS/headhunter"
+)
+
+const (
+	testDirStressBasenamePrefix = "__TestDirStress_" // To be appended with Nonce + "_" + ThreadIndex + "_" + LinkIndex (for this Thread)
+
+	testDirStressDelayBetweenLinkAndUnlink time.Duration = 1 * time.Microsecond
+	testDirStressDelayBetweenThreadStarts  time.Duration = 1 * time.Microsecond
+
+	testDirStressNumIterations        uint64 = 3
+	testDirStressNumLinksPerIteration uint64 = 3
+	testDirStressNumThreads           uint64 = 30
+
+	testDirStressVolumeName = "TestVolume"
+)
+
+type testDirStressGlobalsStruct struct {
+	sync.Mutex // Used to emulate the exclusive lock used in package fs on RootDirInodeNumber
+	nonce      uint64
+	waitGroup  sync.WaitGroup
+	err        []error
+}
+
+var testDirStressGlobals = &testDirStressGlobalsStruct{}
+
+func TestDirStress(t *testing.T) {
+	var (
+		err                    error
+		headhunterVolumeHandle headhunter.VolumeHandle
+		threadIndex            uint64
+	)
+
+	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(testDirStressVolumeName)
+	if nil != err {
+		t.Fatalf("headhunter.FetchVolumeHandle(\"%s\") failed: %v", testDirStressVolumeName, err)
+	}
+
+	testDirStressGlobals.nonce, err = headhunterVolumeHandle.FetchNonce()
+	if nil != err {
+		t.Fatalf("headhunter.FetchNonce(\"%s\") failed: %v", testDirStressVolumeName, err)
+	}
+
+	testDirStressGlobals.waitGroup.Add(int(testDirStressNumThreads))
+
+	testDirStressGlobals.err = make([]error, testDirStressNumThreads)
+
+	for threadIndex = uint64(0); threadIndex < testDirStressNumThreads; threadIndex++ {
+		time.Sleep(testDirStressDelayBetweenThreadStarts)
+
+		go testDirStressThread(threadIndex)
+	}
+
+	testDirStressGlobals.waitGroup.Wait()
+
+	for _, err = range testDirStressGlobals.err {
+		if nil != err {
+			t.Fatal(err)
+		}
+	}
+}
+
+func testDirStressThread(threadIndex uint64) {
+	var (
+		basename        string
+		err             error
+		fileInodeNumber InodeNumber
+		iteration       uint64
+		linkIndex       uint64
+		volumeHandle    VolumeHandle
+	)
+
+	defer testDirStressGlobals.waitGroup.Done()
+
+	volumeHandle, err = FetchVolumeHandle(testDirStressVolumeName)
+	if nil != err {
+		testDirStressGlobals.Lock()
+		testDirStressGlobals.err[threadIndex] = fmt.Errorf("FetchVolumeHandle(\"%s\") failed: %v", testDirStressVolumeName, err)
+		testDirStressGlobals.Unlock()
+		return
+	}
+
+	for iteration = uint64(0); iteration < testDirStressNumIterations; iteration++ {
+		fileInodeNumber, err = volumeHandle.CreateFile(PosixModePerm, InodeUserID(0), InodeGroupID(0))
+		if nil != err {
+			testDirStressGlobals.Lock()
+			testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.CreateFile(PosixModePerm, InodeUserID(0), InodeGroupID(0)) failed: %v", err)
+			testDirStressGlobals.Unlock()
+			return
+		}
+
+		for linkIndex = uint64(0); linkIndex < testDirStressNumLinksPerIteration; linkIndex++ {
+			basename = fmt.Sprintf("%s%016X_%016X_%016X", testDirStressBasenamePrefix, testDirStressGlobals.nonce, threadIndex, linkIndex)
+
+			testDirStressGlobals.Lock()
+			err = volumeHandle.Link(RootDirInodeNumber, basename, fileInodeNumber)
+			if nil != err {
+				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Link(RootDirInodeNumber, \"%s\", fileInodeNumber) failed: %v", basename, err)
+				testDirStressGlobals.Unlock()
+				return
+			}
+			testDirStressGlobals.Unlock()
+
+			time.Sleep(testDirStressDelayBetweenLinkAndUnlink)
+
+			testDirStressGlobals.Lock()
+			err = volumeHandle.Unlink(RootDirInodeNumber, basename)
+			if nil != err {
+				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Unlink(RootDirInodeNumber, \"%s\") failed: %v", basename, err)
+				testDirStressGlobals.Unlock()
+				return
+			}
+			testDirStressGlobals.Unlock()
+		}
+
+		err = volumeHandle.Destroy(fileInodeNumber)
+		if nil != err {
+			testDirStressGlobals.Lock()
+			testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Destroy(fileInodeNumber) failed: %v", err)
+			testDirStressGlobals.Unlock()
+			return
+		}
+	}
+
+	testDirStressGlobals.Lock()
+	testDirStressGlobals.err[threadIndex] = nil
+	testDirStressGlobals.Unlock()
+}

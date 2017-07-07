@@ -1,0 +1,53 @@
+@startuml
+
+title == Headhunter Checkpoint\n==== headhunter/api_swift.go::checkpointDaemon()
+
+start
+
+:set checkpointRequest = nil;
+
+repeat
+  if (checkpointRequest == nil?) then (yes)
+    :await either timer pop or explicit checkpointRequest;
+    if (explicit checkpointRequedst?) then (yes)
+      :set checkpointRequest = this request;
+    else (no)
+    endif
+    :lock DB;
+    if (available Nonce?) then (yes)
+    else (no)
+      :increment reservedToNonce;
+      :compute new checkpointHeader using last successfully POST'd checkpointHeader;
+      :HTTP POST new checkpointHeader;
+      :unlock DB;
+    endif
+  else (no)
+  endif
+  if (didn't need to increment reservedToNonce?) then (yes)
+    :consume next Nonce;
+    if (needFullClone?) then (yes)
+      :inodeRec B+Tree Touch();
+      :logSegmentRec B+Tree Touch();
+      :bPlusTreeObject B+Tree Touch();
+    else (no)
+    endif
+    :inodeRec B+Tree Flush();
+    :logSegmentRec B+Tree Flush();
+    :bPlusTreeObject B+Tree Touch();
+    :unlock DB;
+    :HTTP (chunked) PUT Close();
+    :await checkpointGateWaitGroup;
+    :compute new checkpointHeader using Flush() return values;
+    :HTTP POST new checkpointHeader;
+    if (needFullClone?) then (yes)
+      :launch checkpointCompactor()\n<i>asynchronously deletes all previous checkpoint objects now unreferenced</i>;
+    else (no)
+    endif
+    :signal checkpointDoneWaitGroup;
+  else (no)
+  endif
+repeat while (not asked by checkpointRequest to exit?)
+
+stop
+
+@enduml

@@ -1,0 +1,95 @@
+@startuml
+
+title Open and Create New File with Write, Flush Close
+
+autonumber
+
+box "Samba"
+participant smb
+end box
+box "ProxyFS"
+participant RpcSvr
+participant Fs
+participant Inode
+participant InodeObj
+participant LS
+participant LS2
+participant SockSwift
+end box
+participant SwiftBE
+
+' Create file
+->smb:open(newfile, O_CREAT)
+smb-> RpcSvr: RpcCreate(mountId,\nin_inode_number, in_basename)
+RpcSvr -> Fs:fs.Create(mountId, dirInodeNumber,\nbasename)
+Fs -> Fs:getMount(mountId)\nLooks up mountId in map\nand returns Mount object
+
+Fs -> Inode:inode.CreateFile()
+Inode -> InodeObj:CreateFile()\ncalls inode.makeInMemoryInode()
+InodeObj -> InodeObj:makeInMemoryInode() gets new\ninodeNumber\nand inMemoryInode
+InodeObj -> LS:calls\nstartNewLogSegment()
+LS -> LS2:startNewLogSegment()\ncalls NewLogSegment()
+LS2 ->  LS2:NewLogSegment()\ncalls ProvisionObject() which gets\nnew log segment number and\ncalculates Swift container
+LS2 -> LS2:NewLogSegment() then does\nheadhunter.PutLogSegmentRec(\nlogSegmentNumber, objectPathBytes)
+LS2 -> LS:NewLogSegment()\nreturns logSegent and err
+LS -> LS:startNewLogSegment()\nsets pendingLogSegment to\nnew logSegment
+LS -> InodeObj:Returns err
+InodeObj -> SockSwift:startNewLogSegment()\ncalls segment.NewChunkedContext()
+SockSwift -> InodeObj:segment.NewChunkedContext()\nreturns SwiftContext
+InodeObj -> Inode:makeInMemoryInode()\nReturns err and new inode
+Inode -> Inode:Add new inode to globals.inodecache
+Inode -> Fs: inode.CreateFile()\nreturns newFileInodeNumber, err
+Fs -> Inode:inode.Link(dirInodeNumber, basename,\nfileInodeNumber)
+
+' Link file to directory
+Inode -> Inode:Link calls dirInode.preparePendingLogSegment()\nThis calls startNewLogSegment()\nif pendingLogSegment is nil.
+note left :NOTE: Not showing whole startNewLogSegment() steps since shown above.
+Inode -> Inode:Link calls\ntargetInode.preparePendingLogSegment().pendingLogSegment()\nshould be !NULL since was set when created in\nmakeInMemoryInode().
+note left :Shouldn't we call this on targetInode first since if set pending could flush before directory?
+Inode -> Inode:Call inode.flushInode(\ndirInode.InodeNumber)
+Inode -> Inode:flushInode() calls appendOnDiskInodeThenTrailer()
+Inode -> SockSwift:appendOnDiskInodeThenTrailer() calls PutChunked(buf) which writes\nbuffer with suffix and prefix to socket.
+SockSwift ->SwiftBE:PutChunked(buf)\nwrites buffer to Swift
+SwiftBE ->SockSwift:Swift returns err
+SockSwift -> Inode:Returns err
+Inode -> SockSwift:appendOnDiskInodeThenTrailer() calls Close() which calls\nputChunkedEnd() which completes update to Swift
+SockSwift ->SwiftBE:Close()\nwrites buffer to Swift
+SwiftBE ->SockSwift:Swift returns err
+Inode -> Fs: inode.Link()return err
+note left :We don't seem to be flushing the file inode to Swift before returning.
+Fs -> RpcSvr:fs.Create returns fileInodeNumber,\nerr
+RpcSvr -> smb:return err
+
+' Write file
+->smb:write(newfile, 10MB)
+smb-> RpcSvr: RpcWrite(mountId,\nin_inode_number, in_basename)
+RpcSvr -> Fs:Calls fs.Write(mountId,\ninodeNumber, offset, buf)
+Fs -> Inode:Gets getMount(mountId)
+Inode -> Fs:returns mount
+Fs -> Inode:Calls inode.Write(inodeNumber,\noffset, buf) returns szWritten, err
+Inode -> Inode:inode.Write() calls preparePendingLogSegment()
+note left :NOTE: Not showing whole\npreparePendingLogSegment() steps since shown above.
+Inode -> Inode:inode.Write() calls PutChunked(buf)\nwhich writes buffer with suffix and prefix to socket.
+note left :NOTE: Not showing whole PutChunked() since shown above
+Inode -> Inode:inode.Write() calls recordWrite() to update payload record\nof BTree+ with extents in file.
+Inode -> Fs:inode.Write() returns err
+Fs -> RpcSvr:fs.Write() returns szWritten, err
+RpcSvr -> smb:return szWritten, err
+
+' Show async event when flusher runs
+->smb:sleep 5\nallows flush thread\n to run
+
+' Time based flush to Swift
+Inode -> SwiftBE:ASYNC - Time based flush thread calls inode.flushInode() to flush to Swift.  Locking is "queue" off in memory inode.
+note left :NOTE: Not showing whole flushInode() since shown above.
+
+' Samba close of file causing a flush
+->smb:close(newfile)\ncauses flush()
+smb-> RpcSvr: RpcFlush(mountId,\nin_inode_number)
+RpcSvr -> Fs:Flush(mountId, in_inode_number)
+Fs -> Inode:Flush(inodeNumber, false) returns err
+Inode -> Fs:Returns err
+Fs -> RpcSvr:Return err
+RpcSvr -> smb:return err
+
+@enduml

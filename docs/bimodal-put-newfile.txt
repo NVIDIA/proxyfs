@@ -1,0 +1,98 @@
+@startuml
+
+title Bimodal PUT API - New File Top Directory Case
+
+autonumber
+
+box "Swift WSGI"
+participant WSGI
+participant RPCclient
+end box
+box "ProxyFS"
+participant PFSrpcsvr
+participant PFSfs
+participant PFSinode
+end box
+participant SwiftBE
+
+->WSGI: <URI>?Put
+
+WSGI -> WSGI:Virtual account
+
+WSGI -> RPCclient:<B><I>proxyfs_put_location(authUser, vAccount)</I></B>\n"What pPATH should I use?"
+
+RPCclient -> PFSrpcsvr:<B><I>RpcPutLocation(authUser,\n<B><I>vAccount)</I></B> i.e. "What pPATH should I use?"
+
+PFSrpcsvr -> PFSrpcsvr:Extract components of vPATH
+
+PFSrpcsvr -> PFSrpcsvr:Get mapping of vAccount to volumeName
+
+PFSrpcsvr -> PFSfs:If volume is not mounted for this user,\n<B><I>fs.Mount(volumeName, mountOptions, authUser)</I></B>
+
+PFSfs -> PFSrpcsvr:Return mountId, rootInodeNumber, err
+
+PFSrpcsvr -> PFSfs:<B><I>fs.CallInodeToProvisionObject()</I></B>
+
+PFSfs -> PFSinode:<B><I>inode.ProvisionObject()</I></B>
+
+PFSinode -> PFSfs:Respond with pPATH
+
+PFSfs -> PFSrpcsvr: Returns pPATH for physical\naccount
+
+PFSrpcsvr -> RPCclient: Response for\n<B><I>RpcPutLocation(vPATH)</I></B>\nis target location of object in\nphysical account.
+
+RPCclient -> WSGI: Response for\n<B><I>proxyfs_put_location(vPATH)</I></B>\nis target location of object in physical\naccount.
+
+WSGI -> SwiftBE:<B><I>PUT(BODY, pPATH, data)</I></B>\nPuts data for vPATH in physical account.\nNOTE: User metadata should not be\nwritten!
+SwiftBE -> WSGI:Response for <B><I>PUT(pPATH, data)</I></B>\nis status
+
+WSGI -> RPCclient:<B><I>proxyfs_put_complete(authUser, vPATH,\n<B><I>pPATH, size, metadata)</I></B>\nCompleted writing initial PUT of payload
+
+RPCclient -> PFSrpcsvr:<B><I>RpcPutComplete(authUser, vPATH,\n<B><I>pPATH, metadata, size)</I></B>.\nCompleted writing initial PUT\nof payload
+
+PFSrpcsvr -> PFSrpcsvr:Extract components of vPATH
+
+PFSrpcsvr -> PFSrpcsvr:Get mapping of vAccount to volumeName
+
+PFSrpcsvr -> PFSfs:If volume is not mounted for this user,\n<B><I>fs.Mount(volumeName, mountOptions, authUser)</I></B>
+
+PFSfs -> PFSrpcsvr:Return mountId, rootInodeNumber, err
+
+PFSrpcsvr -> PFSfs:<B><I>fs.Put(mountId, rootInodeNumber, vContainer)</I></B>
+
+PFSfs -> PFSfs:<B><I>fs.Lookup(mountId, rootInodeNumber, vContainer)</I></B>
+PFSfs -> PFSfs:Return dirInode
+
+PFSfs -> PFSfs:<B><I>fs.CreateFsMetaData(vPATH, pPATH,\n<B><I>dirInode, metadata, size)</I></B>
+
+PFSfs -> PFSinode:<B><I>inode.CreateFile()</I></B>
+PFSinode -> PFSfs:Return fileInodeNumber, err
+
+PFSfs -> PFSinode:<B><I>inode.Wrote(fileInodeNumber, fileoffset,\n<B><I>objectPath, objectoffset, length,\n<B><I>metadataMap[string]string ????)</I></B>
+
+PFSinode -> PFSfs:Return status
+
+PFSinode -> SwiftBE:When flushed,\nwrite btree
+SwiftBE -> PFSinode: Response to flush
+
+PFSfs -> PFSinode:<B><I>inode.Link(dirInode, "/"??,\n<B><I>targetInodeNumber???)</I></B>
+PFSinode -> PFSfs:Return status
+
+PFSinode -> SwiftBE:When flushed,\nwrite btree
+
+SwiftBE -> PFSinode: Response to flush
+
+PFSinode -> PFSfs:FsMetaData created\nflush completed
+
+PFSfs -> PFSfs: Response to <B><I>fs.CreateMetaData()</I></B>\nis status
+
+PFSfs -> PFSrpcsvr: Response to <B><I>fs.Put()</I></B>\nis status
+
+PFSrpcsvr -> RPCclient:Response for\n<B><I>RpcPutComplete(vPATH,\n<B><I>pPATH, size, metadata)</I></B>\nis status
+
+RPCclient -> WSGI:Response for\n<B><I>proxyfs_put_complete(vPATH, pPATH, size,\nmetadata)</I></B>\nis status
+
+<-WSGI: Return status code
+
+
+@enduml

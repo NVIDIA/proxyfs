@@ -1,0 +1,18 @@
+
+# ProxyFS Share:
+[proxyfs]
+      comment = ProxyFS test volume
+      path = /mnt/CommonVolume
+      vfs objects = acl_xattr proxyfs
+      proxyfs:volume = CommonVolume
+      valid users = CHANGEME
+      public = yes
+      writable = yes
+      printable = no
+      browseable = yes
+      read only = no
+      oplocks = False
+      level2 oplocks = False
+      aio read size = 1
+      aio write size = 1
+

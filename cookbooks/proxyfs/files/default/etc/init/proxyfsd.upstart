@@ -1,0 +1,26 @@
+# proxyfsd job file 
+
+description "proxyfsd -- a filesystem for OpenStack Swift"
+author "orion <orion@swiftstack.com>"
+
+# Stanzas
+
+# When to start the service
+start on runlevel [2345]
+
+# When to stop the service
+stop on runlevel [016]
+
+# Automatically restart process if crashed
+# respawn
+
+# Essentially lets upstart know the process will detach itself to the background
+# expect fork
+
+# Run before process
+pre-start script
+    [ -d /var/log/proxyfsd ] || mkdir -p /var/log/proxyfsd
+end script
+
+# Start the process
+exec /usr/bin/proxyfsd /etc/proxyfsd/saioproxyfsd0.conf 2>/var/log/proxyfsd/proxyfsd.err

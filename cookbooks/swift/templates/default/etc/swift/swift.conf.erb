@@ -1,0 +1,18 @@
+[swift-hash]
+# random unique strings that can never change (DO NOT LOSE)
+swift_hash_path_prefix = changeme
+swift_hash_path_suffix = changeme
+<% @storage_policies.each_with_index do |name, i| %>
+
+[storage-policy:<%= i %>]
+name = <%= name %>
+<% if i == 0 %>
+default = yes
+<% end %>
+<% if name == @ec_policy %>
+policy_type = erasure_coding
+ec_type = liberasurecode_rs_vand
+ec_num_data_fragments = <%= @ec_replicas - 2 %>
+ec_num_parity_fragments = 2
+<% end %>
+<% end %>

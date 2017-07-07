@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# A simple script to start the services and mount the sample mount point
+# The PATH, etc should already be setup by systemctl environment
+
+MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
+SHARE_NFS=/mnt/nfs_proxyfs_mount/
+
+MOUNT_POINT_SMB=//127.0.0.1/proxyfs
+SHARE_SMB=/mnt/smb_proxyfs_mount
+
+mount -a
+
+if [ -f /usr/bin/systemctl ]; then
+    # Centos
+    MOUNT=/usr/bin/mount
+    sudo /usr/bin/systemctl stop nfs-idmap
+    sudo /usr/bin/systemctl stop nfs-lock
+    sudo /usr/bin/systemctl stop nfs-server
+    sudo /usr/bin/systemctl stop rpcbind
+    sudo /usr/bin/systemctl stop smb
+    sudo /usr/bin/systemctl stop nmb
+    # sudo /usr/bin/systemctl stop winbind
+    sudo /usr/bin/systemctl stop proxyfsd
+    sudo /usr/bin/swift-init main stop
+    # sudo /usr/bin/systemctl stop swift
+    sudo /usr/bin/systemctl stop memcached
+
+    sudo /usr/bin/systemctl start memcached
+    # sudo /usr/bin/systemctl start swift
+    sudo /usr/bin/swift-init main start
+    sudo /usr/bin/systemctl start proxyfsd
+    # sudo /usr/bin/systemctl start winbind
+    sudo /usr/bin/systemctl start nmb
+    sudo /usr/bin/systemctl start smb
+    sudo /usr/bin/systemctl start rpcbind
+    sudo /usr/bin/systemctl start nfs-server
+    sudo /usr/bin/systemctl start nfs-lock
+    sudo /usr/bin/systemctl start nfs-idmap
+
+    /usr/bin/systemctl -q is-active proxyfsd
+    if [ $? -ne 0 ]; then
+        echo "ProfyFS failed to start. Exiting..."
+        exit 1
+    else
+        echo "ProxyFS successfully started"
+    fi
+else
+    # Ubuntu (not tested!)
+    MOUNT=/bin/mount
+    sudo /usr/sbin/service nfs-idmap stop
+    sudo /usr/sbin/service nfs-lock stop
+    sudo /usr/sbin/service nfs-server stop
+    sudo /usr/sbin/service rpcbind stop
+    sudo /usr/sbin/service smbd stop
+    sudo /usr/sbin/service nmbd stop
+    sudo /usr/sbin/service winbindd stop
+    sudo /usr/sbin/service proxyfsd stop
+    sudo /usr/bin/swift-init main stop
+#    sudo /usr/sbin/service swift stop
+    sudo /usr/sbin/service memcached stop
+
+    sudo /usr/sbin/service memcached start
+#    sudo /usr/sbin/service swift start
+    sudo /usr/bin/swift-init main start
+    sudo /usr/sbin/service proxyfsd start
+    sudo /usr/sbin/service winbindd start
+    sudo /usr/sbin/service nmbd start
+    sudo /usr/sbin/service smbd start
+    sudo /usr/sbin/service rpcbind start
+    sudo /usr/sbin/service nfs-server start
+    sudo /usr/sbin/service nfs-lock start
+    sudo /usr/sbin/service nfs-idmap start
+fi
+
+mountpoint -q $SHARE_NFS
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_NFS
+fi
+
+mountpoint -q $SHARE_NFS
+if [ $? -ne 0 ]; then
+    for i in `seq 5`; do
+        sleep 5
+        sudo $MOUNT -t nfs -o vers=3 $MOUNT_POINT_NFS $SHARE_NFS && break
+        echo "Mount of $SHARE_NFS failed.  Retrying..." 
+    done
+fi
+
+mountpoint -q $SHARE_NFS
+if [ $? -ne 0 ]; then
+    echo "ERROR:  Could not mount $SHARE_NFS."
+    exit 1
+else
+    echo "$SHARE_NFS successfully mounted"
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_SMB
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -ne 0 ]; then
+    for i in `seq 5`; do
+        sleep 5
+        sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
+        echo "Mount of $SHARE_SMB failed.  Retrying..." 
+    done
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -ne 0 ]; then
+    echo "ERROR:  Could not mount $SHARE_SMB."
+    exit 1
+else
+    echo "$SHARE_SMB successfully mounted"
+fi

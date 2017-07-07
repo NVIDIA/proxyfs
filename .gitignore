@@ -1,0 +1,73 @@
+# Local additions
+*~
+.DS_Store
+.vscode
+*.swp
+
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+*.so
+*.png
+build/
+dist/
+
+# Local FUSE Mount Point directories
+CommonMountPoint
+MountPoint0
+
+# specific binaries
+jrpcfs/test/client
+
+# Folders
+_obj
+_test
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
+*.test
+*.prof
+*.uds
+*.pyc
+
+# Vagrant private directory
+.vagrant/
+.bundle/
+
+# test coverage artifacts (see https://blog.golang.org/cover#TOC_5.)
+coverage.out
+count.out
+
+# log file
+proxyfsd.log
+
+# generated code
+blunder/fserror_string.go
+inode/inodetype_string.go
+
+# tags
+tags
+
+# setuptools leaves egg stuff around
+pfs_middleware/*.egg-info
+
+# tox's virtualenvs
+.tox
+
+# coverage report temporary files
+pfs_middleware/.coverage
+
+# runway by-products
+ci/ansible/chef_files/local-mode-cache/
+nodes/

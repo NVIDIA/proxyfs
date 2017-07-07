@@ -1,0 +1,99 @@
+@startuml
+
+skinparam sequenceTitleFontSize 40
+skinparam sequenceTitleFontStyle bold
+
+skinparam sequenceParticipantBackgroundColor #darkgrey
+skinparam sequenceParticipantFontSize 8
+
+skinparam sequenceGroupHeaderFontSize 9
+
+title Flush
+
+participant fs.Flush as "fs/api_internal.go::Flush()"
+participant dlm
+participant inode.Access as "inode/inode.go::Access()"
+participant inode.Flush as "inode/file.go::Flush()"
+participant inode.fetchInodeType as "inode/inode.go::fetchInodeType()"
+participant inode.fetchInode as "inode/inode.go::fetchInode()"
+participant inode.fetchOnDiskInode as "inode/inode.go::fetchOnDiskInode()"
+participant headhunter.GetInodeRec as "headhunter/api_swift.go::GetInodeRec()"
+participant cstruct.Unpack as "cstruct.Unpack()"
+participant json.Unmarshal as "json.Unmarshal()"
+participant sortedmap.OldBPlusTree as "sortedmap.OldBPlusTree()"
+participant inode.flush as "inode/file.go::flush()"
+participant inode.flushInode as "inode/inode.go::flushInode()"
+participant inode.flushInodes as "inode/inode.go::flushInodes()"
+participant inode.doFileInodeDataFlush as "inode/file_flusher.go::doFileInodeDataFlush()"
+participant inode.fileInodeFlusherDaemon as "inode/file_flusher.go::fileInodeFlusherDaemon()"
+participant inode.inFlightLogSegmentFlusher as "inode/file_flusher.go::inFlightLogSegmentFlusher()"
+participant swiftclient.Close as "swiftclient.Close()"
+participant inode.convertToOnDiskInodeV1 as "inode/inode.go::convertToOnDiskInodeV1()"
+participant sortedmap.Flush as "sortedmap.Flush()"
+participant json.Marshal as "json.Marshal()"
+participant headhunter.PutInodeRecs as "headhunter/api_swift.go::PutInodeRecs()"
+participant inode.deleteLogSegmentAsync as "inode/file.go::deleteLogSegmentAsync()"
+participant swiftclient.ObjectDeleteAsync as "swiftclient.ObjectDeleteAsync()"
+
+fs.Flush->dlm: obtain WriteLock
+dlm->fs.Flush
+fs.Flush->inode.Access: check for existence
+inode.Access->fs.Flush
+fs.Flush->inode.Access: check for write access
+inode.Access->fs.Flush
+fs.Flush->inode.Flush: request flush
+  inode.Flush->inode.fetchInodeType: fetch in-memory file inode object
+    inode.fetchInodeType->inode.fetchInode: fetch in-memory inode object
+      group if not in inode cache
+        inode.fetchInode->inode.fetchOnDiskInode: construct in-memory inode object
+          inode.fetchOnDiskInode->headhunter.GetInodeRec: fetch serialized inode
+          headhunter.GetInodeRec->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack corruption field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack version field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->json.Unmarshal: unpack json-encoded in-memory inode object
+          json.Unmarshal->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->sortedmap.OldBPlusTree: page in root of extent map
+          sortedmap.OldBPlusTree->inode.fetchOnDiskInode
+        inode.fetchOnDiskInode->inode.fetchInode
+        inode.fetchInode->inode.fetchInode: insert inode object in inode cache
+      end
+    inode.fetchInode->inode.fetchInodeType
+  inode.fetchInodeType->inode.Flush
+  inode.Flush->inode.flush
+    inode.flush->inode.flushInode
+      inode.flushInode->inode.flushInodes
+        group loop for each flushed inode
+          inode.flushInodes->inode.doFileInodeDataFlush: flush in-flight log segments
+            inode.doFileInodeDataFlush-->inode.fileInodeFlusherDaemon: ask daemon to collect log segment PUT completions
+              inode.fileInodeFlusherDaemon-->inode.inFlightLogSegmentFlusher: ask individual log segment PUT to complete
+                inode.inFlightLogSegmentFlusher->swiftclient.Close
+                swiftclient.Close->inode.inFlightLogSegmentFlusher
+              inode.inFlightLogSegmentFlusher-->inode.fileInodeFlusherDaemon
+            inode.fileInodeFlusherDaemon-->inode.doFileInodeDataFlush
+          inode.doFileInodeDataFlush->inode.flushInodes
+          inode.flushInodes->inode.flushInodes: append any newly unreferenced log segments
+          inode.flushInodes->inode.convertToOnDiskInodeV1
+            inode.convertToOnDiskInodeV1->sortedmap.Flush: flush extent map
+            sortedmap.Flush->inode.convertToOnDiskInodeV1
+          inode.convertToOnDiskInodeV1->inode.flushInodes
+          inode.flushInodes->json.Marshal
+          json.Marshal->inode.flushInodes
+        end
+        inode.flushInodes->headhunter.PutInodeRecs: atomically update headhunter for all flushed inodes
+        headhunter.PutInodeRecs->inode.flushInodes
+        group loop for any newly unreferenced log segments
+          inode.flushInodes->inode.deleteLogSegmentAsync
+            inode.deleteLogSegmentAsync->swiftclient.ObjectDeleteAsync
+            swiftclient.ObjectDeleteAsync->inode.deleteLogSegmentAsync
+          inode.deleteLogSegmentAsync->inode.flushInodes
+        end
+      inode.flushInodes->inode.flushInode
+    inode.flushInode->inode.flush
+  inode.flush->inode.Flush
+inode.Flush->fs.Flush
+fs.Flush->dlm: release WriteLock
+dlm->fs.Flush
+
+@enduml

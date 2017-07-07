@@ -1,0 +1,43 @@
+@startuml
+
+title File Write Path - New Model
+
+participant fs
+participant inode
+participant serializer
+participant sortedmap
+participant swiftclient
+participant swift
+participant headhunter
+
+fs->inode: Write(InodeNumber, Data)
+inode->headhunter: GetInodeRec(InodeNumber)
+headhunter->swift: Read "page" of InodeRec Table
+swift->headhunter: returns "page" of InodeRec Table
+headhunter->inode: returns JSON'd FileInode
+inode->serializer: Do definiteWrite()
+serializer->swiftclient: FetchObjectChunkedPutContext()
+swiftclient->swift: HTTP PUT Transfer-Encoding: chunked
+swiftclient->serializer: returns chunkedPutContext
+serializer->swiftclient: SendChunk(Data)
+swiftclient->swift: ChunkHeader...then Data
+swiftclient->serializer: returns chunk sent status
+serializer->sortedmap: Put(FileExtentStruct)
+sortedmap->headhunter: GetB+TreeObject(cstruct'd B+Tree Node)
+headhunter->swift: HTTP GET "page" of B+TreeObject Table
+swift->headhunter: returns "page" of B+TreeObject Table
+headhunter->sortedmap: returns cstruct'd B+Tree Node
+sortedmap->serializer: returns insert status
+serializer->serializer: Time To Flush
+serializer->swiftclient: Close()
+swiftclient->swift: Zero-length'd ChunkHeader
+swift->swiftclient: returns HTTP Status
+swiftclient->serializer: returns HTTP Status
+serializer->sortedmap: Flush()
+sortedmap->headhunter: PutB+TreeObject(cstruct'd B+Tree Node)
+headhunter->sortedmap: returns insert status
+sortedmap->serializer: returns flush status
+serializer->inode: returns definiteWrite() status
+inode->fs: returns Write() status
+
+@enduml

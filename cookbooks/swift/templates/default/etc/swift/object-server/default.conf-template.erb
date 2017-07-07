@@ -1,0 +1,26 @@
+[DEFAULT]
+mount_check = false
+disable_fallocate = true
+workers = 1
+log_facility = LOG_LOCAL2
+# NOTE: servers_per_port necessary for replicator/reconstructor so must go here
+servers_per_port = <%= @servers_per_port %>
+
+[pipeline:main]
+pipeline = recon object-server
+
+[app:object-server]
+use = egg:swift#object
+
+[filter:recon]
+use = egg:swift#recon
+
+[object-updater]
+
+[object-auditor]
+
+[object-replicator]
+# vm_test_mode = yes
+sync_method = <%= @sync_method %>
+
+[object-reconstructor]

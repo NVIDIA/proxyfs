@@ -1,0 +1,41 @@
+@startuml
+
+title Bimodal PUT API - New Container Case
+
+autonumber
+
+box "Swift WSGI"
+participant WSGI
+participant RPCclient
+end box
+box "ProxyFS"
+participant PFSrpcsvr
+participant PFSfs
+participant PFSinode
+end box
+participant SwiftBE
+
+->WSGI: <URI>?Put
+
+WSGI -> WSGI:Virtual account
+
+WSGI -> RPCclient:<B><I>proxyfs_new_container(authUser,\n<B><I>vAccount, vNewContainer)</I></B>
+
+RPCclient -> PFSrpcsvr:<B><I>RpcCreateContainer(authUser,\n<B><I>vAccount, vNewContainer)</I></B>
+
+PFSrpcsvr -> PFSrpcsvr:Extract vAccount
+
+PFSrpcsvr -> PFSrpcsvr:Get mapping of vAccount to volumeName
+
+PFSrpcsvr -> PFSfs:If volume is not mounted for this user,\n<B><I>fs.Mount(volumeName, mountOptions, authUser)</I></B>
+
+PFSfs -> PFSrpcsvr:Return mountId, rootInodeNumber, err
+
+PFSrpcsvr -> PFSfs:<B><I>fs.Mkdir(mountId, rootInodeNumber, basename is vNewContainer)</I></B>
+PFSfs -> PFSrpcsvr:Return newDirInodeNumber, err
+
+PFSrpcsvr -> RPCclient:Return status
+
+RPCclient -> WSGI:Return status
+
+@enduml

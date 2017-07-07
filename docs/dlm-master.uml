@@ -1,0 +1,35 @@
+@startuml
+
+[*] --> Unknown
+
+Unknown --> PopulatingFromClients
+
+PopulatingFromClients --> Stale
+PopulatingFromClients --> PromotingToShared
+PopulatingFromClients --> Shared
+PopulatingFromClients --> PromotingToExclusive
+PopulatingFromClients --> Exclusive
+PopulatingFromClients --> DemotingToShared
+PopulatingFromClients --> DemotingToStale
+
+Stale --> PromotingToShared
+Stale --> PromotingToExclusive
+
+PromotingToShared --> Stale
+PromotingToShared --> Shared
+
+Shared --> PromotingToShared
+Shared --> DemotingToStale
+
+PromotingToExclusive --> Stale
+PromotingToExclusive --> Exclusive
+
+Exclusive --> DemotingToShared
+Exclusive --> DemotingToStale
+
+DemotingToShared --> Stale
+DemotingToShared --> Shared
+
+DemotingToStale --> Stale
+
+@enduml

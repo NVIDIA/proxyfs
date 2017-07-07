@@ -1,0 +1,67 @@
+@startuml
+participant Client
+participant ProxyFS
+participant "Namespace\nDistributed\nLock Manager" as DLM
+participant "Swift Proxy\nsupporting\nHTTP PATCH" as SP
+participant "Object\nServer" as OBJ
+participant "Container\nServer" as CONT
+
+Client->ProxyFS: create("/tmp/foo/cat.jpg")
+
+ProxyFS->DLM: shared-lock-request([/])
+DLM->ProxyFS: shared-lock-grant([/])
+loop until "tmp" found
+ProxyFS->SP: GET([/] to find "tmp" dirent)
+loop
+SP->OBJ: GET(BTree nodes in [/] LogSegments)
+OBJ->SP: GET Response
+end
+SP->ProxyFS: GET Response
+end
+ProxyFS->DLM: shared-lock-release([/])
+DLM->ProxyFS: shared-lock-released([/])
+
+ProxyFS->DLM: shared-lock-request([/tmp/])
+DLM->ProxyFS: shared-lock-grant([/tmp/])
+loop until "foo" found
+ProxyFS->SP: GET([/tmp/] to find "foo" dirent)
+loop on "read plan"
+SP->OBJ: GET(BTree nodes in [/tmp/] LogSegments)
+OBJ->SP: GET Response
+end
+SP->ProxyFS: GET Response
+end
+ProxyFS->DLM: shared-lock-release([/tmp/])
+DLM->ProxyFS: shared-lock-released([/tmp/])
+
+ProxyFS->DLM: exclusive-lock-request([/tmp/foo/])
+DLM->ProxyFS: exclusive-lock-grant([/tmp/foo/])
+loop until "cat.jpg" known to be missing
+ProxyFS->SP: GET([/tmp/foo/] to not find "cat.jpg" dirent)
+loop on "read plan"
+SP->OBJ: GET(BTree nodes in [/tmp/foo/] LogSegments)
+OBJ->SP: GET Response
+end
+SP->ProxyFS: GET Response
+end
+
+ProxyFS->SP: PUT([/tmp/foo/cat.jpg]'s "zeroth" LogSegment (no content))
+ProxyFS->SP: PUT([/tmp/foo/cat.jpg]'s empty "zeroth" LogSegment)
+SP->OBJ: PUT([/tmp/foo/cat.jpg]'s empty "zeroth" LogSegment)
+OBJ->CONT: Add([/tmp/foo/cat.jpg]'s "zeroth" LogSegment)
+CONT->OBJ: Add request queue'd
+OBJ->SP: PUT OK
+SP->ProxyFS: PUT OK
+
+ProxyFS->SP: PATCH([/tmp/foo/] with dirent mapping "cat.jpg" to [/tmp/foo/cat.jpg])
+SP->OBJ: PUT([/tmp/foo/]'s "next" LogSegment)
+OBJ->CONT: Add([/tmp/foo/]'s "next" LogSegment)
+CONT->OBJ: Add request queue'd
+OBJ->SP: PUT OK
+SP->ProxyFS: PATCH OK
+ProxyFS->DLM: exclusive-lock-release([/tmp/foo/])
+DLM->ProxyFS: exclusive-lock-released([/tmp/foo/])
+
+
+ProxyFS->Client: create("/tmp/foo/cat.jpg") successful
+@enduml

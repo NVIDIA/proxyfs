@@ -1,0 +1,60 @@
+@startuml
+
+title File Write Path - Old Model
+
+participant fs
+participant inode
+participant serializer
+participant sortedmap
+participant swiftclient
+participant swift
+participant headhunter
+participant disk
+
+fs->inode: Write(InodeNumber, Data)
+inode->headhunter: GetInodeRec(InodeNumber)
+headhunter->disk: Read "page" of InodeRec Table
+disk->headhunter: returns "page" of InodeRec Table
+headhunter->inode: returns LastLogSegment#
+inode->swiftclient: ObjectRead(trailer...then JSON'd FileInode)
+swiftclient->swift: HTTP GET
+swift->swiftclient: returns trailer...then JSON'd FileInode
+swiftclient->inode: returns trailer... then JSON'd FileInode
+inode->serializer: Do definiteWrite()
+serializer->swiftclient: FetchObjectChunkedPutContext()
+swiftclient->swift: HTTP PUT Transfer-Encoding: chunked
+swiftclient->serializer: returns chunkedPutContext
+serializer->swiftclient: SendChunk(Data)
+swiftclient->swift: ChunkHeader...then Data
+swiftclient->serializer: returns chunk sent status
+serializer->sortedmap: Put(FileExtentStruct)
+sortedmap->swiftclient: ObjectRead(cstruct'd B+Tree Node)
+swiftclient->sortedmap: returns cstruct'd B+Tree Node
+sortedmap->serializer: returns insert status
+serializer->serializer: Time To Flush
+serializer->sortedmap: Flush()
+sortedmap->swiftclient: SendChunk(cstruct'd B+Tree Node)
+swiftclient->swift: ChunkHeader...then cstruct'd B+Tree Node
+swiftclient->sortedmap: returns chunk sent status
+sortedmap->serializer: returns flush status
+serializer->swiftclient: SendChunk(JSON'd FileInode...then trailer)
+swiftclient->swift: ChunkHeader...then JSON'd FileInode...then trailer
+swiftclient->serializer: returns chunk sent status
+serializer->swiftclient: Close()
+swiftclient->swift: Zero-length'd ChunkHeader
+swift->swiftclient: returns HTTP Status
+swiftclient->serializer: returns HTTP Status
+serializer->headhunter: PutLogSegmentRec(LastLogSegment->ObjectPath)
+headhunter->disk: Read "page" of LogSegmentRec Table
+disk->headhunter: returns "page" of LogSegmentRecTable
+headhunter->disk: Write "page" of LogSegmentRec Table
+disk->headhunter: returns Write status
+headhunter->serializer: returns PutLogSegmentRec() status
+serializer->headhunter: PutInodeRec(InodeNumber->LastLogSegment#)
+headhunter->disk: Write "page" of InodeRec Table
+disk->headhunter: returns Write status
+headhunter->serializer: returns PutInodeRec() status
+serializer->inode: returns definiteWrite() status
+inode->fs: returns Write() status
+
+@enduml

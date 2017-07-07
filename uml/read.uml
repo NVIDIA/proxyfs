@@ -1,0 +1,114 @@
+@startuml
+
+skinparam sequenceTitleFontSize 40
+skinparam sequenceTitleFontStyle bold
+
+skinparam sequenceParticipantBackgroundColor #darkgrey
+skinparam sequenceParticipantFontSize 8
+
+skinparam sequenceGroupHeaderFontSize 9
+
+title Read
+
+participant fs.Read as "fs/api_internal.go::Read()"
+participant dlm
+participant inode.Access as "inode/inode.go::Access()"
+participant inode.GetType as "inode/inode.go::GetType()"
+participant inode.Read as "inode/file.go::Read()"
+participant inode.fetchInodeType as "inode/inode.go::fetchInodeType()"
+participant inode.fetchInode as "inode/inode.go::fetchInode()"
+participant inode.fetchOnDiskInode as "inode/inode.go::fetchOnDiskInode()"
+participant headhunter.GetInodeRec as "headhunter/api_swift.go::GetInodeRec()"
+participant cstruct.Unpack as "cstruct.Unpack()"
+participant json.Unmarshal as "json.Unmarshal()"
+participant sortedmap.OldBPlusTree as "sortedmap.OldBPlusTree()"
+participant inode.getReadPlanHelper as "inode/file.go::getReadPlanHelper()"
+participant sortedmap as "sortedmap B+Tree API"
+participant inode.doReadPlan as "inode/file_flusher.go::doReadPlan()"
+participant swiftclient.Read as "swiftclient.Read()"
+participant swiftclient.ObjectGet as "swiftclient.ObjectGet()"
+
+fs.Read->dlm: obtain ReadLock
+dlm->fs.Read
+fs.Read->inode.Access: check for existence
+inode.Access->fs.Read
+fs.Read->inode.Access: check for read access
+inode.Access->fs.Read
+fs.Read->inode.GetType: ensure this is a file inode
+inode.GetType->fs.Read
+fs.Read->inode.Read: perform read
+  inode.Read->inode.fetchInodeType: fetch in-memory file inode object
+    inode.fetchInodeType->inode.fetchInode: fetch in-memory inode object
+      group if not in inode cache
+        inode.fetchInode->inode.fetchOnDiskInode: construct in-memory inode object
+          inode.fetchOnDiskInode->headhunter.GetInodeRec: fetch serialized inode
+          headhunter.GetInodeRec->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack corruption field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack version field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->json.Unmarshal: unpack json-encoded in-memory inode object
+          json.Unmarshal->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->sortedmap.OldBPlusTree: page in root of extent map
+          sortedmap.OldBPlusTree->inode.fetchOnDiskInode
+        inode.fetchOnDiskInode->inode.fetchInode
+        inode.fetchInode->inode.fetchInode: insert inode object in inode cache
+      end
+    inode.fetchInode->inode.fetchInodeType
+  inode.fetchInodeType->inode.Read
+  inode.Read->inode.getReadPlanHelper: fetch read plan
+    inode.getReadPlanHelper->sortedmap: BisectLeft(): find requestedOffset in extent map
+    group iterate requestedOffset for requestedLength
+      inode.getReadPlanHelper->sortedmap: GetByIndex(): find next extent
+      sortedmap->inode.getReadPlanHelper
+    end
+  inode.getReadPlanHelper->inode.Read: return read plan
+  inode.Read->inode.doReadPlan: execute read plan
+    inode.doReadPlan->inode.doReadPlan: if len(readPlan) == 1
+      activate inode.doReadPlan
+        inode.doReadPlan->inode.doReadPlan: if lone readPlanStep == zero-fill
+          activate inode.doReadPlan
+            inode.doReadPlan->inode.doReadPlan: construct zero-filled buf
+            inode.doReadPlan->inode.Read: return zero-filled buf
+          deactivate inode.doReadPlan
+        inode.doReadPlan->inode.doReadPlan: if lone readPlanStep is to inFlightLogSegment
+          activate inode.doReadPlan
+            inode.doReadPlan->swiftclient.Read: fetch buf from inFlightLogSegment
+            swiftclient.Read->inode.doReadPlan
+            inode.doReadPlan->inode.Read: return buf from inFlightLogSegment
+          deactivate inode.doReadPlan
+        inode.doReadPlan->inode.doReadPlan: if lone readPlanStep would land in single read cache line
+          activate inode.doReadPlan
+            inode.doReadPlan->swifclient.ObjectGet: if read cache miss, fill a cache line
+            swifclient.ObjectGet->inode.doReadPlan
+            inode.doReadPlan->inode.Read: return buf from reach cache line
+          deactivate inode.doReadPlan
+      deactivate inode.doReadPlan
+    inode.doReadPlan->inode.doReadPlan: make a returnBuf to receive readPlanStep data
+    group loop over each readPlanStep of readPlan
+      inode.doReadPlan->inode.doReadPlan: if readPlanStep == zero-fill
+        activate inode.doReadPlan
+          inode.doReadPlan->inode.doReadPlan: construct zero-filled buf
+          inode.doReadPlan->inode.doReadPlan: append zero-filled buf to returnBuf
+        deactivate inode.doReadPlan
+      inode.doReadPlan->inode.doReadPlan: if readPlanStep is to inFlightLogSegment
+        activate inode.doReadPlan
+          inode.doReadPlan->swiftclient.Read: fetch buf from inFlightLogSegment
+          swiftclient.Read->inode.doReadPlan
+          inode.doReadPlan->inode.doReadPlan: append buf from inFlightLogSegment to returnBuf
+        deactivate inode.doReadPlan
+      inode.doReadPlan->inode.doReadPlan: if readPlanStep needs to reference read cache
+        activate inode.doReadPlan
+          group loop for each read cache line reference
+            inode.doReadPlan->swifclient.ObjectGet: if read cache miss, fill a cache line
+            swifclient.ObjectGet->inode.doReadPlan
+            inode.doReadPlan->inode.doReadPlan: append buf from reach cache line to returnBuf
+          end
+        deactivate inode.doReadPlan
+   end
+  inode.doReadPlan->inode.Read: return returnBuf
+inode.Read->fs.Read
+fs.Read->dlm: release ReadLock
+dlm->fs.Read
+
+@enduml

@@ -1,0 +1,201 @@
+- hosts: all
+  name: Install and start ProxyFS using the Chef installer
+  vars_files:
+    - "../vars/{{ env }}.yml"
+
+  tasks:
+
+  #
+  # Create SwiftStack user, manage related info
+  #
+
+  - name: Make sure we have wheel group
+    group: name=wheel state=present
+    become: yes
+    become_user: root
+
+  - name: Make sure we have {{ proxyfs_group }} group
+    group: name={{ proxyfs_group }} state=present
+    become: yes
+    become_user: root
+
+  #
+  # On Centos, we have to download and install chef and liberasurecode manually
+  #
+  - name: Download and Install Chef
+    yum:
+      name: https://packages.chef.io/files/stable/chef/12.16.42/el/7/chef-12.16.42-1.el7.x86_64.rpm
+      state: present
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Download and Install liberasurecode
+    yum:
+      name: http://www.rpmfind.net/linux/fedora/linux/releases/23/Everything/x86_64/os/Packages/l/liberasurecode-1.0.9-3.fc23.x86_64.rpm
+      state: present
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Download and Install liberasurecode-devel
+    yum:
+      name: http://www.rpmfind.net/linux/fedora/linux/releases/23/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.0.9-3.fc23.x86_64.rpm
+      state: present
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Create {{ proxyfs_user }} user
+    user:
+      name: "{{ proxyfs_user }}"
+      group: "{{ proxyfs_group }}"
+      groups: wheel
+      createhome: yes
+    become: yes
+    become_user: root
+
+  - name: Make ssh directory
+    file:
+      path: /home/{{ proxyfs_user }}/.ssh
+      state: directory
+      owner: "{{ proxyfs_user }}"
+      group: "{{ proxyfs_group }}"
+      mode: "0775"
+    become: yes
+    become_user: root
+
+  - name: ensure github.com is a known host
+    lineinfile:
+      dest: /home/{{ proxyfs_user }}/.ssh/known_hosts
+      create: yes
+      state: present
+      line: "{{ lookup('pipe', 'ssh-keyscan -t rsa github.com') }}"
+      regexp: "^github\\.com"
+    become: yes
+    become_user: root
+
+  #
+  # Install packages
+  #
+
+  - name: yum install base packages needed for server config
+    yum: name={{ item }} state=present
+    with_items:
+        - sudo
+        - ruby
+        - rubygems
+        - gcc
+        - libxml2
+        - libxml2-devel
+        - libxslt
+        - libxslt-devel
+        - which
+        - tar
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: apt install base packages needed for server config
+    apt: name={{ item }} state=present
+    with_items:
+        - sudo
+        - build-essential
+        - ruby
+        - rubygems
+        - chef
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'Debian'
+
+  #
+  # /etc/sudoers will not exist until after sudo has been installed.
+  #
+  - name: Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: '^%wheel'
+      line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+    become: yes
+    become_user: root
+
+  - name: Change /etc/sudoers to not require a tty
+    lineinfile:
+      dest: /etc/sudoers
+      state: present
+      regexp: '^Defaults    requiretty'
+      line: '#Defaults    requiretty'
+    become: yes
+    become_user: root
+
+  - name: yum install anticipated packages for building/running proxyfs
+    yum: name={{ item }} state=present
+    with_items:
+        - gcc
+        - python-devel
+        - gnutls-devel
+        - libacl-devel
+        - openldap-devel
+        - json-c-devel
+        - samba
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: apt install anticipated packages for building/running proxyfs
+    apt: name={{ item }} state=present
+    with_items:
+        - gcc
+        - python-dev
+        - gnutls-dev
+        - libacl1-dev
+        - libldap2-dev
+        - libjson-c-dev
+        - libb64-dev
+        - samba
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'Debian'
+
+  - name: yum install anticipated packages for building/running swift
+    yum: name={{ item }} state=present
+    with_items:
+        - openssl-devel
+        - curl
+        - memcached
+        - rsync
+        - xfsprogs
+        - git-core
+        - gcc
+        - python-devel
+        - libffi-devel
+        - libxml2-devel
+        - libxml2
+        - libxslt-devel
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: apt install anticipated packages for building/running swift
+    apt: name={{ item }} state=present
+    with_items:
+        - liberasurecode-dev
+        - libssl-dev
+        - curl
+        - memcached
+        - rsync
+        - sqlite3
+        - xfsprogs
+        - git-core
+        - gcc
+        - build-essential
+        - python-dev
+        - libffi-dev
+        - libxml2-dev
+        - libxml2
+        - libxslt1-dev
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'Debian'
+

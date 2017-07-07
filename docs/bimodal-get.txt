@@ -1,0 +1,65 @@
+@startuml
+
+title Bimodal GET API - ReadPlan
+
+autonumber
+
+box "Swift WSGI"
+participant WSGI
+participant RPCclient
+end box
+box "ProxyFS"
+participant PFSrpcsvr
+participant PFSfs
+participant PFSinode
+end box
+participant SwiftBE
+
+->WSGI:<URI>?GET with list of ranges
+
+WSGI -> WSGI:Virtual account
+
+WSGI -> RPCclient:<B><I>proxyfs_get_read_plan(vPATH, array of</I></B>\n<B><I>ranges [start-byte, length][start-byte, length]...)</I></B>\nEmpty range means all.
+
+RPCclient -> PFSrpcsvr:<B><I>RpcGetReadPlan(vPATH, array of</I></B>\n<B><I>ranges [start-byte, length][start-byte, length]..., number of entries)</I></B>\nEmpty range means all
+
+PFSrpcsvr -> PFSrpcsvr:Get mapping of vAccount to volumeName
+
+PFSrpcsvr -> PFSfs:If volume is not mounted for this user,\n<B><I>fs.Mount(volumeName, mountOptions, authUser)</I></B>
+
+PFSfs -> PFSrpcsvr:Return mountId, rootInodeNumber, err
+
+
+PFSrpcsvr -> PFSfs:<B><I>fs.Get(mountId, rootInodeNumber, vObjectName)</I></B>
+PFSfs -> PFSfs:Lookup fileInode of object,\n<B><I>fs.Lookup(mountId, rootInodeNumber, vObjectName)</I></B>
+
+PFSfs -> PFSfs:Return fileInode
+
+PFSfs -> PFSfs: Retrieve read plan <B><I>fs.GetReadPlan(fileInode, array of</I></B>\n<B><I>ranges [start-byte, length][start-byte, length]..., number of entries)</I></B>\nEmpty range means all
+
+PFSfs -> PFSinode: foreach range\n<B><I>inode.GetReadPlan(fileInodeNumber, offset, length)</I></B>
+
+PFSinode -> PFSfs: Response is read plan for given offset and length
+
+PFSfs -> PFSrpcsvr:Response is complete read plan
+
+PFSrpcsvr -> RPCclient:Response for\n<B><I>RpcGetReadPlan(vPATH)</I></B> is\n(pPATH, offset, length) tuples and status
+
+RPCclient -> WSGI: Response for\n<B><I>proxyfs_get_read_plan(vPATH)</I></B> is\npPATH, offset, length) tuples and status
+
+WSGI -> SwiftBE:Reads data using read plan.
+
+SwiftBE -> WSGI:Response to reading is data and status.
+
+
+WSGI -> RPCclient:<B><I>proxyfs_get_read_plan_done(vPATH)</I></B>\nDone with read plan
+RPCclient -> PFSrpcsvr:Done with read plan (DETAILS)
+PFSrpcsvr -> PFSfs:Done with read plan (DETAILS)
+PFSfs -> PFSinode:Done with read plan (DETAILS)
+PFSinode -> PFSfs:Response to done with read plan (DETAILS)
+
+PFSfs -> PFSrpcsvr: Return status
+PFSrpcsvr -> RPCclient: Return status
+RPCclient -> WSGI: Return status
+
+@enduml

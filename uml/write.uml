@@ -1,0 +1,109 @@
+@startuml
+
+skinparam sequenceTitleFontSize 40
+skinparam sequenceTitleFontStyle bold
+
+skinparam sequenceParticipantBackgroundColor #darkgrey
+skinparam sequenceParticipantFontSize 8
+
+skinparam sequenceGroupHeaderFontSize 9
+
+title Write
+
+participant fs.Write as "fs/api_internal.go::Write()"
+participant dlm
+participant inode.Access as "inode/inode.go::Access()"
+participant inode.Write as "inode/file.go::Write()"
+participant inode.fetchInodeType as "inode/inode.go::fetchInodeType()"
+participant inode.fetchInode as "inode/inode.go::fetchInode()"
+participant inode.fetchOnDiskInode as "inode/inode.go::fetchOnDiskInode()"
+participant headhunter.GetInodeRec as "headhunter/api_swift.go::GetInodeRec()"
+participant cstruct.Unpack as "cstruct.Unpack()"
+participant json.Unmarshal as "json.Unmarshal()"
+participant sortedmap.OldBPlusTree as "sortedmap.OldBPlusTree()"
+participant inode.doSendChunk as "inode/file_flusher.go::doSendChunk()"
+participant inode.fileInodeFlusherDaemon as "inode/file_flusher.go::fileInodeFlusherDaemon()"
+participant inode.provisionObject as "inode/inode.go::provisionObject()"
+participant headhunter.FetchNonce as "headhunter/api_swift.go::FetchNonce()"
+participant inode.provisionPhysicalContainer as "inode/inode.go::provisionPhysicalContainer()"
+participant swiftclient.ContainerPut as "swiftclient.ContainerPut()"
+participant inode.setLogSegmentContainer as "inode/file.go::setLogSegmentContainer()"
+participant headhunter.PutLogSegmentRec as "headhunter.PutLogSegmentRec()"
+participant swiftclient.ObjectFetchChunkedPutContext as "swiftclient.ObjectFetchChunkedPutContext()"
+participant swiftclient.BytesPut as "swiftclient.BytesPut()"
+participant swiftclient.SendChunk as "swiftclient.SendChunk()"
+participant inode.recordWrite as "inode/file.go::recordWrite()"
+participant sortedmap as "sortedmap B+Tree API"
+
+fs.Write->dlm: obtain WriteLock
+dlm->fs.Write
+fs.Write->inode.Access: check for existence
+inode.Access->fs.Write
+fs.Write->inode.Access: check for write access
+inode.Access->fs.Write
+fs.Write->inode.Write: perform write
+  inode.Write->inode.fetchInodeType: fetch in-memory file inode object
+    inode.fetchInodeType->inode.fetchInode: fetch in-memory inode object
+      group if not in inode cache
+        inode.fetchInode->inode.fetchOnDiskInode: construct in-memory inode object
+          inode.fetchOnDiskInode->headhunter.GetInodeRec: fetch serialized inode
+          headhunter.GetInodeRec->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack corruption field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->cstruct.Unpack: unpack version field
+          cstruct.Unpack->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->json.Unmarshal: unpack json-encoded in-memory inode object
+          json.Unmarshal->inode.fetchOnDiskInode
+          inode.fetchOnDiskInode->sortedmap.OldBPlusTree: page in root of extent map
+          sortedmap.OldBPlusTree->inode.fetchOnDiskInode
+        inode.fetchOnDiskInode->inode.fetchInode
+        inode.fetchInode->inode.fetchInode: insert inode object in inode cache
+      end
+    inode.fetchInode->inode.fetchInodeType
+  inode.fetchInodeType->inode.Write
+  inode.Write->inode.doSendChunk
+    group if no fileInodeFlusherDaemon
+      inode.doSendChunk-->inode.fileInodeFlusherDaemon
+    end
+    group if no openLogSegment
+      inode.doSendChunk->inode.provisionObject
+        inode.provisionObject->headhunter.FetchNonce
+        headhunter.FetchNonce->inode.provisionObject: fetch Nonce for objectNumber
+        inode.provisionObject->inode.provisionPhysicalContainer
+          group if new phyical container needed
+            inode.provisionPhysicalContainer->headhunter.FetchNonce: fetch Nonce for containerName
+            headhunter.FetchNonce->inode.provisionPhysicalContainer
+            inode.provisionPhysicalContainer->swiftclient.ContainerPut
+            swiftclient.ContainerPut->inode.provisionPhysicalContainer
+          end
+        inode.provisionPhysicalContainer->inode.provisionObject
+      inode.provisionObject->inode.doSendChunk: return containerName & objectNumber
+      inode.doSendChunk->inode.setLogSegmentContainer
+        inode.setLogSegmentContainer->headhunter.PutLogSegmentRec: record mapping from\nobjectNumber to containerName
+        headhunter.PutLogSegmentRec->inode.setLogSegmentContainer
+      inode.setLogSegmentContainer->inode.doSendChunk
+      inode.doSendChunk->swiftclient.ObjectFetchChunkedPutContext
+      swiftclient.ObjectFetchChunkedPutContext->inode.doSendChunk
+    end
+    inode.doSendChunk->swiftclient.BytesPut: fetch where we are about to write to in LogSegment
+    swiftclient.BytesPut->inode.doSendChunk
+    inode.doSendChunk->swiftclient.SendChunk: send chunk in on-going chunked PUT context
+    swiftclient.SendChunk->inode.doSendChunk
+  inode.doSendChunk->inode.Write
+  inode.Write->inode.recordWrite: update extent map
+    inode.recordWrite->sortedmap: BisectLeft(): find where it goes
+    sortedmap->inode.recordWrite
+    inode.recordWrite->sortedmap: GetByIndex(): interate to\nsee what else it may overlap
+    sortedmap->inode.recordWrite
+    inode.recordWrite->sortedmap: PatchByIndex(): modify partial overlaps
+    sortedmap->inode.recordWrite
+    inode.recordWrite->sortedmap: DeleteByIndex(): delete full overlaps
+    sortedmap->inode.recordWrite
+    inode.recordWrite->sortedmap: Put(): insert new extent
+    sortedmap->inode.recordWrite
+  inode.recordWrite->inode.Write
+inode.Write->fs.Write
+fs.Write->dlm: release WriteLock
+dlm->fs.Write
+
+@enduml

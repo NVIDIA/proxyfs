@@ -1,0 +1,104 @@
+#!/usr/bin/env python
+
+import re
+import sys
+import time
+import argparse
+import requests
+import subprocess
+
+# TODO:
+# * humanize stats if humanize is installed
+# * better print formatting; use tables if appropriate module is installed
+
+
+def print_stats(s, exclude=[], show_all=False, diff=True):
+    exclude_re = None
+    if exclude:
+        exclude_re = '|'.join(exclude)
+
+    for k in sorted(s.keys()):
+        # Do not display the line if it is in an excluded category
+        # or if we're in diff mode and it is unchanged.
+        # Unless we specified -v; in that case, show everything.
+        hide = re.match(exclude_re, k)
+        hide = hide or (diff and not s[k])
+        if show_all or not hide:
+            print("{: <90} {: >20}".format(k, s[k]))
+
+
+def stat_diff(s1, s2):
+    diff = {}
+    for k in s2:
+        if k not in s1:
+            continue
+        diff[k] = s2[k] - s1[k]
+
+    return diff
+
+
+def parse_stats(text):
+    stats = {}
+    for l in text.split("\n"):
+        if not l:
+            continue
+
+        # Are stats guaranteed to be positive integers?
+        match = re.match("(\S+)\s+(\d+)\s*$", l)
+        if match:
+            stats[match.group(1)] = int(match.group(2))
+        else:
+            sys.stderr.write("WARNING: unparsed line: [%s]\n" % l)
+
+    return stats
+
+
+def get_stats_from_proxyfsd(hostname, port):
+    r = requests.get("http://%s:%d/metrics" % (hostname, port))
+    r.raise_for_status()
+    stats = parse_stats(r.text)
+    stats['timestamp'] = int(time.time())
+    return stats
+
+
+def read_stats_from_file(fn):
+    with open(fn) as f:
+        text = f.read()
+        stats = parse_stats(text)
+        return stats
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Show Proxyfs stats')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='verbose output')
+    parser.add_argument('--hostname', '-H', type=str, default="localhost",
+                        help='Hostname of proxyfs stat server (probably localhost)')
+    parser.add_argument('--port', '-p', type=int, default=15346,
+                        help='Port used by proxyfs stat server')
+    parser.add_argument('--file', '-f', type=str,
+                        help='Read starting stats from a file')
+    parser.add_argument('cmd', type=str, nargs=argparse.REMAINDER, help='command to run')
+
+    args = parser.parse_args()
+
+    excludes = ['go_runtime', 'logging_level']
+
+    if args.cmd or args.file:
+        start_stats = None
+        if args.file:
+            start_stats = read_stats_from_file(args.file)
+        else:
+            start_stats = get_stats_from_proxyfsd(args.hostname, args.port)
+
+        if args.cmd:
+            subprocess.call(args.cmd)
+
+        end_stats = get_stats_from_proxyfsd(args.hostname, args.port)
+        diff = stat_diff(start_stats, end_stats)
+
+        if args.cmd:
+            print("\n--")
+        print_stats(diff, exclude=excludes, show_all=args.verbose)
+    else:
+        stats = get_stats_from_proxyfsd(args.hostname, args.port)
+        print_stats(stats, diff=False, exclude=excludes, show_all=args.verbose)

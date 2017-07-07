@@ -1,0 +1,137 @@
+#!/usr/bin/env python
+# Copyright (c) 2015 SwiftStack, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import argparse
+import os
+import Queue
+import sys
+import threading
+
+PROJECTS = {
+    'swift': {
+        'root': '/vagrant/swift/doc/',
+        'dir': ['../swift', 'saio'],
+        'container': 'doc',
+    },
+    'swift-specs': {
+        'root': '/vagrant/swift-specs/doc/',
+        'dir': ['../'],
+        'container': 'specs',
+    },
+    'swiftclient': {
+        'root': '/vagrant/python-swiftclient/doc/',
+        'dir': [],
+        'container': 'swiftclient',
+    }
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-r', '--root', default=None,
+                    help="the root of the doc tree")
+parser.add_argument('--dir', action='append', default=[],
+                    help="extra dirs to append, if relative path, "
+                    "it's relative to the root")
+parser.add_argument('--container', default=None,
+                    help="the swift container into which the "
+                    "compiled html will be uploaded")
+parser.add_argument('project', nargs='?', default='swift',
+                    choices=PROJECTS.keys(),
+                    help="use defaults for pre-configured projects")
+
+
+def iter_path_mtime(source_dir):
+    for root, dirs, files in os.walk(source_dir):
+        for filename in files:
+            if filename.rsplit('.', 1)[-1] not in ('rst', 'py'):
+                continue
+            full_path = os.path.join(root, filename)
+            current_mtime = os.path.getmtime(full_path)
+            yield full_path, current_mtime
+
+
+def watch_changed_files(q, *source_dirs):
+    last_changed_time = {}
+    while True:
+        full_pass_has_changes = False
+        for source_dir in source_dirs:
+            for path, mtime in iter_path_mtime(source_dir):
+                if (path in last_changed_time and
+                        last_changed_time[path] < mtime):
+                    yield path
+                    full_pass_has_changes = True
+                    last_changed_time = {}
+                last_changed_time[path] = mtime
+        if not full_pass_has_changes:
+            # sleep for three seconds (or till user hits enter...)
+            try:
+                q.get(timeout=1.0)
+            except Queue.Empty:
+                pass
+            else:
+                yield 'User says path...'
+
+
+def main():
+    options = parser.parse_args()
+    if options.root:
+        root = options.root
+        montior_paths = options.dir
+        default_container = 'doc'
+    else:
+        root = PROJECTS[options.project]['root']
+        montior_paths = PROJECTS[options.project]['dir'] + options.dir
+        default_container = PROJECTS[options.project]['container']
+
+    container = options.container or default_container
+    source_dir = os.path.join(root, 'source')
+    build_dir = os.path.join(root, 'build/html')
+    extra_dirs = [os.path.join(root, path) for path in montior_paths]
+
+    # intial build
+    rv = os.system('sphinx-build -b html %s %s' % (source_dir, build_dir))
+    if rv != 0:
+        # bail on build fail
+        return rv
+    os.chdir(build_dir)
+    os.system('swift post %s -r .r:*' % container)
+    print 'uploading...'
+    os.system('swift upload --changed %s . > /dev/null' % container)
+    print 'done...'
+    os.system('swift stat -v %s index.html | grep URL' % container)
+    # we're gunna let the user hit enter to rebuild immediately
+    q = Queue.Queue()
+
+    def get_input():
+        while True:
+            q.put(raw_input())
+    continue_thread = threading.Thread(target=get_input)
+    continue_thread.daemon = True
+    continue_thread.start()
+    for filename in watch_changed_files(q, source_dir, *extra_dirs):
+        print '%s has CHANGED!' % filename
+        print 'rebuilding...'
+        os.system('sphinx-build -q -b html %s %s' % (source_dir, build_dir))
+        print 'uploading...'
+        os.system('swift upload --changed %s . > /dev/null' % container)
+        print 'done...'
+        os.system('swift stat -v %s index.html | grep URL' % container)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print 'quit.'

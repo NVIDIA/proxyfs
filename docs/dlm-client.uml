@@ -1,0 +1,24 @@
+@startuml
+
+[*] --> Stale
+
+Stale --> PromotingFromStaleToShared
+Stale --> PromotingFromStaleToExclusive
+
+PromotingFromStaleToShared --> Shared
+PromotingFromStaleToShared --> Exclusive
+
+PromotingFromStaleToExclusive --> Exclusive
+
+Shared --> DemotiongFromSharedToStale
+
+Exclusive --> DemotingFromExclusiveToShared
+Exclusive --> DemotingFromExclusiveToStale
+
+DemotiongFromSharedToStale --> Stale
+
+DemotingFromExclusiveToShared --> Shared
+
+DemotingFromExclusiveToStale --> Stale
+
+@enduml
