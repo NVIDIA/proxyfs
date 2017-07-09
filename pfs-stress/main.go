@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"crypto/rand"
 	"fmt"
 	"log"
+	"math"
+	"math/big"
 	"os"
 	"strings"
 	"sync"
@@ -14,7 +18,7 @@ import (
 
 var (
 	displayUpdateInterval      time.Duration
-	fileNamePrefix             string
+	filePathPrefix             string
 	fileSize                   uint64
 	maxExtentSize              uint64
 	minExtentSize              uint64
@@ -33,7 +37,7 @@ func main() {
 		displayUpdateIntervalAsString      string
 		displayUpdateIntervalPad           string
 		err                                error
-		fileNamePrefixPad                  string
+		filePathPrefixPad                  string
 		fileSizeAsString                   string
 		fileSizePad                        string
 		maxExtentSizeAsString              string
@@ -73,12 +77,12 @@ func main() {
 
 	// Process resultant confMap
 
-	fileNamePrefix, err = confMap.FetchOptionValueString("Parameters", "FileNamePrefix")
+	filePathPrefix, err = confMap.FetchOptionValueString("StressParameters", "FilePathPrefix")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	numFiles, err = confMap.FetchOptionValueUint16("Parameters", "NumFiles")
+	numFiles, err = confMap.FetchOptionValueUint16("StressParameters", "NumFiles")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -86,15 +90,18 @@ func main() {
 		log.Fatalf("NumFiles must be > 0")
 	}
 
-	fileSize, err = confMap.FetchOptionValueUint64("Parameters", "FileSize")
+	fileSize, err = confMap.FetchOptionValueUint64("StressParameters", "FileSize")
 	if nil != err {
 		log.Fatal(err)
 	}
-	if 0 == numFiles {
+	if 0 == fileSize {
 		log.Fatalf("FileSize must be > 0")
 	}
+	if fileSize > math.MaxInt64 {
+		log.Fatalf("FileSize(%v) must be <= math.MaxInt64(%v)", fileSize, math.MaxInt64)
+	}
 
-	minExtentSize, err = confMap.FetchOptionValueUint64("Parameters", "MinExtentSize")
+	minExtentSize, err = confMap.FetchOptionValueUint64("StressParameters", "MinExtentSize")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -105,7 +112,7 @@ func main() {
 		log.Fatalf("MinExtentSize(%v) must be <= FileSize(%v)", minExtentSize, fileSize)
 	}
 
-	maxExtentSize, err = confMap.FetchOptionValueUint64("Parameters", "MaxExtentSize")
+	maxExtentSize, err = confMap.FetchOptionValueUint64("StressParameters", "MaxExtentSize")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -116,7 +123,7 @@ func main() {
 		log.Fatalf("MaxExtentSize(%v) must be <= FileSize(%v)", maxExtentSize, fileSize)
 	}
 
-	numExtentsToWritePerFile, err = confMap.FetchOptionValueUint32("Parameters", "NumExtentsToWritePerFile")
+	numExtentsToWritePerFile, err = confMap.FetchOptionValueUint32("StressParameters", "NumExtentsToWritePerFile")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -124,7 +131,7 @@ func main() {
 		log.Fatalf("NumExtentsToWritePerFile must be > 0")
 	}
 
-	numExtentWritesPerValidate, err = confMap.FetchOptionValueUint32("Parameters", "NumExtentWritesPerValidate")
+	numExtentWritesPerValidate, err = confMap.FetchOptionValueUint32("StressParameters", "NumExtentWritesPerValidate")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -132,7 +139,7 @@ func main() {
 		numExtentWritesPerValidate = numExtentsToWritePerFile
 	}
 
-	displayUpdateInterval, err = confMap.FetchOptionValueDuration("Parameters", "DisplayUpdateInterval")
+	displayUpdateInterval, err = confMap.FetchOptionValueDuration("StressParameters", "DisplayUpdateInterval")
 	if nil != err {
 		log.Fatal(err)
 	}
@@ -140,14 +147,14 @@ func main() {
 	// Display parameters
 
 	numFilesAsString = fmt.Sprintf("%d", numFiles)
-	fileSizeAsString = fmt.Sprintf("0x%016X", fileSize)
-	minExtentSizeAsString = fmt.Sprintf("0x%016X", minExtentSize)
-	maxExtentSizeAsString = fmt.Sprintf("0x%016X", maxExtentSize)
+	fileSizeAsString = fmt.Sprintf("%d", fileSize)
+	minExtentSizeAsString = fmt.Sprintf("%d", minExtentSize)
+	maxExtentSizeAsString = fmt.Sprintf("%d", maxExtentSize)
 	numExtentsToWritePerFileAsString = fmt.Sprintf("%d", numExtentsToWritePerFile)
 	numExtentWritesPerValidateAsString = fmt.Sprintf("%d", numExtentWritesPerValidate)
 	displayUpdateIntervalAsString = fmt.Sprintf("%s", displayUpdateInterval)
 
-	maxParameterStringLen = len(fileNamePrefix)
+	maxParameterStringLen = len(filePathPrefix)
 	if len(numFilesAsString) > maxParameterStringLen {
 		maxParameterStringLen = len(numFilesAsString)
 	}
@@ -170,7 +177,7 @@ func main() {
 		maxParameterStringLen = len(displayUpdateIntervalAsString)
 	}
 
-	fileNamePrefixPad = strings.Repeat(" ", maxParameterStringLen-len(fileNamePrefix))
+	filePathPrefixPad = strings.Repeat(" ", maxParameterStringLen-len(filePathPrefix))
 	numFilesPad = strings.Repeat(" ", maxParameterStringLen-len(numFilesAsString))
 	fileSizePad = strings.Repeat(" ", maxParameterStringLen-len(fileSizeAsString))
 	minExtentSizePad = strings.Repeat(" ", maxParameterStringLen-len(minExtentSizeAsString))
@@ -179,8 +186,8 @@ func main() {
 	numExtentWritesPerValidatePad = strings.Repeat(" ", maxParameterStringLen-len(numExtentWritesPerValidateAsString))
 	displayUpdateIntervalPad = strings.Repeat(" ", maxParameterStringLen-len(displayUpdateIntervalAsString))
 
-	fmt.Println("[Parameters]")
-	fmt.Printf("FileNamePrefix:             %s%s\n", fileNamePrefixPad, fileNamePrefix)
+	fmt.Println("[StressParameters]")
+	fmt.Printf("FilePathPrefix:             %s%s\n", filePathPrefixPad, filePathPrefix)
 	fmt.Printf("NumFiles:                   %s%s\n", numFilesPad, numFilesAsString)
 	fmt.Printf("FileSize:                   %s%s\n", fileSizePad, fileSizeAsString)
 	fmt.Printf("MinExtentSize:              %s%s\n", minExtentSizePad, minExtentSizeAsString)
@@ -218,8 +225,119 @@ func main() {
 	fmt.Println("... done!")
 }
 
+type fileStresserContext struct {
+	filePath string
+	file     *os.File
+	written  []byte
+}
+
 func fileStresser(stresserIndex uint16) {
-	// TODO: For now, just act like we are done immediately :-)
-	atomic.AddUint64(&numExtentsWrittenInTotal, uint64(numExtentsToWritePerFile))
+	var (
+		b                                uint8
+		err                              error
+		extentIndex                      uint32
+		fSC                              *fileStresserContext
+		l                                int64
+		mustBeLessThanBigIntPtr          *big.Int
+		numExtentWritesSinceLastValidate uint32
+		off                              int64
+		u64BigIntPtr                     *big.Int
+	)
+
+	// Construct this instance's fileStresserContext
+
+	fSC = &fileStresserContext{
+		filePath: fmt.Sprintf("%s%04X", filePathPrefix, stresserIndex),
+		written:  make([]byte, fileSize),
+	}
+
+	fSC.file, err = os.OpenFile(fSC.filePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if nil != err {
+		log.Fatal(err)
+	}
+
+	fSC.fileStresserWriteAt(int64(0), int64(fileSize), 0x00)
+	fSC.fileStresserValidate()
+
+	// Perform extent writes
+
+	b = 0x00
+	numExtentWritesSinceLastValidate = 0
+
+	for extentIndex = 0; extentIndex < numExtentsToWritePerFile; extentIndex++ {
+		// Pick an l value such that minExtentSize <= l <= maxExtentSize
+		mustBeLessThanBigIntPtr = big.NewInt(int64(maxExtentSize - minExtentSize + 1))
+		u64BigIntPtr, err = rand.Int(rand.Reader, mustBeLessThanBigIntPtr)
+		if nil != err {
+			log.Fatal(err)
+		}
+		l = int64(minExtentSize) + u64BigIntPtr.Int64()
+
+		// Pick an off value such that 0 <= off <= (fileSize - l)
+		mustBeLessThanBigIntPtr = big.NewInt(int64(int64(fileSize) - l))
+		u64BigIntPtr, err = rand.Int(rand.Reader, mustBeLessThanBigIntPtr)
+		if nil != err {
+			log.Fatal(err)
+		}
+		off = u64BigIntPtr.Int64()
+
+		// Pick next b value (skipping 0x00 for as-yet-un-over-written bytes)
+		b++
+		if 0x00 == b {
+			b = 0x01
+		}
+
+		fSC.fileStresserWriteAt(off, l, b)
+
+		numExtentWritesSinceLastValidate++
+
+		if numExtentWritesPerValidate == numExtentWritesSinceLastValidate {
+			fSC.fileStresserValidate()
+			numExtentWritesSinceLastValidate = 0
+		}
+
+		atomic.AddUint64(&numExtentsWrittenInTotal, uint64(1))
+	}
+
+	// Do one final fileStresserValidate() call if necessary to validate final writes
+
+	if 0 < numExtentWritesSinceLastValidate {
+		fSC.fileStresserValidate()
+	}
+
+	// Clean up and exit
+
+	err = fSC.file.Close()
+	if nil != err {
+		log.Fatal(err)
+	}
+	err = os.Remove(fSC.filePath)
+	if nil != err {
+		log.Fatal(err)
+	}
+
 	waitGroup.Done()
+}
+
+func (fSC *fileStresserContext) fileStresserWriteAt(off int64, l int64, b byte) {
+	buf := make([]byte, l)
+	for i := int64(0); i < l; i++ {
+		buf[i] = b
+		fSC.written[off+i] = b
+	}
+	_, err := fSC.file.WriteAt(buf, off)
+	if nil != err {
+		log.Fatal(err)
+	}
+}
+
+func (fSC *fileStresserContext) fileStresserValidate() {
+	buf := make([]byte, fileSize)
+	_, err := fSC.file.ReadAt(buf, int64(0))
+	if nil != err {
+		log.Fatal(err)
+	}
+	if 0 != bytes.Compare(fSC.written, buf) {
+		log.Fatalf("Miscompare in filePath %s\n", fSC.filePath)
+	}
 }
