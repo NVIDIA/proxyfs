@@ -49,8 +49,8 @@ _testmain.go
 coverage.out
 count.out
 
-# log file
-proxyfsd.log
+# log files
+*.log
 
 # generated code
 blunder/fserror_string.go
