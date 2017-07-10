@@ -91,6 +91,7 @@ const (
 	TooManySymlinksError  FsError = FsError(int(unix.ELOOP))        // Too many symbolic links encountered
 	NotSupportedError     FsError = FsError(int(unix.ENOTSUP))      // Operation not supported
 	NoDataError           FsError = FsError(int(unix.ENODATA))      // No data available
+	TimedOut              FsError = FsError(int(unix.ETIMEDOUT))    // Connection Timed Out
 )
 
 // Errors that map to constants already defined above
