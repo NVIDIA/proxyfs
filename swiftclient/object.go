@@ -239,6 +239,73 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	return
 }
 
+func objectGetWithRetry_loop(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+
+	fmt.Printf("objectGetWithRetry_loop entered\n")
+
+	var retryobj RetryCtrl = New(5, 1*time.Second)
+	var lasterr error
+	for {
+		fmt.Printf("objectGetWithRetry_loop calling objectGet\n")
+		buf, lasterr = objectGet(accountName, containerName, objectName, offset, length)
+		if lasterr == nil {
+			fmt.Printf("objectGetWithRetry_loop returned without error\n")
+			return buf, lasterr
+		}
+
+		fmt.Printf("objectGetWithRetry_loop calling retryobj.RetryWait()\n")
+		err = retryobj.RetryWait()
+		if err != nil {
+			// should lasterr be returned annotated with the timeout?
+			return buf, err
+		}
+	}
+}
+
+func objectGetWithRetry_closure1(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+
+	// request is a function that, through the miracle of closure, calls
+	// objectGet with the paramaters passed to this function and packages
+	// the return value(s) into struct retval, returns that, the error, and
+	// whether the error is retriable to RequestWithRetry().  the return
+	// value(s) are retrieved from struct retval.
+	type retval struct {
+		buf []byte
+	}
+	request := func() (interface{}, bool, error) {
+		var rval retval
+		var err error
+		rval.buf, err = objectGet(accountName, containerName, objectName, offset, length)
+		return rval, true, err
+	}
+
+	var retryObj RetryCtrl = New(5, 1*time.Second)
+	var rval retval
+	var rv interface{}
+
+	rv, err = retryObj.RequestWithRetry(request)
+	rval = rv.(retval)
+	return rval.buf, err
+}
+
+func objectGetWithRetry_closure2(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+
+	// request is a function that, through the miracle of closure, calls
+	// objectGet with the paramaters passed to this function and stashes the
+	// return values into the local variables of this function (buf, err)
+	// and then returns any error and whether is retriable to the
+	// RequestWithRetry()
+	request := func() (interface{}, bool, error) {
+		buf, err = objectGet(accountName, containerName, objectName, offset, length)
+		return nil, true, err
+	}
+
+	var retryObj RetryCtrl = New(5, 1*time.Second)
+
+	_, err = retryObj.RequestWithRetry(request)
+	return buf, err
+}
+
 func objectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
 	var (
 		chunk         []byte

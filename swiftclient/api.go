@@ -101,7 +101,7 @@ func ObjectFetchChunkedPutContext(accountName string, containerName string, obje
 
 // ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.
 func ObjectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-	return objectGet(accountName, containerName, objectName, offset, length)
+	return objectGetWithRetry_closure2(accountName, containerName, objectName, offset, length)
 }
 
 // ObjectHead invokes HTTP HEAD on the named Swift Object.
