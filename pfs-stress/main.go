@@ -24,6 +24,7 @@ var (
 	minExtentSize              uint64
 	numExtentsToWriteInTotal   uint64
 	numExtentsToWritePerFile   uint32
+	numExtentWritesPerFlush    uint32
 	numExtentWritesPerValidate uint32
 	numExtentsWrittenInTotal   uint64
 	numFiles                   uint16
@@ -47,6 +48,8 @@ func main() {
 		minExtentSizePad                   string
 		numExtentsToWritePerFileAsString   string
 		numExtentsToWritePerFilePad        string
+		numExtentWritesPerFlushAsString    string
+		numExtentWritesPerFlushPad         string
 		numExtentWritesPerValidateAsString string
 		numExtentWritesPerValidatePad      string
 		numFilesAsString                   string
@@ -131,6 +134,14 @@ func main() {
 		log.Fatalf("NumExtentsToWritePerFile must be > 0")
 	}
 
+	numExtentWritesPerFlush, err = confMap.FetchOptionValueUint32("StressParameters", "NumExtentWritesPerFlush")
+	if nil != err {
+		log.Fatal(err)
+	}
+	if 0 == numExtentWritesPerFlush {
+		numExtentWritesPerFlush = numExtentsToWritePerFile
+	}
+
 	numExtentWritesPerValidate, err = confMap.FetchOptionValueUint32("StressParameters", "NumExtentWritesPerValidate")
 	if nil != err {
 		log.Fatal(err)
@@ -151,6 +162,7 @@ func main() {
 	minExtentSizeAsString = fmt.Sprintf("%d", minExtentSize)
 	maxExtentSizeAsString = fmt.Sprintf("%d", maxExtentSize)
 	numExtentsToWritePerFileAsString = fmt.Sprintf("%d", numExtentsToWritePerFile)
+	numExtentWritesPerFlushAsString = fmt.Sprintf("%d", numExtentWritesPerFlush)
 	numExtentWritesPerValidateAsString = fmt.Sprintf("%d", numExtentWritesPerValidate)
 	displayUpdateIntervalAsString = fmt.Sprintf("%s", displayUpdateInterval)
 
@@ -170,6 +182,9 @@ func main() {
 	if len(numExtentsToWritePerFileAsString) > maxParameterStringLen {
 		maxParameterStringLen = len(numExtentsToWritePerFileAsString)
 	}
+	if len(numExtentWritesPerFlushAsString) > maxParameterStringLen {
+		maxParameterStringLen = len(numExtentWritesPerFlushAsString)
+	}
 	if len(numExtentWritesPerValidateAsString) > maxParameterStringLen {
 		maxParameterStringLen = len(numExtentWritesPerValidateAsString)
 	}
@@ -183,6 +198,7 @@ func main() {
 	minExtentSizePad = strings.Repeat(" ", maxParameterStringLen-len(minExtentSizeAsString))
 	maxExtentSizePad = strings.Repeat(" ", maxParameterStringLen-len(maxExtentSizeAsString))
 	numExtentsToWritePerFilePad = strings.Repeat(" ", maxParameterStringLen-len(numExtentsToWritePerFileAsString))
+	numExtentWritesPerFlushPad = strings.Repeat(" ", maxParameterStringLen-len(numExtentWritesPerFlushAsString))
 	numExtentWritesPerValidatePad = strings.Repeat(" ", maxParameterStringLen-len(numExtentWritesPerValidateAsString))
 	displayUpdateIntervalPad = strings.Repeat(" ", maxParameterStringLen-len(displayUpdateIntervalAsString))
 
@@ -193,6 +209,7 @@ func main() {
 	fmt.Printf("MinExtentSize:              %s%s\n", minExtentSizePad, minExtentSizeAsString)
 	fmt.Printf("MaxExtentSize:              %s%s\n", maxExtentSizePad, maxExtentSizeAsString)
 	fmt.Printf("NumExtentsToWritePerFile:   %s%s\n", numExtentsToWritePerFilePad, numExtentsToWritePerFileAsString)
+	fmt.Printf("NumExtentWritesPerFlush:    %s%s\n", numExtentWritesPerFlushPad, numExtentWritesPerFlushAsString)
 	fmt.Printf("NumExtentWritesPerValidate: %s%s\n", numExtentWritesPerValidatePad, numExtentWritesPerValidateAsString)
 	fmt.Printf("DisplayUpdateInterval:      %s%s\n", displayUpdateIntervalPad, displayUpdateIntervalAsString)
 
@@ -239,6 +256,7 @@ func fileStresser(stresserIndex uint16) {
 		fSC                              *fileStresserContext
 		l                                int64
 		mustBeLessThanBigIntPtr          *big.Int
+		numExtentWritesSinceLastFlush    uint32
 		numExtentWritesSinceLastValidate uint32
 		off                              int64
 		u64BigIntPtr                     *big.Int
@@ -262,6 +280,7 @@ func fileStresser(stresserIndex uint16) {
 	// Perform extent writes
 
 	b = 0x00
+	numExtentWritesSinceLastFlush = 0
 	numExtentWritesSinceLastValidate = 0
 
 	for extentIndex = 0; extentIndex < numExtentsToWritePerFile; extentIndex++ {
@@ -289,6 +308,13 @@ func fileStresser(stresserIndex uint16) {
 
 		fSC.fileStresserWriteAt(off, l, b)
 
+		numExtentWritesSinceLastFlush++
+
+		if numExtentWritesPerFlush == numExtentWritesSinceLastFlush {
+			fSC.fileStresserFlush()
+			numExtentWritesSinceLastFlush = 0
+		}
+
 		numExtentWritesSinceLastValidate++
 
 		if numExtentWritesPerValidate == numExtentWritesSinceLastValidate {
@@ -297,6 +323,12 @@ func fileStresser(stresserIndex uint16) {
 		}
 
 		atomic.AddUint64(&numExtentsWrittenInTotal, uint64(1))
+	}
+
+	// Do one final fileStresserFlush() call if necessary to flush final writes
+
+	if 0 < numExtentWritesSinceLastFlush {
+		fSC.fileStresserFlush()
 	}
 
 	// Do one final fileStresserValidate() call if necessary to validate final writes
@@ -326,6 +358,13 @@ func (fSC *fileStresserContext) fileStresserWriteAt(off int64, l int64, b byte) 
 		fSC.written[off+i] = b
 	}
 	_, err := fSC.file.WriteAt(buf, off)
+	if nil != err {
+		log.Fatal(err)
+	}
+}
+
+func (fSC *fileStresserContext) fileStresserFlush() {
+	err := fSC.file.Sync()
 	if nil != err {
 		log.Fatal(err)
 	}
