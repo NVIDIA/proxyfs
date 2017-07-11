@@ -1,5 +1,5 @@
 hash: 203b9e910318e7042372cb61f10b971f00e649347370fb6a70004e9775e2d18a
-updated: 2017-07-05T15:07:30.818309093-07:00
+updated: 2017-07-08T10:19:44.325457851-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -15,7 +15,7 @@ imports:
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/Sirupsen/logrus
-  version: 7dd06bf38e1e13df288d471a57d5adbac106be9e
+  version: 59d0ca41e5faad81cac03f7a7d84ba80d9cc9673
 - name: github.com/stretchr/testify
   version: f6abca593680b2315d2075e0f5e2a9751e3f431a
   subpackages:
@@ -27,15 +27,15 @@ imports:
 - name: github.com/swiftstack/sortedmap
   version: 36475f2556f000b821290f4a95f1c89378029a86
 - name: golang.org/x/net
-  version: 570fa1c91359c1869590e9cedf3b53162a51a167
+  version: 054b33e6527139ad5b1ec2f6232c3b175bd9a30c
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 6faef541c73732f438fb660a212750a9ba9f9362
+  version: 739734461d1c916b6c72a63d7efda2b27edb369f
   subpackages:
   - unix
 - name: golang.org/x/tools
-  version: c2d03f470b3e28d9e9eb89e22c8023f2642e802c
+  version: bce9606b3f617bc6280aab6abbf25962c23f398d
   subpackages:
   - cmd/stringer
 testImports:
