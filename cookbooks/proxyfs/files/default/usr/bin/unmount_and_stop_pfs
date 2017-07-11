@@ -21,21 +21,19 @@ fi
 
 if [ -f /usr/bin/systemctl ]; then
     # Centos
-    MOUNT=/usr/bin/mount
     sudo /usr/bin/systemctl stop nfs-idmap
     sudo /usr/bin/systemctl stop nfs-lock
     sudo /usr/bin/systemctl stop nfs-server
     sudo /usr/bin/systemctl stop rpcbind
     sudo /usr/bin/systemctl stop smb
     sudo /usr/bin/systemctl stop nmb
-    sudo /usr/bin/systemctl stop winbind
+    # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
     sudo /usr/bin/swift-init main stop
-#    sudo /usr/bin/systemctl stop swift
+    # sudo /usr/bin/systemctl stop swift
     sudo /usr/bin/systemctl stop memcached
 else
     # Ubuntu (not tested!)
-    MOUNT=/bin/mount
     sudo /usr/sbin/service nfs-idmap stop
     sudo /usr/sbin/service nfs-lock stop
     sudo /usr/sbin/service nfs-server stop
@@ -45,6 +43,6 @@ else
     sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
     sudo /usr/bin/swift-init main stop
-#    sudo /usr/sbin/service swift stop
+    # sudo /usr/sbin/service swift stop
     sudo /usr/sbin/service memcached stop
 fi

@@ -11,6 +11,16 @@ SHARE_SMB=/mnt/smb_proxyfs_mount
 
 mount -a
 
+mountpoint -q $SHARE_NFS
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_NFS
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_SMB
+fi
+
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     MOUNT=/usr/bin/mount
@@ -74,11 +84,6 @@ else
 fi
 
 mountpoint -q $SHARE_NFS
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_NFS
-fi
-
-mountpoint -q $SHARE_NFS
 if [ $? -ne 0 ]; then
     for i in `seq 5`; do
         sleep 5
@@ -93,11 +98,6 @@ if [ $? -ne 0 ]; then
     exit 1
 else
     echo "$SHARE_NFS successfully mounted"
-fi
-
-mountpoint -q $SHARE_SMB
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_SMB
 fi
 
 mountpoint -q $SHARE_SMB

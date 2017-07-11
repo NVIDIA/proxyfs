@@ -159,18 +159,18 @@ end
 
 template "/usr/bin/start_and_mount_pfs" do
   mode '0755'
-  source "bin/start_and_mount_pfs.erb"
+  source "usr/bin/start_and_mount_pfs.erb"
   variables({
     :swift_user => node['swift_user'],
   })
 end
 
-template "/usr/bin/unmount_and_stop_pfs" do
-  mode '0755'
-  source "bin/unmount_and_stop_pfs.erb"
-  variables({
-    :swift_user => node['swift_user'],
-  })
+execute "Provision start_swift_only" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_swift_only /usr/bin"
+end
+
+execute "Provision unmount_and_stop_pfs" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
 end
 
 execute "Provision pfs_stat" do
