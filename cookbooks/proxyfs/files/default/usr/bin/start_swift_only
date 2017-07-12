@@ -46,7 +46,7 @@ else
     sudo /usr/sbin/service rpcbind stop
     sudo /usr/sbin/service smbd stop
     sudo /usr/sbin/service nmbd stop
-    sudo /usr/sbin/service winbindd stop
+    # sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
     sudo /usr/bin/swift-init main stop
     # sudo /usr/sbin/service swift stop
