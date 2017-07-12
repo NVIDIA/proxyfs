@@ -11,6 +11,16 @@ SHARE_SMB=/mnt/smb_proxyfs_mount
 
 mount -a
 
+mountpoint -q $SHARE_NFS
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_NFS
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_SMB
+fi
+
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     MOUNT=/usr/bin/mount
@@ -54,28 +64,23 @@ else
     sudo /usr/sbin/service rpcbind stop
     sudo /usr/sbin/service smbd stop
     sudo /usr/sbin/service nmbd stop
-    sudo /usr/sbin/service winbindd stop
+    # sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
     sudo /usr/bin/swift-init main stop
-#    sudo /usr/sbin/service swift stop
+    # sudo /usr/sbin/service swift stop
     sudo /usr/sbin/service memcached stop
 
     sudo /usr/sbin/service memcached start
-#    sudo /usr/sbin/service swift start
+    # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
     sudo /usr/sbin/service proxyfsd start
-    sudo /usr/sbin/service winbindd start
+    # sudo /usr/sbin/service winbindd start
     sudo /usr/sbin/service nmbd start
     sudo /usr/sbin/service smbd start
     sudo /usr/sbin/service rpcbind start
     sudo /usr/sbin/service nfs-server start
     sudo /usr/sbin/service nfs-lock start
     sudo /usr/sbin/service nfs-idmap start
-fi
-
-mountpoint -q $SHARE_NFS
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_NFS
 fi
 
 mountpoint -q $SHARE_NFS
@@ -93,11 +98,6 @@ if [ $? -ne 0 ]; then
     exit 1
 else
     echo "$SHARE_NFS successfully mounted"
-fi
-
-mountpoint -q $SHARE_SMB
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_SMB
 fi
 
 mountpoint -q $SHARE_SMB

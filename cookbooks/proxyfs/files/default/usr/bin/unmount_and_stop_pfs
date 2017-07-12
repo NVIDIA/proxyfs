@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# A simple script to unmount the sample mount point and stop the services
+# The PATH, etc should already be setup by systemctl environment
+
+MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
+SHARE_NFS=/mnt/nfs_proxyfs_mount/
+
+MOUNT_POINT_SMB=//127.0.0.1/proxyfs
+SHARE_SMB=/mnt/smb_proxyfs_mount
+
+mountpoint -q $SHARE_NFS
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_NFS
+fi
+
+mountpoint -q $SHARE_SMB
+if [ $? -eq 0 ]; then
+    sudo umount $SHARE_SMB
+fi
+
+if [ -f /usr/bin/systemctl ]; then
+    # Centos
+    sudo /usr/bin/systemctl stop nfs-idmap
+    sudo /usr/bin/systemctl stop nfs-lock
+    sudo /usr/bin/systemctl stop nfs-server
+    sudo /usr/bin/systemctl stop rpcbind
+    sudo /usr/bin/systemctl stop smb
+    sudo /usr/bin/systemctl stop nmb
+    # sudo /usr/bin/systemctl stop winbind
+    sudo /usr/bin/systemctl stop proxyfsd
+    sudo /usr/bin/swift-init main stop
+    # sudo /usr/bin/systemctl stop swift
+    sudo /usr/bin/systemctl stop memcached
+else
+    # Ubuntu (not tested!)
+    sudo /usr/sbin/service nfs-idmap stop
+    sudo /usr/sbin/service nfs-lock stop
+    sudo /usr/sbin/service nfs-server stop
+    sudo /usr/sbin/service rpcbind stop
+    sudo /usr/sbin/service smbd stop
+    sudo /usr/sbin/service nmbd stop
+    # sudo /usr/sbin/service winbindd stop
+    sudo /usr/sbin/service proxyfsd stop
+    sudo /usr/bin/swift-init main stop
+    # sudo /usr/sbin/service swift stop
+    sudo /usr/sbin/service memcached stop
+fi
