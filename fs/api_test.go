@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/conf"
-
 	"syscall"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -25,6 +23,7 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/conf"
 )
 
 // our global mountStruct to be used in tests
@@ -103,7 +102,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon(testConfMap, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

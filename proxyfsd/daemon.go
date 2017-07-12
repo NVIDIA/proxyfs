@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/pkg/profile"
 	"github.com/swiftstack/conf"
 
 	"github.com/swiftstack/ProxyFS/dlm"
@@ -21,8 +22,48 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
-func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup) {
-	var err error
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup) {
+	var (
+		confMap        conf.ConfMap
+		err            error
+		signalReceived os.Signal
+	)
+
+	// Compute confMap
+
+	confMap, err = conf.MakeConfMapFromFile(confFile)
+	if nil != err {
+		errChan <- err
+
+		return
+	}
+
+	err = confMap.UpdateFromStrings(confStrings)
+	if nil != err {
+		errChan <- err
+
+		return
+	}
+
+	// Start profiling using pkg/profile, if requested. Profiling stops when proxyfsd exits.
+	//
+	// With the settings used below, output goes to a generated directory in /tmp.
+	//  (example: /tmp/profile083387279/cpu.pprof)
+	//
+	// go tool pprof can then be used to analyze the file.
+	//
+	profileType, confErr := confMap.FetchOptionValueString("ProxyfsDebug", "ProfileType")
+	if confErr == nil {
+		switch profileType {
+		case "Memory":
+			defer profile.Start(profile.MemProfile).Stop()
+		case "Block":
+			defer profile.Start(profile.BlockProfile).Stop()
+		case "CPU":
+			defer profile.Start(profile.CPUProfile).Stop()
+		}
+	}
+	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
 
 	// Start up dæmon packages
 
@@ -153,14 +194,15 @@ func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, errChan chan error
 
 	signalChan := make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM)
+	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true
 	}
 
-	receivedSignal := <-signalChan
-	logger.Infof("Received signal %v", receivedSignal)
+	signalReceived = <-signalChan
+	// TODO: Handle SIGHUP
+	logger.Infof("Received signal %v", signalReceived)
 
 	errChan <- nil
 }

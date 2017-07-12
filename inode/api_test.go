@@ -110,7 +110,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon(testConfMap, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

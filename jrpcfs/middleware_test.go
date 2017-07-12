@@ -104,7 +104,7 @@ func testSetup() []func() {
 	}
 
 	doneChan := make(chan bool)
-	go ramswift.Daemon(testConfMap, nil, doneChan)
+	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

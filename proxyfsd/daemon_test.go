@@ -9,8 +9,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
 	"github.com/swiftstack/ProxyFS/ramswift"
 )
 
@@ -88,16 +86,11 @@ func TestDaemon(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	goodConfMap, err := conf.MakeConfMapFromStrings(goodConfs)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
 	var wg sync.WaitGroup
 
-	go Daemon(goodConfMap, &signalHandlerIsArmed, errChan, &wg)
+	go ramswift.Daemon("/dev/null", goodConfs, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
 
-	go ramswift.Daemon(goodConfMap, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
+	go Daemon("/dev/null", goodConfs, &signalHandlerIsArmed, errChan, &wg)
 
 	for !signalHandlerIsArmed {
 		select {

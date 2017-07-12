@@ -123,7 +123,7 @@ func TestHeadHunterAPI(t *testing.T) {
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon(confMap, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)

@@ -6,6 +6,7 @@ package ramswift
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +20,6 @@ import (
 	"github.com/swiftstack/conf"
 	"github.com/swiftstack/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -934,34 +934,34 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 func serveNoAuthSwift(confMap conf.ConfMap) {
 	noAuthTCPPort, err := confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of Swift.NoAuthTCPPort")
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
 	}
 
 	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of Cluster.WhoAmI")
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
 	}
 
 	volumeList, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of FSGlobals.VolumeList")
+		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
 	}
 
 	for _, volumeSectionName := range volumeList {
 		primaryPeer, err := confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
 		if nil != err {
-			logger.PanicfWithError(err, "failed fetch of %v.PrimaryPeer", volumeSectionName)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
 		}
 		if 0 != strings.Compare(whoAmI, primaryPeer) {
 			continue
 		}
 		swiftAccountName, err := confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
-			logger.PanicfWithError(err, "failed fetch of %v.AccountName", volumeSectionName)
+			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
 		}
 		_, errno := createSwiftAccount(swiftAccountName)
 		if 0 != errno {
-			logger.PanicfWithError(err, "failed create of %v", swiftAccountName)
+			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
 		}
 
 	}
@@ -970,30 +970,49 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 
 	globals.maxAccountNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxAccountNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxAccountNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxAccountNameLength: %v", err)
 	}
 	if globals.maxAccountNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.MaxAccountNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxAccountNameLength too large... must fit in a Go int")
 	}
 	globals.maxContainerNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxContainerNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxContainerNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxContainerNameLength: %v", err)
 	}
 	if globals.maxContainerNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.maxContainerNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxContainerNameLength too large... must fit in a Go int")
 	}
 	globals.maxObjectNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxObjectNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxObjectNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxObjectNameLength: %v", err)
 	}
 	if globals.maxObjectNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.maxObjectNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxObjectNameLength too large... must fit in a Go int")
 	}
 
 	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(noAuthTCPPort)), httpRequestHandler{})
 }
 
-func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, doneChan chan bool) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool) {
+	var (
+		confMap        conf.ConfMap
+		err            error
+		signalChan     chan os.Signal
+		signalReceived os.Signal
+	)
+
+	// Compute confMap
+
+	confMap, err = conf.MakeConfMapFromFile(confFile)
+	if nil != err {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	err = confMap.UpdateFromStrings(confStrings)
+	if nil != err {
+		log.Fatalf("failed to load config overrides: %v", err)
+	}
+
 	// Kick off NoAuth Swift Proxy Emulator
 
 	go serveNoAuthSwift(confMap)
@@ -1003,15 +1022,19 @@ func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, doneChan chan bool
 	// Note: signalled chan must be buffered to avoid race with window between
 	// arming handler and blocking on the chan read
 
-	signalChan := make(chan os.Signal, 1)
+	signalChan = make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM)
+	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true
 	}
 
-	_ = <-signalChan
+	signalReceived = <-signalChan
+
+	if unix.SIGHUP == signalReceived {
+		fmt.Println("TODO: Handle SIGHUP")
+	}
 
 	doneChan <- true
 }
