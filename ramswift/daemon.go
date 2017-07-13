@@ -54,7 +54,9 @@ type swiftObjectStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                                            // protects globalsStruct.swiftAccountMap
+	sync.Mutex             // protects globalsStruct.swiftAccountMap
+	whoAmI                 string
+	noAuthTCPPort          uint16
 	swiftAccountMap        map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
 	maxAccountNameLength   uint64
 	maxContainerNameLength uint64
@@ -932,39 +934,148 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 }
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
-	noAuthTCPPort, err := confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
-	if nil != err {
-		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
-	}
+	var (
+		err              error
+		errno            syscall.Errno
+		primaryPeer      string
+		swiftAccountName string
+		volumeList       []string
+	)
 
-	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	// Find out who "we" are
+
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
 	}
 
-	volumeList, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
+	}
+
+	// Fetch and configure volumes for which "we" are the PrimaryPeer
+
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
 	}
 
 	for _, volumeSectionName := range volumeList {
-		primaryPeer, err := confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
 		}
-		if 0 != strings.Compare(whoAmI, primaryPeer) {
+		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
 			continue
 		}
-		swiftAccountName, err := confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
 		}
-		_, errno := createSwiftAccount(swiftAccountName)
+		_, errno = createSwiftAccount(swiftAccountName)
 		if 0 != errno {
 			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
 		}
-
 	}
+
+	// Fetch responses for GETs on /info
+
+	fetchSwiftInfo(confMap)
+
+	// Launch HTTP Server on the requested noAuthTCPPort
+
+	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(globals.noAuthTCPPort)), httpRequestHandler{})
+}
+
+func updateConf(confMap conf.ConfMap) {
+	var (
+		err error
+		//errno                      syscall.Errno
+		noAuthTCPPortUpdate         uint16
+		primaryPeer                 string
+		swiftAccountNameListCurrent []string        // element == swiftAccountName
+		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
+		swiftAccountName            string
+		volumeListUpdate            []string
+		whoAmIUpdate                string
+	)
+
+	// First validate "we" didn't change
+
+	whoAmIUpdate, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
+	}
+	if whoAmIUpdate != globals.whoAmI {
+		log.Fatal("update of whoAmI not allowed")
+	}
+
+	noAuthTCPPortUpdate, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
+	}
+	if noAuthTCPPortUpdate != globals.noAuthTCPPort {
+		log.Fatal("update of noAuthTCPPort not allowed")
+	}
+
+	// Compute current list of accounts being served
+
+	swiftAccountNameListCurrent = make([]string, 0)
+
+	globals.Lock()
+
+	for swiftAccountName = range globals.swiftAccountMap {
+		swiftAccountNameListCurrent = append(swiftAccountNameListCurrent, swiftAccountName)
+	}
+
+	globals.Unlock()
+
+	// Fetch list of accounts for which "we" are the PrimaryPeer
+
+	volumeListUpdate, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+	}
+
+	swiftAccountNameListUpdate = make(map[string]bool)
+
+	for _, volumeSectionName := range volumeListUpdate {
+		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+		}
+		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
+			continue
+		}
+		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+		}
+		swiftAccountNameListUpdate[swiftAccountName] = true
+	}
+
+	// Delete accounts not found in accountListUpdate
+
+	for _, swiftAccountName = range swiftAccountNameListCurrent {
+		_ = deleteSwiftAccount(swiftAccountName)
+	}
+
+	// Add accounts in accountListUpdate not found in globals.swiftAccountMap
+
+	for swiftAccountName = range swiftAccountNameListUpdate {
+		_, _ = createOrLocateSwiftAccount(swiftAccountName)
+	}
+
+	// Fetch (potentially updated) responses for GETs on /info
+
+	fetchSwiftInfo(confMap)
+}
+
+func fetchSwiftInfo(confMap conf.ConfMap) {
+	var (
+		err error
+	)
 
 	maxIntAsUint64 := uint64(^uint(0) >> 1)
 
@@ -989,8 +1100,6 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	if globals.maxObjectNameLength > maxIntAsUint64 {
 		log.Fatal("RamSwiftInfo.MaxObjectNameLength too large... must fit in a Go int")
 	}
-
-	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(noAuthTCPPort)), httpRequestHandler{})
 }
 
 func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool) {
@@ -1010,7 +1119,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 
 	err = confMap.UpdateFromStrings(confStrings)
 	if nil != err {
-		log.Fatalf("failed to load config overrides: %v", err)
+		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
 	// Kick off NoAuth Swift Proxy Emulator
@@ -1030,11 +1139,31 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		*signalHandlerIsArmed = true
 	}
 
-	signalReceived = <-signalChan
+	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
 
-	if unix.SIGHUP == signalReceived {
-		fmt.Println("TODO: Handle SIGHUP")
+	for {
+		signalReceived = <-signalChan
+
+		if unix.SIGHUP == signalReceived {
+			// recompute confMap and re-apply
+
+			confMap, err = conf.MakeConfMapFromFile(confFile)
+			if nil != err {
+				log.Fatalf("failed to load updated config: %v", err)
+			}
+
+			err = confMap.UpdateFromStrings(confStrings)
+			if nil != err {
+				log.Fatalf("failed to reapply config overrides: %v", err)
+			}
+
+			updateConf(confMap)
+		} else {
+			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			doneChan <- true
+
+			return
+		}
 	}
-
-	doneChan <- true
 }
