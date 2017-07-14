@@ -990,9 +990,9 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 
 func updateConf(confMap conf.ConfMap) {
 	var (
-		err error
-		//errno                      syscall.Errno
+		err                         error
 		noAuthTCPPortUpdate         uint16
+		ok                          bool
 		primaryPeer                 string
 		swiftAccountNameListCurrent []string        // element == swiftAccountName
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
@@ -1058,7 +1058,10 @@ func updateConf(confMap conf.ConfMap) {
 	// Delete accounts not found in accountListUpdate
 
 	for _, swiftAccountName = range swiftAccountNameListCurrent {
-		_ = deleteSwiftAccount(swiftAccountName)
+		_, ok = swiftAccountNameListUpdate[swiftAccountName]
+		if !ok {
+			_ = deleteSwiftAccount(swiftAccountName)
+		}
 	}
 
 	// Add accounts in accountListUpdate not found in globals.swiftAccountMap
