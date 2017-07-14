@@ -33,8 +33,9 @@ type globalsStruct struct {
 	noAuthStringAddr         string
 	noAuthTCPAddr            *net.TCPAddr
 	timeout                  time.Duration // TODO: Currently not enforced
-	retryDelay               time.Duration // TODO: Currently only implemented for Object Chunked PUTs
-	retryLimit               uint16        // TODO: Currently only implemented for Object Chunked PUTs
+	retryLimit               uint16        // maximum retries
+	retryDelay               time.Duration // delay before first retry
+	retryExpBackoff          float64       // increase delay by this factor each try (exponential backoff)
 	nilTCPConn               *net.TCPConn
 	chunkedConnectionPool    chan *net.TCPConn
 	nonChunkedConnectionPool chan *net.TCPConn
@@ -76,7 +77,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
-	if nil != err {
+	if nil != err || globals.retryDelay < 50*time.Millisecond || globals.retryDelay > 20*time.Second {
 		// TODO: eventually, just return
 		globals.retryDelay, err = time.ParseDuration("50ms")
 		if nil != err {
@@ -84,8 +85,18 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	var expBackoff uint32
+	expBackoff, err = confMap.FetchOptionValueFloatScaledToUint32("SwiftClient", "RetryExpBackoff", 1000)
+	if nil != err || expBackoff < 1000 || expBackoff > 3000 {
+		// TODO: eventually, just return
+		globals.retryExpBackoff = float64(expBackoff) / float64(1000)
+		if nil != err {
+			return
+		}
+	}
+
 	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
-	if nil != err {
+	if nil != err || globals.retryLimit <= 2 {
 		// TODO: eventually, just return
 		globals.retryLimit = 10
 	}

@@ -243,8 +243,10 @@ func objectGetWithRetry_loop(accountName string, containerName string, objectNam
 
 	fmt.Printf("objectGetWithRetry_loop entered\n")
 
-	var retryobj RetryCtrl = New(5, 1*time.Second)
-	var lasterr error
+	var (
+		retryobj RetryCtrl = New(5, 1*time.Second, 2)
+		lasterr  error
+	)
 	for {
 		fmt.Printf("objectGetWithRetry_loop calling objectGet\n")
 		buf, lasterr = objectGet(accountName, containerName, objectName, offset, length)
@@ -262,47 +264,29 @@ func objectGetWithRetry_loop(accountName string, containerName string, objectNam
 	}
 }
 
-func objectGetWithRetry_closure1(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-
-	// request is a function that, through the miracle of closure, calls
-	// objectGet with the paramaters passed to this function and packages
-	// the return value(s) into struct retval, returns that, the error, and
-	// whether the error is retriable to RequestWithRetry().  the return
-	// value(s) are retrieved from struct retval.
-	type retval struct {
-		buf []byte
-	}
-	request := func() (interface{}, bool, error) {
-		var rval retval
-		var err error
-		rval.buf, err = objectGet(accountName, containerName, objectName, offset, length)
-		return rval, true, err
-	}
-
-	var retryObj RetryCtrl = New(5, 1*time.Second)
-	var rval retval
-	var rv interface{}
-
-	rv, err = retryObj.RequestWithRetry(request)
-	rval = rv.(retval)
-	return rval.buf, err
-}
-
-func objectGetWithRetry_closure2(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+func objectGetWithRetry_closure2(accountName string, containerName string, objectName string,
+	offset uint64, length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
 	// objectGet with the paramaters passed to this function and stashes the
 	// return values into the local variables of this function (buf, err)
-	// and then returns any error and whether is retriable to the
-	// RequestWithRetry()
-	request := func() (interface{}, bool, error) {
+	// and then returns the error code (if any) and whether is retriable to
+	// its caller, which should be RequestWithRetry()
+	var (
+		buf []byte
+		err error
+	)
+	request := func() (bool, error) {
 		buf, err = objectGet(accountName, containerName, objectName, offset, length)
-		return nil, true, err
+		return true, err
 	}
 
-	var retryObj RetryCtrl = New(5, 1*time.Second)
-
-	_, err = retryObj.RequestWithRetry(request)
+	var (
+		retryObj RetryCtrl = New(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string    = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")",
+			accountName, containerName, objectName)
+	)
+	err = retryObj.RequestWithRetry(request, &opname)
 	return buf, err
 }
 
