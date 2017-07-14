@@ -57,6 +57,16 @@ func Up(confMap conf.ConfMap) (err error) {
 	return nil
 }
 
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
 func Down() (err error) {
 	// We open and close our own logfile
 	if logFile != nil {

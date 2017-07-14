@@ -63,6 +63,18 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
+// PauseAndContract pauses the headhunter package and applies any removals from the supplied confMap
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
+// ExpandAndResume applies any additions from the supplied confMap and resumes the headhunter package
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
 // Down terminates the headhunter package
 func Down() (err error) {
 	err = globals.variantHandle.down()

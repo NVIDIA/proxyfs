@@ -1,6 +1,7 @@
 package proxyfsd
 
 import (
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -70,7 +71,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = stats.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -82,7 +82,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = logger.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -94,7 +93,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = swiftclient.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -106,7 +104,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = headhunter.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -118,7 +115,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = inode.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -130,7 +126,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = dlm.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -142,7 +137,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = fs.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -154,7 +148,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = fuse.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -166,7 +159,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = jrpcfs.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -178,7 +170,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	err = httpserver.Up(confMap)
 	if nil != err {
 		errChan <- err
-
 		return
 	}
 	wg.Add(1)
@@ -200,9 +191,154 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		*signalHandlerIsArmed = true
 	}
 
-	signalReceived = <-signalChan
-	// TODO: Handle SIGHUP
-	logger.Infof("Received signal %v", signalReceived)
+	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
 
-	errChan <- nil
+	for {
+		signalReceived = <-signalChan
+		logger.Infof("Received signal %v", signalReceived)
+
+		if unix.SIGHUP == signalReceived {
+			// recompute confMap and re-apply
+
+			confMap, err = conf.MakeConfMapFromFile(confFile)
+			if nil != err {
+				log.Fatalf("failed to load updated config: %v", err)
+			}
+
+			err = confMap.UpdateFromStrings(confStrings)
+			if nil != err {
+				log.Fatalf("failed to reapply config overrides: %v", err)
+			}
+
+			// tell each daemon to pause and apply "contracting" confMap changes
+
+			err = httpserver.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = jrpcfs.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = fuse.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = fs.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = dlm.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = inode.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = headhunter.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = swiftclient.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = logger.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = stats.PauseAndContract(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			// tell each daemon to apply "expanding" confMap changes and result
+
+			err = stats.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = logger.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = swiftclient.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = headhunter.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = inode.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = dlm.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = fs.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = fuse.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = jrpcfs.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+
+			err = httpserver.ExpandAndResume(confMap)
+			if nil != err {
+				errChan <- err
+				return
+			}
+		} else {
+			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			errChan <- nil
+
+			return
+		}
+	}
 }

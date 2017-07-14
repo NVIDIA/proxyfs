@@ -49,7 +49,7 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up initializes the package and must successfully return before any API functions are invoked.
+// Up initializes the package and must successfully return before any API functions are invoked
 func Up(confMap conf.ConfMap) (err error) {
 	var (
 		errFetchingTCPPort error
@@ -129,7 +129,19 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// Down terminates statsd logging and should only be called once no API functions are active or subsequently invoked.
+// PauseAndContract pauses the stats package and applies any removals from the supplied confMap
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
+// ExpandAndResume applies any additions from the supplied confMap and resumes the stats package
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	err = nil // TODO
+	return
+}
+
+// Down terminates statsd logging and should only be called once no API functions are active or subsequently invoked
 func Down() (err error) {
 	globals.stopChan <- true
 
