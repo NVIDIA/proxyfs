@@ -245,22 +245,26 @@ func createOrLocateSwiftAccount(swiftAccountName string) (swiftAccount *swiftAcc
 	return
 }
 
-func deleteSwiftAccount(swiftAccountName string) (errno syscall.Errno) {
+func deleteSwiftAccount(swiftAccountName string, force bool) (errno syscall.Errno) {
 	globals.Lock()
 	swiftAccount, ok := globals.swiftAccountMap[swiftAccountName]
 	if ok {
-		swiftAccount.Lock()
-		swiftswiftAccountContainerCount, nonShadowingErr := swiftAccount.swiftContainerTree.Len()
-		if nil != nonShadowingErr {
-			panic(nonShadowingErr)
-		}
-		if 0 != swiftswiftAccountContainerCount {
+		if force {
+			// ok if account contains data... we'll forget it
+		} else {
+			swiftAccount.Lock()
+			swiftswiftAccountContainerCount, nonShadowingErr := swiftAccount.swiftContainerTree.Len()
+			if nil != nonShadowingErr {
+				panic(nonShadowingErr)
+			}
+			if 0 != swiftswiftAccountContainerCount {
+				swiftAccount.Unlock()
+				globals.Unlock()
+				errno = unix.ENOTEMPTY
+				return
+			}
 			swiftAccount.Unlock()
-			globals.Unlock()
-			errno = unix.ENOTEMPTY
-			return
 		}
-		swiftAccount.Unlock()
 		delete(globals.swiftAccountMap, swiftAccountName)
 	} else {
 		globals.Unlock()
@@ -470,7 +474,7 @@ func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
 	} else {
 		if "" == swiftContainerName {
 			// DELETE SwiftAccount
-			errno := deleteSwiftAccount(swiftAccountName)
+			errno := deleteSwiftAccount(swiftAccountName, false)
 			switch errno {
 			case 0:
 				responseWriter.WriteHeader(http.StatusNoContent)
@@ -479,7 +483,7 @@ func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
 			case unix.ENOTEMPTY:
 				responseWriter.WriteHeader(http.StatusConflict)
 			default:
-				err := fmt.Errorf("deleteSwiftAccount(\"%v\") returned unexpected errno: %v", swiftAccountName, errno)
+				err := fmt.Errorf("deleteSwiftAccount(\"%v\", false) returned unexpected errno: %v", swiftAccountName, errno)
 				panic(err)
 			}
 		} else {
@@ -1060,7 +1064,7 @@ func updateConf(confMap conf.ConfMap) {
 	for _, swiftAccountName = range swiftAccountNameListCurrent {
 		_, ok = swiftAccountNameListUpdate[swiftAccountName]
 		if !ok {
-			_ = deleteSwiftAccount(swiftAccountName)
+			_ = deleteSwiftAccount(swiftAccountName, true)
 		}
 	}
 
