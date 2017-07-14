@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
-	// "github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/logger"
 	// "github.com/swiftstack/ProxyFS/stats"
 )
 
@@ -17,19 +17,20 @@ import (
 // RetryCtrl is used to control the retry process, including exponential backoff
 // on subsequent replay attempts.  lastReq tracks the time that the last request
 // was made so that time consumed by the request can be subtracted from the
-// backoff amount (if a request takes 30 sec to timeout and the initial backoff
+// backoff amount (if a request takes 30 sec to timeout and the initial delay
 // is 10 sec, we don't want 40 sec between requests).
 //
 type RetryCtrl struct {
-	backoff    time.Duration // backoff amount (grows each attempt)
-	attemptMax int           // maximum attempts
-	attemptCnt int           // number of attempts
+	attemptMax uint          // maximum attempts
+	attemptCnt uint          // number of attempts
+	delay      time.Duration // backoff amount (grows each attempt)
+	expBackoff float64       // factor to increase delay by
 	firstReq   time.Time     // first request start time
 	lastReq    time.Time     // most recent request start time
 }
 
-func New(maxAttempt int, backoff time.Duration) RetryCtrl {
-	var ctrl = RetryCtrl{attemptCnt: 0, attemptMax: maxAttempt, backoff: backoff}
+func New(maxAttempt uint16, delay time.Duration, expBackoff float64) RetryCtrl {
+	var ctrl = RetryCtrl{attemptCnt: 0, attemptMax: uint(maxAttempt), delay: delay, expBackoff: expBackoff}
 	ctrl.firstReq = time.Now()
 	ctrl.lastReq = ctrl.firstReq
 
@@ -42,12 +43,12 @@ func (this *RetryCtrl) RetryWait() (err error) {
 		return blunder.NewError(blunder.TimedOut, "Request failed after %d attempts", this.attemptCnt)
 	}
 
-	var backoff time.Duration
-	backoff = time.Now().Sub(this.lastReq)
-	if this.backoff > backoff {
-		time.Sleep(this.backoff - backoff)
+	var delay time.Duration
+	delay = time.Now().Sub(this.lastReq)
+	if this.delay > delay {
+		time.Sleep(this.delay - delay)
 	}
-	this.backoff = time.Duration(float64(this.backoff) * 1.2)
+	this.delay = time.Duration(float64(this.delay) * 2)
 
 	this.lastReq = time.Now()
 	return nil
@@ -58,23 +59,32 @@ func (this *RetryCtrl) RetryWait() (err error) {
 // both an error indication and a boolean indicating whether the error is
 // retriable or not (if there is an error).
 //
-func (this *RetryCtrl) RequestWithRetry(doRequest func() (interface{}, bool, error)) (rval interface{}, err error) {
-	var lastErr error
-	var retriable bool
-
+func (this *RetryCtrl) RequestWithRetry(doRequest func() (bool, error), opid *string) (err error) {
+	var (
+		lastErr   error
+		retriable bool
+	)
 	for {
-		rval, retriable, lastErr = doRequest()
+		retriable, lastErr = doRequest()
 		if lastErr == nil {
-			return rval, nil
+			if this.attemptCnt != 0 {
+				logger.Infof("retry.RequestWithRetry(): %s succeeded after %d attempts",
+					opid, this.attemptCnt)
+			}
+			return nil
 		}
 		if !retriable {
-			return rval, lastErr
+			logger.ErrorWithError(lastErr, "retry.RequestWithRetry(): %s unretriable after %d attempts",
+				opid, this.attemptCnt)
+			return lastErr
 		}
 
 		// wait to retry or hit timeout
 		err = this.RetryWait()
 		if err != nil {
-			return rval, err
+			logger.ErrorWithError(lastErr,
+				"retry.RequestWithRetry(): %s failed after %d attempts", opid, this.attemptCnt)
+			return lastErr
 		}
 	}
 }
