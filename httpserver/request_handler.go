@@ -38,7 +38,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	path := strings.TrimRight(request.URL.Path, "/")
 
 	switch {
-	case "/" == path:
+	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
