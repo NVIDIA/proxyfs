@@ -2,7 +2,6 @@ package headhunter
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/swiftstack/conf"
 )
@@ -53,7 +52,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		if 0 == strings.Compare(whoAmI, primaryPeer) {
+		if whoAmI == primaryPeer {
 			globals.volumeList = append(globals.volumeList, volumeName)
 		}
 	}
