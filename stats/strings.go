@@ -191,4 +191,7 @@ var (
 	SwiftChunkedConnsReuseOps         = "proxyfs.swiftclient.chunked-connections-reuse.operations"
 	SwiftNonchunkedConnsCreateOps     = "proxyfs.swiftclient.non-chunked-connections-create.operations"
 	SwiftNonchunkedConnsReuseOps      = "proxyfs.swiftclient.non-chunked-connections-reuse.operations"
+
+	SwiftObjGetRetryOps        = "proxyfs.swiftclient.object-get.retry.operations"         // failed object-get operations that were retried (*not* number of retries)
+	SwiftObjGetRetrySuccessOps = "proxyfs.swiftclient.object-get.retry.success.operations" // failed object-get operations where retry fixed the problem
 )

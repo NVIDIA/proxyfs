@@ -239,32 +239,7 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	return
 }
 
-func objectGetWithRetry_loop(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-
-	fmt.Printf("objectGetWithRetry_loop entered\n")
-
-	var (
-		retryobj RetryCtrl = New(5, 1*time.Second, 2)
-		lasterr  error
-	)
-	for {
-		fmt.Printf("objectGetWithRetry_loop calling objectGet\n")
-		buf, lasterr = objectGet(accountName, containerName, objectName, offset, length)
-		if lasterr == nil {
-			fmt.Printf("objectGetWithRetry_loop returned without error\n")
-			return buf, lasterr
-		}
-
-		fmt.Printf("objectGetWithRetry_loop calling retryobj.RetryWait()\n")
-		err = retryobj.RetryWait()
-		if err != nil {
-			// should lasterr be returned annotated with the timeout?
-			return buf, err
-		}
-	}
-}
-
-func objectGetWithRetry_closure2(accountName string, containerName string, objectName string,
+func objectGetWithRetry(accountName string, containerName string, objectName string,
 	offset uint64, length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
@@ -283,10 +258,10 @@ func objectGetWithRetry_closure2(accountName string, containerName string, objec
 
 	var (
 		retryObj RetryCtrl = New(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string    = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")",
-			accountName, containerName, objectName)
+		opname   string    = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStat = RetryStat{retryCnt: &stats.SwiftObjGetRetryOps, retrySuccess: &stats.SwiftObjGetRetrySuccessOps}
 	)
-	err = retryObj.RequestWithRetry(request, &opname)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return buf, err
 }
 
