@@ -2,17 +2,20 @@ package swiftclient
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"regexp"
+	//	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/conf"
 )
 
 type testObjectCopyCallbackStruct struct {
@@ -37,10 +40,15 @@ func TestAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthTCPPort=9999",
+
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryLimit=10",
-		"SwiftClient.RetryDelay=50ms",
-		"SwiftClient.RetryExpBackoff=2.0",
+		"SwiftClient.RetryLimit=5",
+		"SwiftClient.RetryLimitObject=5",
+		"SwiftClient.RetryDelay=250ms",
+		"SwiftClient.RetryDelayObject=250ms",
+		"SwiftClient.RetryExpBackoff=1.2",
+		"SwiftClient.RetryExpBackoffObject=2.0",
+
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"Cluster.WhoAmI=Peer0",
@@ -48,20 +56,35 @@ func TestAPI(t *testing.T) {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
+
+		"RamSwiftChaos.AccountDeleteFailureRate=2",
+		"RamSwiftChaos.AccountGetFailureRate=2",
+		"RamSwiftChaos.AccountHeadFailureRate=2",
+		"RamSwiftChaos.AccountPostFailureRate=2",
+		"RamSwiftChaos.AccountPutFailureRate=2",
+
+		"RamSwiftChaos.ContainerDeleteFailureRate=2",
+		"RamSwiftChaos.ContainerGetFailureRate=2",
+		"RamSwiftChaos.ContainerHeadFailureRate=2",
+		"RamSwiftChaos.ContainerPostFailureRate=2",
+		"RamSwiftChaos.ContainerPutFailureRate=2",
+
+		"RamSwiftChaos.ObjectDeleteFailureRate=2",
+		"RamSwiftChaos.ObjectGetFailureRate=2",
+		"RamSwiftChaos.ObjectHeadFailureRate=2",
+		"RamSwiftChaos.ObjectPostFailureRate=2",
+		"RamSwiftChaos.ObjectPutFailureRate=2",
 	}
-
-	catDogHeaderMap := make(map[string][]string)
-	catDogHeaderMap["Cat"] = []string{"Dog"}
-
-	mouseBirdHeaderMap := make(map[string][]string)
-	mouseBirdHeaderMap["Mouse"] = []string{"Bird"}
-
-	mouseDeleteHeaderMap := make(map[string][]string)
-	mouseDeleteHeaderMap["Mouse"] = []string{""}
 
 	confMap, err := conf.MakeConfMapFromStrings(confStrings)
 	if err != nil {
 		t.Fatalf("%v", err)
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
 	}
 
 	signalHandlerIsArmed := false
@@ -85,9 +108,51 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	// Run the tests
+	// t.Run("testOps", testOps)
+	// t.Run("testRetry", testRetry)
+	testOps(t)
+	testRetry(t)
+
+	// Shutdown packages
+
+	err = Down()
+	if nil != err {
+		tErr := fmt.Sprintf("Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = stats.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	// Send ourself a SIGTERM to terminate ramswift.Daemon()
+
+	unix.Kill(unix.Getpid(), unix.SIGTERM)
+
+	_ = <-doneChan
+}
+
+// Test the use of the API for normal Swift operations
+//
+func testOps(t *testing.T) {
+
+	// headers for testing
+
+	catDogHeaderMap := make(map[string][]string)
+	catDogHeaderMap["Cat"] = []string{"Dog"}
+
+	mouseBirdHeaderMap := make(map[string][]string)
+	mouseBirdHeaderMap["Mouse"] = []string{"Bird"}
+
+	mouseDeleteHeaderMap := make(map[string][]string)
+	mouseDeleteHeaderMap["Mouse"] = []string{""}
+
 	// Send a PUT for account "TestAccount" and header Cat: Dog
 
-	err = AccountPut("TestAccount", catDogHeaderMap)
+	err := AccountPut("TestAccount", catDogHeaderMap)
 	if nil != err {
 		tErr := fmt.Sprintf("AccountPut(\"TestAccount\", catDogHeaderMap) failed: %v", err)
 		t.Fatalf(tErr)
@@ -681,6 +746,19 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	// create and delete container "TestContainer" again so we're sure the retry code is hit
+
+	err = ContainerPut("TestAccount", "TestContainer", catDogHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("ContainerPut(\"TestAccount\", \"TestContainer\", catDogHeaderMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	err = ContainerDelete("TestAccount", "TestContainer")
+	if nil != err {
+		tErr := fmt.Sprintf("ContainerDelete(\"TestAccount\", \"TestContainer\") failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	// Send a GET for account "TestAccount" expecting header Cat: Dog and containerList []string{}
 
 	accountHeaders, containerList, err = AccountGet("TestAccount")
@@ -707,23 +785,361 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
-	// Shutdown packages
+	// Create and delete "TestAccount" again so we're sure the retry code is hit
 
-	err = Down()
+	err = AccountPut("TestAccount", catDogHeaderMap)
 	if nil != err {
-		tErr := fmt.Sprintf("Down() failed: %v", err)
+		tErr := fmt.Sprintf("AccountPut(\"TestAccount\", catDogHeaderMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	err = AccountDelete("TestAccount")
+	if nil != err {
+		tErr := fmt.Sprintf("AccountDelete(\"TestAccount\") failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
-	err = stats.Down()
-	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
+}
+
+// Parse a log entry generated by testRetry and return the important values as
+// strings, where the definition of what's important is somewhat arbitrary.
+//
+// matching log entries look like:
+//
+// time="2017-07-27T01:30:46Z" level=info msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) succeeded after 4 attempts in 0.031 sec" function=RequestWithRetry goroutine=6 package=swiftclient
+//
+// time="2017-07-27T02:18:19Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 7 attempts in 0.053 sec with retriable error" error="Simulate a retriable errror" function=RequestWithRetry goroutine=6 package=swiftclient
+//
+// time="2017-07-27T02:09:32Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
+//
+func parseRetryLogEntry(entry string) map[string]string {
+	var (
+		fields  = make(map[string]string)
+		matches []string
+	)
+
+	var fieldRE = regexp.MustCompile(
+		`^time="([-:0-9A-Z]+)" level=([a-zA-Z]+) msg="([^"]+)" (error="([^"]+)")? ?function=(\w+) (.*)`)
+
+	matches = fieldRE.FindStringSubmatch(entry)
+	if matches == nil {
+		return nil
+	}
+	fields["time"] = matches[1]
+	fields["level"] = matches[2]
+	fields["msg"] = matches[3]
+	fields["error"] = matches[5]
+	fields["function"] = matches[6]
+
+	var msgRE = regexp.MustCompile(
+		`^retry.RequestWithRetry\(\): swiftclient.testRetry.request\((\d+)\) (succeeded|failed) after (\d+) attempts in (\d+\.\d*) sec( with (retriable|unretriable) error)?$`)
+
+	matches = msgRE.FindStringSubmatch(fields["msg"])
+	if matches == nil {
+		return nil
+	}
+	fields["reqno"] = matches[1]
+	fields["result"] = matches[2]
+	fields["attempts"] = matches[3]
+	fields["seconds"] = matches[4]
+	fields["retriable"] = matches[6]
+
+	return fields
+}
+
+// Test the retry handler
+func testRetry(t *testing.T) {
+
+	// a new log target to capture messages written to the log
+	var logcopy logger.LogTarget
+	logcopy.Init(50)
+
+	// logcopy will live on long after this function returns
+	logger.AddLogTarget(logcopy)
+
+	// request is a function that, through the miracle of closure, uses and
+	// updates these variables so we can use them to affect its behavior
+	// when its called by by RequestWithRetry()
+	var (
+		callCnt       int = 0
+		successOn     int = 2
+		unretriableOn int = 2
+	)
+	request := func() (bool, error) {
+		callCnt++
+		if successOn == callCnt {
+			return false, nil
+		}
+		if unretriableOn == callCnt {
+			return false, errors.New("Simulate an unretriable error")
+		}
+		return true, errors.New("Simulate a retriable errror")
 	}
 
-	// Send ourself a SIGTERM to terminate ramswift.Daemon()
+	var (
+		retryOps                    = "proxyfs.switclient.test.operations"
+		retrySuccessOps             = "proxyfs.switclient.test.success.operations"
+		statNm          RetryStatNm = RetryStatNm{retryCnt: &retryOps, retrySuccessCnt: &retrySuccessOps}
+		opname          string
+		retryObj        *RetryCtrl
+	)
 
-	unix.Kill(unix.Getpid(), unix.SIGTERM)
+	// requests succeeds on first try (no log entry, stats not updated)
+	//
+	opname = "swiftclient.testRetry.request(1)"
+	retryObj = NewRetryCtrl(5, 1*time.Second, 2.0)
+	callCnt = 0
+	successOn = 1
+	unretriableOn = 0 // never happens
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.0)
 
-	_ = <-doneChan
+	// request succeeds after 3 retries (4th attempt) which should take 30
+	// msec with expBackoff set to 1.0
+	//
+	opname = "swiftclient.testRetry.request(2)"
+	retryObj = NewRetryCtrl(5, 10*time.Millisecond, 1.0)
+	callCnt = 0
+	successOn = 4
+	unretriableOn = 0 // never happens
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.030)
+
+	// requests fails after 4 retries (5th attempt) with a retriable error
+	// which should take 150 msec with expBackoff set to 2.0
+	//
+	opname = "swiftclient.testRetry.request(3)"
+	retryObj = NewRetryCtrl(4, 10*time.Millisecond, 2.0)
+	callCnt = 0
+	successOn = 0     // no success
+	unretriableOn = 0 // no unretriable failure
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 5, 0.150, "retriable")
+
+	// requests fails after 2 retries (3rd attempt) with an unretriable
+	// error, which should take 30 msec with expBackoff set to 2.0
+	//
+	opname = "swiftclient.testRetry.request(4)"
+	retryObj = NewRetryCtrl(4, 10*time.Millisecond, 2.0)
+	callCnt = 0
+	successOn = 0 // no success
+	unretriableOn = 3
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 3, 0.030, "unretriable")
+
+	// retries disabled, no errors
+	//
+	opname = "swiftclient.testRetry.request(5)"
+	retryObj = NewRetryCtrl(0, 10*time.Millisecond, 2.0)
+	callCnt = 0
+	successOn = 1 // success on first try
+	unretriableOn = 0
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.0)
+
+	// retries disabled and request fails with retriable error
+	//
+	opname = "swiftclient.testRetry.request(6)"
+	retryObj = NewRetryCtrl(0, 10*time.Millisecond, 2.0)
+	callCnt = 0
+	successOn = 0 // no success
+	unretriableOn = 0
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.0, "retriable")
+
+	// retries disabled and request fails withan unretriable error
+	//
+	opname = "swiftclient.testRetry.request(7)"
+	retryObj = NewRetryCtrl(0, 10*time.Millisecond, 2.0)
+	callCnt = 0
+	successOn = 0 // no success
+	unretriableOn = 1
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.0, "unretriable")
+}
+
+// Test an operation that succeeds on attempt number successOn after at least
+// totalSec of delay.
+//
+// successOn may be 1, in which case no log messages should be generated and the
+// retry counters are unchanged (because no retries occurred), else we expect
+// properly formatted log messages and updated retry counters.
+//
+func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
+	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	request func() (bool, error), successOn int, totalSec float32) {
+
+	var (
+		totalEntriesPre     int = logcopy.LogBuf.TotalEntries
+		retryCntPre         uint64
+		retryCntPost        uint64
+		retrySuccessCntPre  uint64
+		retrySuccessCntPost uint64
+		statMap             map[string]uint64
+		logEntry            string
+		logval              map[string]string
+		err                 error
+	)
+	statMap = stats.Dump()
+	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
+	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+
+	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	if err != nil {
+		t.Errorf("%s: should have succeeded, error: %s", opname, err)
+	}
+
+	// validate proper log entry found, including number of attempts and
+	// elapsed time
+	logEntry = logcopy.LogBuf.LogEntries[0]
+	logval = parseRetryLogEntry(logEntry)
+	switch {
+	case successOn == 1:
+		if logcopy.LogBuf.TotalEntries != totalEntriesPre {
+			t.Errorf("%s: should not have created a log entry", opname)
+		}
+	case logcopy.LogBuf.TotalEntries != totalEntriesPre+1:
+		t.Errorf("%s: should have created exactly one log entry", opname)
+	case logval == nil:
+		t.Errorf("%s: log entry should exist, instead found: %s", opname, logEntry)
+	case logval["result"] != "succeeded" || logval["retriable"] != "" ||
+		logval["attempts"] == "" || logval["seconds"] == "":
+		t.Errorf("%s: proper log entry should exist, instead found: %s", opname, logEntry)
+	default:
+		var (
+			sec      float32
+			attempts int
+		)
+		cnt, err := fmt.Sscanf(logval["seconds"], "%f", &sec)
+		if err != nil || cnt != 1 {
+			t.Errorf("%s: seconds not found in log entry: %s", opname, logEntry)
+		}
+		cnt, err = fmt.Sscanf(logval["attempts"], "%d", &attempts)
+		if err != nil || cnt != 1 {
+			t.Errorf("%s: attempts not found in log entry: %s", opname, logEntry)
+		}
+
+		if attempts != successOn {
+			t.Errorf("%s: should have succeeded after %d attempts, log entry shows: %s",
+				opname, successOn, logEntry)
+		}
+		// allow upto 20 msec slop for request to complete
+		if sec < totalSec || sec > totalSec+0.020 {
+			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be (%4.3f, %4.3f)",
+				opname, sec, totalSec, totalSec+0.020)
+		}
+	}
+
+	// insure stats are updated correctly (unchanged if no retry occurred,
+	// otherwise both are incremented)
+	if successOn > 1 {
+		retryCntPre++
+		retrySuccessCntPre++
+	}
+
+	// stats sometimes take a little while to update, so wait a bit if we don't
+	// get the right answer on the first try
+	for try := 0; try < 10; try++ {
+		statMap = stats.Dump()
+		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
+		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+
+		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if retryCntPost != retryCntPre {
+		t.Errorf("%s: stats updated incorrectly: retryOps is %d should be %d",
+			opname, retryCntPost, retryCntPre)
+	}
+	if retrySuccessCntPost != retrySuccessCntPre {
+		t.Errorf("%s: stats updated incorrectly: retrySuccessOps is %d should be %d",
+			opname, retrySuccessCntPost, retrySuccessCntPre)
+	}
+}
+
+// Test an operation that ultimately fails after some number of retries
+// (possibly 0).  It should fail on the attempt number failOn, after at least
+// totalSec of delay.
+//
+func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
+	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	request func() (bool, error), failOn int, totalSec float32, retryStr string) {
+
+	var (
+		totalEntriesPre     int = logcopy.LogBuf.TotalEntries
+		retryCntPre         uint64
+		retryCntPost        uint64
+		retrySuccessCntPre  uint64
+		retrySuccessCntPost uint64
+		statMap             map[string]uint64
+		logEntry            string
+		logval              map[string]string
+		err                 error
+	)
+	statMap = stats.Dump()
+	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
+	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+
+	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	if err == nil {
+		t.Errorf("%s: should have failed, error: %s", opname, err)
+	}
+
+	// validate proper log entry found, including number of attempts and
+	// elapsed time
+	logEntry = logcopy.LogBuf.LogEntries[0]
+	logval = parseRetryLogEntry(logEntry)
+	switch {
+	case logcopy.LogBuf.TotalEntries != totalEntriesPre+1:
+		t.Errorf("%s: should have created exactly one log entry", opname)
+	case logval == nil:
+		t.Errorf("%s: log entry should exist, instead found: %s", opname, logEntry)
+	case logval["result"] != "failed" || logval["retriable"] != retryStr ||
+		logval["attempts"] == "" || logval["seconds"] == "":
+		t.Errorf("%s: proper log entry should exist, instead found: %s", opname, logEntry)
+	default:
+		var (
+			sec      float32
+			attempts int
+		)
+		cnt, err := fmt.Sscanf(logval["seconds"], "%f", &sec)
+		if err != nil || cnt != 1 {
+			t.Errorf("%s: seconds not found in log entry: %s", opname, logEntry)
+		}
+		cnt, err = fmt.Sscanf(logval["attempts"], "%d", &attempts)
+		if err != nil || cnt != 1 {
+			t.Errorf("%s: attempts not found in log entry: %s", opname, logEntry)
+		}
+
+		if attempts != failOn {
+			t.Errorf("%s: should have failed after %d attempts, log entry shows: %s",
+				opname, failOn, logEntry)
+		}
+		// allow upto 20 msec slop for request to complete
+		if sec < totalSec || sec > totalSec+0.020 {
+			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be (%4.3f, %4.3f)",
+				opname, sec, totalSec, totalSec+0.020)
+		}
+	}
+
+	// insure stats are updated correctly: retrySuccessOps is never incremented;
+	// retryOps incremented only if retries are enabled
+	if retryObj.attemptMax > 0 {
+		retryCntPre++
+	}
+
+	// stats sometimes take a little while to update, so wait a bit if we don't
+	// get the right answer on the first try
+	for try := 0; try < 10; try++ {
+		statMap = stats.Dump()
+		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
+		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+
+		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if retryCntPost != retryCntPre {
+		t.Errorf("%s: stats updated incorrectly: retryOps is %d should be %d",
+			opname, retryCntPost, retryCntPre)
+	}
+	if retrySuccessCntPost != retrySuccessCntPre {
+		t.Errorf("%s: stats updated incorrectly: retrySuccessOps is %d should be %d",
+			opname, retrySuccessCntPost, retrySuccessCntPre)
+	}
 }

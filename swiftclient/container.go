@@ -3,12 +3,35 @@
 package swiftclient
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
+
+func containerDeleteWithRetry(accountName string, containerName string) (err error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerDelete() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	request := func() (bool, error) {
+		var err error
+		err = containerDelete(accountName, containerName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string      = fmt.Sprintf("swiftclient.containerDelete(\"%v/%v\")", accountName, containerName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftContainerDeleteRetryOps,
+			retrySuccessCnt: &stats.SwiftContainerDeleteRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return err
+}
 
 func containerDelete(accountName string, containerName string) (err error) {
 	var (
@@ -56,6 +79,32 @@ func containerDelete(accountName string, containerName string) (err error) {
 	return
 }
 
+func containerGetWithRetry(accountName string, containerName string) (map[string][]string, []string, error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerGet() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		headers    map[string][]string
+		objectList []string
+		err        error
+	)
+	request := func() (bool, error) {
+		var err error
+		headers, objectList, err = containerGet(accountName, containerName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string      = fmt.Sprintf("swiftclient.containerGet(\"%v/%v\")", accountName, containerName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftContainerGetRetryOps,
+			retrySuccessCnt: &stats.SwiftContainerGetRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return headers, objectList, err
+}
 func containerGet(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
 	var (
 		fsErr      blunder.FsError
@@ -111,6 +160,32 @@ func containerGet(accountName string, containerName string) (headers map[string]
 	return
 }
 
+func containerHeadWithRetry(accountName string, containerName string) (map[string][]string, error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerHead() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		headers map[string][]string
+		err     error
+	)
+	request := func() (bool, error) {
+		var err error
+		headers, err = containerHead(accountName, containerName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string      = fmt.Sprintf("swiftclient.containerHead(\"%v/%v\")", accountName, containerName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftContainerHeadRetryOps,
+			retrySuccessCnt: &stats.SwiftContainerHeadRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return headers, err
+}
+
 func containerHead(accountName string, containerName string) (headers map[string][]string, err error) {
 	var (
 		fsErr      blunder.FsError
@@ -154,6 +229,28 @@ func containerHead(accountName string, containerName string) (headers map[string
 	stats.IncrementOperations(&stats.SwiftContainerHeadOps)
 
 	return
+}
+
+func containerPostWithRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerPost() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	request := func() (bool, error) {
+		var err error
+		err = containerPost(accountName, containerName, requestHeaders)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string      = fmt.Sprintf("swiftclient.containerPost(\"%v/%v\")", accountName, containerName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftContainerPostRetryOps,
+			retrySuccessCnt: &stats.SwiftContainerPostRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return err
 }
 
 func containerPost(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
@@ -216,9 +313,31 @@ func containerPost(accountName string, containerName string, requestHeaders map[
 
 	releaseNonChunkedConnection(tcpConn, parseConnection(responseHeaders))
 
-	stats.IncrementOperations(&stats.SwiftContainerPutOps)
+	stats.IncrementOperations(&stats.SwiftContainerPostOps)
 
 	return
+}
+
+func containerPutWithRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerPut() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	request := func() (bool, error) {
+		var err error
+		err = containerPut(accountName, containerName, requestHeaders)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string      = fmt.Sprintf("swiftclient.containerPut(\"%v/%v\")", accountName, containerName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftContainerPutRetryOps,
+			retrySuccessCnt: &stats.SwiftContainerPutRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return err
 }
 
 func containerPut(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
