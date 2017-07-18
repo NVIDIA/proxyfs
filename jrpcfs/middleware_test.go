@@ -87,6 +87,10 @@ func testSetup() []func() {
 		"SomeContainerLayout2.ContainerNamePrefix=puppies",
 		"SomeContainerLayout2.ContainersPerPeer=1234",
 		"SomeContainerLayout2.MaxObjectsPerContainer=1234567",
+		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
+		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
+		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.DontWriteConf=true",
 	}
 
 	tempDir, err := ioutil.TempDir("", "jrpcfs_test")
@@ -121,6 +125,11 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
 	}
 
+	err = inode.Up(testConfMap)
+	if nil != err {
+		panic(fmt.Sprintf("failed to bring up inode: %v", err))
+	}
+
 	err = dlm.Up(testConfMap)
 	if nil != err {
 		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
@@ -131,9 +140,9 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up fs: %v", err))
 	}
 
-	err = inode.Up(testConfMap)
+	err = Up(testConfMap)
 	if nil != err {
-		panic(fmt.Sprintf("failed to bring up inode: %v", err))
+		panic(fmt.Sprintf("failed to bring up jrpcfs: %v", err))
 	}
 
 	// Unfortunately, we cannot call the jrpcfs Up() method here since it will start the RPC server.

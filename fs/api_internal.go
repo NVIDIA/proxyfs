@@ -2377,6 +2377,11 @@ func (mS *mountStruct) Validate(inodeNumber inode.InodeNumber) (err error) {
 	return nil
 }
 
+func (mS *mountStruct) VolumeName() (volumeName string) {
+	volumeName = mS.volumeName
+	return
+}
+
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
 	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
 	if err != nil {
