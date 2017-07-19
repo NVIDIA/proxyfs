@@ -58,12 +58,14 @@ func Up(confMap conf.ConfMap) (err error) {
 }
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	err = nil // TODO
+	// Nothing to do here
+	err = nil
 	return
 }
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	err = nil // TODO
+	// Nothing to do here
+	err = nil
 	return
 }
 

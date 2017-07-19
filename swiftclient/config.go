@@ -153,13 +153,15 @@ func Up(confMap conf.ConfMap) (err error) {
 
 // PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	err = nil // TODO
+	// Nothing to do here
+	err = nil
 	return
 }
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	err = nil // TODO
+	// Nothing to do here
+	err = nil
 	return
 }
 
