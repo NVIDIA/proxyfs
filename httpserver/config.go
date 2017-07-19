@@ -124,18 +124,46 @@ func Up(confMap conf.ConfMap) (err error) {
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
-		ok              bool
+		ipAddr          string
 		numVolumes      int
+		ok              bool
 		primaryPeer     string
+		tcpPort         uint16
 		volumeIndex     int
 		volumeList      []string
 		volumeMap       map[string]bool
 		volumeName      string
 		volumeNameAsKey sortedmap.Key
+		whoAmI          string
 	)
 
-	err = validateConfigChange(confMap)
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
+		return
+	}
+	if whoAmI != globals.whoAmI {
+		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
+		return
+	}
+
+	ipAddr, err = confMap.FetchOptionValueString(whoAmI, "PrivateIPAddr")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
+		return
+	}
+	if ipAddr != globals.ipAddr {
+		err = fmt.Errorf("confMap change not allowed to alter [<whoAmI>]PrivateIPAddr")
+		return
+	}
+
+	tcpPort, err = confMap.FetchOptionValueUint16("HTTPServer", "TCPPort")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"TCPPort\") failed: %v", err)
+		return
+	}
+	if tcpPort != globals.tcpPort {
+		err = fmt.Errorf("confMap change not allowed to alter [HTTPServer]TCPPort")
 		return
 	}
 
@@ -227,11 +255,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		volumeName  string
 	)
 
-	err = validateConfigChange(confMap)
-	if nil != err {
-		return
-	}
-
 	globals.Lock()
 	defer globals.Unlock()
 
@@ -291,47 +314,6 @@ func Down() (err error) {
 	globals.Unlock()
 
 	globals.wg.Wait()
-
-	err = nil
-	return
-}
-
-func validateConfigChange(confMap conf.ConfMap) (err error) {
-	var (
-		ipAddr  string
-		tcpPort uint16
-		whoAmI  string
-	)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
-		return
-	}
-
-	ipAddr, err = confMap.FetchOptionValueString(whoAmI, "PrivateIPAddr")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
-		return
-	}
-	if ipAddr != globals.ipAddr {
-		err = fmt.Errorf("confMap change not allowed to alter [<whoAmI>]PrivateIPAddr")
-		return
-	}
-
-	tcpPort, err = confMap.FetchOptionValueUint16("HTTPServer", "TCPPort")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"TCPPort\") failed: %v", err)
-		return
-	}
-	if tcpPort != globals.tcpPort {
-		err = fmt.Errorf("confMap change not allowed to alter [HTTPServer]TCPPort")
-		return
-	}
 
 	err = nil
 	return

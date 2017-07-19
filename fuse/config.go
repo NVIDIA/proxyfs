@@ -168,18 +168,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		primaryPeerName string
 		volumeList      []string
 		volumeName      string
-		whoAmI          string
 	)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
-		return
-	}
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {

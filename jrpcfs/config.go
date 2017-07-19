@@ -150,19 +150,69 @@ func Up(confMap conf.ConfMap) (err error) {
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
+		dataPathLogging    bool
+		fastPortString     string
+		ipAddr             string
 		mountHandle        fs.MountHandle
 		mountID            uint64
 		ok                 bool
+		portString         string
 		primaryPeer        string
 		removedMountIDList []uint64
 		removedVolumeList  []string
 		updatedVolumeMap   map[string]bool
 		volumeList         []string
 		volumeName         string
+		whoAmI             string
 	)
 
-	err = validateConfigChange(confMap)
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
+		return
+	}
+	if whoAmI != globals.whoAmI {
+		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
+		return
+	}
+
+	ipAddr, err = confMap.FetchOptionValueString(whoAmI, "PrivateIPAddr")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
+		return
+	}
+	if ipAddr != globals.ipAddr {
+		err = fmt.Errorf("confMap change not allowed to alter [<whoAmI>]PrivateIPAddr")
+		return
+	}
+
+	portString, err = confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"TCPPort\") failed: %v", err)
+		return
+	}
+	if portString != globals.portString {
+		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]TCPPort")
+		return
+	}
+
+	fastPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"FastTCPPort\") failed: %v", err)
+		return
+	}
+	if fastPortString != globals.fastPortString {
+		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]FastTCPPort")
+		return
+	}
+
+	dataPathLogging, err = confMap.FetchOptionValueBool("JSONRPCServer", "DataPathLogging")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"DataPathLogging\") failed: %v", err)
+		return
+	}
+	if dataPathLogging != globals.dataPathLogging {
+		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]DataPathLogging")
 		return
 	}
 
@@ -227,11 +277,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		volumeName       string
 	)
 
-	err = validateConfigChange(confMap)
-	if nil != err {
-		return
-	}
-
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
@@ -264,68 +309,5 @@ func Down() (err error) {
 	err = nil
 	jsonRpcServerDown()
 	ioServerDown()
-	return
-}
-
-func validateConfigChange(confMap conf.ConfMap) (err error) {
-	var (
-		dataPathLogging bool
-		fastPortString  string
-		ipAddr          string
-		portString      string
-		whoAmI          string
-	)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
-		return
-	}
-
-	ipAddr, err = confMap.FetchOptionValueString(whoAmI, "PrivateIPAddr")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
-		return
-	}
-	if ipAddr != globals.ipAddr {
-		err = fmt.Errorf("confMap change not allowed to alter [<whoAmI>]PrivateIPAddr")
-		return
-	}
-
-	portString, err = confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"TCPPort\") failed: %v", err)
-		return
-	}
-	if portString != globals.portString {
-		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]TCPPort")
-		return
-	}
-
-	fastPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"FastTCPPort\") failed: %v", err)
-		return
-	}
-	if fastPortString != globals.fastPortString {
-		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]FastTCPPort")
-		return
-	}
-
-	dataPathLogging, err = confMap.FetchOptionValueBool("JSONRPCServer", "DataPathLogging")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"JSONRPCServer\", \"DataPathLogging\") failed: %v", err)
-		return
-	}
-	if dataPathLogging != globals.dataPathLogging {
-		err = fmt.Errorf("confMap change not allowed to alter [JSONRPCServer]DataPathLogging")
-		return
-	}
-
-	err = nil
 	return
 }
