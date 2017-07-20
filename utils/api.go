@@ -13,54 +13,6 @@ import (
 	"time"
 )
 
-type Gate interface {
-	Enter() // used by API request handlers before executing the request
-	Leave() // used by API request handlers to indicate request is complete
-	Close() // used to ensure there are no in-flight API requests
-	Open()  // used to resume operation of API request handlers
-}
-
-type gateStruct struct {
-	sync.Mutex
-	locked bool           // used to indicate API requests should block on cond during SIGHUP handling
-	cond   *sync.Cond     // used to signal blocked API requests until SIGHUP handling is complete
-	wg     sync.WaitGroup // used to block SIGHUP handling until in-flight API requests are complete
-}
-
-func NewGate() (gate Gate) {
-	gS := &gateStruct{locked: false}
-	gS.cond = sync.NewCond(gS)
-	gate = gS
-	return
-}
-
-func (gS *gateStruct) Enter() {
-	gS.cond.L.Lock()
-	for gS.locked {
-		gS.cond.Wait()
-	}
-	gS.wg.Add(1)
-	gS.cond.L.Unlock()
-}
-
-func (gS *gateStruct) Leave() {
-	gS.wg.Done()
-}
-
-func (gS *gateStruct) Close() {
-	gS.cond.L.Lock()
-	gS.locked = true
-	gS.cond.L.Unlock()
-	gS.wg.Wait()
-}
-
-func (gS *gateStruct) Open() {
-	gS.cond.L.Lock()
-	gS.locked = false
-	gS.cond.Broadcast()
-	gS.cond.L.Unlock()
-}
-
 // MultiWaiterWaitGroup emulates the behavior of sync.WaitGroup while enabling multiple waiters.
 //
 // Unline sync.WaitGroup, however, you must allocate a MultiWaiterWaitGroup with a

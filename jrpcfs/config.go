@@ -9,13 +9,14 @@ import (
 
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type globalsStruct struct {
 	sync.Mutex
 
-	gate utils.Gate
+	gate sync.RWMutex // SIGHUP triggered confMap change control
+	//                   API Requests RLock()/RUnlock
+	//                   SIGHUP confMap changes Lock()/Unlock()
 
 	whoAmI          string
 	ipAddr          string
@@ -136,9 +137,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	// Init SIGHUP handling gate
-	globals.gate = utils.NewGate()
-
 	// Init JSON RPC server stuff
 	jsonRpcServerUp(globals.ipAddr, globals.portString)
 
@@ -216,7 +214,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.gate.Close()
+	globals.gate.Lock()
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
@@ -299,7 +297,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	globals.volumeMap = updatedVolumeMap
 
-	globals.gate.Open()
+	globals.gate.Unlock()
 
 	err = nil
 	return
