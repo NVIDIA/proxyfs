@@ -239,6 +239,32 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	return
 }
 
+func objectGetWithRetry(accountName string, containerName string, objectName string,
+	offset uint64, length uint64) ([]byte, error) {
+
+	// request is a function that, through the miracle of closure, calls
+	// objectGet with the paramaters passed to this function and stashes the
+	// return values into the local variables of this function (buf, err)
+	// and then returns the error code (if any) and whether is retriable to
+	// its caller, which should be RequestWithRetry()
+	var (
+		buf []byte
+		err error
+	)
+	request := func() (bool, error) {
+		buf, err = objectGet(accountName, containerName, objectName, offset, length)
+		return true, err
+	}
+
+	var (
+		retryObj RetryCtrl = New(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string    = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStat = RetryStat{retryCnt: &stats.SwiftObjGetRetryOps, retrySuccess: &stats.SwiftObjGetRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return buf, err
+}
+
 func objectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
 	var (
 		chunk         []byte

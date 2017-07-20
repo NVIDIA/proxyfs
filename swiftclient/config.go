@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/conf"
 )
 
@@ -33,8 +34,9 @@ type globalsStruct struct {
 	noAuthStringAddr         string
 	noAuthTCPAddr            *net.TCPAddr
 	timeout                  time.Duration // TODO: Currently not enforced
-	retryDelay               time.Duration // TODO: Currently only implemented for Object Chunked PUTs
-	retryLimit               uint16        // TODO: Currently only implemented for Object Chunked PUTs
+	retryLimit               uint16        // maximum retries
+	retryDelay               time.Duration // delay before first retry
+	retryExpBackoff          float64       // increase delay by this factor each try (exponential backoff)
 	nilTCPConn               *net.TCPConn
 	chunkedConnectionPool    chan *net.TCPConn
 	nonChunkedConnectionPool chan *net.TCPConn
@@ -77,16 +79,39 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
 	if nil != err {
-		// TODO: eventually, just return
+		// TODO: once controller understands RetryDelay paramater, return if not defined
+		// return
+		globals.retryDelay = 0
+	}
+	if globals.retryDelay < 50*time.Millisecond || globals.retryDelay > 20*time.Second {
+		logger.Warnf("config variable 'SwiftClient.RetryDelay' at %v is too big or too small; changing to 50 ms",
+			globals.retryDelay)
 		globals.retryDelay, err = time.ParseDuration("50ms")
-		if nil != err {
-			return
-		}
+	}
+
+	var expBackoff uint32
+	expBackoff, err = confMap.FetchOptionValueFloatScaledToUint32("SwiftClient", "RetryExpBackoff", 1000)
+	if nil != err {
+		// TODO: once controller understands RetryDelay paramater, return if not defined
+		// return
+		expBackoff = 0
+	}
+	globals.retryExpBackoff = float64(expBackoff) / float64(1000)
+	if globals.retryExpBackoff < 0.5 || globals.retryExpBackoff > 3.0 {
+		logger.Warnf("config variable 'SwiftClient.RetryBackoff' at %v is too big or too small; changing to 2.0",
+			globals.retryExpBackoff)
+		globals.retryExpBackoff = 2.0
 	}
 
 	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
 	if nil != err {
-		// TODO: eventually, just return
+		// TODO: once controller understands RetryDelay paramater, return if undefined
+		// return
+		globals.retryLimit = 111
+	}
+	if globals.retryLimit > 100 {
+		logger.Warnf("config variable 'SwiftClient.RetryLimit' at %v is too big; changing to 10",
+			globals.retryLimit)
 		globals.retryLimit = 10
 	}
 
