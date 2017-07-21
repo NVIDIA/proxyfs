@@ -105,6 +105,7 @@ func readCacheBenchmarkHelper(b *testing.B, byteSize uint64) {
 	fileInodeNumber, _ := testVolumeHandle.CreateFile(PosixModePerm, 0, 0)
 	buffer := make([]byte, byteSize)
 	testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
+	testVolumeHandle.Flush(fileInodeNumber, false)
 	var zero uint64
 	zero = 0
 	readPlan, _ := testVolumeHandle.GetReadPlan(fileInodeNumber, &zero, &byteSize)

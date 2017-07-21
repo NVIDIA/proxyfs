@@ -350,6 +350,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
 		}
+
 		openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(openLogSegment.accountName, openLogSegment.containerName, openLogSegment.objectName)
 		if nil != err {
 			fileInode.Unlock()
@@ -359,6 +360,10 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 
 		fileInodeFlusher.logSegmentsMap[openLogSegment.logSegmentNumber] = openLogSegment
 		fileInodeFlusher.openLogSegment = openLogSegment
+
+		vS.Lock()
+		vS.inFlightFileInodeDataMap[fileInode.InodeNumber] = fileInode
+		vS.Unlock()
 	} else {
 		openLogSegment = fileInodeFlusher.openLogSegment
 	}
@@ -420,6 +425,10 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	fileInode.fileInodeFlusher = nil
 
+	vS.Lock()
+	delete(vS.inFlightFileInodeDataMap, fileInode.InodeNumber)
+	vS.Unlock()
+
 	return
 }
 
@@ -470,7 +479,6 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	// Terminate Chunked PUT
 	err = inFlightLogSegment.Close()
 	if nil != err {
-		// Chunked PUT failed... TODO: retry this here
 		err = blunder.AddError(err, blunder.InodeFlushError)
 		fileInodeFlusher.fileInode.Lock()
 		fileInodeFlusher.errors = append(fileInodeFlusher.errors, err)
