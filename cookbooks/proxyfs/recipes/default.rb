@@ -198,7 +198,7 @@ end
 if node[:platform_family].include?("rhel")
 
   # packages
-  samba_package = ["samba"]
+  samba_package = ["samba", "samba-client"]
 
   samba_deps = %w(
     gcc
@@ -245,7 +245,7 @@ if node[:platform_family].include?("rhel")
 else # assume debian
 
   # packages
-  samba_package = ["samba"]
+  samba_package = ["samba", "smbclient"]
 
   samba_deps = %w(
     gcc
