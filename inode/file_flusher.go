@@ -11,6 +11,17 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func capReadCache(flowControl *flowControlStruct) {
+	flowControl.Lock()
+
+	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
+		flowControl.readCacheLRU.next = nil
+	}
+
+	flowControl.Unlock()
+}
+
 func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
@@ -123,7 +134,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					prev:         nil,
 					cacheLine:    cacheLine,
 				}
-				vS.flowControl.Lock()
+				flowControl.Lock()
 				// If the readCache size is at or greater than the limit, delete something.
 				if uint64(len(flowControl.readCache)) >= flowControl.readCacheLineCount {
 					// Purge LRU element
@@ -238,7 +249,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheHitOps)
 					} else {
-						vS.flowControl.Unlock()
+						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheMissOps)
 						// Make readCacheHit true (at MRU, likely kicking out LRU)
 						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
@@ -264,7 +275,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 								flowControl.readCacheMRU = nil
 								flowControl.readCacheLRU = nil
 							} else {
-								flowControl.readCacheLRU = vS.flowControl.readCacheLRU.prev
+								flowControl.readCacheLRU = flowControl.readCacheLRU.prev
 								flowControl.readCacheLRU.next = nil
 							}
 						}
