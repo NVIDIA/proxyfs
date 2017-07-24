@@ -199,6 +199,7 @@ func removeDirEntryInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemo
 
 	dirInode.ModificationTime = updateTime
 	dirInode.AccessTime = updateTime
+	dirInode.AttrChangeTime = updateTime
 
 	untargetInode.AttrChangeTime = updateTime
 	return
