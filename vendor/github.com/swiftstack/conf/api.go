@@ -458,7 +458,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, o
 		return
 	}
 
-	optionValueFloat64Scaled := optionValueFloat64 * float64(multiplier)
+	optionValueFloat64Scaled := optionValueFloat64*float64(multiplier) + float64(0.5)
 
 	if optionValueFloat64Scaled >= float64(uint32(0xFFFFFFFF)) {
 		err = fmt.Errorf("[%v]%v after scaling won't fit in uint32", sectionName, optionName)
@@ -491,7 +491,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint64(sectionName string, o
 		return
 	}
 
-	optionValueFloat64Scaled := optionValueFloat64 * float64(multiplier)
+	optionValueFloat64Scaled := optionValueFloat64*float64(multiplier) + float64(0.5)
 
 	if optionValueFloat64Scaled >= float64(uint64(0xFFFFFFFFFFFFFFFF)) {
 		err = fmt.Errorf("[%v]%v after scaling won't fit in uint64", sectionName, optionName)
