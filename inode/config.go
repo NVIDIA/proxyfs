@@ -7,6 +7,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/conf"
 	"github.com/swiftstack/cstruct"
 )
@@ -42,7 +43,7 @@ type flowControlStruct struct {
 	maxFlushSize       uint64
 	maxFlushTime       time.Duration
 	readCacheLineSize  uint64
-	readCacheTotalSize uint64
+	readCacheWeight    uint64
 	readCacheLineCount uint64
 	readCache          map[readCacheKeyStruct]*readCacheElementStruct
 	readCacheMRU       *readCacheElementStruct
@@ -70,6 +71,7 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
+	whoAmI                       string
 	volumeMap                    map[string]*volumeStruct      // key == volumeStruct.volumeName
 	accountMap                   map[string]*volumeStruct      // key == volumeStruct.accountName
 	flowControlMap               map[string]*flowControlStruct // key == flowControlStruct.flowControlName
@@ -101,13 +103,23 @@ func Up(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
 	}
 
-	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		return
 	}
-	_, ok := peerPrivateIPAddrMap[whoAmI]
+	_, ok := peerPrivateIPAddrMap[globals.whoAmI]
 	if !ok {
-		err = fmt.Errorf("Cluster.WhoAmI (\"%v\") not in Cluster.Peers list", whoAmI)
+		err = fmt.Errorf("Cluster.WhoAmI (\"%v\") not in Cluster.Peers list", globals.whoAmI)
+		return
+	}
+
+	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	if nil != err {
+		// TODO: eventually, just return
+		readCacheQuotaPercentage = 20
+	}
+	if 100 < readCacheQuotaPercentage {
+		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
 		return
 	}
 
@@ -164,7 +176,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		volume.active = (primaryPeerName == whoAmI)
+		volume.active = (primaryPeerName == globals.whoAmI)
 		volume.activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerName]
 		if !ok {
 			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeSectionName, primaryPeerName)
@@ -282,15 +294,13 @@ func Up(confMap conf.ConfMap) (err error) {
 				return
 			}
 
-			flowControl.readCacheTotalSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
+			flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 			if nil != err {
-				return
-			}
-
-			flowControl.readCacheLineCount = flowControl.readCacheTotalSize / flowControl.readCacheLineSize
-			if 0 == flowControl.readCacheLineCount {
-				err = fmt.Errorf("[\"%v\"]ReadCacheTotalSize must be at least [\"%v\"]ReadCacheLineSize", flowControlSectionName, flowControlSectionName)
-				return
+				// TODO: eventually, just return
+				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
+				if nil != err {
+					return
+				}
 			}
 
 			globals.flowControlMap[flowControlSectionName] = flowControl
@@ -307,6 +317,24 @@ func Up(confMap conf.ConfMap) (err error) {
 
 		globals.volumeMap[volume.volumeName] = volume
 		globals.accountMap[volume.accountName] = volume
+	}
+
+	var flowControlWeightSum uint64
+
+	for _, flowControl := range globals.flowControlMap {
+		flowControlWeightSum += flowControl.readCacheWeight
+	}
+
+	readCacheMemSize := platform.MemSize() * readCacheQuotaPercentage / 100
+
+	for _, flowControl := range globals.flowControlMap {
+		readCacheTotalSize := readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
+
+		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
+		if 0 == flowControl.readCacheLineCount {
+			err = fmt.Errorf("[\"%v\"]ReadCacheWeight must result in at least one ReadCacheLineSize (%v) of memory", flowControl.flowControlName, flowControl.readCacheLineSize)
+			return
+		}
 	}
 
 	globals.fileExtentStructSize, _, err = cstruct.Examine(fileExtentStruct{})
