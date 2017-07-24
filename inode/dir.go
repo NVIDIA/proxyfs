@@ -120,6 +120,7 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 
 	dirInode.ModificationTime = updateTime
 	dirInode.AccessTime = updateTime
+	dirInode.AttrChangeTime = updateTime
 	return nil
 }
 

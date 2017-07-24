@@ -2050,7 +2050,7 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterLink.AccessTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AccessTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.AccessTime unexpected")
 	}
-	if !dirInodeMetadataAfterLink.AttrChangeTime.Equal(dirInodeMetadataAfterDeleteStream.AttrChangeTime) {
+	if dirInodeMetadataAfterLink.AttrChangeTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AttrChangeTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.AttrChangeTime unexpected")
 	}
 	if !dirInodeMetadataAfterLink.AccessTime.Equal(dirInodeMetadataAfterLink.ModificationTime) {
