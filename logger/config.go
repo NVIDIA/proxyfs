@@ -1,7 +1,9 @@
 package logger
 
 import (
+	"io"
 	"os"
+	"strings"
 
 	log "github.com/Sirupsen/logrus"
 
@@ -10,7 +12,46 @@ import (
 
 var logFile *os.File = nil
 
-func Up(confMap conf.ConfMap) (err error) {
+// multiWriter groups multiple io.Writers into a single io.Writer. (Our
+// immediate motivation for this is that logrus's SetOutput expects an
+// io.Writer, but we might want to log to both the console and a file in
+// development, and this seems potentially simpler in some aspects than
+// defining a Hook. We may want to revisit this judgement—again—later.
+//
+// Supporting multiple writers is now a full-fledged feature of logger.
+//
+type multiWriter struct {
+	writers []io.Writer
+}
+
+// The global list of log targets to write to.
+//
+// logTargets should probably be protected by a lock or use some clever RCU
+// update technique, but its really only changed for test cases.
+//
+var logTargets multiWriter
+
+func (mw *multiWriter) addWriter(writer io.Writer) {
+	mw.writers = append(mw.writers, writer)
+}
+
+func (mw *multiWriter) Write(p []byte) (n int, err error) {
+	for _, writer := range mw.writers {
+		n, err = writer.Write(p)
+		// regrettably, the first thing that goes wrong determines our return
+		// values
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func addLogTarget(writer io.Writer) {
+	logTargets.addWriter(writer)
+}
+
+func up(confMap conf.ConfMap) (err error) {
 	log.SetFormatter(&log.TextFormatter{DisableColors: true})
 
 	// Fetch log file info, if provided
@@ -29,18 +70,15 @@ func Up(confMap conf.ConfMap) (err error) {
 		logToConsole = false
 	}
 
-	if logFilePath != "" {
+	log.SetOutput(&logTargets)
+	if logFilePath == "" {
+		addLogTarget(os.Stderr)
+	} else {
+		addLogTarget(logFile)
 		if logToConsole {
-			// use multiWriter to log to both file and console
-			output := &multiWriter{}
-			output.addWriter(logFile)
-			output.addWriter(os.Stderr)
-			log.SetOutput(output)
-		} else {
-			log.SetOutput(logFile)
+			addLogTarget(os.Stderr)
 		}
 	}
-	// else: accept default destination of stderr
 
 	// NOTE: We always enable max logging in logrus, and either decide in
 	//       this package whether to log OR log everything and parse it out of
@@ -57,6 +95,24 @@ func Up(confMap conf.ConfMap) (err error) {
 	return nil
 }
 
+func down() (err error) {
+	// We open and close our own logfile
+	if logFile != nil {
+		logFile.Close()
+	}
+	return
+}
+
+func (log LogTarget) write(p []byte) (n int, err error) {
+	for i := len(log.LogBuf.LogEntries) - 1; i > 0; i-- {
+		log.LogBuf.LogEntries[i] = log.LogBuf.LogEntries[i-1]
+	}
+	log.LogBuf.LogEntries[0] = strings.TrimRight(string(p), " \t\n")
+
+	log.LogBuf.TotalEntries++
+	return 0, nil
+}
+
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	// Nothing to do here
 	err = nil
@@ -66,13 +122,5 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	// Nothing to do here
 	err = nil
-	return
-}
-
-func Down() (err error) {
-	// We open and close our own logfile
-	if logFile != nil {
-		logFile.Close()
-	}
 	return
 }
