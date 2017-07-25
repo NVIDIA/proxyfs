@@ -116,16 +116,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
-	if nil != err {
-		// TODO: eventually, just return
-		readCacheQuotaPercentage = 20
-	}
-	if 100 < readCacheQuotaPercentage {
-		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
-		return
-	}
-
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
@@ -140,6 +130,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			volumeName:                     volumeSectionName,
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
+			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
 			inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
 			inFlightFileInodeDataMap:       make(map[InodeNumber]*inMemoryInodeStruct),
 		}
@@ -167,7 +158,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		_, alreadyInAccountMap := globals.volumeMap[volume.accountName]
+		_, alreadyInAccountMap := globals.accountMap[volume.accountName]
 		if alreadyInAccountMap {
 			err = fmt.Errorf("Account \"%v\" only allowed once in [FSGlobals]VolumeList", volume.accountName)
 			return
@@ -198,8 +189,6 @@ func Up(confMap conf.ConfMap) (err error) {
 				// TODO: eventually, just return
 				volume.maxExtentsPerFileNode = 32
 			}
-
-			volume.physicalContainerLayoutMap = make(map[string]*physicalContainerLayoutStruct)
 
 			physicalContainerLayoutSectionNameSlice, fetchOptionErr := confMap.FetchOptionValueStringSlice(volumeSectionName, "PhysicalContainerLayoutList")
 			if nil != fetchOptionErr {
@@ -329,6 +318,16 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	for _, flowControl := range globals.flowControlMap {
 		flowControlWeightSum += flowControl.readCacheWeight
+	}
+
+	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	if nil != err {
+		// TODO: eventually, just return
+		readCacheQuotaPercentage = 20
+	}
+	if 100 < readCacheQuotaPercentage {
+		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
+		return
 	}
 
 	readCacheMemSize := platform.MemSize() * readCacheQuotaPercentage / 100
@@ -504,7 +503,319 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 }
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	err = nil // TODO
+	peerPrivateIPAddrMap := make(map[string]string)
+
+	peerNames, err := confMap.FetchOptionValueStringSlice("Cluster", "Peers")
+	if nil != err {
+		return
+	}
+
+	for _, peerName := range peerNames {
+		peerPrivateIPAddr, nonShadowingErr := confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		if nil != nonShadowingErr {
+			err = nonShadowingErr
+			return
+		}
+
+		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
+	}
+
+	volumeNames, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		return
+	}
+
+	for _, volumeName := range volumeNames {
+		fsid, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "FSID")
+		if nil != nonShadowingErr {
+			err = nonShadowingErr
+			return
+		}
+
+		accountName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "AccountName")
+		if nil != nonShadowingErr {
+			err = nonShadowingErr
+			return
+		}
+
+		primaryPeerName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		if nil != nonShadowingErr {
+			err = nonShadowingErr
+			return
+		}
+
+		active := (primaryPeerName == globals.whoAmI)
+		activePeerPrivateIPAddr, ok := peerPrivateIPAddrMap[primaryPeerName]
+		if !ok {
+			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerName)
+			return
+		}
+
+		maxEntriesPerDirNode, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
+		if nil != nonShadowingErr {
+			// TODO: eventually, just err = nonShadowingErr & return
+			maxEntriesPerDirNode = 32
+		}
+
+		maxExtentsPerFileNode, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
+		if nil != nonShadowingErr {
+			// TODO: eventually, just err = nonShadowingErr & return
+			maxExtentsPerFileNode = 32
+		}
+
+		newlyActiveVolumeSet := make(map[string]*volumeStruct)
+
+		volume, ok := globals.volumeMap[volumeName]
+		if ok { // previously known volumeName
+			if fsid != volume.fsid {
+				err = fmt.Errorf("Volume \"%v\" changed its FSID", volumeName)
+				return
+			}
+
+			if accountName != volume.accountName {
+				err = fmt.Errorf("Volume \"%v\" changed its AccountName", volumeName)
+				return
+			}
+
+			if active {
+				if volume.active { // also previously active
+					flowControlSectionName, fetchOptionErr := confMap.FetchOptionValueString(volumeName, "FlowControl")
+					if nil != fetchOptionErr {
+						err = fetchOptionErr
+						return
+					}
+
+					flowControl := volume.flowControl
+
+					if flowControlSectionName == flowControl.flowControlName {
+						flowControl.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
+						if nil != err {
+							return
+						}
+
+						flowControl.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
+						if nil != err {
+							return
+						}
+
+						readCacheLineSize, nonShadowingErr := confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheLineSize")
+						if nil != nonShadowingErr {
+							err = nonShadowingErr
+							return
+						}
+						if readCacheLineSize != flowControl.readCacheLineSize {
+							err = fmt.Errorf("FlowControl \"%v\" changed its ReadCacheLineSize", flowControl.flowControlName)
+							return
+						}
+
+						flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
+						if nil != err {
+							// TODO: eventually, just return
+							flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
+							if nil != err {
+								return
+							}
+						}
+
+					} else {
+						err = fmt.Errorf("Volume \"%v\" changed its FlowControl name", volumeName)
+						return
+					}
+				} else { // newly active
+					volume.active = true
+					newlyActiveVolumeSet[volumeName] = volume
+				}
+			}
+		} else { // previously unknown volumeName
+			for _, prevVolume := range globals.volumeMap {
+				if fsid == prevVolume.fsid {
+					err = fmt.Errorf("Volume \"%v\" duplicates FSID (%v) of volume \"%v\"", volumeName, fsid, prevVolume.volumeName)
+					return
+				}
+			}
+
+			_, alreadyInAccountMap := globals.accountMap[volumeName]
+			if alreadyInAccountMap {
+				err = fmt.Errorf("Account \"%v\" only allowed once in [FSGlobals]VolumeList", accountName)
+				return
+			}
+
+			volume = &volumeStruct{
+				fsid:                           fsid,
+				volumeName:                     volumeName,
+				accountName:                    accountName,
+				active:                         active,
+				activePeerPrivateIPAddr:        activePeerPrivateIPAddr,
+				maxEntriesPerDirNode:           maxEntriesPerDirNode,
+				maxExtentsPerFileNode:          maxExtentsPerFileNode,
+				physicalContainerLayoutSet:     make(map[string]struct{}),
+				physicalContainerNamePrefixSet: make(map[string]struct{}),
+				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
+				inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
+				inFlightFileInodeDataMap:       make(map[InodeNumber]*inMemoryInodeStruct),
+			}
+
+			globals.volumeMap[volume.volumeName] = volume
+			globals.accountMap[volume.accountName] = volume
+
+			if active {
+				newlyActiveVolumeSet[volumeName] = volume
+			}
+		}
+
+		for _, volume = range newlyActiveVolumeSet {
+			physicalContainerLayoutSectionNameSlice, fetchOptionErr := confMap.FetchOptionValueStringSlice(volume.volumeName, "PhysicalContainerLayoutList")
+			if nil != fetchOptionErr {
+				err = fetchOptionErr
+				return
+			}
+
+			for _, physicalContainerLayoutSectionName := range physicalContainerLayoutSectionNameSlice {
+				_, alreadyInGlobalsPhysicalContainerLayoutSet := volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
+				if alreadyInGlobalsPhysicalContainerLayoutSet {
+					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutSectionName)
+					return
+				}
+
+				physicalContainerLayout := &physicalContainerLayoutStruct{}
+
+				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
+
+				physicalContainerLayout.physicalContainerStoragePolicyIndex, err = confMap.FetchOptionValueUint32(physicalContainerLayoutSectionName, "ContainerStoragePolicyIndex")
+				if nil != err {
+					return
+				}
+
+				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
+				if nil != err {
+					return
+				}
+				_, alreadyInGlobalsPhysicalContainerNamePrefixSet := volume.physicalContainerLayoutSet[physicalContainerLayout.physicalContainerNamePrefix]
+				if alreadyInGlobalsPhysicalContainerNamePrefixSet {
+					err = fmt.Errorf("ContainerNamePrefix \"%v\" only allowed once", physicalContainerLayout.physicalContainerNamePrefix)
+					return
+				}
+
+				physicalContainerLayout.physicalContainerCountMax, err = confMap.FetchOptionValueUint64(physicalContainerLayoutSectionName, "ContainersPerPeer")
+				if nil != err {
+					return
+				}
+
+				physicalContainerLayout.physicalObjectCountMax, err = confMap.FetchOptionValueUint64(physicalContainerLayoutSectionName, "MaxObjectsPerContainer")
+				if nil != err {
+					return
+				}
+
+				physicalContainerLayout.physicalContainerNameSlice = make([]string, physicalContainerLayout.physicalContainerCountMax)
+
+				physicalContainerLayout.physicalContainerNameSliceNextIndex = 0
+				physicalContainerLayout.physicalContainerNameSliceLoopCount = 0
+
+				volume.physicalContainerLayoutMap[physicalContainerLayoutSectionName] = physicalContainerLayout
+
+				volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName] = struct{}{}
+				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
+			}
+
+			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
+			if nil != fetchOptionErr {
+				err = fetchOptionErr
+				return
+			}
+
+			var alreadyInVolumePhysicalContainerLayoutMap bool
+
+			volume.defaultPhysicalContainerLayout, alreadyInVolumePhysicalContainerLayoutMap = volume.physicalContainerLayoutMap[defaultPhysicalContainerLayoutName]
+			if !alreadyInVolumePhysicalContainerLayoutMap {
+				err = fmt.Errorf("DefaultPhysicalContainerLayout \"%v\" must be in [%v]PhysicalContaonerLayoutList", defaultPhysicalContainerLayoutName, volume.volumeName)
+				return
+			}
+
+			flowControlSectionName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "FlowControl")
+			if nil != fetchOptionErr {
+				err = fetchOptionErr
+				return
+			}
+
+			_, alreadyInFlowControlMap := globals.flowControlMap[flowControlSectionName]
+
+			if !alreadyInFlowControlMap {
+				flowControl := &flowControlStruct{
+					flowControlName: flowControlSectionName,
+					refCount:        0,
+					readCache:       make(map[readCacheKeyStruct]*readCacheElementStruct),
+					readCacheMRU:    nil,
+					readCacheLRU:    nil,
+				}
+
+				flowControl.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
+				if nil != err {
+					return
+				}
+
+				flowControl.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
+				if nil != err {
+					return
+				}
+
+				flowControl.readCacheLineSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheLineSize")
+				if nil != err {
+					return
+				}
+
+				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
+				if nil != err {
+					// TODO: eventually, just return
+					flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
+					if nil != err {
+						return
+					}
+				}
+
+				globals.flowControlMap[flowControlSectionName] = flowControl
+			}
+
+			volume.flowControl = globals.flowControlMap[flowControlSectionName]
+			volume.flowControl.refCount++
+
+			volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
+			if nil != err {
+				return
+			}
+		}
+	}
+
+	var flowControlWeightSum uint64
+
+	for _, flowControl := range globals.flowControlMap {
+		flowControlWeightSum += flowControl.readCacheWeight
+	}
+
+	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	if nil != err {
+		// TODO: eventually, just return
+		readCacheQuotaPercentage = 20
+	}
+	if 100 < readCacheQuotaPercentage {
+		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
+		return
+	}
+
+	readCacheMemSize := platform.MemSize() * readCacheQuotaPercentage / 100
+
+	for _, flowControl := range globals.flowControlMap {
+		readCacheTotalSize := readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
+
+		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
+		if 0 == flowControl.readCacheLineCount {
+			err = fmt.Errorf("[\"%v\"]ReadCacheWeight must result in at least one ReadCacheLineSize (%v) of memory", flowControl.flowControlName, flowControl.readCacheLineSize)
+			return
+		}
+
+		capReadCache(flowControl)
+	}
+
+	err = nil
 	return
 }
 

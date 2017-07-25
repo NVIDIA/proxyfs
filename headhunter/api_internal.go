@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/conf"
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -15,264 +14,6 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
-
-const (
-	checkpointHeaderName = "X-Container-Meta-Checkpoint"
-)
-
-const (
-	checkpointHeaderVersion1 uint64 = iota + 1
-	// uint64 in %016X indicating checkpointHeaderVersion1
-	// ' '
-	// uint64 in %016X indicating objectNumber containing inodeRec.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               inodeRec.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating length of               inodeRec.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating objectNumber containing logSegmentRec.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               logSegmentRec.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating length of               logSegmentRec.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating objectNumber containing bPlusTreeObject.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               bPlusTreeObject.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating length of               bPlusTreeObject.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating reservedToNonce
-)
-
-type checkpointHeaderV1Struct struct {
-	volume                               *swiftVolumeStruct
-	inodeRecBPlusTreeObjectNumber        uint64
-	inodeRecBPlusTreeObjectOffset        uint64
-	inodeRecBPlusTreeObjectLength        uint64
-	logSegmentRecBPlusTreeObjectNumber   uint64
-	logSegmentRecBPlusTreeObjectOffset   uint64
-	logSegmentRecBPlusTreeObjectLength   uint64
-	bPlusTreeObjectBPlusTreeObjectNumber uint64
-	bPlusTreeObjectBPlusTreeObjectOffset uint64
-	bPlusTreeObjectBPlusTreeObjectLength uint64
-	reservedToNonce                      uint64
-}
-
-const (
-	inodeRecStructType uint32 = iota
-	logSegmentRecStructType
-	bPlusTreeObjectStructType
-)
-
-type bPlusTreeStruct struct {
-	volume       *swiftVolumeStruct
-	structType   uint32              // Either inodeRecStructType, logSegmentRecStructType, or bPlusTreeObjectStructType
-	bPlusTree    sortedmap.BPlusTree // In memory representation
-	objectNumber uint64              // If != 0, objectNumber-named Object in accountName.checkpointContainerName
-	objectOffset uint64              // if objectNumber != 0, offset into the Object where Root Inode starts
-	objectLength uint64              // If objectNumber != 0, length of Root Inode
-}
-
-type checkpointRequestStruct struct {
-	waitGroup        sync.WaitGroup
-	err              error
-	exitOnCompletion bool
-}
-
-type swiftVolumeStruct struct {
-	sync.Mutex
-	volumeName                           string
-	accountName                          string
-	maxFlushSize                         uint64
-	maxInodesPerMetadataNode             uint64
-	maxLogSegmentsPerMetadataNode        uint64
-	maxDirFileNodesPerMetadataNode       uint64
-	checkpointContainerName              string
-	checkpointInterval                   time.Duration
-	checkpointIntervalsPerCompaction     uint64
-	checkpointIntervalsSinceCompaction   uint64
-	checkpointCompactorObjectNumberLimit uint64 //                  If == 0, compactor isn't running
-	//                                                              If != 0, compactor should delete up to, but not including, this object number
-	checkpointObjectNumber            uint64 //                     If == 0, no checkpointObject ChunkedPut is active
-	checkpointObjectOffset            uint64 //                     If ChunkedPut is active, next available offset
-	checkpointChunkedPutContext       swiftclient.ChunkedPutContext
-	checkpointGateWaitGroup           *sync.WaitGroup
-	checkpointDoneWaitGroup           *sync.WaitGroup
-	needFullClone                     bool
-	inodeRec                          *bPlusTreeStruct
-	logSegmentRec                     *bPlusTreeStruct
-	bPlusTreeObject                   *bPlusTreeStruct
-	nonceValuesToReserve              uint16
-	reservedToNonce                   uint64
-	nextNonce                         uint64
-	checkpointRequestChan             chan *checkpointRequestStruct
-	lastSuccessfulCheckpointHeaderPut *checkpointHeaderV1Struct
-}
-
-type swiftGlobalsStruct struct {
-	volumeMap map[string]*swiftVolumeStruct // key == ramVolumeStruct.volumeName
-}
-
-var swiftGlobals swiftGlobalsStruct
-
-func (swiftGlobals *swiftGlobalsStruct) up(confMap conf.ConfMap) (err error) {
-	var (
-		checkpointHeader *checkpointHeaderV1Struct
-		flowControlName  string
-		volume           *swiftVolumeStruct
-		volumeName       string
-	)
-
-	// Init volume database(s)
-
-	swiftGlobals.volumeMap = make(map[string]*swiftVolumeStruct)
-
-	for _, volumeName = range globals.volumeList {
-		volume = &swiftVolumeStruct{volumeName: volumeName, checkpointIntervalsSinceCompaction: 0, checkpointCompactorObjectNumberLimit: 0, checkpointObjectNumber: 0, checkpointGateWaitGroup: nil, checkpointDoneWaitGroup: nil, needFullClone: false}
-
-		volume.inodeRec = &bPlusTreeStruct{volume: volume, structType: inodeRecStructType}
-		volume.logSegmentRec = &bPlusTreeStruct{volume: volume, structType: logSegmentRecStructType}
-		volume.bPlusTreeObject = &bPlusTreeStruct{volume: volume, structType: bPlusTreeObjectStructType}
-
-		volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
-		if nil != err {
-			return
-		}
-
-		flowControlName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
-		if nil != err {
-			return
-		}
-
-		volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlName, "MaxFlushSize")
-		if nil != err {
-			return
-		}
-
-		volume.nonceValuesToReserve, err = confMap.FetchOptionValueUint16(volumeName, "NonceValuesToReserve")
-		if nil != err {
-			return
-		}
-
-		volume.maxInodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxInodesPerMetadataNode")
-		if nil != err {
-			// TODO: eventually, just return
-			volume.maxInodesPerMetadataNode = 32
-		}
-
-		volume.maxLogSegmentsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxLogSegmentsPerMetadataNode")
-		if nil != err {
-			// TODO: eventually, just return
-			volume.maxLogSegmentsPerMetadataNode = 64
-		}
-
-		volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxDirFileNodesPerMetadataNode")
-		if nil != err {
-			// TODO: eventually, just return
-			volume.maxDirFileNodesPerMetadataNode = 16
-		}
-
-		volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeName, "CheckpointContainerName")
-		if nil != err {
-			return
-		}
-
-		volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeName, "CheckpointInterval")
-		if nil != err {
-			return
-		}
-
-		volume.checkpointIntervalsPerCompaction, err = confMap.FetchOptionValueUint64(volumeName, "CheckpointIntervalsPerCompaction")
-		if nil != err {
-			return
-		}
-
-		checkpointHeader = &checkpointHeaderV1Struct{volume: volume}
-
-		err = checkpointHeader.get()
-		if nil != err {
-			return
-		}
-
-		volume.lastSuccessfulCheckpointHeaderPut = checkpointHeader
-
-		volume.inodeRec.objectNumber = checkpointHeader.inodeRecBPlusTreeObjectNumber
-		volume.inodeRec.objectOffset = checkpointHeader.inodeRecBPlusTreeObjectOffset
-		volume.inodeRec.objectLength = checkpointHeader.inodeRecBPlusTreeObjectLength
-
-		volume.logSegmentRec.objectNumber = checkpointHeader.logSegmentRecBPlusTreeObjectNumber
-		volume.logSegmentRec.objectOffset = checkpointHeader.logSegmentRecBPlusTreeObjectOffset
-		volume.logSegmentRec.objectLength = checkpointHeader.logSegmentRecBPlusTreeObjectLength
-
-		volume.bPlusTreeObject.objectNumber = checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber
-		volume.bPlusTreeObject.objectOffset = checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset
-		volume.bPlusTreeObject.objectLength = checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength
-
-		volume.reservedToNonce = checkpointHeader.reservedToNonce
-
-		volume.nextNonce = volume.reservedToNonce // This will trigger a Nonce pool population on next FetchNonce() call
-
-		if 0 == volume.inodeRec.objectNumber {
-			volume.inodeRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxInodesPerMetadataNode, sortedmap.CompareUint64, volume.inodeRec)
-		} else {
-			volume.inodeRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.inodeRec.objectNumber, volume.inodeRec.objectOffset, volume.inodeRec.objectLength, sortedmap.CompareUint64, volume.inodeRec)
-			if nil != err {
-				return
-			}
-		}
-		if 0 == volume.logSegmentRec.objectNumber {
-			volume.logSegmentRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxLogSegmentsPerMetadataNode, sortedmap.CompareUint64, volume.logSegmentRec)
-		} else {
-			volume.logSegmentRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.logSegmentRec.objectNumber, volume.logSegmentRec.objectOffset, volume.logSegmentRec.objectLength, sortedmap.CompareUint64, volume.logSegmentRec)
-			if nil != err {
-				return
-			}
-		}
-		if 0 == volume.bPlusTreeObject.objectNumber {
-			volume.bPlusTreeObject.bPlusTree = sortedmap.NewBPlusTree(volume.maxDirFileNodesPerMetadataNode, sortedmap.CompareUint64, volume.bPlusTreeObject)
-		} else {
-			volume.bPlusTreeObject.bPlusTree, err = sortedmap.OldBPlusTree(volume.bPlusTreeObject.objectNumber, volume.bPlusTreeObject.objectOffset, volume.bPlusTreeObject.objectLength, sortedmap.CompareUint64, volume.bPlusTreeObject)
-			if nil != err {
-				return
-			}
-		}
-
-		volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
-
-		swiftGlobals.volumeMap[volumeName] = volume
-
-		go volume.checkpointDaemon()
-	}
-
-	return
-}
-
-func (swiftGlobals *swiftGlobalsStruct) down() (err error) {
-	var (
-		checkpointRequest checkpointRequestStruct
-		volume            *swiftVolumeStruct
-	)
-
-	// Do final checkpoint on every Volume
-
-	checkpointRequest.exitOnCompletion = true
-
-	for _, volume = range swiftGlobals.volumeMap {
-		checkpointRequest.waitGroup.Add(1)
-		volume.checkpointRequestChan <- &checkpointRequest
-		checkpointRequest.waitGroup.Wait()
-		if nil != checkpointRequest.err {
-			err = checkpointRequest.err
-			return
-		}
-	}
-
-	// All done - successfully exit
-
-	err = nil
-	return
-}
 
 func (checkpointHeader *checkpointHeaderV1Struct) get() (err error) {
 	var (
@@ -439,19 +180,6 @@ func (checkpointHeader *checkpointHeaderV1Struct) put() (err error) {
 	return
 }
 
-func (swiftGlobals *swiftGlobalsStruct) fetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error) {
-	volume, ok := swiftGlobals.volumeMap[volumeName]
-	if !ok {
-		err = fmt.Errorf("FetchVolumeHandle(\"%v\") unable to find volume", volumeName)
-		return
-	}
-
-	volumeHandle = volume
-	err = nil
-
-	return
-}
-
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.
 //
 // Each checkpoint, the "live" B+Tree's implementing the state of headhunter are
@@ -467,7 +195,7 @@ func (swiftGlobals *swiftGlobalsStruct) fetchVolumeHandle(volumeName string) (vo
 // be lost in certain cases. To avoid that, we must ensure every node of each
 // B+Tree is DIRTY such that a subsequent Clone() will fully replicate the B+Tree
 // at that point and not miss any changes that failed to be recorded previously.
-func (volume *swiftVolumeStruct) checkpointDaemon() {
+func (volume *volumeStruct) checkpointDaemon() {
 	var (
 		checkpointHeader                              *checkpointHeaderV1Struct
 		checkpointRequest                             *checkpointRequestStruct
@@ -749,7 +477,7 @@ func (volume *swiftVolumeStruct) checkpointDaemon() {
 	}
 }
 
-func (volume *swiftVolumeStruct) checkpointCompactor() {
+func (volume *volumeStruct) checkpointCompactor() {
 	var (
 		err                                             error
 		lastWorkingCheckpointCompactorObjectNumberLimit uint64
@@ -978,7 +706,7 @@ func (bPT *bPlusTreeStruct) UnpackValue(payloadData []byte) (value sortedmap.Val
 	return
 }
 
-func (volume *swiftVolumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup) {
+func (volume *volumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup) {
 	volume.Lock()
 	if nil == volume.checkpointDoneWaitGroup {
 		volume.checkpointDoneWaitGroup = &sync.WaitGroup{}
@@ -989,7 +717,7 @@ func (volume *swiftVolumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.Wa
 	return
 }
 
-func (volume *swiftVolumeStruct) FetchNextCheckPointGateWaitGroup() (wg *sync.WaitGroup) {
+func (volume *volumeStruct) FetchNextCheckPointGateWaitGroup() (wg *sync.WaitGroup) {
 	volume.Lock()
 	if nil == volume.checkpointGateWaitGroup {
 		volume.checkpointGateWaitGroup = &sync.WaitGroup{}
@@ -1000,7 +728,7 @@ func (volume *swiftVolumeStruct) FetchNextCheckPointGateWaitGroup() (wg *sync.Wa
 	return
 }
 
-func (volume *swiftVolumeStruct) FetchNonce() (nonce uint64, err error) {
+func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 	volume.Lock()
 
 	for volume.nextNonce == volume.reservedToNonce {
@@ -1026,7 +754,7 @@ func (volume *swiftVolumeStruct) FetchNonce() (nonce uint64, err error) {
 	return
 }
 
-func (volume *swiftVolumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
+func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
 	volume.Lock()
 	valueAsValue, ok, err := volume.inodeRec.bPlusTree.GetByKey(inodeNumber)
 	if nil != err {
@@ -1047,7 +775,7 @@ func (volume *swiftVolumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, 
 	return
 }
 
-func (volume *swiftVolumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
+func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -1070,7 +798,7 @@ func (volume *swiftVolumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (
 	return
 }
 
-func (volume *swiftVolumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
+func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
 	if len(inodeNumbers) != len(values) {
 		err = fmt.Errorf("InodeNumber and Values array don't match")
 		return
@@ -1105,7 +833,7 @@ func (volume *swiftVolumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]
 	return
 }
 
-func (volume *swiftVolumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
+func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 	volume.Lock()
 	_, err = volume.inodeRec.bPlusTree.DeleteByKey(inodeNumber)
 	volume.Unlock()
@@ -1113,7 +841,7 @@ func (volume *swiftVolumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) 
 	return
 }
 
-func (volume *swiftVolumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
+func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 	volume.Lock()
 	valueAsValue, ok, err := volume.logSegmentRec.bPlusTree.GetByKey(logSegmentNumber)
 	if nil != err {
@@ -1134,7 +862,7 @@ func (volume *swiftVolumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (valu
 	return
 }
 
-func (volume *swiftVolumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error) {
+func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error) {
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -1157,7 +885,7 @@ func (volume *swiftVolumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value
 	return
 }
 
-func (volume *swiftVolumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
+func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
 	volume.Lock()
 	_, err = volume.logSegmentRec.bPlusTree.DeleteByKey(logSegmentNumber)
 	volume.Unlock()
@@ -1165,7 +893,7 @@ func (volume *swiftVolumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (e
 	return
 }
 
-func (volume *swiftVolumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
+func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
 	volume.Lock()
 	valueAsValue, ok, err := volume.bPlusTreeObject.bPlusTree.GetByKey(objectNumber)
 	if nil != err {
@@ -1186,7 +914,7 @@ func (volume *swiftVolumeStruct) GetBPlusTreeObject(objectNumber uint64) (value 
 	return
 }
 
-func (volume *swiftVolumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte) (err error) {
+func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte) (err error) {
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -1209,7 +937,7 @@ func (volume *swiftVolumeStruct) PutBPlusTreeObject(objectNumber uint64, value [
 	return
 }
 
-func (volume *swiftVolumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
+func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
 	volume.Lock()
 	_, err = volume.bPlusTreeObject.bPlusTree.DeleteByKey(objectNumber)
 	volume.Unlock()
@@ -1217,7 +945,7 @@ func (volume *swiftVolumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err
 	return
 }
 
-func (volume *swiftVolumeStruct) DoCheckpoint() (err error) {
+func (volume *volumeStruct) DoCheckpoint() (err error) {
 	var (
 		checkpointRequest checkpointRequestStruct
 	)
