@@ -485,17 +485,17 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerName)
 			return
 		}
-		volume.physicalContainerLayoutSet = nil
-		volume.physicalContainerNamePrefixSet = nil
-		volume.physicalContainerLayoutMap = nil
+		volume.physicalContainerLayoutSet = make(map[string]struct{})
+		volume.physicalContainerNamePrefixSet = make(map[string]struct{})
+		volume.physicalContainerLayoutMap = make(map[string]*physicalContainerLayoutStruct)
 		volume.defaultPhysicalContainerLayout = nil
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
 		}
 		volume.flowControl = nil
-		volume.inodeCache = nil
-		volume.inFlightFileInodeDataMap = nil
+		volume.inodeCache = make(map[InodeNumber]*inMemoryInodeStruct)
+		volume.inFlightFileInodeDataMap = make(map[InodeNumber]*inMemoryInodeStruct)
 	}
 
 	err = nil
