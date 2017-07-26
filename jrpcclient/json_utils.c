@@ -389,3 +389,18 @@ const char* jsonrpc_get_resp_array_str_value(jsonrpc_context_t* ctx,
 //    DPRINTF("Returned %s: %d %s\n", array_key, index, value);
     return value;
 }
+
+int jsonrpc_get_resp_array_length(jsonrpc_context_t *ctx,
+                                  char              *array_key)
+{
+    if (array_key == NULL) {
+        return 0;
+    }
+
+    json_object* dobj = jsonrpc_get_resp_obj(ctx, array_key);
+
+    int num_entries = json_object_array_length(dobj);
+
+    return num_entries;
+
+}
