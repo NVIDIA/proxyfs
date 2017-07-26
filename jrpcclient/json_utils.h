@@ -33,6 +33,7 @@ uint64_t    jsonrpc_get_resp_array_uint64(jsonrpc_context_t* ctx, char* array_ke
 int         jsonrpc_get_resp_array_int(jsonrpc_context_t* ctx, char* array_key, int index, char* key);
 const char* jsonrpc_get_resp_array_str(jsonrpc_context_t* ctx, char* array_key, int index, char* key);
 const char* jsonrpc_get_resp_array_str_value(jsonrpc_context_t* ctx, char* array_key, int index);
+int         jsonrpc_get_resp_array_length(jsonrpc_context_t *ctx, char *array_key);
 
 // Callbacks
 typedef void (*jsonrpc_done_callback_t)(void* in_cookie);

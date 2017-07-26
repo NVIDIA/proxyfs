@@ -817,11 +817,15 @@ static int proxyfs_list_xattr1(mount_handle_t* in_mount_handle,
     // Call RPC
     int rsp_status = jsonrpc_exec_request_blocking(ctx);
     if (rsp_status == 0) {
-        *out_attr_list_size = jsonrpc_get_resp_uint64(ctx, ptable[ATTRVALUESIZE]);
-        if (*out_attr_list_size == 0) {
+        *out_attr_list_size = 0;
+
+        int num_entries = jsonrpc_get_resp_array_length(ctx, ptable[ATTRNAMES]);
+        if (num_entries <= 0) {
             jsonrpc_close(ctx);
             return rsp_status;
         }
+
+        *out_attr_list_size = (size_t)num_entries;
 
         out_attr_list = (char **)malloc((*out_attr_list_size) * sizeof(char *));
         int i = 0;

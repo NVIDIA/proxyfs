@@ -1109,7 +1109,6 @@ func (s *Server) RpcListXAttrPath(in *ListXAttrPathRequest, reply *ListXAttrRepl
 		return
 	}
 
-	reply.AttrNamesCount = uint64(len(reply.AttrNames))
 	return
 }
 
