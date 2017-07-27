@@ -339,7 +339,7 @@ static int vfs_proxyfs_statvfs(struct vfs_handle_struct *handle,
 	vfs_statvfs->TotalFileNodes = stat_vfs->f_files;
 	vfs_statvfs->FreeFileNodes = stat_vfs->f_ffree;
 	vfs_statvfs->FsIdentifier = stat_vfs->f_fsid;
-	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS | FILE_NAMED_STREAMS;
+	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
 
     free(stat_vfs);
 
