@@ -26,12 +26,18 @@ func serveHTTP() {
 }
 
 func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	switch request.Method {
-	case http.MethodGet:
-		doGet(responseWriter, request)
-	default:
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+	globals.Lock()
+	if globals.active {
+		switch request.Method {
+		case http.MethodGet:
+			doGet(responseWriter, request)
+		default:
+			responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	} else {
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
 	}
+	globals.Unlock()
 }
 
 func doGet(responseWriter http.ResponseWriter, request *http.Request) {
@@ -109,7 +115,6 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 }
 
 func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
-	globals.Lock()
 	responseWriter.Header().Add("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
 	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
@@ -122,7 +127,7 @@ func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
 	for i := 0; i < numVolumes; i++ {
 		_, volumeAsValue, ok, nonShadowingErr := globals.volumeLLRB.GetByIndex(i)
 		if nil != nonShadowingErr {
-			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", i, err))
+			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", i, nonShadowingErr))
 		}
 		if !ok {
 			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) returned ok == false", i))
@@ -193,17 +198,14 @@ func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
 		volume.Unlock()
 	}
 	_, _ = responseWriter.Write(utils.StringToByteSlice("</table>\n"))
-	globals.Unlock()
 }
 
 func doGetOfFSCKStart(responseWriter http.ResponseWriter, request *http.Request, volumeName string, interactive bool) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -234,17 +236,14 @@ func doGetOfFSCKStart(responseWriter http.ResponseWriter, request *http.Request,
 		}
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfFSCKStatus(responseWriter http.ResponseWriter, request *http.Request, volumeName string) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -269,17 +268,14 @@ func doGetOfFSCKStatus(responseWriter http.ResponseWriter, request *http.Request
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfFSCKStop(responseWriter http.ResponseWriter, request *http.Request, volumeName string, interactive bool) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -319,7 +315,6 @@ func doGetOfFSCKStop(responseWriter http.ResponseWriter, request *http.Request, 
 		}
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {

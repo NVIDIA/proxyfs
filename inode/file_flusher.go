@@ -11,6 +11,17 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func capReadCache(flowControl *flowControlStruct) {
+	flowControl.Lock()
+
+	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
+		flowControl.readCacheLRU.next = nil
+	}
+
+	flowControl.Unlock()
+}
+
 func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
@@ -123,7 +134,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					prev:         nil,
 					cacheLine:    cacheLine,
 				}
-				vS.flowControl.Lock()
+				flowControl.Lock()
 				// If the readCache size is at or greater than the limit, delete something.
 				if uint64(len(flowControl.readCache)) >= flowControl.readCacheLineCount {
 					// Purge LRU element
@@ -238,7 +249,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheHitOps)
 					} else {
-						vS.flowControl.Unlock()
+						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheMissOps)
 						// Make readCacheHit true (at MRU, likely kicking out LRU)
 						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
@@ -264,7 +275,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 								flowControl.readCacheMRU = nil
 								flowControl.readCacheLRU = nil
 							} else {
-								flowControl.readCacheLRU = vS.flowControl.readCacheLRU.prev
+								flowControl.readCacheLRU = flowControl.readCacheLRU.prev
 								flowControl.readCacheLRU.next = nil
 							}
 						}
@@ -350,6 +361,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
 		}
+
 		openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(openLogSegment.accountName, openLogSegment.containerName, openLogSegment.objectName)
 		if nil != err {
 			fileInode.Unlock()
@@ -359,6 +371,10 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 
 		fileInodeFlusher.logSegmentsMap[openLogSegment.logSegmentNumber] = openLogSegment
 		fileInodeFlusher.openLogSegment = openLogSegment
+
+		vS.Lock()
+		vS.inFlightFileInodeDataMap[fileInode.InodeNumber] = fileInode
+		vS.Unlock()
 	} else {
 		openLogSegment = fileInodeFlusher.openLogSegment
 	}
@@ -420,6 +436,10 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	fileInode.fileInodeFlusher = nil
 
+	vS.Lock()
+	delete(vS.inFlightFileInodeDataMap, fileInode.InodeNumber)
+	vS.Unlock()
+
 	return
 }
 
@@ -470,7 +490,6 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	// Terminate Chunked PUT
 	err = inFlightLogSegment.Close()
 	if nil != err {
-		// Chunked PUT failed... TODO: retry this here
 		err = blunder.AddError(err, blunder.InodeFlushError)
 		fileInodeFlusher.fileInode.Lock()
 		fileInodeFlusher.errors = append(fileInodeFlusher.errors, err)

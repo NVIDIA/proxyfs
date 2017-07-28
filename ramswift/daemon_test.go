@@ -10,50 +10,45 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
 func TestViaNoAuthClient(t *testing.T) {
-	confStrings := []string{
-		"SwiftClient.NoAuthTCPPort=9999",
-		"Cluster.WhoAmI=Peer0",
-		"FSGlobals.VolumeList=",
-		"RamSwiftInfo.MaxAccountNameLength=256",
-		"RamSwiftInfo.MaxContainerNameLength=256",
-		"RamSwiftInfo.MaxObjectNameLength=1024",
-	}
-
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	const (
+		noAuthTCPPort = "9999"
+	)
+	var (
+		confStrings = []string{
+			"SwiftClient.NoAuthTCPPort=" + noAuthTCPPort,
+			"Cluster.WhoAmI=Peer0",
+			"FSGlobals.VolumeList=",
+			"RamSwiftInfo.MaxAccountNameLength=256",
+			"RamSwiftInfo.MaxContainerNameLength=256",
+			"RamSwiftInfo.MaxObjectNameLength=1024",
+		}
+		err          error
+		httpRequest  *http.Request
+		httpResponse *http.Response
+		readBuf      []byte
+	)
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
-	go Daemon(confMap, &signalHandlerIsArmed, doneChan)
+	go Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Setup urlPrefix to be "http://127.0.0.1:<Swift.NoAuthTCPPort>/v1/"
+	// Setup urlPrefix to be "http://127.0.0.1:<SwiftClient.NoAuthTCPPort>/v1/"
 
-	noAuthTCPPort, err := confMap.FetchOptionValueString("SwiftClient", "NoAuthTCPPort")
-	if nil != err {
-		t.Fatalf("Error fetching Swift.NoAuthTCPPort: %v", err)
-	}
 	urlForInfo := "http://127.0.0.1:" + noAuthTCPPort + "/info"
 	urlPrefix := "http://127.0.0.1:" + noAuthTCPPort + "/v1/"
 
-	// Setup http.Client, http.Request, http.Response, readBuf, and writeBuf that we will use for all HTTP requests
+	// Setup http.Client that we will use for all HTTP requests
 
 	httpClient := &http.Client{}
-	var httpRequest *http.Request
-	var httpResponse *http.Response
-	var readBuf []byte
 
 	// Send a GET for "/info" expecting [RamSwiftInfo] data in compact JSON form
 

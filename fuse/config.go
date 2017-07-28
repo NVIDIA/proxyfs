@@ -25,7 +25,8 @@ type mountPointStruct struct {
 }
 
 type globalsStruct struct {
-	mountPointMap map[string]*mountPointStruct
+	whoAmI        string
+	mountPointMap map[string]*mountPointStruct // key == mountPointStruct.mountPointName
 }
 
 var globals globalsStruct
@@ -33,16 +34,11 @@ var globals globalsStruct
 func Up(confMap conf.ConfMap) (err error) {
 	var (
 		alreadyInMountPointMap bool
-		conn                   *fuselib.Conn
-		endingInodeNumber      uint64
-		mountHandle            fs.MountHandle
 		mountPoint             *mountPointStruct
 		mountPointName         string
 		primaryPeerName        string
-		startingInodeNumber    uint64
 		volumeName             string
 		volumeNameSlice        []string
-		whoAmI                 string
 	)
 
 	globals.mountPointMap = make(map[string]*mountPointStruct)
@@ -52,7 +48,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		return
 	}
@@ -63,7 +59,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		if primaryPeerName == whoAmI {
+		if primaryPeerName == globals.whoAmI {
 			mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
 			if nil != err {
 				return
@@ -83,65 +79,125 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	// If we reach here, we succeeded importing confMap
 
-	for mountPointName, mountPoint = range globals.mountPointMap {
-		if platform.IsDarwin {
-			startingInodeNumber, err = fetchInodeNumber(mountPointName)
+	for _, mountPoint = range globals.mountPointMap {
+		err = performMount(mountPoint)
+		if nil != err {
+			return
+		}
+	}
+
+	err = nil
+	return
+}
+
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	var (
+		mountPoint       *mountPointStruct
+		ok               bool
+		primaryPeerName  string
+		removedVolumeMap map[string]*mountPointStruct // key == volumeName
+		volumeList       []string
+		volumeName       string
+		whoAmI           string
+	)
+
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
+		return
+	}
+	if whoAmI != globals.whoAmI {
+		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
+		return
+	}
+
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
+		return
+	}
+
+	removedVolumeMap = make(map[string]*mountPointStruct)
+
+	for _, mountPoint = range globals.mountPointMap {
+		removedVolumeMap[mountPoint.volumeName] = mountPoint
+	}
+
+	for _, volumeName = range volumeList {
+		_, ok = removedVolumeMap[volumeName]
+		if ok {
+			primaryPeerName, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
 			if nil != err {
-				logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case One]", mountPointName)
-				continue
+				return
+			}
+
+			if primaryPeerName == globals.whoAmI {
+				delete(removedVolumeMap, volumeName)
+			}
+		}
+	}
+
+	for volumeName, mountPoint = range removedVolumeMap {
+		if mountPoint.mounted {
+			err = fuselib.Unmount(mountPoint.mountPointName)
+			if nil == err {
+				logger.Infof("Unmounted %v", mountPoint.mountPointName)
+			} else {
+				lazyUnmountCmd := exec.Command("fusermount", "-uz", mountPoint.mountPointName)
+				err = lazyUnmountCmd.Run()
+				if nil == err {
+					logger.Infof("Lazily unmounted %v", mountPoint.mountPointName)
+				} else {
+					logger.Infof("Unable to lazily unmount %v - got err == %v", mountPoint.mountPointName, err)
+				}
 			}
 		}
 
-		conn, err = fuselib.Mount(
-			mountPointName,
-			fuselib.FSName(mountPointName),
-			fuselib.AllowOther(),
-			// OS X specific—
-			fuselib.LocalVolume(),
-			fuselib.VolumeName(mountPointName),
-		)
+		delete(globals.mountPointMap, mountPoint.mountPointName)
+	}
 
-		if nil != err {
-			logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Two]", mountPointName)
-			continue
-		}
+	err = nil
+	return
+}
 
-		mountHandle, err = fs.Mount(mountPoint.volumeName, fs.MountOptions(0))
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	var (
+		mountPoint      *mountPointStruct
+		mountPointName  string
+		ok              bool
+		primaryPeerName string
+		volumeList      []string
+		volumeName      string
+	)
+
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
+		return
+	}
+
+	for _, volumeName = range volumeList {
+		primaryPeerName, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		fs := &ProxyFUSE{mountHandle: mountHandle}
-
-		go func(mountPointName string, conn *fuselib.Conn) {
-			logger.Infof("Serving %v", mountPointName)
-			defer conn.Close()
-			fusefslib.Serve(conn, fs)
-		}(mountPointName, conn)
-
-		if platform.IsDarwin {
-			for {
-				endingInodeNumber, err = fetchInodeNumber(mountPointName)
-				if nil != err {
-					logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Three]", mountPointName)
-					continue
-				}
-
-				if startingInodeNumber != endingInodeNumber { // Indicates the FUSE Mount has completed
-					mountPoint.mounted = true
-					break
-				}
-
-				time.Sleep(10 * time.Millisecond) // Try again in a bit
+		if primaryPeerName == globals.whoAmI {
+			mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
+			if nil != err {
+				return
 			}
-		} else { // platform.IsLinux
-			for {
-				if isMountPoint(mountPointName) {
-					mountPoint.mounted = true
-					break
-				}
 
-				time.Sleep(10 * time.Millisecond) // Try again in a bit
+			_, ok = globals.mountPointMap[mountPointName]
+			if !ok {
+				mountPoint = &mountPointStruct{mountPointName: mountPointName, volumeName: volumeName, mounted: false}
+
+				globals.mountPointMap[mountPointName] = mountPoint
+
+				err = performMount(mountPoint)
+				if nil != err {
+					return
+				}
 			}
 		}
 	}
@@ -200,4 +256,79 @@ func fetchInodeNumber(path string) (inodeNumber uint64, err error) {
 	}
 	inodeNumber = uint64(stat.Ino)
 	return
+}
+
+func performMount(mountPoint *mountPointStruct) (err error) {
+	var (
+		conn                *fuselib.Conn
+		endingInodeNumber   uint64
+		mountHandle         fs.MountHandle
+		startingInodeNumber uint64
+	)
+
+	if platform.IsDarwin {
+		startingInodeNumber, err = fetchInodeNumber(mountPoint.mountPointName)
+		if nil != err {
+			logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case One]", mountPoint.mountPointName)
+			err = nil
+			return
+		}
+	}
+
+	conn, err = fuselib.Mount(
+		mountPoint.mountPointName,
+		fuselib.FSName(mountPoint.mountPointName),
+		fuselib.AllowOther(),
+		// OS X specific—
+		fuselib.LocalVolume(),
+		fuselib.VolumeName(mountPoint.mountPointName),
+	)
+
+	if nil != err {
+		logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Two]", mountPoint.mountPointName)
+		err = nil
+		return
+	}
+
+	mountHandle, err = fs.Mount(mountPoint.volumeName, fs.MountOptions(0))
+	if nil != err {
+		return
+	}
+
+	fs := &ProxyFUSE{mountHandle: mountHandle}
+
+	go func(mountPointName string, conn *fuselib.Conn) {
+		logger.Infof("Serving %v", mountPointName)
+		defer conn.Close()
+		fusefslib.Serve(conn, fs)
+	}(mountPoint.mountPointName, conn)
+
+	if platform.IsDarwin {
+		for {
+			endingInodeNumber, err = fetchInodeNumber(mountPoint.mountPointName)
+			if nil != err {
+				logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Three]", mountPoint.mountPointName)
+				err = nil
+				return
+			}
+
+			if startingInodeNumber != endingInodeNumber { // Indicates the FUSE Mount has completed
+				mountPoint.mounted = true
+				err = nil
+				return
+			}
+
+			time.Sleep(10 * time.Millisecond) // Try again in a bit
+		}
+	} else { // platform.IsLinux
+		for {
+			if isMountPoint(mountPoint.mountPointName) {
+				mountPoint.mounted = true
+				err = nil
+				return
+			}
+
+			time.Sleep(10 * time.Millisecond) // Try again in a bit
+		}
+	}
 }

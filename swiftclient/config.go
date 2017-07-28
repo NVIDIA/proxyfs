@@ -44,7 +44,7 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up reads the Swift configuration to enable subsequent communication.
+// Up reads the Swift configuration to enable subsequent communication
 func Up(confMap conf.ConfMap) (err error) {
 	var (
 		chunkedConnectionPoolSize    uint16
@@ -151,7 +151,21 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// Down terminates all outstanding communications as part of process shutdown.
+// PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
+// ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
+// Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
 	globals.pendingDeletes.Lock()
 

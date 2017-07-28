@@ -80,44 +80,44 @@ func exitWorkerLevel(level int) {
 }
 
 func incRunningWorkers() {
-	if !debugConcurrency {
-		return
+	globals.gate.RLock()
+
+	if debugConcurrency {
+		concWorkerLock.Lock()
+		timesIncWorkers++
+
+		// Record how long we spent in the previous level
+		exitWorkerLevel(numConcWorkers)
+
+		numConcWorkers++
+
+		// Time how long we are at this level start the clock
+		enterWorkerLevel(numConcWorkers)
+
+		if numConcWorkers > hwmConcWorkers {
+			hwmConcWorkers = numConcWorkers
+		}
+		concWorkerLock.Unlock()
 	}
-
-	concWorkerLock.Lock()
-	timesIncWorkers++
-
-	// Record how long we spent in the previous level
-	exitWorkerLevel(numConcWorkers)
-
-	numConcWorkers++
-
-	// Time how long we are at this level start the clock
-	enterWorkerLevel(numConcWorkers)
-
-	if numConcWorkers > hwmConcWorkers {
-		hwmConcWorkers = numConcWorkers
-	}
-	concWorkerLock.Unlock()
 }
 
 func decRunningWorkers() {
-	if !debugConcurrency {
-		return
+	if debugConcurrency {
+		concWorkerLock.Lock()
+		timesDecWorkers++
+
+		// Record how long we spent in the previous level
+		exitWorkerLevel(numConcWorkers)
+
+		numConcWorkers--
+
+		// Time how long we are at this level start the clock
+		enterWorkerLevel(numConcWorkers)
+
+		concWorkerLock.Unlock()
 	}
 
-	concWorkerLock.Lock()
-	timesDecWorkers++
-
-	// Record how long we spent in the previous level
-	exitWorkerLevel(numConcWorkers)
-
-	numConcWorkers--
-
-	// Time how long we are at this level start the clock
-	enterWorkerLevel(numConcWorkers)
-
-	concWorkerLock.Unlock()
+	globals.gate.RUnlock()
 }
 
 // It'd be nice if the time package supported a check for nil duration, but it doesn't.

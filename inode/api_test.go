@@ -79,12 +79,13 @@ func testSetup() (err error) {
 		"TestFlowControl.MaxFlushSize=10000000",
 		"TestFlowControl.MaxFlushTime=10s",
 		"TestFlowControl.ReadCacheLineSize=1000000",
-		"TestFlowControl.ReadCacheTotalSize=100000000",
+		"TestFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
 		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
 		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
 		"Peer0.PrivateIPAddr=localhost",
+		"Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
 		"TestVolume.FSID=1",
@@ -110,7 +111,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon(testConfMap, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

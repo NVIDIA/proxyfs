@@ -2,6 +2,7 @@
 package headhunter
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -25,6 +26,14 @@ type VolumeHandle interface {
 
 // FetchVolumeHandle is used to fetch a VolumeHandle to use when operating on a given volume's database
 func FetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error) {
-	volumeHandle, err = globals.variantHandle.fetchVolumeHandle(volumeName)
+	volume, ok := globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("FetchVolumeHandle(\"%v\") unable to find volume", volumeName)
+		return
+	}
+
+	volumeHandle = volume
+	err = nil
+
 	return
 }
