@@ -1296,6 +1296,11 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Read(fileInodeNumber, 0, 4) returned unexpected testFileInodeData")
 	}
 
+	preResizeMetadata, err := testVolumeHandle.GetMetadata(fileInodeNumber)
+	if nil != err {
+		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
+	}
+
 	testMetadata.Size = 0
 	err = testVolumeHandle.SetSize(fileInodeNumber, testMetadata.Size)
 	if nil != err {
@@ -1307,6 +1312,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataSizeField, "GetMetadata() after SetSize()")
+	checkMetadataTimeChanges(t, preResizeMetadata, postMetadata, false, true, true, true, "SetSize changed metadata times inappropriately")
 
 	err = testVolumeHandle.Flush(fileInodeNumber, true)
 	if nil != err {
@@ -2044,7 +2050,7 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterLink.AccessTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AccessTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.AccessTime unexpected")
 	}
-	if !dirInodeMetadataAfterLink.AttrChangeTime.Equal(dirInodeMetadataAfterDeleteStream.AttrChangeTime) {
+	if dirInodeMetadataAfterLink.AttrChangeTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AttrChangeTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.AttrChangeTime unexpected")
 	}
 	if !dirInodeMetadataAfterLink.AccessTime.Equal(dirInodeMetadataAfterLink.ModificationTime) {
@@ -2142,7 +2148,7 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterUnlink.AccessTime.Before(timeAfterMove) || dirInodeMetadataAfterUnlink.AccessTime.After(timeAfterUnlink) {
 		t.Fatalf("dirInodeMetadataAfterUnlink.AccessTime unexpected")
 	}
-	if !dirInodeMetadataAfterUnlink.AttrChangeTime.Equal(dirInodeMetadataAfterMove.AttrChangeTime) {
+	if dirInodeMetadataAfterUnlink.AttrChangeTime.Before(timeAfterMove) || dirInodeMetadataAfterUnlink.AttrChangeTime.After(timeAfterUnlink) {
 		t.Fatalf("dirInodeMetadataAfterUnlink.AttrChangeTime unexpected")
 	}
 	if !dirInodeMetadataAfterUnlink.AccessTime.Equal(dirInodeMetadataAfterUnlink.ModificationTime) {
@@ -2223,7 +2229,7 @@ func TestAPI(t *testing.T) {
 	if fileInodeMetadataAfterWrote.AccessTime.Before(timeAfterWrite) || fileInodeMetadataAfterWrote.AccessTime.After(timeAfterWrote) {
 		t.Fatalf("fileInodeMetadataAfterWrote.AccessTime unexpected")
 	}
-	if !fileInodeMetadataAfterWrote.AttrChangeTime.Equal(fileInodeMetadataAfterWrite.AttrChangeTime) {
+	if fileInodeMetadataAfterWrote.AttrChangeTime.Before(timeAfterWrite) || fileInodeMetadataAfterWrote.AttrChangeTime.After(timeAfterWrote) {
 		t.Fatalf("fileInodeMetadataAfterWrote.AttrChangeTime unexpected")
 	}
 	if !fileInodeMetadataAfterWrote.AccessTime.Equal(fileInodeMetadataAfterWrote.ModificationTime) {
@@ -2255,7 +2261,7 @@ func TestAPI(t *testing.T) {
 	if fileInodeMetadataAfterSetSize.AccessTime.Before(timeAfterWrote) || fileInodeMetadataAfterSetSize.AccessTime.After(timeAfterSetSize) {
 		t.Fatalf("fileInodeMetadataAfterSetSize.AccessTime unexpected")
 	}
-	if !fileInodeMetadataAfterSetSize.AttrChangeTime.Equal(fileInodeMetadataAfterWrote.AttrChangeTime) {
+	if fileInodeMetadataAfterSetSize.AttrChangeTime.Before(timeAfterWrote) || fileInodeMetadataAfterSetSize.AttrChangeTime.After(timeAfterSetSize) {
 		t.Fatalf("fileInodeMetadataAfterSetSize.AttrChangeTime unexpected")
 	}
 	if !fileInodeMetadataAfterSetSize.AccessTime.Equal(fileInodeMetadataAfterSetSize.ModificationTime) {

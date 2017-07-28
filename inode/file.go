@@ -149,6 +149,7 @@ func setSizeInMemory(fileInode *inMemoryInodeStruct, size uint64) (err error) {
 	updateTime := time.Now()
 	fileInode.ModificationTime = updateTime
 	fileInode.AccessTime = updateTime
+	fileInode.AttrChangeTime = updateTime
 	return
 }
 
