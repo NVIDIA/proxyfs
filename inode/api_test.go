@@ -1295,7 +1295,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Read(fileInodeNumber, 0, 4) returned unexpected testFileInodeData")
 	}
 
-	// var preResizeMetadata *MetadataStruct
 	preResizeMetadata, err := testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
