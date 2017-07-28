@@ -388,9 +388,9 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	// Pause a few milliseconds between operations
 	time.Sleep(10 * time.Millisecond)
 
-	// Tell threads 1 to numThreads to loop doing 35 readdirs
+	// Tell threads 1 to numThreads to loop doing 50 readdirs
 	for i := 1; i < numThreads; i++ {
-		sendRequestToThread(i, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0)
+		sendRequestToThread(i, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 50, 0)
 	}
 
 	// Wait until threads 1 to numThreads complete
