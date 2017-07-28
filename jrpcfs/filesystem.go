@@ -1059,19 +1059,19 @@ func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
 	parentDir, basename := splitPath(in.Fullpath)
 
 	// Get the inode for the (source) parent dir
-	src_ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
+	srcIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
 	if err != nil {
 		return
 	}
 
-	// Get the inode for the target dir
-	tgt_ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.TargetFullpath)
+	// Get the inode for the target
+	tgtIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.TargetFullpath)
 	if err != nil {
 		return
 	}
 
 	// Do the link
-	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, src_ino, basename, tgt_ino)
+	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, srcIno, basename, tgtIno)
 	return
 }
 

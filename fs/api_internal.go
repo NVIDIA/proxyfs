@@ -489,6 +489,11 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
+	err = validateBaseName(basename)
+	if err != nil {
+		return
+	}
+
 	// We need both dirInodelock and the targetInode lock to make sure they don't go away and linkCount is updated correctly.
 	callerID := dlm.GenerateCallerID()
 	dirInodeLock, err := mS.initInodeLock(dirInodeNumber, callerID)
@@ -1627,6 +1632,16 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
+	err = validateBaseName(srcBasename)
+	if err != nil {
+		return
+	}
+
+	err = validateBaseName(dstBasename)
+	if err != nil {
+		return
+	}
+
 	// Flag to tell us if there's only one directory to be locked
 	srcAndDestDirsAreSame := srcDirInodeNumber == dstDirInodeNumber
 
