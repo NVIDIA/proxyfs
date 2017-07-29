@@ -9,7 +9,7 @@ SHARE_NFS=/mnt/nfs_proxyfs_mount/
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
 SHARE_SMB=/mnt/smb_proxyfs_mount
 
-mount -a
+sudo mount -a
 
 mountpoint -q $SHARE_NFS
 if [ $? -eq 0 ]; then
