@@ -1904,10 +1904,33 @@ static int vfs_proxyfs_get_real_filename(struct vfs_handle_struct *handle,
                                          const char *path, const char *name,
                                          TALLOC_CTX *mem_ctx, char **found_name)
 {
-	DEBUG(10, ("vfs_proxyfs_get_real_filename: %s\n", path));
-	errno = ENOTSUP;
-	return -1;
+	int ret;
+	char *val_buf = NULL;
+	size_t val_buf_size;
 
+    DEBUG(10, ("vfs_proxyfs_get_real_filename: %s\n", path));
+
+	if (strlen(name) >= NAME_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+
+	char *rpath = resolve_path(handle, path);
+
+	int err = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, name, (void **) &val_buf,
+		&val_buf_size);
+	free(rpath);
+	if (err == -1) {
+		errno = EOPNOTSUPP;
+		return -1;
+	}
+
+	*found_name = talloc_strdup(mem_ctx, val_buf);
+	if (found_name[0] == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+	return 0;
 }
 
 static const char *vfs_proxyfs_connectpath(struct vfs_handle_struct *handle,
