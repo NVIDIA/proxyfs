@@ -2,6 +2,7 @@ package inode
 
 import (
 	"testing"
+	"fmt"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -86,7 +87,17 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 
 	// the headhunter records got deleted, and ...
 	for _, segmentObjectLocation := range segmentObjectLocations {
-		_, objectGetErr := swiftclient.ObjectGet(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName, 0, 16)
+		var objectGetErr error
+
+		// wait for up to 100 sec for the object to be (async) deleted
+		for try := 0; try < 100; try++ {
+			_, objectGetErr = swiftclient.ObjectGet(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName, 0, 16)
+			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectGetErr)
+			if objectGetErr != nil {
+				break
+			}
+			time.Sleep(time.Second)
+		}
 		if objectGetErr == nil {
 			t.Errorf("expected object GET to fail for allegedly-deleted log segment object at %s/%s/%s", segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
 		}

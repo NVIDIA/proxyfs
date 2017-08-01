@@ -72,12 +72,14 @@ func testSetup() (err error) {
 		"Logging.LogFilePath=proxyfsd.log",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
+
 		"SwiftClient.RetryLimit=5",
 		"SwiftClient.RetryLimitObject=5",
 		"SwiftClient.RetryDelay=1s",
-		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryDelayObject=0.5s",
 		"SwiftClient.RetryExpBackoff=1.2",
-		"SwiftClient.RetryExpBackoffObject=2.0",
+		"SwiftClient.RetryExpBackoffObject=1.0",
+
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"TestFlowControl.MaxFlushSize=10000000",
