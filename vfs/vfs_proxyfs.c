@@ -447,6 +447,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 
 	if (sbuf != NULL) {
 		smb_stat_ex_from_stat(sbuf, &stats[0]);
+		free(stats);
 	}
 
 	dir->offset = dir_ent->d_off;
@@ -570,6 +571,7 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 		path = resolve_path(handle, smb_fname->base_name);
 		err = proxyfs_lookup_path(MOUNT_HANDLE(handle), path, &fd->inum);
 		if (err != 0) {
+			free(path);
 			free(fd);
 			errno = err;
 			return -1;
@@ -609,6 +611,7 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 		path = resolve_path(handle, smb_fname->base_name);
 		err = proxyfs_lookup_path(MOUNT_HANDLE(handle), path, &fd->inum);
 		if (err != 0) {
+			free(path);
 			free(fd);
 			errno = err;
 			return -1;
@@ -2247,6 +2250,7 @@ static int vfs_proxyfs_sys_acl_set_file(struct vfs_handle_struct *handle,
 	TALLOC_CTX *mem_ctx = talloc_init("proxyfs_set_acl");
 	if (!mem_ctx) {
 		DEBUG(10, ("Failed to initialize memory context for writing acl to xattr\n"));
+		free(rpath);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -2254,6 +2258,7 @@ static int vfs_proxyfs_sys_acl_set_file(struct vfs_handle_struct *handle,
 	DATA_BLOB blob = smb_acl_to_blob(theacl, mem_ctx);
 	if (!blob.data) {
 		DEBUG(1, ("Failed to get memory to convert acl to blob\n"));
+		free(rpath);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -2261,6 +2266,8 @@ static int vfs_proxyfs_sys_acl_set_file(struct vfs_handle_struct *handle,
 	int ret = proxyfs_set_xattr_path(MOUNT_HANDLE(handle), rpath, key, blob.data, blob.length, 0);
 	if (ret != 0) {
 		DEBUG(1, ("Failed to store acl blob in xattr\n"));
+		talloc_free(blob.data);
+		free(rpath);
 		errno = ret;
 		ret = -1;
 	}
