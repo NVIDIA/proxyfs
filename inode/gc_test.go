@@ -1,8 +1,8 @@
 package inode
 
 import (
-	"testing"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/swiftclient"
