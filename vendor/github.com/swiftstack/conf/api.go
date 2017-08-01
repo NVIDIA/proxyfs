@@ -167,17 +167,40 @@ func (confMap ConfMap) UpdateFromStrings(confStrings []string) (err error) {
 
 // UpdateFromFile modifies a pre-existing ConfMap based on updates specified in confFilePath
 func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
-	confFileBytes, err := ioutil.ReadFile(confFilePath)
-	if nil != err {
-		return
+	var (
+		absConfFilePath                          string
+		confFileBytes                            []byte
+		confFileBytesLineOffsetStart             int
+		confFileBytesOffset                      int
+		currentLine                              string
+		currentLineDotIncludeIncludePathStrings  []string
+		currentLineNumber                        int
+		currentLineOptionNameOptionValuesStrings []string
+		currentSection                           ConfMapSection
+		currentSectionName                       string
+		dirAbsConfFilePath                       string
+		found                                    bool
+		lastRune                                 rune
+		nestedConfFilePath                       string
+		optionName                               string
+		optionValues                             string
+		optionValuesSplit                        []string
+		runeSize                                 int
+	)
+
+	if "-" == confFilePath {
+		confFileBytes, err = ioutil.ReadAll(os.Stdin)
+		if nil != err {
+			return
+		}
+	} else {
+		confFileBytes, err = ioutil.ReadFile(confFilePath)
+		if nil != err {
+			return
+		}
 	}
 
-	var confFileBytesOffset int = 0
-	var confFileBytesLineOffsetStart int = 0 // Record where first line would start
-	var lastRune rune = '\n'
-	var runeSize int
-	var currentSectionName string = ""
-	var currentLineNumber int = 0
+	lastRune = '\n'
 
 	for len(confFileBytes) > confFileBytesOffset {
 		// Consume next rune
@@ -194,7 +217,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 			currentLineNumber += 1
 
 			if confFileBytesLineOffsetStart < confFileBytesOffset {
-				currentLine := string(confFileBytes[confFileBytesLineOffsetStart:confFileBytesOffset])
+				currentLine = string(confFileBytes[confFileBytesLineOffsetStart:confFileBytesOffset])
 
 				currentLine = strings.SplitN(currentLine, ";", 2)[0] // Trim comment after ';'
 				currentLine = strings.SplitN(currentLine, "#", 2)[0] // Trim comment after '#'
@@ -206,20 +229,19 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 					if includeLineRE.MatchString(currentLine) {
 						// Include found
 
-						currentLineDotIncludeIncludePathStrings := includeFilePathSeparatorRE.Split(currentLine, 2)
+						currentLineDotIncludeIncludePathStrings = includeFilePathSeparatorRE.Split(currentLine, 2)
 
-						nestedConfFilePath := currentLineDotIncludeIncludePathStrings[1]
+						nestedConfFilePath = currentLineDotIncludeIncludePathStrings[1]
 
 						if '/' != nestedConfFilePath[0] {
 							// Need to adjust for relative path
 
-							absConfFilePath, nonShadowingErr := filepath.Abs(confFilePath)
-							if nil != nonShadowingErr {
-								err = nonShadowingErr
+							absConfFilePath, err = filepath.Abs(confFilePath)
+							if nil != err {
 								return
 							}
 
-							dirAbsConfFilePath := filepath.Dir(absConfFilePath)
+							dirAbsConfFilePath = filepath.Dir(absConfFilePath)
 
 							nestedConfFilePath = dirAbsConfFilePath + "/" + nestedConfFilePath
 						}
@@ -253,12 +275,12 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 
 						// Option Line found, so extract Option Name and Option Values
 
-						currentLineOptionNameOptionValuesStrings := optionNameOptionValuesSeparatorRE.Split(currentLine, 2)
+						currentLineOptionNameOptionValuesStrings = optionNameOptionValuesSeparatorRE.Split(currentLine, 2)
 
-						optionName := currentLineOptionNameOptionValuesStrings[0]
-						optionValues := currentLineOptionNameOptionValuesStrings[1]
+						optionName = currentLineOptionNameOptionValuesStrings[0]
+						optionValues = currentLineOptionNameOptionValuesStrings[1]
 
-						optionValuesSplit := optionValueSeparatorRE.Split(optionValues, -1)
+						optionValuesSplit = optionValueSeparatorRE.Split(optionValues, -1)
 
 						if (1 == len(optionValuesSplit)) && ("" == optionValuesSplit[0]) {
 							// Handle special case where optionValuesSplit == []string{""}... changing it to []string{}
@@ -268,7 +290,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 
 						// Insert or Update confMap creating a new Section if necessary
 
-						currentSection, found := confMap[currentSectionName]
+						currentSection, found = confMap[currentSectionName]
 
 						if !found {
 							// Need to create the new Section
@@ -458,7 +480,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, o
 		return
 	}
 
-	optionValueFloat64Scaled := optionValueFloat64 * float64(multiplier)
+	optionValueFloat64Scaled := optionValueFloat64*float64(multiplier) + float64(0.5)
 
 	if optionValueFloat64Scaled >= float64(uint32(0xFFFFFFFF)) {
 		err = fmt.Errorf("[%v]%v after scaling won't fit in uint32", sectionName, optionName)
@@ -491,7 +513,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint64(sectionName string, o
 		return
 	}
 
-	optionValueFloat64Scaled := optionValueFloat64 * float64(multiplier)
+	optionValueFloat64Scaled := optionValueFloat64*float64(multiplier) + float64(0.5)
 
 	if optionValueFloat64Scaled >= float64(uint64(0xFFFFFFFFFFFFFFFF)) {
 		err = fmt.Errorf("[%v]%v after scaling won't fit in uint64", sectionName, optionName)

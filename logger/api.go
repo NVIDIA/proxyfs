@@ -22,9 +22,31 @@ import (
 
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/swiftstack/conf"
 )
 
 type Level int
+
+// Call to configure the logger.  This really should be done before using it,
+// but you can log things before calling.  However, they will not appear in
+// the logfile and will not be in the new text format.
+//
+// Config variables that affect logging include:
+//     Logging.LogFilePath        string       if present, pathname to log file
+//     Logging.LogToConsole       bool         if present and true, log to console as well as file
+//     Logging.TraceLevelLogging  stringslice  list of packages where tracing is enabled (name must
+//                                             also appear in packageTraceSettings)
+//     Logging.DebugLevelLogging  stringslice
+//
+func Up(confMap conf.ConfMap) (err error) {
+	return up(confMap)
+}
+
+// Call to shutdown logging (closes the logfile)
+//
+func Down() (err error) {
+	return down()
+}
 
 // Our logging levels - These are the different logging levels supported by this package.
 //
@@ -102,9 +124,14 @@ var debugLevelEnabled = false
 // considered to be enabled and trace logs for that package will be emitted. If the
 // package is in this list and is set to "false", OR if the package is not in this list,
 // trace logs for that package will NOT be emitted.
+//
+// Note: In order to enable tracing for a package using the "Logging.TraceLevelLogging"
+// config variable, the package must be in this map with a value of false (or true).
+//
 var packageTraceSettings = map[string]bool{
 	"jrpcfs": false,
 	"inode":  false,
+	"logger": false,
 }
 
 func setTraceLoggingLevel(confStrSlice []string) {
@@ -701,46 +728,38 @@ func (ctx *FuncCtx) traceInternal(formatPrefix string, argsPrefix string, args .
 
 	numParams := len(args)
 
-	// Default newArgs for zero params case
-	newArgs := args
-
 	// Build format string
 	format := formatPrefix
 
-	if numParams > 0 {
-		// prepend argsPrefix to the args that were passed in
-		newArgs = append([]interface{}{argsPrefix}, args...)
-
-		// Need to add argsPrefix into format string for all cases of numParams > 0
-		format += " %s"
-	}
+	// prepend argsPrefix to the args that were passed in
+	newArgs := append([]interface{}{argsPrefix}, args...)
 
 	// XXX TODO: make more generic, perhaps a for loop to add "%v" based on numParams
 	switch numParams {
 	case 0:
-		// Already handled above, nothing more to do
+		format += " %s"
 	case 1:
-		format += "%+v"
+		format += " %s %+v"
 	case 2:
-		format += "%+v %+v"
+		format += " %s %+v %+v"
 	case 3:
-		format += "%+v %+v %+v"
+		format += " %s %+v %+v %+v"
 	case 4:
-		format += "%+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v"
 	case 5:
-		format += "%+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v"
 	case 6:
-		format += "%+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v"
 	case 7:
-		format += "%+v %+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v %+v"
 	case 8:
-		format += "%+v %+v %+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v %+v %+v"
 	case 9:
-		format += "%+v %+v %+v %+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v %+v %+v %+v"
 	case 10:
-		format += "%+v %+v %+v %+v %+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v %+v %+v %+v %+v"
 	default:
-		format += "%+v %+v %+v %+v %+v %+v %+v %+v %+v %+v"
+		format += " %s %+v %+v %+v %+v %+v %+v %+v %+v %+v %+v"
 	}
 	ctx.log(TraceLevel, fmt.Sprintf(format, newArgs...))
 }
@@ -810,27 +829,40 @@ func (ctx FuncCtx) logWithID(level Level, id string, args ...interface{}) {
 	ctx.log(level, args...)
 }
 
-// multiWriter groups multiple io.Writers into a single io.Writer. (Our
-// immediate motivation for this is that logrus's SetOutput expects an
-// io.Writer, but we might want to log to both the console and a file in
-// development, and this seems potentially simpler in some aspects than
-// defining a Hook. We may want to revisit this judgement—again—later.
-type multiWriter struct {
-	writers []io.Writer
+// Add another target for log messages to be written to.  writer is an object
+// with an io.Writer interface that's called once for each log message.
+//
+// Logger.Up() must be called before this function is used.
+//
+func AddLogTarget(writer io.Writer) {
+	addLogTarget(writer)
 }
 
-func (mw *multiWriter) addWriter(writer io.Writer) {
-	mw.writers = append(mw.writers, writer)
+// An example of a log target that captures the most recent n lines of log into
+// an array.  Useful for writing test cases.
+//
+// There should really be a lock or clever RCU mechanism to coordinate
+// access/updates to the array, but its not really necessary for test case code
+// (and adds overhead).
+//
+type LogBuffer struct {
+	LogEntries   []string // most recent log entry is [0]
+	TotalEntries int      // count of all entries see
 }
 
-func (mw *multiWriter) Write(p []byte) (n int, err error) {
-	for _, writer := range mw.writers {
-		n, err = writer.Write(p)
-		// regrettably, the first thing that goes wrong determines our return
-		// values
-		if err != nil {
-			return
-		}
-	}
-	return
+type LogTarget struct {
+	LogBuf *LogBuffer
+}
+
+// Initialize a LogTarget to hold upto nEntry log entries.
+//
+func (log *LogTarget) Init(nEntry int) {
+	log.LogBuf = &LogBuffer{TotalEntries: 0}
+	log.LogBuf.LogEntries = make([]string, nEntry)
+}
+
+// Called by logger for each log entry
+//
+func (log LogTarget) Write(p []byte) (n int, err error) {
+	return log.write(p)
 }

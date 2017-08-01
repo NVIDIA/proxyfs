@@ -1,5 +1,5 @@
 hash: 203b9e910318e7042372cb61f10b971f00e649347370fb6a70004e9775e2d18a
-updated: 2017-07-08T10:19:44.325457851-07:00
+updated: 2017-07-25T14:41:53.931795183-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -15,27 +15,27 @@ imports:
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/Sirupsen/logrus
-  version: 59d0ca41e5faad81cac03f7a7d84ba80d9cc9673
+  version: 8d4f6a97d3fe8725a31e3185c7a877a5e1dc6f09
 - name: github.com/stretchr/testify
-  version: f6abca593680b2315d2075e0f5e2a9751e3f431a
+  version: 05e8a0eda380579888eb53c394909df027f06991
   subpackages:
   - assert
 - name: github.com/swiftstack/conf
-  version: 26e8da4dcfcb776d9bd3843b38c96dce0c116629
+  version: 8f742304a86191941be2d20d9b086babce15a5dc
 - name: github.com/swiftstack/cstruct
   version: d95eae1090e554a03651062ec2fee2627df9b23b
 - name: github.com/swiftstack/sortedmap
   version: 36475f2556f000b821290f4a95f1c89378029a86
 - name: golang.org/x/net
-  version: 054b33e6527139ad5b1ec2f6232c3b175bd9a30c
+  version: ab5485076ff3407ad2d02db054635913f017b0ed
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 739734461d1c916b6c72a63d7efda2b27edb369f
+  version: 14ac33bf8474b62c65cae263af2e4d3b543cc699
   subpackages:
   - unix
 - name: golang.org/x/tools
-  version: bce9606b3f617bc6280aab6abbf25962c23f398d
+  version: 3da34b1b520a543128e8441cd2ffffc383111d03
   subpackages:
   - cmd/stringer
 testImports:

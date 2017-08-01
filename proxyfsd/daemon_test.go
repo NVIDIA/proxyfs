@@ -9,8 +9,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
 	"github.com/swiftstack/ProxyFS/ramswift"
 )
 
@@ -39,6 +37,7 @@ func TestDaemon(t *testing.T) {
 		"Logging.LogFilePath=proxyfsd.log",
 		"Peer1.PublicIPAddr=127.0.0.1",
 		"Peer1.PrivateIPAddr=127.0.0.1",
+		"Peer1.ReadCacheQuotaFraction=0.20",
 		"Cluster.WhoAmI=Peer1",
 		"Cluster.Peers=Peer1",
 		"Cluster.ServerGuid=a66488e9-a051-4ff7-865d-87bfb84cc2ae",
@@ -53,14 +52,18 @@ func TestDaemon(t *testing.T) {
 		"HTTPServer.TCPPort=53461",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryDelay=50ms",
-		"SwiftClient.RetryLimit=10",
+		"SwiftClient.RetryLimit=5",
+		"SwiftClient.RetryLimitObject=5",
+		"SwiftClient.RetryDelay=1s",
+		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryExpBackoff=1.2",
+		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"CommonFlowControl.MaxFlushSize=10000000",
 		"CommonFlowControl.MaxFlushTime=10s",
 		"CommonFlowControl.ReadCacheLineSize=1000000",
-		"CommonFlowControl.ReadCacheTotalSize=100000000",
+		"CommonFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
 		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
@@ -88,16 +91,11 @@ func TestDaemon(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	goodConfMap, err := conf.MakeConfMapFromStrings(goodConfs)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
 	var wg sync.WaitGroup
 
-	go Daemon(goodConfMap, &signalHandlerIsArmed, errChan, &wg)
+	go ramswift.Daemon("/dev/null", goodConfs, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
 
-	go ramswift.Daemon(goodConfMap, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
+	go Daemon("/dev/null", goodConfs, &signalHandlerIsArmed, errChan, &wg)
 
 	for !signalHandlerIsArmed {
 		select {

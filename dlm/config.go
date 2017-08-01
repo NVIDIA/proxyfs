@@ -30,6 +30,18 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
 func Down() (err error) {
 	return
 }

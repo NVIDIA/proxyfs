@@ -26,25 +26,31 @@ func serveHTTP() {
 }
 
 func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	switch request.Method {
-	case http.MethodGet:
-		doGet(responseWriter, request)
-	default:
-		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+	globals.Lock()
+	if globals.active {
+		switch request.Method {
+		case http.MethodGet:
+			doGet(responseWriter, request)
+		default:
+			responseWriter.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	} else {
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
 	}
+	globals.Unlock()
 }
 
 func doGet(responseWriter http.ResponseWriter, request *http.Request) {
+	path := strings.TrimRight(request.URL.Path, "/")
+
 	switch {
-	case "/" == request.URL.Path:
+	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
-	case "/index.html" == request.URL.Path:
+	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
-	case "/config" == request.URL.Path:
+	case "/config" == path:
 		doGetOfConfig(responseWriter, request)
-	case "/config-packed" == request.URL.Path:
-		doGetOfConfigPacked(responseWriter, request)
-	case "/fsck" == request.URL.Path:
+	case "/fsck" == path:
 		doGetOfFSCK(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/fsck-start/"):
 		doGetOfFSCKStart(responseWriter, request, strings.TrimPrefix(request.URL.Path, "/fsck-start/"), true)
@@ -56,7 +62,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfFSCKStop(responseWriter, request, strings.TrimPrefix(request.URL.Path, "/fsck-stop/"), true)
 	case strings.HasPrefix(request.URL.Path, "/fsck-stop-non-interactive/"):
 		doGetOfFSCKStop(responseWriter, request, strings.TrimPrefix(request.URL.Path, "/fsck-stop-non-interactive/"), false)
-	case "/metrics" == request.URL.Path:
+	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -85,23 +91,30 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 		confMapJSONPacked []byte
 	)
 
+	// NOTE:  Some day, perhaps, we'll use utility functions for semantic extraction
+	// of query strings, and we can get rid of this.  Or we'll use an off-the-shelf router.
+	sendPackedConfig := false
+	if paramList, ok := request.URL.Query()["compact"]; ok {
+		if len(paramList) > 0 {
+			param := paramList[0]
+			sendPackedConfig = (param == "true" || param == "1")
+		}
+	}
+
 	responseWriter.Header().Add("Content-Type", "application/json")
 	responseWriter.WriteHeader(http.StatusOK)
 	confMapJSONPacked, _ = json.Marshal(globals.confMap)
-	json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
-	_, _ = responseWriter.Write(confMapJSON.Bytes())
-	_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
-}
 
-func doGetOfConfigPacked(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.Header().Add("Content-Type", "application/json")
-	responseWriter.WriteHeader(http.StatusOK)
-	confMapJSONPacked, _ := json.Marshal(globals.confMap)
-	_, _ = responseWriter.Write(confMapJSONPacked)
+	if sendPackedConfig {
+		_, _ = responseWriter.Write(confMapJSONPacked)
+	} else {
+		json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
+		_, _ = responseWriter.Write(confMapJSON.Bytes())
+		_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+	}
 }
 
 func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
-	globals.Lock()
 	responseWriter.Header().Add("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
 	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
@@ -114,7 +127,7 @@ func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
 	for i := 0; i < numVolumes; i++ {
 		_, volumeAsValue, ok, nonShadowingErr := globals.volumeLLRB.GetByIndex(i)
 		if nil != nonShadowingErr {
-			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", i, err))
+			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", i, nonShadowingErr))
 		}
 		if !ok {
 			panic(fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) returned ok == false", i))
@@ -185,17 +198,14 @@ func doGetOfFSCK(responseWriter http.ResponseWriter, request *http.Request) {
 		volume.Unlock()
 	}
 	_, _ = responseWriter.Write(utils.StringToByteSlice("</table>\n"))
-	globals.Unlock()
 }
 
 func doGetOfFSCKStart(responseWriter http.ResponseWriter, request *http.Request, volumeName string, interactive bool) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -226,17 +236,14 @@ func doGetOfFSCKStart(responseWriter http.ResponseWriter, request *http.Request,
 		}
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfFSCKStatus(responseWriter http.ResponseWriter, request *http.Request, volumeName string) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -261,17 +268,14 @@ func doGetOfFSCKStatus(responseWriter http.ResponseWriter, request *http.Request
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfFSCKStop(responseWriter http.ResponseWriter, request *http.Request, volumeName string, interactive bool) {
-	globals.Lock()
 	volumeAsValue, ok, err := globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
 		panic(fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err))
 	}
 	if !ok {
-		globals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -311,7 +315,6 @@ func doGetOfFSCKStop(responseWriter http.ResponseWriter, request *http.Request, 
 		}
 	}
 	volume.Unlock()
-	globals.Unlock()
 }
 
 func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {

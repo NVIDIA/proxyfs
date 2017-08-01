@@ -96,8 +96,12 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryDelay=50ms",
-		"SwiftClient.RetryLimit=10",
+		"SwiftClient.RetryLimit=5",
+		"SwiftClient.RetryLimitObject=5",
+		"SwiftClient.RetryDelay=1s",
+		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryExpBackoff=1.2",
+		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"Cluster.WhoAmI=Peer0",
@@ -123,7 +127,7 @@ func TestHeadHunterAPI(t *testing.T) {
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon(confMap, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)

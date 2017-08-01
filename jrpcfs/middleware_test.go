@@ -45,14 +45,19 @@ func testSetup() []func() {
 		"FSGlobals.VolumeList=SomeVolume,SomeVolume2",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryDelay=50ms",
-		"SwiftClient.RetryLimit=10",
+		"SwiftClient.RetryLimit=5",
+		"SwiftClient.RetryLimitObject=5",
+		"SwiftClient.RetryDelay=1s",
+		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryExpBackoff=1.2",
+		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=256",
 		"Peer0.PrivateIPAddr=localhost",
+		"Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
 		"SomeVolume.FSID=1",
@@ -78,7 +83,7 @@ func testSetup() []func() {
 		"JrpcfsTestFlowControl.MaxFlushSize=10027008",
 		"JrpcfsTestFlowControl.MaxFlushTime=2s",
 		"JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
-		"JrpcfsTestFlowControl.ReadCacheTotalSize=100000000",
+		"JrpcfsTestFlowControl.ReadCacheWeight=100",
 		"SomeContainerLayout.ContainerStoragePolicyIndex=0",
 		"SomeContainerLayout.ContainerNamePrefix=kittens",
 		"SomeContainerLayout.ContainersPerPeer=1000",
@@ -87,6 +92,10 @@ func testSetup() []func() {
 		"SomeContainerLayout2.ContainerNamePrefix=puppies",
 		"SomeContainerLayout2.ContainersPerPeer=1234",
 		"SomeContainerLayout2.MaxObjectsPerContainer=1234567",
+		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
+		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
+		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.DontWriteConf=true",
 	}
 
 	tempDir, err := ioutil.TempDir("", "jrpcfs_test")
@@ -104,7 +113,7 @@ func testSetup() []func() {
 	}
 
 	doneChan := make(chan bool)
-	go ramswift.Daemon(testConfMap, nil, doneChan)
+	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan)
 
 	err = stats.Up(testConfMap)
 	if nil != err {
@@ -121,6 +130,11 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
 	}
 
+	err = inode.Up(testConfMap)
+	if nil != err {
+		panic(fmt.Sprintf("failed to bring up inode: %v", err))
+	}
+
 	err = dlm.Up(testConfMap)
 	if nil != err {
 		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
@@ -131,9 +145,9 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up fs: %v", err))
 	}
 
-	err = inode.Up(testConfMap)
+	err = Up(testConfMap)
 	if nil != err {
-		panic(fmt.Sprintf("failed to bring up inode: %v", err))
+		panic(fmt.Sprintf("failed to bring up jrpcfs: %v", err))
 	}
 
 	// Unfortunately, we cannot call the jrpcfs Up() method here since it will start the RPC server.

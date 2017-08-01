@@ -53,17 +53,9 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 	LogSegmentMap       map[uint64]uint64 // FileInode:    Key == LogSegment#, Value = file user data byte count
 }
 
-type pendingLogSegmentStruct struct {
-	logSegmentNumber              uint64
-	accountName                   string
-	containerName                 string
-	objectName                    string
-	swiftclient.ChunkedPutContext // Only used by serializer() for Chunked PUTs
-}
-
-type inFlightLogSegmentStruct struct { //     Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
-	logSegmentNumber uint64 //                Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
-	fileInodeFlusher *fileInodeFlusherStruct
+type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
+	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
+	fileInode        *inMemoryInodeStruct
 	flushChannel     chan bool
 	accountName      string
 	containerName    string
@@ -71,24 +63,17 @@ type inFlightLogSegmentStruct struct { //     Used as (by reference) Value for i
 	swiftclient.ChunkedPutContext
 }
 
-type fileInodeFlusherStruct struct {
-	sync.WaitGroup //                                      Flush Daemon waits on this
-	fileInode      *inMemoryInodeStruct
-	flushChannel   chan bool
-	logSegmentsMap map[uint64]*inFlightLogSegmentStruct // Key == logSegmentNumber; Value == *inFlightLogSegmentStruct
-	openLogSegment *inFlightLogSegmentStruct            // SendChunk() calls go to this one (if non-nil)
-	errors         []error                              // Any non-nil/unrecovered errors go here
-}
-
 type inMemoryInodeStruct struct {
-	sync.Mutex     //                                    Used to synchronize with background fileInodeFlusherDaemon
-	sync.WaitGroup //                                    Flush requests wait on this
+	sync.Mutex     //                                                Used to synchronize with background fileInodeFlusherDaemon
+	sync.WaitGroup //                                                FileInode Flush requests wait on this
 	dirty          bool
 	volume         *volumeStruct
-	payload        interface{} //                        DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
-	//                                                   FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
-	fileInodeFlusher    *fileInodeFlusherStruct //       Only used for a FileInode when data in flight
-	onDiskInodeV1Struct                         //       Real on-disk inode information embedded here
+	payload        interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
+	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
+	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
+	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
+	inFlightLogSegmentErrors map[uint64]error                     // FileInode: key == logSegmentNumber; value == err (if non nil)
+	onDiskInodeV1Struct                                           // Real on-disk inode information embedded here
 }
 
 func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode *inMemoryInodeStruct, err error) {
@@ -142,9 +127,12 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	}
 
 	inMemoryInode = &inMemoryInodeStruct{
-		dirty:               true,
-		volume:              vS,
-		onDiskInodeV1Struct: *onDiskInodeV1,
+		dirty:                    true,
+		volume:                   vS,
+		openLogSegment:           nil,
+		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
+		inFlightLogSegmentErrors: make(map[uint64]error),
+		onDiskInodeV1Struct:      *onDiskInodeV1,
 	}
 
 	switch inMemoryInode.InodeType {
@@ -276,9 +264,11 @@ func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType
 	birthTime := time.Now()
 
 	inMemoryInode = &inMemoryInodeStruct{
-		dirty:            true,
-		volume:           vS,
-		fileInodeFlusher: nil,
+		dirty:                    true,
+		volume:                   vS,
+		openLogSegment:           nil,
+		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
+		inFlightLogSegmentErrors: make(map[uint64]error),
 		onDiskInodeV1Struct: onDiskInodeV1Struct{
 			InodeNumber:      InodeNumber(inodeNumber),
 			InodeType:        inodeType,

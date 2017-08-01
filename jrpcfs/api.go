@@ -277,8 +277,7 @@ type ListXAttrPathRequest struct {
 }
 
 type ListXAttrReply struct {
-	AttrNamesCount uint64
-	AttrNames      []string
+	AttrNames []string
 }
 
 // LookupRequest is the request object for RpcLookup.

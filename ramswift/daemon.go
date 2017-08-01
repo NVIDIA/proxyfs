@@ -6,6 +6,7 @@ package ramswift
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +20,6 @@ import (
 	"github.com/swiftstack/conf"
 	"github.com/swiftstack/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -53,12 +53,29 @@ type swiftObjectStruct struct {
 	contents       []byte
 }
 
+type methodStruct struct {
+	delete uint64
+	get    uint64
+	head   uint64
+	post   uint64
+	put    uint64
+}
+
 type globalsStruct struct {
-	sync.Mutex                                            // protects globalsStruct.swiftAccountMap
-	swiftAccountMap        map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
-	maxAccountNameLength   uint64
-	maxContainerNameLength uint64
-	maxObjectNameLength    uint64
+	sync.Mutex                      // protects globalsStruct.swiftAccountMap
+	whoAmI                          string
+	noAuthTCPPort                   uint16
+	swiftAccountMap                 map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
+	accountMethodCount              methodStruct
+	containerMethodCount            methodStruct
+	objectMethodCount               methodStruct
+	chaosFailureHTTPStatus          int
+	accountMethodChaosFailureRate   methodStruct // fail method if corresponding accountMethodCount divisible by accountMethodChaosFailureRate
+	containerMethodChaosFailureRate methodStruct // fail method if corresponding containerMethodCount divisible by containerMethodChaosFailureRate
+	objectMethodChaosFailureRate    methodStruct // fail method if corresponding objectMethodCount divisible by objectMethodChaosFailureRate
+	maxAccountNameLength            uint64
+	maxContainerNameLength          uint64
+	maxObjectNameLength             uint64
 }
 
 var globals = globalsStruct{swiftAccountMap: make(map[string]*swiftAccountStruct)}
@@ -243,22 +260,26 @@ func createOrLocateSwiftAccount(swiftAccountName string) (swiftAccount *swiftAcc
 	return
 }
 
-func deleteSwiftAccount(swiftAccountName string) (errno syscall.Errno) {
+func deleteSwiftAccount(swiftAccountName string, force bool) (errno syscall.Errno) {
 	globals.Lock()
 	swiftAccount, ok := globals.swiftAccountMap[swiftAccountName]
 	if ok {
-		swiftAccount.Lock()
-		swiftswiftAccountContainerCount, nonShadowingErr := swiftAccount.swiftContainerTree.Len()
-		if nil != nonShadowingErr {
-			panic(nonShadowingErr)
-		}
-		if 0 != swiftswiftAccountContainerCount {
+		if force {
+			// ok if account contains data... we'll forget it
+		} else {
+			swiftAccount.Lock()
+			swiftswiftAccountContainerCount, nonShadowingErr := swiftAccount.swiftContainerTree.Len()
+			if nil != nonShadowingErr {
+				panic(nonShadowingErr)
+			}
+			if 0 != swiftswiftAccountContainerCount {
+				swiftAccount.Unlock()
+				globals.Unlock()
+				errno = unix.ENOTEMPTY
+				return
+			}
 			swiftAccount.Unlock()
-			globals.Unlock()
-			errno = unix.ENOTEMPTY
-			return
 		}
-		swiftAccount.Unlock()
 		delete(globals.swiftAccountMap, swiftAccountName)
 	} else {
 		globals.Unlock()
@@ -468,17 +489,25 @@ func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
 	} else {
 		if "" == swiftContainerName {
 			// DELETE SwiftAccount
-			errno := deleteSwiftAccount(swiftAccountName)
-			switch errno {
-			case 0:
-				responseWriter.WriteHeader(http.StatusNoContent)
-			case unix.ENOENT:
-				responseWriter.WriteHeader(http.StatusNotFound)
-			case unix.ENOTEMPTY:
-				responseWriter.WriteHeader(http.StatusConflict)
-			default:
-				err := fmt.Errorf("deleteSwiftAccount(\"%v\") returned unexpected errno: %v", swiftAccountName, errno)
-				panic(err)
+			globals.Lock()
+			globals.accountMethodCount.delete++
+			if (0 != globals.accountMethodChaosFailureRate.delete) && (0 == globals.accountMethodCount.delete%globals.accountMethodChaosFailureRate.delete) {
+				globals.Unlock()
+				responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+			} else {
+				globals.Unlock()
+				errno := deleteSwiftAccount(swiftAccountName, false)
+				switch errno {
+				case 0:
+					responseWriter.WriteHeader(http.StatusNoContent)
+				case unix.ENOENT:
+					responseWriter.WriteHeader(http.StatusNotFound)
+				case unix.ENOTEMPTY:
+					responseWriter.WriteHeader(http.StatusConflict)
+				default:
+					err := fmt.Errorf("deleteSwiftAccount(\"%v\", false) returned unexpected errno: %v", swiftAccountName, errno)
+					panic(err)
+				}
 			}
 		} else {
 			// DELETE SwiftContainer or SwiftObject
@@ -487,38 +516,54 @@ func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
 			case 0:
 				if "" == swiftObjectName {
 					// DELETE SwiftContainer
-					errno := deleteSwiftContainer(swiftAccount, swiftContainerName)
-					switch errno {
-					case 0:
-						responseWriter.WriteHeader(http.StatusNoContent)
-					case unix.ENOENT:
-						responseWriter.WriteHeader(http.StatusNotFound)
-					case unix.ENOTEMPTY:
-						responseWriter.WriteHeader(http.StatusConflict)
-					default:
-						err := fmt.Errorf("deleteSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
-						panic(err)
-					}
-				} else {
-					// DELETE SwiftObject
-					swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
-					switch errno {
-					case 0:
-						errno := deleteSwiftObject(swiftContainer, swiftObjectName)
+					globals.Lock()
+					globals.containerMethodCount.delete++
+					if (0 != globals.containerMethodChaosFailureRate.delete) && (0 == globals.containerMethodCount.delete%globals.containerMethodChaosFailureRate.delete) {
+						globals.Unlock()
+						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+					} else {
+						globals.Unlock()
+						errno := deleteSwiftContainer(swiftAccount, swiftContainerName)
 						switch errno {
 						case 0:
 							responseWriter.WriteHeader(http.StatusNoContent)
 						case unix.ENOENT:
 							responseWriter.WriteHeader(http.StatusNotFound)
+						case unix.ENOTEMPTY:
+							responseWriter.WriteHeader(http.StatusConflict)
 						default:
-							err := fmt.Errorf("deleteSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
+							err := fmt.Errorf("deleteSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
 							panic(err)
 						}
-					case unix.ENOENT:
-						responseWriter.WriteHeader(http.StatusNotFound)
-					default:
-						err := fmt.Errorf("locateSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
-						panic(err)
+					}
+				} else {
+					// DELETE SwiftObject
+					globals.Lock()
+					globals.objectMethodCount.delete++
+					if (0 != globals.objectMethodChaosFailureRate.delete) && (0 == globals.objectMethodCount.delete%globals.objectMethodChaosFailureRate.delete) {
+						globals.Unlock()
+						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+					} else {
+						globals.Unlock()
+						swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
+						switch errno {
+						case 0:
+							errno := deleteSwiftObject(swiftContainer, swiftObjectName)
+							switch errno {
+							case 0:
+								responseWriter.WriteHeader(http.StatusNoContent)
+							case unix.ENOENT:
+								responseWriter.WriteHeader(http.StatusNotFound)
+							default:
+								err := fmt.Errorf("deleteSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
+								panic(err)
+							}
+						case unix.ENOENT:
+							responseWriter.WriteHeader(http.StatusNotFound)
+						default:
+							err := fmt.Errorf("locateSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
+							panic(err)
+						}
 					}
 				}
 			case unix.ENOENT:
@@ -550,30 +595,38 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 			case 0:
 				if "" == swiftContainerName {
 					// GET SwiftAccount
-					swiftAccount.Lock()
-					for headerName, headerValueSlice := range swiftAccount.headers {
-						for _, headerValue := range headerValueSlice {
-							responseWriter.Header().Add(headerName, headerValue)
-						}
-					}
-					numContainers, err := swiftAccount.swiftContainerTree.Len()
-					if nil != err {
-						panic(err)
-					}
-					if 0 == numContainers {
-						responseWriter.WriteHeader(http.StatusNoContent)
+					globals.Lock()
+					globals.accountMethodCount.get++
+					if (0 != globals.accountMethodChaosFailureRate.get) && (0 == globals.accountMethodCount.get%globals.accountMethodChaosFailureRate.get) {
+						globals.Unlock()
+						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
 					} else {
-						for containerIndex := 0; containerIndex < numContainers; containerIndex++ {
-							swiftContainerNameAsKey, _, _, err := swiftAccount.swiftContainerTree.GetByIndex(containerIndex)
-							if nil != err {
-								panic(err)
+						globals.Unlock()
+						swiftAccount.Lock()
+						for headerName, headerValueSlice := range swiftAccount.headers {
+							for _, headerValue := range headerValueSlice {
+								responseWriter.Header().Add(headerName, headerValue)
 							}
-							swiftContainerName := swiftContainerNameAsKey.(string)
-							_, _ = responseWriter.Write(utils.StringToByteSlice(swiftContainerName))
-							_, _ = responseWriter.Write([]byte{'\n'})
 						}
+						numContainers, err := swiftAccount.swiftContainerTree.Len()
+						if nil != err {
+							panic(err)
+						}
+						if 0 == numContainers {
+							responseWriter.WriteHeader(http.StatusNoContent)
+						} else {
+							for containerIndex := 0; containerIndex < numContainers; containerIndex++ {
+								swiftContainerNameAsKey, _, _, err := swiftAccount.swiftContainerTree.GetByIndex(containerIndex)
+								if nil != err {
+									panic(err)
+								}
+								swiftContainerName := swiftContainerNameAsKey.(string)
+								_, _ = responseWriter.Write(utils.StringToByteSlice(swiftContainerName))
+								_, _ = responseWriter.Write([]byte{'\n'})
+							}
+						}
+						swiftAccount.Unlock()
 					}
-					swiftAccount.Unlock()
 				} else {
 					// GET SwiftContainer or SwiftObject
 					swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
@@ -581,77 +634,93 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 					case 0:
 						if "" == swiftObjectName {
 							// GET SwiftContainer
-							swiftContainer.Lock()
-							for headerName, headerValueSlice := range swiftContainer.headers {
-								for _, headerValue := range headerValueSlice {
-									responseWriter.Header().Add(headerName, headerValue)
-								}
-							}
-							numObjects, err := swiftContainer.swiftObjectTree.Len()
-							if nil != err {
-								panic(err)
-							}
-							if 0 == numObjects {
-								responseWriter.WriteHeader(http.StatusNoContent)
+							globals.Lock()
+							globals.containerMethodCount.get++
+							if (0 != globals.containerMethodChaosFailureRate.get) && (0 == globals.containerMethodCount.get%globals.containerMethodChaosFailureRate.get) {
+								globals.Unlock()
+								responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
 							} else {
-								for objectIndex := 0; objectIndex < numObjects; objectIndex++ {
-									swiftObjectNameAsKey, _, _, err := swiftContainer.swiftObjectTree.GetByIndex(objectIndex)
-									if nil != err {
-										panic(err)
+								globals.Unlock()
+								swiftContainer.Lock()
+								for headerName, headerValueSlice := range swiftContainer.headers {
+									for _, headerValue := range headerValueSlice {
+										responseWriter.Header().Add(headerName, headerValue)
 									}
-									swiftObjectName := swiftObjectNameAsKey.(string)
-									_, _ = responseWriter.Write(utils.StringToByteSlice(swiftObjectName))
-									_, _ = responseWriter.Write([]byte{'\n'})
 								}
+								numObjects, err := swiftContainer.swiftObjectTree.Len()
+								if nil != err {
+									panic(err)
+								}
+								if 0 == numObjects {
+									responseWriter.WriteHeader(http.StatusNoContent)
+								} else {
+									for objectIndex := 0; objectIndex < numObjects; objectIndex++ {
+										swiftObjectNameAsKey, _, _, err := swiftContainer.swiftObjectTree.GetByIndex(objectIndex)
+										if nil != err {
+											panic(err)
+										}
+										swiftObjectName := swiftObjectNameAsKey.(string)
+										_, _ = responseWriter.Write(utils.StringToByteSlice(swiftObjectName))
+										_, _ = responseWriter.Write([]byte{'\n'})
+									}
+								}
+								swiftContainer.Unlock()
 							}
-							swiftContainer.Unlock()
 						} else {
 							// GET SwiftObject
-							swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
-							switch errno {
-							case 0:
-								swiftObject.Lock()
-								rangeHeaderPresent, startOffset, stopOffset, err := parseRangeHeader(request)
-								if nil == err {
-									if rangeHeaderPresent {
-										// A negative offset indicates it was absent from the HTTP Range header in the
-										// request. At least one offset is present.
-										if startOffset < 0 {
-											// e.g. bytes=-100
-											startOffset = int64(len(swiftObject.contents)) - stopOffset
+							globals.Lock()
+							globals.objectMethodCount.get++
+							if (0 != globals.objectMethodChaosFailureRate.get) && (0 == globals.objectMethodCount.get%globals.objectMethodChaosFailureRate.get) {
+								globals.Unlock()
+								responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+							} else {
+								globals.Unlock()
+								swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
+								switch errno {
+								case 0:
+									swiftObject.Lock()
+									rangeHeaderPresent, startOffset, stopOffset, err := parseRangeHeader(request)
+									if nil == err {
+										if rangeHeaderPresent {
+											// A negative offset indicates it was absent from the HTTP Range header in the
+											// request. At least one offset is present.
 											if startOffset < 0 {
-												// happens if you ask for the last N+K bytes of an N-byte file
-												startOffset = 0
-											}
-											stopOffset = int64(len(swiftObject.contents) - 1)
-										} else if stopOffset < 0 {
-											// e.g. bytes=100-
-											stopOffset = int64(len(swiftObject.contents) - 1)
-										} else {
-											// TODO: we'll probably want to handle ranges that are off the end of the
-											// object with a 416 response, like if someone asks for "bytes=100-200" of a
-											// 50-byte object. We haven't needed it yet, though.
-											if stopOffset > int64(len(swiftObject.contents)-1) {
+												// e.g. bytes=-100
+												startOffset = int64(len(swiftObject.contents)) - stopOffset
+												if startOffset < 0 {
+													// happens if you ask for the last N+K bytes of an N-byte file
+													startOffset = 0
+												}
 												stopOffset = int64(len(swiftObject.contents) - 1)
+											} else if stopOffset < 0 {
+												// e.g. bytes=100-
+												stopOffset = int64(len(swiftObject.contents) - 1)
+											} else {
+												// TODO: we'll probably want to handle ranges that are off the end of the
+												// object with a 416 response, like if someone asks for "bytes=100-200" of a
+												// 50-byte object. We haven't needed it yet, though.
+												if stopOffset > int64(len(swiftObject.contents)-1) {
+													stopOffset = int64(len(swiftObject.contents) - 1)
+												}
 											}
+
+											responseWriter.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startOffset, stopOffset, len(swiftObject.contents)))
+											responseWriter.WriteHeader(http.StatusPartialContent)
+											_, _ = responseWriter.Write(swiftObject.contents[startOffset:(stopOffset + 1)])
+
+										} else {
+											_, _ = responseWriter.Write(swiftObject.contents)
 										}
-
-										responseWriter.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startOffset, stopOffset, len(swiftObject.contents)))
-										responseWriter.WriteHeader(http.StatusPartialContent)
-										_, _ = responseWriter.Write(swiftObject.contents[startOffset:(stopOffset + 1)])
-
 									} else {
-										_, _ = responseWriter.Write(swiftObject.contents)
+										responseWriter.WriteHeader(http.StatusBadRequest)
 									}
-								} else {
-									responseWriter.WriteHeader(http.StatusBadRequest)
+									swiftObject.Unlock()
+								case unix.ENOENT:
+									responseWriter.WriteHeader(http.StatusNotFound)
+								default:
+									err := fmt.Errorf("locateSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
+									panic(err)
 								}
-								swiftObject.Unlock()
-							case unix.ENOENT:
-								responseWriter.WriteHeader(http.StatusNotFound)
-							default:
-								err := fmt.Errorf("locateSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
-								panic(err)
 							}
 						}
 					case unix.ENOENT:
@@ -681,14 +750,22 @@ func doHead(responseWriter http.ResponseWriter, request *http.Request) {
 		case 0:
 			if "" == swiftContainerName {
 				// HEAD SwiftAccount
-				swiftAccount.Lock()
-				for headerName, headerValueSlice := range swiftAccount.headers {
-					for _, headerValue := range headerValueSlice {
-						responseWriter.Header().Add(headerName, headerValue)
+				globals.Lock()
+				globals.accountMethodCount.head++
+				if (0 != globals.accountMethodChaosFailureRate.head) && (0 == globals.accountMethodCount.head%globals.accountMethodChaosFailureRate.head) {
+					globals.Unlock()
+					responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+				} else {
+					globals.Unlock()
+					swiftAccount.Lock()
+					for headerName, headerValueSlice := range swiftAccount.headers {
+						for _, headerValue := range headerValueSlice {
+							responseWriter.Header().Add(headerName, headerValue)
+						}
 					}
+					swiftAccount.Unlock()
+					responseWriter.WriteHeader(http.StatusNoContent)
 				}
-				swiftAccount.Unlock()
-				responseWriter.WriteHeader(http.StatusNoContent)
 			} else {
 				// HEAD SwiftContainer or SwiftObject
 				swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
@@ -696,26 +773,42 @@ func doHead(responseWriter http.ResponseWriter, request *http.Request) {
 				case 0:
 					if "" == swiftObjectName {
 						// HEAD SwiftContainer
-						swiftContainer.Lock()
-						for headerName, headerValueSlice := range swiftContainer.headers {
-							for _, headerValue := range headerValueSlice {
-								responseWriter.Header().Add(headerName, headerValue)
+						globals.Lock()
+						globals.containerMethodCount.head++
+						if (0 != globals.containerMethodChaosFailureRate.head) && (0 == globals.containerMethodCount.head%globals.containerMethodChaosFailureRate.head) {
+							globals.Unlock()
+							responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+						} else {
+							globals.Unlock()
+							swiftContainer.Lock()
+							for headerName, headerValueSlice := range swiftContainer.headers {
+								for _, headerValue := range headerValueSlice {
+									responseWriter.Header().Add(headerName, headerValue)
+								}
 							}
+							swiftContainer.Unlock()
+							responseWriter.WriteHeader(http.StatusNoContent)
 						}
-						swiftContainer.Unlock()
-						responseWriter.WriteHeader(http.StatusNoContent)
 					} else {
 						// HEAD SwiftObject
-						swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
-						switch errno {
-						case 0:
-							responseWriter.Header().Set("Content-Length", strconv.Itoa(len(swiftObject.contents)))
-							responseWriter.WriteHeader(http.StatusOK)
-						case unix.ENOENT:
-							responseWriter.WriteHeader(http.StatusNotFound)
-						default:
-							err := fmt.Errorf("locateSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
-							panic(err)
+						globals.Lock()
+						globals.objectMethodCount.head++
+						if (0 != globals.objectMethodChaosFailureRate.head) && (0 == globals.objectMethodCount.head%globals.objectMethodChaosFailureRate.head) {
+							globals.Unlock()
+							responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+						} else {
+							globals.Unlock()
+							swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
+							switch errno {
+							case 0:
+								responseWriter.Header().Set("Content-Length", strconv.Itoa(len(swiftObject.contents)))
+								responseWriter.WriteHeader(http.StatusOK)
+							case unix.ENOENT:
+								responseWriter.WriteHeader(http.StatusNotFound)
+							default:
+								err := fmt.Errorf("locateSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
+								panic(err)
+							}
 						}
 					}
 				case unix.ENOENT:
@@ -744,26 +837,34 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 		case 0:
 			if "" == swiftContainerName {
 				// POST SwiftAccount
-				swiftAccount.Lock()
-				for headerName, headerValueSlice := range request.Header {
-					_, ignoreHeader := headerNameIgnoreSet[headerName]
-					if !ignoreHeader {
-						headerValueSliceLen := len(headerValueSlice)
-						if 0 < headerValueSliceLen {
-							swiftAccount.headers[headerName] = make([]string, 0, headerValueSliceLen)
-							for _, headerValue := range headerValueSlice {
-								if 0 < len(headerValue) {
-									swiftAccount.headers[headerName] = append(swiftAccount.headers[headerName], headerValue)
+				globals.Lock()
+				globals.accountMethodCount.post++
+				if (0 != globals.accountMethodChaosFailureRate.post) && (0 == globals.accountMethodCount.post%globals.accountMethodChaosFailureRate.post) {
+					globals.Unlock()
+					responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+				} else {
+					globals.Unlock()
+					swiftAccount.Lock()
+					for headerName, headerValueSlice := range request.Header {
+						_, ignoreHeader := headerNameIgnoreSet[headerName]
+						if !ignoreHeader {
+							headerValueSliceLen := len(headerValueSlice)
+							if 0 < headerValueSliceLen {
+								swiftAccount.headers[headerName] = make([]string, 0, headerValueSliceLen)
+								for _, headerValue := range headerValueSlice {
+									if 0 < len(headerValue) {
+										swiftAccount.headers[headerName] = append(swiftAccount.headers[headerName], headerValue)
+									}
 								}
-							}
-							if 0 == len(swiftAccount.headers[headerName]) {
-								delete(swiftAccount.headers, headerName)
+								if 0 == len(swiftAccount.headers[headerName]) {
+									delete(swiftAccount.headers, headerName)
+								}
 							}
 						}
 					}
+					swiftAccount.Unlock()
+					responseWriter.WriteHeader(http.StatusNoContent)
 				}
-				swiftAccount.Unlock()
-				responseWriter.WriteHeader(http.StatusNoContent)
 			} else {
 				// POST SwiftContainer or SwiftObject
 				swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
@@ -771,29 +872,45 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 				case 0:
 					if "" == swiftObjectName {
 						// POST SwiftContainer
-						swiftContainer.Lock()
-						for headerName, headerValueSlice := range request.Header {
-							_, ignoreHeader := headerNameIgnoreSet[headerName]
-							if !ignoreHeader {
-								headerValueSliceLen := len(headerValueSlice)
-								if 0 < headerValueSliceLen {
-									swiftContainer.headers[headerName] = make([]string, 0, headerValueSliceLen)
-									for _, headerValue := range headerValueSlice {
-										if 0 < len(headerValue) {
-											swiftContainer.headers[headerName] = append(swiftContainer.headers[headerName], headerValue)
+						globals.Lock()
+						globals.containerMethodCount.post++
+						if (0 != globals.containerMethodChaosFailureRate.post) && (0 == globals.containerMethodCount.post%globals.containerMethodChaosFailureRate.post) {
+							globals.Unlock()
+							responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+						} else {
+							globals.Unlock()
+							swiftContainer.Lock()
+							for headerName, headerValueSlice := range request.Header {
+								_, ignoreHeader := headerNameIgnoreSet[headerName]
+								if !ignoreHeader {
+									headerValueSliceLen := len(headerValueSlice)
+									if 0 < headerValueSliceLen {
+										swiftContainer.headers[headerName] = make([]string, 0, headerValueSliceLen)
+										for _, headerValue := range headerValueSlice {
+											if 0 < len(headerValue) {
+												swiftContainer.headers[headerName] = append(swiftContainer.headers[headerName], headerValue)
+											}
 										}
-									}
-									if 0 == len(swiftContainer.headers[headerName]) {
-										delete(swiftContainer.headers, headerName)
+										if 0 == len(swiftContainer.headers[headerName]) {
+											delete(swiftContainer.headers, headerName)
+										}
 									}
 								}
 							}
+							swiftContainer.Unlock()
+							responseWriter.WriteHeader(http.StatusNoContent)
 						}
-						swiftContainer.Unlock()
-						responseWriter.WriteHeader(http.StatusNoContent)
 					} else {
 						// POST SwiftObject
-						responseWriter.WriteHeader(http.StatusForbidden)
+						globals.Lock()
+						globals.objectMethodCount.post++
+						if (0 != globals.objectMethodChaosFailureRate.post) && (0 == globals.objectMethodCount.post%globals.objectMethodChaosFailureRate.post) {
+							globals.Unlock()
+							responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+						} else {
+							globals.Unlock()
+							responseWriter.WriteHeader(http.StatusForbidden)
+						}
 					}
 				case unix.ENOENT:
 					responseWriter.WriteHeader(http.StatusNotFound)
@@ -818,33 +935,41 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 	} else {
 		if "" == swiftContainerName {
 			// PUT SwiftAccount
-			swiftAccount, wasCreated := createOrLocateSwiftAccount(swiftAccountName)
-			swiftAccount.Lock()
-			if wasCreated {
-				swiftAccount.headers = make(http.Header)
-			}
-			for headerName, headerValueSlice := range request.Header {
-				_, ignoreHeader := headerNameIgnoreSet[headerName]
-				if !ignoreHeader {
-					headerValueSliceLen := len(headerValueSlice)
-					if 0 < headerValueSliceLen {
-						swiftAccount.headers[headerName] = make([]string, 0, headerValueSliceLen)
-						for _, headerValue := range headerValueSlice {
-							if 0 < len(headerValue) {
-								swiftAccount.headers[headerName] = append(swiftAccount.headers[headerName], headerValue)
+			globals.Lock()
+			globals.accountMethodCount.put++
+			if (0 != globals.accountMethodChaosFailureRate.put) && (0 == globals.accountMethodCount.put%globals.accountMethodChaosFailureRate.put) {
+				globals.Unlock()
+				responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+			} else {
+				globals.Unlock()
+				swiftAccount, wasCreated := createOrLocateSwiftAccount(swiftAccountName)
+				swiftAccount.Lock()
+				if wasCreated {
+					swiftAccount.headers = make(http.Header)
+				}
+				for headerName, headerValueSlice := range request.Header {
+					_, ignoreHeader := headerNameIgnoreSet[headerName]
+					if !ignoreHeader {
+						headerValueSliceLen := len(headerValueSlice)
+						if 0 < headerValueSliceLen {
+							swiftAccount.headers[headerName] = make([]string, 0, headerValueSliceLen)
+							for _, headerValue := range headerValueSlice {
+								if 0 < len(headerValue) {
+									swiftAccount.headers[headerName] = append(swiftAccount.headers[headerName], headerValue)
+								}
 							}
-						}
-						if 0 == len(swiftAccount.headers[headerName]) {
-							delete(swiftAccount.headers, headerName)
+							if 0 == len(swiftAccount.headers[headerName]) {
+								delete(swiftAccount.headers, headerName)
+							}
 						}
 					}
 				}
-			}
-			swiftAccount.Unlock()
-			if wasCreated {
-				responseWriter.WriteHeader(http.StatusCreated)
-			} else {
-				responseWriter.WriteHeader(http.StatusAccepted)
+				swiftAccount.Unlock()
+				if wasCreated {
+					responseWriter.WriteHeader(http.StatusCreated)
+				} else {
+					responseWriter.WriteHeader(http.StatusAccepted)
+				}
 			}
 		} else {
 			// PUT SwiftContainer or SwiftObject
@@ -853,53 +978,69 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 			case 0:
 				if "" == swiftObjectName {
 					// PUT SwiftContainer
-					swiftContainer, wasCreated := createOrLocateSwiftContainer(swiftAccount, swiftContainerName)
-					swiftContainer.Lock()
-					if wasCreated {
-						swiftContainer.headers = make(http.Header)
-					}
-					for headerName, headerValueSlice := range request.Header {
-						_, ignoreHeader := headerNameIgnoreSet[headerName]
-						if !ignoreHeader {
-							headerValueSliceLen := len(headerValueSlice)
-							if 0 < headerValueSliceLen {
-								swiftContainer.headers[headerName] = make([]string, 0, headerValueSliceLen)
-								for _, headerValue := range headerValueSlice {
-									if 0 < len(headerValue) {
-										swiftContainer.headers[headerName] = append(swiftContainer.headers[headerName], headerValue)
+					globals.Lock()
+					globals.containerMethodCount.put++
+					if (0 != globals.containerMethodChaosFailureRate.put) && (0 == globals.containerMethodCount.put%globals.containerMethodChaosFailureRate.put) {
+						globals.Unlock()
+						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+					} else {
+						globals.Unlock()
+						swiftContainer, wasCreated := createOrLocateSwiftContainer(swiftAccount, swiftContainerName)
+						swiftContainer.Lock()
+						if wasCreated {
+							swiftContainer.headers = make(http.Header)
+						}
+						for headerName, headerValueSlice := range request.Header {
+							_, ignoreHeader := headerNameIgnoreSet[headerName]
+							if !ignoreHeader {
+								headerValueSliceLen := len(headerValueSlice)
+								if 0 < headerValueSliceLen {
+									swiftContainer.headers[headerName] = make([]string, 0, headerValueSliceLen)
+									for _, headerValue := range headerValueSlice {
+										if 0 < len(headerValue) {
+											swiftContainer.headers[headerName] = append(swiftContainer.headers[headerName], headerValue)
+										}
 									}
-								}
-								if 0 == len(swiftContainer.headers[headerName]) {
-									delete(swiftContainer.headers, headerName)
+									if 0 == len(swiftContainer.headers[headerName]) {
+										delete(swiftContainer.headers, headerName)
+									}
 								}
 							}
 						}
-					}
-					swiftContainer.Unlock()
-					if wasCreated {
-						responseWriter.WriteHeader(http.StatusCreated)
-					} else {
-						responseWriter.WriteHeader(http.StatusAccepted)
-					}
-				} else {
-					// PUT SwiftObject
-					swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
-					switch errno {
-					case 0:
-						swiftObject, wasCreated := createOrLocateSwiftObject(swiftContainer, swiftObjectName)
-						swiftObject.Lock()
-						swiftObject.contents, _ = ioutil.ReadAll(request.Body)
-						swiftObject.Unlock()
+						swiftContainer.Unlock()
 						if wasCreated {
 							responseWriter.WriteHeader(http.StatusCreated)
 						} else {
 							responseWriter.WriteHeader(http.StatusAccepted)
 						}
-					case unix.ENOENT:
-						responseWriter.WriteHeader(http.StatusForbidden)
-					default:
-						err := fmt.Errorf("locateSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
-						panic(err)
+					}
+				} else {
+					// PUT SwiftObject
+					globals.Lock()
+					globals.objectMethodCount.put++
+					if (0 != globals.objectMethodChaosFailureRate.put) && (0 == globals.objectMethodCount.put%globals.objectMethodChaosFailureRate.put) {
+						globals.Unlock()
+						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+					} else {
+						globals.Unlock()
+						swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
+						switch errno {
+						case 0:
+							swiftObject, wasCreated := createOrLocateSwiftObject(swiftContainer, swiftObjectName)
+							swiftObject.Lock()
+							swiftObject.contents, _ = ioutil.ReadAll(request.Body)
+							swiftObject.Unlock()
+							if wasCreated {
+								responseWriter.WriteHeader(http.StatusCreated)
+							} else {
+								responseWriter.WriteHeader(http.StatusAccepted)
+							}
+						case unix.ENOENT:
+							responseWriter.WriteHeader(http.StatusForbidden)
+						default:
+							err := fmt.Errorf("locateSwiftContainer(\"%v\") returned unexpected errno: %v", swiftContainerName, errno)
+							panic(err)
+						}
 					}
 				}
 			case unix.ENOENT:
@@ -932,68 +1073,282 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 }
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
-	noAuthTCPPort, err := confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	var (
+		err              error
+		errno            syscall.Errno
+		primaryPeer      string
+		swiftAccountName string
+		volumeList       []string
+	)
+
+	// Find out who "we" are
+
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of Swift.NoAuthTCPPort")
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
 	}
 
-	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of Cluster.WhoAmI")
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
 	}
 
-	volumeList, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	// Fetch and configure volumes for which "we" are the PrimaryPeer
+
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of FSGlobals.VolumeList")
+		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
 	}
 
 	for _, volumeSectionName := range volumeList {
-		primaryPeer, err := confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
 		if nil != err {
-			logger.PanicfWithError(err, "failed fetch of %v.PrimaryPeer", volumeSectionName)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
 		}
-		if 0 != strings.Compare(whoAmI, primaryPeer) {
+		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
 			continue
 		}
-		swiftAccountName, err := confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
-			logger.PanicfWithError(err, "failed fetch of %v.AccountName", volumeSectionName)
+			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
 		}
-		_, errno := createSwiftAccount(swiftAccountName)
+		_, errno = createSwiftAccount(swiftAccountName)
 		if 0 != errno {
-			logger.PanicfWithError(err, "failed create of %v", swiftAccountName)
+			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
 		}
-
 	}
+
+	// Fetch chaos settings
+
+	fetchChaosSettings(confMap)
+
+	// Fetch responses for GETs on /info
+
+	fetchSwiftInfo(confMap)
+
+	// Launch HTTP Server on the requested noAuthTCPPort
+
+	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(globals.noAuthTCPPort)), httpRequestHandler{})
+}
+
+func updateConf(confMap conf.ConfMap) {
+	var (
+		err                         error
+		noAuthTCPPortUpdate         uint16
+		ok                          bool
+		primaryPeer                 string
+		swiftAccountNameListCurrent []string        // element == swiftAccountName
+		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
+		swiftAccountName            string
+		volumeListUpdate            []string
+		whoAmIUpdate                string
+	)
+
+	// First validate "we" didn't change
+
+	whoAmIUpdate, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
+	}
+	if whoAmIUpdate != globals.whoAmI {
+		log.Fatal("update of whoAmI not allowed")
+	}
+
+	noAuthTCPPortUpdate, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
+	}
+	if noAuthTCPPortUpdate != globals.noAuthTCPPort {
+		log.Fatal("update of noAuthTCPPort not allowed")
+	}
+
+	// Compute current list of accounts being served
+
+	swiftAccountNameListCurrent = make([]string, 0)
+
+	globals.Lock()
+
+	for swiftAccountName = range globals.swiftAccountMap {
+		swiftAccountNameListCurrent = append(swiftAccountNameListCurrent, swiftAccountName)
+	}
+
+	globals.Unlock()
+
+	// Fetch list of accounts for which "we" are the PrimaryPeer
+
+	volumeListUpdate, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+	}
+
+	swiftAccountNameListUpdate = make(map[string]bool)
+
+	for _, volumeSectionName := range volumeListUpdate {
+		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+		}
+		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
+			continue
+		}
+		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+		}
+		swiftAccountNameListUpdate[swiftAccountName] = true
+	}
+
+	// Delete accounts not found in accountListUpdate
+
+	for _, swiftAccountName = range swiftAccountNameListCurrent {
+		_, ok = swiftAccountNameListUpdate[swiftAccountName]
+		if !ok {
+			_ = deleteSwiftAccount(swiftAccountName, true)
+		}
+	}
+
+	// Add accounts in accountListUpdate not found in globals.swiftAccountMap
+
+	for swiftAccountName = range swiftAccountNameListUpdate {
+		_, _ = createOrLocateSwiftAccount(swiftAccountName)
+	}
+
+	// Fetch (potentially updated) chaos settings
+
+	fetchChaosSettings(confMap)
+
+	// Fetch (potentially updated) responses for GETs on /info
+
+	fetchSwiftInfo(confMap)
+}
+
+func fetchChaosSettings(confMap conf.ConfMap) {
+	var (
+		chaosFailureHTTPStatus uint16
+		err                    error
+	)
+
+	chaosFailureHTTPStatus, err = confMap.FetchOptionValueUint16("RamSwiftChaos", "FailureHTTPStatus")
+	if nil == err {
+		globals.chaosFailureHTTPStatus = int(chaosFailureHTTPStatus)
+	} else {
+		globals.chaosFailureHTTPStatus = http.StatusInternalServerError
+	}
+
+	globals.accountMethodChaosFailureRate.delete, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "AccountDeleteFailureRate")
+	if nil != err {
+		globals.accountMethodChaosFailureRate.delete = 0
+	}
+	globals.accountMethodChaosFailureRate.get, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "AccountGetFailureRate")
+	if nil != err {
+		globals.accountMethodChaosFailureRate.get = 0
+	}
+	globals.accountMethodChaosFailureRate.head, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "AccountHeadFailureRate")
+	if nil != err {
+		globals.accountMethodChaosFailureRate.head = 0
+	}
+	globals.accountMethodChaosFailureRate.post, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "AccountPostFailureRate")
+	if nil != err {
+		globals.accountMethodChaosFailureRate.post = 0
+	}
+	globals.accountMethodChaosFailureRate.put, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "AccountPutFailureRate")
+	if nil != err {
+		globals.accountMethodChaosFailureRate.put = 0
+	}
+
+	globals.containerMethodChaosFailureRate.delete, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ContainerDeleteFailureRate")
+	if nil != err {
+		globals.containerMethodChaosFailureRate.delete = 0
+	}
+	globals.containerMethodChaosFailureRate.get, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ContainerGetFailureRate")
+	if nil != err {
+		globals.containerMethodChaosFailureRate.get = 0
+	}
+	globals.containerMethodChaosFailureRate.head, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ContainerHeadFailureRate")
+	if nil != err {
+		globals.containerMethodChaosFailureRate.head = 0
+	}
+	globals.containerMethodChaosFailureRate.post, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ContainerPostFailureRate")
+	if nil != err {
+		globals.containerMethodChaosFailureRate.post = 0
+	}
+	globals.containerMethodChaosFailureRate.put, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ContainerPutFailureRate")
+	if nil != err {
+		globals.containerMethodChaosFailureRate.put = 0
+	}
+
+	globals.objectMethodChaosFailureRate.delete, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ObjectDeleteFailureRate")
+	if nil != err {
+		globals.objectMethodChaosFailureRate.delete = 0
+	}
+	globals.objectMethodChaosFailureRate.get, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ObjectGetFailureRate")
+	if nil != err {
+		globals.objectMethodChaosFailureRate.get = 0
+	}
+	globals.objectMethodChaosFailureRate.head, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ObjectHeadFailureRate")
+	if nil != err {
+		globals.objectMethodChaosFailureRate.head = 0
+	}
+	globals.objectMethodChaosFailureRate.post, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ObjectPostFailureRate")
+	if nil != err {
+		globals.objectMethodChaosFailureRate.post = 0
+	}
+	globals.objectMethodChaosFailureRate.put, err = confMap.FetchOptionValueUint64("RamSwiftChaos", "ObjectPutFailureRate")
+	if nil != err {
+		globals.objectMethodChaosFailureRate.put = 0
+	}
+}
+
+func fetchSwiftInfo(confMap conf.ConfMap) {
+	var (
+		err error
+	)
 
 	maxIntAsUint64 := uint64(^uint(0) >> 1)
 
 	globals.maxAccountNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxAccountNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxAccountNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxAccountNameLength: %v", err)
 	}
 	if globals.maxAccountNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.MaxAccountNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxAccountNameLength too large... must fit in a Go int")
 	}
 	globals.maxContainerNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxContainerNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxContainerNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxContainerNameLength: %v", err)
 	}
 	if globals.maxContainerNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.maxContainerNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxContainerNameLength too large... must fit in a Go int")
 	}
 	globals.maxObjectNameLength, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "MaxObjectNameLength")
 	if nil != err {
-		logger.PanicfWithError(err, "failed fetch of RamSwiftInfo.MaxObjectNameLength")
+		log.Fatalf("failed fetch of RamSwiftInfo.MaxObjectNameLength: %v", err)
 	}
 	if globals.maxObjectNameLength > maxIntAsUint64 {
-		logger.PanicfWithError(nil, "RamSwiftInfo.maxObjectNameLength too large... must fit in a Go int")
+		log.Fatal("RamSwiftInfo.MaxObjectNameLength too large... must fit in a Go int")
 	}
-
-	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(noAuthTCPPort)), httpRequestHandler{})
 }
 
-func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, doneChan chan bool) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool) {
+	var (
+		confMap        conf.ConfMap
+		err            error
+		signalChan     chan os.Signal
+		signalReceived os.Signal
+	)
+
+	// Compute confMap
+
+	confMap, err = conf.MakeConfMapFromFile(confFile)
+	if nil != err {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	err = confMap.UpdateFromStrings(confStrings)
+	if nil != err {
+		log.Fatalf("failed to apply config overrides: %v", err)
+	}
+
 	// Kick off NoAuth Swift Proxy Emulator
 
 	go serveNoAuthSwift(confMap)
@@ -1003,15 +1358,39 @@ func Daemon(confMap conf.ConfMap, signalHandlerIsArmed *bool, doneChan chan bool
 	// Note: signalled chan must be buffered to avoid race with window between
 	// arming handler and blocking on the chan read
 
-	signalChan := make(chan os.Signal, 1)
+	signalChan = make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM)
+	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true
 	}
 
-	_ = <-signalChan
+	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
 
-	doneChan <- true
+	for {
+		signalReceived = <-signalChan
+
+		if unix.SIGHUP == signalReceived {
+			// recompute confMap and re-apply
+
+			confMap, err = conf.MakeConfMapFromFile(confFile)
+			if nil != err {
+				log.Fatalf("failed to load updated config: %v", err)
+			}
+
+			err = confMap.UpdateFromStrings(confStrings)
+			if nil != err {
+				log.Fatalf("failed to reapply config overrides: %v", err)
+			}
+
+			updateConf(confMap)
+		} else {
+			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			doneChan <- true
+
+			return
+		}
+	}
 }

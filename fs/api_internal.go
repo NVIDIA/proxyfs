@@ -51,29 +51,45 @@ func (coll dirAndFileNameSlice) Swap(i int, j int) {
 }
 
 func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
-	volumeHandle, err := inode.FetchVolumeHandle(volumeName)
+	var (
+		mS           *mountStruct
+		ok           bool
+		volStruct    *volumeStruct
+		volumeHandle inode.VolumeHandle
+	)
+
+	volumeHandle, err = inode.FetchVolumeHandle(volumeName)
 	if nil != err {
 		logger.ErrorWithError(err)
 		return
 	}
 
 	globals.Lock()
-	globals.lastMountID++
-	mS := &mountStruct{
-		id:           globals.lastMountID,
-		userID:       inode.InodeRootUserID,  // TODO: Remove this
-		groupID:      inode.InodeRootGroupID, // TODO: Remove this
-		volumeName:   volumeName,
-		options:      mountOptions,
-		VolumeHandle: volumeHandle,
-	}
-	globals.mountMap[mS.id] = mS
-	_, ok := globals.volumeMap[volumeName]
+
+	volStruct, ok = globals.volumeMap[volumeName]
 	if !ok {
-		volStruct := &volumeStruct{}
+		volStruct = &volumeStruct{}
 		volStruct.FLockMap = make(map[inode.InodeNumber]*list.List)
+		volStruct.mountList = make([]MountID, 0)
 		globals.volumeMap[volumeName] = volStruct
 	}
+
+	globals.lastMountID++
+
+	mS = &mountStruct{
+		id:           globals.lastMountID,
+		volumeName:   volumeName,
+		options:      mountOptions,
+		volStruct:    volStruct,
+		VolumeHandle: volumeHandle,
+	}
+
+	globals.mountMap[mS.id] = mS
+
+	volStruct.Lock()
+	volStruct.mountList = append(volStruct.mountList, mS.id)
+	volStruct.Unlock()
+
 	globals.Unlock()
 
 	mountHandle = mS
@@ -174,23 +190,13 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) getFileLockList(inodeNumber inode.InodeNumber) (fLocklist *list.List, err error) {
-	globals.Lock()
-	vol, ok := globals.volumeMap[mS.volumeName]
-	globals.Unlock()
+	mS.volStruct.Lock()
+	defer mS.volStruct.Unlock()
 
-	if !ok {
-		err = fmt.Errorf("Logic error... mS.volumeName == %v not found in globals.volumeMap", mS.volumeName)
-		err = blunder.AddError(err, blunder.BadMountVolumeError)
-		return
-	}
-
-	vol.Lock()
-	defer vol.Unlock()
-
-	fLocklist, ok = vol.FLockMap[inodeNumber]
+	fLocklist, ok := mS.volStruct.FLockMap[inodeNumber]
 	if !ok {
 		fLocklist = list.New()
-		vol.FLockMap[inodeNumber] = fLocklist
+		mS.volStruct.FLockMap[inodeNumber] = fLocklist
 	}
 
 	err = nil
@@ -489,6 +495,11 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
+	err = validateBaseName(basename)
+	if err != nil {
+		return
+	}
+
 	// We need both dirInodelock and the targetInode lock to make sure they don't go away and linkCount is updated correctly.
 	callerID := dlm.GenerateCallerID()
 	dirInodeLock, err := mS.initInodeLock(dirInodeNumber, callerID)
@@ -1627,6 +1638,16 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
+	err = validateBaseName(srcBasename)
+	if err != nil {
+		return
+	}
+
+	err = validateBaseName(dstBasename)
+	if err != nil {
+		return
+	}
+
 	// Flag to tell us if there's only one directory to be locked
 	srcAndDestDirsAreSame := srcDirInodeNumber == dstDirInodeNumber
 
@@ -2375,6 +2396,11 @@ func (mS *mountStruct) Validate(inodeNumber inode.InodeNumber) (err error) {
 
 	stats.IncrementOperations(&stats.FsValidateOps)
 	return nil
+}
+
+func (mS *mountStruct) VolumeName() (volumeName string) {
+	volumeName = mS.volumeName
+	return
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {

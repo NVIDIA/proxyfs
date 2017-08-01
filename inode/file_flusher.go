@@ -11,6 +11,17 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func capReadCache(flowControl *flowControlStruct) {
+	flowControl.Lock()
+
+	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
+		flowControl.readCacheLRU.next = nil
+	}
+
+	flowControl.Unlock()
+}
+
 func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
@@ -18,7 +29,6 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		cacheLineHitOffset   uint64
 		cacheLineStartOffset uint64
 		chunkOffset          uint64
-		fileInodeFlusher     *fileInodeFlusherStruct
 		flowControl          *flowControlStruct
 		inFlightHit          bool
 		inFlightHitBuf       []byte
@@ -54,26 +64,23 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 
 		fileInode.Lock()
 
-		fileInodeFlusher = fileInode.fileInodeFlusher
-
-		if nil != fileInodeFlusher {
-			inFlightLogSegment, inFlightHit = fileInodeFlusher.logSegmentsMap[step.LogSegmentNumber]
-			if inFlightHit {
-				// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
-				buf, err = inFlightLogSegment.Read(step.Offset, step.Length)
-				if nil != err {
-					fileInode.Unlock()
-					logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - optimal case")
-					err = blunder.AddError(err, blunder.SegReadError)
-					return
-				}
+		inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
+		if inFlightHit {
+			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
+			buf, err = inFlightLogSegment.Read(step.Offset, step.Length)
+			if nil != err {
 				fileInode.Unlock()
-				stats.IncrementOperations(&stats.FileWritebackHitOps)
-				stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
+				logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - optimal case")
+				err = blunder.AddError(err, blunder.SegReadError)
 				return
 			}
-			stats.IncrementOperations(&stats.FileWritebackMissOps)
+			fileInode.Unlock()
+			stats.IncrementOperations(&stats.FileWritebackHitOps)
+			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
+			return
 		}
+
+		stats.IncrementOperations(&stats.FileWritebackMissOps)
 
 		fileInode.Unlock()
 
@@ -123,7 +130,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					prev:         nil,
 					cacheLine:    cacheLine,
 				}
-				vS.flowControl.Lock()
+				flowControl.Lock()
 				// If the readCache size is at or greater than the limit, delete something.
 				if uint64(len(flowControl.readCache)) >= flowControl.readCacheLineCount {
 					// Purge LRU element
@@ -175,31 +182,25 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 			buf = append(buf, make([]byte, step.Length)...)
 		} else {
 			fileInode.Lock()
-			fileInodeFlusher = fileInode.fileInodeFlusher
-			if nil == fileInodeFlusher {
+			inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
+			if inFlightHit {
+				// The step is satisfied by reading from an inFlightLogSegment
+				inFlightHitBuf, err = inFlightLogSegment.Read(step.Offset, step.Length)
+				if nil != err {
+					fileInode.Unlock()
+					logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - general case")
+					err = blunder.AddError(err, blunder.SegReadError)
+					return
+				}
 				fileInode.Unlock()
-				inFlightHit = false
+				buf = append(buf, inFlightHitBuf...)
+				stats.IncrementOperations(&stats.FileWritebackHitOps)
 			} else {
-				inFlightLogSegment, inFlightHit = fileInodeFlusher.logSegmentsMap[step.LogSegmentNumber]
-				if inFlightHit {
-					// The step is satisfied by reading from an inFlightLogSegment
-					inFlightHitBuf, err = inFlightLogSegment.Read(step.Offset, step.Length)
-					if nil != err {
-						fileInode.Unlock()
-						logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - general case")
-						err = blunder.AddError(err, blunder.SegReadError)
-						return
-					}
-					fileInode.Unlock()
-					buf = append(buf, inFlightHitBuf...)
-					stats.IncrementOperations(&stats.FileWritebackHitOps)
+				fileInode.Unlock()
+				if (0 == stepIndex) && (1 == len(readPlan)) {
+					// No need to increment stats.FileWritebackMissOps since it was incremented above
 				} else {
-					fileInode.Unlock()
-					if (0 == stepIndex) && (1 == len(readPlan)) {
-						// No need to increment stats.FileWritebackMissOps since it was incremented above
-					} else {
-						stats.IncrementOperations(&stats.FileWritebackMissOps)
-					}
+					stats.IncrementOperations(&stats.FileWritebackMissOps)
 				}
 			}
 			if !inFlightHit {
@@ -238,7 +239,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheHitOps)
 					} else {
-						vS.flowControl.Unlock()
+						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheMissOps)
 						// Make readCacheHit true (at MRU, likely kicking out LRU)
 						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
@@ -264,7 +265,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 								flowControl.readCacheMRU = nil
 								flowControl.readCacheLRU = nil
 							} else {
-								flowControl.readCacheLRU = vS.flowControl.readCacheLRU.prev
+								flowControl.readCacheLRU = flowControl.readCacheLRU.prev
 								flowControl.readCacheLRU.next = nil
 							}
 						}
@@ -301,190 +302,132 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 
 func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) (logSegmentNumber uint64, logSegmentOffset uint64, err error) {
 	var (
-		fileInodeFlusher            *fileInodeFlusherStruct
-		openLogSegment              *inFlightLogSegmentStruct
 		openLogSegmentContainerName string
 		openLogSegmentObjectNumber  uint64
-		volume                      = fileInode.volume
 	)
 
 	fileInode.Lock()
+	defer fileInode.Unlock()
 
-	if nil == fileInode.fileInodeFlusher {
-		fileInodeFlusher = &fileInodeFlusherStruct{
-			fileInode:      fileInode,
-			flushChannel:   make(chan bool, 1), // Buffer explicit flush request sent while implicitly flushing
-			logSegmentsMap: make(map[uint64]*inFlightLogSegmentStruct),
-			openLogSegment: nil,
-			errors:         []error{},
+	if nil == fileInode.openLogSegment {
+		if 0 == len(fileInode.inFlightLogSegmentMap) {
+			vS.Lock()
+			vS.inFlightFileInodeDataMap[fileInode.InodeNumber] = fileInode
+			vS.Unlock()
 		}
 
-		fileInode.fileInodeFlusher = fileInodeFlusher
-
-		fileInode.Add(1)
-		go fileInodeFlusherDaemon(fileInodeFlusher)
-	} else {
-		fileInodeFlusher = fileInode.fileInodeFlusher
-	}
-
-	if nil == fileInodeFlusher.openLogSegment {
-		openLogSegmentContainerName, openLogSegmentObjectNumber, err = volume.provisionObject()
+		openLogSegmentContainerName, openLogSegmentObjectNumber, err = fileInode.volume.provisionObject()
 		if nil != err {
-			fileInode.Unlock()
 			logger.ErrorfWithError(err, "Provisioning LogSegment failed")
 			return
 		}
 
-		err = volume.setLogSegmentContainer(openLogSegmentObjectNumber, openLogSegmentContainerName)
+		err = fileInode.volume.setLogSegmentContainer(openLogSegmentObjectNumber, openLogSegmentContainerName)
 		if nil != err {
-			fileInode.Unlock()
 			logger.ErrorfWithError(err, "Recording LogSegment ContainerName failed")
 			return
 		}
 
-		openLogSegment = &inFlightLogSegmentStruct{
+		fileInode.openLogSegment = &inFlightLogSegmentStruct{
 			logSegmentNumber: openLogSegmentObjectNumber,
-			fileInodeFlusher: fileInodeFlusher,
-			flushChannel:     make(chan bool),
-			accountName:      volume.accountName,
+			fileInode:        fileInode,
+			flushChannel:     make(chan bool, 1), // Buffer explicit flush request sent while implicitly flushing
+			accountName:      fileInode.volume.accountName,
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
 		}
-		openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(openLogSegment.accountName, openLogSegment.containerName, openLogSegment.objectName)
+
+		fileInode.inFlightLogSegmentMap[fileInode.openLogSegment.logSegmentNumber] = fileInode.openLogSegment
+
+		fileInode.openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(fileInode.openLogSegment.accountName, fileInode.openLogSegment.containerName, fileInode.openLogSegment.objectName)
 		if nil != err {
-			fileInode.Unlock()
 			logger.ErrorfWithError(err, "Starting Chunked PUT to LogSegment failed")
 			return
 		}
 
-		fileInodeFlusher.logSegmentsMap[openLogSegment.logSegmentNumber] = openLogSegment
-		fileInodeFlusher.openLogSegment = openLogSegment
-	} else {
-		openLogSegment = fileInodeFlusher.openLogSegment
+		fileInode.Add(1)
+		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 	}
 
-	logSegmentNumber = openLogSegment.logSegmentNumber
+	logSegmentNumber = fileInode.openLogSegment.logSegmentNumber
 
-	logSegmentOffset, err = openLogSegment.BytesPut()
+	logSegmentOffset, err = fileInode.openLogSegment.BytesPut()
 	if nil != err {
-		fileInode.Unlock()
 		logger.ErrorfWithError(err, "Failed to get current LogSegmentOffset")
 		return
 	}
 
-	err = openLogSegment.ChunkedPutContext.SendChunk(buf)
+	err = fileInode.openLogSegment.ChunkedPutContext.SendChunk(buf)
 	if nil != err {
-		fileInode.Unlock()
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return
 	}
 
-	if (logSegmentOffset + uint64(len(buf))) >= volume.flowControl.maxFlushSize {
-		fileInodeFlusher.openLogSegment = nil
-		fileInodeFlusher.Add(1)
-		go inFlightLogSegmentFlusher(openLogSegment)
+	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
+		fileInode.openLogSegment.flushChannel <- true
+		fileInode.openLogSegment = nil
 	}
-
-	fileInode.Unlock()
 
 	err = nil
 	return
 }
 
 func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (err error) {
-	var (
-		fileInodeFlusher *fileInodeFlusherStruct
-	)
-
 	fileInode.Lock()
 
-	fileInodeFlusher = fileInode.fileInodeFlusher
-
-	if nil == fileInodeFlusher {
-		fileInode.Unlock()
-		err = nil
-		return
+	if nil != fileInode.openLogSegment {
+		fileInode.openLogSegment.flushChannel <- true
+		fileInode.openLogSegment = nil
 	}
-
-	fileInodeFlusher.flushChannel <- true
 
 	fileInode.Unlock()
 
 	fileInode.Wait()
 
-	if 0 == len(fileInodeFlusher.errors) {
+	if 0 == len(fileInode.inFlightLogSegmentErrors) {
 		err = nil
 	} else {
 		err = fmt.Errorf("Errors encountered while flushing inFlightLogSegments")
 	}
-
-	fileInode.fileInodeFlusher = nil
-
-	return
-}
-
-func fileInodeFlusherDaemon(fileInodeFlusher *fileInodeFlusherStruct) {
-	var (
-		fileInode      = fileInodeFlusher.fileInode
-		openLogSegment *inFlightLogSegmentStruct
-		volume         = fileInode.volume
-	)
-
-	// Wait for either an explicit or implicit (maxFlushTime) indication to perform the flush
-	select {
-	case _ = <-fileInodeFlusher.flushChannel:
-		// The sender of the (bool) signaled a trigger to FLUSH
-	case <-time.After(volume.flowControl.maxFlushTime):
-		// We reached maxFlushTime... so flush it now
-	}
-
-	// Ensure we are the only one accessing fileInodeFlusher
-	fileInode.Lock()
-
-	// If there is an openLogSegment, close it off
-	openLogSegment = fileInodeFlusher.openLogSegment
-	if nil != openLogSegment {
-		fileInodeFlusher.openLogSegment = nil
-		fileInodeFlusher.Add(1)
-		go inFlightLogSegmentFlusher(openLogSegment)
-	}
-
-	// Allow inFlightLogSegmentFlusher's to run
-	fileInode.Unlock()
-
-	// Now await any outstanding inFlightLogSegment's
-	fileInodeFlusher.Wait()
-
-	// Finally, inform anybody waiting that we are done
-	fileInode.Done()
 
 	return
 }
 
 func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	var (
-		err              error
-		fileInodeFlusher = inFlightLogSegment.fileInodeFlusher
+		err error
 	)
+
+	// Wait for either an explicit or implicit (maxFlushTime) indication to perform the flush
+	select {
+	case _ = <-inFlightLogSegment.flushChannel:
+		// The sender of the (bool) signaled a trigger to FLUSH
+	case <-time.After(inFlightLogSegment.fileInode.volume.flowControl.maxFlushTime):
+		// We reached maxFlushTime... so flush it now
+	}
 
 	// Terminate Chunked PUT
 	err = inFlightLogSegment.Close()
 	if nil != err {
-		// Chunked PUT failed... TODO: retry this here
 		err = blunder.AddError(err, blunder.InodeFlushError)
-		fileInodeFlusher.fileInode.Lock()
-		fileInodeFlusher.errors = append(fileInodeFlusher.errors, err)
-		fileInodeFlusher.fileInode.Unlock()
-		fileInodeFlusher.Done()
+		inFlightLogSegment.fileInode.Lock()
+		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
+		inFlightLogSegment.fileInode.Unlock()
+		inFlightLogSegment.fileInode.Done()
 		return
 	}
 
 	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
-	fileInodeFlusher.fileInode.Lock()
-	delete(fileInodeFlusher.logSegmentsMap, inFlightLogSegment.logSegmentNumber)
-	fileInodeFlusher.fileInode.Unlock()
+	inFlightLogSegment.fileInode.Lock()
+	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+	if 0 == len(inFlightLogSegment.fileInode.inFlightLogSegmentMap) {
+		inFlightLogSegment.fileInode.volume.Lock()
+		delete(inFlightLogSegment.fileInode.volume.inFlightFileInodeDataMap, inFlightLogSegment.fileInode.InodeNumber)
+		inFlightLogSegment.fileInode.volume.Unlock()
+	}
+	inFlightLogSegment.fileInode.Unlock()
 
 	// And we are done
-	fileInodeFlusher.Done()
+	inFlightLogSegment.fileInode.Done()
 	return
 }

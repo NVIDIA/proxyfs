@@ -2,70 +2,411 @@ package headhunter
 
 import (
 	"fmt"
-	"strings"
+	"sync"
+	"time"
 
+	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/conf"
+	"github.com/swiftstack/sortedmap"
 )
 
 const (
 	firstNonceToProvide = uint64(2) // Must skip useful values: 0 == unassigned and 1 == RootDirInodeNumber
 )
 
-type variantHandle interface {
-	up(confMap conf.ConfMap) (err error)
-	down() (err error)
-	fetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error)
+const (
+	checkpointHeaderName = "X-Container-Meta-Checkpoint"
+)
+
+const (
+	checkpointHeaderVersion1 uint64 = iota + 1
+	// uint64 in %016X indicating checkpointHeaderVersion1
+	// ' '
+	// uint64 in %016X indicating objectNumber containing inodeRec.bPlusTree        Root Node
+	// ' '
+	// uint64 in %016X indicating offset of               inodeRec.bPlusTree        Root Node
+	// ' '
+	// uint64 in %016X indicating length of               inodeRec.bPlusTree        Root Node
+	// ' '
+	// uint64 in %016X indicating objectNumber containing logSegmentRec.bPlusTree   Root Node
+	// ' '
+	// uint64 in %016X indicating offset of               logSegmentRec.bPlusTree   Root Node
+	// ' '
+	// uint64 in %016X indicating length of               logSegmentRec.bPlusTree   Root Node
+	// ' '
+	// uint64 in %016X indicating objectNumber containing bPlusTreeObject.bPlusTree Root Node
+	// ' '
+	// uint64 in %016X indicating offset of               bPlusTreeObject.bPlusTree Root Node
+	// ' '
+	// uint64 in %016X indicating length of               bPlusTreeObject.bPlusTree Root Node
+	// ' '
+	// uint64 in %016X indicating reservedToNonce
+)
+
+type checkpointHeaderV1Struct struct {
+	volume                               *volumeStruct
+	inodeRecBPlusTreeObjectNumber        uint64
+	inodeRecBPlusTreeObjectOffset        uint64
+	inodeRecBPlusTreeObjectLength        uint64
+	logSegmentRecBPlusTreeObjectNumber   uint64
+	logSegmentRecBPlusTreeObjectOffset   uint64
+	logSegmentRecBPlusTreeObjectLength   uint64
+	bPlusTreeObjectBPlusTreeObjectNumber uint64
+	bPlusTreeObjectBPlusTreeObjectOffset uint64
+	bPlusTreeObjectBPlusTreeObjectLength uint64
+	reservedToNonce                      uint64
+}
+
+const (
+	inodeRecStructType uint32 = iota
+	logSegmentRecStructType
+	bPlusTreeObjectStructType
+)
+
+type bPlusTreeStruct struct {
+	volume       *volumeStruct
+	structType   uint32              // Either inodeRecStructType, logSegmentRecStructType, or bPlusTreeObjectStructType
+	bPlusTree    sortedmap.BPlusTree // In memory representation
+	objectNumber uint64              // If != 0, objectNumber-named Object in accountName.checkpointContainerName
+	objectOffset uint64              // if objectNumber != 0, offset into the Object where Root Inode starts
+	objectLength uint64              // If objectNumber != 0, length of Root Inode
+}
+
+type checkpointRequestStruct struct {
+	waitGroup        sync.WaitGroup
+	err              error
+	exitOnCompletion bool
+}
+
+type volumeStruct struct {
+	sync.Mutex
+	volumeName                           string
+	accountName                          string
+	maxFlushSize                         uint64
+	maxInodesPerMetadataNode             uint64
+	maxLogSegmentsPerMetadataNode        uint64
+	maxDirFileNodesPerMetadataNode       uint64
+	checkpointContainerName              string
+	checkpointInterval                   time.Duration
+	checkpointIntervalsPerCompaction     uint64
+	checkpointIntervalsSinceCompaction   uint64
+	checkpointCompactorObjectNumberLimit uint64 //                  If == 0, compactor isn't running
+	//                                                              If != 0, compactor should delete up to, but not including, this object number
+	checkpointObjectNumber            uint64 //                     If == 0, no checkpointObject ChunkedPut is active
+	checkpointObjectOffset            uint64 //                     If ChunkedPut is active, next available offset
+	checkpointChunkedPutContext       swiftclient.ChunkedPutContext
+	checkpointGateWaitGroup           *sync.WaitGroup
+	checkpointDoneWaitGroup           *sync.WaitGroup
+	needFullClone                     bool
+	inodeRec                          *bPlusTreeStruct
+	logSegmentRec                     *bPlusTreeStruct
+	bPlusTreeObject                   *bPlusTreeStruct
+	nonceValuesToReserve              uint16
+	reservedToNonce                   uint64
+	nextNonce                         uint64
+	checkpointRequestChan             chan *checkpointRequestStruct
+	lastSuccessfulCheckpointHeaderPut *checkpointHeaderV1Struct
 }
 
 type globalsStruct struct {
-	variantHandle
-	volumeList []string
+	volumeMap map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
 var globals globalsStruct
 
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
-	// Hard-code variant as using Swift
+	var (
+		primaryPeer string
+		volumeName  string
+		volumeNames []string
+		whoAmI      string
+	)
 
-	globals.variantHandle = &swiftGlobals
+	// Init volume database(s)
 
-	// Determine PrimaryPeer-selected volumeList
-
-	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"Cluster\", \"WhoAmI\") failed: %v", err)
 		return
 	}
 
-	volumeSectionNameSlice, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
 		return
 	}
 
-	globals.volumeList = make([]string, 0)
+	globals.volumeMap = make(map[string]*volumeStruct)
 
-	for _, volumeName := range volumeSectionNameSlice {
-		primaryPeer, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
-		if nil != nonShadowingErr {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, nonShadowingErr)
+	for _, volumeName = range volumeNames {
+		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		if nil != err {
 			return
 		}
 
-		if 0 == strings.Compare(whoAmI, primaryPeer) {
-			globals.volumeList = append(globals.volumeList, volumeName)
+		if whoAmI == primaryPeer {
+			err = addVolume(confMap, volumeName)
+			if nil != err {
+				return
+			}
 		}
 	}
 
-	err = globals.variantHandle.up(confMap)
+	return
+}
 
+// PauseAndContract pauses the headhunter package and applies any removals from the supplied confMap
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	var (
+		deletedVolumeNames map[string]bool
+		primaryPeer        string
+		volumeName         string
+		volumeNames        []string
+		whoAmI             string
+	)
+
+	deletedVolumeNames = make(map[string]bool)
+
+	for volumeName = range globals.volumeMap {
+		deletedVolumeNames[volumeName] = true
+	}
+
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		return
+	}
+
+	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		return
+	}
+
+	for _, volumeName = range volumeNames {
+		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		if nil != err {
+			return
+		}
+
+		if whoAmI == primaryPeer {
+			delete(deletedVolumeNames, volumeName)
+		}
+	}
+
+	for volumeName = range deletedVolumeNames {
+		err = addVolume(confMap, volumeName)
+		if nil != err {
+			return
+		}
+	}
+
+	err = nil
+	return
+}
+
+// ExpandAndResume applies any additions from the supplied confMap and resumes the headhunter package
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	var (
+		ok          bool
+		primaryPeer string
+		volumeName  string
+		volumeNames []string
+		whoAmI      string
+	)
+
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		return
+	}
+
+	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	if nil != err {
+		return
+	}
+
+	for _, volumeName = range volumeNames {
+		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		if nil != err {
+			return
+		}
+
+		if whoAmI == primaryPeer {
+			_, ok = globals.volumeMap[volumeName]
+			if !ok {
+				err = downVolume(volumeName)
+				if nil != err {
+					return
+				}
+			}
+		}
+	}
+
+	err = nil
 	return
 }
 
 // Down terminates the headhunter package
 func Down() (err error) {
-	err = globals.variantHandle.down()
+	var (
+		volumeName string
+	)
+
+	for volumeName = range globals.volumeMap {
+		err = downVolume(volumeName)
+		if nil != err {
+			return
+		}
+	}
+
+	err = nil
+	return
+}
+
+func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	var (
+		checkpointHeader *checkpointHeaderV1Struct
+		flowControlName  string
+		volume           *volumeStruct
+	)
+
+	volume = &volumeStruct{volumeName: volumeName, checkpointIntervalsSinceCompaction: 0, checkpointCompactorObjectNumberLimit: 0, checkpointObjectNumber: 0, checkpointGateWaitGroup: nil, checkpointDoneWaitGroup: nil, needFullClone: false}
+
+	volume.inodeRec = &bPlusTreeStruct{volume: volume, structType: inodeRecStructType}
+	volume.logSegmentRec = &bPlusTreeStruct{volume: volume, structType: logSegmentRecStructType}
+	volume.bPlusTreeObject = &bPlusTreeStruct{volume: volume, structType: bPlusTreeObjectStructType}
+
+	volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
+	if nil != err {
+		return
+	}
+
+	flowControlName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+	if nil != err {
+		return
+	}
+
+	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlName, "MaxFlushSize")
+	if nil != err {
+		return
+	}
+
+	volume.nonceValuesToReserve, err = confMap.FetchOptionValueUint16(volumeName, "NonceValuesToReserve")
+	if nil != err {
+		return
+	}
+
+	volume.maxInodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxInodesPerMetadataNode")
+	if nil != err {
+		// TODO: eventually, just return
+		volume.maxInodesPerMetadataNode = 32
+	}
+
+	volume.maxLogSegmentsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxLogSegmentsPerMetadataNode")
+	if nil != err {
+		// TODO: eventually, just return
+		volume.maxLogSegmentsPerMetadataNode = 64
+	}
+
+	volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxDirFileNodesPerMetadataNode")
+	if nil != err {
+		// TODO: eventually, just return
+		volume.maxDirFileNodesPerMetadataNode = 16
+	}
+
+	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeName, "CheckpointContainerName")
+	if nil != err {
+		return
+	}
+
+	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeName, "CheckpointInterval")
+	if nil != err {
+		return
+	}
+
+	volume.checkpointIntervalsPerCompaction, err = confMap.FetchOptionValueUint64(volumeName, "CheckpointIntervalsPerCompaction")
+	if nil != err {
+		return
+	}
+
+	checkpointHeader = &checkpointHeaderV1Struct{volume: volume}
+
+	err = checkpointHeader.get()
+	if nil != err {
+		return
+	}
+
+	volume.lastSuccessfulCheckpointHeaderPut = checkpointHeader
+
+	volume.inodeRec.objectNumber = checkpointHeader.inodeRecBPlusTreeObjectNumber
+	volume.inodeRec.objectOffset = checkpointHeader.inodeRecBPlusTreeObjectOffset
+	volume.inodeRec.objectLength = checkpointHeader.inodeRecBPlusTreeObjectLength
+
+	volume.logSegmentRec.objectNumber = checkpointHeader.logSegmentRecBPlusTreeObjectNumber
+	volume.logSegmentRec.objectOffset = checkpointHeader.logSegmentRecBPlusTreeObjectOffset
+	volume.logSegmentRec.objectLength = checkpointHeader.logSegmentRecBPlusTreeObjectLength
+
+	volume.bPlusTreeObject.objectNumber = checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber
+	volume.bPlusTreeObject.objectOffset = checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset
+	volume.bPlusTreeObject.objectLength = checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength
+
+	volume.reservedToNonce = checkpointHeader.reservedToNonce
+
+	volume.nextNonce = volume.reservedToNonce // This will trigger a Nonce pool population on next FetchNonce() call
+
+	if 0 == volume.inodeRec.objectNumber {
+		volume.inodeRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxInodesPerMetadataNode, sortedmap.CompareUint64, volume.inodeRec)
+	} else {
+		volume.inodeRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.inodeRec.objectNumber, volume.inodeRec.objectOffset, volume.inodeRec.objectLength, sortedmap.CompareUint64, volume.inodeRec)
+		if nil != err {
+			return
+		}
+	}
+	if 0 == volume.logSegmentRec.objectNumber {
+		volume.logSegmentRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxLogSegmentsPerMetadataNode, sortedmap.CompareUint64, volume.logSegmentRec)
+	} else {
+		volume.logSegmentRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.logSegmentRec.objectNumber, volume.logSegmentRec.objectOffset, volume.logSegmentRec.objectLength, sortedmap.CompareUint64, volume.logSegmentRec)
+		if nil != err {
+			return
+		}
+	}
+	if 0 == volume.bPlusTreeObject.objectNumber {
+		volume.bPlusTreeObject.bPlusTree = sortedmap.NewBPlusTree(volume.maxDirFileNodesPerMetadataNode, sortedmap.CompareUint64, volume.bPlusTreeObject)
+	} else {
+		volume.bPlusTreeObject.bPlusTree, err = sortedmap.OldBPlusTree(volume.bPlusTreeObject.objectNumber, volume.bPlusTreeObject.objectOffset, volume.bPlusTreeObject.objectLength, sortedmap.CompareUint64, volume.bPlusTreeObject)
+		if nil != err {
+			return
+		}
+	}
+
+	volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
+
+	globals.volumeMap[volumeName] = volume
+
+	go volume.checkpointDaemon()
+
+	err = nil
+	return
+}
+
+func downVolume(volumeName string) (err error) {
+	var (
+		checkpointRequest checkpointRequestStruct
+		ok                bool
+		volume            *volumeStruct
+	)
+
+	volume, ok = globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("\"%v\" not found in volumeMap", volumeName)
+		return
+	}
+
+	checkpointRequest.exitOnCompletion = true
+	checkpointRequest.waitGroup.Add(1)
+
+	volume.checkpointRequestChan <- &checkpointRequest
+
+	checkpointRequest.waitGroup.Wait()
+
+	err = checkpointRequest.err
 
 	return
 }

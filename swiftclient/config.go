@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/conf"
 )
 
@@ -33,8 +34,12 @@ type globalsStruct struct {
 	noAuthStringAddr         string
 	noAuthTCPAddr            *net.TCPAddr
 	timeout                  time.Duration // TODO: Currently not enforced
-	retryDelay               time.Duration // TODO: Currently only implemented for Object Chunked PUTs
-	retryLimit               uint16        // TODO: Currently only implemented for Object Chunked PUTs
+	retryLimit               uint16        // maximum retries
+	retryLimitObject         uint16        // maximum retries for object ops
+	retryDelay               time.Duration // delay before first retry
+	retryDelayObject         time.Duration // delay before first retry for object ops
+	retryExpBackoff          float64       // increase delay by this factor each try (exponential backoff)
+	retryExpBackoffObject    float64       // increase delay by this factor each try for object ops
 	nilTCPConn               *net.TCPConn
 	chunkedConnectionPool    chan *net.TCPConn
 	nonChunkedConnectionPool chan *net.TCPConn
@@ -44,7 +49,7 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up reads the Swift configuration to enable subsequent communication.
+// Up reads the Swift configuration to enable subsequent communication
 func Up(confMap conf.ConfMap) (err error) {
 	var (
 		chunkedConnectionPoolSize    uint16
@@ -75,19 +80,68 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
-	if nil != err {
-		// TODO: eventually, just return
-		globals.retryDelay, err = time.ParseDuration("50ms")
+	// take care of both RetryLimit and RetryLimitObject at same time
+	var retryLimitMap = map[string]*uint16{
+		"RetryLimit":       &globals.retryLimit,
+		"RetryLimitObject": &globals.retryLimitObject,
+	}
+	for name, ptr := range retryLimitMap {
+		*ptr, err = confMap.FetchOptionValueUint16("SwiftClient", name)
 		if nil != err {
-			return
+			// TODO: once controller understands RetryDelay paramater, return if undefined
+			// return
+			*ptr = 21
+		}
+		if *ptr > 20 {
+			logger.Warnf("config variable 'SwiftClient.%s' at %v is too big; changing to 5",
+				name, *ptr)
+			*ptr = 5
 		}
 	}
 
-	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
-	if nil != err {
-		// TODO: eventually, just return
-		globals.retryLimit = 10
+	// take care of both RetryDelay and RetryDelayObject at same time
+	var retryDelayMap = map[string]*time.Duration{
+		"RetryDelay":       &globals.retryDelay,
+		"RetryDelayObject": &globals.retryDelayObject,
+	}
+	for name, ptr := range retryDelayMap {
+		*ptr, err = confMap.FetchOptionValueDuration("SwiftClient", name)
+		if nil != err {
+			// TODO: once controller understands RetryDelay*
+			// paramater, return if not defined
+			*ptr = 0
+			globals.retryDelay = 0
+		}
+		if *ptr < 50*time.Millisecond || *ptr > 30*time.Second {
+			logger.Warnf("config variable 'SwiftClient.%s' at %d msec is too big or too small; changing to 1s",
+				name, *ptr/time.Millisecond)
+			*ptr, err = time.ParseDuration("1s")
+		}
+	}
+
+	// take care of both RetryExpBackoff and RetryExpBackoffObject at same time
+	var retryExpBackoffMap = map[string]*float64{
+		"RetryExpBackoff":       &globals.retryExpBackoff,
+		"RetryExpBackoffObject": &globals.retryExpBackoffObject,
+	}
+	for name, ptr := range retryExpBackoffMap {
+		var expBackoff uint32
+		expBackoff, err = confMap.FetchOptionValueFloatScaledToUint32("SwiftClient", name, 1000)
+		if nil != err {
+			// TODO: once controller understands RetryExpBackoff*
+			// paramater, return if not defined
+			expBackoff = 0
+		}
+		*ptr = float64(expBackoff) / float64(1000)
+		if *ptr < 0.5 || *ptr > 3.0 {
+			var ebo float64 = 2.0
+			if name == "RetryExpBackoff" {
+				ebo = 1.2
+			}
+			logger.Warnf("config variable 'SwiftClient.%s' at %2.1f is too big or too small; changing to %2.1f",
+				name, *ptr, ebo)
+			*ptr = ebo
+		}
 	}
 
 	globals.nilTCPConn = nil
@@ -151,7 +205,21 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// Down terminates all outstanding communications as part of process shutdown.
+// PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
+func PauseAndContract(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
+// ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
+func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	// Nothing to do here
+	err = nil
+	return
+}
+
+// Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
 	globals.pendingDeletes.Lock()
 

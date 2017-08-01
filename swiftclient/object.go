@@ -16,6 +16,34 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 )
 
+func objectContentLengthWithRetry(accountName string, containerName string, objectName string) (uint64, error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectContentLength() with the paramaters passed to this function,
+	// stashes the relevant return values into the local variables of this
+	// function, and then returns err and whether it is retriable to
+	// RequestWithRetry()
+	var (
+		length uint64
+		err    error
+	)
+	request := func() (bool, error) {
+		var err error
+		length, err = objectContentLength(accountName, containerName, objectName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string     = fmt.Sprintf("swiftclient.objectContentLength(\"%v/%v/%v\")",
+			accountName, containerName, objectName)
+		statnm RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjContentLengthRetryOps,
+			retrySuccessCnt: &stats.SwiftObjContentLengthRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return length, err
+}
+
 func objectContentLength(accountName string, containerName string, objectName string) (length uint64, err error) {
 	var (
 		contentLengthAsInt int
@@ -82,12 +110,12 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		srcObjectSize        uint64
 	)
 
-	srcObjectSize, err = objectContentLength(srcAccountName, srcContainerName, srcObjectName)
+	srcObjectSize, err = objectContentLengthWithRetry(srcAccountName, srcContainerName, srcObjectName)
 	if nil != err {
 		return
 	}
 
-	dstChunkedPutContext, err = objectFetchChunkedPutContext(dstAccountName, dstContainerName, dstObjectName)
+	dstChunkedPutContext, err = objectFetchChunkedPutContextWithRetry(dstAccountName, dstContainerName, dstObjectName)
 	if nil != err {
 		return
 	}
@@ -102,9 +130,9 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		if (srcObjectPosition + chunkSize) > srcObjectSize {
 			chunkSize = srcObjectSize - srcObjectPosition
 
-			chunk, _, err = objectTail(srcAccountName, srcContainerName, srcObjectName, chunkSize)
+			chunk, _, err = objectTailWithRetry(srcAccountName, srcContainerName, srcObjectName, chunkSize)
 		} else {
-			chunk, err = objectGet(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
+			chunk, err = objectGetWithRetry(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
 		}
 
 		srcObjectPosition += chunkSize
@@ -182,15 +210,38 @@ func objectDeleteAsyncDaemon() {
 				pendingDelete.wgPreCondition.Wait()
 			}
 
-			_ = objectDeleteSync(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName)
+			_ = objectDeleteSyncWithRetry(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName)
 
 			if nil != pendingDelete.wgPostSignal {
+				// TODO: what if the delete failed?
 				pendingDelete.wgPostSignal.Done()
 			}
 
 			pendingDeletes.Lock()
 		}
 	}
+}
+
+func objectDeleteSyncWithRetry(accountName string, containerName string, objectName string) (err error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectDeleteSync() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	request := func() (bool, error) {
+		var err error
+		err = objectDeleteSync(accountName, containerName, objectName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectDeleteSync(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjDeleteRetryOps,
+			retrySuccessCnt: &stats.SwiftObjDeleteRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return err
 }
 
 func objectDeleteSync(accountName string, containerName string, objectName string) (err error) {
@@ -237,6 +288,34 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	stats.IncrementOperations(&stats.SwiftObjDeleteOps)
 
 	return
+}
+
+func objectGetWithRetry(accountName string, containerName string, objectName string,
+	offset uint64, length uint64) ([]byte, error) {
+
+	// request is a function that, through the miracle of closure, calls
+	// objectGet() with the paramaters passed to this function, stashes the
+	// relevant return values into the local variables of this function, and
+	// then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		buf []byte
+		err error
+	)
+	request := func() (bool, error) {
+		var err error
+		buf, err = objectGet(accountName, containerName, objectName, offset, length)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjGetRetryOps,
+			retrySuccessCnt: &stats.SwiftObjGetRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return buf, err
 }
 
 func objectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
@@ -329,6 +408,32 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	return
 }
 
+func objectHeadWithRetry(accountName string, containerName string, objectName string) (map[string][]string, error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectHead() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		headers map[string][]string
+		err     error
+	)
+	request := func() (bool, error) {
+		var err error
+		headers, err = objectHead(accountName, containerName, objectName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectHead(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjHeadRetryOps,
+			retrySuccessCnt: &stats.SwiftObjHeadRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return headers, err
+}
+
 func objectHead(accountName string, containerName string, objectName string) (headers map[string][]string, err error) {
 	var (
 		fsErr      blunder.FsError
@@ -372,6 +477,32 @@ func objectHead(accountName string, containerName string, objectName string) (he
 	stats.IncrementOperations(&stats.SwiftObjHeadOps)
 
 	return
+}
+
+func objectLoadWithRetry(accountName string, containerName string, objectName string) ([]byte, error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectLoad() with the paramaters passed to this function, stashes the
+	// relevant return values into the local variables of this function, and
+	// then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		buf []byte
+		err error
+	)
+	request := func() (bool, error) {
+		var err error
+		buf, err = objectLoad(accountName, containerName, objectName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectLoad(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjLoadRetryOps,
+			retrySuccessCnt: &stats.SwiftObjLoadRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return buf, err
 }
 
 func objectLoad(accountName string, containerName string, objectName string) (buf []byte, err error) {
@@ -456,9 +587,38 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 
 	releaseNonChunkedConnection(tcpConn, parseConnection(headers))
 
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjLoad, uint64(contentLength))
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjLoad, uint64(len(buf)))
 
 	return
+}
+
+func objectTailWithRetry(accountName string, containerName string, objectName string,
+	length uint64) ([]byte, int64, error) {
+
+	// request is a function that, through the miracle of closure, calls
+	// objectTail() with the paramaters passed to this function, stashes the
+	// relevant return values into the local variables of this function, and
+	// then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		buf          []byte
+		objectLength int64
+		err          error
+	)
+	request := func() (bool, error) {
+		var err error
+		buf, objectLength, err = objectTail(accountName, containerName, objectName, length)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectTail(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjTailRetryOps,
+			retrySuccessCnt: &stats.SwiftObjTailRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return buf, objectLength, err
 }
 
 func objectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, objectLength int64, err error) {
@@ -595,6 +755,32 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 
 	err = nil
 	return
+}
+
+func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string) (*chunkedPutContextStruct, error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectFetchChunkedPutContext() with the paramaters passed to this
+	// function, stashes the relevant return values into the local variables of
+	// this function, and then returns err and whether it is retriable to
+	// RequestWithRetry()
+	var (
+		chunkedPutContext *chunkedPutContextStruct
+	)
+	request := func() (bool, error) {
+		var err error
+		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectFetchChunkedPutContext(\"%v/%v/%v\")", accountName, containerName, objectName)
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjFetchPutCtxtRetryOps,
+			retrySuccessCnt: &stats.SwiftObjFetchPutCtxtRetrySuccessOps}
+	)
+	err := retryObj.RequestWithRetry(request, &opname, &statnm)
+	return chunkedPutContext, err
 }
 
 func objectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext *chunkedPutContextStruct, err error) {
