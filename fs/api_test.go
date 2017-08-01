@@ -194,6 +194,47 @@ func testTeardown() (err error) {
 	return
 }
 
+// TODO: Enhance this to do a stat() as well and check number of files
+func expectDirectory(t *testing.T, userID inode.InodeUserID, groupID inode.InodeGroupID, inodeNum inode.InodeNumber, expectedEntries []string) {
+	readdirEntries, numEntries, moreEntries, err := mS.Readdir(userID, groupID, nil, inodeNum, "", 0, 0)
+	if nil != err {
+		t.Fatalf("Readdir() [#1] returned error: %v", err)
+	}
+	if uint64(len(expectedEntries)) != numEntries {
+		t.Fatalf("Readdir() [#1] returned unexpected number of entries (%v) -  should have been %v", numEntries, len(expectedEntries))
+	}
+	if moreEntries {
+		t.Fatalf("Readdir() [#1] returned moreEntries == true... should have been false")
+	}
+
+	entriesFound := make(map[string]bool)
+	for i := uint64(0); i < numEntries; i++ {
+		entriesFound[readdirEntries[i].Basename] = true
+	}
+
+	for i := 0; i < len(expectedEntries); i++ {
+		expected := expectedEntries[i]
+		_, found := entriesFound[expected]
+		if !found {
+			t.Errorf("Expected entry %s not found in readdirEntries", expected)
+		}
+	}
+}
+
+func createTestDirectory(t *testing.T, dirname string) (dirInode inode.InodeNumber) {
+	var err error
+
+	// Get root dir inode number
+	rootDirInodeNumber := inode.RootDirInodeNumber
+
+	dirInode, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, dirname, inode.PosixModePerm)
+	if nil != err {
+		t.Fatalf("Mkdir() returned error: %v", err)
+	}
+
+	return dirInode
+}
+
 func TestMain(m *testing.M) {
 	flag.Parse()
 
@@ -221,11 +262,14 @@ func TestMain(m *testing.M) {
 	os.Exit(testResults)
 }
 
+// TODO:  Ultimately, each of these tests should at least run in their own directory
+//        a la createTestDirectory(), or preferably some stronger effort should be
+//        made to insulate them from each other.
 func TestCreateAndLookup(t *testing.T) {
 	rootDirInodeNumber := inode.RootDirInodeNumber
 	basename := "create_lookup.test"
-	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Unexpectedly couldn't create file: %v", err)
 	}
@@ -237,6 +281,11 @@ func TestCreateAndLookup(t *testing.T) {
 
 	if createdFileInodeNumber != foundFileInodeNumber {
 		t.Fatalf("Expected created inode number %v to equal found inode number %v", createdFileInodeNumber, foundFileInodeNumber)
+	}
+
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	if nil != err {
+		t.Fatalf("Unlink() returned error: %v", err)
 	}
 }
 
@@ -270,6 +319,11 @@ func TestGetstat(t *testing.T) {
 
 	// TODO: perform a write, check that size has changed accordingly
 	// TODO: make and delete hardlinks, check that link count has changed accordingly
+
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	if nil != err {
+		t.Fatalf("Unlink() returned error: %v", err)
+	}
 }
 
 // TestAllAPIPositiveCases() follows the following "positive" test steps:
@@ -298,8 +352,7 @@ func TestGetstat(t *testing.T) {
 //    Unlink      #4 A/B                                  : delete the subdirectory
 //    Unmount        A                                    : unmount the Volume
 //
-// TODO: Since this will initially be tested against the FUSE ProxyFS Python POC code, hard links are not currently tested
-//       As such, Rename() also is not currently tested (as such requires a dir_entry->inode mapping also used for hardlinks)
+// TODO: Rename(), Link() tests
 
 var tempVolumeName string // TODO: This is currently the local file system full path
 
@@ -423,90 +476,41 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Create      #2 A/B/E                                : create a normal file within subdirectory
-	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile", inode.PosixModePerm)
+	testSubDirectoryFileInode, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile", inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Create() [#2] returned error: %v", err)
 	}
 
-	//    Readdir     #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
-	_, readdir_1_rspNumEntries, readdir_1_moreEntries, err := mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "", 0, 0)
+	//    Readdir and examine contents
+	entriesExpected := []string{".", "..", "TestSubDirectoryFile"}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
+
+	//    Link A/B/E
+	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink", testSubDirectoryFileInode)
 	if nil != err {
-		t.Fatalf("Readdir() [#1] returned error: %v", err)
+		t.Fatalf("Link() returned error: %v", err)
 	}
-	if 3 != readdir_1_rspNumEntries {
-		t.Fatalf("Readdir() [#1] returned unexpected number of entries (%v) -  should have been %v", readdir_1_rspNumEntries, 3)
-	}
-	if readdir_1_moreEntries {
-		t.Fatalf("Readdir() [#1] returned moreEntries == true... should have been false")
-	}
-	//	if readdir_1_buf[0] != "." {
-	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [0]")
-	//	}
-	//	if readdir_1_buf[1] != ".." {
-	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [1]")
-	//	}
-	//	if readdir_1_buf[2] != "TestSubDirectoryFile" {
-	//		t.Fatalf("Readdir() [#1] returned unexpected directory entry [2]")
-	//	}
 
-	/* KM: This code needs some changes before it will work again...
-	    //    Statfs         A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
-		_, err = mount_mountHandle.Statfs()
-
-		if nil != err {
-			t.Fatalf("Statfs() returned error: %v", err)
-		}
-
-		// It is unexpected that the values returned are at all reliable, so no check is made here
-	*/
+	entriesExpected = []string{".", "..", "TestSubDirectoryFile", "TestSubDirectoryFileHardLink"}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
 
 	//    Unlink      #1 A/B/E                                : delete the normal file within the subdirectory
 	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile")
 	if nil != err {
 		t.Fatalf("Unlink() [#1] returned error: %v", err)
 	}
-	/*
-	       //    Readdir     #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
-	   	readdir_2_buf, readdir_2_rspNumEntries, _, readdir_2_moreEntries, err := mount_rootInodeHandle.Readdir("", 3, 0)
 
-	   	if nil != err {
-	   		t.Fatalf("Readdir() [#2] returned error: %v", err)
-	   	}
-	   	if 3 != readdir_2_rspNumEntries {
-	   		t.Fatalf("Readdir() [#2] returned unexpected number of entries (%v) -  should have been %v", readdir_2_rspNumEntries, 3)
-	   	}
-	   	if !readdir_2_moreEntries {
-	   		t.Fatalf("Readdir() [#2] returned moreEntries == false... should have been true")
-	   	}
-	   	if readdir_2_buf[0] != "." {
-	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [0]")
-	   	}
-	   	if readdir_2_buf[1] != ".." {
-	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [1]")
-	   	}
-	   	if readdir_2_buf[2] != "TestNormalFile" {
-	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [2]")
-	   	}
+	entriesExpected = []string{".", "..", "TestSubDirectoryFileHardLink"}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
 
-	       //    Readdir     #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
-	   	readdir_3_buf, readdir_3_rspNumEntries, _, readdir_3_moreEntries, err := mount_rootInodeHandle.Readdir(readdir_2_buf[2], 3, 0)
+	//    Unlink      #1.5 A/B/E                                : delete the normal file within the subdirectory
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink")
+	if nil != err {
+		t.Fatalf("Unlink() [#1.5] returned error: %v", err)
+	}
 
-	   	if nil != err {
-	   		t.Fatalf("Readdir() [#3] returned error: %v", err)
-	   	}
-	   	if 2 != readdir_3_rspNumEntries {
-	   		t.Fatalf("Readdir() [#3] returned unexpected number of entries (%v) -  should have been %v", readdir_3_rspNumEntries, 2)
-	   	}
-	   	if readdir_3_moreEntries {
-	   		t.Fatalf("Readdir() [#3] returned moreEntries == true... should have been false")
-	   	}
-	   	if readdir_3_buf[0] != "TestSubDirectory" {
-	   		t.Fatalf("Readdir() [#2] returned unexpected directory entry [0]")
-	   	}
-	   	if readdir_3_buf[1] != "TestSymlink" {
-	   		t.Fatalf("Readdir() [#3] returned unexpected directory entry [1]")
-	   	}
-	*/
+	entriesExpected = []string{".", "..", "TestSymlink", "TestNormalFile", "TestSubDirectory"}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, rootDirInodeNumber, entriesExpected)
 
 	//    Unlink      #2 A/D                                  : delete the symlink
 	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink")
@@ -527,8 +531,70 @@ func TestAllAPIPositiveCases(t *testing.T) {
 		t.Fatalf("Unlink() [#4] returned error: %v", err)
 	}
 
-	//    Unmount        A                                    : unmount the Volume
-	// => this is done by the main test loop.
+	entriesExpected = []string{".", ".."}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, rootDirInodeNumber, entriesExpected)
+}
+
+// TODO: flesh this out with other boundary condition testing for Link
+func TestBadLinks(t *testing.T) {
+	testDirInode := createTestDirectory(t, "BadLinks")
+
+	validFile := "PerfectlyValidFile"
+	validFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	nameTooLong := strings.Repeat("x", FileNameMax+1)
+	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, validFileInodeNumber)
+	if nil != err {
+		if blunder.IsNot(err, blunder.NameTooLongError) {
+			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
+		}
+	} else {
+		t.Fatal("Link() unexpectedly succeeded on too-long filename!")
+	}
+
+	entriesExpected := []string{".", "..", validFile}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+}
+
+// TODO: flesh this out with other boundary condition testing for Rename
+func TestBadRename(t *testing.T) {
+	testDirInode := createTestDirectory(t, "BadRename")
+	nameTooLong := strings.Repeat("x", FileNameMax+1)
+
+	validFile := "PerfectlyValidFile"
+	_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// Try to rename a valid file to a name that is too long
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, testDirInode, nameTooLong)
+	if nil != err {
+		if blunder.IsNot(err, blunder.NameTooLongError) {
+			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
+		}
+	} else {
+		t.Fatal("Link() unexpectedly succeeded on too-long filename!")
+	}
+
+	entriesExpected := []string{".", "..", validFile}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+
+	// Try to rename a nonexistent file with a name that is too long
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, testDirInode, "AlsoAGoodFilename")
+	if nil != err {
+		if blunder.IsNot(err, blunder.NameTooLongError) {
+			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
+		}
+	} else {
+		t.Fatal("Link() unexpectedly succeeded on too-long filename!")
+	}
+
+	entriesExpected = []string{".", "..", validFile}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
 }
 
 func TestBadChownChmod(t *testing.T) {
