@@ -569,8 +569,9 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 	if (flags & O_DIRECTORY) {
 		path = resolve_path(handle, smb_fname->base_name);
 		err = proxyfs_lookup_path(MOUNT_HANDLE(handle), path, &fd->inum);
+		free(path);
+
 		if (err != 0) {
-			free(path);
 			free(fd);
 			errno = err;
 			return -1;
@@ -609,8 +610,9 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 	} else {
 		path = resolve_path(handle, smb_fname->base_name);
 		err = proxyfs_lookup_path(MOUNT_HANDLE(handle), path, &fd->inum);
+		free(path);
+
 		if (err != 0) {
-			free(path);
 			free(fd);
 			errno = err;
 			return -1;
@@ -2123,18 +2125,15 @@ static SMB_ACL_T blob_to_smb_acl(DATA_BLOB *blob, TALLOC_CTX *mem_ctx) {
 	return acl;
 }
 
-static DATA_BLOB smb_acl_to_blob(SMB_ACL_T acl, TALLOC_CTX *mem_ctx) {
+static void smb_acl_to_blob(SMB_ACL_T acl, TALLOC_CTX *mem_ctx, DATA_BLOB *blob) {
 
 	enum ndr_err_code ndr_err;
-	DATA_BLOB blob;
-	blob.data = NULL;
+	blob->data = NULL;
 
-	ndr_err = ndr_push_struct_blob(&blob, mem_ctx, acl, (ndr_push_flags_fn_t)ndr_push_smb_acl_t);
+	ndr_err = ndr_push_struct_blob(blob, mem_ctx, acl, (ndr_push_flags_fn_t)ndr_push_smb_acl_t);
 	if (!NDR_ERR_CODE_IS_SUCCESS(ndr_err)) {
 		DEBUG(1, ("ndr_push_acl_t failed: %s\n", ndr_errstr(ndr_err)));
 	}
-
-	return blob;
 }
 
 static SMB_ACL_T vfs_proxyfs_sys_acl_get_file(struct vfs_handle_struct *handle,
@@ -2186,6 +2185,8 @@ static SMB_ACL_T vfs_proxyfs_sys_acl_get_file(struct vfs_handle_struct *handle,
 	blob.length = size;
 	result = blob_to_smb_acl(&blob, mem_ctx);
 
+	free(buf);
+
 	return result;
 }
 
@@ -2221,6 +2222,8 @@ static SMB_ACL_T vfs_proxyfs_sys_acl_get_fd(struct vfs_handle_struct *handle,
 	blob.length = size;
 	result = blob_to_smb_acl(&blob, mem_ctx);
 
+	free(buf);
+
 	return result;
 }
 
@@ -2254,10 +2257,12 @@ static int vfs_proxyfs_sys_acl_set_file(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	DATA_BLOB blob = smb_acl_to_blob(theacl, mem_ctx);
+	DATA_BLOB blob;
+	smb_acl_to_blob(theacl, mem_ctx, &blob);
 	if (!blob.data) {
 		DEBUG(1, ("Failed to get memory to convert acl to blob\n"));
 		free(rpath);
+		talloc_free(mem_ctx);
 		errno = ENOMEM;
 		return -1;
 	}
@@ -2273,6 +2278,7 @@ static int vfs_proxyfs_sys_acl_set_file(struct vfs_handle_struct *handle,
 
 	talloc_free(blob.data);
 	free(rpath);
+	talloc_free(mem_ctx);
 
 	DEBUG(10, ("SUCCESSFULLY stored the acl\n"));
 	return ret;
@@ -2293,15 +2299,18 @@ static int vfs_proxyfs_sys_acl_set_fd(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	DATA_BLOB blob = smb_acl_to_blob(theacl, mem_ctx);
+	DATA_BLOB blob;
+	smb_acl_to_blob(theacl, mem_ctx, &blob);
 	if (!blob.data) {
 		DEBUG(1, ("Failed to get memory to convert acl to blob\n"));
 		errno = ENOMEM;
+		talloc_free(mem_ctx);
 		return -1;
 	}
 
 	int ret = proxyfs_set_xattr(MOUNT_HANDLE(handle), fd->inum, key, blob.data, blob.length, 0);
 	talloc_free(blob.data);
+	talloc_free(mem_ctx);
 
 	if (ret != 0) {
 		errno = ret;
