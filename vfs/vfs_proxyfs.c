@@ -49,7 +49,7 @@
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_VFS
 
-static char *resolve_path(struct vfs_handle_struct *handle,
+char *resolve_path(struct vfs_handle_struct *handle,
                           const char *path)
 {
 	char *path_to_resolve;
@@ -81,10 +81,11 @@ static char *resolve_path(struct vfs_handle_struct *handle,
 	int i = 0;
 	int path_count = 0;
 	char *token, *saveptr;
+	char *firstptr = path_to_resolve;
 
 	do {
-		token = strtok_r(path_to_resolve, "/", &saveptr);
-		path_to_resolve = NULL;
+		token = strtok_r(firstptr, "/", &saveptr);
+		firstptr = NULL;
 
 		if (token == NULL) {
 			break;
@@ -100,14 +101,12 @@ static char *resolve_path(struct vfs_handle_struct *handle,
 			}
 
 			path_count -= strlen(path_stack[i - 1]);
-			free(path_stack[i - 1]);
 			i--;
 			continue;
 		}
 
-		char *path_elm = strdup(token);
-		path_stack[i] = path_elm;
-		path_count += strlen(path_elm);
+		path_stack[i] = token;
+		path_count += strlen(token);
 		i++;
 	} while (token != NULL);
 
@@ -120,10 +119,10 @@ static char *resolve_path(struct vfs_handle_struct *handle,
 	for (idx = 0, j = 0; j < i; j++) {
 		snprintf(&rpath[idx], buf_len - idx, "/%s", path_stack[j]);
 		idx += strlen(path_stack[j]) + 1;
-		free(path_stack[j]);
 	}
 
 	free(path_stack);
+	free(path_to_resolve);
 
 	return rpath;
 }
