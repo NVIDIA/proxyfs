@@ -110,7 +110,6 @@ func Up(confMap conf.ConfMap) (err error) {
 			// TODO: once controller understands RetryDelay*
 			// paramater, return if not defined
 			*ptr = 0
-			globals.retryDelay = 0
 		}
 		if *ptr < 50*time.Millisecond || *ptr > 30*time.Second {
 			logger.Warnf("config variable 'SwiftClient.%s' at %d msec is too big or too small; changing to 1s",
@@ -143,6 +142,11 @@ func Up(confMap conf.ConfMap) (err error) {
 			*ptr = ebo
 		}
 	}
+	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
+		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
+	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
+		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
+		globals.retryExpBackoffObject)
 
 	globals.nilTCPConn = nil
 
