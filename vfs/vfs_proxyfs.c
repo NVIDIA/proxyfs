@@ -352,7 +352,7 @@ static uint32_t vfs_proxyfs_fs_capabilities(struct vfs_handle_struct *handle,
                                             enum timestamp_set_resolution *p_ts_res)
 {
 	DEBUG(10, ("vfs_proxyfs_fs_capabilities: %s\n", handle->conn->connectpath));
-	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES;
+	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
 
 #ifdef STAT_HAVE_NSEC
 	*p_ts_res = TIMESTAMP_SET_NT_OR_BETTER;
@@ -425,7 +425,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
                                           SMB_STRUCT_STAT *sbuf)
 {
 	int ret;
-	struct dirent *dir_ent;
+	struct dirent *dir_ent = NULL;
 	file_handle_t *dir = (file_handle_t *)dirp;
 
 	uint64_t num_ents, size;
