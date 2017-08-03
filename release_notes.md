@@ -5,6 +5,9 @@
 ### Features:
 
 * Enhanced tolerance for intermittent Swift errors
+* Read Cache now consumes a configurable percentage of available memory
+* Flow Controls now get a weighted fraction of total Read Cache memory
+* Configuration reload now supported via SIGHUP signal
 
 ### Bug Fixes:
 
