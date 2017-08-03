@@ -13,7 +13,7 @@ import (
 )
 
 type physicalContainerLayoutStruct struct {
-	physicalContainerLayoutName         string //   == [VolumeSectionName>]PhysicalContainerLayoutList element (<physical-container-layout-section>)
+	physicalContainerLayoutName         string
 	physicalContainerStoragePolicyIndex uint32
 	physicalContainerNamePrefix         string   // == prefix for every PhysicalContainer in this PhysicalContainerLayout
 	physicalContainerNameSlice          []string // == slice of current PhysicalContainers for this PhysicalContainerLayout
@@ -190,11 +190,19 @@ func Up(confMap conf.ConfMap) (err error) {
 				volume.maxExtentsPerFileNode = 32
 			}
 
-			physicalContainerLayoutSectionNameSlice, fetchOptionErr := confMap.FetchOptionValueStringSlice(volumeSectionName, "PhysicalContainerLayoutList")
+			// [Case 1] For now, physicalContainerLayoutSectionNameSlice will simply contain only defaultPhysicalContainerLayoutName
+			//
+			// The expectation is that, at some point, multiple container layouts may be supported along with
+			// a set of policies used to determine which one to apply. At such time, the following code will
+			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
+
+			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
 			if nil != fetchOptionErr {
 				err = fetchOptionErr
 				return
 			}
+
+			physicalContainerLayoutSectionNameSlice := []string{defaultPhysicalContainerLayoutName}
 
 			for _, physicalContainerLayoutSectionName := range physicalContainerLayoutSectionNameSlice {
 				_, alreadyInGlobalsPhysicalContainerLayoutSet := volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
@@ -241,12 +249,6 @@ func Up(confMap conf.ConfMap) (err error) {
 
 				volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName] = struct{}{}
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
-			}
-
-			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
-				return
 			}
 
 			var alreadyInVolumePhysicalContainerLayoutMap bool
@@ -664,11 +666,19 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 
 		for _, volume = range newlyActiveVolumeSet {
-			physicalContainerLayoutSectionNameSlice, fetchOptionErr := confMap.FetchOptionValueStringSlice(volume.volumeName, "PhysicalContainerLayoutList")
+			// [Case 2] For now, physicalContainerLayoutSectionNameSlice will simply contain only defaultPhysicalContainerLayoutName
+			//
+			// The expectation is that, at some point, multiple container layouts may be supported along with
+			// a set of policies used to determine which one to apply. At such time, the following code will
+			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
+
+			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
 			if nil != fetchOptionErr {
 				err = fetchOptionErr
 				return
 			}
+
+			physicalContainerLayoutSectionNameSlice := []string{defaultPhysicalContainerLayoutName}
 
 			for _, physicalContainerLayoutSectionName := range physicalContainerLayoutSectionNameSlice {
 				_, alreadyInGlobalsPhysicalContainerLayoutSet := volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
@@ -715,12 +725,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 				volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName] = struct{}{}
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
-			}
-
-			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
-				return
 			}
 
 			var alreadyInVolumePhysicalContainerLayoutMap bool
