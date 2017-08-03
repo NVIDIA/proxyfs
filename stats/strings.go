@@ -222,6 +222,8 @@ var (
 	SwiftObjDeleteRetrySuccessOps        = "proxyfs.swiftclient.object-delete.retry.success.operations"
 	SwiftObjFetchPutCtxtRetryOps         = "proxyfs.swiftclient.object-fetch-put-ctxt.retry.operations"
 	SwiftObjFetchPutCtxtRetrySuccessOps  = "proxyfs.swiftclient.object-fetch-put-ctxt.retry.success.operations"
+	SwiftObjPutCtxtCloseRetryOps         = "proxyfs.swiftclient.object-put-ctxt-close.retry.operations"
+	SwiftObjPutCtxtCloseRetrySuccessOps  = "proxyfs.swiftclient.object-put-ctxt-close.retry.success.operations"
 	SwiftObjGetRetryOps                  = "proxyfs.swiftclient.object-get.retry.operations"
 	SwiftObjGetRetrySuccessOps           = "proxyfs.swiftclient.object-get.retry.success.operations"
 	SwiftObjHeadRetryOps                 = "proxyfs.swiftclient.object-head.retry.operations"

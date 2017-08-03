@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 	"regexp"
-	//	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,11 +108,16 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	// additional error injection settings
+	globals.chaosSendChunkFailureRate = 7
+	globals.chaosFetchChunkedPutFailureRate = 2
+
 	// Run the tests
-	// t.Run("testOps", testOps)
 	// t.Run("testRetry", testRetry)
-	testOps(t)
+	// t.Run("testOps", testOps)
 	testRetry(t)
+	testOps(t)
+	testChunkedPut(t)
 
 	// Shutdown packages
 
@@ -532,22 +537,6 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
-	// Retry the chunked PUT for object "FooBar"
-
-	err = chunkedPutContext.Retry()
-	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.Retry() failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
-	// Finish the retry'd chunked PUT for object "FooBar"
-
-	err = chunkedPutContext.Close()
-	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.Close() failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
 	// Send a GET for container "TestContainer" expecting header Cat: Dog and objectList []string{"FooBar"}
 
 	containerHeaders, objectList, err = ContainerGet("TestAccount", "TestContainer")
@@ -798,6 +787,151 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+}
+
+// Extended testing of chunked put interface to exercise internal retries
+//
+func testChunkedPut(t *testing.T) {
+
+	// preserve the original settings
+	var (
+		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
+		chaosFetchChunkedPutFailureRate = globals.chaosFetchChunkedPutFailureRate
+		cleanup                         = func() {
+			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
+			globals.chaosFetchChunkedPutFailureRate = chaosFetchChunkedPutFailureRate
+		}
+	)
+	defer cleanup()
+	var (
+		accountName   = "TestAccount"
+		containerName = "TestContainer"
+		objNameFmt    = "chunkObj%d"
+		objName       string
+	)
+
+	// (lack of) headers for putting
+	catDogHeaderMap := make(map[string][]string)
+
+	// (re)create the test account and continer
+
+	err := AccountPut(accountName, catDogHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("testChunkedPut.AccountPut('%s', catDogHeaderMap) failed: %v", accountName, err)
+		t.Fatalf(tErr)
+	}
+
+	err = ContainerPut(accountName, containerName, catDogHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("testChunkedPut.ContainerPut('%s', '%s', catDogHeaderMap) failed: %v",
+			accountName, containerName, err)
+		t.Fatalf(tErr)
+	}
+
+	// create an object and write 4 Kbyte to it in 4 chunks with a SendChunk
+	// failure every 7th
+	globals.chaosSendChunkFailureRate = 7
+	globals.chaosFetchChunkedPutFailureRate = 3
+
+	for i := 0; i < 5; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+
+		err = testObjectWriteVerify(t, accountName, containerName, objName, 4096, 4)
+		if nil != err {
+			tErr := fmt.Sprintf("testChunkedPut.testObjectWriteVerify('%s/%s/%s', %d, %d ) failed: %v",
+				accountName, containerName, objName, 4096, 4, err)
+			t.Fatalf(tErr)
+		}
+	}
+
+	// cleanup the mess we made (objects, container, and account)
+	for i := 0; i < 5; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+
+		err = ObjectDeleteSync(accountName, containerName, objName)
+		if nil != err {
+			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
+				accountName, containerName, objName, err)
+			t.Fatalf(tErr)
+		}
+	}
+
+	err = ContainerDelete(accountName, containerName)
+	if nil != err {
+		tErr := fmt.Sprintf("ContainerDelete('%s', '%s') failed: %v", accountName, containerName, err)
+		t.Fatalf(tErr)
+	}
+
+	err = AccountDelete(accountName)
+	if nil != err {
+		tErr := fmt.Sprintf("AccountDelete('%s') failed: %v", accountName, err)
+		t.Fatalf(tErr)
+	}
+}
+
+// write objSize worth of random bytes to the object using nWrite calls to
+// SendChunk() and then read it back to verify.
+//
+func testObjectWriteVerify(t *testing.T, accountName string, containerName string, objName string,
+	objSize int, nwrite int) (err error) {
+
+	writeBuf := make([]byte, objSize)
+	readBuf := make([]byte, 0)
+
+	for i := 0; i < objSize; i++ {
+		writeBuf[i] = byte(rand.Uint32())
+	}
+	if writeBuf[0] == 0 && writeBuf[1] == 0 && writeBuf[2] == 0 && writeBuf[3] == 0 {
+		tErr := "unix.GetRandom() is not very random"
+		t.Fatalf(tErr)
+	}
+	if writeBuf[objSize-1] == 0 && writeBuf[objSize-2] == 0 && writeBuf[objSize-3] == 0 &&
+		writeBuf[objSize-4] == 0 {
+		tErr := "unix.GetRandom() is not very radnom at end of buffer"
+		t.Fatalf(tErr)
+	}
+
+	// Start a chunked PUT for the object
+	chunkedPutContext, err := ObjectFetchChunkedPutContext(accountName, containerName, objName)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext('%s', '%s', '%s') failed: %v",
+			accountName, containerName, objName, err)
+		return errors.New(tErr)
+	}
+
+	wsz := len(writeBuf) / nwrite
+	for off := 0; off < len(writeBuf); off += wsz {
+		if off+wsz < objSize {
+			err = chunkedPutContext.SendChunk(writeBuf[off : off+wsz])
+		} else {
+			err = chunkedPutContext.SendChunk(writeBuf[off:])
+		}
+		if nil != err {
+			tErr := fmt.Sprintf("chunkedPutContext.SendChunk(writeBuf[%d:%d]) failed: %v",
+				off, off+wsz, err)
+			return errors.New(tErr)
+		}
+	}
+	err = chunkedPutContext.Close()
+	if nil != err {
+		tErr := fmt.Sprintf("chunkedPutContext.Close('%s/%s/%s') failed: %v",
+			accountName, containerName, objName, err)
+		return errors.New(tErr)
+	}
+
+	// read and compare
+	readBuf, err = ObjectLoad(accountName, containerName, objName)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectLoad('%s/%s/%s') failed: %v", accountName, containerName, objName, err)
+		return errors.New(tErr)
+	}
+	if !bytes.Equal(readBuf, writeBuf) {
+		tErr := fmt.Sprintf("Object('%s/%s/%s') read back something different then written",
+			accountName, containerName, objName)
+		return errors.New(tErr)
+	}
+
+	return nil
 }
 
 // Parse a log entry generated by testRetry and return the important values as

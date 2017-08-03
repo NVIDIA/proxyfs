@@ -31,20 +31,22 @@ type pendingDeletesStruct struct {
 }
 
 type globalsStruct struct {
-	noAuthStringAddr         string
-	noAuthTCPAddr            *net.TCPAddr
-	timeout                  time.Duration // TODO: Currently not enforced
-	retryLimit               uint16        // maximum retries
-	retryLimitObject         uint16        // maximum retries for object ops
-	retryDelay               time.Duration // delay before first retry
-	retryDelayObject         time.Duration // delay before first retry for object ops
-	retryExpBackoff          float64       // increase delay by this factor each try (exponential backoff)
-	retryExpBackoffObject    float64       // increase delay by this factor each try for object ops
-	nilTCPConn               *net.TCPConn
-	chunkedConnectionPool    chan *net.TCPConn
-	nonChunkedConnectionPool chan *net.TCPConn
-	maxIntAsUint64           uint64
-	pendingDeletes           *pendingDeletesStruct
+	noAuthStringAddr                string
+	noAuthTCPAddr                   *net.TCPAddr
+	timeout                         time.Duration // TODO: Currently not enforced
+	retryLimit                      uint16        // maximum retries
+	retryLimitObject                uint16        // maximum retries for object ops
+	retryDelay                      time.Duration // delay before first retry
+	retryDelayObject                time.Duration // delay before first retry for object ops
+	retryExpBackoff                 float64       // increase delay by this factor each try (exponential backoff)
+	retryExpBackoffObject           float64       // increase delay by this factor each try for object ops
+	nilTCPConn                      *net.TCPConn
+	chunkedConnectionPool           chan *net.TCPConn
+	nonChunkedConnectionPool        chan *net.TCPConn
+	maxIntAsUint64                  uint64
+	pendingDeletes                  *pendingDeletesStruct
+	chaosSendChunkFailureRate       uint64 // set only during testing
+	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 }
 
 var globals globalsStruct

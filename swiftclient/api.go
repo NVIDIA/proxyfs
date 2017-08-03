@@ -13,11 +13,16 @@ type ChunkedCopyContext interface {
 }
 
 // ChunkedPutContext provides a context to use for Object HTTP PUTs using "chunked" Transfer-Encoding.
+//
+// The slice(s) passed to SendChunk() must not be modified until Close() has
+// been called and has returned success or failure.  Close() must always be
+// called on a successfullly opened ChunkedPutContext, even if SendChunk()
+// returns an error, or else we will leak open connections (although SendChunk()
+// does its best).
 type ChunkedPutContext interface {
 	BytesPut() (bytesPut uint64, err error)                    // Report how many bytes have been sent via SendChunk() for this ChunkedPutContext
-	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext
+	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
 	Read(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk()
-	Retry() (err error)                                        // Retry all the preceeding steps for this ChunkedPutContext
 	SendChunk(buf []byte) (err error)                          // Send the supplied "chunk" via this ChunkedPutContext
 }
 
