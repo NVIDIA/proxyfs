@@ -13,6 +13,7 @@
 
 * Fixed embedded HTTP Server handling of "empty" URLs
 * Removed memory leaks in SMB handling
+* Resolved potential corruption when actively written files are flushed
 
 ### Known Issues:
 
