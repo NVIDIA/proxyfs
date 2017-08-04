@@ -17,4 +17,5 @@
 
 ### Known Issues:
 
-* Named Streams are disabled in SMB
+* Memory leak in SMB directory reading and extended attribute reading
+* Named Streams are disabled in SMB (enabling this is TBD)
