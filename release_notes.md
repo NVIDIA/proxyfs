@@ -18,4 +18,5 @@
 ### Known Issues:
 
 * Memory leak in SMB directory reading and extended attribute reading
+* Process restart may leave NFS mount point in a hung state
 * Named Streams are disabled in SMB (enabling this is TBD)
