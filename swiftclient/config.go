@@ -31,20 +31,22 @@ type pendingDeletesStruct struct {
 }
 
 type globalsStruct struct {
-	noAuthStringAddr         string
-	noAuthTCPAddr            *net.TCPAddr
-	timeout                  time.Duration // TODO: Currently not enforced
-	retryLimit               uint16        // maximum retries
-	retryLimitObject         uint16        // maximum retries for object ops
-	retryDelay               time.Duration // delay before first retry
-	retryDelayObject         time.Duration // delay before first retry for object ops
-	retryExpBackoff          float64       // increase delay by this factor each try (exponential backoff)
-	retryExpBackoffObject    float64       // increase delay by this factor each try for object ops
-	nilTCPConn               *net.TCPConn
-	chunkedConnectionPool    chan *net.TCPConn
-	nonChunkedConnectionPool chan *net.TCPConn
-	maxIntAsUint64           uint64
-	pendingDeletes           *pendingDeletesStruct
+	noAuthStringAddr                string
+	noAuthTCPAddr                   *net.TCPAddr
+	timeout                         time.Duration // TODO: Currently not enforced
+	retryLimit                      uint16        // maximum retries
+	retryLimitObject                uint16        // maximum retries for object ops
+	retryDelay                      time.Duration // delay before first retry
+	retryDelayObject                time.Duration // delay before first retry for object ops
+	retryExpBackoff                 float64       // increase delay by this factor each try (exponential backoff)
+	retryExpBackoffObject           float64       // increase delay by this factor each try for object ops
+	nilTCPConn                      *net.TCPConn
+	chunkedConnectionPool           chan *net.TCPConn
+	nonChunkedConnectionPool        chan *net.TCPConn
+	maxIntAsUint64                  uint64
+	pendingDeletes                  *pendingDeletesStruct
+	chaosSendChunkFailureRate       uint64 // set only during testing
+	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 }
 
 var globals globalsStruct
@@ -110,7 +112,6 @@ func Up(confMap conf.ConfMap) (err error) {
 			// TODO: once controller understands RetryDelay*
 			// paramater, return if not defined
 			*ptr = 0
-			globals.retryDelay = 0
 		}
 		if *ptr < 50*time.Millisecond || *ptr > 30*time.Second {
 			logger.Warnf("config variable 'SwiftClient.%s' at %d msec is too big or too small; changing to 1s",
@@ -143,6 +144,11 @@ func Up(confMap conf.ConfMap) (err error) {
 			*ptr = ebo
 		}
 	}
+	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
+		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
+	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
+		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
+		globals.retryExpBackoffObject)
 
 	globals.nilTCPConn = nil
 

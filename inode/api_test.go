@@ -100,7 +100,6 @@ func testSetup() (err error) {
 		"TestVolume.CheckpointContainerName=.__checkpoint__",
 		"TestVolume.CheckpointInterval=10s",
 		"TestVolume.CheckpointIntervalsPerCompaction=100",
-		"TestVolume.PhysicalContainerLayoutList=PhysicalContainerLayoutReplicated3Way",
 		"TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"TestVolume.FlowControl=TestFlowControl",
 		"TestVolume.NonceValuesToReserve=100",

@@ -467,6 +467,8 @@ int proxyfs_flock(mount_handle_t* in_mount_handle,
         flock->l_pid    = jsonrpc_get_resp_uint64(ctx, ptable[FLOCK_PID]);
     }
 
+    // Clean up jsonrpc context and return
+    jsonrpc_close(ctx);
     return rsp_status;
 }
 

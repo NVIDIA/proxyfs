@@ -77,7 +77,6 @@ func TestDaemon(t *testing.T) {
 		"CommonVolume.CheckpointContainerName=.__checkpoint__",
 		"CommonVolume.CheckpointInterval=10s",
 		"CommonVolume.CheckpointIntervalsPerCompaction=100",
-		"CommonVolume.PhysicalContainerLayoutList=PhysicalContainerLayoutReplicated3Way",
 		"CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"CommonVolume.FlowControl=CommonFlowControl",
 		"CommonVolume.NonceValuesToReserve=100",
