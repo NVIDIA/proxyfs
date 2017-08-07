@@ -41,6 +41,15 @@ const (
 	// uint64 in %016X indicating length of               bPlusTreeObject.bPlusTree Root Node
 	// ' '
 	// uint64 in %016X indicating reservedToNonce
+
+	checkpointHeaderVersion2
+	// uint64 in %016X indicating checkpointHeaderVersion1
+	// ' '
+	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
+	// ' '
+	// uint64 in %016X indicating length of               checkpoint record at tail of object
+	// ' '
+	// uint64 in %016X indicating reservedToNonce
 )
 
 type checkpointHeaderV1Struct struct {
@@ -55,6 +64,42 @@ type checkpointHeaderV1Struct struct {
 	bPlusTreeObjectBPlusTreeObjectOffset uint64
 	bPlusTreeObjectBPlusTreeObjectLength uint64
 	reservedToNonce                      uint64
+}
+
+type checkpointHeaderV2Struct struct {
+	volume                               *volumeStruct
+	checkpointObjectV2StructObjectNumber uint64 // checkpointObjectOnDiskV2Struct found at "tail" of object
+	reservedToNonce                      uint64
+}
+
+type checkpointObjectOnDiskV2Struct struct {
+	inodeRecBPlusTreeObjectNumber             uint64
+	inodeRecBPlusTreeObjectOffset             uint64
+	inodeRecBPlusTreeObjectLength             uint64
+	inodeRecBPlusTreeLayoutNumElements        uint64 // Elements immediately follow checkpointObjectOnDiskV2Struct
+	logSegmentRecBPlusTreeObjectNumber        uint64
+	logSegmentRecBPlusTreeObjectOffset        uint64
+	logSegmentRecBPlusTreeObjectLength        uint64
+	logSegmentRecBPlusTreeLayoutNumElements   uint64 // Elements immediately follow inodeRecBPlusTreeLayout
+	bPlusTreeObjectBPlusTreeObjectNumber      uint64
+	bPlusTreeObjectBPlusTreeObjectOffset      uint64
+	bPlusTreeObjectBPlusTreeObjectLength      uint64
+	bPlusTreeObjectBPlusTreeLayoutNumElements uint64 // Elements immediately follow logSegmentRecBPlusTreeLayout
+	// inodeRecBPlusTreeLayout        serialized as [inodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
+	// logSegmentBPlusTreeLayout      serialized as [logSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
+	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
+}
+
+type elementOfBPlusTreeLayoutStruct struct {
+	objectNumber uint64
+	objectBytes  uint64
+}
+
+type checkpointObjectInMemoryV2Struct struct {
+	checkpointObjectOnDiskV2Struct
+	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
 }
 
 const (
