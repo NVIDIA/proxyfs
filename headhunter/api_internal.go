@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -15,21 +16,54 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-func (checkpointHeader *checkpointHeaderV1Struct) get() (err error) {
+func (volume *volumeStruct) getCheckpoint() (err error) {
 	var (
 		checkpointContainerHeaders map[string][]string
+		checkpointHeader           checkpointHeaderV2Struct
+		checkpointHeaderValue      string
 		checkpointHeaderValueSlice []string
 		checkpointHeaderValues     []string
+		checkpointObjectTrailerBuf []byte
 		checkpointVersion          uint64
 		ok                         bool
 	)
 
-	checkpointContainerHeaders, err = swiftclient.ContainerHead(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName)
-	if nil != err {
+	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+	if nil == err {
+		checkpointHeaderValues, ok = checkpointContainerHeaders[checkpointHeaderName]
+		if !ok {
+			err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, checkpointHeaderName)
+			return
+		}
+		if 1 != len(checkpointHeaderValues) {
+			err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, checkpointHeaderName)
+			return
+		}
+
+		checkpointHeaderValue = checkpointHeaderValues[0]
+	} else {
 		if 404 == blunder.HTTPCode(err) {
-			// Checkpoint Container not found... so try to create it...
+			// Checkpoint Container not found... so try to create it with some initial values...
+
+			checkpointHeader.checkpointObjectTrailerV2StructObjectNumber = 0
+			checkpointHeader.checkpointObjectTrailerV2StructObjectLength = 0
+
+			checkpointHeader.reservedToNonce = firstNonceToProvide - 1
+
+			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
+				checkpointHeaderVersion2,
+				checkpointHeader.checkpointObjectTrailerV2StructObjectNumber,
+				checkpointHeader.checkpointObjectTrailerV2StructObjectLength,
+				checkpointHeader.reservedToNonce,
+			)
+
+			checkpointHeaderValues = []string{checkpointHeaderValue}
+
 			checkpointContainerHeaders = make(map[string][]string)
-			err = swiftclient.ContainerPut(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointContainerHeaders)
+
+			checkpointContainerHeaders[checkpointHeaderName] = checkpointHeaderValues
+
+			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 			if nil != err {
 				return
 			}
@@ -39,133 +73,164 @@ func (checkpointHeader *checkpointHeaderV1Struct) get() (err error) {
 		}
 	}
 
-	checkpointHeaderValues, ok = checkpointContainerHeaders[checkpointHeaderName]
+	checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
 
-	if ok {
-		if 1 != len(checkpointHeaderValues) {
-			err = fmt.Errorf("Expected one single value for %v/%v header %v", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName)
-			return
-		}
+	if 1 > len(checkpointHeaderValueSlice) {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
+		return
+	}
 
-		checkpointHeaderValueSlice = strings.Split(checkpointHeaderValues[0], " ")
+	checkpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
+	if nil != err {
+		return
+	}
 
-		if 1 > len(checkpointHeaderValueSlice) {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
-			return
-		}
-
-		checkpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
-		if nil != err {
-			return
-		}
-
-		if checkpointHeaderVersion1 != checkpointVersion {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0], checkpointVersion)
-			return
-		}
+	if checkpointHeaderVersion1 == checkpointVersion {
+		// Read in checkpointHeaderV1Struct converting it to a checkpointHeaderV2Struct + checkpointObjectTrailerV2Struct
 
 		if 11 != len(checkpointHeaderValueSlice) {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.inodeRecBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
+		volume.checkpointHeader = &checkpointHeaderV2Struct{
+			checkpointObjectTrailerV2StructObjectNumber: 0,
+			checkpointObjectTrailerV2StructObjectLength: 0,
+		}
+
+		volume.checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{}
+
+		volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectNumber)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectNumber)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.inodeRecBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
+		volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectOffset)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectOffset)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.inodeRecBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
+		volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectLength)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad inodeRec Root Node objectLength)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.logSegmentRecBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[4], 16, 64)
+		volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[4], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectNumber)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectNumber)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.logSegmentRecBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[5], 16, 64)
+		volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[5], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectOffset)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectOffset)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.logSegmentRecBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[6], 16, 64)
+		volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[6], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectLength)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad logSegmentRec Root Node objectLength)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[7], 16, 64)
+		volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[7], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectNumber)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectNumber)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[8], 16, 64)
+		volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset, err = strconv.ParseUint(checkpointHeaderValueSlice[8], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectOffset)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectOffset)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[9], 16, 64)
+		volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[9], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectLength)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad bPlusTreeObject Root Node objectLength)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
 
-		checkpointHeader.reservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[10], 16, 64)
+		volume.checkpointHeader.reservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[10], 16, 64)
 		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValues[0])
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
 			return
 		}
-	} else { // !ok: Missing checkpointContainerHeaders[checkpointHeaderName], so return defaults
-		checkpointHeader.inodeRecBPlusTreeObjectNumber = 0
-		checkpointHeader.inodeRecBPlusTreeObjectOffset = 0
-		checkpointHeader.inodeRecBPlusTreeObjectLength = 0
 
-		checkpointHeader.logSegmentRecBPlusTreeObjectNumber = 0
-		checkpointHeader.logSegmentRecBPlusTreeObjectOffset = 0
-		checkpointHeader.logSegmentRecBPlusTreeObjectLength = 0
+		// TODO: load B+Trees
+		//       compute volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+		//       fill in volume.checkpointObjectTrailer.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayoutNumElements
+	} else if checkpointHeaderVersion2 == checkpointVersion {
+		// Read in checkpointHeaderV2Struct
 
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber = 0
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset = 0
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength = 0
+		if 4 != len(checkpointHeaderValueSlice) {
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
+			return
+		}
 
-		checkpointHeader.reservedToNonce = firstNonceToProvide - 1
+		volume.checkpointHeader = &checkpointHeaderV2Struct{}
+
+		volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
+		if nil != err {
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
+			return
+		}
+
+		volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
+		if nil != err {
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
+			return
+		}
+
+		volume.checkpointHeader.reservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
+		if nil != err {
+			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
+			return
+		}
+
+		// TODO: Read in checkpointObjectTrailerV2Struct
+		checkpointObjectTrailerBuf, _, err = swiftclient.ObjectTail(volume.accountName, volume.checkpointContainerName, utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber), volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength)
+		if nil != err {
+			return
+		}
+
+		volume.checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{}
+
+		_, _ = cstruct.Unpack(checkpointObjectTrailerBuf, volume.checkpointObjectTrailer, LittleEndian)
+
+		// TODO: Deserialize volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+	} else {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue, checkpointVersion)
+		return
 	}
 
 	err = nil
 	return
 }
 
-func (checkpointHeader *checkpointHeaderV1Struct) put() (err error) {
+//(bPT.volume.accountName, bPT.volume.checkpointContainerName, utils.Uint64ToHexStr(bPT.volume.checkpointObjectNumber))
+/*
+// ObjectTail invokes HTTP GET on the named Swift Object with a byte range selecting the specified length of trailing bytes.
+func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, objectLength int64, err error) {
+	return objectTailWithRetry(accountName, containerName, objectName, length)
+}
+*/
+
+/*
+func (checkpointHeader *checkpointHeaderV2Struct) put() (err error) {
 	var (
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
 		checkpointContainerHeaders map[string][]string
 	)
 
-	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X %016X %016X %016X %016X %016X %016X %016X",
-		checkpointHeaderVersion1,
-		checkpointHeader.inodeRecBPlusTreeObjectNumber,
-		checkpointHeader.inodeRecBPlusTreeObjectOffset,
-		checkpointHeader.inodeRecBPlusTreeObjectLength,
-		checkpointHeader.logSegmentRecBPlusTreeObjectNumber,
-		checkpointHeader.logSegmentRecBPlusTreeObjectOffset,
-		checkpointHeader.logSegmentRecBPlusTreeObjectLength,
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber,
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset,
-		checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength,
+	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
+		checkpointHeaderVersion2,
+		checkpointHeader.checkpointObjectTrailerV2StructObjectNumber,
+		checkpointHeader.checkpointObjectTrailerV2StructObjectLength,
 		checkpointHeader.reservedToNonce,
 	)
 
@@ -178,6 +243,10 @@ func (checkpointHeader *checkpointHeaderV1Struct) put() (err error) {
 	err = swiftclient.ContainerPost(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointContainerHeaders)
 
 	return
+}
+*/
+func (volume *volumeStruct) putCheckpoint() (err error) {
+	return // TODO
 }
 
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.

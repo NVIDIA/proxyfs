@@ -5,9 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/conf"
+	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
+
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 const (
@@ -16,6 +18,10 @@ const (
 
 const (
 	checkpointHeaderName = "X-Container-Meta-Checkpoint"
+)
+
+var (
+	LittleEndian = cstruct.LittleEndian
 )
 
 const (
@@ -43,7 +49,7 @@ const (
 	// uint64 in %016X indicating reservedToNonce
 
 	checkpointHeaderVersion2
-	// uint64 in %016X indicating checkpointHeaderVersion1
+	// uint64 in %016X indicating checkpointHeaderVersion2
 	// ' '
 	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
 	// ' '
@@ -53,7 +59,6 @@ const (
 )
 
 type checkpointHeaderV1Struct struct {
-	volume                               *volumeStruct
 	inodeRecBPlusTreeObjectNumber        uint64
 	inodeRecBPlusTreeObjectOffset        uint64
 	inodeRecBPlusTreeObjectLength        uint64
@@ -67,16 +72,16 @@ type checkpointHeaderV1Struct struct {
 }
 
 type checkpointHeaderV2Struct struct {
-	volume                               *volumeStruct
-	checkpointObjectV2StructObjectNumber uint64 // checkpointObjectOnDiskV2Struct found at "tail" of object
-	reservedToNonce                      uint64
+	checkpointObjectTrailerV2StructObjectNumber uint64 // checkpointObjectTrailerV2Struct found at "tail" of object
+	checkpointObjectTrailerV2StructObjectLength uint64 // this length includes the three B+Tree "layouts" appended
+	reservedToNonce                             uint64
 }
 
-type checkpointObjectOnDiskV2Struct struct {
+type checkpointObjectTrailerV2Struct struct {
 	inodeRecBPlusTreeObjectNumber             uint64
 	inodeRecBPlusTreeObjectOffset             uint64
 	inodeRecBPlusTreeObjectLength             uint64
-	inodeRecBPlusTreeLayoutNumElements        uint64 // Elements immediately follow checkpointObjectOnDiskV2Struct
+	inodeRecBPlusTreeLayoutNumElements        uint64 // Elements immediately follow checkpointObjectTrailerV2Struct
 	logSegmentRecBPlusTreeObjectNumber        uint64
 	logSegmentRecBPlusTreeObjectOffset        uint64
 	logSegmentRecBPlusTreeObjectLength        uint64
@@ -93,13 +98,6 @@ type checkpointObjectOnDiskV2Struct struct {
 type elementOfBPlusTreeLayoutStruct struct {
 	objectNumber uint64
 	objectBytes  uint64
-}
-
-type checkpointObjectInMemoryV2Struct struct {
-	checkpointObjectOnDiskV2Struct
-	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
 }
 
 const (
@@ -125,32 +123,28 @@ type checkpointRequestStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	volumeName                           string
-	accountName                          string
-	maxFlushSize                         uint64
-	maxInodesPerMetadataNode             uint64
-	maxLogSegmentsPerMetadataNode        uint64
-	maxDirFileNodesPerMetadataNode       uint64
-	checkpointContainerName              string
-	checkpointInterval                   time.Duration
-	checkpointIntervalsPerCompaction     uint64
-	checkpointIntervalsSinceCompaction   uint64
-	checkpointCompactorObjectNumberLimit uint64 //                  If == 0, compactor isn't running
-	//                                                              If != 0, compactor should delete up to, but not including, this object number
-	checkpointObjectNumber            uint64 //                     If == 0, no checkpointObject ChunkedPut is active
-	checkpointObjectOffset            uint64 //                     If ChunkedPut is active, next available offset
-	checkpointChunkedPutContext       swiftclient.ChunkedPutContext
-	checkpointGateWaitGroup           *sync.WaitGroup
-	checkpointDoneWaitGroup           *sync.WaitGroup
-	needFullClone                     bool
-	inodeRec                          *bPlusTreeStruct
-	logSegmentRec                     *bPlusTreeStruct
-	bPlusTreeObject                   *bPlusTreeStruct
-	nonceValuesToReserve              uint16
-	reservedToNonce                   uint64
-	nextNonce                         uint64
-	checkpointRequestChan             chan *checkpointRequestStruct
-	lastSuccessfulCheckpointHeaderPut *checkpointHeaderV1Struct
+	volumeName                     string
+	accountName                    string
+	maxFlushSize                   uint64
+	nonceValuesToReserve           uint16
+	maxInodesPerMetadataNode       uint64
+	maxLogSegmentsPerMetadataNode  uint64
+	maxDirFileNodesPerMetadataNode uint64
+	checkpointContainerName        string
+	checkpointInterval             time.Duration
+	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
+	checkpointGateWaitGroup        *sync.WaitGroup
+	checkpointDoneWaitGroup        *sync.WaitGroup
+	needFullClone                  bool
+	logSegmentRec                  *bPlusTreeStruct
+	bPlusTreeObject                *bPlusTreeStruct
+	nextNonce                      uint64
+	checkpointRequestChan          chan *checkpointRequestStruct
+	checkpointHeader               *checkpointHeaderV2Struct
+	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
+	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
 }
 
 type globalsStruct struct {
@@ -362,11 +356,6 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	}
 
 	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeName, "CheckpointInterval")
-	if nil != err {
-		return
-	}
-
-	volume.checkpointIntervalsPerCompaction, err = confMap.FetchOptionValueUint64(volumeName, "CheckpointIntervalsPerCompaction")
 	if nil != err {
 		return
 	}
