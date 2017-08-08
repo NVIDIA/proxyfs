@@ -184,6 +184,21 @@ static void smb_stat_ex_from_stat(struct stat_ex *dst,
 #endif
 }
 
+static void free_data(void **handle_data)
+{
+	fs_ctx_t *ctx = (fs_ctx_t *)*handle_data;
+
+	if (ctx == NULL) {
+		return;
+	}
+
+	if (ctx->cwd) {
+		free(ctx->cwd);
+	}
+	free(ctx);
+	*handle_data = NULL;
+}
+
 static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
                                const char *service,
                                const char *user)
@@ -219,6 +234,8 @@ static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
 
 	handle->data = ctx;
 
+	handle->free_data = free_data;
+
 	return 0;
 }
 
@@ -234,11 +251,7 @@ static void vfs_proxyfs_disconnect(struct vfs_handle_struct *handle)
 
 	proxyfs_unmount(MOUNT_HANDLE(handle));
 
-	if (ctx->cwd) {
-		free(ctx->cwd);
-	}
-	free(ctx);
-	handle->data = NULL;
+	free_data(&handle->data);
 }
 
 static uint64_t vfs_proxyfs_disk_free(struct vfs_handle_struct *handle,
