@@ -488,9 +488,9 @@ static int vfs_proxyfs_mkdir(struct vfs_handle_struct *handle,
 
 	int err = proxyfs_mkdir_path(MOUNT_HANDLE(handle), path, uid, gid, mode);
 
-	free(path);
-
 	DEBUG(10, ("vfs_proxyfs_mkdir: %s mode 0%o errno = %d\n", path, mode, err));
+
+	free(path);
 
 	if (err != 0) {
 		errno = err;
@@ -2447,8 +2447,9 @@ static int vfs_proxyfs_removexattr(struct vfs_handle_struct *handle,
 	char *rpath = resolve_path(handle, path);
 
 	int err = proxyfs_remove_xattr_path(MOUNT_HANDLE(handle), rpath, name);
-	free(rpath);
 	DEBUG(10, ("File %s Remove xattr %s errcode %d\n", rpath, name, err));
+
+	free(rpath);
 	if (err != 0) {
 		errno = err;
 		return -1;
