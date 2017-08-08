@@ -18,14 +18,19 @@ import (
 
 func (volume *volumeStruct) getCheckpoint() (err error) {
 	var (
-		checkpointContainerHeaders map[string][]string
-		checkpointHeader           checkpointHeaderV2Struct
-		checkpointHeaderValue      string
-		checkpointHeaderValueSlice []string
-		checkpointHeaderValues     []string
-		checkpointObjectTrailerBuf []byte
-		checkpointVersion          uint64
-		ok                         bool
+		bPlusTree                           *bPlusTreeStruct
+		bytesConsumed                       uint64
+		checkpointContainerHeaders          map[string][]string
+		checkpointHeader                    checkpointHeaderV2Struct
+		checkpointHeaderValue               string
+		checkpointHeaderValueSlice          []string
+		checkpointHeaderValues              []string
+		checkpointObjectTrailerBuf          []byte
+		checkpointVersion                   uint64
+		elementOfBPlusTreeLayout            elementOfBPlusTreeLayoutStruct
+		expectedCheckpointObjectTrailerSize uint64
+		layoutReportIndex                   uint64
+		ok                                  bool
 	)
 
 	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
@@ -160,9 +165,73 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			return
 		}
 
-		// TODO: load B+Trees
-		//       compute volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
-		//       fill in volume.checkpointObjectTrailer.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayoutNumElements
+		// Compute volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+
+		if 0 == volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber {
+			volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
+			volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = 0
+		} else {
+			bPlusTree = &bPlusTreeStruct{
+				volume:       volume,
+				structType:   inodeRecStructType,
+				objectNumber: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
+				objectOffset: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
+				objectLength: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
+			}
+			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			if nil != err {
+				return
+			}
+			volume.inodeRecBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			if nil != err {
+				return
+			}
+			volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = uint64(len(volume.inodeRecBPlusTreeLayout))
+		}
+
+		if 0 == volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber {
+			volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
+			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = 0
+		} else {
+			bPlusTree = &bPlusTreeStruct{
+				volume:       volume,
+				structType:   logSegmentRecStructType,
+				objectNumber: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
+				objectOffset: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
+				objectLength: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
+			}
+			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			if nil != err {
+				return
+			}
+			volume.logSegmentRecBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			if nil != err {
+				return
+			}
+			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.logSegmentRecBPlusTreeLayout))
+		}
+
+		if 0 == volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber {
+			volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
+			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = 0
+		} else {
+			bPlusTree = &bPlusTreeStruct{
+				volume:       volume,
+				structType:   bPlusTreeObjectStructType,
+				objectNumber: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
+				objectOffset: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
+				objectLength: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
+			}
+			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			if nil != err {
+				return
+			}
+			volume.bPlusTreeObjectBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			if nil != err {
+				return
+			}
+			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.bPlusTreeObjectBPlusTreeLayout))
+		}
 	} else if checkpointHeaderVersion2 == checkpointVersion {
 		// Read in checkpointHeaderV2Struct
 
@@ -191,17 +260,67 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			return
 		}
 
-		// TODO: Read in checkpointObjectTrailerV2Struct
-		checkpointObjectTrailerBuf, _, err = swiftclient.ObjectTail(volume.accountName, volume.checkpointContainerName, utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber), volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength)
+		// Read in checkpointObjectTrailerV2Struct
+		checkpointObjectTrailerBuf, err = swiftclient.ObjectTail(volume.accountName, volume.checkpointContainerName, utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber), volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength)
 		if nil != err {
 			return
 		}
 
 		volume.checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{}
 
-		_, _ = cstruct.Unpack(checkpointObjectTrailerBuf, volume.checkpointObjectTrailer, LittleEndian)
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, volume.checkpointObjectTrailer, LittleEndian)
+		if nil != err {
+			return
+		}
 
-		// TODO: Deserialize volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+		// Deserialize volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+
+		expectedCheckpointObjectTrailerSize = volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements
+		expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements
+		expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements
+		expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
+		expectedCheckpointObjectTrailerSize += bytesConsumed
+
+		if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
+			err = fmt.Errorf("volume.checkpointObjectTrailer for volume %v does not match required size", volume.volumeName)
+			return
+		}
+
+		volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
+
+		for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+			checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+			if nil != err {
+				return
+			}
+
+			volume.inodeRecBPlusTreeLayout[elementOfBPlusTreeLayout.objectNumber] = elementOfBPlusTreeLayout.objectBytes
+		}
+
+		volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
+
+		for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+			checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+			if nil != err {
+				return
+			}
+
+			volume.logSegmentRecBPlusTreeLayout[elementOfBPlusTreeLayout.objectNumber] = elementOfBPlusTreeLayout.objectBytes
+		}
+
+		volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
+
+		for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
+			checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+			if nil != err {
+				return
+			}
+
+			volume.bPlusTreeObjectBPlusTreeLayout[elementOfBPlusTreeLayout.objectNumber] = elementOfBPlusTreeLayout.objectBytes
+		}
 	} else {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue, checkpointVersion)
 		return
@@ -210,14 +329,6 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 	err = nil
 	return
 }
-
-//(bPT.volume.accountName, bPT.volume.checkpointContainerName, utils.Uint64ToHexStr(bPT.volume.checkpointObjectNumber))
-/*
-// ObjectTail invokes HTTP GET on the named Swift Object with a byte range selecting the specified length of trailing bytes.
-func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, objectLength int64, err error) {
-	return objectTailWithRetry(accountName, containerName, objectName, length)
-}
-*/
 
 /*
 func (checkpointHeader *checkpointHeaderV2Struct) put() (err error) {

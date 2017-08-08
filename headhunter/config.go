@@ -136,6 +136,7 @@ type volumeStruct struct {
 	checkpointGateWaitGroup        *sync.WaitGroup
 	checkpointDoneWaitGroup        *sync.WaitGroup
 	needFullClone                  bool
+	inodeRec                       *bPlusTreeStruct
 	logSegmentRec                  *bPlusTreeStruct
 	bPlusTreeObject                *bPlusTreeStruct
 	nextNonce                      uint64
@@ -148,7 +149,8 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	volumeMap map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+	elementOfBPlusTreeLayoutStructSize uint64
 }
 
 var globals globalsStruct
@@ -156,10 +158,12 @@ var globals globalsStruct
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		primaryPeer string
-		volumeName  string
-		volumeNames []string
-		whoAmI      string
+		dummyElementOfBPlusTreeLayoutStruct elementOfBPlusTreeLayoutStruct
+		primaryPeer                         string
+		trailingByteSlice                   bool
+		volumeName                          string
+		volumeNames                         []string
+		whoAmI                              string
 	)
 
 	// Init volume database(s)
@@ -188,6 +192,17 @@ func Up(confMap conf.ConfMap) (err error) {
 				return
 			}
 		}
+	}
+
+	// Pre-compute sizeof(elementOfBPlusTreeLayoutStruct)
+
+	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
+		return
 	}
 
 	return
