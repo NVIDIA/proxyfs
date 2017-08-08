@@ -120,6 +120,6 @@ func ObjectLoad(accountName string, containerName string, objectName string) (bu
 }
 
 // ObjectTail invokes HTTP GET on the named Swift Object with a byte range selecting the specified length of trailing bytes.
-func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, objectLength int64, err error) {
+func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
 	return objectTailWithRetry(accountName, containerName, objectName, length)
 }

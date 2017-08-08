@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	LittleEndian = cstruct.LittleEndian
+	LittleEndian = cstruct.LittleEndian // All data cstructs to be serialized in LittleEndian form
 )
 
 const (

@@ -608,17 +608,13 @@ func testOps(t *testing.T) {
 
 	// Send a tail GET of the last 2 bytes for object "FooBar" expecting []byte{0xDD, 0xEE}
 
-	tailBuf, fooBarSize, err := ObjectTail("TestAccount", "TestContainer", "FooBar", uint64(2))
+	tailBuf, err := ObjectTail("TestAccount", "TestContainer", "FooBar", uint64(2))
 	if nil != err {
 		tErr := fmt.Sprintf("ObjectTail(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(2)) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xDD, 0xEE}, tailBuf) {
 		tErr := fmt.Sprintf("ObjectTail(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(2)) didn't return expected []byte")
-		t.Fatalf(tErr)
-	}
-	if 5 != fooBarSize {
-		tErr := fmt.Sprintf("ObjectTail(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(2)) didn't return expected object size (got %v)", fooBarSize)
 		t.Fatalf(tErr)
 	}
 
