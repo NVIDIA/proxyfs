@@ -133,7 +133,6 @@ type volumeStruct struct {
 	checkpointContainerName        string
 	checkpointInterval             time.Duration
 	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
-	checkpointGateWaitGroup        *sync.WaitGroup
 	checkpointDoneWaitGroup        *sync.WaitGroup
 	nextNonce                      uint64
 	checkpointRequestChan          chan *checkpointRequestStruct
@@ -150,6 +149,7 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+	checkpointObjectTrailerStructSize  uint64
 	elementOfBPlusTreeLayoutStructSize uint64
 }
 
@@ -158,12 +158,13 @@ var globals globalsStruct
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		dummyElementOfBPlusTreeLayoutStruct elementOfBPlusTreeLayoutStruct
-		primaryPeer                         string
-		trailingByteSlice                   bool
-		volumeName                          string
-		volumeNames                         []string
-		whoAmI                              string
+		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
+		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
+		primaryPeer                          string
+		trailingByteSlice                    bool
+		volumeName                           string
+		volumeNames                          []string
+		whoAmI                               string
 	)
 
 	// Init volume database(s)
@@ -194,7 +195,16 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	// Pre-compute sizeof(elementOfBPlusTreeLayoutStruct)
+	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
+
+	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
+		return
+	}
 
 	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
 	if nil != err {
@@ -321,7 +331,13 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 		volume           *volumeStruct
 	)
 
-	volume = &volumeStruct{volumeName: volumeName, checkpointChunkedPutContext: nil, checkpointGateWaitGroup: nil, checkpointDoneWaitGroup: nil}
+	volume = &volumeStruct{
+		volumeName:                                  volumeName,
+		checkpointChunkedPutContext:                 nil,
+		lastCheckpointChunkedPutContextObjectNumber: 0,
+		checkpointGateWaitGroup:                     nil,
+		checkpointDoneWaitGroup:                     nil,
+	}
 
 	volume.inodeRec = &bPlusTreeWrapper{volume: volume, structType: inodeRecBPlusTreeWrapperType}
 	volume.logSegmentRec = &bPlusTreeWrapper{volume: volume, structType: logSegmentRecBPlusTreeWrapperType}

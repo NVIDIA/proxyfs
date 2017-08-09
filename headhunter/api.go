@@ -9,7 +9,6 @@ import (
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
 	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
-	FetchNextCheckPointGateWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)

@@ -11,7 +11,6 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -334,19 +333,122 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 	return
 }
 
-/*
-func (checkpointHeader *checkpointHeaderV2Struct) put() (err error) {
+func (volume *volumeStruct) putCheckpoint(withFlush bool) (err error) {
 	var (
-		checkpointHeaderValue      string
-		checkpointHeaderValues     []string
-		checkpointContainerHeaders map[string][]string
+		checkpointContainerHeaders             map[string][]string
+		checkpointHeaderValue                  string
+		checkpointHeaderValues                 []string
+		checkpointObjectTrailerBeginningOffset uint64
+		checkpointObjectTrailerEndingOffset    uint64
+		checkpointTrailerBuf                   []byte
+		elementOfBPlusTreeLayout               elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayoutBuf            []byte
+		layoutReportIndex                      uint64
+		treeLayoutBuf                          []byte
+		treeLayoutBufSize                      uint64
 	)
+
+	if withFlush {
+		volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
+			volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
+			volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
+			_, err = volume.inodeRec.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+		volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
+			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
+			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
+			_, err = volume.logSegmentRec.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+		volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
+			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
+			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
+			_, err = volume.inodeRec.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+	}
+
+	volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = uint64(len(volume.inodeRecBPlusTreeLayout))
+	volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.logSegmentRecBPlusTreeLayout))
+	volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.bPlusTreeObjectBPlusTreeLayout))
+
+	checkpointTrailerBuf, err = cstruct.Pack(volume.checkpointObjectTrailer, LittleEndian)
+	if nil != err {
+		return
+	}
+
+	treeLayoutBufSize = volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements
+	treeLayoutBufSize += volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements
+	treeLayoutBufSize += volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements
+	treeLayoutBufSize *= globals.elementOfBPlusTreeLayoutStructSize
+
+	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
+
+	for elementOfBPlusTreeLayout.objectNumber, elementOfBPlusTreeLayout.objectBytes = range volume.inodeRecBPlusTreeLayout {
+		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
+	}
+
+	for elementOfBPlusTreeLayout.objectNumber, elementOfBPlusTreeLayout.objectBytes = range volume.logSegmentRecBPlusTreeLayout {
+		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
+	}
+
+	for elementOfBPlusTreeLayout.objectNumber, elementOfBPlusTreeLayout.objectBytes = range volume.bPlusTreeObjectBPlusTreeLayout {
+		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
+	}
+
+	err = volume.openCheckpointChunkedPutContextIfNecessary()
+	if nil != err {
+		return
+	}
+
+	checkpointObjectTrailerBeginningOffset, err = volume.bytesPutToCheckpointChunkedPutContext()
+	if nil != err {
+		return
+	}
+
+	err = volume.sendChunkToCheckpointChunkedPutContext(checkpointTrailerBuf)
+	if nil != err {
+		return
+	}
+
+	err = volume.sendChunkToCheckpointChunkedPutContext(treeLayoutBuf)
+	if nil != err {
+		return
+	}
+
+	checkpointObjectTrailerEndingOffset, err = volume.bytesPutToCheckpointChunkedPutContext()
+	if nil != err {
+		return
+	}
+
+	err = volume.closeCheckpointChunkedPutContext()
+	if nil != err {
+		return
+	}
+
+	volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
 
 	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
 		checkpointHeaderVersion2,
-		checkpointHeader.checkpointObjectTrailerV2StructObjectNumber,
-		checkpointHeader.checkpointObjectTrailerV2StructObjectLength,
-		checkpointHeader.reservedToNonce,
+		volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber,
+		volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength,
+		volume.checkpointHeader.reservedToNonce,
 	)
 
 	checkpointHeaderValues = []string{checkpointHeaderValue}
@@ -355,366 +457,111 @@ func (checkpointHeader *checkpointHeaderV2Struct) put() (err error) {
 
 	checkpointContainerHeaders[checkpointHeaderName] = checkpointHeaderValues
 
-	err = swiftclient.ContainerPost(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointContainerHeaders)
+	err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 
+	return // err set as appropriate
+}
+
+func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {
+	if nil == volume.checkpointChunkedPutContext {
+		volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber, err = volume.fetchNonceWhileLocked()
+		if nil != err {
+			return
+		}
+		volume.checkpointChunkedPutContext, err =
+			swiftclient.ObjectFetchChunkedPutContext(volume.accountName,
+				volume.checkpointContainerName,
+				utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber))
+		if nil != err {
+			return
+		}
+	}
+	err = nil
 	return
 }
-*/
-func (volume *volumeStruct) putCheckpoint() (err error) {
-	return // TODO
+
+func (volume *volumeStruct) bytesPutToCheckpointChunkedPutContext() (bytesPut uint64, err error) {
+	if nil == volume.checkpointChunkedPutContext {
+		err = fmt.Errorf("bytesPutToCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
+	} else {
+		bytesPut, err = volume.checkpointChunkedPutContext.BytesPut()
+	}
+	return // err set as appropriate regardless of path
+}
+
+func (volume *volumeStruct) sendChunkToCheckpointChunkedPutContext(buf []byte) (err error) {
+	if nil == volume.checkpointChunkedPutContext {
+		err = fmt.Errorf("sendChunkToCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
+	} else {
+		err = volume.checkpointChunkedPutContext.SendChunk(buf)
+	}
+	return // err set as appropriate regardless of path
+}
+
+func (volume *volumeStruct) closeCheckpointChunkedPutContextIfNecessary() (err error) {
+	var (
+		bytesPut uint64
+	)
+
+	if nil == volume.checkpointChunkedPutContext {
+		err = nil
+	} else {
+		bytesPut, err = volume.checkpointChunkedPutContext.BytesPut()
+		if nil == err {
+			if bytesPut >= volume.maxFlushSize {
+				err = volume.checkpointChunkedPutContext.Close()
+			}
+		}
+	}
+	return // err set as appropriate regardless of path
+}
+
+func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
+	if nil == volume.checkpointChunkedPutContext {
+		err = fmt.Errorf("closeCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
+	} else {
+		err = volume.checkpointChunkedPutContext.Close()
+		if nil == err {
+			volume.checkpointChunkedPutContext = nil
+		}
+	}
+	return // err set as appropriate regardless of path
 }
 
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.
-//
-// Each checkpoint, the "live" B+Tree's implementing the state of headhunter are
-// Clone()'d. In the background, these Clone()'d copies are serialized to a Swift
-// Object and a description of the checkpoint taken is recorded in a Header of
-// the Swift Container holding the checkpoint Swift Objects.
-//
-// When checkpointDaemon() takes a Clone() of each of the three B+Tree's, it
-// specifies the andUnTouch==true option which will mark each node of the "live"
-// B+Tree as CLEAN. This is so that a subsequent Clone() will only capture the
-// delta from the previous Clone(). Unfortunately, should the checkpoint fail
-// later in the process (e.g. when recording it's location), those changes could
-// be lost in certain cases. To avoid that, we must ensure every node of each
-// B+Tree is DIRTY such that a subsequent Clone() will fully replicate the B+Tree
-// at that point and not miss any changes that failed to be recorded previously.
 func (volume *volumeStruct) checkpointDaemon() {
 	var (
-		checkpointHeader                              *checkpointHeaderV1Struct
-		checkpointRequest                             *checkpointRequestStruct
-		checkpointDoneWaitGroup                       *sync.WaitGroup
-		checkpointGateWaitGroup                       *sync.WaitGroup
-		flushObjectLength                             uint64
-		flushObjectNumber                             uint64
-		flushObjectOffset                             uint64
-		potentialCheckpointCompactorObjectNumberLimit uint64
+		checkpointRequest *checkpointRequestStruct
+		exitOnCompletion  bool
 	)
 
-	checkpointRequest = nil // Left non-nil if request needs to be retried due to Nonce exhaustion
-
 	for {
-		if nil == checkpointRequest {
-			select {
-			case checkpointRequest = <-volume.checkpointRequestChan:
-				// Explicitly requested checkpoint... use it below
-			case <-time.After(volume.checkpointInterval):
-				// Time to automatically do a checkpoint... so dummy up a checkpointRequest
-				checkpointRequest = &checkpointRequestStruct{exitOnCompletion: false}
-				checkpointRequest.waitGroup.Add(1) // ...even though we won't be waiting on it...
-			}
+		select {
+		case checkpointRequest = <-volume.checkpointRequestChan:
+			// Explicitly requested checkpoint... use it below
+		case <-time.After(volume.checkpointInterval):
+			// Time to automatically do a checkpoint... so dummy up a checkpointRequest
+			checkpointRequest = &checkpointRequestStruct{exitOnCompletion: false}
+			checkpointRequest.waitGroup.Add(1) // ...even though we won't be waiting on it...
 		}
 
 		volume.Lock()
 
-		if volume.nextNonce == volume.reservedToNonce {
-			// Need to first replenish Nonce pool
-
-			volume.reservedToNonce += uint64(volume.nonceValuesToReserve)
-
-			checkpointHeader = &checkpointHeaderV1Struct{}
-			*checkpointHeader = *volume.lastSuccessfulCheckpointHeaderPut
-			checkpointHeader.reservedToNonce = volume.reservedToNonce
-
-			checkpointRequest.err = checkpointHeader.put()
-
-			volume.Unlock()
-
-			if nil != checkpointRequest.err {
-				checkpointRequest.waitGroup.Done()
-				if checkpointRequest.exitOnCompletion {
-					return
-				}
-				checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-				continue
-			}
-
-			// Checkpoint done - now retry this checkpointRequest
-
-			continue
-		}
-
-		// We are guaranteed to have a Nonce available if we reach here
-
-		volume.checkpointObjectNumber = volume.nextNonce // Simply discarded if checkpointChunkedPutContext not used
-		volume.checkpointObjectOffset = 0
-
-		volume.nextNonce++
-
-		potentialCheckpointCompactorObjectNumberLimit = volume.checkpointObjectNumber // Used only if compacting
-
-		// Save checkpointDoneWaitGroup before taking SnapShots
-
-		checkpointGateWaitGroup = volume.checkpointGateWaitGroup
-		volume.checkpointGateWaitGroup = nil
-
-		checkpointDoneWaitGroup = volume.checkpointDoneWaitGroup
-		volume.checkpointDoneWaitGroup = nil
-
-		// Trigger "full" clone if requested or it's been too long
-
-		volume.checkpointIntervalsSinceCompaction++
-
-		if volume.checkpointIntervalsSinceCompaction >= volume.checkpointIntervalsPerCompaction {
-			volume.needFullClone = true
-		}
-
-		if volume.needFullClone {
-			checkpointRequest.err = volume.inodeRec.bPlusTree.Touch()
-			if nil != checkpointRequest.err {
-				volume.Unlock()
-				checkpointRequest.waitGroup.Done()
-				logger.ErrorfWithError(checkpointRequest.err, "volume.inodeRec.bPlusTree.Touch() on volume \"%s\" failed", volume.volumeName)
-				if checkpointRequest.exitOnCompletion {
-					return
-				}
-				checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-				continue
-			}
-
-			checkpointRequest.err = volume.logSegmentRec.bPlusTree.Touch()
-			if nil != checkpointRequest.err {
-				volume.Unlock()
-				checkpointRequest.waitGroup.Done()
-				logger.ErrorfWithError(checkpointRequest.err, "volume.logSegmentRec.bPlusTree.Touch() on volume \"%s\" failed", volume.volumeName)
-				if checkpointRequest.exitOnCompletion {
-					return
-				}
-				checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-				continue
-			}
-
-			checkpointRequest.err = volume.bPlusTreeObject.bPlusTree.Touch()
-			if nil != checkpointRequest.err {
-				volume.Unlock()
-				checkpointRequest.waitGroup.Done()
-				logger.ErrorfWithError(checkpointRequest.err, "volume.bPlusTreeObject.bPlusTree.Touch() on volume \"%s\" failed", volume.volumeName)
-				if checkpointRequest.exitOnCompletion {
-					return
-				}
-				checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-				continue
-			}
-		}
-
-		flushObjectNumber, flushObjectOffset, flushObjectLength, _, checkpointRequest.err = volume.inodeRec.bPlusTree.Flush(false)
-		if nil != checkpointRequest.err {
-			volume.Unlock()
-			if nil != volume.checkpointChunkedPutContext {
-				volume.checkpointObjectOffset = 0
-				_ = volume.checkpointChunkedPutContext.Close()
-				volume.checkpointChunkedPutContext = nil
-			}
-			volume.checkpointObjectNumber = 0
-			volume.needFullClone = true // For next checkpoint...
-			checkpointRequest.waitGroup.Done()
-			logger.ErrorfWithError(checkpointRequest.err, "volume.inodeRec.bPlusTree.Flush() on volume \"%s\" failed", volume.volumeName)
-			if checkpointRequest.exitOnCompletion {
-				return
-			}
-			checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-			continue
-		}
-		if flushObjectNumber > volume.inodeRec.objectNumber {
-			// Update checkpoint'd inodeRec location
-			volume.inodeRec.objectNumber = flushObjectNumber
-			volume.inodeRec.objectOffset = flushObjectOffset
-			volume.inodeRec.objectLength = flushObjectLength
-		}
-		flushObjectNumber, flushObjectOffset, flushObjectLength, _, checkpointRequest.err = volume.logSegmentRec.bPlusTree.Flush(false)
-		if nil != checkpointRequest.err {
-			volume.Unlock()
-			if nil != volume.checkpointChunkedPutContext {
-				volume.checkpointObjectOffset = 0
-				_ = volume.checkpointChunkedPutContext.Close()
-				volume.checkpointChunkedPutContext = nil
-			}
-			volume.checkpointObjectNumber = 0
-			volume.needFullClone = true // For next checkpoint...
-			checkpointRequest.waitGroup.Done()
-			logger.ErrorfWithError(checkpointRequest.err, "volume.logSegmentRec.bPlusTree.Flush() on volume \"%s\" failed", volume.volumeName)
-			if checkpointRequest.exitOnCompletion {
-				return
-			}
-			checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-			continue
-		}
-		if flushObjectNumber > volume.logSegmentRec.objectNumber {
-			// Update checkpoint'd logSegmentRec location
-			volume.logSegmentRec.objectNumber = flushObjectNumber
-			volume.logSegmentRec.objectOffset = flushObjectOffset
-			volume.logSegmentRec.objectLength = flushObjectLength
-		}
-		flushObjectNumber, flushObjectOffset, flushObjectLength, _, checkpointRequest.err = volume.bPlusTreeObject.bPlusTree.Flush(false)
-		if nil != checkpointRequest.err {
-			volume.Unlock()
-			if nil != volume.checkpointChunkedPutContext {
-				volume.checkpointObjectOffset = 0
-				_ = volume.checkpointChunkedPutContext.Close()
-				volume.checkpointChunkedPutContext = nil
-			}
-			volume.checkpointObjectNumber = 0
-			volume.needFullClone = true // For next checkpoint...
-			checkpointRequest.waitGroup.Done()
-			logger.ErrorfWithError(checkpointRequest.err, "volume.bPlusTreeObject.bPlusTree.Flush() on volume \"%s\" failed", volume.volumeName)
-			if checkpointRequest.exitOnCompletion {
-				return
-			}
-			checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-			continue
-		}
-		if flushObjectNumber > volume.bPlusTreeObject.objectNumber {
-			// Update checkpoint'd bPlusTreeObject location
-			volume.bPlusTreeObject.objectNumber = flushObjectNumber
-			volume.bPlusTreeObject.objectOffset = flushObjectOffset
-			volume.bPlusTreeObject.objectLength = flushObjectLength
-		}
-
-		volume.Unlock()
-
-		if nil == volume.checkpointChunkedPutContext {
-			volume.checkpointObjectNumber = 0 // Throw away provisioned ObjectNumber... didn't need it
-		} else {
-			// Some checkpoint data was written... so close off Object Chunked PUT
-			checkpointRequest.err = volume.checkpointChunkedPutContext.Close()
-			if nil != checkpointRequest.err {
-				volume.checkpointObjectNumber = 0
-				volume.checkpointObjectOffset = 0
-				volume.checkpointChunkedPutContext = nil
-				volume.needFullClone = true // For next checkpoint...
-				checkpointRequest.waitGroup.Done()
-				logger.ErrorfWithError(checkpointRequest.err, "volume.checkpointChunkedPutContext.Close() on volume \"%s\" failed", volume.volumeName)
-				if checkpointRequest.exitOnCompletion {
-					return
-				}
-				checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-				continue
-			}
-			volume.checkpointObjectNumber = 0
-			volume.checkpointObjectOffset = 0
-			volume.checkpointChunkedPutContext = nil
-		}
-
-		if nil != checkpointGateWaitGroup {
-			checkpointGateWaitGroup.Wait() // Wait for clients to say it's ok
-		}
-
-		checkpointHeader = &checkpointHeaderV1Struct{
-			volume: volume,
-			inodeRecBPlusTreeObjectNumber:        volume.inodeRec.objectNumber,
-			inodeRecBPlusTreeObjectOffset:        volume.inodeRec.objectOffset,
-			inodeRecBPlusTreeObjectLength:        volume.inodeRec.objectLength,
-			logSegmentRecBPlusTreeObjectNumber:   volume.logSegmentRec.objectNumber,
-			logSegmentRecBPlusTreeObjectOffset:   volume.logSegmentRec.objectOffset,
-			logSegmentRecBPlusTreeObjectLength:   volume.logSegmentRec.objectLength,
-			bPlusTreeObjectBPlusTreeObjectNumber: volume.bPlusTreeObject.objectNumber,
-			bPlusTreeObjectBPlusTreeObjectOffset: volume.bPlusTreeObject.objectOffset,
-			bPlusTreeObjectBPlusTreeObjectLength: volume.bPlusTreeObject.objectLength,
-			reservedToNonce:                      volume.reservedToNonce,
-		}
-
-		checkpointRequest.err = checkpointHeader.put()
-		if nil == checkpointRequest.err {
-			volume.lastSuccessfulCheckpointHeaderPut = checkpointHeader
-		} else {
-			volume.needFullClone = true // For next checkpoint...
-			checkpointRequest.waitGroup.Done()
-			logger.ErrorfWithError(checkpointRequest.err, "checkpointHeader.put() on volume \"%s\" failed", volume.volumeName)
-			if checkpointRequest.exitOnCompletion {
-				return
-			}
-			checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-			continue
-		}
-
-		if volume.needFullClone {
-			// Full Clone successfully recorded... so:
-			//
-			//   Clear this setting
-			//   Reset interval counter
-			//   Kick off background deletion of now unreferenced checkpoint objects
-
-			volume.needFullClone = false
-			volume.checkpointIntervalsSinceCompaction = 0
-
-			if 0 == volume.checkpointCompactorObjectNumberLimit {
-				// Must kick off background checkpoint compactor (after indicating limit)
-				volume.checkpointCompactorObjectNumberLimit = potentialCheckpointCompactorObjectNumberLimit
-				go volume.checkpointCompactor()
-			} else {
-				// Just bump up limit
-				volume.checkpointCompactorObjectNumberLimit = potentialCheckpointCompactorObjectNumberLimit
-			}
-		}
+		checkpointRequest.err = volume.putCheckpoint(true)
 
 		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
-		if nil != checkpointDoneWaitGroup {
-			// Awake any others who were waiting the next checkpoint
-			checkpointDoneWaitGroup.Done()
+		if nil != volume.checkpointDoneWaitGroup {
+			// Awake any others who were waiting on this checkpoint
+			volume.checkpointDoneWaitGroup.Done()
 		}
 
-		if checkpointRequest.exitOnCompletion {
-			return
-		}
+		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
 
-		checkpointRequest = nil // Indicate we are done with this checkpointRequest before looping
-	}
-}
-
-func (volume *volumeStruct) checkpointCompactor() {
-	var (
-		err                                             error
-		lastWorkingCheckpointCompactorObjectNumberLimit uint64
-		objectList                                      []string
-		objectName                                      string
-		objectNumber                                    uint64
-		thisWorkingCheckpointCompactorObjectNumberLimit uint64
-	)
-
-	lastWorkingCheckpointCompactorObjectNumberLimit = 0
-
-	for {
-		volume.Lock()
-		thisWorkingCheckpointCompactorObjectNumberLimit = volume.checkpointCompactorObjectNumberLimit
-		if lastWorkingCheckpointCompactorObjectNumberLimit == thisWorkingCheckpointCompactorObjectNumberLimit {
-			volume.checkpointCompactorObjectNumberLimit = 0
-			volume.Unlock()
-			return
-		}
 		volume.Unlock()
 
-		_, objectList, err = swiftclient.ContainerGet(volume.accountName, volume.checkpointContainerName)
-		if nil != err {
-			volume.Lock()
-			volume.checkpointCompactorObjectNumberLimit = 0
-			volume.Unlock()
-			logger.ErrorfWithError(err, "ContainerGet(%s, %s) on Checkpoint Container failed", volume.accountName, volume.checkpointContainerName)
+		if exitOnCompletion {
 			return
 		}
-
-		for _, objectName = range objectList {
-			objectNumber, err = strconv.ParseUint(objectName, 16, 64)
-			if nil != err {
-				volume.Lock()
-				volume.checkpointCompactorObjectNumberLimit = 0
-				volume.Unlock()
-				logger.ErrorfWithError(err, "strconv.ParseUint(\"%s\") on Checkpoint Container %s/%s failed", objectName, volume.accountName, volume.checkpointContainerName)
-				return
-			}
-
-			if objectNumber < thisWorkingCheckpointCompactorObjectNumberLimit {
-				err = swiftclient.ObjectDeleteSync(volume.accountName, volume.checkpointContainerName, objectName)
-				if nil != err {
-					volume.Lock()
-					volume.checkpointCompactorObjectNumberLimit = 0
-					volume.Unlock()
-					logger.ErrorfWithError(err, "swiftclient.ObjectDeleteSync(%s/%s/%s) on Checkpoint Container objectName failed", volume.accountName, volume.checkpointContainerName, objectName)
-					return
-				}
-			}
-		}
-
-		lastWorkingCheckpointCompactorObjectNumberLimit = thisWorkingCheckpointCompactorObjectNumberLimit
 	}
 }
 
@@ -769,61 +616,26 @@ func (bPTW *bPlusTreeWrapper) GetNode(objectNumber uint64, objectOffset uint64, 
 }
 
 func (bPTW *bPlusTreeWrapper) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
-	if 0 == bPTW.volume.checkpointObjectNumber {
-		err = fmt.Errorf("*bPlusTreeWrapper.PutNode() called without an assigned checkpointObjectNumber")
-		return
-	}
-
-	if nil == bPTW.volume.checkpointChunkedPutContext {
-		bPTW.volume.checkpointObjectOffset = 0
-		bPTW.volume.checkpointChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(bPTW.volume.accountName, bPTW.volume.checkpointContainerName, utils.Uint64ToHexStr(bPTW.volume.checkpointObjectNumber))
-		if nil != err {
-			bPTW.volume.checkpointObjectNumber = 0
-			bPTW.volume.checkpointObjectOffset = 0
-			bPTW.volume.checkpointChunkedPutContext = nil
-			return
-		}
-	}
-
-	err = bPTW.volume.checkpointChunkedPutContext.SendChunk(nodeByteSlice)
+	err = bPTW.volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
-		bPTW.volume.checkpointObjectNumber = 0
-		bPTW.volume.checkpointObjectOffset = 0
-		bPTW.volume.checkpointChunkedPutContext = nil
 		return
 	}
 
-	objectNumber = bPTW.volume.checkpointObjectNumber
-	objectOffset = bPTW.volume.checkpointObjectOffset
+	objectNumber = bPTW.volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber
 
-	bPTW.volume.checkpointObjectOffset += uint64(len(nodeByteSlice))
-
-	if bPTW.volume.checkpointObjectOffset > bPTW.volume.maxFlushSize {
-		// Object is at maximum size... so must flush it and start another one...
-
-		err = bPTW.volume.checkpointChunkedPutContext.Close()
-		if nil != err {
-			return
-		}
-
-		bPTW.volume.checkpointObjectNumber = 0 // We'll hopefully be updating this shortly
-		bPTW.volume.checkpointObjectOffset = 0
-		bPTW.volume.checkpointChunkedPutContext = nil
-
-		// Now provision a new Nonce if possible
-
-		if bPTW.volume.nextNonce == bPTW.volume.reservedToNonce {
-			// Oops - got unlucky... we'll have to abort this checkpoint
-			err = fmt.Errorf("checkpoint overflowed object and there is no available Nonce... must abort this checkpoint")
-			return
-		}
-
-		// Good - there is room for our next object
-		bPTW.volume.checkpointObjectNumber = bPTW.volume.nextNonce
-		bPTW.volume.nextNonce++
+	objectOffset, err = bPTW.volume.bytesPutToCheckpointChunkedPutContext()
+	if nil != err {
+		return
 	}
 
-	return
+	err = bPTW.volume.sendChunkToCheckpointChunkedPutContext(nodeByteSlice)
+	if nil != err {
+		return
+	}
+
+	err = bPTW.volume.closeCheckpointChunkedPutContextIfNecessary()
+
+	return // err set as appropriate
 }
 
 func (bPTW *bPlusTreeWrapper) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
@@ -901,21 +713,12 @@ func (volume *volumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGro
 	return
 }
 
-func (volume *volumeStruct) FetchNextCheckPointGateWaitGroup() (wg *sync.WaitGroup) {
-	volume.Lock()
-	if nil == volume.checkpointGateWaitGroup {
-		volume.checkpointGateWaitGroup = &sync.WaitGroup{}
-		volume.checkpointGateWaitGroup.Add(1)
-	}
-	wg = volume.checkpointGateWaitGroup
-	volume.Unlock()
-	return
-}
-
 func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 	var (
-		checkpointHeaderValue string
-		newReservedToNonce    uint64
+		checkpointContainerHeaders map[string][]string
+		checkpointHeaderValue      string
+		checkpointHeaderValues     []string
+		newReservedToNonce         uint64
 	)
 
 	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
@@ -950,7 +753,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 
 		checkpointContainerHeaders[checkpointHeaderName] = checkpointHeaderValues
 
-		err = swiftclient.ContainerPost(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointContainerHeaders)
+		err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 		if nil != err {
 			return
 		}
@@ -967,8 +770,9 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 
 func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 	volume.Lock()
-	nonce, err = fetchNonceWhileLocked()
+	nonce, err = volume.fetchNonceWhileLocked()
 	volume.Unlock()
+	return
 }
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
