@@ -18,7 +18,7 @@ import (
 
 func (volume *volumeStruct) getCheckpoint() (err error) {
 	var (
-		bPlusTree                           *bPlusTreeStruct
+		bPTW                                *bPlusTreeWrapper
 		bytesConsumed                       uint64
 		checkpointContainerHeaders          map[string][]string
 		checkpointHeader                    checkpointHeaderV2Struct
@@ -92,6 +92,8 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 
 	if checkpointHeaderVersion1 == checkpointVersion {
 		// Read in checkpointHeaderV1Struct converting it to a checkpointHeaderV2Struct + checkpointObjectTrailerV2Struct
+
+		volume.checkpointHeaderVersion = checkpointHeaderVersion1
 
 		if 11 != len(checkpointHeaderValueSlice) {
 			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
@@ -171,18 +173,18 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = 0
 		} else {
-			bPlusTree = &bPlusTreeStruct{
+			bPTW = &bPlusTreeWrapper{
 				volume:       volume,
-				structType:   inodeRecStructType,
+				structType:   inodeRecBPlusTreeWrapperType,
 				objectNumber: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
 				objectOffset: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
 				objectLength: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
 			}
-			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
 			if nil != err {
 				return
 			}
-			volume.inodeRecBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			volume.inodeRecBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -193,18 +195,18 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = 0
 		} else {
-			bPlusTree = &bPlusTreeStruct{
+			bPTW = &bPlusTreeWrapper{
 				volume:       volume,
-				structType:   logSegmentRecStructType,
+				structType:   logSegmentRecBPlusTreeWrapperType,
 				objectNumber: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
 				objectOffset: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
 				objectLength: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
 			}
-			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
 			if nil != err {
 				return
 			}
-			volume.logSegmentRecBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			volume.logSegmentRecBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -215,18 +217,18 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = 0
 		} else {
-			bPlusTree = &bPlusTreeStruct{
+			bPTW = &bPlusTreeWrapper{
 				volume:       volume,
-				structType:   bPlusTreeObjectStructType,
+				structType:   bPlusTreeObjectBPlusTreeWrapperType,
 				objectNumber: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
 				objectOffset: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
 				objectLength: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
 			}
-			bPlusTree.bPlusTree, err = sortedmap.OldBPlusTree(bPlusTree.objectNumber, bPlusTree.objectOffset, bPlusTree.objectLength, sortedmap.CompareUint64, bPlusTree)
+			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
 			if nil != err {
 				return
 			}
-			volume.bPlusTreeObjectBPlusTreeLayout, err = bPlusTree.bPlusTree.FetchLayoutReport()
+			volume.bPlusTreeObjectBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -234,6 +236,8 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 		}
 	} else if checkpointHeaderVersion2 == checkpointVersion {
 		// Read in checkpointHeaderV2Struct
+
+		volume.checkpointHeaderVersion = checkpointHeaderVersion2
 
 		if 4 != len(checkpointHeaderValueSlice) {
 			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, checkpointHeaderName, checkpointHeaderValue)
@@ -714,10 +718,10 @@ func (volume *volumeStruct) checkpointCompactor() {
 	}
 }
 
-func (bPT *bPlusTreeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+func (bPTW *bPlusTreeWrapper) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	keyAsUint64, ok := key.(uint64)
 	if !ok {
-		err = fmt.Errorf("headhunter.bPlusTreeStruct.DumpKey() could not parse key as a uint64")
+		err = fmt.Errorf("headhunter.bPlusTreeWrapper.DumpKey() could not parse key as a uint64")
 		return
 	}
 
@@ -727,10 +731,10 @@ func (bPT *bPlusTreeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err 
 	return
 }
 
-func (bPT *bPlusTreeStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+func (bPTW *bPlusTreeWrapper) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
 	valueAsByteSlice, ok := value.([]byte)
 	if !ok {
-		err = fmt.Errorf("headhunter.bPlusTreeStruct.DumpValue() count not parse value as []byte")
+		err = fmt.Errorf("headhunter.bPlusTreeWrapper.DumpValue() count not parse value as []byte")
 		return
 	}
 
@@ -759,78 +763,78 @@ func (bPT *bPlusTreeStruct) DumpValue(value sortedmap.Value) (valueAsString stri
 	return
 }
 
-func (bPT *bPlusTreeStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
-	nodeByteSlice, err = swiftclient.ObjectGet(bPT.volume.accountName, bPT.volume.checkpointContainerName, utils.Uint64ToHexStr(objectNumber), objectOffset, objectLength)
+func (bPTW *bPlusTreeWrapper) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	nodeByteSlice, err = swiftclient.ObjectGet(bPTW.volume.accountName, bPTW.volume.checkpointContainerName, utils.Uint64ToHexStr(objectNumber), objectOffset, objectLength)
 	return
 }
 
-func (bPT *bPlusTreeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
-	if 0 == bPT.volume.checkpointObjectNumber {
-		err = fmt.Errorf("*bPlusTreeStruct.PutNode() called without an assigned checkpointObjectNumber")
+func (bPTW *bPlusTreeWrapper) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	if 0 == bPTW.volume.checkpointObjectNumber {
+		err = fmt.Errorf("*bPlusTreeWrapper.PutNode() called without an assigned checkpointObjectNumber")
 		return
 	}
 
-	if nil == bPT.volume.checkpointChunkedPutContext {
-		bPT.volume.checkpointObjectOffset = 0
-		bPT.volume.checkpointChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(bPT.volume.accountName, bPT.volume.checkpointContainerName, utils.Uint64ToHexStr(bPT.volume.checkpointObjectNumber))
+	if nil == bPTW.volume.checkpointChunkedPutContext {
+		bPTW.volume.checkpointObjectOffset = 0
+		bPTW.volume.checkpointChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(bPTW.volume.accountName, bPTW.volume.checkpointContainerName, utils.Uint64ToHexStr(bPTW.volume.checkpointObjectNumber))
 		if nil != err {
-			bPT.volume.checkpointObjectNumber = 0
-			bPT.volume.checkpointObjectOffset = 0
-			bPT.volume.checkpointChunkedPutContext = nil
+			bPTW.volume.checkpointObjectNumber = 0
+			bPTW.volume.checkpointObjectOffset = 0
+			bPTW.volume.checkpointChunkedPutContext = nil
 			return
 		}
 	}
 
-	err = bPT.volume.checkpointChunkedPutContext.SendChunk(nodeByteSlice)
+	err = bPTW.volume.checkpointChunkedPutContext.SendChunk(nodeByteSlice)
 	if nil != err {
-		bPT.volume.checkpointObjectNumber = 0
-		bPT.volume.checkpointObjectOffset = 0
-		bPT.volume.checkpointChunkedPutContext = nil
+		bPTW.volume.checkpointObjectNumber = 0
+		bPTW.volume.checkpointObjectOffset = 0
+		bPTW.volume.checkpointChunkedPutContext = nil
 		return
 	}
 
-	objectNumber = bPT.volume.checkpointObjectNumber
-	objectOffset = bPT.volume.checkpointObjectOffset
+	objectNumber = bPTW.volume.checkpointObjectNumber
+	objectOffset = bPTW.volume.checkpointObjectOffset
 
-	bPT.volume.checkpointObjectOffset += uint64(len(nodeByteSlice))
+	bPTW.volume.checkpointObjectOffset += uint64(len(nodeByteSlice))
 
-	if bPT.volume.checkpointObjectOffset > bPT.volume.maxFlushSize {
+	if bPTW.volume.checkpointObjectOffset > bPTW.volume.maxFlushSize {
 		// Object is at maximum size... so must flush it and start another one...
 
-		err = bPT.volume.checkpointChunkedPutContext.Close()
+		err = bPTW.volume.checkpointChunkedPutContext.Close()
 		if nil != err {
 			return
 		}
 
-		bPT.volume.checkpointObjectNumber = 0 // We'll hopefully be updating this shortly
-		bPT.volume.checkpointObjectOffset = 0
-		bPT.volume.checkpointChunkedPutContext = nil
+		bPTW.volume.checkpointObjectNumber = 0 // We'll hopefully be updating this shortly
+		bPTW.volume.checkpointObjectOffset = 0
+		bPTW.volume.checkpointChunkedPutContext = nil
 
 		// Now provision a new Nonce if possible
 
-		if bPT.volume.nextNonce == bPT.volume.reservedToNonce {
+		if bPTW.volume.nextNonce == bPTW.volume.reservedToNonce {
 			// Oops - got unlucky... we'll have to abort this checkpoint
 			err = fmt.Errorf("checkpoint overflowed object and there is no available Nonce... must abort this checkpoint")
 			return
 		}
 
 		// Good - there is room for our next object
-		bPT.volume.checkpointObjectNumber = bPT.volume.nextNonce
-		bPT.volume.nextNonce++
+		bPTW.volume.checkpointObjectNumber = bPTW.volume.nextNonce
+		bPTW.volume.nextNonce++
 	}
 
 	return
 }
 
-func (bPT *bPlusTreeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+func (bPTW *bPlusTreeWrapper) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	err = nil // Garbage collection handled by doing a "full" snapshot and deleting old LogSegments in checkpointDaemon()
 	return
 }
 
-func (bPT *bPlusTreeStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+func (bPTW *bPlusTreeWrapper) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
 	keyAsUint64, ok := key.(uint64)
 	if !ok {
-		err = fmt.Errorf("*bPlusTreeStruct.PackKey(key == %v) failed to convert key to uint64", key)
+		err = fmt.Errorf("*bPlusTreeWrapper.PackKey(key == %v) failed to convert key to uint64", key)
 		return
 	}
 	packedKey = utils.Uint64ToByteSlice(keyAsUint64)
@@ -838,14 +842,14 @@ func (bPT *bPlusTreeStruct) PackKey(key sortedmap.Key) (packedKey []byte, err er
 	return
 }
 
-func (bPT *bPlusTreeStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+func (bPTW *bPlusTreeWrapper) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
 	if 8 > len(payloadData) {
-		err = fmt.Errorf("*bPlusTreeStruct.UnpackKey(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
+		err = fmt.Errorf("*bPlusTreeWrapper.UnpackKey(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
 		return
 	}
 	keyAsUint64, ok := utils.ByteSliceToUint64(payloadData[:8])
 	if !ok {
-		err = fmt.Errorf("*bPlusTreeStruct.UnpackKey(payloadData) failed in call to utils.ByteSliceToUint64()")
+		err = fmt.Errorf("*bPlusTreeWrapper.UnpackKey(payloadData) failed in call to utils.ByteSliceToUint64()")
 		return
 	}
 	key = keyAsUint64
@@ -854,10 +858,10 @@ func (bPT *bPlusTreeStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, by
 	return
 }
 
-func (bPT *bPlusTreeStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+func (bPTW *bPlusTreeWrapper) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
 	valueAsByteSlice, ok := value.([]byte)
 	if !ok {
-		err = fmt.Errorf("*bPlusTreeStruct.PackValue() failed - value isn't a []byte")
+		err = fmt.Errorf("*bPlusTreeWrapper.PackValue() failed - value isn't a []byte")
 		return
 	}
 	packedValue = utils.Uint64ToByteSlice(uint64(len(valueAsByteSlice)))
@@ -866,14 +870,14 @@ func (bPT *bPlusTreeStruct) PackValue(value sortedmap.Value) (packedValue []byte
 	return
 }
 
-func (bPT *bPlusTreeStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+func (bPTW *bPlusTreeWrapper) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
 	if 8 > len(payloadData) {
-		err = fmt.Errorf("*bPlusTreeStruct.UnpackValue(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
+		err = fmt.Errorf("*bPlusTreeWrapper.UnpackValue(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
 		return
 	}
 	valueSize, ok := utils.ByteSliceToUint64(payloadData[:8])
 	if !ok {
-		err = fmt.Errorf("*bPlusTreeStruct.UnpackValue(payloadData) failed in call to utils.ByteSliceToUint64()")
+		err = fmt.Errorf("*bPlusTreeWrapper.UnpackValue(payloadData) failed in call to utils.ByteSliceToUint64()")
 		return
 	}
 	valueAsByteSlice := make([]byte, valueSize)
@@ -908,30 +912,63 @@ func (volume *volumeStruct) FetchNextCheckPointGateWaitGroup() (wg *sync.WaitGro
 	return
 }
 
-func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
-	volume.Lock()
+func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
+	var (
+		checkpointHeaderValue string
+		newReservedToNonce    uint64
+	)
 
-	for volume.nextNonce == volume.reservedToNonce {
-		// Do a checkpoint to provision for Nonce's
-		volume.Unlock()
-		checkpointRequest := &checkpointRequestStruct{exitOnCompletion: false}
-		checkpointRequest.waitGroup.Add(1)
-		volume.checkpointRequestChan <- checkpointRequest
-		checkpointRequest.waitGroup.Wait()
-		if nil != checkpointRequest.err {
-			err = checkpointRequest.err
+	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
+		newReservedToNonce = volume.checkpointHeader.reservedToNonce + uint64(volume.nonceValuesToReserve)
+
+		if checkpointHeaderVersion1 == volume.checkpointHeaderVersion {
+			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X %016X %016X %016X %016X %016X %016X %016X",
+				checkpointHeaderVersion1,
+				volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
+				volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
+				volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
+				newReservedToNonce,
+			)
+		} else { // checkpointHeaderVersion2 == volume.checkpointHeaderVersion1
+			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
+				checkpointHeaderVersion2,
+				volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber,
+				volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength,
+				newReservedToNonce,
+			)
+		}
+
+		checkpointHeaderValues = []string{checkpointHeaderValue}
+
+		checkpointContainerHeaders = make(map[string][]string)
+
+		checkpointContainerHeaders[checkpointHeaderName] = checkpointHeaderValues
+
+		err = swiftclient.ContainerPost(checkpointHeader.volume.accountName, checkpointHeader.volume.checkpointContainerName, checkpointContainerHeaders)
+		if nil != err {
 			return
 		}
-		volume.Lock()
+
+		volume.checkpointHeader.reservedToNonce = newReservedToNonce
 	}
 
 	nonce = volume.nextNonce
 	volume.nextNonce++
 
-	volume.Unlock()
-
 	err = nil
 	return
+}
+
+func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
+	volume.Lock()
+	nonce, err = fetchNonceWhileLocked()
+	volume.Unlock()
 }
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {

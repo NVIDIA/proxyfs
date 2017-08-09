@@ -59,37 +59,37 @@ const (
 )
 
 type checkpointHeaderV1Struct struct {
-	inodeRecBPlusTreeObjectNumber        uint64
-	inodeRecBPlusTreeObjectOffset        uint64
-	inodeRecBPlusTreeObjectLength        uint64
-	logSegmentRecBPlusTreeObjectNumber   uint64
-	logSegmentRecBPlusTreeObjectOffset   uint64
-	logSegmentRecBPlusTreeObjectLength   uint64
-	bPlusTreeObjectBPlusTreeObjectNumber uint64
-	bPlusTreeObjectBPlusTreeObjectOffset uint64
-	bPlusTreeObjectBPlusTreeObjectLength uint64
-	reservedToNonce                      uint64
+	inodeRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
+	inodeRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
+	inodeRecBPlusTreeObjectLength        uint64 // ...and length if that root node
+	logSegmentRecBPlusTreeObjectNumber   uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
+	logSegmentRecBPlusTreeObjectOffset   uint64 // ...and offset into the Object where root starts
+	logSegmentRecBPlusTreeObjectLength   uint64 // ...and length if that root node
+	bPlusTreeObjectBPlusTreeObjectNumber uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
+	bPlusTreeObjectBPlusTreeObjectOffset uint64 // ...and offset into the Object where root starts
+	bPlusTreeObjectBPlusTreeObjectLength uint64 // ...and length if that root node
+	reservedToNonce                      uint64 // highest nonce value reserved
 }
 
 type checkpointHeaderV2Struct struct {
 	checkpointObjectTrailerV2StructObjectNumber uint64 // checkpointObjectTrailerV2Struct found at "tail" of object
 	checkpointObjectTrailerV2StructObjectLength uint64 // this length includes the three B+Tree "layouts" appended
-	reservedToNonce                             uint64
+	reservedToNonce                             uint64 // highest nonce value reserved
 }
 
 type checkpointObjectTrailerV2Struct struct {
-	inodeRecBPlusTreeObjectNumber             uint64
-	inodeRecBPlusTreeObjectOffset             uint64
-	inodeRecBPlusTreeObjectLength             uint64
-	inodeRecBPlusTreeLayoutNumElements        uint64 // Elements immediately follow checkpointObjectTrailerV2Struct
-	logSegmentRecBPlusTreeObjectNumber        uint64
-	logSegmentRecBPlusTreeObjectOffset        uint64
-	logSegmentRecBPlusTreeObjectLength        uint64
-	logSegmentRecBPlusTreeLayoutNumElements   uint64 // Elements immediately follow inodeRecBPlusTreeLayout
-	bPlusTreeObjectBPlusTreeObjectNumber      uint64
-	bPlusTreeObjectBPlusTreeObjectOffset      uint64
-	bPlusTreeObjectBPlusTreeObjectLength      uint64
-	bPlusTreeObjectBPlusTreeLayoutNumElements uint64 // Elements immediately follow logSegmentRecBPlusTreeLayout
+	inodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
+	inodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
+	inodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
+	inodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV2Struct
+	logSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
+	logSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
+	logSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
+	logSegmentRecBPlusTreeLayoutNumElements   uint64 // elements immediately follow inodeRecBPlusTreeLayout
+	bPlusTreeObjectBPlusTreeObjectNumber      uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
+	bPlusTreeObjectBPlusTreeObjectOffset      uint64 // ...and offset into the Object where root starts
+	bPlusTreeObjectBPlusTreeObjectLength      uint64 // ...and length if that root node
+	bPlusTreeObjectBPlusTreeLayoutNumElements uint64 // elements immediately follow logSegmentRecBPlusTreeLayout
 	// inodeRecBPlusTreeLayout        serialized as [inodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
 	// logSegmentBPlusTreeLayout      serialized as [logSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
 	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
@@ -101,14 +101,14 @@ type elementOfBPlusTreeLayoutStruct struct {
 }
 
 const (
-	inodeRecStructType uint32 = iota
-	logSegmentRecStructType
-	bPlusTreeObjectStructType
+	inodeRecBPlusTreeWrapperType uint32 = iota
+	logSegmentRecBPlusTreeWrapperType
+	bPlusTreeObjectBPlusTreeWrapperType
 )
 
-type bPlusTreeStruct struct {
+type bPlusTreeWrapper struct {
 	volume       *volumeStruct
-	structType   uint32              // Either inodeRecStructType, logSegmentRecStructType, or bPlusTreeObjectStructType
+	structType   uint32              // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
 	bPlusTree    sortedmap.BPlusTree // In memory representation
 	objectNumber uint64              // If != 0, objectNumber-named Object in accountName.checkpointContainerName
 	objectOffset uint64              // if objectNumber != 0, offset into the Object where Root Inode starts
@@ -135,14 +135,14 @@ type volumeStruct struct {
 	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
 	checkpointGateWaitGroup        *sync.WaitGroup
 	checkpointDoneWaitGroup        *sync.WaitGroup
-	needFullClone                  bool
-	inodeRec                       *bPlusTreeStruct
-	logSegmentRec                  *bPlusTreeStruct
-	bPlusTreeObject                *bPlusTreeStruct
 	nextNonce                      uint64
 	checkpointRequestChan          chan *checkpointRequestStruct
+	checkpointHeaderVersion        uint64
 	checkpointHeader               *checkpointHeaderV2Struct
 	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
+	inodeRec                       *bPlusTreeWrapper
+	logSegmentRec                  *bPlusTreeWrapper
+	bPlusTreeObject                *bPlusTreeWrapper
 	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
 	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
 	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
@@ -321,11 +321,11 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 		volume           *volumeStruct
 	)
 
-	volume = &volumeStruct{volumeName: volumeName, checkpointIntervalsSinceCompaction: 0, checkpointCompactorObjectNumberLimit: 0, checkpointObjectNumber: 0, checkpointGateWaitGroup: nil, checkpointDoneWaitGroup: nil, needFullClone: false}
+	volume = &volumeStruct{volumeName: volumeName, checkpointChunkedPutContext: nil, checkpointGateWaitGroup: nil, checkpointDoneWaitGroup: nil}
 
-	volume.inodeRec = &bPlusTreeStruct{volume: volume, structType: inodeRecStructType}
-	volume.logSegmentRec = &bPlusTreeStruct{volume: volume, structType: logSegmentRecStructType}
-	volume.bPlusTreeObject = &bPlusTreeStruct{volume: volume, structType: bPlusTreeObjectStructType}
+	volume.inodeRec = &bPlusTreeWrapper{volume: volume, structType: inodeRecBPlusTreeWrapperType}
+	volume.logSegmentRec = &bPlusTreeWrapper{volume: volume, structType: logSegmentRecBPlusTreeWrapperType}
+	volume.bPlusTreeObject = &bPlusTreeWrapper{volume: volume, structType: bPlusTreeObjectBPlusTreeWrapperType}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
 	if nil != err {
