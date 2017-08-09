@@ -184,6 +184,21 @@ static void smb_stat_ex_from_stat(struct stat_ex *dst,
 #endif
 }
 
+static void free_data(void **handle_data)
+{
+	fs_ctx_t *ctx = (fs_ctx_t *)*handle_data;
+
+	if (ctx == NULL) {
+		return;
+	}
+
+	if (ctx->cwd) {
+		free(ctx->cwd);
+	}
+	free(ctx);
+	*handle_data = NULL;
+}
+
 static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
                                const char *service,
                                const char *user)
@@ -219,6 +234,8 @@ static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
 
 	handle->data = ctx;
 
+	handle->free_data = free_data;
+
 	return 0;
 }
 
@@ -234,11 +251,7 @@ static void vfs_proxyfs_disconnect(struct vfs_handle_struct *handle)
 
 	proxyfs_unmount(MOUNT_HANDLE(handle));
 
-	if (ctx->cwd) {
-		free(ctx->cwd);
-	}
-	free(ctx);
-	handle->data = NULL;
+	free_data(&handle->data);
 }
 
 static uint64_t vfs_proxyfs_disk_free(struct vfs_handle_struct *handle,
@@ -488,9 +501,9 @@ static int vfs_proxyfs_mkdir(struct vfs_handle_struct *handle,
 
 	int err = proxyfs_mkdir_path(MOUNT_HANDLE(handle), path, uid, gid, mode);
 
-	free(path);
-
 	DEBUG(10, ("vfs_proxyfs_mkdir: %s mode 0%o errno = %d\n", path, mode, err));
+
+	free(path);
 
 	if (err != 0) {
 		errno = err;
@@ -1446,6 +1459,7 @@ static int vfs_proxyfs_chdir(struct vfs_handle_struct *handle,
 	int err = proxyfs_lookup_path(MOUNT_HANDLE(handle), rpath, &inum);
 	if (err != 0) {
 		errno = err;
+		free(rpath);
 		return -1;
 	}
 
@@ -2136,6 +2150,27 @@ static void smb_acl_to_blob(SMB_ACL_T acl, TALLOC_CTX *mem_ctx, DATA_BLOB *blob)
 	}
 }
 
+static SMB_ACL_T get_xattr_error_out(struct vfs_handle_struct *handle,
+						 char *rpath,
+						 TALLOC_CTX *mem_ctx,
+						 ssize_t ret)
+{
+	proxyfs_stat_t *st;
+	SMB_ACL_T result;
+
+	ret = proxyfs_get_stat_path(MOUNT_HANDLE(handle), rpath, &st);
+	if (ret != 0) {
+		errno = ret;
+		free(rpath);
+		return NULL;
+	}
+
+	free(rpath);
+	result = mode_to_smb_acls(st, mem_ctx);
+	free(st);
+	return result;
+}
+
 static SMB_ACL_T vfs_proxyfs_sys_acl_get_file(struct vfs_handle_struct *handle,
                                               const char *path_p,
                                               SMB_ACL_TYPE_T type,
@@ -2145,7 +2180,7 @@ static SMB_ACL_T vfs_proxyfs_sys_acl_get_file(struct vfs_handle_struct *handle,
 
 	SMB_ACL_T result;
 	struct stat st;
-	uint8_t *buf;
+	uint8_t *buf = NULL;
 	const char *key;
 	ssize_t ret, size;
 
@@ -2162,20 +2197,22 @@ static SMB_ACL_T vfs_proxyfs_sys_acl_get_file(struct vfs_handle_struct *handle,
 	}
 
 	char *rpath = resolve_path(handle, path_p);
-	ret = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, key, (void **)&buf, &size);
-	if ((ret != 0) || (size == 0)) {
-		proxyfs_stat_t *st;
-		ret = proxyfs_get_stat_path(MOUNT_HANDLE(handle), rpath, &st);
-		if (ret != 0) {
-			errno = ret;
-			free(rpath);
-			return NULL;
-		}
 
-		free(rpath);
-		result = mode_to_smb_acls(st, mem_ctx);
-		free(st);
-		return result;
+	// First find out how large the buf should be by passing 0 for the size.
+	//
+	// Then malloc() a buf and do the call again with the buf pointer.
+	size = 0;
+	ret = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, key, NULL, &size);
+	if ((ret != 0) || (size == 0)) {
+		return get_xattr_error_out(handle, rpath, mem_ctx, ret);
+	}
+
+	buf = malloc(size+1);
+
+	ret = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, key, buf, &size);
+	if ((ret != 0) || (size == 0)) {
+		free(buf);
+		return get_xattr_error_out(handle, rpath, mem_ctx, ret);
 	}
 
 	free(rpath);
@@ -2194,7 +2231,7 @@ static SMB_ACL_T vfs_proxyfs_sys_acl_get_fd(struct vfs_handle_struct *handle,
                                             struct files_struct *fsp,
                                             TALLOC_CTX *mem_ctx)
 {
-	DEBUG(10, ("vfs_proxyfs_sys_acl_get_file: %s ACL_TYPE: system.posix_acl_access\n", fsp->fsp_name->base_name));
+	DEBUG(10, ("vfs_proxyfs_sys_acl_get_fd: %s ACL_TYPE: system.posix_acl_access\n", fsp->fsp_name->base_name));
 	file_handle_t *fd = *(file_handle_t **)VFS_FETCH_FSP_EXTENSION(handle, fsp);
 
 	SMB_ACL_T result;
@@ -2348,7 +2385,7 @@ static ssize_t vfs_proxyfs_getxattr(struct vfs_handle_struct *handle,
 
 	char *rpath = resolve_path(handle, path);
 
-	int err = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, name, &value, &size);
+	int err = proxyfs_get_xattr_path(MOUNT_HANDLE(handle), rpath, name, value, &size);
 	free(rpath);
 
 	if (err != 0) {
@@ -2356,7 +2393,7 @@ static ssize_t vfs_proxyfs_getxattr(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	return 0;
+	return size;
 }
 
 static ssize_t vfs_proxyfs_fgetxattr(struct vfs_handle_struct *handle,
@@ -2370,13 +2407,13 @@ static ssize_t vfs_proxyfs_fgetxattr(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	int err = proxyfs_get_xattr(MOUNT_HANDLE(handle), fd->inum, name, &value, &size);
+	int err = proxyfs_get_xattr(MOUNT_HANDLE(handle), fd->inum, name, value, &size);
 	if (err != 0) {
 		errno = err;
 		return -1;
 	}
 
-	return 0;
+	return size;
 }
 
 static ssize_t vfs_proxyfs_listxattr(struct vfs_handle_struct *handle,
@@ -2393,7 +2430,7 @@ static ssize_t vfs_proxyfs_listxattr(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	return 0;
+	return size;
 }
 
 static ssize_t vfs_proxyfs_flistxattr(struct vfs_handle_struct *handle,
@@ -2413,7 +2450,7 @@ static ssize_t vfs_proxyfs_flistxattr(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	return 0;
+	return size;
 }
 
 static int vfs_proxyfs_removexattr(struct vfs_handle_struct *handle,
@@ -2423,8 +2460,9 @@ static int vfs_proxyfs_removexattr(struct vfs_handle_struct *handle,
 	char *rpath = resolve_path(handle, path);
 
 	int err = proxyfs_remove_xattr_path(MOUNT_HANDLE(handle), rpath, name);
-	free(rpath);
 	DEBUG(10, ("File %s Remove xattr %s errcode %d\n", rpath, name, err));
+
+	free(rpath);
 	if (err != 0) {
 		errno = err;
 		return -1;
