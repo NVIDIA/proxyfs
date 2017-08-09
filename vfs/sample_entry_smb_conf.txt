@@ -3,7 +3,7 @@
 [proxyfs]
       comment = ProxyFS test volume
       path = /mnt/CommonVolume
-      vfs objects = acl_xattr proxyfs
+      vfs objects = proxyfs
       proxyfs:volume = CommonVolume
       valid users = CHANGEME
       public = yes
