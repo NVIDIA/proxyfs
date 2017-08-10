@@ -653,6 +653,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		if nil != volume.checkpointDoneWaitGroup {
 			// Awake any others who were waiting on this checkpoint
 			volume.checkpointDoneWaitGroup.Done()
+			volume.checkpointDoneWaitGroup = nil
 		}
 
 		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
