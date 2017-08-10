@@ -28,23 +28,23 @@ const (
 	checkpointHeaderVersion1 uint64 = iota + 1
 	// uint64 in %016X indicating checkpointHeaderVersion1
 	// ' '
-	// uint64 in %016X indicating objectNumber containing inodeRec.bPlusTree        Root Node
+	// uint64 in %016X indicating objectNumber containing inodeRecWrapper.bPlusTree        Root Node
 	// ' '
-	// uint64 in %016X indicating offset of               inodeRec.bPlusTree        Root Node
+	// uint64 in %016X indicating offset of               inodeRecWrapper.bPlusTree        Root Node
 	// ' '
-	// uint64 in %016X indicating length of               inodeRec.bPlusTree        Root Node
+	// uint64 in %016X indicating length of               inodeRecWrapper.bPlusTree        Root Node
 	// ' '
-	// uint64 in %016X indicating objectNumber containing logSegmentRec.bPlusTree   Root Node
+	// uint64 in %016X indicating objectNumber containing logSegmentRecWrapper.bPlusTree   Root Node
 	// ' '
-	// uint64 in %016X indicating offset of               logSegmentRec.bPlusTree   Root Node
+	// uint64 in %016X indicating offset of               logSegmentRecWrapper.bPlusTree   Root Node
 	// ' '
-	// uint64 in %016X indicating length of               logSegmentRec.bPlusTree   Root Node
+	// uint64 in %016X indicating length of               logSegmentRecWrapper.bPlusTree   Root Node
 	// ' '
-	// uint64 in %016X indicating objectNumber containing bPlusTreeObject.bPlusTree Root Node
+	// uint64 in %016X indicating objectNumber containing bPlusTreeObjectWrapper.bPlusTree Root Node
 	// ' '
-	// uint64 in %016X indicating offset of               bPlusTreeObject.bPlusTree Root Node
+	// uint64 in %016X indicating offset of               bPlusTreeObjectWrapper.bPlusTree Root Node
 	// ' '
-	// uint64 in %016X indicating length of               bPlusTreeObject.bPlusTree Root Node
+	// uint64 in %016X indicating length of               bPlusTreeObjectWrapper.bPlusTree Root Node
 	// ' '
 	// uint64 in %016X indicating reservedToNonce
 
@@ -106,10 +106,10 @@ const (
 	bPlusTreeObjectBPlusTreeWrapperType
 )
 
-type bPlusTreeWrapper struct {
+type bPlusTreeWrapperStruct struct {
 	volume      *volumeStruct
-	wrapperType uint32              // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
-	bPlusTree   sortedmap.BPlusTree // In memory representation
+	wrapperType uint32 // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
+	bPlusTree   sortedmap.BPlusTree
 }
 
 type checkpointRequestStruct struct {
@@ -136,9 +136,9 @@ type volumeStruct struct {
 	checkpointHeaderVersion        uint64
 	checkpointHeader               *checkpointHeaderV2Struct
 	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
-	inodeRec                       *bPlusTreeWrapper
-	logSegmentRec                  *bPlusTreeWrapper
-	bPlusTreeObject                *bPlusTreeWrapper
+	inodeRecWrapper                *bPlusTreeWrapperStruct
+	logSegmentRecWrapper           *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
 	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
 	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
 	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
@@ -323,22 +323,20 @@ func Down() (err error) {
 
 func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		checkpointHeader *checkpointHeaderV1Struct
-		flowControlName  string
-		volume           *volumeStruct
+		flowControlName string
+		volume          *volumeStruct
 	)
 
 	volume = &volumeStruct{
-		volumeName:                                  volumeName,
-		checkpointChunkedPutContext:                 nil,
-		lastCheckpointChunkedPutContextObjectNumber: 0,
-		checkpointGateWaitGroup:                     nil,
-		checkpointDoneWaitGroup:                     nil,
+		volumeName:                  volumeName,
+		checkpointChunkedPutContext: nil,
+		checkpointDoneWaitGroup:     nil,
+		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
 	}
 
-	volume.inodeRec = &bPlusTreeWrapper{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
-	volume.logSegmentRec = &bPlusTreeWrapper{volume: volume, wrapperType: logSegmentRecBPlusTreeWrapperType}
-	volume.bPlusTreeObject = &bPlusTreeWrapper{volume: volume, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
+	volume.inodeRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
+	volume.logSegmentRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: logSegmentRecBPlusTreeWrapperType}
+	volume.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
 	if nil != err {
@@ -388,57 +386,10 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 		return
 	}
 
-	checkpointHeader = &checkpointHeaderV1Struct{volume: volume}
-
-	err = checkpointHeader.get()
+	err = volume.getCheckpoint()
 	if nil != err {
 		return
 	}
-
-	volume.lastSuccessfulCheckpointHeaderPut = checkpointHeader
-
-	volume.inodeRec.objectNumber = checkpointHeader.inodeRecBPlusTreeObjectNumber
-	volume.inodeRec.objectOffset = checkpointHeader.inodeRecBPlusTreeObjectOffset
-	volume.inodeRec.objectLength = checkpointHeader.inodeRecBPlusTreeObjectLength
-
-	volume.logSegmentRec.objectNumber = checkpointHeader.logSegmentRecBPlusTreeObjectNumber
-	volume.logSegmentRec.objectOffset = checkpointHeader.logSegmentRecBPlusTreeObjectOffset
-	volume.logSegmentRec.objectLength = checkpointHeader.logSegmentRecBPlusTreeObjectLength
-
-	volume.bPlusTreeObject.objectNumber = checkpointHeader.bPlusTreeObjectBPlusTreeObjectNumber
-	volume.bPlusTreeObject.objectOffset = checkpointHeader.bPlusTreeObjectBPlusTreeObjectOffset
-	volume.bPlusTreeObject.objectLength = checkpointHeader.bPlusTreeObjectBPlusTreeObjectLength
-
-	volume.reservedToNonce = checkpointHeader.reservedToNonce
-
-	volume.nextNonce = volume.reservedToNonce // This will trigger a Nonce pool population on next FetchNonce() call
-
-	if 0 == volume.inodeRec.objectNumber {
-		volume.inodeRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxInodesPerMetadataNode, sortedmap.CompareUint64, volume.inodeRec)
-	} else {
-		volume.inodeRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.inodeRec.objectNumber, volume.inodeRec.objectOffset, volume.inodeRec.objectLength, sortedmap.CompareUint64, volume.inodeRec)
-		if nil != err {
-			return
-		}
-	}
-	if 0 == volume.logSegmentRec.objectNumber {
-		volume.logSegmentRec.bPlusTree = sortedmap.NewBPlusTree(volume.maxLogSegmentsPerMetadataNode, sortedmap.CompareUint64, volume.logSegmentRec)
-	} else {
-		volume.logSegmentRec.bPlusTree, err = sortedmap.OldBPlusTree(volume.logSegmentRec.objectNumber, volume.logSegmentRec.objectOffset, volume.logSegmentRec.objectLength, sortedmap.CompareUint64, volume.logSegmentRec)
-		if nil != err {
-			return
-		}
-	}
-	if 0 == volume.bPlusTreeObject.objectNumber {
-		volume.bPlusTreeObject.bPlusTree = sortedmap.NewBPlusTree(volume.maxDirFileNodesPerMetadataNode, sortedmap.CompareUint64, volume.bPlusTreeObject)
-	} else {
-		volume.bPlusTreeObject.bPlusTree, err = sortedmap.OldBPlusTree(volume.bPlusTreeObject.objectNumber, volume.bPlusTreeObject.objectOffset, volume.bPlusTreeObject.objectLength, sortedmap.CompareUint64, volume.bPlusTreeObject)
-		if nil != err {
-			return
-		}
-	}
-
-	volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
 
 	globals.volumeMap[volumeName] = volume
 

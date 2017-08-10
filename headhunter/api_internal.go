@@ -17,7 +17,7 @@ import (
 
 func (volume *volumeStruct) getCheckpoint() (err error) {
 	var (
-		bPTW                                *bPlusTreeWrapper
+		bPlusTreeWrapper                    *bPlusTreeWrapperStruct
 		bytesConsumed                       uint64
 		checkpointContainerHeaders          map[string][]string
 		checkpointHeader                    checkpointHeaderV2Struct
@@ -172,21 +172,21 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = 0
 		} else {
-			bPTW = &bPlusTreeWrapper{
+			bPlusTreeWrapper = &bPlusTreeWrapperStruct{
 				volume:      volume,
 				wrapperType: inodeRecBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err =
+			bPlusTreeWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
 					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
 					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
 					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
-					bPTW)
+					bPlusTreeWrapper)
 			if nil != err {
 				return
 			}
-			volume.inodeRecBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
+			volume.inodeRecBPlusTreeLayout, err = bPlusTreeWrapper.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -197,21 +197,21 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = 0
 		} else {
-			bPTW = &bPlusTreeWrapper{
+			bPlusTreeWrapper = &bPlusTreeWrapperStruct{
 				volume:      volume,
 				wrapperType: logSegmentRecBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err =
+			bPlusTreeWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
 					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
 					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
 					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
-					bPTW)
+					bPlusTreeWrapper)
 			if nil != err {
 				return
 			}
-			volume.logSegmentRecBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
+			volume.logSegmentRecBPlusTreeLayout, err = bPlusTreeWrapper.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -222,21 +222,21 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = 0
 		} else {
-			bPTW = &bPlusTreeWrapper{
+			bPlusTreeWrapper = &bPlusTreeWrapperStruct{
 				volume:      volume,
 				wrapperType: bPlusTreeObjectBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err =
+			bPlusTreeWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
 					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
 					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
 					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
-					bPTW)
+					bPlusTreeWrapper)
 			if nil != err {
 				return
 			}
-			volume.bPlusTreeObjectBPlusTreeLayout, err = bPTW.bPlusTree.FetchLayoutReport()
+			volume.bPlusTreeObjectBPlusTreeLayout, err = bPlusTreeWrapper.bPlusTree.FetchLayoutReport()
 			if nil != err {
 				return
 			}
@@ -366,21 +366,21 @@ func (volume *volumeStruct) putCheckpoint(withFlush bool) (err error) {
 		volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
 			volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
 			volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
-			_, err = volume.inodeRec.bPlusTree.Flush(false)
+			_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
 		if nil != err {
 			return
 		}
 		volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
 			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
 			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
-			_, err = volume.logSegmentRec.bPlusTree.Flush(false)
+			_, err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
 		if nil != err {
 			return
 		}
 		volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
 			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
 			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
-			_, err = volume.inodeRec.bPlusTree.Flush(false)
+			_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
 		if nil != err {
 			return
 		}
@@ -579,7 +579,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 	}
 }
 
-func (bPTW *bPlusTreeWrapper) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	keyAsUint64, ok := key.(uint64)
 	if !ok {
 		err = fmt.Errorf("headhunter.bPlusTreeWrapper.DumpKey() could not parse key as a uint64")
@@ -592,7 +592,7 @@ func (bPTW *bPlusTreeWrapper) DumpKey(key sortedmap.Key) (keyAsString string, er
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
 	valueAsByteSlice, ok := value.([]byte)
 	if !ok {
 		err = fmt.Errorf("headhunter.bPlusTreeWrapper.DumpValue() count not parse value as []byte")
@@ -624,147 +624,153 @@ func (bPTW *bPlusTreeWrapper) DumpValue(value sortedmap.Value) (valueAsString st
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
-	nodeByteSlice, err = swiftclient.ObjectGet(bPTW.volume.accountName, bPTW.volume.checkpointContainerName, utils.Uint64ToHexStr(objectNumber), objectOffset, objectLength)
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	nodeByteSlice, err =
+		swiftclient.ObjectGet(
+			bPlusTreeWrapper.volume.accountName,
+			bPlusTreeWrapper.volume.checkpointContainerName,
+			utils.Uint64ToHexStr(objectNumber),
+			objectOffset,
+			objectLength)
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
 	var (
 		bytesUsed uint64
 		ok        bool
 	)
 
-	err = bPTW.volume.openCheckpointChunkedPutContextIfNecessary()
+	err = bPlusTreeWrapper.volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
 		return
 	}
 
-	objectNumber = bPTW.volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber
+	objectNumber = bPlusTreeWrapper.volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber
 
-	objectOffset, err = bPTW.volume.bytesPutToCheckpointChunkedPutContext()
+	objectOffset, err = bPlusTreeWrapper.volume.bytesPutToCheckpointChunkedPutContext()
 	if nil != err {
 		return
 	}
 
-	err = bPTW.volume.sendChunkToCheckpointChunkedPutContext(nodeByteSlice)
+	err = bPlusTreeWrapper.volume.sendChunkToCheckpointChunkedPutContext(nodeByteSlice)
 	if nil != err {
 		return
 	}
 
-	switch bPTW.wrapperType {
+	switch bPlusTreeWrapper.wrapperType {
 	case inodeRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.inodeRecBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
-			bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
 		} else {
-			bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
 	case logSegmentRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
 		if ok {
-			bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
 		} else {
-			bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
 	case bPlusTreeObjectBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
 		if ok {
-			bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
 		} else {
-			bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+			bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
 	default:
-		err = fmt.Errorf("Logic error: bPTW.PutNode() called for invalid wrapperType: %v", bPTW.wrapperType)
+		err = fmt.Errorf("Logic error: bPlusTreeWrapper.PutNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
 		panic(err)
 	}
 
-	err = bPTW.volume.closeCheckpointChunkedPutContextIfNecessary()
+	err = bPlusTreeWrapper.volume.closeCheckpointChunkedPutContextIfNecessary()
 
 	return // err set as appropriate
 }
 
-func (bPTW *bPlusTreeWrapper) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	var (
 		bytesUsed uint64
 		ok        bool
 	)
 
-	switch bPTW.wrapperType {
+	switch bPlusTreeWrapper.wrapperType {
 	case inodeRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.inodeRecBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
 				if bytesUsed == 0 {
-					delete(bPTW.volume.inodeRecBPlusTreeLayout, objectNumber)
+					delete(bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout, objectNumber)
 					swiftclient.ObjectDeleteAsync(
-						bPTW.volume.accountName,
-						bPTW.volume.checkpointContainerName,
+						bPlusTreeWrapper.volume.accountName,
+						bPlusTreeWrapper.volume.checkpointContainerName,
 						utils.Uint64ToHexStr(objectNumber),
-						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
 						nil)
 				} else {
-					bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+					bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 				}
 			}
 		} else {
-			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
 		}
 	case logSegmentRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
 				if bytesUsed == 0 {
-					delete(bPTW.volume.logSegmentRecBPlusTreeLayout, objectNumber)
+					delete(bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout, objectNumber)
 					swiftclient.ObjectDeleteAsync(
-						bPTW.volume.accountName,
-						bPTW.volume.checkpointContainerName,
+						bPlusTreeWrapper.volume.accountName,
+						bPlusTreeWrapper.volume.checkpointContainerName,
 						utils.Uint64ToHexStr(objectNumber),
-						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
 						nil)
 				} else {
-					bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+					bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 				}
 			}
 		} else {
-			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
 		}
 	case bPlusTreeObjectBPlusTreeWrapperType:
-		bytesUsed, ok = bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
+		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
 				if bytesUsed == 0 {
-					delete(bPTW.volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
+					delete(bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
 					swiftclient.ObjectDeleteAsync(
-						bPTW.volume.accountName,
-						bPTW.volume.checkpointContainerName,
+						bPlusTreeWrapper.volume.accountName,
+						bPlusTreeWrapper.volume.checkpointContainerName,
 						utils.Uint64ToHexStr(objectNumber),
-						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
 						nil)
 				} else {
-					bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+					bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 				}
 			}
 		} else {
-			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
 		}
 	default:
-		err = fmt.Errorf("Logic error: bPTW.DiscardNode() called for invalid wrapperType: %v", bPTW.wrapperType)
+		err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
 	}
 
 	return // err set as appropriate regardless of path
 }
 
-func (bPTW *bPlusTreeWrapper) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
 	keyAsUint64, ok := key.(uint64)
 	if !ok {
 		err = fmt.Errorf("*bPlusTreeWrapper.PackKey(key == %v) failed to convert key to uint64", key)
@@ -775,7 +781,7 @@ func (bPTW *bPlusTreeWrapper) PackKey(key sortedmap.Key) (packedKey []byte, err 
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) UnpackKey(payloadData []byte) (key sortedmap.Key, bytesConsumed uint64, err error) {
 	if 8 > len(payloadData) {
 		err = fmt.Errorf("*bPlusTreeWrapper.UnpackKey(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
 		return
@@ -791,7 +797,7 @@ func (bPTW *bPlusTreeWrapper) UnpackKey(payloadData []byte) (key sortedmap.Key, 
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PackValue(value sortedmap.Value) (packedValue []byte, err error) {
 	valueAsByteSlice, ok := value.([]byte)
 	if !ok {
 		err = fmt.Errorf("*bPlusTreeWrapper.PackValue() failed - value isn't a []byte")
@@ -803,7 +809,7 @@ func (bPTW *bPlusTreeWrapper) PackValue(value sortedmap.Value) (packedValue []by
 	return
 }
 
-func (bPTW *bPlusTreeWrapper) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) UnpackValue(payloadData []byte) (value sortedmap.Value, bytesConsumed uint64, err error) {
 	if 8 > len(payloadData) {
 		err = fmt.Errorf("*bPlusTreeWrapper.UnpackValue(payloadData) failed - len(payloadData) must be atleast 8 (was %v)", len(payloadData))
 		return
@@ -903,14 +909,14 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
 	volume.Lock()
-	valueAsValue, ok, err := volume.inodeRec.bPlusTree.GetByKey(inodeNumber)
+	valueAsValue, ok, err := volume.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRec.bPlusTree", inodeNumber, volume.volumeName)
+		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -927,13 +933,13 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 	copy(valueToTree, value)
 
 	volume.Lock()
-	ok, err := volume.inodeRec.bPlusTree.PatchByKey(inodeNumber, valueToTree)
+	ok, err := volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.inodeRec.bPlusTree.Put(inodeNumber, valueToTree)
+		_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -960,14 +966,14 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 
 	volume.Lock()
 	for i, inodeNumber := range inodeNumbers {
-		ok, nonShadowingErr := volume.inodeRec.bPlusTree.PatchByKey(inodeNumber, valuesToTree[i])
+		ok, nonShadowingErr := volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valuesToTree[i])
 		if nil != nonShadowingErr {
 			volume.Unlock()
 			err = nonShadowingErr
 			return
 		}
 		if !ok {
-			_, err = volume.inodeRec.bPlusTree.Put(inodeNumber, valuesToTree[i])
+			_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, valuesToTree[i])
 			if nil != err {
 				volume.Unlock()
 				return
@@ -982,7 +988,7 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 
 func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 	volume.Lock()
-	_, err = volume.inodeRec.bPlusTree.DeleteByKey(inodeNumber)
+	_, err = volume.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 	volume.Unlock()
 
 	return
@@ -990,14 +996,14 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 	volume.Lock()
-	valueAsValue, ok, err := volume.logSegmentRec.bPlusTree.GetByKey(logSegmentNumber)
+	valueAsValue, ok, err := volume.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRec.bPlusTree", logSegmentNumber, volume.volumeName)
+		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRecWrapper.bPlusTree", logSegmentNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -1014,13 +1020,13 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 	copy(valueToTree, value)
 
 	volume.Lock()
-	ok, err := volume.logSegmentRec.bPlusTree.PatchByKey(logSegmentNumber, valueToTree)
+	ok, err := volume.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.logSegmentRec.bPlusTree.Put(logSegmentNumber, valueToTree)
+		_, err = volume.logSegmentRecWrapper.bPlusTree.Put(logSegmentNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -1034,7 +1040,7 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 
 func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
 	volume.Lock()
-	_, err = volume.logSegmentRec.bPlusTree.DeleteByKey(logSegmentNumber)
+	_, err = volume.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
 	volume.Unlock()
 
 	return
@@ -1042,14 +1048,14 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
 	volume.Lock()
-	valueAsValue, ok, err := volume.bPlusTreeObject.bPlusTree.GetByKey(objectNumber)
+	valueAsValue, ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.GetByKey(objectNumber)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObject.bPlusTree", objectNumber, volume.volumeName)
+		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObjectWrapper.bPlusTree", objectNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -1066,13 +1072,13 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 	copy(valueToTree, value)
 
 	volume.Lock()
-	ok, err := volume.bPlusTreeObject.bPlusTree.PatchByKey(objectNumber, valueToTree)
+	ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.bPlusTreeObject.bPlusTree.Put(objectNumber, valueToTree)
+		_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Put(objectNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -1086,7 +1092,7 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 
 func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
 	volume.Lock()
-	_, err = volume.bPlusTreeObject.bPlusTree.DeleteByKey(objectNumber)
+	_, err = volume.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
 	volume.Unlock()
 
 	return
