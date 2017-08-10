@@ -107,12 +107,9 @@ const (
 )
 
 type bPlusTreeWrapper struct {
-	volume       *volumeStruct
-	structType   uint32              // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
-	bPlusTree    sortedmap.BPlusTree // In memory representation
-	objectNumber uint64              // If != 0, objectNumber-named Object in accountName.checkpointContainerName
-	objectOffset uint64              // if objectNumber != 0, offset into the Object where Root Inode starts
-	objectLength uint64              // If objectNumber != 0, length of Root Inode
+	volume      *volumeStruct
+	wrapperType uint32              // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
+	bPlusTree   sortedmap.BPlusTree // In memory representation
 }
 
 type checkpointRequestStruct struct {
@@ -339,9 +336,9 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 		checkpointDoneWaitGroup:                     nil,
 	}
 
-	volume.inodeRec = &bPlusTreeWrapper{volume: volume, structType: inodeRecBPlusTreeWrapperType}
-	volume.logSegmentRec = &bPlusTreeWrapper{volume: volume, structType: logSegmentRecBPlusTreeWrapperType}
-	volume.bPlusTreeObject = &bPlusTreeWrapper{volume: volume, structType: bPlusTreeObjectBPlusTreeWrapperType}
+	volume.inodeRec = &bPlusTreeWrapper{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
+	volume.logSegmentRec = &bPlusTreeWrapper{volume: volume, wrapperType: logSegmentRecBPlusTreeWrapperType}
+	volume.bPlusTreeObject = &bPlusTreeWrapper{volume: volume, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
 	if nil != err {

@@ -173,13 +173,16 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.checkpointObjectTrailer.inodeRecBPlusTreeLayoutNumElements = 0
 		} else {
 			bPTW = &bPlusTreeWrapper{
-				volume:       volume,
-				structType:   inodeRecBPlusTreeWrapperType,
-				objectNumber: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
-				objectOffset: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
-				objectLength: volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
+				volume:      volume,
+				wrapperType: inodeRecBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
+			bPTW.bPlusTree, err =
+				sortedmap.OldBPlusTree(
+					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectNumber,
+					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectOffset,
+					volume.checkpointObjectTrailer.inodeRecBPlusTreeObjectLength,
+					sortedmap.CompareUint64,
+					bPTW)
 			if nil != err {
 				return
 			}
@@ -195,13 +198,16 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.checkpointObjectTrailer.logSegmentRecBPlusTreeLayoutNumElements = 0
 		} else {
 			bPTW = &bPlusTreeWrapper{
-				volume:       volume,
-				structType:   logSegmentRecBPlusTreeWrapperType,
-				objectNumber: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
-				objectOffset: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
-				objectLength: volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
+				volume:      volume,
+				wrapperType: logSegmentRecBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
+			bPTW.bPlusTree, err =
+				sortedmap.OldBPlusTree(
+					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectNumber,
+					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectOffset,
+					volume.checkpointObjectTrailer.logSegmentRecBPlusTreeObjectLength,
+					sortedmap.CompareUint64,
+					bPTW)
 			if nil != err {
 				return
 			}
@@ -217,13 +223,16 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 			volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeLayoutNumElements = 0
 		} else {
 			bPTW = &bPlusTreeWrapper{
-				volume:       volume,
-				structType:   bPlusTreeObjectBPlusTreeWrapperType,
-				objectNumber: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
-				objectOffset: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
-				objectLength: volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
+				volume:      volume,
+				wrapperType: bPlusTreeObjectBPlusTreeWrapperType,
 			}
-			bPTW.bPlusTree, err = sortedmap.OldBPlusTree(bPTW.objectNumber, bPTW.objectOffset, bPTW.objectLength, sortedmap.CompareUint64, bPTW)
+			bPTW.bPlusTree, err =
+				sortedmap.OldBPlusTree(
+					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectNumber,
+					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectOffset,
+					volume.checkpointObjectTrailer.bPlusTreeObjectBPlusTreeObjectLength,
+					sortedmap.CompareUint64,
+					bPTW)
 			if nil != err {
 				return
 			}
@@ -264,7 +273,12 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 		}
 
 		// Read in checkpointObjectTrailerV2Struct
-		checkpointObjectTrailerBuf, err = swiftclient.ObjectTail(volume.accountName, volume.checkpointContainerName, utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber), volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength)
+		checkpointObjectTrailerBuf, err =
+			swiftclient.ObjectTail(
+				volume.accountName,
+				volume.checkpointContainerName,
+				utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerV2StructObjectNumber),
+				volume.checkpointHeader.checkpointObjectTrailerV2StructObjectLength)
 		if nil != err {
 			return
 		}
@@ -616,6 +630,11 @@ func (bPTW *bPlusTreeWrapper) GetNode(objectNumber uint64, objectOffset uint64, 
 }
 
 func (bPTW *bPlusTreeWrapper) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+	var (
+		bytesUsed uint64
+		ok        bool
+	)
+
 	err = bPTW.volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
 		return
@@ -633,14 +652,116 @@ func (bPTW *bPlusTreeWrapper) PutNode(nodeByteSlice []byte) (objectNumber uint64
 		return
 	}
 
+	switch bPTW.wrapperType {
+	case inodeRecBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.inodeRecBPlusTreeLayout[objectNumber]
+		if ok {
+			bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+		} else {
+			bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+		}
+	case logSegmentRecBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber]
+		if ok {
+			bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+		} else {
+			bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+		}
+	case bPlusTreeObjectBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
+		if ok {
+			bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+		} else {
+			bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+		}
+	default:
+		err = fmt.Errorf("Logic error: bPTW.PutNode() called for invalid wrapperType: %v", bPTW.wrapperType)
+		panic(err)
+	}
+
 	err = bPTW.volume.closeCheckpointChunkedPutContextIfNecessary()
 
 	return // err set as appropriate
 }
 
 func (bPTW *bPlusTreeWrapper) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
-	err = nil // Garbage collection handled by doing a "full" snapshot and deleting old LogSegments in checkpointDaemon()
-	return
+	var (
+		bytesUsed uint64
+		ok        bool
+	)
+
+	switch bPTW.wrapperType {
+	case inodeRecBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.inodeRecBPlusTreeLayout[objectNumber]
+		if ok {
+			if bytesUsed < objectLength {
+				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+			} else {
+				err = nil
+				if bytesUsed == 0 {
+					delete(bPTW.volume.inodeRecBPlusTreeLayout, objectNumber)
+					swiftclient.ObjectDeleteAsync(
+						bPTW.volume.accountName,
+						bPTW.volume.checkpointContainerName,
+						utils.Uint64ToHexStr(objectNumber),
+						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						nil)
+				} else {
+					bPTW.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+				}
+			}
+		} else {
+			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+		}
+	case logSegmentRecBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber]
+		if ok {
+			if bytesUsed < objectLength {
+				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+			} else {
+				err = nil
+				if bytesUsed == 0 {
+					delete(bPTW.volume.logSegmentRecBPlusTreeLayout, objectNumber)
+					swiftclient.ObjectDeleteAsync(
+						bPTW.volume.accountName,
+						bPTW.volume.checkpointContainerName,
+						utils.Uint64ToHexStr(objectNumber),
+						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						nil)
+				} else {
+					bPTW.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+				}
+			}
+		} else {
+			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+		}
+	case bPlusTreeObjectBPlusTreeWrapperType:
+		bytesUsed, ok = bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
+		if ok {
+			if bytesUsed < objectLength {
+				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPTW.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+			} else {
+				err = nil
+				if bytesUsed == 0 {
+					delete(bPTW.volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
+					swiftclient.ObjectDeleteAsync(
+						bPTW.volume.accountName,
+						bPTW.volume.checkpointContainerName,
+						utils.Uint64ToHexStr(objectNumber),
+						bPTW.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+						nil)
+				} else {
+					bPTW.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
+				}
+			}
+		} else {
+			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPTW.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+		}
+	default:
+		err = fmt.Errorf("Logic error: bPTW.DiscardNode() called for invalid wrapperType: %v", bPTW.wrapperType)
+	}
+
+	return // err set as appropriate regardless of path
 }
 
 func (bPTW *bPlusTreeWrapper) PackKey(key sortedmap.Key) (packedKey []byte, err error) {
@@ -702,13 +823,18 @@ func (bPTW *bPlusTreeWrapper) UnpackValue(payloadData []byte) (value sortedmap.V
 	return
 }
 
-func (volume *volumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup) {
-	volume.Lock()
+func (volume *volumeStruct) fetchNextCheckPointDoneWaitGroupWhileLocked() (wg *sync.WaitGroup) {
 	if nil == volume.checkpointDoneWaitGroup {
 		volume.checkpointDoneWaitGroup = &sync.WaitGroup{}
 		volume.checkpointDoneWaitGroup.Add(1)
 	}
 	wg = volume.checkpointDoneWaitGroup
+	return
+}
+
+func (volume *volumeStruct) FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup) {
+	volume.Lock()
+	wg = volume.fetchNextCheckPointDoneWaitGroupWhileLocked()
 	volume.Unlock()
 	return
 }
