@@ -461,7 +461,7 @@ func (volume *volumeStruct) putCheckpoint(withFlush bool) (err error) {
 		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 			volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 			volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
-			_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
+			_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
 		if nil != err {
 			return
 		}

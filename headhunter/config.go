@@ -145,9 +145,9 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 	checkpointObjectTrailerStructSize  uint64
 	elementOfBPlusTreeLayoutStructSize uint64
+	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
 var globals globalsStruct
@@ -163,6 +163,26 @@ func Up(confMap conf.ConfMap) (err error) {
 		volumeNames                          []string
 		whoAmI                               string
 	)
+
+	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
+
+	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
+		return
+	}
+
+	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
+		return
+	}
 
 	// Init volume database(s)
 
@@ -190,26 +210,6 @@ func Up(confMap conf.ConfMap) (err error) {
 				return
 			}
 		}
-	}
-
-	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
-
-	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
-	if nil != err {
-		return
-	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
-		return
-	}
-
-	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
-	if nil != err {
-		return
-	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
-		return
 	}
 
 	return
