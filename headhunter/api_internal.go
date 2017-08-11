@@ -429,42 +429,62 @@ func (volume *volumeStruct) getCheckpoint() (err error) {
 	return
 }
 
-func (volume *volumeStruct) putCheckpoint(withFlush bool) (err error) {
+func (volume *volumeStruct) putCheckpoint() (err error) {
 	var (
+		bytesUsedCumulative                    uint64
+		bytesUsedThisBPlusTree                 uint64
 		checkpointContainerHeaders             map[string][]string
 		checkpointHeaderValue                  string
 		checkpointHeaderValues                 []string
 		checkpointObjectTrailerBeginningOffset uint64
 		checkpointObjectTrailerEndingOffset    uint64
 		checkpointTrailerBuf                   []byte
+		combinedBPlusTreeLayout                sortedmap.LayoutReport
 		elementOfBPlusTreeLayout               elementOfBPlusTreeLayoutStruct
 		elementOfBPlusTreeLayoutBuf            []byte
+		objectNumber                           uint64
+		ok                                     bool
 		treeLayoutBuf                          []byte
 		treeLayoutBufSize                      uint64
 	)
 
-	if withFlush {
-		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
-			volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
-			volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
-			_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
-		if nil != err {
-			return
-		}
-		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
-			volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
-			volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
-			_, err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
-		if nil != err {
-			return
-		}
-		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
-			volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
-			volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
-			_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
-		if nil != err {
-			return
-		}
+	volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
+		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
+		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
+		_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
+	if nil != err {
+		return
+	}
+	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
+		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
+		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
+		_, err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
+	if nil != err {
+		return
+	}
+	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
+		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
+		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
+		_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
+	if nil != err {
+		return
+	}
+
+	if nil == volume.checkpointChunkedPutContext {
+		return // since nothing was flushed, we can simply return
+	}
+
+	err = volume.inodeRecWrapper.bPlusTree.Prune()
+	if nil != err {
+		return
+	}
+	err = volume.logSegmentRecWrapper.bPlusTree.Prune()
+	if nil != err {
+		return
+	}
+	err = volume.bPlusTreeObjectWrapper.bPlusTree.Prune()
+	if nil != err {
+		return
 	}
 
 	volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.inodeRecBPlusTreeLayout))
@@ -559,6 +579,48 @@ func (volume *volumeStruct) putCheckpoint(withFlush bool) (err error) {
 
 	volume.checkpointHeaderVersion = checkpointHeaderVersion2
 
+	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
+
+	for objectNumber, bytesUsedThisBPlusTree = range volume.inodeRecBPlusTreeLayout {
+		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
+		if ok {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
+		} else {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+	}
+	for objectNumber, bytesUsedThisBPlusTree = range volume.logSegmentRecBPlusTreeLayout {
+		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
+		if ok {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
+		} else {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+	}
+	for objectNumber, bytesUsedThisBPlusTree = range volume.bPlusTreeObjectBPlusTreeLayout {
+		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
+		if ok {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
+		} else {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+	}
+
+	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
+		if 0 == bytesUsedCumulative {
+			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
+			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
+			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
+
+			swiftclient.ObjectDeleteAsync(
+				volume.accountName,
+				volume.checkpointContainerName,
+				utils.Uint64ToHexStr(objectNumber),
+				volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+				nil)
+		}
+	}
+
 	return // err set as appropriate
 }
 
@@ -647,7 +709,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		volume.Lock()
 
-		checkpointRequest.err = volume.putCheckpoint(true)
+		checkpointRequest.err = volume.putCheckpoint()
 
 		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
 		if nil != volume.checkpointDoneWaitGroup {
@@ -791,17 +853,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
-				if bytesUsed == 0 {
-					delete(bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout, objectNumber)
-					swiftclient.ObjectDeleteAsync(
-						bPlusTreeWrapper.volume.accountName,
-						bPlusTreeWrapper.volume.checkpointContainerName,
-						utils.Uint64ToHexStr(objectNumber),
-						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-						nil)
-				} else {
-					bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
-				}
+				bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
@@ -813,17 +865,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
-				if bytesUsed == 0 {
-					delete(bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout, objectNumber)
-					swiftclient.ObjectDeleteAsync(
-						bPlusTreeWrapper.volume.accountName,
-						bPlusTreeWrapper.volume.checkpointContainerName,
-						utils.Uint64ToHexStr(objectNumber),
-						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-						nil)
-				} else {
-					bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
-				}
+				bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
@@ -835,17 +877,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
 			} else {
 				err = nil
-				if bytesUsed == 0 {
-					delete(bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
-					swiftclient.ObjectDeleteAsync(
-						bPlusTreeWrapper.volume.accountName,
-						bPlusTreeWrapper.volume.checkpointContainerName,
-						utils.Uint64ToHexStr(objectNumber),
-						bPlusTreeWrapper.volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-						nil)
-				} else {
-					bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
-				}
+				bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
