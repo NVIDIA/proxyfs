@@ -30,10 +30,6 @@ int io_sock_fd = -1;
 
 int sock_open(char* rpc_server, int rpc_port)
 {
-    struct sockaddr_in serv_addr;
-    struct sockaddr_in6 serv_addr6;
-    struct hostent *server;
-
     char* hostname = rpc_server;
     int   portno   = rpc_port;
     int   sockfd   = -1;
@@ -48,69 +44,58 @@ int sock_open(char* rpc_server, int rpc_port)
         errno = ECONNREFUSED;
     }
 
-    // Determine socket address family
-    server = gethostbyname2(hostname, AF_INET6); // Try IPv6 first
-    if (server == NULL) {
-        server = gethostbyname2(hostname, AF_INET); // If no IPv6, try IPv4
-        if (server == NULL) {
-            DPRINTF("ERROR %s, no such host %s\n", strerror(errno), hostname);
-            return -1;
-        } else {
-            DPRINTF("got IPv4 server for hostname %s.\n", hostname);
-            bzero((char *) &serv_addr, sizeof(serv_addr));
-            serv_addr.sin_family = AF_INET;
-            bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-            serv_addr.sin_port = htons(portno);
+    // Lookup the IP address of the host.  By default, getaddrinfo(3) chooses
+    // the best IP address for a host according to RFC 3484. I believe this
+    // means it will perfer IPv6 addresses if they exist and this host can reach
+    // them.  In theory, multiple addresses can be returned and this code should
+    // cycle through them until it finds one that works.  This code just uses
+    // the first one.
+    struct addrinfo    *resp;
+    char                portstr[20];
+    int                 err;
+    snprintf(portstr, sizeof(portstr), "%d", portno);
+    err = getaddrinfo(hostname, portstr, NULL, &resp);
+    if (err != 0) {
+        DPRINTF("ERROR: sockopen(): getaddrinfo(%s) returned %s\n", hostname, gai_strerror(err));
+        return -1;
+    }
+    if (resp->ai_family != AF_INET && resp->ai_family != AF_INET6) {
+        DPRINTF("ERROR: sock_open(): got unkown address family %d for hostname %s\n",
+                resp->ai_family, hostname);
+        return -1;
+    }
+    DPRINTF("sock_open(): got IPv%d server addrlen %u and socktype %d for hostname %s\n",
+            resp->ai_family == AF_INET ? 4 : 6, resp->ai_addrlen, resp->ai_socktype, hostname);
 
-            // Set errno to zero before system calls
-            errno = 0;
+    // Set errno to zero before system calls
+    errno = 0;
 
-            // Create the socket
-            sockfd = socket(AF_INET, SOCK_STREAM, 0);
-            if (sockfd < 0) {
-                DPRINTF("ERROR %s opening AF_INET socket\n", strerror(errno));
-                return -1;
-            }
+    // Create the socket
+    sockfd = socket(resp->ai_family, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        DPRINTF("ERROR: sock_open(): %s opening %s socket\n", strerror(errno),
+                resp->ai_family == AF_INET ? "AF_INET" : "AF_INET6");
+        freeaddrinfo(resp);
+        return -1;
+    }
 
-            // Connect to the far end
-            if (connect(sockfd,(struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-                DPRINTF("ERROR %s connecting socket\n", strerror(errno));
-                return -1;
-            }
-        }
-    } else {
-        DPRINTF("got IPv6 server for hostname %s.\n", hostname);
-        bzero((char *) &serv_addr6, sizeof(serv_addr6));
-        serv_addr6.sin6_flowinfo = 0;
-        serv_addr6.sin6_family = AF_INET6;
-        bcopy((char *)server->h_addr, (char *)&serv_addr6.sin6_addr.s6_addr, server->h_length);
-        serv_addr6.sin6_port = htons(portno);
-
-        // Set errno to zero before system calls
-        errno = 0;
-
-        // Create the socket
-        sockfd = socket(AF_INET6, SOCK_STREAM, 0);
-        if (sockfd < 0) {
-            DPRINTF("ERROR %s opening AF_INET6 socket\n", strerror(errno));
-            return -1;
-        }
-
-        // Connect to the far end
-        if (connect(sockfd,(struct sockaddr *) &serv_addr6, sizeof(serv_addr6)) < 0) {
-            DPRINTF("ERROR %s connecting socket\n", strerror(errno));
-            return -1;
-        }
+    // Connect to the far end
+    if (connect(sockfd, resp->ai_addr, resp->ai_addrlen) < 0) {
+        DPRINTF("ERROR: sock_open(): %s connecting socket\n", strerror(errno));
+        freeaddrinfo(resp);
+        return -1;
     }
 
     flag = 1;
     if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int)) < 0) {
         DPRINTF("ERROR %s setting TCP_NODELAY option\n", strerror(errno));
+        freeaddrinfo(resp);
         return -1;
     }
 
     DPRINTF("socket %s:%d opened successfully.\n",hostname,portno);
 
+    freeaddrinfo(resp);
     return sockfd;
 }
 

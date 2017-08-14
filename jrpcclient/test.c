@@ -581,7 +581,8 @@ void handle_api_return(char* funcToTest, int err, int exp_status) {
 
 fail:
     test_failed(funcToTest);
-    TLOG("FAILURE, got status=%d from %s, expected %d.\n\n",err,funcToTest,exp_status);
+    TLOG("FAILURE, test %s: got status='%s(%d)' expected '%s(%d)'.\n\n",
+         funcToTest, strerror(err), err, strerror(exp_status), exp_status);
 }
 
 void handle_api_return_with_inode(char* funcToTest, int err, int exp_status, uint64_t inode) {
