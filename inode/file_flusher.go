@@ -412,7 +412,6 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	err = inFlightLogSegment.Close()
 	if nil != err {
 		err = blunder.AddError(err, blunder.InodeFlushError)
-		inFlightLogSegment.fileInode.Lock()
 		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
 		inFlightLogSegment.fileInode.Unlock()
 		inFlightLogSegment.fileInode.Done()
@@ -425,6 +424,10 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 		inFlightLogSegment.fileInode.volume.Lock()
 		delete(inFlightLogSegment.fileInode.volume.inFlightFileInodeDataMap, inFlightLogSegment.fileInode.InodeNumber)
 		inFlightLogSegment.fileInode.volume.Unlock()
+	}
+
+	if inFlightLogSegment.fileInode.openLogSegment == inFlightLogSegment {
+		inFlightLogSegment.fileInode.openLogSegment = nil
 	}
 
 	inFlightLogSegment.fileInode.Unlock()
