@@ -1,8 +1,12 @@
 # ProxyFS Release Notes
 
-## 0.51.2 (TBD)
+## 0.51.2 (August 15, 2017)
 
-x### Bug Fixes:
+### Features:
+
+* Improved metadata checkpointing mechanism (V2) performs optimized garbage collection
+
+### Bug Fixes:
 
 * Fixed clean-up of FUSE (and NFS) mount point upon restart after failure
 * Fixed memory leaks in SMBd for readdir(), getxattr(), chdir() and list xattr
