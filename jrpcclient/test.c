@@ -581,7 +581,8 @@ void handle_api_return(char* funcToTest, int err, int exp_status) {
 
 fail:
     test_failed(funcToTest);
-    TLOG("FAILURE, got status=%d from %s, expected %d.\n\n",err,funcToTest,exp_status);
+    TLOG("FAILURE, test %s: got status='%s(%d)' expected '%s(%d)'.\n\n",
+         funcToTest, strerror(err), err, strerror(exp_status), exp_status);
 }
 
 void handle_api_return_with_inode(char* funcToTest, int err, int exp_status, uint64_t inode) {
@@ -1725,7 +1726,6 @@ void test_readdir(file_id_t id, int prevDirLoc, int exp_status) {
     handle_api_return_with_dirent(funcToTest, err, fi->inode, dir_ent, prevDirLoc, exp_status);
 
     if (dir_ent != NULL) {
-        free(dir_ent);
         dir_ent = NULL;
     }
 }
@@ -1758,7 +1758,6 @@ void test_readdir_all(file_id_t id, int exp_status) {
 
         if (dir_ent != NULL) {
             prevDirLoc = dir_ent->d_off;
-            free(dir_ent);
             dir_ent = NULL;
         }
     } while (err != ENOENT);
@@ -1787,7 +1786,6 @@ void test_readdir_plus(file_id_t id, int prevDirLoc, int exp_status) {
     handle_api_return_with_dirent_stat(funcToTest, err, fi->inode, dir_ent, stat, prevDirLoc, exp_status);
 
     if (dir_ent != NULL) {
-        free(dir_ent);
         dir_ent = NULL;
     }
     if (stat != NULL) {
@@ -1825,7 +1823,6 @@ void test_readdir_plus_all(file_id_t id, int exp_status) {
 
         if (dir_ent != NULL) {
             prevDirLoc = dir_ent->d_off;
-            free(dir_ent);
             dir_ent = NULL;
         }
         if (stat != NULL) {

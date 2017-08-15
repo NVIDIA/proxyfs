@@ -31,6 +31,7 @@ typedef struct {
     uint64_t          auth_user_id;
     uint64_t          auth_group_id;
     char              auth_user[MAX_USER_NAME_LENGTH];
+    struct dirent     dir_ent;
 } mount_handle_t;
 
 // NOTE: Both CIFS and NFS need stats to be in sys/stat.h format, i.e. like
@@ -197,23 +198,23 @@ int proxyfs_get_stat_path(mount_handle_t*  in_mount_handle,
 
 // Inode-based get_xattr
 //
-// NOTE: Caller must free the memory returned once done with it.
+// NOTE: Caller allocates the memory.
 //
 //
 int proxyfs_get_xattr(mount_handle_t* in_mount_handle,
                      uint64_t         in_inode_number,
                      const char*      in_attr_name,
-                     void**           out_attr_value,
+                     void*            out_attr_value,
                      size_t*          out_attr_value_size);
 
 // Path-based get_xattr
 //
-// NOTE: Caller must free the memory returned once done with it.
+// NOTE: Caller allocates the memory.
 //
 int proxyfs_get_xattr_path(mount_handle_t* in_mount_handle,
                           char*            in_fullpath,
                           const char*      in_attr_name,
-                          void**           out_attr_value,
+                          void*            out_attr_value,
                           size_t*          out_attr_value_size);
 
 // Inode-based link

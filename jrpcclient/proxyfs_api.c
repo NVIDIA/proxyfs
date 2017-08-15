@@ -670,7 +670,7 @@ static int proxyfs_get_xattr1(mount_handle_t* in_mount_handle,
                               char*           in_fullpath,
                               uint64_t        in_inode_number,
                               const char*     in_attr_name,
-                              void**          out_attr_value,
+                              void*           out_attr_value,
                               size_t*         out_attr_value_size)
 {
     if ((in_mount_handle == NULL) && (out_attr_value != NULL)) {
@@ -695,16 +695,41 @@ static int proxyfs_get_xattr1(mount_handle_t* in_mount_handle,
     // Call RPC
     int rsp_status = jsonrpc_exec_request_blocking(ctx);
     if (rsp_status == 0) {
-        *out_attr_value_size = jsonrpc_get_resp_uint64(ctx, ptable[ATTRVALUESIZE]);
-        if (*out_attr_value_size == 0) {
+
+        size_t local_out_attr_value_size = jsonrpc_get_resp_uint64(ctx, ptable[ATTRVALUESIZE]);
+
+        // Return now if no values
+        if (local_out_attr_value_size == 0) {
+            *out_attr_value_size = 0;
             jsonrpc_close(ctx);
             return rsp_status;
         }
 
-        *out_attr_value = (void *)malloc(*out_attr_value_size);
-        size_t bytes_written;
+        // The caller passes 0 if they want to know how much to allocate
+        // before calling with the proper size.
+        if (*out_attr_value_size == 0) {
+            *out_attr_value_size = local_out_attr_value_size;
+            jsonrpc_close(ctx);
+            return rsp_status;
+        }
 
-        jsonrpc_get_resp_buf(ctx, ptable[ATTRVALUE], *out_attr_value, *out_attr_value_size, &bytes_written);
+        // At this point, they should have passed a buffer.  Make sure it
+        // it is not NULL.
+        if (out_attr_value == NULL) {
+            rsp_status = EFAULT;
+            jsonrpc_close(ctx);
+            return rsp_status;
+        }
+
+        // Check if enough space to store values
+        if (local_out_attr_value_size > *out_attr_value_size) {
+            rsp_status = ERANGE;
+            jsonrpc_close(ctx);
+            return rsp_status;
+        }
+
+        size_t bytes_written;
+        jsonrpc_get_resp_buf(ctx, ptable[ATTRVALUE], out_attr_value, *out_attr_value_size, &bytes_written);
     } else {
         handle_rsp_error(__FUNCTION__, &rsp_status, in_mount_handle);
     }
@@ -717,7 +742,7 @@ static int proxyfs_get_xattr1(mount_handle_t* in_mount_handle,
 int proxyfs_get_xattr(mount_handle_t* in_mount_handle,
                      uint64_t         in_inode_number,
                      const char*      in_attr_name,
-                     void**           out_attr_value,
+                     void*            out_attr_value,
                      size_t*          out_attr_value_size)
 {
     return proxyfs_get_xattr1(in_mount_handle, NULL,in_inode_number, in_attr_name, out_attr_value, out_attr_value_size);
@@ -727,7 +752,7 @@ int proxyfs_get_xattr(mount_handle_t* in_mount_handle,
 int proxyfs_get_xattr_path(mount_handle_t* in_mount_handle,
                           char*            in_fullpath,
                           const char*      in_attr_name,
-                          void**           out_attr_value,
+                          void*            out_attr_value,
                           size_t*          out_attr_value_size)
 {
     if (in_fullpath == NULL) {
@@ -1746,11 +1771,15 @@ int proxyfs_readdir_plus(mount_handle_t*  in_mount_handle,
                          struct dirent**  out_dir_ent,
                          proxyfs_stat_t** out_dir_ent_stats)
 {
+    struct dirent *gdir_ent = NULL;
+    struct dirent* tmp_dir_ent = NULL;
     uint64_t out_num_entries = 1;
 
     if ((in_mount_handle == NULL) || (out_dir_ent == NULL) || (out_dir_ent_stats == NULL)) {
         return EINVAL;
     }
+
+    gdir_ent = &(in_mount_handle->dir_ent);
 
     // Get context and set the method
     jsonrpc_context_t* ctx = jsonrpc_open(in_mount_handle->rpc_handle, "RpcReaddirPlus");
@@ -1767,9 +1796,20 @@ int proxyfs_readdir_plus(mount_handle_t*  in_mount_handle,
         //
 
         // Alloc and fill in the directory entry info
-        //
-        // NOTE: The caller is responsible for freeing this memory.
-        *out_dir_ent = proxyfs_get_dirents(ctx, out_num_entries);
+        tmp_dir_ent = proxyfs_get_dirents(ctx, out_num_entries);
+        if (tmp_dir_ent) {
+
+            // Copy the contents into our global dirent struct stored
+            // on the mount handle so that we can free the memory.
+            //
+            // The caller does not free the returned dirent.  It
+            // expects that it is statically allocated.  See the
+            // readdir() man page for more information.
+            memset(gdir_ent, 0, sizeof(in_mount_handle->dir_ent));
+            memcpy(gdir_ent, tmp_dir_ent, sizeof(in_mount_handle->dir_ent));
+            free(tmp_dir_ent);
+            *out_dir_ent = gdir_ent;
+        }
 
         // Alloc and fill in the stat entry info
         //

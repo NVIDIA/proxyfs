@@ -266,6 +266,12 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 		startingInodeNumber uint64
 	)
 
+	lazyUnmountCmd := exec.Command("fusermount", "-uz", mountPoint.mountPointName)
+	err = lazyUnmountCmd.Run()
+	if nil != err {
+		logger.Infof("Unable to lazily unmount %v - got err == %v", mountPoint.mountPointName, err)
+	}
+
 	if platform.IsDarwin {
 		startingInodeNumber, err = fetchInodeNumber(mountPoint.mountPointName)
 		if nil != err {

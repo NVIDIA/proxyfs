@@ -406,11 +406,12 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 		// We reached maxFlushTime... so flush it now
 	}
 
+	inFlightLogSegment.fileInode.Lock()
+
 	// Terminate Chunked PUT
 	err = inFlightLogSegment.Close()
 	if nil != err {
 		err = blunder.AddError(err, blunder.InodeFlushError)
-		inFlightLogSegment.fileInode.Lock()
 		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
 		inFlightLogSegment.fileInode.Unlock()
 		inFlightLogSegment.fileInode.Done()
@@ -418,13 +419,17 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	}
 
 	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
-	inFlightLogSegment.fileInode.Lock()
 	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
 	if 0 == len(inFlightLogSegment.fileInode.inFlightLogSegmentMap) {
 		inFlightLogSegment.fileInode.volume.Lock()
 		delete(inFlightLogSegment.fileInode.volume.inFlightFileInodeDataMap, inFlightLogSegment.fileInode.InodeNumber)
 		inFlightLogSegment.fileInode.volume.Unlock()
 	}
+
+	if inFlightLogSegment.fileInode.openLogSegment == inFlightLogSegment {
+		inFlightLogSegment.fileInode.openLogSegment = nil
+	}
+
 	inFlightLogSegment.fileInode.Unlock()
 
 	// And we are done

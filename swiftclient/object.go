@@ -129,7 +129,7 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		if (srcObjectPosition + chunkSize) > srcObjectSize {
 			chunkSize = srcObjectSize - srcObjectPosition
 
-			chunk, _, err = objectTailWithRetry(srcAccountName, srcContainerName, srcObjectName, chunkSize)
+			chunk, err = objectTailWithRetry(srcAccountName, srcContainerName, srcObjectName, chunkSize)
 		} else {
 			chunk, err = objectGetWithRetry(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
 		}
@@ -592,20 +592,19 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 }
 
 func objectTailWithRetry(accountName string, containerName string, objectName string,
-	length uint64) ([]byte, int64, error) {
+	length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
 	// objectTail() with the paramaters passed to this function, stashes the
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
-		buf          []byte
-		objectLength int64
-		err          error
+		buf []byte
+		err error
 	)
 	request := func() (bool, error) {
 		var err error
-		buf, objectLength, err = objectTail(accountName, containerName, objectName, length)
+		buf, err = objectTail(accountName, containerName, objectName, length)
 		return true, err
 	}
 
@@ -617,10 +616,10 @@ func objectTailWithRetry(accountName string, containerName string, objectName st
 			retrySuccessCnt: &stats.SwiftObjTailRetrySuccessOps}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
-	return buf, objectLength, err
+	return buf, err
 }
 
-func objectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, objectLength int64, err error) {
+func objectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
 	var (
 		chunk         []byte
 		contentLength int
@@ -661,14 +660,6 @@ func objectTail(accountName string, containerName string, objectName string, len
 		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
 		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
-		return
-	}
-
-	_, _, objectLength, err = parseContentRange(headers)
-	if err != nil {
-		releaseNonChunkedConnection(tcpConn, false)
-		err = fmt.Errorf("GET %s/%s/%s had bad or missing Content-Range header (%s)", accountName, containerName, objectName, err.Error())
-		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got parseContentRange() error", accountName, containerName, objectName)
 		return
 	}
 

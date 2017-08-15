@@ -1,5 +1,23 @@
 # ProxyFS Release Notes
 
+## 0.51.2 (August 15, 2017)
+
+### Features:
+
+* Improved metadata checkpointing mechanism (V2) performs optimized garbage collection
+
+### Bug Fixes:
+
+* Fixed clean-up of FUSE (and NFS) mount point upon restart after failure
+* Fixed memory leaks in SMBd for readdir(), getxattr(), chdir() and list xattr
+* Fixed race condition between time-based flushes and on-going write traffic
+* Fixed multi-threaded socket management code in resolving DNS names
+* Fixed missing support for file names containing special characters
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+
 ## 0.51.1 (August 3, 2017)
 
 ### Features:
@@ -17,4 +35,6 @@
 
 ### Known Issues:
 
-* Named Streams are disabled in SMB
+* Memory leak in SMB directory reading and extended attribute reading
+* Process restart may leave NFS mount point in a hung state
+* Named Streams are disabled in SMB (enabling this is TBD)
