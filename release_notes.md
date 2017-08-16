@@ -17,6 +17,7 @@
 ### Known Issues:
 
 * Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
 
 ## 0.51.1 (August 3, 2017)
 
