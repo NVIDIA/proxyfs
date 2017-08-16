@@ -157,7 +157,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	var (
 		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
 		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
-		primaryPeer                          string
+		primaryPeerList                      []string
 		trailingByteSlice                    bool
 		volumeName                           string
 		volumeNames                          []string
@@ -199,16 +199,23 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 
 	for _, volumeName = range volumeNames {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		if whoAmI == primaryPeer {
-			err = addVolume(confMap, volumeName)
-			if nil != err {
-				return
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if whoAmI == primaryPeerList[0] {
+				err = addVolume(confMap, volumeName)
+				if nil != err {
+					return
+				}
 			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
+			return
 		}
 	}
 
@@ -219,7 +226,7 @@ func Up(confMap conf.ConfMap) (err error) {
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
 		deletedVolumeNames map[string]bool
-		primaryPeer        string
+		primaryPeerList    []string
 		volumeName         string
 		volumeNames        []string
 		whoAmI             string
@@ -242,13 +249,20 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeNames {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		if whoAmI == primaryPeer {
-			delete(deletedVolumeNames, volumeName)
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if whoAmI == primaryPeerList[0] {
+				delete(deletedVolumeNames, volumeName)
+			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
+			return
 		}
 	}
 
@@ -266,11 +280,11 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 // ExpandAndResume applies any additions from the supplied confMap and resumes the headhunter package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		ok          bool
-		primaryPeer string
-		volumeName  string
-		volumeNames []string
-		whoAmI      string
+		ok              bool
+		primaryPeerList []string
+		volumeName      string
+		volumeNames     []string
+		whoAmI          string
 	)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -284,19 +298,26 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeNames {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		if whoAmI == primaryPeer {
-			_, ok = globals.volumeMap[volumeName]
-			if !ok {
-				err = downVolume(volumeName)
-				if nil != err {
-					return
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if whoAmI == primaryPeerList[0] {
+				_, ok = globals.volumeMap[volumeName]
+				if !ok {
+					err = downVolume(volumeName)
+					if nil != err {
+						return
+					}
 				}
 			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
+			return
 		}
 	}
 
