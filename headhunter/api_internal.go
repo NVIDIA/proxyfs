@@ -711,14 +711,14 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		checkpointRequest.err = volume.putCheckpoint()
 
+		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
+
 		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
 		if nil != volume.checkpointDoneWaitGroup {
 			// Awake any others who were waiting on this checkpoint
 			volume.checkpointDoneWaitGroup.Done()
 			volume.checkpointDoneWaitGroup = nil
 		}
-
-		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
 
 		volume.Unlock()
 
