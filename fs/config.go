@@ -11,9 +11,11 @@ import (
 )
 
 // Stores the volume related information across all mount points. E.g file lock information.
+type LockMap map[uint64]*list.List
+
 type volumeStruct struct {
 	sync.Mutex
-	FLockMap  map[inode.InodeNumber]*list.List
+	FLockMap  map[inode.InodeNumber]LockMap
 	mountList []MountID
 }
 

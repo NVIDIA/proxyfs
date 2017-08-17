@@ -1650,8 +1650,8 @@ static bool vfs_proxyfs_lock(struct vfs_handle_struct *handle,
 		return false;
 	}
 
-    if ((op == F_GETLK) && (flock.l_type != F_UNLCK) && (flock.l_pid != 0) && (flock.l_pid != getpid())) {
-		DEBUG(10, ("OP == F_GETLK - false\n"));
+    if ((op == F_GETLK) && (flock.l_type != F_UNLCK)) {
+		DEBUG(10, ("vfs_proxyfs_lock: F_GETLK failed, lock_type = %d error = %d\n", type, err));
 		return false;
 	}
 
@@ -1675,7 +1675,7 @@ static int vfs_proxyfs_linux_setlease(struct vfs_handle_struct *handle,
 {
 	DEBUG(10, ("vfs_proxyfs_linux_setlease: %s leasetype:%d\n", fsp->fsp_name->base_name, leasetype));
 	errno = ENOSYS;
-	return 0;
+	return -1;
 }
 
 static bool vfs_proxyfs_getlock(struct vfs_handle_struct *handle,
@@ -2704,17 +2704,10 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.ntimes_fn = vfs_proxyfs_ntimes,
 	.ftruncate_fn = vfs_proxyfs_ftruncate,
 	.fallocate_fn = vfs_proxyfs_fallocate,
-#if 0
 	.lock_fn = vfs_proxyfs_lock,
 	.kernel_flock_fn = vfs_proxyfs_kernel_flock,
 	.linux_setlease_fn = vfs_proxyfs_linux_setlease,
 	.getlock_fn = vfs_proxyfs_getlock,
-#else
-	.lock_fn = NULL,
-	.kernel_flock_fn = NULL,
-	.linux_setlease_fn = NULL,
-	.getlock_fn = NULL,
-#endif
 	.symlink_fn = vfs_proxyfs_symlink,
 	.readlink_fn = vfs_proxyfs_readlink,
 	.link_fn = vfs_proxyfs_link,
