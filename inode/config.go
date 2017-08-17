@@ -88,17 +88,48 @@ type globalsStruct struct {
 var globals globalsStruct
 
 func Up(confMap conf.ConfMap) (err error) {
-	peerPrivateIPAddrMap := make(map[string]string)
+	var (
+		alreadyInAccountMap                            bool
+		alreadyInFlowControlMap                        bool
+		alreadyInGlobalsPhysicalContainerLayoutSet     bool
+		alreadyInGlobalsPhysicalContainerNamePrefixSet bool
+		alreadyInVolumeMap                             bool
+		alreadyInVolumePhysicalContainerLayoutMap      bool
+		corruptionDetectedFalse                        = CorruptionDetected(false)
+		corruptionDetectedTrue                         = CorruptionDetected(true)
+		defaultPhysicalContainerLayoutName             string
+		flowControl                                    *flowControlStruct
+		flowControlSectionName                         string
+		flowControlWeightSum                           uint64
+		ok                                             bool
+		peerName                                       string
+		peerNames                                      []string
+		peerPrivateIPAddr                              string
+		peerPrivateIPAddrMap                           map[string]string
+		physicalContainerLayout                        *physicalContainerLayoutStruct
+		physicalContainerLayoutSectionName             string
+		physicalContainerLayoutSectionNameSlice        []string
+		prevVolume                                     *volumeStruct
+		primaryPeerNameList                            []string
+		readCacheMemSize                               uint64
+		readCacheQuotaPercentage                       uint64
+		readCacheTotalSize                             uint64
+		versionV1                                      = Version(V1)
+		volume                                         *volumeStruct
+		volumeSectionName                              string
+		volumeSectionNameSlice                         []string
+	)
 
-	peerNames, err := confMap.FetchOptionValueStringSlice("Cluster", "Peers")
+	peerPrivateIPAddrMap = make(map[string]string)
+
+	peerNames, err = confMap.FetchOptionValueStringSlice("Cluster", "Peers")
 	if nil != err {
 		return
 	}
 
-	for _, peerName := range peerNames {
-		peerPrivateIPAddr, nonShadowingErr := confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	for _, peerName = range peerNames {
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		if nil != err {
 			return
 		}
 
@@ -109,7 +140,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
-	var ok bool
 	globals.myPrivateIPAddr, ok = peerPrivateIPAddrMap[globals.whoAmI]
 	if !ok {
 		err = fmt.Errorf("Cluster.WhoAmI (\"%v\") not in Cluster.Peers list", globals.whoAmI)
@@ -120,13 +150,13 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
-	volumeSectionNameSlice, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeSectionNameSlice, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeSectionName := range volumeSectionNameSlice {
-		volume := &volumeStruct{
+	for _, volumeSectionName = range volumeSectionNameSlice {
+		volume = &volumeStruct{
 			volumeName:                     volumeSectionName,
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
@@ -140,7 +170,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		for _, prevVolume := range globals.volumeMap {
+		for _, prevVolume = range globals.volumeMap {
 			if volume.fsid == prevVolume.fsid {
 				err = fmt.Errorf("Volume \"%v\" duplicates FSID (%v) of volume \"%v\"", volume.volumeName, volume.fsid, prevVolume.volumeName)
 				return
@@ -152,28 +182,35 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		_, alreadyInVolumeMap := globals.volumeMap[volume.volumeName]
+		_, alreadyInVolumeMap = globals.volumeMap[volume.volumeName]
 		if alreadyInVolumeMap {
 			err = fmt.Errorf("Volume \"%v\" only allowed once in [FSGlobals]VolumeList", volume.volumeName)
 			return
 		}
 
-		_, alreadyInAccountMap := globals.accountMap[volume.accountName]
+		_, alreadyInAccountMap = globals.accountMap[volume.accountName]
 		if alreadyInAccountMap {
 			err = fmt.Errorf("Account \"%v\" only allowed once in [FSGlobals]VolumeList", volume.accountName)
 			return
 		}
 
-		primaryPeerName, nonShadowingErr := confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+		if nil != err {
 			return
 		}
 
-		volume.active = (primaryPeerName == globals.whoAmI)
-		volume.activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerName]
-		if !ok {
-			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeSectionName, primaryPeerName)
+		if 0 == len(primaryPeerNameList) {
+			volume.active = false
+			volume.activePeerPrivateIPAddr = ""
+		} else if 1 == len(primaryPeerNameList) {
+			volume.active = (globals.whoAmI == primaryPeerNameList[0])
+			volume.activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerNameList[0]]
+			if !ok {
+				err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeSectionName, primaryPeerNameList[0])
+				return
+			}
+		} else {
+			err = fmt.Errorf("%s.PrimaryPeer cannot have multiple values", volumeSectionName)
 			return
 		}
 
@@ -196,22 +233,21 @@ func Up(confMap conf.ConfMap) (err error) {
 			// a set of policies used to determine which one to apply. At such time, the following code will
 			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
 
-			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
+			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
+			if nil != err {
 				return
 			}
 
-			physicalContainerLayoutSectionNameSlice := []string{defaultPhysicalContainerLayoutName}
+			physicalContainerLayoutSectionNameSlice = []string{defaultPhysicalContainerLayoutName}
 
-			for _, physicalContainerLayoutSectionName := range physicalContainerLayoutSectionNameSlice {
-				_, alreadyInGlobalsPhysicalContainerLayoutSet := volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
+			for _, physicalContainerLayoutSectionName = range physicalContainerLayoutSectionNameSlice {
+				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
 				if alreadyInGlobalsPhysicalContainerLayoutSet {
 					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutSectionName)
 					return
 				}
 
-				physicalContainerLayout := &physicalContainerLayoutStruct{}
+				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
 
@@ -224,7 +260,7 @@ func Up(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-				_, alreadyInGlobalsPhysicalContainerNamePrefixSet := volume.physicalContainerLayoutSet[physicalContainerLayout.physicalContainerNamePrefix]
+				_, alreadyInGlobalsPhysicalContainerNamePrefixSet = volume.physicalContainerLayoutSet[physicalContainerLayout.physicalContainerNamePrefix]
 				if alreadyInGlobalsPhysicalContainerNamePrefixSet {
 					err = fmt.Errorf("ContainerNamePrefix \"%v\" only allowed once", physicalContainerLayout.physicalContainerNamePrefix)
 					return
@@ -251,24 +287,21 @@ func Up(confMap conf.ConfMap) (err error) {
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
 			}
 
-			var alreadyInVolumePhysicalContainerLayoutMap bool
-
 			volume.defaultPhysicalContainerLayout, alreadyInVolumePhysicalContainerLayoutMap = volume.physicalContainerLayoutMap[defaultPhysicalContainerLayoutName]
 			if !alreadyInVolumePhysicalContainerLayoutMap {
 				err = fmt.Errorf("DefaultPhysicalContainerLayout \"%v\" must be in [%v]PhysicalContaonerLayoutList", defaultPhysicalContainerLayoutName, volumeSectionName)
 				return
 			}
 
-			flowControlSectionName, fetchOptionErr := confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
+			flowControlSectionName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
+			if nil != err {
 				return
 			}
 
-			_, alreadyInFlowControlMap := globals.flowControlMap[flowControlSectionName]
+			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlSectionName]
 
 			if !alreadyInFlowControlMap {
-				flowControl := &flowControlStruct{
+				flowControl = &flowControlStruct{
 					flowControlName: flowControlSectionName,
 					refCount:        0,
 					readCache:       make(map[readCacheKeyStruct]*readCacheElementStruct),
@@ -316,13 +349,11 @@ func Up(confMap conf.ConfMap) (err error) {
 		globals.accountMap[volume.accountName] = volume
 	}
 
-	var flowControlWeightSum uint64
-
-	for _, flowControl := range globals.flowControlMap {
+	for _, flowControl = range globals.flowControlMap {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
 	if nil != err {
 		// TODO: eventually, just return
 		readCacheQuotaPercentage = 20
@@ -332,10 +363,10 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	readCacheMemSize := platform.MemSize() * readCacheQuotaPercentage / 100
+	readCacheMemSize = platform.MemSize() * readCacheQuotaPercentage / 100
 
-	for _, flowControl := range globals.flowControlMap {
-		readCacheTotalSize := readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
+	for _, flowControl = range globals.flowControlMap {
+		readCacheTotalSize = readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
 
 		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
 		if 0 == flowControl.readCacheLineCount {
@@ -353,19 +384,14 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.supportedOnDiskInodeVersions[V1] = struct{}{}
 
-	corruptionDetectedTrue := CorruptionDetected(true)
 	globals.corruptionDetectedTrueBuf, err = cstruct.Pack(corruptionDetectedTrue, cstruct.LittleEndian)
 	if nil != err {
 		return
 	}
-
-	corruptionDetectedFalse := CorruptionDetected(false)
 	globals.corruptionDetectedFalseBuf, err = cstruct.Pack(corruptionDetectedFalse, cstruct.LittleEndian)
 	if nil != err {
 		return
 	}
-
-	versionV1 := Version(V1)
 	globals.versionV1Buf, err = cstruct.Pack(versionV1, cstruct.LittleEndian)
 	if nil != err {
 		return
@@ -380,24 +406,41 @@ func Up(confMap conf.ConfMap) (err error) {
 }
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	peerPrivateIPAddrMap := make(map[string]string)
+	var (
+		myPrivateIPAddr         string
+		newVolumeSet            map[string]bool
+		ok                      bool
+		peerName                string
+		peerNames               []string
+		primaryPeerNameList     []string
+		peerPrivateIPAddr       string
+		peerPrivateIPAddrMap    map[string]string
+		volume                  *volumeStruct
+		volumeName              string
+		volumeSectionNameSlice  []string
+		volumesDeletedSet       map[string]bool
+		volumesNewlyInactiveSet map[string]bool
+		wg                      sync.WaitGroup
+		whoAmI                  string
+	)
 
-	peerNames, err := confMap.FetchOptionValueStringSlice("Cluster", "Peers")
+	peerPrivateIPAddrMap = make(map[string]string)
+
+	peerNames, err = confMap.FetchOptionValueStringSlice("Cluster", "Peers")
 	if nil != err {
 		return
 	}
 
-	for _, peerName := range peerNames {
-		peerPrivateIPAddr, nonShadowingErr := confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	for _, peerName = range peerNames {
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		if nil != err {
 			return
 		}
 
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
 	}
 
-	whoAmI, err := confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		return
 	}
@@ -405,7 +448,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
 		return
 	}
-	myPrivateIPAddr, ok := peerPrivateIPAddrMap[globals.whoAmI]
+	myPrivateIPAddr, ok = peerPrivateIPAddrMap[globals.whoAmI]
 	if !ok {
 		err = fmt.Errorf("Cluster.WhoAmI (\"%v\") not in Cluster.Peers list", globals.whoAmI)
 		return
@@ -415,58 +458,62 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	volumeSectionNameSlice, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeSectionNameSlice, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	volumesDeletedSet := make(map[string]bool)
-	volumesNewlyInactiveSet := make(map[string]bool)
+	newVolumeSet = make(map[string]bool)
 
-	for volumeName, volume := range globals.volumeMap {
-		volumesDeletedSet[volumeName] = true
-		if volume.active {
-			volumesNewlyInactiveSet[volumeName] = true
+	for _, volumeName = range volumeSectionNameSlice {
+		newVolumeSet[volumeName] = true
+	}
+
+	volumesDeletedSet = make(map[string]bool)
+	volumesNewlyInactiveSet = make(map[string]bool)
+
+	for volumeName, volume = range globals.volumeMap {
+		_, ok = newVolumeSet[volumeName]
+		if ok {
+			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+			if nil != err {
+				return
+			}
+			if 0 == len(primaryPeerNameList) {
+				if volume.active {
+					volumesNewlyInactiveSet[volumeName] = true
+				}
+			} else if 1 == len(primaryPeerNameList) {
+				if volume.active {
+					if whoAmI != primaryPeerNameList[0] {
+						volumesNewlyInactiveSet[volumeName] = true
+					}
+				}
+			} else {
+				err = fmt.Errorf("%s.PrimaryPeer cannot have multiple values", volumeName)
+				return
+			}
+		} else {
+			volumesDeletedSet[volumeName] = true
 		}
 	}
 
-	for _, volumeName := range volumeSectionNameSlice {
-		delete(volumesDeletedSet, volumeName)
-	}
-
-	for volumeName := range volumesDeletedSet {
-		delete(volumesNewlyInactiveSet, volumeName)
-	}
-
-	for volumeName := range volumesNewlyInactiveSet {
-		primaryPeerName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
-			return
-		}
-		if whoAmI == primaryPeerName {
-			delete(volumesNewlyInactiveSet, volumeName)
-		}
-	}
-
-	var wg sync.WaitGroup
-
-	for volumeName := range volumesDeletedSet {
-		volume := globals.volumeMap[volumeName]
+	for volumeName = range volumesDeletedSet {
+		volume = globals.volumeMap[volumeName]
 		wg.Add(1)
 		go volume.drainVolume(&wg)
 	}
 
-	for volumeName := range volumesNewlyInactiveSet {
-		volume := globals.volumeMap[volumeName]
+	for volumeName = range volumesNewlyInactiveSet {
+		volume = globals.volumeMap[volumeName]
 		wg.Add(1)
 		go volume.drainVolume(&wg)
 	}
 
 	wg.Wait()
 
-	for volumeName := range volumesDeletedSet {
-		volume := globals.volumeMap[volumeName]
+	for volumeName = range volumesDeletedSet {
+		volume = globals.volumeMap[volumeName]
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
@@ -474,17 +521,23 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		delete(globals.volumeMap, volumeName)
 	}
 
-	for volumeName := range volumesNewlyInactiveSet {
-		volume := globals.volumeMap[volumeName]
+	for volumeName = range volumesNewlyInactiveSet {
+		volume = globals.volumeMap[volumeName]
 		volume.active = false
-		primaryPeerName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		if nil != err {
 			return
 		}
-		volume.activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerName]
-		if !ok {
-			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerName)
+		if 0 == len(primaryPeerNameList) {
+			volume.activePeerPrivateIPAddr = ""
+		} else if 1 == len(primaryPeerNameList) {
+			volume.activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerNameList[0]]
+			if !ok {
+				err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerNameList[0])
+				return
+			}
+		} else {
+			err = fmt.Errorf("%s.PrimaryPeer cannot have multiple values", volumeName)
 			return
 		}
 		volume.physicalContainerLayoutSet = make(map[string]struct{})
@@ -505,69 +558,111 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 }
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	peerPrivateIPAddrMap := make(map[string]string)
+	var (
+		accountName                                    string
+		active                                         bool
+		activePeerPrivateIPAddr                        string
+		alreadyInAccountMap                            bool
+		alreadyInFlowControlMap                        bool
+		alreadyInGlobalsPhysicalContainerLayoutSet     bool
+		alreadyInGlobalsPhysicalContainerNamePrefixSet bool
+		alreadyInVolumePhysicalContainerLayoutMap      bool
+		defaultPhysicalContainerLayoutName             string
+		flowControlSectionName                         string
+		flowControl                                    *flowControlStruct
+		flowControlWeightSum                           uint64
+		fsid                                           uint64
+		maxEntriesPerDirNode                           uint64
+		maxExtentsPerFileNode                          uint64
+		newlyActiveVolumeSet                           map[string]*volumeStruct
+		ok                                             bool
+		peerName                                       string
+		peerNames                                      []string
+		peerPrivateIPAddr                              string
+		peerPrivateIPAddrMap                           map[string]string
+		physicalContainerLayout                        *physicalContainerLayoutStruct
+		physicalContainerLayoutSectionName             string
+		physicalContainerLayoutSectionNameSlice        []string
+		prevVolume                                     *volumeStruct
+		primaryPeerNameList                            []string
+		readCacheLineSize                              uint64
+		readCacheMemSize                               uint64
+		readCacheQuotaPercentage                       uint64
+		readCacheTotalSize                             uint64
+		volume                                         *volumeStruct
+		volumeName                                     string
+		volumeNames                                    []string
+	)
 
-	peerNames, err := confMap.FetchOptionValueStringSlice("Cluster", "Peers")
+	peerPrivateIPAddrMap = make(map[string]string)
+
+	peerNames, err = confMap.FetchOptionValueStringSlice("Cluster", "Peers")
 	if nil != err {
 		return
 	}
 
-	for _, peerName := range peerNames {
-		peerPrivateIPAddr, nonShadowingErr := confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	for _, peerName = range peerNames {
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		if nil != err {
 			return
 		}
 
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
 	}
 
-	volumeNames, err := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeName := range volumeNames {
-		fsid, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "FSID")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	for _, volumeName = range volumeNames {
+		fsid, err = confMap.FetchOptionValueUint64(volumeName, "FSID")
+		if nil != err {
 			return
 		}
 
-		accountName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "AccountName")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
+		if nil != err {
 			return
 		}
 
-		primaryPeerName, nonShadowingErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		if nil != err {
 			return
 		}
 
-		active := (primaryPeerName == globals.whoAmI)
-		activePeerPrivateIPAddr, ok := peerPrivateIPAddrMap[primaryPeerName]
-		if !ok {
-			err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerName)
+		if 0 == len(primaryPeerNameList) {
+			active = false
+			activePeerPrivateIPAddr = ""
+		} else if 1 == len(primaryPeerNameList) {
+			active = (globals.whoAmI == primaryPeerNameList[0])
+			activePeerPrivateIPAddr, ok = peerPrivateIPAddrMap[primaryPeerNameList[0]]
+			if !ok {
+				err = fmt.Errorf("Volume \"%v\" specifies unknown PrimaryPeer \"%v\"", volumeName, primaryPeerNameList[0])
+				return
+			}
+		} else {
+			err = fmt.Errorf("%s.PrimaryPeer cannot have multiple values", volumeName)
 			return
 		}
 
-		maxEntriesPerDirNode, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
-		if nil != nonShadowingErr {
+		maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
+		if nil != err {
 			// TODO: eventually, just err = nonShadowingErr & return
 			maxEntriesPerDirNode = 32
+			err = nil
 		}
 
-		maxExtentsPerFileNode, nonShadowingErr := confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
-		if nil != nonShadowingErr {
+		maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
+		if nil != err {
 			// TODO: eventually, just err = nonShadowingErr & return
 			maxExtentsPerFileNode = 32
+			err = nil
 		}
 
-		newlyActiveVolumeSet := make(map[string]*volumeStruct)
+		newlyActiveVolumeSet = make(map[string]*volumeStruct)
 
-		volume, ok := globals.volumeMap[volumeName]
+		volume, ok = globals.volumeMap[volumeName]
 		if ok { // previously known volumeName
 			if fsid != volume.fsid {
 				err = fmt.Errorf("Volume \"%v\" changed its FSID", volumeName)
@@ -581,13 +676,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			if active {
 				if volume.active { // also previously active
-					flowControlSectionName, fetchOptionErr := confMap.FetchOptionValueString(volumeName, "FlowControl")
-					if nil != fetchOptionErr {
-						err = fetchOptionErr
+					flowControlSectionName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+					if nil != err {
 						return
 					}
 
-					flowControl := volume.flowControl
+					flowControl = volume.flowControl
 
 					if flowControlSectionName == flowControl.flowControlName {
 						flowControl.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
@@ -600,9 +694,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 							return
 						}
 
-						readCacheLineSize, nonShadowingErr := confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheLineSize")
-						if nil != nonShadowingErr {
-							err = nonShadowingErr
+						readCacheLineSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheLineSize")
+						if nil != err {
 							return
 						}
 						if readCacheLineSize != flowControl.readCacheLineSize {
@@ -629,14 +722,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				}
 			}
 		} else { // previously unknown volumeName
-			for _, prevVolume := range globals.volumeMap {
+			for _, prevVolume = range globals.volumeMap {
 				if fsid == prevVolume.fsid {
 					err = fmt.Errorf("Volume \"%v\" duplicates FSID (%v) of volume \"%v\"", volumeName, fsid, prevVolume.volumeName)
 					return
 				}
 			}
 
-			_, alreadyInAccountMap := globals.accountMap[volumeName]
+			_, alreadyInAccountMap = globals.accountMap[volumeName]
 			if alreadyInAccountMap {
 				err = fmt.Errorf("Account \"%v\" only allowed once in [FSGlobals]VolumeList", accountName)
 				return
@@ -672,22 +765,21 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			// a set of policies used to determine which one to apply. At such time, the following code will
 			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
 
-			defaultPhysicalContainerLayoutName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
+			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
+			if nil != err {
 				return
 			}
 
-			physicalContainerLayoutSectionNameSlice := []string{defaultPhysicalContainerLayoutName}
+			physicalContainerLayoutSectionNameSlice = []string{defaultPhysicalContainerLayoutName}
 
-			for _, physicalContainerLayoutSectionName := range physicalContainerLayoutSectionNameSlice {
-				_, alreadyInGlobalsPhysicalContainerLayoutSet := volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
+			for _, physicalContainerLayoutSectionName = range physicalContainerLayoutSectionNameSlice {
+				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
 				if alreadyInGlobalsPhysicalContainerLayoutSet {
 					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutSectionName)
 					return
 				}
 
-				physicalContainerLayout := &physicalContainerLayoutStruct{}
+				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
 
@@ -700,7 +792,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-				_, alreadyInGlobalsPhysicalContainerNamePrefixSet := volume.physicalContainerLayoutSet[physicalContainerLayout.physicalContainerNamePrefix]
+				_, alreadyInGlobalsPhysicalContainerNamePrefixSet = volume.physicalContainerLayoutSet[physicalContainerLayout.physicalContainerNamePrefix]
 				if alreadyInGlobalsPhysicalContainerNamePrefixSet {
 					err = fmt.Errorf("ContainerNamePrefix \"%v\" only allowed once", physicalContainerLayout.physicalContainerNamePrefix)
 					return
@@ -727,24 +819,21 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
 			}
 
-			var alreadyInVolumePhysicalContainerLayoutMap bool
-
 			volume.defaultPhysicalContainerLayout, alreadyInVolumePhysicalContainerLayoutMap = volume.physicalContainerLayoutMap[defaultPhysicalContainerLayoutName]
 			if !alreadyInVolumePhysicalContainerLayoutMap {
 				err = fmt.Errorf("DefaultPhysicalContainerLayout \"%v\" must be in [%v]PhysicalContaonerLayoutList", defaultPhysicalContainerLayoutName, volume.volumeName)
 				return
 			}
 
-			flowControlSectionName, fetchOptionErr := confMap.FetchOptionValueString(volume.volumeName, "FlowControl")
-			if nil != fetchOptionErr {
-				err = fetchOptionErr
+			flowControlSectionName, err = confMap.FetchOptionValueString(volume.volumeName, "FlowControl")
+			if nil != err {
 				return
 			}
 
-			_, alreadyInFlowControlMap := globals.flowControlMap[flowControlSectionName]
+			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlSectionName]
 
 			if !alreadyInFlowControlMap {
-				flowControl := &flowControlStruct{
+				flowControl = &flowControlStruct{
 					flowControlName: flowControlSectionName,
 					refCount:        0,
 					readCache:       make(map[readCacheKeyStruct]*readCacheElementStruct),
@@ -789,13 +878,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	var flowControlWeightSum uint64
-
-	for _, flowControl := range globals.flowControlMap {
+	for _, flowControl = range globals.flowControlMap {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaPercentage, err := confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
 	if nil != err {
 		// TODO: eventually, just return
 		readCacheQuotaPercentage = 20
@@ -805,10 +892,10 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	readCacheMemSize := platform.MemSize() * readCacheQuotaPercentage / 100
+	readCacheMemSize = platform.MemSize() * readCacheQuotaPercentage / 100
 
-	for _, flowControl := range globals.flowControlMap {
-		readCacheTotalSize := readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
+	for _, flowControl = range globals.flowControlMap {
+		readCacheTotalSize = readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
 
 		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
 		if 0 == flowControl.readCacheLineCount {
@@ -843,11 +930,16 @@ func Down() (err error) {
 }
 
 func (vS *volumeStruct) drainVolume(wg *sync.WaitGroup) {
+	var (
+		err       error
+		fileInode *inMemoryInodeStruct
+	)
+
 	vS.Lock() // Prevent vS.inFlightFileInodeDataMap from changing while we are iterating over it
-	for _, fileInode := range vS.inFlightFileInodeDataMap {
+	for _, fileInode = range vS.inFlightFileInodeDataMap {
 		wg.Add(1) // Add one "item" to await per file
 		go func(fileInode *inMemoryInodeStruct, wg *sync.WaitGroup) {
-			err := vS.doFileInodeDataFlush(fileInode)
+			err = vS.doFileInodeDataFlush(fileInode)
 			if nil != err {
 				logger.ErrorWithError(err, "Forced flush during Volume Offline failed")
 			}
