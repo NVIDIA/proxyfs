@@ -309,7 +309,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if whoAmI == primaryPeerList[0] {
 				_, ok = globals.volumeMap[volumeName]
 				if !ok {
-					err = downVolume(volumeName)
+					err = addVolume(confMap, volumeName)
 					if nil != err {
 						return
 					}
