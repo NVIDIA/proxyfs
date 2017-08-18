@@ -53,7 +53,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
 		id                MountID
 		ok                bool
-		primaryPeer       string
+		primaryPeerList   []string
 		removedVolumeList []string
 		updatedVolumeMap  map[string]bool // key == volumeName; value ignored
 		volStruct         *volumeStruct
@@ -81,14 +81,21 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if globals.whoAmI == primaryPeer {
-			updatedVolumeMap[volumeName] = true
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				updatedVolumeMap[volumeName] = true
+			}
+		} else {
+			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
+			return
 		}
 	}
 

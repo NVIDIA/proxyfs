@@ -42,9 +42,9 @@ var globals globalsStruct
 //       from handling returned errors and gracefully unwinding.
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		primaryPeer string
-		volumeList  []string
-		volumeName  string
+		primaryPeerList []string
+		volumeList      []string
+		volumeName      string
 	)
 
 	globals.mountIDMap = make(map[uint64]fs.MountHandle)
@@ -126,14 +126,21 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if globals.whoAmI == primaryPeer {
-			globals.volumeMap[volumeName] = true
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				globals.volumeMap[volumeName] = true
+			}
+		} else {
+			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
+			return
 		}
 	}
 
@@ -155,7 +162,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		mountID            uint64
 		ok                 bool
 		portString         string
-		primaryPeer        string
+		primaryPeerList    []string
 		removedMountIDList []uint64
 		removedVolumeList  []string
 		updatedVolumeMap   map[string]bool
@@ -225,14 +232,21 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if globals.whoAmI == primaryPeer {
-			updatedVolumeMap[volumeName] = true
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				updatedVolumeMap[volumeName] = true
+			}
+		} else {
+			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
+			return
 		}
 	}
 
@@ -269,7 +283,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		primaryPeer      string
+		primaryPeerList  []string
 		updatedVolumeMap map[string]bool
 		volumeList       []string
 		volumeName       string
@@ -284,14 +298,21 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if globals.whoAmI == primaryPeer {
-			updatedVolumeMap[volumeName] = true
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				updatedVolumeMap[volumeName] = true
+			}
+		} else {
+			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
+			return
 		}
 	}
 

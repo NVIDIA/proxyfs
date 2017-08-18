@@ -36,7 +36,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		alreadyInMountPointMap bool
 		mountPoint             *mountPointStruct
 		mountPointName         string
-		primaryPeerName        string
+		primaryPeerNameList    []string
 		volumeName             string
 		volumeNameSlice        []string
 	)
@@ -54,26 +54,33 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeNameSlice {
-		primaryPeerName, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		if primaryPeerName == globals.whoAmI {
-			mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
-			if nil != err {
-				return
+		if 0 == len(primaryPeerNameList) {
+			continue
+		} else if 1 == len(primaryPeerNameList) {
+			if globals.whoAmI == primaryPeerNameList[0] {
+				mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
+				if nil != err {
+					return
+				}
+
+				_, alreadyInMountPointMap = globals.mountPointMap[mountPointName]
+				if alreadyInMountPointMap {
+					err = fmt.Errorf("MountPoint \"%v\" only allowed to be used by a single Volume", mountPointName)
+					return
+				}
+
+				mountPoint = &mountPointStruct{mountPointName: mountPointName, volumeName: volumeName, mounted: false}
+
+				globals.mountPointMap[mountPointName] = mountPoint
 			}
-
-			_, alreadyInMountPointMap = globals.mountPointMap[mountPointName]
-			if alreadyInMountPointMap {
-				err = fmt.Errorf("MountPoint \"%v\" only allowed to be used by a single Volume", mountPointName)
-				return
-			}
-
-			mountPoint = &mountPointStruct{mountPointName: mountPointName, volumeName: volumeName, mounted: false}
-
-			globals.mountPointMap[mountPointName] = mountPoint
+		} else {
+			err = fmt.Errorf("Volume \"%v\" only allowed one PrimaryPeer", volumeName)
+			return
 		}
 	}
 
@@ -92,13 +99,13 @@ func Up(confMap conf.ConfMap) (err error) {
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
-		mountPoint       *mountPointStruct
-		ok               bool
-		primaryPeerName  string
-		removedVolumeMap map[string]*mountPointStruct // key == volumeName
-		volumeList       []string
-		volumeName       string
-		whoAmI           string
+		mountPoint          *mountPointStruct
+		ok                  bool
+		primaryPeerNameList []string
+		removedVolumeMap    map[string]*mountPointStruct // key == volumeName
+		volumeList          []string
+		volumeName          string
+		whoAmI              string
 	)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -126,13 +133,20 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	for _, volumeName = range volumeList {
 		_, ok = removedVolumeMap[volumeName]
 		if ok {
-			primaryPeerName, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 			if nil != err {
 				return
 			}
 
-			if primaryPeerName == globals.whoAmI {
-				delete(removedVolumeMap, volumeName)
+			if 0 == len(primaryPeerNameList) {
+				continue
+			} else if 1 == len(primaryPeerNameList) {
+				if globals.whoAmI == primaryPeerNameList[0] {
+					delete(removedVolumeMap, volumeName)
+				}
+			} else {
+				err = fmt.Errorf("Volume \"%v\" only allowed one PrimaryPeer", volumeName)
+				return
 			}
 		}
 	}
@@ -162,12 +176,12 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		mountPoint      *mountPointStruct
-		mountPointName  string
-		ok              bool
-		primaryPeerName string
-		volumeList      []string
-		volumeName      string
+		mountPoint          *mountPointStruct
+		mountPointName      string
+		ok                  bool
+		primaryPeerNameList []string
+		volumeList          []string
+		volumeName          string
 	)
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
@@ -177,28 +191,35 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerName, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		if primaryPeerName == globals.whoAmI {
-			mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
-			if nil != err {
-				return
-			}
-
-			_, ok = globals.mountPointMap[mountPointName]
-			if !ok {
-				mountPoint = &mountPointStruct{mountPointName: mountPointName, volumeName: volumeName, mounted: false}
-
-				globals.mountPointMap[mountPointName] = mountPoint
-
-				err = performMount(mountPoint)
+		if 0 == len(primaryPeerNameList) {
+			continue
+		} else if 1 == len(primaryPeerNameList) {
+			if globals.whoAmI == primaryPeerNameList[0] {
+				mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
 				if nil != err {
 					return
 				}
+
+				_, ok = globals.mountPointMap[mountPointName]
+				if !ok {
+					mountPoint = &mountPointStruct{mountPointName: mountPointName, volumeName: volumeName, mounted: false}
+
+					globals.mountPointMap[mountPointName] = mountPoint
+
+					err = performMount(mountPoint)
+					if nil != err {
+						return
+					}
+				}
 			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" only allowed one PrimaryPeer", volumeName)
+			return
 		}
 	}
 

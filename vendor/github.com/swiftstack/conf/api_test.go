@@ -299,7 +299,7 @@ func TestFetch(t *testing.T) {
 
 	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionStringSlice1=")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionStringSlice1=TestString1,TestString2: %v", err)
+		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionStringSlice1=: %v", err)
 	}
 	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionStringSlice2=TestString1,TestString2")
 	if nil != err {
@@ -340,6 +340,15 @@ func TestFetch(t *testing.T) {
 	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC")
 	if nil != err {
 		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC: %v", err)
+	}
+
+	err = confMap.VerifyOptionValueIsEmpty("Test_-_Section", "Test_-_OptionStringSlice1")
+	if nil != err {
+		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice1 should have verified as empty")
+	}
+	err = confMap.VerifyOptionValueIsEmpty("Test_-_Section", "Test_-_OptionStringSlice2")
+	if nil == err {
+		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice2 should have verified as empty")
 	}
 
 	testStringSlice1, err := confMap.FetchOptionValueStringSlice("Test_-_Section", "Test_-_OptionStringSlice1")
@@ -388,7 +397,7 @@ func TestFetch(t *testing.T) {
 	}
 
 	if 0 != len(testStringSlice1) {
-		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice contained unexpected value(s)")
+		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice1 contained unexpected value(s)")
 	}
 	if (2 != len(testStringSlice2)) || ("TestString1" != testStringSlice2[0]) || ("TestString2" != testStringSlice2[1]) {
 		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice2 contained unexpected value(s)")
