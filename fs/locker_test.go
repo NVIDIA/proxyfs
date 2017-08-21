@@ -13,7 +13,7 @@ func TestLockerStuff(t *testing.T) {
 	var inodeNumber inode.InodeNumber = inode.InodeNumber(2)
 
 	// Test: get a lock for vol A inode 2
-	srcDirLock, err := mS.initInodeLock(inodeNumber, nil)
+	srcDirLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		t.Fatalf("Failed to initInodeLock: %v", err)
 	}
@@ -21,7 +21,7 @@ func TestLockerStuff(t *testing.T) {
 
 	// Test: get a lock for vol A inode 3
 	inodeNumber++
-	dstDirLock, err := mS.initInodeLock(inodeNumber, nil)
+	dstDirLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		t.Fatalf("Failed to initInodeLock: %v", err)
 	}
@@ -40,13 +40,13 @@ func TestLockerStuff(t *testing.T) {
 	var srcDirInodeNumber inode.InodeNumber = 9001
 	var dstDirInodeNumber inode.InodeNumber = 9002
 	callerID := dlm.GenerateCallerID()
-	srcDirLock, err = mS.initInodeLock(srcDirInodeNumber, callerID)
+	srcDirLock, err = mS.volStruct.initInodeLock(srcDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
 	srcCallerID = srcDirLock.GetCallerID()
 
-	dstDirLock, err = mS.initInodeLock(dstDirInodeNumber, callerID)
+	dstDirLock, err = mS.volStruct.initInodeLock(dstDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}

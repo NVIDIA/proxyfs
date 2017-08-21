@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/conf"
 	"github.com/swiftstack/cstruct"
@@ -67,7 +66,6 @@ type volumeStruct struct {
 	flowControl                    *flowControlStruct
 	headhunterVolumeHandle         headhunter.VolumeHandle
 	inodeCache                     map[InodeNumber]*inMemoryInodeStruct //      key == InodeNumber
-	inFlightFileInodeDataMap       map[InodeNumber]*inMemoryInodeStruct //      key == InodeNumber
 }
 
 type globalsStruct struct {
@@ -162,7 +160,6 @@ func Up(confMap conf.ConfMap) (err error) {
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
 			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
 			inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
-			inFlightFileInodeDataMap:       make(map[InodeNumber]*inMemoryInodeStruct),
 		}
 
 		volume.fsid, err = confMap.FetchOptionValueUint64(volumeSectionName, "FSID")
@@ -420,7 +417,6 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volumeSectionNameSlice  []string
 		volumesDeletedSet       map[string]bool
 		volumesNewlyInactiveSet map[string]bool
-		wg                      sync.WaitGroup
 		whoAmI                  string
 	)
 
@@ -500,20 +496,6 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesDeletedSet {
 		volume = globals.volumeMap[volumeName]
-		wg.Add(1)
-		go volume.drainVolume(&wg)
-	}
-
-	for volumeName = range volumesNewlyInactiveSet {
-		volume = globals.volumeMap[volumeName]
-		wg.Add(1)
-		go volume.drainVolume(&wg)
-	}
-
-	wg.Wait()
-
-	for volumeName = range volumesDeletedSet {
-		volume = globals.volumeMap[volumeName]
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
@@ -550,7 +532,6 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		}
 		volume.flowControl = nil
 		volume.inodeCache = make(map[InodeNumber]*inMemoryInodeStruct)
-		volume.inFlightFileInodeDataMap = make(map[InodeNumber]*inMemoryInodeStruct)
 	}
 
 	err = nil
@@ -747,7 +728,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerNamePrefixSet: make(map[string]struct{}),
 				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
 				inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
-				inFlightFileInodeDataMap:       make(map[InodeNumber]*inMemoryInodeStruct),
 			}
 
 			globals.volumeMap[volume.volumeName] = volume
@@ -911,41 +891,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 }
 
 func Down() (err error) {
-	var (
-		volume *volumeStruct
-		wg     sync.WaitGroup
-	)
-
-	for _, volume = range globals.volumeMap {
-		if volume.active {
-			wg.Add(1) // Add one "item" to await per volume
-			go volume.drainVolume(&wg)
-		}
-	}
-
-	wg.Wait()
-
-	err = nil
+	err = nil // Nothing to do
 	return
-}
-
-func (vS *volumeStruct) drainVolume(wg *sync.WaitGroup) {
-	var (
-		err       error
-		fileInode *inMemoryInodeStruct
-	)
-
-	vS.Lock() // Prevent vS.inFlightFileInodeDataMap from changing while we are iterating over it
-	for _, fileInode = range vS.inFlightFileInodeDataMap {
-		wg.Add(1) // Add one "item" to await per file
-		go func(fileInode *inMemoryInodeStruct, wg *sync.WaitGroup) {
-			err = vS.doFileInodeDataFlush(fileInode)
-			if nil != err {
-				logger.ErrorWithError(err, "Forced flush during Volume Offline failed")
-			}
-			wg.Done() // This file "item" is done
-		}(fileInode, wg)
-	}
-	vS.Unlock()
-	wg.Done() // This volume "item" is done
 }

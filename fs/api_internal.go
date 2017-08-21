@@ -50,38 +50,124 @@ func (coll dirAndFileNameSlice) Swap(i int, j int) {
 	coll[i], coll[j] = coll[j], coll[i]
 }
 
-func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+// trackInFlightFileInodeData is called to ensure a timely Flush occurs.
+//
+// Only Write() will call this while holding a WriteLock on the fileInode
+// either just before or just after its call to inode.Write().
+func (vS *volumeStruct) trackInFlightFileInodeData(inodeNumber inode.InodeNumber) {
 	var (
-		mS           *mountStruct
-		ok           bool
-		volStruct    *volumeStruct
-		volumeHandle inode.VolumeHandle
+		inFlightFileInodeData *inFlightFileInodeDataStruct
+		ok                    bool
 	)
 
-	volumeHandle, err = inode.FetchVolumeHandle(volumeName)
-	if nil != err {
-		logger.ErrorWithError(err)
-		return
+	vS.Lock()
+	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
+	if !ok {
+		inFlightFileInodeData = &inFlightFileInodeDataStruct{
+			InodeNumber: inodeNumber,
+			volStruct:   vS,
+			control:     make(chan bool, 1),
+		}
+		vS.inFlightFileInodeDataMap[inodeNumber] = inFlightFileInodeData
+		inFlightFileInodeData.wg.Add(1)
+		go inFlightFileInodeData.inFlightFileInodeDataTracker()
 	}
+	vS.Unlock()
+}
+
+// untrackInFlightInodeData is called once it is known a Flush() is no longer needed
+// or to actually request a Flush() [as would be the case during unmounting a volume].
+func (vS *volumeStruct) untrackInFlightFileInodeData(inodeNumber inode.InodeNumber, flushFirst bool) {
+	var (
+		inFlightFileInodeData *inFlightFileInodeDataStruct
+		ok                    bool
+	)
+
+	vS.Lock()
+	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
+	if ok {
+		inFlightFileInodeData.control <- flushFirst
+	}
+	vS.Unlock()
+
+	if ok {
+		inFlightFileInodeData.wg.Wait()
+	}
+}
+
+func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
+	var (
+		err        error
+		flushFirst bool
+		inodeLock  *dlm.RWLockStruct
+	)
+
+	select {
+	case flushFirst = <-inFlightFileInodeData.control:
+		// All we needed was the value of flushFirst from control chan
+	case <-time.After(inFlightFileInodeData.volStruct.maxFlushTime):
+		flushFirst = true
+	}
+
+	if flushFirst {
+		// As if a package fs client called Flush()... so take out a WriteLock around all activity
+
+		inodeLock, err = inFlightFileInodeData.volStruct.initInodeLock(inFlightFileInodeData.InodeNumber, nil)
+		if nil != err {
+			panic(err)
+		}
+		err = inodeLock.WriteLock()
+		if nil != err {
+			panic(err)
+		}
+
+		err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
+		if nil != err {
+			panic(err)
+		}
+
+		inFlightFileInodeData.volStruct.Lock()
+		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
+		inFlightFileInodeData.volStruct.Unlock()
+
+		err = inodeLock.Unlock()
+		if nil != err {
+			panic(err)
+		}
+	} else {
+		// Assume we were triggered while holding a WriteLock... just remove self from map
+
+		inFlightFileInodeData.volStruct.Lock()
+		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
+		inFlightFileInodeData.volStruct.Unlock()
+	}
+
+	inFlightFileInodeData.wg.Done()
+}
+
+func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	var (
+		mS        *mountStruct
+		ok        bool
+		volStruct *volumeStruct
+	)
 
 	globals.Lock()
 
 	volStruct, ok = globals.volumeMap[volumeName]
 	if !ok {
-		volStruct = &volumeStruct{}
-		volStruct.FLockMap = make(map[inode.InodeNumber]*list.List)
-		volStruct.mountList = make([]MountID, 0)
-		globals.volumeMap[volumeName] = volStruct
+		err = fmt.Errorf("Unknown volumeName passed to mount(): \"%s\"", volumeName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
 	}
 
 	globals.lastMountID++
 
 	mS = &mountStruct{
-		id:           globals.lastMountID,
-		volumeName:   volumeName,
-		options:      mountOptions,
-		volStruct:    volStruct,
-		VolumeHandle: volumeHandle,
+		id:        globals.lastMountID,
+		options:   mountOptions,
+		volStruct: volStruct,
 	}
 
 	globals.mountMap[mS.id] = mS
@@ -99,12 +185,12 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 }
 
 func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool) {
-	accessReturn = mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, accessMode)
+	accessReturn = mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, accessMode)
 	return
 }
 
 func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
-	pPath, err = mS.ProvisionObject()
+	pPath, err = mS.volStruct.VolumeHandle.ProvisionObject()
 	stats.IncrementOperations(&stats.FsProvisionObjOps)
 	return
 }
@@ -115,15 +201,15 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 		return 0, err
 	}
 
-	fileInodeNumber, err = mS.CreateFile(filePerm, userID, groupID)
+	fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(filePerm, userID, groupID)
 	if err != nil {
 		return 0, err
 	}
 
 	// Lock the directory inode before doing the link
-	dirInodeLock, err := mS.initInodeLock(dirInodeNumber, nil)
+	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, nil)
 	if err != nil {
-		destroyErr := mS.Destroy(fileInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed initInodeLock() check in fs.Create", fileInodeNumber)
 		}
@@ -131,7 +217,7 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	err = dirInodeLock.WriteLock()
 	if err != nil {
-		destroyErr := mS.Destroy(fileInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed WriteLock() in fs.Create", fileInodeNumber)
 		}
@@ -139,24 +225,24 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer dirInodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
-		destroyErr := mS.Destroy(fileInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(F_OK) in fs.Create", fileInodeNumber)
 		}
 		return 0, blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
-		destroyErr := mS.Destroy(fileInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(W_OK|X_OK) in fs.Create", fileInodeNumber)
 		}
 		return 0, blunder.NewError(blunder.PermDeniedError, "EACCES")
 	}
 
-	err = mS.VolumeHandle.Link(dirInodeNumber, basename, fileInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, fileInodeNumber)
 	if err != nil {
-		destroyErr := mS.Destroy(fileInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.Create", fileInodeNumber)
 		}
@@ -168,7 +254,7 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -178,15 +264,18 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		return blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		return blunder.NewError(blunder.PermDeniedError, "EACCES")
 	}
 
+	err = mS.volStruct.VolumeHandle.Flush(inodeNumber, false)
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
+
 	stats.IncrementOperations(&stats.FsFlushOps)
-	return mS.VolumeHandle.Flush(inodeNumber, false)
+	return
 }
 
 func (mS *mountStruct) getFileLockList(inodeNumber inode.InodeNumber) (fLocklist *list.List, err error) {
@@ -212,7 +301,7 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 
 	// Make sure the inode does not go away, while we are applying the flock.
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -222,11 +311,11 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -312,7 +401,7 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (stat Stat, err error) {
-	lockID, err := mS.makeLockID(inodeNumber)
+	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -323,7 +412,7 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 
 	stat = make(map[StatKey]uint64)
 
-	metadata, err := mS.GetMetadata(inodeNumber)
+	metadata, err := mS.volStruct.VolumeHandle.GetMetadata(inodeNumber)
 
 	if err != nil {
 		return nil, err
@@ -346,7 +435,7 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -363,7 +452,7 @@ func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (inodeType inode.InodeType, err error) {
-	lockID, err := mS.makeLockID(inodeNumber)
+	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -373,7 +462,7 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 		return
 	}
 
-	inodeType, err = mS.VolumeHandle.GetType(inodeNumber)
+	inodeType, err = mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		logger.ErrorWithError(err, "couldn't get inode type")
 		return inodeType, err
@@ -382,7 +471,7 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeType inode.InodeType, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -397,7 +486,7 @@ func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (value []byte, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -407,16 +496,16 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	value, err = mS.GetStream(inodeNumber, streamName)
+	value, err = mS.volStruct.VolumeHandle.GetStream(inodeNumber, streamName)
 	if err != nil {
 		// Did not find the requested stream. However this isn't really an error since
 		// samba will ask for acl-related streams and is fine with not finding them.
@@ -428,7 +517,7 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsDir bool, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -440,7 +529,7 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 
 	stats.IncrementOperations(&stats.FsIsdirOps)
 
-	lockID, err := mS.makeLockID(inodeNumber)
+	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -449,7 +538,7 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return false, blunder.AddError(err, blunder.NotFoundError)
 	}
 
-	inodeType, err := mS.VolumeHandle.GetType(inodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		return false, err
 	}
@@ -457,7 +546,7 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsFile bool, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -467,7 +556,7 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer inodeLock.Unlock()
 
-	inodeType, err := mS.VolumeHandle.GetType(inodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		return false, err
 	}
@@ -476,7 +565,7 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsSymlink bool, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -486,7 +575,7 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 	}
 	defer inodeLock.Unlock()
 
-	inodeType, err := mS.VolumeHandle.GetType(inodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		return false, err
 	}
@@ -502,12 +591,12 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 
 	// We need both dirInodelock and the targetInode lock to make sure they don't go away and linkCount is updated correctly.
 	callerID := dlm.GenerateCallerID()
-	dirInodeLock, err := mS.initInodeLock(dirInodeNumber, callerID)
+	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
 
-	targetInodeLock, err := mS.initInodeLock(targetInodeNumber, callerID)
+	targetInodeLock, err := mS.volStruct.initInodeLock(targetInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -525,7 +614,7 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 	defer targetInodeLock.Unlock()
 
 	// In the case of hardlink, make sure target inode is not a directory
-	inodeType, err := mS.VolumeHandle.GetType(targetInodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(targetInodeNumber)
 	if err != nil {
 		// Because we know that GetMetadata has already "blunderized" the error, we just pass it on
 		logger.ErrorfWithError(err, "couldn't get type for inode %v", targetInodeNumber)
@@ -537,30 +626,34 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 		return blunder.AddError(err, blunder.LinkDirError)
 	}
 
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(targetInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(targetInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
-	if !mS.VolumeHandle.Access(targetInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(targetInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	err = mS.VolumeHandle.Link(dirInodeNumber, basename, targetInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, targetInodeNumber)
+	if inodeType == inode.FileType {
+		mS.volStruct.untrackInFlightFileInodeData(targetInodeNumber, false)
+	}
+
 	stats.IncrementOperations(&stats.FsLinkOps)
 	return err
 }
 
 func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -570,16 +663,16 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	metadata, err := mS.GetMetadata(inodeNumber)
+	metadata, err := mS.volStruct.VolumeHandle.GetMetadata(inodeNumber)
 	if err != nil {
 		// Did not find the requested stream. However this isn't really an error since
 		// samba will ask for acl-related streams and is fine with not finding them.
@@ -594,23 +687,23 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error) {
-	dirInodeLock, err := mS.initInodeLock(dirInodeNumber, nil)
+	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, nil)
 	if err != nil {
 		return
 	}
 	dirInodeLock.ReadLock()
 	defer dirInodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	inodeNumber, err = mS.VolumeHandle.Lookup(dirInodeNumber, basename)
+	inodeNumber, err = mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, basename)
 	stats.IncrementOperations(&stats.FsLookupOps)
 	return inodeNumber, err
 }
@@ -632,7 +725,7 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 
 	cursorInodeNumber := inode.RootDirInodeNumber
 	for _, segment := range pathSegments {
-		cursorInodeLock, err1 := mS.initInodeLock(cursorInodeNumber, nil)
+		cursorInodeLock, err1 := mS.volStruct.initInodeLock(cursorInodeNumber, nil)
 		if err = err1; err != nil {
 			return
 		}
@@ -641,13 +734,13 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 			return
 		}
 
-		if !mS.VolumeHandle.Access(cursorInodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+		if !mS.volStruct.VolumeHandle.Access(cursorInodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 			cursorInodeLock.Unlock()
 			err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 			return
 		}
 
-		cursorInodeNumber, err = mS.VolumeHandle.Lookup(cursorInodeNumber, segment)
+		cursorInodeNumber, err = mS.volStruct.VolumeHandle.Lookup(cursorInodeNumber, segment)
 		cursorInodeLock.Unlock()
 
 		if err != nil {
@@ -711,7 +804,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 	// too much trouble.
 	callerID := dlm.GenerateCallerID()
 
-	rootDirInodeLock, err := mS.getWriteLock(inode.RootDirInodeNumber, callerID)
+	rootDirInodeLock, err := mS.volStruct.getWriteLock(inode.RootDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -742,13 +835,13 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 			return
 		}
 
-		fileInodeNumber, err1 := mS.VolumeHandle.Lookup(dirInodeNumber, entry.fileName)
+		fileInodeNumber, err1 := mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, entry.fileName)
 		if err1 != nil {
 			err = err1
 			return
 		}
 
-		fileInodeLock, err1 := mS.initInodeLock(fileInodeNumber, callerID)
+		fileInodeLock, err1 := mS.volStruct.initInodeLock(fileInodeNumber, callerID)
 		if err1 != nil {
 			err = err1
 			return
@@ -761,7 +854,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 			heldLocks = append(heldLocks, fileInodeLock)
 		}
 
-		fileMetadata, err1 := mS.GetMetadata(fileInodeNumber)
+		fileMetadata, err1 := mS.volStruct.VolumeHandle.GetMetadata(fileInodeNumber)
 		if err1 != nil {
 			err = err1
 			return
@@ -780,7 +873,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
 	// do something useful
-	destInodeNumber, mtime, numWrites, err := mS.Coalesce(destDirInodeNumber, destFileName, coalesceElements)
+	destInodeNumber, mtime, numWrites, err := mS.volStruct.VolumeHandle.Coalesce(destDirInodeNumber, destFileName, coalesceElements)
 	ino = uint64(destInodeNumber)
 	modificationTime = uint64(mtime.UnixNano())
 	return
@@ -798,17 +891,17 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	}
 
 	// We will need both parentDir lock to Unlink() and baseInode lock.
-	baseNameInodeNumber, err := mS.VolumeHandle.Lookup(parentInodeNumber, baseName)
+	baseNameInodeNumber, err := mS.volStruct.VolumeHandle.Lookup(parentInodeNumber, baseName)
 	if err != nil {
 		return err
 	}
-	baseInodeLock, err := mS.getWriteLock(baseNameInodeNumber, parentDirLock.GetCallerID())
+	baseInodeLock, err := mS.volStruct.getWriteLock(baseNameInodeNumber, parentDirLock.GetCallerID())
 	if nil != err {
 		return
 	}
 	defer baseInodeLock.Unlock()
 
-	inodeType, err := mS.VolumeHandle.GetType(baseNameInodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(baseNameInodeNumber)
 	if nil != err {
 		return
 	}
@@ -816,7 +909,7 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	var doDestroy bool
 
 	if inodeType == inode.DirType {
-		dirEntries, nonShadowingErr := mS.NumDirEntries(baseNameInodeNumber)
+		dirEntries, nonShadowingErr := mS.volStruct.VolumeHandle.NumDirEntries(baseNameInodeNumber)
 		if nil != nonShadowingErr {
 			err = nonShadowingErr
 			return
@@ -832,7 +925,7 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 
 		doDestroy = true
 	} else { // inodeType != inode.DirType
-		basenameLinkCount, nonShadowingErr := mS.GetLinkCount(baseNameInodeNumber)
+		basenameLinkCount, nonShadowingErr := mS.volStruct.VolumeHandle.GetLinkCount(baseNameInodeNumber)
 		if nil != nonShadowingErr {
 			err = nonShadowingErr
 			return
@@ -843,16 +936,17 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 
 	// At this point, we *are* going to Unlink... and optionally Destroy... the inode
 
-	err = mS.VolumeHandle.Unlink(parentInodeNumber, baseName)
+	err = mS.volStruct.VolumeHandle.Unlink(parentInodeNumber, baseName)
 	if nil != err {
 		return
 	}
 
 	if doDestroy {
-		err = mS.Destroy(baseNameInodeNumber)
+		err = mS.volStruct.VolumeHandle.Destroy(baseNameInodeNumber)
 		if nil != err {
 			return err
 		}
+		mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 	}
 
 	stats.IncrementOperations(&stats.FsMwDeleteOps)
@@ -1116,7 +1210,7 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 	}
 
 	// Find file size
-	metadata, err := mS.GetMetadata(inodeNumber)
+	metadata, err := mS.volStruct.VolumeHandle.GetMetadata(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -1160,7 +1254,7 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 		}
 	}
 
-	serializedMetadata, err = mS.GetStream(inodeNumber, MiddlewareStream)
+	serializedMetadata, err = mS.volStruct.VolumeHandle.GetStream(inodeNumber, MiddlewareStream)
 	// If someone makes a directory or file via SMB/FUSE and then
 	// accesses it via HTTP, we'll see StreamNotFound. We treat it as
 	// though there is no metadata. The middleware is equipped to
@@ -1191,7 +1285,7 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 	response.InodeNumber = ino
 	response.NumWrites = statResult[StatNumWrites]
 
-	response.Metadata, err = mS.GetStream(ino, MiddlewareStream)
+	response.Metadata, err = mS.volStruct.VolumeHandle.GetStream(ino, MiddlewareStream)
 	if err != nil {
 		response.Metadata = []byte{}
 		// If someone makes a directory or file via SMB/FUSE and then
@@ -1218,7 +1312,7 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 
 	// Compare oldMetaData to existing existingStreamData to make sure that the HTTP metadata has not changed.
 	// If it has changed, then return an error since middleware has to handle it.
-	existingStreamData, err := mS.GetStream(baseNameInodeNumber, MiddlewareStream)
+	existingStreamData, err := mS.volStruct.VolumeHandle.GetStream(baseNameInodeNumber, MiddlewareStream)
 
 	// GetStream() will return an error if there is no "middleware" stream
 	if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
@@ -1231,7 +1325,8 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	}
 
 	// Change looks okay so make it.
-	err = mS.PutStream(baseNameInodeNumber, MiddlewareStream, newMetaData)
+	err = mS.volStruct.VolumeHandle.PutStream(baseNameInodeNumber, MiddlewareStream, newMetaData)
+	mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 
 	stats.IncrementOperations(&stats.FsMwPostOps)
 	return err
@@ -1259,7 +1354,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	// us.
 	var dirEntInodeLock *dlm.RWLockStruct
 	callerID := dlm.GenerateCallerID()
-	dirInodeLock, err := mS.getWriteLock(dirInodeNumber, callerID)
+	dirInodeLock, err := mS.volStruct.getWriteLock(dirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -1281,7 +1376,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 			continue
 		}
 
-		dirEntInodeNumber, err1 := mS.VolumeHandle.Lookup(dirInodeNumber, thisDir)
+		dirEntInodeNumber, err1 := mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, thisDir)
 		if err1 != nil && blunder.Errno(err1) == int(blunder.NotFoundError) {
 			// NotFoundError just means that it's time to start making
 			// directories. We deliberately do not unlock dirInodeLock
@@ -1293,13 +1388,13 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 		} else {
 			// There's a directory entry there; let's go see what it is
 			dirs = dirs[0 : len(dirs)-1]
-			dirEntInodeLock, err1 = mS.getWriteLock(dirEntInodeNumber, callerID)
+			dirEntInodeLock, err1 = mS.volStruct.getWriteLock(dirEntInodeNumber, callerID)
 			if err1 != nil {
 				err = err1
 				return
 			}
 
-			dirEntInodeType, err1 := mS.VolumeHandle.GetType(dirEntInodeNumber)
+			dirEntInodeType, err1 := mS.volStruct.VolumeHandle.GetType(dirEntInodeNumber)
 			if err1 != nil {
 				err = err1
 				return
@@ -1312,7 +1407,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 				err = blunder.NewError(blunder.NotDirError, "%s is a file, not a directory", thisDir)
 				return
 			} else if dirEntInodeType == inode.SymlinkType {
-				target, err1 := mS.GetSymlink(dirEntInodeNumber)
+				target, err1 := mS.volStruct.VolumeHandle.GetSymlink(dirEntInodeNumber)
 				dirEntInodeLock.Unlock()
 				dirEntInodeLock = nil
 				if err1 != nil {
@@ -1325,7 +1420,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 					// root directory.
 					dirInodeLock.Unlock()
 					dirInodeNumber = inode.RootDirInodeNumber
-					dirInodeLock, err1 = mS.getWriteLock(inode.RootDirInodeNumber, nil)
+					dirInodeLock, err1 = mS.volStruct.getWriteLock(inode.RootDirInodeNumber, nil)
 					if err1 != nil {
 						err = err1
 						return
@@ -1353,7 +1448,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	// Reify the Swift object into a ProxyFS file by making a new,
 	// empty inode and then associating it with the log segment
 	// written by the middleware.
-	fileInodeNumber, err = mS.CreateFile(inode.PosixModePerm, 0, 0)
+	fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(inode.PosixModePerm, 0, 0)
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.CreateFile(): %v dirInodeNumber: %v vContainerName: %v failed!",
 			dirInodeNumber, vContainerName)
@@ -1364,7 +1459,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	fileOffset := uint64(0) // Swift only writes whole files
 	pObjectOffset := uint64(0)
 	for i := 0; i < len(pObjectPaths); i++ {
-		err = mS.Wrote(fileInodeNumber, fileOffset, pObjectPaths[i], pObjectOffset, pObjectLengths[i], i > 0)
+		err = mS.volStruct.VolumeHandle.Wrote(fileInodeNumber, fileOffset, pObjectPaths[i], pObjectOffset, pObjectLengths[i], i > 0)
 		if err != nil {
 			logger.DebugfIDWithError(internalDebug, err, "mount.Wrote() fileInodeNumber: %v fileOffset: %v pOjectPaths: %v pObjectOffset: %v pObjectLengths: %v i: %v failed!",
 				fileInodeNumber, fileOffset, pObjectPaths, pObjectOffset, pObjectLengths, i)
@@ -1374,7 +1469,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	}
 
 	// Set the metadata on the file
-	err = mS.PutStream(fileInodeNumber, MiddlewareStream, pObjectMetadata)
+	err = mS.volStruct.VolumeHandle.PutStream(fileInodeNumber, MiddlewareStream, pObjectMetadata)
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
 			fileInodeNumber, pObjectMetadata)
@@ -1385,19 +1480,20 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	highestUnlinkedInodeNumber := fileInodeNumber
 	highestUnlinkedName := vObjectBaseName
 	for i := 0; i < len(dirs); i++ {
-		newDirInodeNumber, err1 := mS.CreateDir(inode.PosixModePerm, 0, 0)
+		newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 		if err1 != nil {
 			logger.DebugfIDWithError(internalDebug, err1, "mount.CreateDir(): %v failed!")
 			err = err1
 			return
 		}
 
-		err = mS.VolumeHandle.Link(newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
+		err = mS.volStruct.VolumeHandle.Link(newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
 		if err != nil {
 			logger.DebugfIDWithError(internalDebug, err, "mount.Link(%v, %v, %v) failed",
 				newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
 			return
 		}
+		mS.volStruct.untrackInFlightFileInodeData(highestUnlinkedInodeNumber, false)
 
 		highestUnlinkedInodeNumber = newDirInodeNumber
 		highestUnlinkedName = dirs[i]
@@ -1413,7 +1509,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	haveObstacle := false
 	var obstacleInodeNumber inode.InodeNumber
 	if 0 == len(dirs) {
-		obstacleInodeNumber, err1 := mS.VolumeHandle.Lookup(dirInodeNumber, vObjectBaseName)
+		obstacleInodeNumber, err1 := mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, vObjectBaseName)
 		if err1 != nil && blunder.Errno(err1) == int(blunder.NotFoundError) {
 			// File not found? Good!
 		} else if err1 != nil {
@@ -1423,7 +1519,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 			haveObstacle = true
 			// Grab our own lock and call .getstatHelper() instead of
 			// letting Getstat() do it for us;
-			obstacleInodeLock, err1 := mS.getWriteLock(obstacleInodeNumber, callerID)
+			obstacleInodeLock, err1 := mS.volStruct.getWriteLock(obstacleInodeNumber, callerID)
 			if err1 != nil {
 				err = err1
 				return
@@ -1447,7 +1543,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	// That's because this inode was created in this function, so
 	// nobody else knows it exists, so we don't have to worry about
 	// anyone else accessing it.
-	err = mS.VolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
 	if err != nil {
 		logger.ErrorfWithError(err, "MiddlewarePutComplete: failed final Link(%v, %v, %v)", dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
 
@@ -1455,7 +1551,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 		// the old thing back. We're still holding locks, so it's safe
 		// to try.
 		if haveObstacle {
-			relinkErr := mS.VolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber)
+			relinkErr := mS.volStruct.VolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber)
 			// the rest of the relevant variables were logged in the previous error-logging call
 			logger.ErrorfWithError(relinkErr, "MiddlewarePutComplete: relink failed for inode=%v name=%v", obstacleInodeNumber, vObjectBaseName)
 		}
@@ -1467,13 +1563,13 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	// RPC call to fail. As far as this function's caller is
 	// concerned, everything worked as intended.
 	if haveObstacle {
-		destroyErr := mS.Destroy(obstacleInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(obstacleInodeNumber)
 		if destroyErr != nil {
 			logger.ErrorfWithError(destroyErr, "MiddlewarePutComplete: error destroying inode %v", obstacleInodeNumber)
 		}
 	}
 
-	metadata, err := mS.GetMetadata(fileInodeNumber) // not getstat() since we're already holding a lock on this inode
+	metadata, err := mS.volStruct.VolumeHandle.GetMetadata(fileInodeNumber) // not getstat() since we're already holding a lock on this inode
 	if err != nil {
 		return
 	}
@@ -1498,46 +1594,46 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 	// Yes, it's a heavy lock to hold on the root inode. However, we
 	// might need to add a new directory entry there, so there's not
 	// much else we can do.
-	rootInodeLock, err := mS.getWriteLock(inode.RootDirInodeNumber, nil)
+	rootInodeLock, err := mS.volStruct.getWriteLock(inode.RootDirInodeNumber, nil)
 	if nil != err {
 		return
 	}
 	defer rootInodeLock.Unlock()
 
-	containerInodeNumber, err = mS.VolumeHandle.Lookup(inode.RootDirInodeNumber, containerName)
+	containerInodeNumber, err = mS.volStruct.VolumeHandle.Lookup(inode.RootDirInodeNumber, containerName)
 	if err != nil && blunder.IsNot(err, blunder.NotFoundError) {
 		return
 	} else if err != nil {
 		// No such container, so we create it
 
-		newDirInodeNumber, err = mS.CreateDir(inode.PosixModePerm, 0, 0)
+		newDirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return
 		}
 
-		newDirInodeLock, err = mS.getWriteLock(newDirInodeNumber, nil)
+		newDirInodeLock, err = mS.volStruct.getWriteLock(newDirInodeNumber, nil)
 		defer newDirInodeLock.Unlock()
 
-		err = mS.PutStream(newDirInodeNumber, MiddlewareStream, newMetadata)
+		err = mS.volStruct.VolumeHandle.PutStream(newDirInodeNumber, MiddlewareStream, newMetadata)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return
 		}
 
-		err = mS.VolumeHandle.Link(inode.RootDirInodeNumber, containerName, newDirInodeNumber)
+		err = mS.volStruct.VolumeHandle.Link(inode.RootDirInodeNumber, containerName, newDirInodeNumber)
 
 		return
 	}
 
-	containerInodeLock, err = mS.getWriteLock(containerInodeNumber, nil)
+	containerInodeLock, err = mS.volStruct.getWriteLock(containerInodeNumber, nil)
 	if err != nil {
 		return
 	}
 	defer containerInodeLock.Unlock()
 
 	// Existing container: just update the metadata
-	existingMetadata, err = mS.GetStream(containerInodeNumber, MiddlewareStream)
+	existingMetadata, err = mS.volStruct.VolumeHandle.GetStream(containerInodeNumber, MiddlewareStream)
 
 	// GetStream() will return an error if there is no "middleware" stream
 	if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
@@ -1551,7 +1647,7 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 		err = blunder.NewError(blunder.TryAgainError, "Metadata differs - actual: %v request: %v", existingMetadata, oldMetadata)
 		return
 	}
-	err = mS.PutStream(containerInodeNumber, MiddlewareStream, newMetadata)
+	err = mS.volStruct.VolumeHandle.PutStream(containerInodeNumber, MiddlewareStream, newMetadata)
 
 	stats.IncrementOperations(&stats.FsMwPutContainerOps)
 	return
@@ -1564,13 +1660,13 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return 0, err
 	}
 
-	newDirInodeNumber, err = mS.CreateDir(filePerm, userID, groupID)
+	newDirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(filePerm, userID, groupID)
 	if err != nil {
 		logger.ErrorWithError(err)
 		return 0, err
 	}
 
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1580,16 +1676,16 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
-		destroyErr := mS.Destroy(newDirInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(F_OK) in fs.Mkdir", newDirInodeNumber)
 		}
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return 0, err
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
-		destroyErr := mS.Destroy(newDirInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(W_OK|X_OK) in fs.Mkdir", newDirInodeNumber)
 		}
@@ -1597,9 +1693,9 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return 0, err
 	}
 
-	err = mS.VolumeHandle.Link(inodeNumber, basename, newDirInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, newDirInodeNumber)
 	if err != nil {
-		destroyErr := mS.Destroy(newDirInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.Mkdir", newDirInodeNumber)
 		}
@@ -1610,7 +1706,7 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1620,19 +1716,22 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	err = mS.DeleteStream(inodeNumber, streamName)
+	err = mS.volStruct.VolumeHandle.DeleteStream(inodeNumber, streamName)
 	if err != nil {
 		logger.ErrorfWithError(err, "Failed to delete XAttr %v of inode %v", streamName, inodeNumber)
 	}
+
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
+
 	stats.IncrementOperations(&stats.FsRemoveXattrOps)
 	return
 }
@@ -1655,13 +1754,13 @@ func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroup
 	callerID := dlm.GenerateCallerID()
 
 	// Allocate the source dir lock
-	srcDirLock, err := mS.initInodeLock(srcDirInodeNumber, callerID)
+	srcDirLock, err := mS.volStruct.initInodeLock(srcDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
 
 	// Allocate the dest dir lock
-	dstDirLock, err := mS.initInodeLock(dstDirInodeNumber, callerID)
+	dstDirLock, err := mS.volStruct.initInodeLock(dstDirInodeNumber, callerID)
 	if err != nil {
 		return err
 	}
@@ -1673,11 +1772,11 @@ retryLock:
 		return
 	}
 
-	if !mS.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1695,12 +1794,12 @@ retryLock:
 			return err
 		}
 
-		if !mS.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 			srcDirLock.Unlock()
 			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 			return
 		}
-		if !mS.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 			srcDirLock.Unlock()
 			err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 			return
@@ -1708,7 +1807,7 @@ retryLock:
 	}
 
 	// Now we have the locks for both directories; we can do the move
-	err = mS.Move(srcDirInodeNumber, srcBasename, dstDirInodeNumber, dstBasename)
+	err = mS.volStruct.VolumeHandle.Move(srcDirInodeNumber, srcBasename, dstDirInodeNumber, dstBasename)
 
 	// Release our locks and return
 	if !srcAndDestDirsAreSame {
@@ -1716,12 +1815,14 @@ retryLock:
 	}
 	srcDirLock.Unlock()
 
+	// TODO: Where is the lock on the potentially removed fileInode overwritten by the Move() call?
+
 	stats.IncrementOperations(&stats.FsRenameOps)
 	return err
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1731,16 +1832,16 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	inodeType, err := mS.VolumeHandle.GetType(inodeNumber)
+	inodeType, err := mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		logger.ErrorfWithError(err, "couldn't get type for inode %v", inodeNumber)
 		return buf, err
@@ -1753,7 +1854,7 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 	}
 
 	profiler.AddEventNow("before inode.Read()")
-	buf, err = mS.VolumeHandle.Read(inodeNumber, offset, length, profiler)
+	buf, err = mS.volStruct.VolumeHandle.Read(inodeNumber, offset, length, profiler)
 	profiler.AddEventNow("after inode.Read()")
 	if uint64(len(buf)) > length {
 		err = fmt.Errorf("%s: Buf length %v is greater than supplied length %v", utils.GetFnName(), uint64(len(buf)), length)
@@ -1766,7 +1867,7 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 }
 
 func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1776,11 +1877,11 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1792,7 +1893,7 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (entries []inode.DirEntry, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return entries, err
 	}
@@ -1802,11 +1903,11 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1825,7 +1926,7 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 }
 
 func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1834,11 +1935,11 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 		return
 	}
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1855,7 +1956,7 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	// Get stats
 	statEntries = make([]Stat, numEntries)
 	for i := range dirEntries {
-		entryInodeLock, err1 := mS.initInodeLock(dirEntries[i].InodeNumber, nil)
+		entryInodeLock, err1 := mS.volStruct.initInodeLock(dirEntries[i].InodeNumber, nil)
 		if err = err1; err != nil {
 			return
 		}
@@ -1879,7 +1980,7 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1888,11 +1989,11 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 		return
 	}
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1916,7 +2017,7 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	// Get stats
 	statEntries = make([]Stat, numEntries)
 	for i := range dirEntries {
-		entryInodeLock, err1 := mS.initInodeLock(dirEntries[i].InodeNumber, nil)
+		entryInodeLock, err1 := mS.volStruct.initInodeLock(dirEntries[i].InodeNumber, nil)
 		if err = err1; err != nil {
 			return
 		}
@@ -1940,7 +2041,7 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1950,22 +2051,22 @@ func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.Inode
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	target, err = mS.GetSymlink(inodeNumber)
+	target, err = mS.volStruct.VolumeHandle.GetSymlink(inodeNumber)
 	stats.IncrementOperations(&stats.FsSymlinkReadOps)
 	return target, err
 }
 
 func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, newSize uint64) (err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -1975,23 +2076,24 @@ func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	err = mS.SetSize(inodeNumber, newSize)
+	err = mS.volStruct.VolumeHandle.SetSize(inodeNumber, newSize)
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 	stats.IncrementOperations(&stats.FsSetsizeOps)
 	return err
 }
 
 func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
 	callerID := dlm.GenerateCallerID()
-	inodeLock, err := mS.initInodeLock(inodeNumber, callerID)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -2001,21 +2103,21 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	basenameInodeNumber, err := mS.VolumeHandle.Lookup(inodeNumber, basename)
+	basenameInodeNumber, err := mS.volStruct.VolumeHandle.Lookup(inodeNumber, basename)
 	if nil != err {
 		return
 	}
 
-	basenameInodeLock, err := mS.initInodeLock(basenameInodeNumber, callerID)
+	basenameInodeLock, err := mS.volStruct.initInodeLock(basenameInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -2025,12 +2127,12 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer basenameInodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	basenameInodeType, err := mS.VolumeHandle.GetType(basenameInodeNumber)
+	basenameInodeType, err := mS.volStruct.VolumeHandle.GetType(basenameInodeNumber)
 	if nil != err {
 		return
 	}
@@ -2041,7 +2143,7 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 
-	dirEntries, err := mS.NumDirEntries(basenameInodeNumber)
+	dirEntries, err := mS.volStruct.VolumeHandle.NumDirEntries(basenameInodeNumber)
 	if nil != err {
 		return
 	}
@@ -2052,12 +2154,12 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 
-	err = mS.VolumeHandle.Unlink(inodeNumber, basename)
+	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename)
 	if nil != err {
 		return
 	}
 
-	err = mS.Destroy(basenameInodeNumber)
+	err = mS.volStruct.VolumeHandle.Destroy(basenameInodeNumber)
 	if nil != err {
 		return
 	}
@@ -2067,7 +2169,7 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -2077,7 +2179,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.P_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.P_OK) {
 		err = blunder.NewError(blunder.NotPermError, "EPERM")
 		return
 	}
@@ -2086,7 +2188,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	crtime, ok := stat[StatCRTime]
 	if ok {
 		newCreationTime := time.Unix(0, int64(crtime))
-		err = mS.SetCreationTime(inodeNumber, newCreationTime)
+		err = mS.volStruct.VolumeHandle.SetCreationTime(inodeNumber, newCreationTime)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
@@ -2097,7 +2199,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	mtime, ok := stat[StatMTime]
 	if ok {
 		newModificationTime := time.Unix(0, int64(mtime))
-		err = mS.SetModificationTime(inodeNumber, newModificationTime)
+		err = mS.volStruct.VolumeHandle.SetModificationTime(inodeNumber, newModificationTime)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
@@ -2108,7 +2210,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	atime, ok := stat[StatATime]
 	if ok {
 		newAccessTime := time.Unix(0, int64(atime))
-		err = mS.SetAccessTime(inodeNumber, newAccessTime)
+		err = mS.volStruct.VolumeHandle.SetAccessTime(inodeNumber, newAccessTime)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
@@ -2119,7 +2221,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	ctime, ok := stat[StatCTime]
 	if ok {
 		newAccessTime := time.Unix(0, int64(ctime))
-		err = mS.SetAttrChangeTime(inodeNumber, newAccessTime)
+		err = mS.volStruct.VolumeHandle.SetAttrChangeTime(inodeNumber, newAccessTime)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
@@ -2129,7 +2231,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	// Set size, if present in the map
 	size, ok := stat[StatSize]
 	if ok {
-		err = mS.SetSize(inodeNumber, size)
+		err = mS.volStruct.VolumeHandle.SetSize(inodeNumber, size)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
@@ -2159,12 +2261,12 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	if settingUserID || settingGroupID {
 		if settingUserID {
 			if settingGroupID {
-				err = mS.SetOwnerUserIDGroupID(inodeNumber, inode.InodeUserID(newUserID), inode.InodeGroupID(newGroupID))
+				err = mS.volStruct.VolumeHandle.SetOwnerUserIDGroupID(inodeNumber, inode.InodeUserID(newUserID), inode.InodeGroupID(newGroupID))
 			} else { // only settingUserID is true
-				err = mS.SetOwnerUserID(inodeNumber, inode.InodeUserID(newUserID))
+				err = mS.volStruct.VolumeHandle.SetOwnerUserID(inodeNumber, inode.InodeUserID(newUserID))
 			}
 		} else { // only settingGroupID is true
-			err = mS.SetOwnerGroupID(inodeNumber, inode.InodeGroupID(newGroupID))
+			err = mS.volStruct.VolumeHandle.SetOwnerGroupID(inodeNumber, inode.InodeGroupID(newGroupID))
 		}
 		if nil != err {
 			logger.ErrorWithError(err)
@@ -2181,12 +2283,14 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 			return blunder.AddError(err, blunder.InvalidFileModeError)
 		}
 
-		err = mS.SetPermMode(inodeNumber, inode.InodeMode(filePerm))
+		err = mS.volStruct.VolumeHandle.SetPermMode(inodeNumber, inode.InodeMode(filePerm))
 		if err != nil {
 			logger.ErrorWithError(err)
 			return err
 		}
 	}
+
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
 	stats.IncrementOperations(&stats.FsSetstatOps)
 	return
@@ -2199,7 +2303,7 @@ const (
 )
 
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -2209,11 +2313,11 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -2235,10 +2339,12 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 		return blunder.AddError(err, blunder.InvalidArgError)
 	}
 
-	err = mS.PutStream(inodeNumber, streamName, value)
+	err = mS.volStruct.VolumeHandle.PutStream(inodeNumber, streamName, value)
 	if err != nil {
 		logger.ErrorfWithError(err, "Failed to set XAttr %v to inode %v", streamName, inodeNumber)
 	}
+
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
 	stats.IncrementOperations(&stats.FsSetXattrOps)
 	return
@@ -2247,7 +2353,7 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 	statVFS = make(map[StatVFSKey]uint64)
 
-	statVFS[StatVFSFilesystemID] = mS.GetFSID()
+	statVFS[StatVFSFilesystemID] = mS.volStruct.VolumeHandle.GetFSID()
 	statVFS[StatVFSBlockSize] = FsBlockSize
 	statVFS[StatVFSFragmentSize] = FsOptimalTransferSize
 	statVFS[StatVFSTotalBlocks] = VolFakeTotalBlocks
@@ -2275,12 +2381,12 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 
 	// Mode for symlinks defaults to rwxrwxrwx, i.e. inode.PosixModePerm
-	symlinkInodeNumber, err = mS.CreateSymlink(target, inode.PosixModePerm, userID, groupID)
+	symlinkInodeNumber, err = mS.volStruct.VolumeHandle.CreateSymlink(target, inode.PosixModePerm, userID, groupID)
 	if err != nil {
 		return
 	}
 
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -2290,16 +2396,16 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
-		destroyErr := mS.Destroy(symlinkInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(symlinkInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(F_OK) in fs.Symlink", symlinkInodeNumber)
 		}
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
-		destroyErr := mS.Destroy(symlinkInodeNumber)
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(symlinkInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(W_OK|X_OK) in fs.Symlink", symlinkInodeNumber)
 		}
@@ -2307,9 +2413,9 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 		return
 	}
 
-	err = mS.VolumeHandle.Link(inodeNumber, basename, symlinkInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, symlinkInodeNumber)
 	if err != nil {
-		destroyErr := mS.Destroy(symlinkInodeNumber)
+		destroyErr := mS.volStruct.VolumeHandle.Destroy(symlinkInodeNumber)
 		if destroyErr != nil {
 			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.Symlink", symlinkInodeNumber)
 		}
@@ -2322,7 +2428,7 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 
 func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
 	callerID := dlm.GenerateCallerID()
-	inodeLock, err := mS.initInodeLock(inodeNumber, callerID)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -2332,21 +2438,21 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	basenameInodeNumber, err := mS.VolumeHandle.Lookup(inodeNumber, basename)
+	basenameInodeNumber, err := mS.volStruct.VolumeHandle.Lookup(inodeNumber, basename)
 	if nil != err {
 		return
 	}
 
-	basenameInodeLock, err := mS.initInodeLock(basenameInodeNumber, callerID)
+	basenameInodeLock, err := mS.volStruct.initInodeLock(basenameInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -2356,7 +2462,7 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer basenameInodeLock.Unlock()
 
-	basenameInodeType, err := mS.VolumeHandle.GetType(basenameInodeNumber)
+	basenameInodeType, err := mS.volStruct.VolumeHandle.GetType(basenameInodeNumber)
 	if nil != err {
 		return
 	}
@@ -2367,18 +2473,20 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 		return
 	}
 
-	err = mS.VolumeHandle.Unlink(inodeNumber, basename)
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
+
+	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename)
 	if nil != err {
 		return
 	}
 
-	basenameLinkCount, err := mS.GetLinkCount(basenameInodeNumber)
+	basenameLinkCount, err := mS.volStruct.VolumeHandle.GetLinkCount(basenameInodeNumber)
 	if nil != err {
 		return
 	}
 
 	if 0 == basenameLinkCount {
-		err = mS.Destroy(basenameInodeNumber)
+		err = mS.volStruct.VolumeHandle.Destroy(basenameInodeNumber)
 		if nil != err {
 			return
 		}
@@ -2399,12 +2507,12 @@ func (mS *mountStruct) Validate(inodeNumber inode.InodeNumber) (err error) {
 }
 
 func (mS *mountStruct) VolumeName() (volumeName string) {
-	volumeName = mS.volumeName
+	volumeName = mS.volStruct.volumeName
 	return
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
-	inodeLock, err := mS.initInodeLock(inodeNumber, nil)
+	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
 	}
@@ -2414,22 +2522,23 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
 	profiler.AddEventNow("before inode.Write()")
-	err = mS.VolumeHandle.Write(inodeNumber, offset, buf, profiler)
+	err = mS.volStruct.VolumeHandle.Write(inodeNumber, offset, buf, profiler)
 	profiler.AddEventNow("after inode.Write()")
 	// write to Swift presumably succeeds or fails as a whole
 	if err != nil {
 		return 0, err
 	}
+	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
 	stats.IncrementOperations(&stats.FsWriteOps)
 	return
@@ -2488,11 +2597,11 @@ func revSplitPath(fullpath string) []string {
 // non-symlink may be a directory, a file, or something that does not
 // exist.
 func (mS *mountStruct) resolvePathForRead(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.ensureReadLock)
+	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureReadLock)
 }
 
 func (mS *mountStruct) resolvePathForWrite(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.ensureWriteLock)
+	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureWriteLock)
 }
 
 func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
@@ -2540,7 +2649,7 @@ func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLo
 		// If we find a relative symlink (does not start with "/"),
 		// then we'll need to keep this lock around for our next pass
 		// through the loop.
-		cursorInodeNumber, err = mS.VolumeHandle.Lookup(dirInodeNumber, segment)
+		cursorInodeNumber, err = mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, segment)
 		if err != nil {
 			return
 		}
@@ -2549,7 +2658,7 @@ func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLo
 		if err != nil {
 			return
 		}
-		cursorInodeType, err = mS.VolumeHandle.GetType(cursorInodeNumber)
+		cursorInodeType, err = mS.volStruct.VolumeHandle.GetType(cursorInodeNumber)
 		if err != nil {
 			return
 		}
@@ -2564,7 +2673,7 @@ func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLo
 				followsRemaining -= 1
 			}
 
-			target, err1 := mS.GetSymlink(cursorInodeNumber)
+			target, err1 := mS.volStruct.VolumeHandle.GetSymlink(cursorInodeNumber)
 			if cursorInodeLock != nil {
 				cursorInodeLock.Unlock() // done with this symlink, error or not
 				cursorInodeLock = nil
@@ -2647,12 +2756,12 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 	fileType := inode.InodeType(statResult[StatFType])
 	if fileType == inode.FileType || fileType == inode.SymlinkType {
 		// Files and symlinks can always, barring errors, be unlinked
-		err = mS.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+		err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
 		if err != nil {
 			return err
 		}
 	} else if fileType == inode.DirType {
-		numEntries, err := mS.NumDirEntries(obstacleInodeNumber)
+		numEntries, err := mS.volStruct.VolumeHandle.NumDirEntries(obstacleInodeNumber)
 		if err != nil {
 			return err
 		}
@@ -2672,7 +2781,7 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 			// We already have the locks and we've already
 			// checked that it's empty, so let's just get
 			// down to it.
-			err = mS.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+			err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
 			if err != nil {
 				return err
 			}
@@ -2699,12 +2808,12 @@ func removeObstacleToObjectPut(mount *mountStruct, callerID dlm.CallerID, dirIno
 	fileType := inode.InodeType(statResult[StatFType])
 	if fileType == inode.FileType || fileType == inode.SymlinkType {
 		// Files and symlinks can always, barring errors, be unlinked
-		err = mount.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+		err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
 		if err != nil {
 			return err
 		}
 	} else if fileType == inode.DirType {
-		numEntries, err := mount.NumDirEntries(obstacleInodeNumber)
+		numEntries, err := mount.volStruct.VolumeHandle.NumDirEntries(obstacleInodeNumber)
 		if err != nil {
 			return err
 		}
@@ -2724,7 +2833,7 @@ func removeObstacleToObjectPut(mount *mountStruct, callerID dlm.CallerID, dirIno
 			// We already have the locks and we've already
 			// checked that it's empty, so let's just get
 			// down to it.
-			err = mount.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+			err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
 			if err != nil {
 				return err
 			}
@@ -2750,7 +2859,7 @@ type dirToDescend struct {
 
 // readdir is a helper function to do the work of Readdir once we hold the lock.
 func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64, callerID dlm.CallerID) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
-	lockID, err := mS.makeLockID(inodeNumber)
+	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -2759,7 +2868,7 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 		return nil, 0, false, blunder.AddError(err, blunder.NotFoundError)
 	}
 
-	entries, areMoreEntries, err = mS.ReadDir(inodeNumber, maxEntries, maxBufSize, prevBasenameReturned)
+	entries, areMoreEntries, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, maxEntries, maxBufSize, prevBasenameReturned)
 	if err != nil {
 		return entries, numEntries, areMoreEntries, err
 	}
@@ -2770,7 +2879,7 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 		if inodeNumber == entries[i].InodeNumber {
 			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
 		} else {
-			entryInodeLock, err1 := mS.initInodeLock(entries[i].InodeNumber, callerID)
+			entryInodeLock, err1 := mS.volStruct.initInodeLock(entries[i].InodeNumber, callerID)
 			if err = err1; err != nil {
 				return
 			}
@@ -2787,7 +2896,7 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 
 // readdirOne is a helper function to do the work of ReaddirOne once we hold the lock.
 func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
-	lockID, err := mS.makeLockID(inodeNumber)
+	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
 	}
@@ -2797,7 +2906,7 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLo
 		return
 	}
 
-	entries, _, err = mS.ReadDir(inodeNumber, 1, 0, prevDirLocation)
+	entries, _, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirLocation)
 	if err != nil {
 		// Note: by convention, we don't log errors in helper functions; the caller should
 		//       be the one to log or not given its use case.
@@ -2809,7 +2918,7 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLo
 		if inodeNumber == entries[i].InodeNumber {
 			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
 		} else {
-			entryInodeLock, err1 := mS.initInodeLock(entries[i].InodeNumber, callerID)
+			entryInodeLock, err1 := mS.volStruct.initInodeLock(entries[i].InodeNumber, callerID)
 			if err = err1; err != nil {
 				return
 			}
