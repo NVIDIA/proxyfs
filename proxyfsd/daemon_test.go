@@ -1,7 +1,7 @@
 package proxyfsd
 
 import (
-	"io/ioutil"
+	"bytes"
 	"os"
 	"sync"
 	"testing"
@@ -9,6 +9,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/ramswift"
 )
 
@@ -18,23 +20,32 @@ func TestMain(m *testing.M) {
 }
 
 func TestDaemon(t *testing.T) {
-	HeadhunterDirPath, err := ioutil.TempDir("", "headhunter.db")
-	if nil != err {
-		t.Fatalf("ioutil.TempDir(\"\", \"headhunter.db\") returned error: %v", err)
-	}
+	var (
+		bytesWritten                 uint64
+		confMapStrings               []string
+		createdFileInodeNumber       inode.InodeNumber
+		err                          error
+		errChan                      chan error
+		mountHandle                  fs.MountHandle
+		proxyfsdSignalHandlerIsArmed bool
+		ramswiftDoneChan             chan bool
+		ramswiftSignalHandlerIsArmed bool
+		readData                     []byte
+		toReadFileInodeNumber        inode.InodeNumber
+		wg                           sync.WaitGroup
+	)
 
-	signalHandlerIsArmed := false
-	errChan := make(chan error, 1) // Must be buffered to avoid race
+	// Setup a ramswift instance leveraging test config
 
-	ramswiftSignalHandlerIsArmed := false
-	ramswiftDoneChan := make(chan bool, 1)
+	ramswiftSignalHandlerIsArmed = false
+	ramswiftDoneChan = make(chan bool, 1)
 
-	goodConfs := []string{
+	confMapStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
-		"Logging.LogFilePath=proxyfsd.log",
+		"Logging.LogFilePath=",
 		"Peer1.PublicIPAddr=127.0.0.1",
 		"Peer1.PrivateIPAddr=127.0.0.1",
 		"Peer1.ReadCacheQuotaFraction=0.20",
@@ -90,27 +101,94 @@ func TestDaemon(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	var wg sync.WaitGroup
+	go ramswift.Daemon("/dev/null", confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
 
-	go ramswift.Daemon("/dev/null", goodConfs, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
+	for !ramswiftSignalHandlerIsArmed {
+		time.Sleep(100 * time.Millisecond)
+	}
 
-	go Daemon("/dev/null", goodConfs, &signalHandlerIsArmed, errChan, &wg)
+	// Launch an instance of proxyfsd using that same config
 
-	for !signalHandlerIsArmed {
+	proxyfsdSignalHandlerIsArmed = false
+	errChan = make(chan error, 1) // Must be buffered to avoid race
+
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg)
+
+	for !proxyfsdSignalHandlerIsArmed {
 		select {
-		case err := <-errChan:
+		case err = <-errChan:
 			if nil == err {
-				t.Fatalf("Daemon() exited successfully despite not being told to do so")
+				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 1]")
 			} else {
-				t.Fatalf("Daemon() exited with error == \"%v\"", err)
+				t.Fatalf("Daemon() exited with error [case 1a]: %v", err)
 			}
 		default:
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
-	for !ramswiftSignalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
+	// Write to the volume (with no flush so that only time-based/restart flush is performed)
+
+	mountHandle, err = fs.Mount("CommonVolume", fs.MountOptions(0))
+	if nil != err {
+		t.Fatalf("fs.Mount() failed [case 1]: %v", err)
+	}
+
+	createdFileInodeNumber, err = mountHandle.Create(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		inode.RootDirInodeNumber,
+		"TestFile",
+		inode.R_OK|inode.W_OK,
+	)
+	if nil != err {
+		t.Fatalf("fs.Create() failed: %v", err)
+	}
+
+	bytesWritten, err = mountHandle.Write(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		createdFileInodeNumber,
+		0,
+		[]byte{0x00, 0x01, 0x02, 0x03},
+		nil,
+	)
+	if nil != err {
+		t.Fatalf("fs.Write() failed: %v", err)
+	}
+	if 4 != bytesWritten {
+		t.Fatalf("fs.Write() returned unexpected bytesWritten")
+	}
+
+	// Verify written data before restart
+
+	toReadFileInodeNumber, err = mountHandle.Lookup(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		inode.RootDirInodeNumber,
+		"TestFile",
+	)
+	if nil != err {
+		t.Fatalf("fs.Lookup() failed [case 1]: %v", err)
+	}
+
+	readData, err = mountHandle.Read(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		toReadFileInodeNumber,
+		0,
+		4,
+		nil,
+	)
+	if nil != err {
+		t.Fatalf("fs.Read() failed [case 1]: %v", err)
+	}
+	if 0 != bytes.Compare([]byte{0x00, 0x01, 0x02, 0x03}, readData) {
+		t.Fatalf("fs.Read() returned unexpected readData [case 1]")
 	}
 
 	// Send ourself a SIGTERM to signal normal termination of mainWithArgs()
@@ -120,11 +198,70 @@ func TestDaemon(t *testing.T) {
 	err = <-errChan
 
 	if nil != err {
-		t.Fatalf("Daemon() exited with error == \"%v\"", err)
+		t.Fatalf("Daemon() exited with error [case 1b]: == %v", err)
 	}
 
-	err = os.RemoveAll(HeadhunterDirPath)
+	// Relaunch an instance of proxyfsd
+
+	proxyfsdSignalHandlerIsArmed = false
+	errChan = make(chan error, 1) // Must be buffered to avoid race
+
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg)
+
+	for !proxyfsdSignalHandlerIsArmed {
+		select {
+		case err = <-errChan:
+			if nil == err {
+				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 2]")
+			} else {
+				t.Fatalf("Daemon() exited with error [case 2a]: %v", err)
+			}
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	// Verify written data before restart
+
+	mountHandle, err = fs.Mount("CommonVolume", fs.MountOptions(0))
 	if nil != err {
-		t.Fatalf("os.RemoveAll() returned error == \"%v\"", err)
+		t.Fatalf("fs.Mount() failed [case 2]: %v", err)
+	}
+
+	toReadFileInodeNumber, err = mountHandle.Lookup(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		inode.RootDirInodeNumber,
+		"TestFile",
+	)
+	if nil != err {
+		t.Fatalf("fs.Lookup() failed [case 2]: %v", err)
+	}
+
+	readData, err = mountHandle.Read(
+		inode.InodeRootUserID,
+		inode.InodeRootGroupID,
+		nil,
+		toReadFileInodeNumber,
+		0,
+		4,
+		nil,
+	)
+	if nil != err {
+		t.Fatalf("fs.Read() failed [case 2]: %v", err)
+	}
+	if 0 != bytes.Compare([]byte{0x00, 0x01, 0x02, 0x03}, readData) {
+		t.Fatalf("fs.Read() returned unexpected readData [case 2]")
+	}
+
+	// Send ourself a SIGTERM to signal normal termination of mainWithArgs()
+
+	unix.Kill(unix.Getpid(), unix.SIGTERM)
+
+	err = <-errChan
+
+	if nil != err {
+		t.Fatalf("Daemon() exited with error [case 2b]: %v", err)
 	}
 }
