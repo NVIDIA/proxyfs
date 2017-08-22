@@ -674,14 +674,23 @@ class PfsMiddleware(object):
             # Check account to see if this is a bimodal-access account or
             # not. ProxyFS is the sole source of truth on this matter.
             try:
-                proxyfsd_addrinfo = self._fetch_owning_proxyfs(acc)
+                is_bimodal, proxyfsd_addrinfo = self._fetch_owning_proxyfs(acc)
             except NoSuchHostnameError as err:
                 # proxyfsd gave us a hostname to connect to, but we couldn't
                 # resolve it
                 return swob.HTTPInternalServerError(request=req, body=str(err))
 
-            if proxyfsd_addrinfo is None:
+            if not is_bimodal and proxyfsd_addrinfo is None:
+                # This is a plain old Swift account, so we get out of the
+                # way.
                 return self.app
+            elif proxyfsd_addrinfo is None:
+                # This is a bimodal account, but there is currently no
+                # proxyfsd responsible for it. This can happen during a move
+                # of a ProxyFS volume from one proxyfsd to another, and
+                # should be cleared up quickly. Nevertheless, all we can do
+                # here is return an error to the client.
+                return swob.HTTPServiceUnavailable(request=req)
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             # For requests that we make to Swift, we have to ensure that any
@@ -1508,6 +1517,8 @@ class PfsMiddleware(object):
         in-memory list (or whatever data structure it uses) of known
         accounts, so it can answer the RPC request very quickly. Storing
         that result in memcached wouldn't be any faster than asking ProxyFS.
+
+        :returns: 2-tuple (is-bimodal, proxyfsd-addrinfo).
         """
         cached_result = self._cached_is_bimodal.get(account_name)
         if cached_result:
@@ -1524,6 +1535,12 @@ class PfsMiddleware(object):
                 self._rpc_call(self.proxyfsd_addrinfo, iab_req))
 
         if is_bimodal:
+            if not proxyfsd_ip_or_hostname:
+                # When an account is moving between proxyfsd nodes, it's
+                # bimodal but nobody owns it. This is usually a
+                # very-short-lived temporary condition, so we don't cache
+                # this result.
+                return (True, None)
             # Just run whatever we got through socket.getaddrinfo(). If we
             # got an IPv4 or IPv6 address, it'll come out the other side
             # unchanged. If we got a hostname, it'll get resolved.
@@ -1548,9 +1565,9 @@ class PfsMiddleware(object):
             # Since we didn't get an exception, we resolved the hostname
             # to *something*, which means there's at least one element
             # in addrinfos.
-            res = addrinfos[0]
+            res = (True, addrinfos[0])
         else:
-            res = None
+            res = (False, None)
         self._cached_is_bimodal[account_name] = (res, time.time())
         return res
 
