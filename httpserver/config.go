@@ -41,11 +41,11 @@ var globals globalsStruct
 
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		ok          bool
-		primaryPeer string
-		volume      *volumeStruct
-		volumeList  []string
-		volumeName  string
+		ok              bool
+		primaryPeerList []string
+		volume          *volumeStruct
+		volumeList      []string
+		volumeName      string
 	)
 
 	globals.confMap = confMap
@@ -65,32 +65,38 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if primaryPeer == globals.whoAmI {
-			volume = &volumeStruct{
-				name:           volumeName,
-				lastStartTime:  nil,
-				lastStopTime:   nil,
-				lastFinishTime: nil,
-				lastRunErr:     nil,
-				fsckRunning:    false,
-				stopChan:       make(chan bool, 1),
-				errChan:        make(chan error, 1),
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				volume = &volumeStruct{
+					name:           volumeName,
+					lastStartTime:  nil,
+					lastStopTime:   nil,
+					lastFinishTime: nil,
+					lastRunErr:     nil,
+					fsckRunning:    false,
+					stopChan:       make(chan bool, 1),
+					errChan:        make(chan error, 1),
+				}
+				ok, err = globals.volumeLLRB.Put(volumeName, volume)
+				if nil != err {
+					err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
+					return
+				}
 			}
-			ok, err = globals.volumeLLRB.Put(volumeName, volume)
-			if nil != err {
-				err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
-				return
-			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
 		}
 	}
 
@@ -127,7 +133,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		ipAddr          string
 		numVolumes      int
 		ok              bool
-		primaryPeer     string
+		primaryPeerList []string
 		tcpPort         uint16
 		volumeIndex     int
 		volumeList      []string
@@ -187,14 +193,20 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	volumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if primaryPeer == globals.whoAmI {
-			volumeMap[volumeName] = true
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				volumeMap[volumeName] = true
+			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
 		}
 	}
 
@@ -248,11 +260,11 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		ok          bool
-		primaryPeer string
-		volume      *volumeStruct
-		volumeList  []string
-		volumeName  string
+		ok              bool
+		primaryPeerList []string
+		volume          *volumeStruct
+		volumeList      []string
+		volumeName      string
 	)
 
 	globals.Lock()
@@ -265,39 +277,45 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
 		}
 
-		if primaryPeer == globals.whoAmI {
-			_, ok, err = globals.volumeLLRB.GetByKey(volumeName)
-			if nil != err {
-				err = fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err)
-				return
-			}
-			if !ok {
-				volume = &volumeStruct{
-					name:           volumeName,
-					lastStartTime:  nil,
-					lastStopTime:   nil,
-					lastFinishTime: nil,
-					lastRunErr:     nil,
-					fsckRunning:    false,
-					stopChan:       make(chan bool, 1),
-					errChan:        make(chan error, 1),
-				}
-				ok, err = globals.volumeLLRB.Put(volumeName, volume)
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI == primaryPeerList[0] {
+				_, ok, err = globals.volumeLLRB.GetByKey(volumeName)
 				if nil != err {
-					err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
+					err = fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err)
 					return
 				}
 				if !ok {
-					err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
-					return
+					volume = &volumeStruct{
+						name:           volumeName,
+						lastStartTime:  nil,
+						lastStopTime:   nil,
+						lastFinishTime: nil,
+						lastRunErr:     nil,
+						fsckRunning:    false,
+						stopChan:       make(chan bool, 1),
+						errChan:        make(chan error, 1),
+					}
+					ok, err = globals.volumeLLRB.Put(volumeName, volume)
+					if nil != err {
+						err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
+						return
+					}
+					if !ok {
+						err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
+						return
+					}
 				}
 			}
+		} else {
+			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
 		}
 	}
 

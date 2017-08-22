@@ -1,5 +1,5 @@
 hash: 203b9e910318e7042372cb61f10b971f00e649347370fb6a70004e9775e2d18a
-updated: 2017-07-25T14:41:53.931795183-07:00
+updated: 2017-08-16T14:33:53.413844387-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -15,27 +15,32 @@ imports:
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/Sirupsen/logrus
-  version: 8d4f6a97d3fe8725a31e3185c7a877a5e1dc6f09
+  version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
 - name: github.com/stretchr/testify
-  version: 05e8a0eda380579888eb53c394909df027f06991
+  version: 890a5c3458b43e6104ff5da8dfa139d013d77544
   subpackages:
   - assert
 - name: github.com/swiftstack/conf
-  version: 8f742304a86191941be2d20d9b086babce15a5dc
+  version: febf000c9efef945f1f8691e606ed1664c247aab
 - name: github.com/swiftstack/cstruct
   version: d95eae1090e554a03651062ec2fee2627df9b23b
 - name: github.com/swiftstack/sortedmap
   version: 36475f2556f000b821290f4a95f1c89378029a86
+- name: golang.org/x/crypto
+  version: b176d7def5d71bdd214203491f89843ed217f420
+  subpackages:
+  - ssh/terminal
 - name: golang.org/x/net
-  version: ab5485076ff3407ad2d02db054635913f017b0ed
+  version: 1c05540f6879653db88113bc4a2b70aec4bd491f
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 14ac33bf8474b62c65cae263af2e4d3b543cc699
+  version: 9f7170bcd8e9f4d3691c06401119c46a769a1e03
   subpackages:
   - unix
+  - windows
 - name: golang.org/x/tools
-  version: 3da34b1b520a543128e8441cd2ffffc383111d03
+  version: 84a35ef54dff3c5596983e180ec10919fc432242
   subpackages:
   - cmd/stringer
 testImports:

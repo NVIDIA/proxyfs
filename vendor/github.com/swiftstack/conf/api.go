@@ -325,6 +325,29 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 	return
 }
 
+// VerifyOptionValueIsEmpty returns an error if [sectionName]valueName's string value is empty
+func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName string) (err error) {
+	section, ok := confMap[sectionName]
+	if !ok {
+		err = fmt.Errorf("[%v] missing", sectionName)
+		return
+	}
+
+	option, ok := section[optionName]
+	if !ok {
+		err = fmt.Errorf("[%v]%v missing", sectionName, optionName)
+		return
+	}
+
+	if 0 == len(option) {
+		err = nil
+	} else {
+		err = fmt.Errorf("[%v]%v must have no value", sectionName, optionName)
+	}
+
+	return
+}
+
 // FetchOptionValueStringSlice returns [sectionName]valueName's string values as a (non-emptry) []string
 func (confMap ConfMap) FetchOptionValueStringSlice(sectionName string, optionName string) (optionValue []string, err error) {
 	optionValue = []string{}

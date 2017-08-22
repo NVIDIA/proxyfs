@@ -498,6 +498,22 @@ class TestAccountHead(BaseMiddlewareTest):
         self.assertEqual(headers.get("ProxyFS-Enabled"), "yes")
         self.assertEqual(body, '')
 
+    def test_in_transit(self):
+
+        def fake_RpcIsAccountBimodal(request):
+            return {
+                "error": None,
+                "result": {
+                    "IsBimodal": True,
+                    "ActivePeerPrivateIPAddr": ""}}
+        self.fake_rpc.register_handler("Server.RpcIsAccountBimodal",
+                                       fake_RpcIsAccountBimodal)
+
+        req = swob.Request.blank("/v1/AUTH_test",
+                                 environ={"REQUEST_METHOD": "HEAD"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '503 Service Unavailable')
+
 
 class TestObjectGet(BaseMiddlewareTest):
     def setUp(self):
@@ -3063,11 +3079,28 @@ class TestBimodalCaching(unittest.TestCase):
         def fake_RpcIsAccountBimodal(request):
             acc = request["AccountName"]
             rpc_iab_calls.append(acc)
-            return {
-                "error": None,
-                "result": {
-                    "IsBimodal": acc.startswith('b'),
-                    "ActivePeerPrivateIPAddr": "10.221.76.210"}}
+
+            if acc == 'bob':
+                # Normal, happy bimodal account
+                return {
+                    "error": None,
+                    "result": {
+                        "IsBimodal": True,
+                        "ActivePeerPrivateIPAddr": "10.221.76.210"}}
+            elif acc == 'david':
+                # Temporarily in limbo as it's being moved from one proxyfsd
+                # to another
+                return {
+                    "error": None,
+                    "result": {
+                        "IsBimodal": True,
+                        "ActivePeerPrivateIPAddr": ""}}
+            else:
+                return {
+                    "error": None,
+                    "result": {
+                        "IsBimodal": False,
+                        "ActivePeerPrivateIPAddr": ""}}
         self.fake_rpc.register_handler("Server.RpcIsAccountBimodal",
                                        fake_RpcIsAccountBimodal)
 
@@ -3080,6 +3113,8 @@ class TestBimodalCaching(unittest.TestCase):
             a_req = swob.Request.blank("/v1/alice",
                                        environ={"REQUEST_METHOD": "HEAD"})
             b_req = swob.Request.blank("/v1/bob",
+                                       environ={"REQUEST_METHOD": "HEAD"})
+            d_req = swob.Request.blank("/v1/david",
                                        environ={"REQUEST_METHOD": "HEAD"})
 
             # First time, we have a completely empty cache, so an RPC is made
@@ -3108,3 +3143,9 @@ class TestBimodalCaching(unittest.TestCase):
             list(self.pfs(a_req.environ, start_response))
             list(self.pfs(b_req.environ, start_response))
             self.assertEqual(rpc_iab_calls, ["alice"])
+
+            # In-transit accounts don't get cached
+            del rpc_iab_calls[:]
+            list(self.pfs(d_req.environ, start_response))
+            list(self.pfs(d_req.environ, start_response))
+            self.assertEqual(rpc_iab_calls, ["david", "david"])

@@ -1076,7 +1076,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
 		err              error
 		errno            syscall.Errno
-		primaryPeer      string
+		primaryPeerList  []string
 		swiftAccountName string
 		volumeList       []string
 	)
@@ -1101,12 +1101,18 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	}
 
 	for _, volumeSectionName := range volumeList {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
 		}
-		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
+		if 0 == len(primaryPeerList) {
 			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI != primaryPeerList[0] {
+				continue
+			}
+		} else {
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
 		}
 		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
@@ -1136,7 +1142,7 @@ func updateConf(confMap conf.ConfMap) {
 		err                         error
 		noAuthTCPPortUpdate         uint16
 		ok                          bool
-		primaryPeer                 string
+		primaryPeerList             []string
 		swiftAccountNameListCurrent []string        // element == swiftAccountName
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
 		swiftAccountName            string
@@ -1184,12 +1190,18 @@ func updateConf(confMap conf.ConfMap) {
 	swiftAccountNameListUpdate = make(map[string]bool)
 
 	for _, volumeSectionName := range volumeListUpdate {
-		primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
 		}
-		if 0 != strings.Compare(globals.whoAmI, primaryPeer) {
+		if 0 == len(primaryPeerList) {
 			continue
+		} else if 1 == len(primaryPeerList) {
+			if globals.whoAmI != primaryPeerList[0] {
+				continue
+			}
+		} else {
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
 		}
 		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {

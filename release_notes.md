@@ -1,5 +1,20 @@
 # ProxyFS Release Notes
 
+## 0.52.0 (August 21, 2017)
+
+### Features:
+
+* Support for disabling volumes added
+
+### Bug Fixes:
+
+* Fixed missing flushing of modified files leading to zero-lengthed files
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.51.2 (August 15, 2017)
 
 ### Features:
@@ -17,6 +32,7 @@
 ### Known Issues:
 
 * Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
 
 ## 0.51.1 (August 3, 2017)
 

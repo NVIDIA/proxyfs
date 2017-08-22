@@ -14,22 +14,16 @@ import (
 	"github.com/swiftstack/ProxyFS/inode"
 )
 
-func (mount *mountStruct) makeLockID(inodeNumber inode.InodeNumber) (lockID string, err error) {
-	// Get volume ID from mountID
-	//volID := 102
-	//myLockID := fmt.Sprintf("vol.%d:ino.%d", volID, inodeNumber)
-
-	// XXX TODO: just using volume name for now
-	myLockID := fmt.Sprintf("vol.%s:ino.%d", mount.volumeName, inodeNumber)
+func (vS *volumeStruct) makeLockID(inodeNumber inode.InodeNumber) (lockID string, err error) {
+	myLockID := fmt.Sprintf("vol.%s:ino.%d", vS.volumeName, inodeNumber)
 
 	return myLockID, nil
 }
 
 // getInodeLock creates an inode lock. If callerID is non-nil, it is used.
 // Otherwise a new callerID is allocated.
-func (mount *mountStruct) initInodeLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (lock *dlm.RWLockStruct, err error) {
-
-	lockID, err := mount.makeLockID(inodeNumber)
+func (vS *volumeStruct) initInodeLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (lock *dlm.RWLockStruct, err error) {
+	lockID, err := vS.makeLockID(inodeNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +39,8 @@ func (mount *mountStruct) initInodeLock(inodeNumber inode.InodeNumber, callerID 
 }
 
 // Convenience functions to create and acquire an inode lock
-func (mount *mountStruct) getReadLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
-	lock, err := mount.initInodeLock(inodeNumber, callerID)
+func (vS *volumeStruct) getReadLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +49,8 @@ func (mount *mountStruct) getReadLock(inodeNumber inode.InodeNumber, callerID dl
 	return lock, err
 }
 
-func (mount *mountStruct) getWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
-	lock, err := mount.initInodeLock(inodeNumber, callerID)
+func (vS *volumeStruct) getWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,8 +62,8 @@ func (mount *mountStruct) getWriteLock(inodeNumber inode.InodeNumber, callerID d
 // These functions ensure that a lock of the right type is held by the given callerID. If the lock is not held, they
 // acquire it. If the lock is held, they return nil (so you don't unlock twice; even if that's not crashworthy, you'd
 // still release a lock that other code thinks it still holds).
-func (mount *mountStruct) ensureReadLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
-	lock, err := mount.initInodeLock(inodeNumber, callerID)
+func (vS *volumeStruct) ensureReadLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +76,8 @@ func (mount *mountStruct) ensureReadLock(inodeNumber inode.InodeNumber, callerID
 	return lock, err
 }
 
-func (mount *mountStruct) ensureWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
-	lock, err := mount.initInodeLock(inodeNumber, callerID)
+func (vS *volumeStruct) ensureWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.initInodeLock(inodeNumber, callerID)
 	if err != nil {
 		return nil, err
 	}

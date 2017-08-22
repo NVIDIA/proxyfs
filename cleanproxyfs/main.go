@@ -67,14 +67,21 @@ func main() {
 	// Prune VolumeList per PrimaryPeer attribute
 	volumeListPruned := []string{}
 	for _, volumeName := range volumeList {
-		primaryPeer, confErr := confMap.FetchOptionValueString(volumeName, "PrimaryPeer")
+		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
 		if nil != confErr {
 			fmt.Fprintf(os.Stderr, "confMap did not contain %v.PrimaryPeer\n", volumeName)
 			os.Exit(1)
 		}
 
-		if 0 == strings.Compare(whoAmI, primaryPeer) {
-			volumeListPruned = append(volumeListPruned, volumeName)
+		if 0 == len(primaryPeerList) {
+			continue
+		} else if 1 == len(primaryPeerList) {
+			if whoAmI == primaryPeerList[0] {
+				volumeListPruned = append(volumeListPruned, volumeName)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "confMap contained multiple values for %v.PrimaryPeer: %v\n", volumeName, primaryPeerList)
+			os.Exit(1)
 		}
 	}
 

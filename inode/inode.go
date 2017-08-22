@@ -56,7 +56,6 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
 	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
 	fileInode        *inMemoryInodeStruct
-	flushChannel     chan bool
 	accountName      string
 	containerName    string
 	objectName       string
