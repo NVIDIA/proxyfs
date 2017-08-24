@@ -3,6 +3,7 @@ package inode
 import (
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -87,7 +88,9 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 
 	inodeRec, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil != err {
-		err = fmt.Errorf("%s: unable to get inodeRec for inodeNumber 0x%016X: %v", utils.GetFnName(), inodeNumber, err)
+		stackStr := string(debug.Stack())
+		err = fmt.Errorf("%s: unable to get inodeRec for inodeNumber 0x%016X: %v stack: %s",
+			utils.GetFnName(), inodeNumber, err, stackStr)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		return
 	}
