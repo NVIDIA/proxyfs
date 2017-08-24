@@ -1341,7 +1341,7 @@ func fetchSwiftInfo(confMap conf.ConfMap) {
 	}
 }
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -1372,7 +1372,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 
 	signalChan = make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
+	signal.Notify(signalChan, signals...)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true

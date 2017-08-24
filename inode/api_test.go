@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/swiftstack/conf"
 
 	"github.com/swiftstack/ProxyFS/headhunter"
@@ -116,7 +118,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

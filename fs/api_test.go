@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"syscall"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -106,7 +108,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

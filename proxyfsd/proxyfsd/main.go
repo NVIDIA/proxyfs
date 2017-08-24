@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/swiftstack/ProxyFS/proxyfsd"
 )
 
@@ -18,7 +20,7 @@ func main() {
 	errChan := make(chan error, 1) // Must be buffered to avoid race
 	var wg sync.WaitGroup
 
-	go proxyfsd.Daemon(os.Args[1], os.Args[2:], nil, errChan, &wg)
+	go proxyfsd.Daemon(os.Args[1], os.Args[2:], nil, errChan, &wg, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	err := <-errChan
 

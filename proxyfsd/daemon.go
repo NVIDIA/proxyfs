@@ -23,7 +23,7 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -185,7 +185,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 
 	signalChan := make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
+	signal.Notify(signalChan, signals...)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true

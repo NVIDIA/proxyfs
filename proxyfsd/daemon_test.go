@@ -63,10 +63,10 @@ func TestDaemon(t *testing.T) {
 		"HTTPServer.TCPPort=53461",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryLimit=5",
-		"SwiftClient.RetryLimitObject=5",
-		"SwiftClient.RetryDelay=1s",
-		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryLimit=1",
+		"SwiftClient.RetryLimitObject=1",
+		"SwiftClient.RetryDelay=10ms",
+		"SwiftClient.RetryDelayObject=10ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
@@ -101,7 +101,7 @@ func TestDaemon(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	go ramswift.Daemon("/dev/null", confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan)
+	go ramswift.Daemon("/dev/null", confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan, unix.SIGINT)
 
 	for !ramswiftSignalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
@@ -112,7 +112,7 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg)
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
@@ -197,6 +197,8 @@ func TestDaemon(t *testing.T) {
 
 	err = <-errChan
 
+	wg.Wait() // wait for services to go Down()
+
 	if nil != err {
 		t.Fatalf("Daemon() exited with error [case 1b]: == %v", err)
 	}
@@ -206,7 +208,7 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg)
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
@@ -261,7 +263,15 @@ func TestDaemon(t *testing.T) {
 
 	err = <-errChan
 
+	wg.Wait() // wait for services to go Down()
+
 	if nil != err {
 		t.Fatalf("Daemon() exited with error [case 2b]: %v", err)
 	}
+
+	// Send ourself a SIGINT to also terminate ramswift
+
+	unix.Kill(unix.Getpid(), unix.SIGINT)
+
+	_ = <-ramswiftDoneChan
 }
