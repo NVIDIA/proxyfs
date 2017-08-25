@@ -304,7 +304,7 @@ func (inMemoryInode *inMemoryInodeStruct) convertToOnDiskInodeV1() (onDiskInodeV
 
 	if (DirType == inMemoryInode.InodeType) || (FileType == inMemoryInode.InodeType) {
 		content := inMemoryInode.payload.(sortedmap.BPlusTree)
-		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, _, flushErr := content.Flush(false)
+		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, flushErr := content.Flush(false)
 		if nil != flushErr {
 			panic(flushErr)
 		}
@@ -392,7 +392,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		if SymlinkType != inode.InodeType {
 			// (FileType == inode.InodeType || (DirType == inode.InodeType)
 			payloadAsBPlusTree = inode.payload.(sortedmap.BPlusTree)
-			payloadObjectNumber, _, payloadObjectLength, _, err = payloadAsBPlusTree.Flush(false)
+			payloadObjectNumber, _, payloadObjectLength, err = payloadAsBPlusTree.Flush(false)
 			if nil != err {
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)

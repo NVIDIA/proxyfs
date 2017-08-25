@@ -233,7 +233,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		t.Fatalf("btreeNew.Put(uint32(7), valueAsValueStructToInsert)).ok should have been true")
 	}
 
-	rootLogSegmentNumber, rootLogOffset, rootLogLength, _, err = btreeNew.Flush(false)
+	rootLogSegmentNumber, rootLogOffset, rootLogLength, err = btreeNew.Flush(false)
 	if nil != err {
 		t.Fatalf("btreeNew.Flush(false) should not have failed")
 	}
@@ -251,7 +251,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		t.Fatalf("btreeNew.GetByKey(uint32(5)).value should have been valueAsValueStructExpected")
 	}
 
-	rootLogSegmentNumber, rootLogOffset, rootLogLength, _, err = btreeNew.Flush(true)
+	rootLogSegmentNumber, rootLogOffset, rootLogLength, err = btreeNew.Flush(true)
 	if nil != err {
 		t.Fatalf("btreeNew.Flush(true) should not have failed")
 	}
