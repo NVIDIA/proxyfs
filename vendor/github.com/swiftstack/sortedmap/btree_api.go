@@ -26,8 +26,6 @@ type BPlusTree interface {
 	TouchFlushedList(flushedList FlushedList) (err error)
 	Prune() (err error)
 	Discard() (err error)
-	Clone(andUnTouch bool, callbacks BPlusTreeCallbacks) (newTree BPlusTree, err error)
-	UpdateCloneSource() (err error)
 }
 
 // BPlusTreeCallbacks specifies the interface to a set of callbacks provided by the client
@@ -64,7 +62,6 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 		root:                true,
 		leaf:                true,
 		tree:                nil, //                          To be set just below
-		clonedFromNode:      nil,
 		parentNode:          nil,
 		kvLLRB:              NewLLRBTree(compare, callbacks),
 		nonLeafLeftChild:    nil,
@@ -107,7 +104,6 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 		root:                true,
 		leaf:                true, //          To be updated once root node is loaded
 		tree:                nil,  //          To be set just below
-		clonedFromNode:      nil,
 		parentNode:          nil,
 		kvLLRB:              nil, //           To be filled in once root node is loaded
 		nonLeafLeftChild:    nil, //           To be filled in once root node is loaded

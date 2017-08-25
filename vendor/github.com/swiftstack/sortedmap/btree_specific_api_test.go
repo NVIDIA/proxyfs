@@ -181,7 +181,6 @@ func uint32To8ReplicaByteArray(u32 uint32) (b8 [8]byte) {
 
 func TestBPlusTreeSpecific(t *testing.T) {
 	var (
-		btreeClone                 BPlusTree
 		btreeLen                   int
 		btreeNew                   BPlusTree
 		btreeOld                   BPlusTree
@@ -376,89 +375,6 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		t.Fatalf("btreeOld.Purge(true) should have failed")
 	}
 
-	btreeClone, err = btreeOld.Clone(false, persistentContext)
-	if nil != err {
-		t.Fatalf("btreeOld.Clone() should not have failed")
-	}
-
-	ok, err = btreeOld.DeleteByKey(uint32(3))
-	if nil != err {
-		t.Fatalf("btreeOld.DeleteByKey(uint32(3)) should not have failed")
-	}
-	if !ok {
-		t.Fatalf("btreeOld.DetelByKey(uint32(3)) should have returned true")
-	}
-
-	ok, err = btreeClone.DeleteByKey(uint32(7))
-	if nil != err {
-		t.Fatalf("btreeClone.DeleteByKey(uint32(7)) should not have failed")
-	}
-	if !ok {
-		t.Fatalf("btreeClone.DetelByKey(uint32(7)) should have returned true")
-	}
-
-	_, ok, err = btreeOld.GetByKey(uint32(3))
-	if nil != err {
-		t.Fatalf("btreeOld.GetByKey(uint32(3)) should not have failed")
-	}
-	if ok {
-		t.Fatalf("btreeOld.GetByKey(uint32(3)) should have returned false")
-	}
-
-	_, ok, err = btreeOld.GetByKey(uint32(7))
-	if nil != err {
-		t.Fatalf("btreeOld.GetByKey(uint32(7)) should not have failed")
-	}
-	if !ok {
-		t.Fatalf("btreeOld.GetByKey(uint32(7)) should have returned true")
-	}
-
-	_, ok, err = btreeClone.GetByKey(uint32(3))
-	if nil != err {
-		t.Fatalf("btreeClone.GetByKey(uint32(3)) should not have failed")
-	}
-	if !ok {
-		t.Fatalf("btreeClone.GetByKey(uint32(3)) should have returned true")
-	}
-
-	_, ok, err = btreeClone.GetByKey(uint32(7))
-	if nil != err {
-		t.Fatalf("btreeClone.GetByKey(uint32(7)) should not have failed")
-	}
-	if ok {
-		t.Fatalf("btreeClone.GetByKey(uint32(7)) should have returned false")
-	}
-
-	err = btreeOld.UpdateCloneSource()
-	if nil == err {
-		t.Fatalf("btreeOld.UpdateCloneSource() should have failed")
-	}
-
-	err = btreeClone.UpdateCloneSource()
-	if nil != err {
-		t.Fatalf("btreeClone.UpdateCloneSource() should not have failed")
-	}
-
-	err = btreeClone.Prune()
-	if nil == err {
-		t.Fatalf("btreeClone.Prune() should have failed")
-	}
-
-	err = btreeOld.Prune()
-	if nil == err {
-		t.Fatalf("btreeOld.Prune() with active clone should have failed")
-	}
-
-	err = btreeOld.Discard()
-	if nil == err {
-		t.Fatalf("btreeOld.Discard() with active clone should have failed")
-	}
-
-	err = btreeClone.Discard()
-	if nil != err {
-		t.Fatalf("btreeClone.Discard() should not have failed")
-	}
-
 	nextItemIndexToTouch, err := btreeOld.TouchItem(0)
 	if nil != err {
 		t.Fatalf("btreeOld.TouchItem(0) should not have failed")
@@ -471,16 +387,16 @@ func TestBPlusTreeSpecific(t *testing.T) {
 	if nil != err {
 		t.Fatalf("btreeOld.TouchItem(1) should not have failed")
 	}
-	if 2 != nextItemIndexToTouch {
-		t.Fatalf("btreeOld.TouchItem(1) should have returned 2")
+	if 3 != nextItemIndexToTouch {
+		t.Fatalf("btreeOld.TouchItem(1) should have returned 3")
 	}
 
-	nextItemIndexToTouch, err = btreeOld.TouchItem(2)
+	nextItemIndexToTouch, err = btreeOld.TouchItem(3)
 	if nil != err {
-		t.Fatalf("btreeOld.TouchItem(2) should not have failed")
+		t.Fatalf("btreeOld.TouchItem(3) should not have failed")
 	}
 	if 1 != nextItemIndexToTouch {
-		t.Fatalf("btreeOld.TouchItem(2) should have returned 1")
+		t.Fatalf("btreeOld.TouchItem(3) should have returned 1")
 	}
 
 	err = btreeOld.Discard()
@@ -543,227 +459,5 @@ func TestCompareOnDiskReferenceKey(t *testing.T) {
 	}
 	if !(result > 0) {
 		t.Fatalf("compareOnDiskReferenceKey(key5, key0) should have returned > 0... instead: %v", result)
-	}
-}
-
-func TestBPlusTreeCloneStress(t *testing.T) {
-	const (
-		cloneInterval = 0x0040
-		maxElements   = 0x1000
-	)
-	var (
-		actualLen                  int
-		btreeClone                 BPlusTree
-		btreeCloneDiscardList      []BPlusTree
-		btreeCloneMap              map[int]BPlusTree
-		btreeLive                  BPlusTree
-		elementKey                 uint32
-		expectedLen                int
-		err                        error
-		ok                         bool
-		persistentContext          *specificBPlusTreeTestContextStruct
-		valueAsValueStructToInsert valueStruct
-	)
-
-	// PHASE SETUP
-
-	persistentContext = &specificBPlusTreeTestContextStruct{t: t, lastLogSegmentNumberGenerated: 0, lastLogOffsetGenerated: 0, logSegmentChunkMap: make(map[uint64]*logSegmentChunkStruct)}
-
-	btreeLive = NewBPlusTree(specificBPlusTreeTestNumKeysMaxSmall, CompareUint32, persistentContext)
-
-	btreeCloneMap = make(map[int]BPlusTree)
-	btreeCloneDiscardList = make([]BPlusTree, 0, 1+2*int(maxElements/cloneInterval))
-
-	btreeClone, err = btreeLive.Clone(false, persistentContext)
-	if nil != err {
-		t.Fatalf("btreeLive.Clone() should not have failed")
-	}
-
-	btreeCloneMap[0] = btreeClone
-	btreeCloneDiscardList = append(btreeCloneDiscardList, btreeClone)
-
-	// PHASE ONE - clone un-flushed/purged btreeLive
-
-	// Add maxElements elements to btreeLive cloning every cloneInterval
-
-	for elementKey = 0; elementKey < maxElements; elementKey++ {
-		valueAsValueStructToInsert = valueStruct{u32: elementKey, s8: uint32To8ReplicaByteArray(elementKey)}
-		ok, err = btreeLive.Put(elementKey, valueAsValueStructToInsert)
-		if nil != err {
-			t.Fatalf("btreeLive.Put(elementKey == %v) should not have failed", elementKey)
-		}
-		if !ok {
-			t.Fatalf("btreeLive.Put(elementKey == %v).ok should have been true", elementKey)
-		}
-
-		if 0 == ((elementKey + 1) % cloneInterval) {
-			btreeClone, err = btreeLive.Clone(false, persistentContext)
-			if nil != err {
-				t.Fatalf("btreeLive.Clone() should not have failed")
-			}
-			expectedLen = int(elementKey + 1)
-			btreeCloneMap[expectedLen] = btreeClone
-			btreeCloneDiscardList = append(btreeCloneDiscardList, btreeClone)
-		}
-	}
-
-	// Check Len of and Validate each btreeCloneMap element
-
-	for expectedLen, btreeClone = range btreeCloneMap {
-		actualLen, err = btreeClone.Len()
-		if nil != err {
-			t.Fatalf("btreeClone.Len() should not have failed")
-		}
-		if expectedLen != actualLen {
-			t.Fatalf("btreeClone.Len() expectedLen == %v actualLen == %v", expectedLen, actualLen)
-		}
-
-		err = btreeClone.Validate()
-		if nil != err {
-			t.Fatalf("btreeClone.Validate() should not have failed")
-		}
-	}
-
-	// Remove elements from btreeLive until empty cloning every cloneInterval
-
-	for elementKey = 0; elementKey < maxElements; elementKey++ {
-		ok, err = btreeLive.DeleteByKey(elementKey)
-		if nil != err {
-			t.Fatalf("btreeLive.DeleteByKey(elementKey == %v) should not have failed", elementKey)
-		}
-		if !ok {
-			t.Fatalf("btreeLive.DeleteByKey(elementKey == %v).ok should have been true", elementKey)
-		}
-
-		if 0 == ((elementKey + 1) % cloneInterval) {
-			btreeClone, err = btreeLive.Clone(false, persistentContext)
-			if nil != err {
-				t.Fatalf("btreeLive.Clone() should not have failed")
-			}
-			expectedLen = maxElements - int(elementKey+1)
-			btreeCloneMap[expectedLen] = btreeClone
-			btreeCloneDiscardList = append(btreeCloneDiscardList, btreeClone)
-		}
-	}
-
-	// Check Len of and Validate each btreeCloneMap element
-
-	for expectedLen, btreeClone = range btreeCloneMap {
-		actualLen, err = btreeClone.Len()
-		if nil != err {
-			t.Fatalf("btreeClone.Len() should not have failed")
-		}
-		if expectedLen != actualLen {
-			t.Fatalf("btreeClone.Len() expectedLen == %v actualLen == %v", expectedLen, actualLen)
-		}
-
-		err = btreeClone.Validate()
-		if nil != err {
-			t.Fatalf("btreeClone.Validate() should not have failed")
-		}
-	}
-
-	// PHASE TWO - clone flushed/purged btreeLive
-
-	// Add maxElements elements to btreeLive cloning every cloneInterval
-
-	for elementKey = 0; elementKey < maxElements; elementKey++ {
-		valueAsValueStructToInsert = valueStruct{u32: elementKey, s8: uint32To8ReplicaByteArray(elementKey)}
-		ok, err = btreeLive.Put(elementKey, valueAsValueStructToInsert)
-		if nil != err {
-			t.Fatalf("btreeLive.Put(elementKey == %v) should not have failed", elementKey)
-		}
-		if !ok {
-			t.Fatalf("btreeLive.Put(elementKey == %v).ok should have been true", elementKey)
-		}
-
-		if 0 == ((elementKey + 1) % cloneInterval) {
-			_, _, _, _, err = btreeLive.Flush(true)
-			if nil != err {
-				t.Fatalf("btreeLive.Flush(true) should not have failed")
-			}
-			btreeClone, err = btreeLive.Clone(false, persistentContext)
-			if nil != err {
-				t.Fatalf("btreeLive.Clone() should not have failed")
-			}
-			expectedLen = int(elementKey + 1)
-			btreeCloneMap[expectedLen] = btreeClone
-			btreeCloneDiscardList = append(btreeCloneDiscardList, btreeClone)
-		}
-	}
-
-	// Check Len of and Validate each btreeCloneMap element
-
-	for expectedLen, btreeClone = range btreeCloneMap {
-		actualLen, err = btreeClone.Len()
-		if nil != err {
-			t.Fatalf("btreeClone.Len() should not have failed")
-		}
-		if expectedLen != actualLen {
-			t.Fatalf("btreeClone.Len() expectedLen == %v actualLen == %v", expectedLen, actualLen)
-		}
-
-		err = btreeClone.Validate()
-		if nil != err {
-			t.Fatalf("btreeClone.Validate() should not have failed")
-		}
-	}
-
-	// Remove elements from btreeLive until empty cloning every cloneInterval
-
-	for elementKey = 0; elementKey < maxElements; elementKey++ {
-		expectedLen = maxElements - int(elementKey+1) // TODO: Remove this
-		ok, err = btreeLive.DeleteByKey(elementKey)
-		if nil != err {
-			t.Fatalf("btreeLive.DeleteByKey(elementKey == %v) should not have failed", elementKey)
-		}
-		if !ok {
-			t.Fatalf("btreeLive.DeleteByKey(elementKey == %v).ok should have been true", elementKey)
-		}
-
-		if 0 == ((elementKey + 1) % cloneInterval) {
-			_, _, _, _, err = btreeLive.Flush(true)
-			if nil != err {
-				t.Fatalf("btreeLive.Flush(true) should not have failed")
-			}
-			btreeClone, err = btreeLive.Clone(false, persistentContext)
-			if nil != err {
-				t.Fatalf("btreeLive.Clone() should not have failed")
-			}
-			expectedLen = maxElements - int(elementKey+1)
-			btreeCloneMap[expectedLen] = btreeClone
-			btreeCloneDiscardList = append(btreeCloneDiscardList, btreeClone)
-		}
-	}
-
-	// Check Len of and Validate each btreeCloneMap element
-
-	for expectedLen, btreeClone = range btreeCloneMap {
-		actualLen, err = btreeClone.Len()
-		if nil != err {
-			t.Fatalf("btreeClone.Len() should not have failed")
-		}
-		if expectedLen != actualLen {
-			t.Fatalf("btreeClone.Len() expectedLen == %v actualLen == %v", expectedLen, actualLen)
-		}
-
-		err = btreeClone.Validate()
-		if nil != err {
-			t.Fatalf("btreeClone.Validate() should not have failed")
-		}
-	}
-
-	// PHASE TEARDOWN
-
-	for _, btreeClone = range btreeCloneDiscardList {
-		err = btreeClone.Discard()
-		if nil != err {
-			t.Fatalf("btreeClone.Discard() should not have failed")
-		}
-	}
-
-	err = btreeLive.Discard()
-	if nil != err {
-		t.Fatalf("btreeLive.Discard() should not have failed")
 	}
 }
