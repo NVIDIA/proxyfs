@@ -64,7 +64,7 @@ def get_pfsconfjson_path():
             return file_path
 
     try:
-        paths = subprocess.check_output("sudo find / -iname 'pfsconfjson'",
+        paths = subprocess.check_output("find / -iname 'pfsconfjson'",
                                         shell=True,
                                         stderr=subprocess.PIPE).splitlines()
     except subprocess.CalledProcessError as ex:
