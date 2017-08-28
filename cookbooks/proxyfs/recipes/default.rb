@@ -162,6 +162,8 @@ template "/usr/bin/start_and_mount_pfs" do
   source "usr/bin/start_and_mount_pfs.erb"
   variables({
     :swift_user => node['swift_user'],
+    :swift_uid => node['swift_uid'],
+    :swift_gid => node['swift_gid']
   })
 end
 
