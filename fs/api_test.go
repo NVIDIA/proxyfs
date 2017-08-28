@@ -687,21 +687,21 @@ func TestFlock(t *testing.T) {
 	}
 
 	// Try another write lock from a different pid, it should fail:
-	lock.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	var lock1 FlockStruct
+	lock1 = lock
+	lock1.Pid = 2
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock on a locked file should fail with EAGAIN instead got : %v", err)
 	}
 
-	// Lock again, it should succeed:
-	//lock.Pid = 1
-	//_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
-	//if err != nil {
-	//	t.Fatalf("Relocking from same PID on file failed: %v", err)
-	//}
+	// Lock again from pid1, it should succeed:
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Relocking from same PID on file failed: %v", err)
+	}
 
 	lock.Type = syscall.F_UNLCK
-	lock.Pid = 1
 	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Unlock failed : %v", err)
@@ -709,49 +709,47 @@ func TestFlock(t *testing.T) {
 
 	// Read lock test:
 	lock.Type = syscall.F_RDLCK
-	lock.Pid = 1
 	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Read lock pid - 1 failed: %v", err)
 	}
 
-	lock.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock1.Type = syscall.F_RDLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if err != nil {
 		t.Fatalf("Read lock pid - 2 failed: %v", err)
 	}
 
 	// Try write lock it should fail:
-	lock.Type = syscall.F_WRLCK
-	lock.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock3 := lock
+	lock3.Type = syscall.F_WRLCK
+	lock3.Pid = 3
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock should have failed with EAGAIN instead got - %v", err)
 	}
 
-	lock.Pid = 2
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock11 := lock1
+	lock11.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock11)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 2 failed: %v", err)
 	}
 
-	lock.Pid = 1
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock01 := lock
+	lock01.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock01)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 1 failed: %v", err)
 	}
 
-	lock.Type = syscall.F_WRLCK
-	lock.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
-		t.Fatalf("Write lock should have succeeded instead got - %v", err)
+		t.Fatalf("Write lock should have succeeded instead got - %v", err.Error())
 	}
 
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock3.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
 		t.Fatalf("Unlock of (write after read) failed: %v", err)
 	}
