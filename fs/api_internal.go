@@ -352,6 +352,8 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 	start := inFlock.Start
 	len := inFlock.Len
 
+	removeList := new(list.List)
+
 	for e := flockList.Front(); e != nil; e = e.Next() {
 		elm := e.Value.(*FlockStruct)
 
@@ -364,12 +366,12 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 		}
 
 		if elm.Start >= (start + len) {
-			return
+			break
 		}
 
 		// If the lock falls completely in the range, delete it.
 		if elm.Start >= start && (elm.Start+elm.Len) <= (start+len) {
-			flockList.Remove(e)
+			removeList.PushBack(e)
 			continue
 		}
 
@@ -386,7 +388,7 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 				// use the existing record
 				elm.Start = start + len
 				elm.Len = elmLen - elm.Start
-				return
+				break
 			}
 
 			// Create a new record - handle case #3 both (starts before the range and extends beyond the range)
@@ -397,8 +399,13 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 			elmTail.Type = elm.Type
 			elmTail.Whence = elm.Whence
 			flockList.InsertAfter(elmTail, e)
-			return
+			break
 		}
+	}
+
+	for e := removeList.Front(); e != nil; e = e.Next() {
+		elm := e.Value.(*list.Element)
+		flockList.Remove(elm)
 	}
 
 	return
