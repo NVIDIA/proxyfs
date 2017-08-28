@@ -2,7 +2,6 @@ package inode
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -310,12 +309,6 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 	defer fileInode.Unlock()
 
 	if nil == fileInode.openLogSegment {
-		if 0 == len(fileInode.inFlightLogSegmentMap) {
-			vS.Lock()
-			vS.inFlightFileInodeDataMap[fileInode.InodeNumber] = fileInode
-			vS.Unlock()
-		}
-
 		openLogSegmentContainerName, openLogSegmentObjectNumber, err = fileInode.volume.provisionObject()
 		if nil != err {
 			logger.ErrorfWithError(err, "Provisioning LogSegment failed")
@@ -331,7 +324,6 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		fileInode.openLogSegment = &inFlightLogSegmentStruct{
 			logSegmentNumber: openLogSegmentObjectNumber,
 			fileInode:        fileInode,
-			flushChannel:     make(chan bool, 1), // Buffer explicit flush request sent while implicitly flushing
 			accountName:      fileInode.volume.accountName,
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
@@ -344,9 +336,6 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			logger.ErrorfWithError(err, "Starting Chunked PUT to LogSegment failed")
 			return
 		}
-
-		fileInode.Add(1)
-		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 	}
 
 	logSegmentNumber = fileInode.openLogSegment.logSegmentNumber
@@ -364,7 +353,8 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 	}
 
 	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
-		fileInode.openLogSegment.flushChannel <- true
+		fileInode.Add(1)
+		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
 	}
 
@@ -376,7 +366,8 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 	fileInode.Lock()
 
 	if nil != fileInode.openLogSegment {
-		fileInode.openLogSegment.flushChannel <- true
+		fileInode.Add(1)
+		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
 	}
 
@@ -398,41 +389,25 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 		err error
 	)
 
-	// Wait for either an explicit or implicit (maxFlushTime) indication to perform the flush
-	select {
-	case _ = <-inFlightLogSegment.flushChannel:
-		// The sender of the (bool) signaled a trigger to FLUSH
-	case <-time.After(inFlightLogSegment.fileInode.volume.flowControl.maxFlushTime):
-		// We reached maxFlushTime... so flush it now
-	}
-
-	inFlightLogSegment.fileInode.Lock()
-
 	// Terminate Chunked PUT
 	err = inFlightLogSegment.Close()
 	if nil != err {
 		err = blunder.AddError(err, blunder.InodeFlushError)
+		inFlightLogSegment.fileInode.Lock()
 		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
+		delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
 		inFlightLogSegment.fileInode.Unlock()
 		inFlightLogSegment.fileInode.Done()
 		return
 	}
 
 	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
+	inFlightLogSegment.fileInode.Lock()
 	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
-	if 0 == len(inFlightLogSegment.fileInode.inFlightLogSegmentMap) {
-		inFlightLogSegment.fileInode.volume.Lock()
-		delete(inFlightLogSegment.fileInode.volume.inFlightFileInodeDataMap, inFlightLogSegment.fileInode.InodeNumber)
-		inFlightLogSegment.fileInode.volume.Unlock()
-	}
-
-	if inFlightLogSegment.fileInode.openLogSegment == inFlightLogSegment {
-		inFlightLogSegment.fileInode.openLogSegment = nil
-	}
-
 	inFlightLogSegment.fileInode.Unlock()
 
 	// And we are done
 	inFlightLogSegment.fileInode.Done()
+
 	return
 }

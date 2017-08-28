@@ -345,11 +345,11 @@ func testMultiThreadCreateAndLookup(t *testing.T) {
 	// Tell thread 0 to loop creating files of the pattern nameOfTest
 	sendRequestToThread(0, t, createLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 10, 0)
 
-	// Tell thread 1 to loop doing 50 Lookups
-	sendRequestToThread(1, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 50, 0)
+	// Tell thread 1 to loop doing 35 Lookups
+	sendRequestToThread(1, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0)
 
-	// Tell thread 2 to loop doing 50 Lookups
-	sendRequestToThread(2, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 50, 0)
+	// Tell thread 2 to loop doing 35 Lookups
+	sendRequestToThread(2, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0)
 
 	// Wait for threads to complete
 	for i := 0; i < numThreads; i++ {
@@ -388,9 +388,9 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	// Pause a few milliseconds between operations
 	time.Sleep(10 * time.Millisecond)
 
-	// Tell threads 1 to numThreads to loop doing 50 readdirs
+	// Tell threads 1 to numThreads to loop doing 35 readdirs
 	for i := 1; i < numThreads; i++ {
-		sendRequestToThread(i, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 50, 0)
+		sendRequestToThread(i, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0)
 	}
 
 	// Wait until threads 1 to numThreads complete

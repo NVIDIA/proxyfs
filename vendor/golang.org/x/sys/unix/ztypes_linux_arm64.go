@@ -288,6 +288,13 @@ type IPv6Mreq struct {
 	Interface uint32
 }
 
+type PacketMreq struct {
+	Ifindex int32
+	Type    uint16
+	Alen    uint16
+	Address [8]uint8
+}
+
 type Msghdr struct {
 	Name       *byte
 	Namelen    uint32
@@ -378,9 +385,11 @@ const (
 	SizeofSockaddrALG       = 0x58
 	SizeofSockaddrVM        = 0x10
 	SizeofLinger            = 0x8
+	SizeofIovec             = 0x10
 	SizeofIPMreq            = 0x8
 	SizeofIPMreqn           = 0xc
 	SizeofIPv6Mreq          = 0x14
+	SizeofPacketMreq        = 0x10
 	SizeofMsghdr            = 0x38
 	SizeofCmsghdr           = 0x10
 	SizeofInet4Pktinfo      = 0xc
@@ -679,4 +688,54 @@ type Winsize struct {
 	Col    uint16
 	Xpixel uint16
 	Ypixel uint16
+}
+
+type Taskstats struct {
+	Version                   uint16
+	Pad_cgo_0                 [2]byte
+	Ac_exitcode               uint32
+	Ac_flag                   uint8
+	Ac_nice                   uint8
+	Pad_cgo_1                 [6]byte
+	Cpu_count                 uint64
+	Cpu_delay_total           uint64
+	Blkio_count               uint64
+	Blkio_delay_total         uint64
+	Swapin_count              uint64
+	Swapin_delay_total        uint64
+	Cpu_run_real_total        uint64
+	Cpu_run_virtual_total     uint64
+	Ac_comm                   [32]int8
+	Ac_sched                  uint8
+	Ac_pad                    [3]uint8
+	Pad_cgo_2                 [4]byte
+	Ac_uid                    uint32
+	Ac_gid                    uint32
+	Ac_pid                    uint32
+	Ac_ppid                   uint32
+	Ac_btime                  uint32
+	Pad_cgo_3                 [4]byte
+	Ac_etime                  uint64
+	Ac_utime                  uint64
+	Ac_stime                  uint64
+	Ac_minflt                 uint64
+	Ac_majflt                 uint64
+	Coremem                   uint64
+	Virtmem                   uint64
+	Hiwater_rss               uint64
+	Hiwater_vm                uint64
+	Read_char                 uint64
+	Write_char                uint64
+	Read_syscalls             uint64
+	Write_syscalls            uint64
+	Read_bytes                uint64
+	Write_bytes               uint64
+	Cancelled_write_bytes     uint64
+	Nvcsw                     uint64
+	Nivcsw                    uint64
+	Ac_utimescaled            uint64
+	Ac_stimescaled            uint64
+	Cpu_scaled_run_real_total uint64
+	Freepages_count           uint64
+	Freepages_delay_total     uint64
 }

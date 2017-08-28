@@ -632,22 +632,26 @@ class PfsMiddleware(object):
 
         self.logger = logger or get_logger(conf, log_route='pfs')
 
-        proxyfsd_host = conf.get('proxyfsd_host', '127.0.0.1')
+        proxyfsd_hosts = [h.strip() for h
+                          in conf.get('proxyfsd_host', '127.0.0.1').split(',')]
         self.proxyfsd_port = int(conf.get('proxyfsd_port', '12345'))
 
-        try:
-            # If hostname resolution fails, we'll cause the proxy to fail to
-            # start. This is probably better than returning 500 to every
-            # single request, but maybe not.
-            #
-            # To ensure that proxy startup works, use an IP address for
-            # proxyfsd_host. Then socket.getaddrinfo() will always work.
-            self.proxyfsd_addrinfo = socket.getaddrinfo(
-                proxyfsd_host, self.proxyfsd_port,
-                socket.AF_UNSPEC, socket.SOCK_STREAM)[0]
-        except socket.gaierror:
-            self.logger.error("Error resolving hostname %r", proxyfsd_host)
-            raise
+        self.proxyfsd_addrinfos = []
+        for host in proxyfsd_hosts:
+            try:
+                # If hostname resolution fails, we'll cause the proxy to
+                # fail to start. This is probably better than returning 500
+                # to every single request, but maybe not.
+                #
+                # To ensure that proxy startup works, use IP addresses for
+                # proxyfsd_host. Then socket.getaddrinfo() will always work.
+                addrinfo = socket.getaddrinfo(
+                    host, self.proxyfsd_port,
+                    socket.AF_UNSPEC, socket.SOCK_STREAM)[0]
+                self.proxyfsd_addrinfos.append(addrinfo)
+            except socket.gaierror:
+                self.logger.error("Error resolving hostname %r", host)
+                raise
 
         self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
         self.bimodal_recheck_interval = float(conf.get(
@@ -674,14 +678,23 @@ class PfsMiddleware(object):
             # Check account to see if this is a bimodal-access account or
             # not. ProxyFS is the sole source of truth on this matter.
             try:
-                proxyfsd_addrinfo = self._fetch_owning_proxyfs(acc)
+                is_bimodal, proxyfsd_addrinfo = self._fetch_owning_proxyfs(acc)
             except NoSuchHostnameError as err:
                 # proxyfsd gave us a hostname to connect to, but we couldn't
                 # resolve it
                 return swob.HTTPInternalServerError(request=req, body=str(err))
 
-            if proxyfsd_addrinfo is None:
+            if not is_bimodal and proxyfsd_addrinfo is None:
+                # This is a plain old Swift account, so we get out of the
+                # way.
                 return self.app
+            elif proxyfsd_addrinfo is None:
+                # This is a bimodal account, but there is currently no
+                # proxyfsd responsible for it. This can happen during a move
+                # of a ProxyFS volume from one proxyfsd to another, and
+                # should be cleared up quickly. Nevertheless, all we can do
+                # here is return an error to the client.
+                return swob.HTTPServiceUnavailable(request=req)
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             # For requests that we make to Swift, we have to ensure that any
@@ -1508,6 +1521,8 @@ class PfsMiddleware(object):
         in-memory list (or whatever data structure it uses) of known
         accounts, so it can answer the RPC request very quickly. Storing
         that result in memcached wouldn't be any faster than asking ProxyFS.
+
+        :returns: 2-tuple (is-bimodal, proxyfsd-addrinfo).
         """
         cached_result = self._cached_is_bimodal.get(account_name)
         if cached_result:
@@ -1521,9 +1536,15 @@ class PfsMiddleware(object):
         iab_req = rpc.is_account_bimodal_request(account_name)
         is_bimodal, proxyfsd_ip_or_hostname = \
             rpc.parse_is_account_bimodal_response(
-                self._rpc_call(self.proxyfsd_addrinfo, iab_req))
+                self._rpc_call(self.proxyfsd_addrinfos, iab_req))
 
         if is_bimodal:
+            if not proxyfsd_ip_or_hostname:
+                # When an account is moving between proxyfsd nodes, it's
+                # bimodal but nobody owns it. This is usually a
+                # very-short-lived temporary condition, so we don't cache
+                # this result.
+                return (True, None)
             # Just run whatever we got through socket.getaddrinfo(). If we
             # got an IPv4 or IPv6 address, it'll come out the other side
             # unchanged. If we got a hostname, it'll get resolved.
@@ -1548,9 +1569,9 @@ class PfsMiddleware(object):
             # Since we didn't get an exception, we resolved the hostname
             # to *something*, which means there's at least one element
             # in addrinfos.
-            res = addrinfos[0]
+            res = (True, addrinfos[0])
         else:
-            res = None
+            res = (False, None)
         self._cached_is_bimodal[account_name] = (res, time.time())
         return res
 
@@ -1573,24 +1594,45 @@ class PfsMiddleware(object):
             have an errno in it, then the exception's errno attribute will
             be None.
         """
-        return self._rpc_call(ctx.proxyfsd_addrinfo, rpc_request)
+        return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
 
-    def _rpc_call(self, addrinfo, rpc_request):
-        rpc_client = JsonRpcClient(addrinfo)
-        try:
-            result = rpc_client.call(rpc_request, self.proxyfsd_rpc_timeout)
-        except eventlet.Timeout:
-            errstr = "Timeout ({0:.6f}s) calling {1}".format(
-                self.proxyfsd_rpc_timeout,
-                rpc_request.get("method", "<unknown method>"))
-            raise RpcTimeout(errstr)
+    def _rpc_call(self, addrinfos, rpc_request):
+        addrinfos = set(addrinfos)
 
-        errstr = result.get("error")
-        if errstr:
-            errno = extract_errno(errstr)
-            raise RpcError(errno, errstr)
+        # We can get fast errors or slow errors here; we retry across all
+        # hosts on fast errors, but immediately raise a slow error. HTTP
+        # clients won't wait forever for a response, so we can't retry slow
+        # errors across all hosts.
+        #
+        # Fast errors are things like "connection refused" or "no route to
+        # host". Slow errors are timeouts.
+        result = None
+        while addrinfos:
+            addrinfo = addrinfos.pop()
+            rpc_client = JsonRpcClient(addrinfo)
+            try:
+                result = rpc_client.call(rpc_request,
+                                         self.proxyfsd_rpc_timeout)
+            except socket.error as err:
+                if addrinfos:
+                    self.logger.debug("Error communicating with %r: %s. "
+                                      "Trying again with another host.",
+                                      addrinfo, err)
+                    continue
+                else:
+                    raise
+            except eventlet.Timeout:
+                errstr = "Timeout ({0:.6f}s) calling {1}".format(
+                    self.proxyfsd_rpc_timeout,
+                    rpc_request.get("method", "<unknown method>"))
+                raise RpcTimeout(errstr)
 
-        return result["result"]
+            errstr = result.get("error")
+            if errstr:
+                errno = extract_errno(errstr)
+                raise RpcError(errno, errstr)
+
+            return result["result"]
 
 
 def filter_factory(global_conf, **local_conf):

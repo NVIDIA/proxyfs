@@ -451,21 +451,21 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
-		_, err = volume.inodeRecWrapper.bPlusTree.Flush(false)
+		err = volume.inodeRecWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}
 	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
-		_, err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
+		err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}
 	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
-		_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
+		err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}

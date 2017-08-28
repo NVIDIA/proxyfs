@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/swiftstack/conf"
 
 	"github.com/swiftstack/ProxyFS/headhunter"
@@ -73,10 +75,10 @@ func testSetup() (err error) {
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 
-		"SwiftClient.RetryLimit=5",
-		"SwiftClient.RetryLimitObject=5",
-		"SwiftClient.RetryDelay=1s",
-		"SwiftClient.RetryDelayObject=0.5s",
+		"SwiftClient.RetryLimit=1",
+		"SwiftClient.RetryLimitObject=1",
+		"SwiftClient.RetryDelay=10ms",
+		"SwiftClient.RetryDelayObject=10ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=1.0",
 
@@ -116,7 +118,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

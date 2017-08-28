@@ -3,6 +3,7 @@ package inode
 import (
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -56,7 +57,6 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
 	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
 	fileInode        *inMemoryInodeStruct
-	flushChannel     chan bool
 	accountName      string
 	containerName    string
 	objectName       string
@@ -88,7 +88,9 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 
 	inodeRec, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil != err {
-		err = fmt.Errorf("%s: unable to get inodeRec for inodeNumber 0x%016X: %v", utils.GetFnName(), inodeNumber, err)
+		stackStr := string(debug.Stack())
+		err = fmt.Errorf("%s: unable to get inodeRec for inodeNumber 0x%016X: %v stack: %s",
+			utils.GetFnName(), inodeNumber, err, stackStr)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		return
 	}
@@ -305,7 +307,7 @@ func (inMemoryInode *inMemoryInodeStruct) convertToOnDiskInodeV1() (onDiskInodeV
 
 	if (DirType == inMemoryInode.InodeType) || (FileType == inMemoryInode.InodeType) {
 		content := inMemoryInode.payload.(sortedmap.BPlusTree)
-		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, _, flushErr := content.Flush(false)
+		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, flushErr := content.Flush(false)
 		if nil != flushErr {
 			panic(flushErr)
 		}
@@ -393,7 +395,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		if SymlinkType != inode.InodeType {
 			// (FileType == inode.InodeType || (DirType == inode.InodeType)
 			payloadAsBPlusTree = inode.payload.(sortedmap.BPlusTree)
-			payloadObjectNumber, _, payloadObjectLength, _, err = payloadAsBPlusTree.Flush(false)
+			payloadObjectNumber, _, payloadObjectLength, err = payloadAsBPlusTree.Flush(false)
 			if nil != err {
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)

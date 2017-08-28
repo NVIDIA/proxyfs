@@ -145,6 +145,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 // Down terminates statsd logging and should only be called once no API functions are active or subsequently invoked
 func Down() (err error) {
+	globals.statChan = nil
+
 	globals.stopChan <- true
 
 	_ = <-globals.doneChan

@@ -261,10 +261,17 @@ func incrementSomething(statName *string, incBy uint64) {
 		return
 	}
 
+	// if stats are not enabled yet, just ignore (reduce a window while
+	// stats are shutting down by saving the channel to a local variable)
+	statChan := globals.statChan
+	if statChan == nil {
+		return
+	}
+
 	stat := statStructPool.Get().(*statStruct)
 	stat.name = statName
 	stat.increment = incBy
-	globals.statChan <- stat
+	statChan <- stat
 }
 
 func incrementOperationsAndBytes(stat MultipleStat, bytes uint64) {

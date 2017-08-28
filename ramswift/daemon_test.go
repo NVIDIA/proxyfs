@@ -35,7 +35,7 @@ func TestViaNoAuthClient(t *testing.T) {
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan)
+	go Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)

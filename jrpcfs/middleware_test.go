@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/swiftstack/conf"
 
 	"github.com/stretchr/testify/assert"
@@ -111,7 +113,7 @@ func testSetup() []func() {
 	}
 
 	doneChan := make(chan bool)
-	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan)
+	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan, unix.SIGTERM)
 
 	err = stats.Up(testConfMap)
 	if nil != err {

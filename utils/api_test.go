@@ -9,6 +9,34 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	testTryLockMutex *TryLockMutex
+)
+
+func testTryLockMutexAsyncUnlock() {
+	testTryLockMutex.Unlock()
+}
+
+func TestTryLockMutex(t *testing.T) {
+	testTryLockMutex = NewTryLockMutex()
+	testTryLockMutex.Lock()
+	testTryLockMutex.Unlock()
+	shouldHaveGottonIt := testTryLockMutex.TryLock(100 * time.Millisecond)
+	if !shouldHaveGottonIt {
+		t.Fatalf("1st TryLock() should have succeeded")
+	}
+	shouldNotHaveGottenIt := testTryLockMutex.TryLock(100 * time.Millisecond)
+	if shouldNotHaveGottenIt {
+		t.Fatalf("2nd TryLock() should have failed")
+	}
+	_ = time.AfterFunc(50*time.Millisecond, testTryLockMutexAsyncUnlock)
+	shouldHaveGottonIt = testTryLockMutex.TryLock(100 * time.Millisecond)
+	if !shouldHaveGottonIt {
+		t.Fatalf("3rd TryLock() should have succeeded")
+	}
+	testTryLockMutex.Unlock()
+}
+
 func testMultiWaiterSyncDotWaitGroupWaiter(wgToWaitOn *sync.WaitGroup, currentPhase *uint64, phaseWhenDone *uint64, wgWhenDone *sync.WaitGroup) {
 	wgToWaitOn.Wait()
 	*phaseWhenDone = *currentPhase
