@@ -13,6 +13,37 @@ import (
 	"time"
 )
 
+// TryLockMutex is used to support a timeout a the lock request
+type TryLockMutex struct {
+	c chan struct{} // a  lock()    request             writes a struct{} to   c
+	//                 a  tryLock() request attempts to write  a struct{} to   c but will give up after a time.Duration
+	//                 an unlock()  request             reads  a struct{} from c
+}
+
+func NewTryLockMutex() (tryLockMutex *TryLockMutex) {
+	return &TryLockMutex{c: make(chan struct{}, 1)} // since there is space for one struct{}, lock is initially available
+}
+
+func (tryLockMutex *TryLockMutex) Lock() {
+	tryLockMutex.c <- struct{}{}
+}
+
+func (tryLockMutex *TryLockMutex) TryLock(timeout time.Duration) (gotIt bool) {
+	timer := time.NewTimer(timeout)
+	select {
+	case tryLockMutex.c <- struct{}{}:
+		timer.Stop()
+		gotIt = true
+	case <-time.After(time.Duration(timeout)):
+		gotIt = false
+	}
+	return
+}
+
+func (tryLockMutex *TryLockMutex) Unlock() {
+	<-tryLockMutex.c
+}
+
 // MultiWaiterWaitGroup emulates the behavior of sync.WaitGroup while enabling multiple waiters.
 //
 // Unline sync.WaitGroup, however, you must allocate a MultiWaiterWaitGroup with a
