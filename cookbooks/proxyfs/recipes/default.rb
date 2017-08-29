@@ -63,6 +63,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
+    file.insert_line_if_no_match(/ls -la/, "alias la='ls -la'")
+    file.insert_line_if_no_match(/ls -lia/, "alias li='ls -lia'")
+    file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
     file.write_file
 
     unless File.exist?(ROOT_DOT_BASH_PROFILE)
@@ -88,6 +91,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
+    file.insert_line_if_no_match(/ls -la/, "alias la='ls -la'")
+    file.insert_line_if_no_match(/ls -lia/, "alias li='ls -lia'")
+    file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
     file.write_file
 
   end
