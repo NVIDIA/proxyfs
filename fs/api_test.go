@@ -564,6 +564,40 @@ func TestBadLinks(t *testing.T) {
 	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
 }
 
+func TestMkdir(t *testing.T) {
+	testDirInode := createTestDirectory(t, "Mkdir")
+	longButLegalFilename := strings.Repeat("x", FileNameMax)
+	nameTooLong := strings.Repeat("x", FileNameMax+1)
+
+	_, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, inode.PosixModePerm)
+	if nil != err {
+		if blunder.IsNot(err, blunder.NameTooLongError) {
+			t.Fatalf("Mkdir() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
+		}
+	} else {
+		t.Fatal("Mkdir() unexpectedly succeeded on too-long filename!")
+	}
+
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, longButLegalFilename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Mkdir() returned error: %v", err)
+	}
+
+	entriesExpected := []string{".", "..", longButLegalFilename}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+
+	longButLegalFullPath := "/Mkdir/" + longButLegalFilename
+	ino, err := mS.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, longButLegalFullPath)
+	if err != nil {
+		t.Fatalf("LookupPath() returned error: %v", err)
+	}
+
+	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino))
+	if err != nil {
+		t.Fatalf("GetStat() returned error: %v", err)
+	}
+}
+
 // TODO: flesh this out with other boundary condition testing for Rename
 func TestBadRename(t *testing.T) {
 	testDirInode := createTestDirectory(t, "BadRename")

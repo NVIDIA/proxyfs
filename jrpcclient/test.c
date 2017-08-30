@@ -199,6 +199,7 @@ static char subDir2[]         = "TestSubDir2";
 static char subDir3[]         = "TestSubDir3";
 static char subDir4[]         = "TestSubDir4";
 static char subDir5[]         = "TestSubDir5";
+static char longSubDir[]      = "TestSubDirxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 static char subDir1Slash[]    = "/TestSubDir1";
 static char subSubDir1[]      = "TestSubDir1/TestSubDir3";
 static char subSubDir2[]      = "TestSubDir2/TestSubDir4";
@@ -207,8 +208,10 @@ static char file1[]           = "TestNormalFile";
 static char file2[]           = "TestNormalFileByPath";
 static char badBasename[BAD_BASENAME_SIZE];
 static char badFullpath[BAD_FULLPATH_SIZE];
-static char subdirfile1[]     = "TestSubDirFile";
-static char subdirfile1Path[] = "TestSubDir1/TestSubDirFile";
+static char subdirfile1[]     = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+/* Exactly MAX_FILE_NAME in length */
+static char subdirfile1Path[] = "TestSubDir1/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+//static char subdirfile1Path[]     = "TestSubDir1/TestSubDirFile";
 static char subdirfile2[]     = "SyslogFile";
 static char subdirfile2Path[] = "TestSubDir1/SyslogFile";
 static char notAFile[]        = "DoesNotExist";
@@ -224,6 +227,7 @@ typedef enum {
     SUBDIR1 = 0,
     SUBDIR2,
     SUBDIR1_SLASH,
+    LONGSUBDIR,
     SUBSUBDIR1,
     SUBSUBDIR2,
     BAD_PARENT_SUBDIR,
@@ -260,6 +264,7 @@ file_info_t file_info[] = {
     { true, DT_DIR, 0, subDir1,       subDir1,         0,     -1,  -1,  -1  }, // SUBDIR1
     { true, DT_DIR, 0, subDir2,       subDir2,         0,     -1,  -1,  -1  }, // SUBDIR2
     { true, DT_DIR, 0, subDir1Slash,  subDir1Slash,    0,     -1,  -1,  -1  }, // SUBDIR1_SLASH
+    { true, DT_DIR, 0, longSubDir,    longSubDir,      0,     -1,  -1,  -1  }, // LONGSUBDIR
     { true, DT_DIR, 0, subDir3,       subSubDir1,      0,     -1,  -1,  -1  }, // SUBSUBDIR1
     { true, DT_DIR, 0, subDir4,       subSubDir2,      0,     -1,  -1,  -1  }, // SUBSUBDIR2
     { true, DT_DIR, 0, subDir5,       badSubSubDir3,   0,     -1,  -1,  -1  }, // BAD_PARENT_SUBDIR
@@ -414,6 +419,7 @@ void print_file_info() {
     printf("\n");
 }
 
+
 void print_stats(proxyfs_stat_t* stat) {
     if ((stat == NULL) || quiet) return;
 
@@ -517,13 +523,12 @@ uid_t mount_uid() {
 uid_t mount_gid() {
     return global_mounted_gid;
 }
-
 // Read/write-related stuff
 static uint8_t  bufToWrite[] = {0x41, 0x42, 0x43};
 static uint64_t bytesWritten = 0;
 
 // Rename-related
-static char newName[80];
+static char newName[1024];
 
 // Test stats
 static int   private_numPassed = 0;
@@ -1045,6 +1050,34 @@ int test_mount(char* volname, uint64_t options, uid_t userid, gid_t groupid, int
         set_mount_uid_gid(userid, groupid);
     }
 }
+
+// Diagnostic utility function 
+void dump_dir_listing(uint64_t inode) {
+    TLOG("--\n", "");
+
+    int64_t prevDirLoc         = -1;
+    int     err                = 0;
+    for (;;) {
+        struct dirent* dir_ent = NULL;
+        err = proxyfs_readdir(mount_id(), inode, prevDirLoc, &dir_ent);
+
+        if (err == 0) {
+            if (dir_ent != NULL) {
+                TLOG("%s\n", dir_ent->d_name);
+                prevDirLoc = dir_ent->d_off;
+                free(dir_ent);
+                dir_ent = NULL;
+            }
+        } else {
+            if (err != ENOENT) {
+                TLOG("readdir returned errno %d\n", err);
+            }
+            return;
+        }
+
+    }
+}
+
 
 void test_mkdir(file_id_t id, uint64_t parent_inode, uid_t uid, gid_t gid, mode_t mode, int exp_status) {
     // Check that operations on this file are enabled
@@ -1731,7 +1764,9 @@ void test_readdir(file_id_t id, int prevDirLoc, int exp_status) {
 }
 
 // Read all dir entries for a given id
-void test_readdir_all(file_id_t id, int exp_status) {
+void test_readdir_all(file_id_t id, int exp_status, int files_expected, char *check_for) {
+    int files_found = 0;
+
     // Check that operations on this file are enabled
     if (!get_enabled(id)) { return; }
 
@@ -1746,8 +1781,9 @@ void test_readdir_all(file_id_t id, int exp_status) {
     char* funcToTest = funcs[READDIR];
     file_info_t* fi = &file_info[id];
 
-    int64_t prevDirLoc = -1;
-    int     err        = 0;
+    int64_t prevDirLoc         = -1;
+    int     checked_file_found = 0;
+    int     err                = 0;
     do {
         // Do a readdir. If we get success, keep doing it again until we get ENOENT
         TLOG("Calling %s on inode %" PRIu64 " with previous location %" PRId64 ", expect status %d.\n", funcToTest, fi->inode, prevDirLoc, exp_status);
@@ -1757,10 +1793,28 @@ void test_readdir_all(file_id_t id, int exp_status) {
         handle_api_return_with_dirent(funcToTest, err, fi->inode, dir_ent, prevDirLoc, exp_status);
 
         if (dir_ent != NULL) {
+            files_found += 1;
+            TLOG("name: %s\n", dir_ent->d_name);
+            if (check_for != NULL) {
+                if (strcmp(dir_ent->d_name, check_for) == 0) {
+                    checked_file_found = 1;
+                }
+            }
+
             prevDirLoc = dir_ent->d_off;
             dir_ent = NULL;
         }
     } while (err != ENOENT);
+
+    if (files_expected != files_found) {
+        test_failed(funcToTest);
+        TLOG("FAILURE, got found %d files in readdir_all; expected %d.\n\n", files_found, files_expected);
+    }
+
+    if (check_for != NULL && !checked_file_found) {
+        test_failed(funcToTest);
+        TLOG("FAILURE, did not find file %s in dir listing", check_for);
+    }
 }
 
 void test_readdir_plus(file_id_t id, int prevDirLoc, int exp_status) {
@@ -1795,7 +1849,10 @@ void test_readdir_plus(file_id_t id, int prevDirLoc, int exp_status) {
 }
 
 // Read all dir entries for a given id
-void test_readdir_plus_all(file_id_t id, int exp_status) {
+// TODO: should probably expand check_for into an expected list
+void test_readdir_plus_all(file_id_t id, int exp_status, int files_expected, char *check_for) {
+    int files_found = 0;
+
     // Check that operations on this file are enabled
     if (!get_enabled(id)) { return; }
 
@@ -1810,8 +1867,9 @@ void test_readdir_plus_all(file_id_t id, int exp_status) {
     char* funcToTest = funcs[READDIR_PLUS];
     file_info_t* fi = &file_info[id];
 
-    int64_t prevDirLoc = -1;
-    int     err        = 0;
+    int64_t prevDirLoc     = -1;
+    int checked_file_found = 0;
+    int err                = 0;
     do {
         // Do a readdir. If we get success, keep doing it again until we get ENOENT
         TLOG("Calling %s on inode %" PRIu64 " with previous location %" PRId64 ", expect status %d.\n", funcToTest, fi->inode, prevDirLoc, exp_status);
@@ -1822,6 +1880,13 @@ void test_readdir_plus_all(file_id_t id, int exp_status) {
         handle_api_return_with_dirent_stat(funcToTest, err, fi->inode, dir_ent, stat, prevDirLoc, exp_status);
 
         if (dir_ent != NULL) {
+            files_found += 1;
+            if (check_for != NULL) {
+                if (strcmp(dir_ent->d_name, check_for) == 0) {
+                    checked_file_found = 1;
+                }
+            }
+
             prevDirLoc = dir_ent->d_off;
             dir_ent = NULL;
         }
@@ -1831,6 +1896,16 @@ void test_readdir_plus_all(file_id_t id, int exp_status) {
         }
 
     } while (err != ENOENT);
+
+    if (files_expected != files_found) {
+        test_failed(funcToTest);
+        TLOG("FAILURE, got found %d files in readdir_all; expected %d.\n\n", files_found, files_expected);
+    }
+
+    if (check_for != NULL && !checked_file_found) {
+        test_failed(funcToTest);
+        TLOG("FAILURE, did not find file %s in dir listing", check_for);
+    }
 }
 
 void test_get_stat(file_id_t id, int expectedSize, int exp_status) {
@@ -2291,6 +2366,11 @@ void mkdir_create_tests()
 
     // Try to create the same dir again. Should get EEXIST.
     test_mkdir(SUBDIR1, root_inode(), mount_uid(), mount_gid(), mode, EEXIST);
+
+    // Mkdir A/LongFilename/  : create a long subdirectory within Volume
+    test_mkdir(LONGSUBDIR, root_inode(), mount_uid(), mount_gid(), mode, 0);
+    // do get_stat to check that mode is what we just set it to
+    test_get_stat(LONGSUBDIR, 0, 0);
 
     // Create #1 A/C   : create and open a normal file within Volume directory
     test_create(FILE1, root_inode(), mount_uid(), mount_gid(), mode, 0);
@@ -2957,7 +3037,8 @@ void read_symlink_tests()
 void readdir_tests()
 {
     // Readdir     #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
-    test_readdir_all(ROOT_DIR, -1);
+    test_readdir_all(ROOT_DIR, -1, 11, longSubDir);
+    test_readdir_all(SUBDIR1, -1, 5, subdirfile1);
     test_readdir(ROOT_DIR, 5, 0);
     test_readdir(ROOT_DIR, 99, ENOENT);
 
@@ -2970,7 +3051,7 @@ void readdir_tests()
     clear_fault(BAD_MOUNT_ID);
 
     // Readdir     #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
-    test_readdir_plus_all(ROOT_DIR, -1);
+    test_readdir_plus_all(ROOT_DIR, -1, 11, longSubDir);
     test_readdir_plus(ROOT_DIR, 5, 0);
     test_readdir_plus(ROOT_DIR, 99, ENOENT);
 
@@ -3061,7 +3142,9 @@ void rename_tests()
     char* oldName = get_fullpath(SUBDIR_FILE1);
 
     // Rename
-    sprintf(newName, "%sWoohoo", get_fullpath(SUBDIR_FILE1));
+    int pathlen = strlen(oldName);
+    strncpy(newName, oldName, pathlen);
+    newName[pathlen-2] = (newName[pathlen-2] == '1' ? '2' : '1');
     test_rename_path(SUBDIR_FILE1, newName, 0);
 
     // Check that the cache was updated correctly
@@ -3152,6 +3235,7 @@ void unlink_rmdir_tests()
 
     // Rmdir => removing subDir1
     test_rmdir(SUBDIR1, 0);
+    test_rmdir(LONGSUBDIR, 0);
 }
 
 void unmount_tests()
