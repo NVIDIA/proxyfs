@@ -19,22 +19,26 @@ import (
 // Server handle, used to track io-related ops
 var qserver *Server
 
+var ioListener net.Listener
+
 func ioServerUp(ipAddr string, fastPortString string) {
+	var err error
+
 	qserver = NewServer()
 
-	lis, err := net.Listen("tcp", net.JoinHostPort(ipAddr, fastPortString))
+	ioListener, err = net.Listen("tcp", net.JoinHostPort(ipAddr, fastPortString))
 	if err != nil {
 		logger.ErrorfWithError(err, "net.Listen %s:%s failed", ipAddr, fastPortString)
 		return
 	}
 
 	//logger.Infof("Starting to listen on %s:%s", ipAddr, fastPortString)
-	go ioListener(lis)
+	go ioServerLoop()
 }
 
-func ioListener(l net.Listener) {
+func ioServerLoop() {
 	for {
-		conn, err := l.Accept()
+		conn, err := ioListener.Accept()
 		if err != nil {
 			logger.ErrorfWithError(err, "net.Accept failed for IO listener\n")
 			return
@@ -47,7 +51,8 @@ func ioListener(l net.Listener) {
 func ioServerDown() {
 	DumpIfNecessary(qserver)
 	dumpRunningWorkers()
-	stopServer(qserver)
+	stopServerProfiling(qserver)
+	ioListener.Close()
 }
 
 var debugConcurrency = false

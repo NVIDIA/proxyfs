@@ -333,6 +333,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			}
 
 			logger.Infof("Reconfig finished successfully")
+			break
 		}
 
 		// if one of the daemons didn't make it, log the error and shutdown

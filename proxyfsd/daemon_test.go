@@ -2,7 +2,11 @@ package proxyfsd
 
 import (
 	"bytes"
+	"encoding/json"
+	"io/ioutil"
+	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +35,9 @@ func TestDaemon(t *testing.T) {
 		ramswiftDoneChan             chan bool
 		ramswiftSignalHandlerIsArmed bool
 		readData                     []byte
+		testVersion                  uint64
+		testVersionConfFile          *os.File
+		testVersionConfFileName      string
 		toReadFileInodeNumber        inode.InodeNumber
 		wg                           sync.WaitGroup
 	)
@@ -101,7 +108,27 @@ func TestDaemon(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	go ramswift.Daemon("/dev/null", confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan, unix.SIGINT)
+	testVersionConfFile, err = ioutil.TempFile(os.TempDir(), "proxyfsdTest_")
+	if nil != err {
+		t.Fatalf("ioutil.TempFile() failed: %v", err)
+	}
+	testVersionConfFileName = testVersionConfFile.Name()
+
+	_, err = testVersionConfFile.WriteString("[TestVersionSection]\n")
+	if nil != err {
+		t.Fatalf("testVersionConfFile.WriteString() [case 1] failed: %v", err)
+	}
+	_, err = testVersionConfFile.WriteString("Version: 1\n")
+	if nil != err {
+		t.Fatalf("testVersionConfFile.WriteString() [case 2] failed: %v", err)
+	}
+
+	err = testVersionConfFile.Close()
+	if nil != err {
+		t.Fatalf("testVersionConfFile.Close() [case 1] failed: %v", err)
+	}
+
+	go ramswift.Daemon(testVersionConfFileName, confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan, unix.SIGINT)
 
 	for !ramswiftSignalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
@@ -112,7 +139,7 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM)
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM, unix.SIGHUP)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
@@ -208,7 +235,7 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM)
+	go Daemon(testVersionConfFileName, confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM, unix.SIGHUP)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
@@ -223,7 +250,7 @@ func TestDaemon(t *testing.T) {
 		}
 	}
 
-	// Verify written data before restart
+	// Verify written data after restart
 
 	mountHandle, err = fs.Mount("CommonVolume", fs.MountOptions(0))
 	if nil != err {
@@ -257,6 +284,47 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Read() returned unexpected readData [case 2]")
 	}
 
+	// Verify [TestVersionSection]Version == 1
+
+	testVersion = fetchTestVersionSectionDotVersion(t)
+	if 1 != testVersion {
+		t.Fatalf("Before SIGHUP, fetchTestVersionSectionDotVersion() should have returned 1")
+	}
+
+	// Update testVersionConfFileName to bump [TestVersionSection]Version to 2
+
+	testVersionConfFile, err = os.OpenFile(testVersionConfFileName, os.O_TRUNC|os.O_WRONLY, 0)
+	if nil != err {
+		t.Fatalf("os.OpenFile() failed: %v", err)
+	}
+
+	_, err = testVersionConfFile.WriteString("[TestVersionSection]\n")
+	if nil != err {
+		t.Fatalf("testVersionConfFile.WriteString() [case 3] failed: %v", err)
+	}
+	_, err = testVersionConfFile.WriteString("Version: 2\n")
+	if nil != err {
+		t.Fatalf("testVersionConfFile.WriteString() [case 4] failed: %v", err)
+	}
+
+	err = testVersionConfFile.Close()
+	if nil != err {
+		t.Fatalf("testVersionConfFile.Close() [case 2] failed: %v", err)
+	}
+
+	// Send ourself a SIGHUP to signal reload of testVersionConfFileName
+	//   and wait a sufficient amount of time for the reload to complete
+
+	unix.Kill(unix.Getpid(), unix.SIGHUP)
+	time.Sleep(time.Second)
+
+	// Verify [TestVersionSection]Version == 2
+
+	testVersion = fetchTestVersionSectionDotVersion(t)
+	if 2 != testVersion {
+		t.Fatalf("After SIGHUP, fetchTestVersionSectionDotVersion() should have returned 2")
+	}
+
 	// Send ourself a SIGTERM to signal normal termination of mainWithArgs()
 
 	unix.Kill(unix.Getpid(), unix.SIGTERM)
@@ -274,4 +342,75 @@ func TestDaemon(t *testing.T) {
 	unix.Kill(unix.Getpid(), unix.SIGINT)
 
 	_ = <-ramswiftDoneChan
+
+	// Clean up
+
+	err = os.Remove(testVersionConfFileName)
+	if nil != err {
+		t.Fatalf("os.Remove(testVersionConfFileName) failed: %v", err)
+	}
+}
+
+func fetchTestVersionSectionDotVersion(t *testing.T) (version uint64) {
+	var (
+		body                                         []byte
+		bodySections                                 map[string]interface{}
+		err                                          error
+		ok                                           bool
+		resp                                         *http.Response
+		testVersionSection                           interface{}
+		testVersionSectionMap                        map[string]interface{}
+		testVersionSectionMapVersion                 interface{}
+		testVersionSectionMapVersionSlice            []interface{}
+		testVersionSectionMapVersionSliceElementZero interface{}
+		versionAsString                              string
+	)
+
+	resp, err = http.Get("http://127.0.0.1:53461/config")
+	if nil != err {
+		t.Fatalf("http.Get() failed: %v", err)
+	}
+	body, err = ioutil.ReadAll(resp.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() failed: %v", err)
+	}
+	err = resp.Body.Close()
+	if nil != err {
+		t.Fatalf("resp.Body.Close() failed: %v", err)
+	}
+	bodySections = make(map[string]interface{})
+	err = json.Unmarshal(body, &bodySections)
+	if nil != err {
+		t.Fatalf("json.Unmarshal() failed: %v", err)
+	}
+	testVersionSection, ok = bodySections["TestVersionSection"]
+	if !ok {
+		t.Fatalf("bodySections[\"TestVersionSection\"] not found")
+	}
+	testVersionSectionMap, ok = testVersionSection.(map[string]interface{})
+	if !ok {
+		t.Fatalf("testVersionSection.(map[string]interface{}) failed")
+	}
+	testVersionSectionMapVersion, ok = testVersionSectionMap["Version"]
+	if !ok {
+		t.Fatalf("testVersionSectionMap[\"Version\"] not found")
+	}
+	testVersionSectionMapVersionSlice, ok = testVersionSectionMapVersion.([]interface{})
+	if !ok {
+		t.Fatalf("testVersionSectionMapVersion.([]interface{}) failed")
+	}
+	if 1 != len(testVersionSectionMapVersionSlice) {
+		t.Fatalf("testVersionSectionMapVersionSlice should have a single element")
+	}
+	testVersionSectionMapVersionSliceElementZero = testVersionSectionMapVersionSlice[0]
+	versionAsString, ok = testVersionSectionMapVersionSliceElementZero.(string)
+	if !ok {
+		t.Fatalf("testVersionSectionMapVersionSliceElementZero.(string) failed")
+	}
+	version, err = strconv.ParseUint(versionAsString, 10, 64)
+	if nil != err {
+		t.Fatalf("strconv(versionAsString, 10, 64) failed: %v", err)
+	}
+
+	return
 }
