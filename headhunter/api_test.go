@@ -2,8 +2,6 @@ package headhunter
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -84,11 +82,6 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 }
 
 func TestHeadHunterAPI(t *testing.T) {
-	dbDirPath, err := ioutil.TempDir("", "headhunter.db")
-	if nil != err {
-		t.Fatalf("ioutil.TempDir(\"\", \"headhunter.db\") returned error: %v", err)
-	}
-
 	confStrings := []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
@@ -141,6 +134,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = swiftclient.Up(confMap)
 	if nil != err {
 		t.Fatalf("swiftclient.Up() [case 1] returned error: %v", err)
+	}
+
+	err = Format(confMap, "TestVolume")
+	if nil != err {
+		t.Fatalf("headhunter.Format() returned error: %v", err)
 	}
 
 	err = Up(confMap)
@@ -242,13 +240,6 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
-	}
-
-	// Clean-up dbDirPath (if used)
-
-	err = os.RemoveAll(dbDirPath)
-	if nil != err {
-		t.Fatalf("os.RemoveAll(\"%v\") returned error: %v", dbDirPath, err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()

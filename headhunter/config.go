@@ -17,7 +17,7 @@ const (
 )
 
 const (
-	checkpointHeaderName = "X-Container-Meta-Checkpoint"
+	CheckpointHeaderName = "X-Container-Meta-Checkpoint"
 )
 
 var (
@@ -208,7 +208,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			continue
 		} else if 1 == len(primaryPeerList) {
 			if whoAmI == primaryPeerList[0] {
-				err = addVolume(confMap, volumeName)
+				err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 				if nil != err {
 					return
 				}
@@ -267,7 +267,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for volumeName = range deletedVolumeNames {
-		err = addVolume(confMap, volumeName)
+		err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 		if nil != err {
 			return
 		}
@@ -309,7 +309,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if whoAmI == primaryPeerList[0] {
 				_, ok = globals.volumeMap[volumeName]
 				if !ok {
-					err = addVolume(confMap, volumeName)
+					err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 					if nil != err {
 						return
 					}
@@ -342,7 +342,52 @@ func Down() (err error) {
 	return
 }
 
-func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
+// Format runs an instance of the headhunter package for formatting a new volume
+func Format(confMap conf.ConfMap, volumeName string) (err error) {
+	var (
+		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
+		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
+		trailingByteSlice                    bool
+	)
+
+	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
+
+	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
+		return
+	}
+
+	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+	if trailingByteSlice {
+		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
+		return
+	}
+
+	// Init volume database...triggering format
+
+	globals.volumeMap = make(map[string]*volumeStruct)
+
+	err = addVolume(confMap, volumeName, true)
+	if nil != err {
+		return
+	}
+
+	// Shutdown and exit
+
+	err = downVolume(volumeName)
+
+	return
+}
+
+// TODO: allowFormat should change to doFormat when controller/runway pre-formats
+func addVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err error) {
 	var (
 		flowControlName string
 		volume          *volumeStruct
@@ -403,7 +448,7 @@ func addVolume(confMap conf.ConfMap, volumeName string) (err error) {
 		return
 	}
 
-	err = volume.getCheckpoint()
+	err = volume.getCheckpoint(allowFormat) // TODO: change to doFormat ultimately
 	if nil != err {
 		return
 	}
