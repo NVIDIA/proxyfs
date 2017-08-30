@@ -342,6 +342,13 @@ func TestDaemon(t *testing.T) {
 	unix.Kill(unix.Getpid(), unix.SIGINT)
 
 	_ = <-ramswiftDoneChan
+
+	// Clean up
+
+	err = os.Remove(testVersionConfFileName)
+	if nil != err {
+		t.Fatalf("os.Remove(testVersionConfFileName) failed: %v", err)
+	}
 }
 
 func fetchTestVersionSectionDotVersion(t *testing.T) (version uint64) {
