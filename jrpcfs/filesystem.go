@@ -21,34 +21,39 @@ import (
 // RPC server handle
 var srv *rpc.Server
 
+var jrpcListener net.Listener
+
 // Local server handle, used to track jrpc-related ops
 var jserver *Server
 
 func jsonRpcServerUp(ipAddr string, portString string) {
+	var err error
+
 	jserver = NewServer()
 
 	srv = rpc.NewServer()
-	err := srv.Register(jserver)
+	err = srv.Register(jserver)
 	if err != nil {
 		logger.ErrorfWithError(err, "failed to register RPC handler")
 		return
 	}
 
-	lis, err := net.Listen("tcp", net.JoinHostPort(ipAddr, portString))
+	jrpcListener, err = net.Listen("tcp", net.JoinHostPort(ipAddr, portString))
 	if err != nil {
 		logger.ErrorfWithError(err, "net.Listen %s:%s failed", ipAddr, portString)
 		return
 	}
 
 	//logger.Infof("Starting to listen on %s:%s", ipAddr, portString)
-	go jrpcListener(lis)
+	go jrpcServerLoop()
 }
 
-func jrpcListener(l net.Listener) {
+func jrpcServerLoop() {
 	for {
-		conn, err := l.Accept()
+		conn, err := jrpcListener.Accept()
 		if err != nil {
-			logger.FatalfWithError(err, "net.Accept failed\n")
+			logger.ErrorfWithError(err, "net.Accept failed for JRPC listener\n")
+			return
 		}
 
 		go srv.ServeCodec(jsonrpc.NewServerCodec(conn))
@@ -57,8 +62,8 @@ func jrpcListener(l net.Listener) {
 
 func jsonRpcServerDown() {
 	DumpIfNecessary(jserver)
-	stopServer(jserver)
-	//srv.Stop()
+	stopServerProfiling(jserver)
+	jrpcListener.Close()
 }
 
 // Enumeration of operations, used for stats-related things
@@ -213,7 +218,7 @@ func NewServer() *Server {
 	return &s
 }
 
-func stopServer(s *Server) {
+func stopServerProfiling(s *Server) {
 	if doProfiling {
 		close(s.saveChannel)
 		close(s.internalSaveChannel)

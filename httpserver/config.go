@@ -321,6 +321,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	globals.active = true
 
+	globals.confMap = confMap
+
 	err = nil
 	return
 }
