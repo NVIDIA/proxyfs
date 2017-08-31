@@ -8,7 +8,6 @@ import (
 	"math"
 	"path"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -278,22 +277,241 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 	return
 }
 
-func (mS *mountStruct) getFileLockList(inodeNumber inode.InodeNumber) (fLocklist *list.List, err error) {
+func (mS *mountStruct) getFileLockList(inodeNumber inode.InodeNumber) (flockList *list.List) {
 	mS.volStruct.Lock()
 	defer mS.volStruct.Unlock()
 
-	fLocklist, ok := mS.volStruct.FLockMap[inodeNumber]
+	flockList, ok := mS.volStruct.FLockMap[inodeNumber]
 	if !ok {
-		fLocklist = list.New()
-		mS.volStruct.FLockMap[inodeNumber] = fLocklist
+		flockList = new(list.List)
+		mS.volStruct.FLockMap[inodeNumber] = flockList
 	}
 
-	err = nil
 	return
 }
 
-func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlockStruct *FlockStruct) (outFlockStruct *FlockStruct, err error) {
-	outFlockStruct = nil // default up front
+// Check for lock conflict with other Pids, if there is a conflict then it will return the first occurance of conflicting range.
+func checkConflict(elm *FlockStruct, flock *FlockStruct) bool {
+
+	if flock.Pid == elm.Pid {
+		return false
+	}
+
+	if (elm.Start+elm.Len) <= flock.Start || (flock.Start+flock.Len) <= elm.Start {
+		return false
+	}
+
+	if (flock.Type == syscall.F_WRLCK) || (elm.Type == syscall.F_WRLCK) {
+		return true
+	}
+
+	return false
+}
+
+func (mS *mountStruct) verifyLock(inodeNumber inode.InodeNumber, flock *FlockStruct) (conflictLock *FlockStruct) {
+	flockList := mS.getFileLockList(inodeNumber)
+
+	for e := flockList.Front(); e != nil; e = e.Next() {
+		elm := e.Value.(*FlockStruct)
+
+		if checkConflict(elm, flock) == true {
+			return elm
+		}
+	}
+
+	return nil
+}
+
+// Insert a file lock range to corresponding lock list for the pid.
+// Assumption: There is no lock conflict and the range that is being inserted has no conflict and is free.
+func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
+	err = nil
+	flockList := mS.getFileLockList(inodeNumber)
+
+	overlapList := new(list.List)
+	var beforeElm *list.Element // Refers to the immediate element that starts before the start of the range.
+	var afterElm *list.Element  // Refers to the immediate element that starts after the end of the range.
+
+	// flockList is sorted by starting offset of the range.
+	// Inserting a range happens in two steps. 1) Check if there is any conflict and also identify the
+	// point in the list where the entry will be added (before and after elements) 2) Then check if
+	// the range can extend the before element, if so adjust it. 3) Simillarly, check if the after
+	// element can be collapsed if it forms a contiguous range.
+
+	for e := flockList.Front(); e != nil; e = e.Next() {
+		elm := e.Value.(*FlockStruct)
+
+		if (elm.Start + elm.Len) <= inFlock.Start {
+			beforeElm = e
+			continue
+		}
+
+		if elm.Start > (inFlock.Start + inFlock.Len) {
+			afterElm = e
+			if overlapList.Len() == 0 {
+				flockList.InsertBefore(inFlock, e)
+				return
+			}
+
+			break
+		}
+
+		if checkConflict(elm, inFlock) {
+			err = blunder.AddError(nil, blunder.TryAgainError)
+			return
+		}
+
+		if elm.Pid == inFlock.Pid {
+			overlapList.PushBack(e)
+		}
+	}
+
+	if overlapList.Len() == 0 {
+		if beforeElm != nil {
+			elm := beforeElm.Value.(*FlockStruct)
+			if elm.Pid == inFlock.Pid && elm.Type == inFlock.Type && (elm.Start+elm.Len) == inFlock.Start {
+				elm.Len = inFlock.Start + inFlock.Len - elm.Len
+			} else {
+				flockList.InsertAfter(inFlock, beforeElm)
+			}
+		} else {
+			flockList.PushBack(inFlock)
+		}
+
+		return
+	}
+
+	// Look at the last element in the overlapping list
+	lastEnt := overlapList.Back()
+	e := lastEnt.Value.(*list.Element)
+	elm := e.Value.(*FlockStruct)
+	if (elm.Start + elm.Len) > (inFlock.Start + inFlock.Len) {
+		inFlock.Len = (elm.Start + elm.Len) - inFlock.Start
+	}
+
+	// We can delete all the entries in the overlapping list. These entries are replaced by
+	// the range we are inserting.
+	for e := overlapList.Front(); e != nil; e = e.Next() {
+		entry := e.Value.(*list.Element)
+		flockList.Remove(entry)
+	}
+
+	// Now adjust the before and after entries:
+	// First adjust the after:
+	if afterElm != nil {
+		elm := afterElm.Value.(*FlockStruct)
+		if elm.Pid == inFlock.Pid && elm.Type == inFlock.Type && (inFlock.Start+inFlock.Len) == elm.Start {
+			// We can collapse the entry:
+			elm.Len = elm.Start + elm.Len - inFlock.Start
+			elm.Start = inFlock.Start
+
+			if beforeElm != nil {
+				belm := beforeElm.Value.(*FlockStruct)
+				if belm.Pid == elm.Pid && belm.Type == elm.Type && (belm.Start+belm.Len) == elm.Start {
+					belm.Len = elm.Start + elm.Len - belm.Start
+					flockList.Remove(afterElm)
+				}
+			}
+
+			return
+		}
+	}
+
+	if beforeElm != nil {
+		belm := beforeElm.Value.(*FlockStruct)
+		if belm.Pid == inFlock.Pid && belm.Type == inFlock.Type && (belm.Start+belm.Len) == inFlock.Start {
+			belm.Len = inFlock.Start + inFlock.Len - belm.Start
+		}
+
+		flockList.InsertAfter(inFlock, beforeElm)
+		return
+	}
+
+	if afterElm != nil {
+		flockList.InsertBefore(inFlock, afterElm)
+	} else {
+		flockList.PushBack(inFlock)
+	}
+
+	return
+
+}
+
+// Unlock a given range. All locks held in this range by the process (indentified by Pid) are removed.
+func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
+
+	flockList := mS.getFileLockList(inodeNumber)
+	if flockList == nil {
+		logger.Warnf("Unlock of a region not already locked - %+v", inFlock)
+		return
+	}
+
+	start := inFlock.Start
+	len := inFlock.Len
+
+	removeList := new(list.List)
+
+	for e := flockList.Front(); e != nil; e = e.Next() {
+		elm := e.Value.(*FlockStruct)
+
+		if elm.Pid != inFlock.Pid {
+			continue
+		}
+
+		if (elm.Start + elm.Len) < start {
+			continue
+		}
+
+		if elm.Start >= (start + len) {
+			break
+		}
+
+		// If the lock falls completely in the range, delete it.
+		if elm.Start >= start && (elm.Start+elm.Len) <= (start+len) {
+			removeList.PushBack(e)
+			continue
+		}
+
+		// This lock overlapps with the range - three possibalities 1) lock starts before the range, 2) end after range and 3) both.
+
+		elmLen := elm.Start + elm.Len // Save the original length, it is required in case of #3 (both)
+
+		if elm.Start < start { // Handle the first part - lock starts before the range.
+			elm.Len = start - elm.Start
+		}
+
+		if elmLen > (start + len) { // Lock extends beyond the unlock range.
+			if elm.Start > start { // case #2
+				// use the existing record
+				elm.Start = start + len
+				elm.Len = elmLen - elm.Start
+				break
+			}
+
+			// Create a new record - handle case #3 both (starts before the range and extends beyond the range)
+			elmTail := new(FlockStruct)
+			elmTail.Start = start + len
+			elmTail.Len = elmLen - elm.Start
+			elmTail.Pid = elm.Pid
+			elmTail.Type = elm.Type
+			elmTail.Whence = elm.Whence
+			flockList.InsertAfter(elmTail, e)
+			break
+		}
+	}
+
+	for e := removeList.Front(); e != nil; e = e.Next() {
+		elm := e.Value.(*list.Element)
+		flockList.Remove(elm)
+	}
+
+	return
+}
+
+// Implements file locking conforming to fcntl(2) locking description. F_SETLKW is not implemented. Supports F_SETLW and F_GETLW.
+// whence: FS supports only SEEK_SET - starting from 0, since it does not manage file handles, caller is expected to supply the start and length relative to offset ZERO.
+func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlock *FlockStruct) (outFlock *FlockStruct, err error) {
+	outFlock = inFlock
 
 	if lockCmd == syscall.F_SETLKW {
 		err = blunder.AddError(nil, blunder.NotSupportedError)
@@ -311,93 +529,50 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+	if !mS.volStruct.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
+	if !mS.volStruct.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	flockList, err := mS.getFileLockList(inodeNumber)
-	if err != nil {
-		return
+	if inFlock.Len == 0 { // If length is ZERO means treat it as whole file.
+		inFlock.Len = ^uint64(0)
 	}
 
-	if inFlockStruct.Type == syscall.F_UNLCK {
-		for e := flockList.Front(); e != nil; e = e.Next() {
-			elm := e.Value.(*FlockStruct)
-
-			if (elm.Pid == inFlockStruct.Pid) && (elm.Start == inFlockStruct.Start) && (elm.Len == inFlockStruct.Len) {
-				flockList.Remove(e)
-				return // err == nil already
-			}
-		}
-
-		err = blunder.AddError(nil, blunder.NoDataError)
-		return
-	}
-
-	var lockEnd uint64
-	if inFlockStruct.Len == 0 {
-		lockEnd = ^uint64(0)
-	} else {
-		lockEnd = inFlockStruct.Start + inFlockStruct.Len
-	}
-
-	var insertElm *list.Element
-
-	// TBD: We are currently not handling overlapping locks more efficiently as described in fcntl(2) manpage.
-	for e := flockList.Front(); e != nil; e = e.Next() {
-		elm := e.Value.(*FlockStruct)
-		var elmEnd uint64
-
-		if elm.Len == 0 {
-			elmEnd = ^uint64(0)
-		} else {
-			elmEnd = elm.Start + elm.Len
-		}
-
-		if elmEnd < inFlockStruct.Start {
-			continue
-		}
-
-		if insertElm == nil && elm.Start >= inFlockStruct.Start {
-			insertElm = e
-		}
-
-		if elm.Start > lockEnd {
-			// No conflict insert the lock and return:
-			flockList.InsertBefore(inFlockStruct, insertElm)
-			outFlockStruct = inFlockStruct
-			return // err == nil already
-		}
-
-		if reflect.DeepEqual(elm, inFlockStruct) {
-			outFlockStruct = elm
-			return // err == nil already
-		}
-
-		if (elm.Type == syscall.F_WRLCK) || (inFlockStruct.Type == syscall.F_WRLCK) {
-			outFlockStruct = elm
+	switch lockCmd {
+	case syscall.F_GETLK:
+		conflictLock := mS.verifyLock(inodeNumber, inFlock)
+		if conflictLock != nil {
+			outFlock = conflictLock
 			err = blunder.AddError(nil, blunder.TryAgainError)
+		} else {
+			outFlock = inFlock
+			outFlock.Type = syscall.F_UNLCK
+		}
+		break
+
+	case syscall.F_SETLK:
+		if inFlock.Type == syscall.F_UNLCK {
+			err = mS.fileUnlock(inodeNumber, inFlock)
+		} else if inFlock.Type == syscall.F_WRLCK || inFlock.Type == syscall.F_RDLCK {
+			err = mS.fileLockInsert(inodeNumber, inFlock)
+		} else {
+			err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
 			return
 		}
-	}
 
-	newFlock := *inFlockStruct
-	if insertElm != nil {
-		flockList.InsertBefore(&newFlock, insertElm)
-	} else {
-		flockList.PushBack(&newFlock)
+		break
+
+	default:
+		err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
+		return
 	}
 
 	stats.IncrementOperations(&stats.FsFlockOps)
-
-	outFlockStruct = inFlockStruct
-
-	return // err == nil already
+	return
 }
 
 func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (stat Stat, err error) {
