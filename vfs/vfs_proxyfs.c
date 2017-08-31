@@ -1651,7 +1651,8 @@ static bool vfs_proxyfs_lock(struct vfs_handle_struct *handle,
 	}
 
     if ((op == F_GETLK) && (flock.l_type != F_UNLCK)) {
-		DEBUG(10, ("vfs_proxyfs_lock: F_GETLK failed, lock_type = %d error = %d\n", type, err));
+		// Lock is already held by someone, not possible to get the lock.
+		DEBUG(10, ("vfs_proxyfs_lock: F_GETLK failed, conflicting lock: lock_type = %d error = %d\n", type, err));
 		return false;
 	}
 

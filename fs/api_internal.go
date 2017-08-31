@@ -329,8 +329,14 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 	flockList := mS.getFileLockList(inodeNumber)
 
 	overlapList := new(list.List)
-	var beforeElm *list.Element
-	var afterElm *list.Element
+	var beforeElm *list.Element // Refers to the immediate element that starts before the start of the range.
+	var afterElm *list.Element  // Refers to the immediate element that starts after the end of the range.
+
+	// flockList is sorted by starting offset of the range.
+	// Inserting a range happens in two steps. 1) Check if there is any conflict and also identify the
+	// point in the list where the entry will be added (before and after elements) 2) Then check if
+	// the range can extend the before element, if so adjust it. 3) Simillarly, check if the after
+	// element can be collapsed if it forms a contiguous range.
 
 	for e := flockList.Front(); e != nil; e = e.Next() {
 		elm := e.Value.(*FlockStruct)
@@ -383,7 +389,8 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 		inFlock.Len = (elm.Start + elm.Len) - inFlock.Start
 	}
 
-	// We can delete all the entries in the overlapping list:
+	// We can delete all the entries in the overlapping list. These entries are replaced by
+	// the range we are inserting.
 	for e := overlapList.Front(); e != nil; e = e.Next() {
 		entry := e.Value.(*list.Element)
 		flockList.Remove(entry)
@@ -435,6 +442,7 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 
 	flockList := mS.getFileLockList(inodeNumber)
 	if flockList == nil {
+		logger.Warnf("Unlock of a region not already locked - %+v", inFlock)
 		return
 	}
 
