@@ -421,7 +421,7 @@ ruby_block "Create exports entry" do
     end
 
     editor = Chef::Util::FileEdit.new("/etc/exports")
-    editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,fsid=1000,anonuid=1000,anongid=1000,no_subtree_check,no_root_squash) 192.168.0.0/255.255.255.0(rw,sync,fsid=1000,no_subtree_check,anonuid=1000,anongid=1000)")
+    editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,sync,fsid=1000,no_subtree_check,no_root_squash)")
     editor.write_file
   end 
 end

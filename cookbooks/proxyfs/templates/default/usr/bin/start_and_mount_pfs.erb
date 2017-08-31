@@ -104,7 +104,7 @@ mountpoint -q $SHARE_SMB
 if [ $? -ne 0 ]; then
     for i in `seq 5`; do
         sleep 5
-        sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,uid=<%= @swift_uid %>,gid=<%= @swift_gid %>,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
+        sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
         echo "Mount of $SHARE_SMB failed.  Retrying..." 
     done
 fi
