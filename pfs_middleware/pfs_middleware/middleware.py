@@ -1444,7 +1444,7 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPNoContent(request=req, headers=headers)
+        return swob.HTTPOk(request=req, headers=headers)
 
     def coalesce_object(self, ctx):
         req = ctx.req
