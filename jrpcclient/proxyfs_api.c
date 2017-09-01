@@ -1702,7 +1702,8 @@ struct dirent* proxyfs_get_dirents(jsonrpc_context_t* ctx, int num_entries)
         name        = jsonrpc_get_resp_array_str   (ctx, ptable[DIRENTS], i, ptable[BASENAME]);
         if (name != NULL) {
             strncpy(ent->d_name, name, NAME_MAX);
-            ent->d_name[NAME_MAX-1] = 0;
+            // dirent->d_name is NAME_MAX+1 long
+            ent->d_name[NAME_MAX] = 0;
         } else {
             DPRINTF("Error getting basename for entry %d!\n",i);
         }

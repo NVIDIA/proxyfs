@@ -351,6 +351,7 @@ def test_jrpcclient():
 
 
 def main(options):
+    failures = ""
     go_version = subprocess.check_output((['go', 'version']))
     color_print(go_version[:-1], "bright green")
 
