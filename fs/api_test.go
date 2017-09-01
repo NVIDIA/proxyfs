@@ -605,7 +605,7 @@ func TestBadRename(t *testing.T) {
 
 	validFile := "PerfectlyValidFile"
 	_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
-	if err != nil {
+	if nil != err {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 

@@ -528,7 +528,7 @@ static uint8_t  bufToWrite[] = {0x41, 0x42, 0x43};
 static uint64_t bytesWritten = 0;
 
 // Rename-related
-static char newName[1024];
+static char newName[PATH_MAX+1];
 
 // Test stats
 static int   private_numPassed = 0;
