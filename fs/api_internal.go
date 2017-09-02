@@ -584,12 +584,17 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
+	var (
+		inodeType inode.InodeType
+	)
+
 	err = validateBaseName(basename)
 	if err != nil {
 		return
 	}
 
-	// We need both dirInodelock and the targetInode lock to make sure they don't go away and linkCount is updated correctly.
+	// We need both dirInodelock and the targetInode lock to make sure they
+	// don't go away and linkCount is updated correctly.
 	callerID := dlm.GenerateCallerID()
 	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, callerID)
 	if err != nil {
@@ -600,6 +605,32 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 	if err != nil {
 		return
 	}
+
+	// Lock the target inode to check its type and insure its not a directory (if it is a
+	// directory then locking it after the target directory could result in deadlock).
+	err = targetInodeLock.WriteLock()
+	if err != nil {
+		return
+	}
+
+	// make sure target inode is not a directory
+	inodeType, err = mS.volStruct.VolumeHandle.GetType(targetInodeNumber)
+	if err != nil {
+		targetInodeLock.Unlock()
+		// Because we know that GetType() has already "blunderized" the error, we just pass it on
+		logger.ErrorfWithError(err, "%s: couldn't get type for inode %v", utils.GetFnName(), targetInodeNumber)
+		return err
+	}
+	if inodeType == inode.DirType {
+		targetInodeLock.Unlock()
+		// no need to print an error when its a mistake by the client
+		err = fmt.Errorf("%s: inode %v cannot be a dir inode", utils.GetFnName(), targetInodeNumber)
+		return blunder.AddError(err, blunder.LinkDirError)
+	}
+
+	// drop the target inode lock so we can get the directory lock then
+	// reget the target inode lock
+	targetInodeLock.Unlock()
 
 	err = dirInodeLock.WriteLock()
 	if err != nil {
@@ -613,19 +644,6 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 	}
 	defer targetInodeLock.Unlock()
 
-	// In the case of hardlink, make sure target inode is not a directory
-	inodeType, err := mS.volStruct.VolumeHandle.GetType(targetInodeNumber)
-	if err != nil {
-		// Because we know that GetMetadata has already "blunderized" the error, we just pass it on
-		logger.ErrorfWithError(err, "couldn't get type for inode %v", targetInodeNumber)
-		return err
-	}
-	if inodeType == inode.DirType {
-		err = fmt.Errorf("%s: inode %v cannot be a dir inode", utils.GetFnName(), targetInodeNumber)
-		logger.ErrorWithError(err)
-		return blunder.AddError(err, blunder.LinkDirError)
-	}
-
 	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
@@ -638,13 +656,12 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
-	if !mS.volStruct.VolumeHandle.Access(targetInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
 
 	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, targetInodeNumber)
-	if inodeType == inode.FileType {
+
+	// if the link was successful and this is a regular file then any
+	// pending data was flushed
+	if err == nil && inodeType == inode.FileType {
 		mS.volStruct.untrackInFlightFileInodeData(targetInodeNumber, false)
 	}
 
@@ -2183,8 +2200,17 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 		err = blunder.NewError(blunder.NotPermError, "EPERM")
 		return
 	}
+	_, ok := stat[StatSize]
+	if ok {
+		if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+			err = blunder.NewError(blunder.NotPermError, "EPERM")
+			return
+		}
+	}
 
 	// Set crtime, if present in the map
+	//
+	// TODO: delete this; changing the creation time of a file should not be allowed. --craig
 	crtime, ok := stat[StatCRTime]
 	if ok {
 		newCreationTime := time.Unix(0, int64(crtime))
@@ -2218,6 +2244,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 
 	// Set ctime, if present in the map
+	//
+	// TODO: delete this -- changing the attribute change time of a file should not be allowed. --craig
 	ctime, ok := stat[StatCTime]
 	if ok {
 		newAccessTime := time.Unix(0, int64(ctime))
@@ -2239,6 +2267,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 
 	// Set userID, if present in the map
+	//
+	// TODO: only root can do this (unless the userid is not changing, in which case its OK) --craig
 	newUserID, settingUserID := stat[StatUserID]
 	if settingUserID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
@@ -2249,6 +2279,9 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 
 	// Set groupID, if present in the map
+	//
+	// TODO: any user can change a file to a different group in their group list,
+	// but only root can change to a group not in the group list. --craig
 	newGroupID, settingGroupID := stat[StatGroupID]
 	if settingGroupID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
@@ -2290,6 +2323,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 		}
 	}
 
+	// TODO: was there a flush of inflight data that i missed?
+	// if not, this should be deleted --craig
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
 	stats.IncrementOperations(&stats.FsSetstatOps)
