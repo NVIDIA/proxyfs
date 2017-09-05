@@ -2612,7 +2612,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
         self.assertEqual(headers["Content-Length"], "2641863")
         self.assertEqual(headers["Content-Type"], "image/png")
@@ -2630,7 +2630,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Type"], "Pegasus/inartistic")
 
     def test_bogus_meta(self):
@@ -2639,7 +2639,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
     def test_meta(self):
         self.serialized_object_metadata = json.dumps({
@@ -2649,7 +2649,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["X-Object-Sysmeta-Fish"], "cod")
         self.assertEqual(headers["X-Object-Meta-Fish"], "trout")
 
@@ -2661,7 +2661,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
     def test_special_chars(self):
         def mock_RpcHead(head_object_req):
@@ -2728,7 +2728,7 @@ class TestObjectHeadDir(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/a-dir",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Length"], "0")
         self.assertEqual(headers["Content-Type"], "application/directory")
 
