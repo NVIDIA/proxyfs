@@ -1730,6 +1730,49 @@ func TestRpcPutContainer(t *testing.T) {
 	assert.Equal(newMetadata, headReply.Metadata)
 }
 
+func TestRpcMiddlewareMkdir(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+	containerName := "rpc-middleware-mkdir-container"
+
+	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	dirName := "rpc-middleware-mkdir-test"
+	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
+	dirMetadata := []byte("some metadata b5fdbc4a0f1484225fcb7aa64b1e6b94")
+	req := MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply := MiddlewareMkdirReply{}
+
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.Nil(err)
+
+	// Check created dir
+	headRequest := HeadReq{
+		VirtPath: dirPath,
+	}
+	headReply := HeadReply{}
+	err = server.RpcHead(&headRequest, &headReply)
+	assert.Nil(err)
+	assert.Equal(headReply.Metadata, dirMetadata)
+	assert.True(headReply.IsDir)
+
+	// You get an error if the file exists (which it does since we just made it)
+	req = MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply = MiddlewareMkdirReply{}
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.NotNil(err)
+	assert.True(blunder.Is(err, blunder.FileExistsError))
+}
+
 func TestRpcCoalesce(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)

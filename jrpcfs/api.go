@@ -652,6 +652,21 @@ type MiddlewarePostReq struct {
 	OldMetaData []byte
 }
 
+type MiddlewareMkdirReply struct {
+	ModificationTime uint64
+	InodeNumber      uint64
+	NumWrites        uint64
+}
+
+type MiddlewareMkdirReq struct {
+
+	// Virtual path of the directory to be created
+	VirtPath string
+
+	// HTTP metadata to be stored
+	Metadata []byte
+}
+
 // PutCompleteReq is the request object for RpcPutComplete
 type PutCompleteReq struct {
 	VirtPath    string
