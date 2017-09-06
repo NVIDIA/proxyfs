@@ -201,43 +201,28 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 		return 0, err
 	}
 
-	fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(filePerm, userID, groupID)
-	if err != nil {
-		return 0, err
-	}
-
 	// Lock the directory inode before doing the link
 	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, nil)
 	if err != nil {
-		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
-		if destroyErr != nil {
-			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed initInodeLock() check in fs.Create", fileInodeNumber)
-		}
 		return 0, err
 	}
 	err = dirInodeLock.WriteLock()
 	if err != nil {
-		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
-		if destroyErr != nil {
-			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed WriteLock() in fs.Create", fileInodeNumber)
-		}
 		return 0, err
 	}
 	defer dirInodeLock.Unlock()
 
 	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
-		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
-		if destroyErr != nil {
-			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(F_OK) in fs.Create", fileInodeNumber)
-		}
 		return 0, blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
 	if !mS.volStruct.VolumeHandle.Access(dirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
-		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
-		if destroyErr != nil {
-			logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Access(W_OK|X_OK) in fs.Create", fileInodeNumber)
-		}
 		return 0, blunder.NewError(blunder.PermDeniedError, "EACCES")
+	}
+
+	// create the file and add it to the directory
+	fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(filePerm, userID, groupID)
+	if err != nil {
+		return 0, err
 	}
 
 	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, fileInodeNumber)

@@ -102,8 +102,8 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 		panic(err)
 	}
 	if !ok {
-		err = fmt.Errorf("%s: failed to create hardlink %v to inode %v in directory inode %v: entry exists", utils.GetFnName(), basename, targetInode.InodeNumber, dirInode.InodeNumber)
-		logger.ErrorWithError(err)
+		err = fmt.Errorf("%s: failed to create link '%v' to inode %v in directory inode %v: entry exists",
+			utils.GetFnName(), basename, targetInode.InodeNumber, dirInode.InodeNumber)
 		return blunder.AddError(err, blunder.FileExistsError)
 	}
 
@@ -123,6 +123,7 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 	return nil
 }
 
+// This is by both the link(2) and create(2) operations (mountstruct.Link() and mountstruct.Create())
 func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber) (err error) {
 	stats.IncrementOperations(&stats.DirLinkOps)
 
