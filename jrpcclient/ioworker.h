@@ -6,6 +6,7 @@
 #include <proxyfs.h>
 
 int io_workers_start(char *server, int port, int count);
+void io_workers_stop();
 int schedule_io_work(proxyfs_io_request_t *req);
 
 #endif
