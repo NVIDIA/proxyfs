@@ -77,7 +77,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	logger.Infof("proxyfsd is starting up (PID %d)", os.Getpid())
 	defer func() {
 		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
-		logger.Down()
+		err = logger.Down()
+		if nil != err {
+			logger.Errorf("logger.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
+		}
 		wg.Done()
 	}()
 
@@ -89,7 +92,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		stats.Down()
+		err = stats.Down()
+		if nil != err {
+			logger.Errorf("stats.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -101,7 +107,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		swiftclient.Down()
+		err = swiftclient.Down()
+		if nil != err {
+			logger.Errorf("swiftclient.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -113,7 +122,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		headhunter.Down()
+		err = headhunter.Down()
+		if nil != err {
+			logger.Errorf("headhunter.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -125,7 +137,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		inode.Down()
+		err = inode.Down()
+		if nil != err {
+			logger.Errorf("inode.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -137,7 +152,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		dlm.Down()
+		err = dlm.Down()
+		if nil != err {
+			logger.Errorf("dlm.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -149,7 +167,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		fs.Down()
+		err = fs.Down()
+		if nil != err {
+			logger.Errorf("fs.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -161,7 +182,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		fuse.Down()
+		err = fuse.Down()
+		if nil != err {
+			logger.Errorf("fuse.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -173,7 +197,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		jrpcfs.Down()
+		err = jrpcfs.Down()
+		if nil != err {
+			logger.Errorf("jrpcfs.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -185,7 +212,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	wg.Add(1)
 	defer func() {
-		httpserver.Down()
+		err = httpserver.Down()
+		if nil != err {
+			logger.Errorf("httpserver.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
