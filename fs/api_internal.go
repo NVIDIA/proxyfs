@@ -2194,8 +2194,6 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 
 	// Set crtime, if present in the map
-	//
-	// TODO: delete this; changing the creation time of a file should not be allowed. --craig
 	crtime, ok := stat[StatCRTime]
 	if ok {
 		newCreationTime := time.Unix(0, int64(crtime))
@@ -2228,17 +2226,14 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 		}
 	}
 
-	// Set ctime, if present in the map
-	//
-	// TODO: delete this -- changing the attribute change time of a file should not be allowed. --craig
+	// ctime is used to reliably determine whether the contents of a file
+	// have changed so it cannot be altered by a client (some security
+	// software depends on this)
 	ctime, ok := stat[StatCTime]
 	if ok {
 		newAccessTime := time.Unix(0, int64(ctime))
-		err = mS.volStruct.VolumeHandle.SetAttrChangeTime(inodeNumber, newAccessTime)
-		if err != nil {
-			logger.ErrorWithError(err)
-			return err
-		}
+		logger.Info("%s: ignoring attempt to change ctime to %v on volume '%s' inode %v",
+			utils.GetFnName(), newAccessTime, mS.volStruct.volumeName, inodeNumber)
 	}
 
 	// Set size, if present in the map
@@ -2307,10 +2302,6 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 			return err
 		}
 	}
-
-	// TODO: was there a flush of inflight data that i missed?
-	// if not, this should be deleted --craig
-	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
 	stats.IncrementOperations(&stats.FsSetstatOps)
 	return
