@@ -393,6 +393,11 @@ func checkMetadataTimeChanges(t *testing.T, oldMd *MetadataStruct, newMd *Metada
 }
 
 func TestAPI(t *testing.T) {
+	var (
+		timeBeforeOp time.Time
+		timeAfterOp  time.Time
+	)
+
 	_, ok := AccountNameToVolumeName("BadAccountName")
 	if ok {
 		t.Fatalf("AccountNameToVolumeName(\"BadAccountName\") should have failed")
@@ -1088,7 +1093,8 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	checkMetadata(t, postMetadata, testMetadata, MetadataCrTimeField, "GetMetadata() after SetCreationTime()")
+	checkMetadata(t, postMetadata, testMetadata, MetadataCrTimeField,
+		"GetMetadata() after SetCreationTime() test 1")
 
 	testMetadata.ModificationTime = time.Now().Add(2 * time.Hour)
 	err = testVolumeHandle.SetModificationTime(fileInodeNumber, testMetadata.ModificationTime)
@@ -1686,48 +1692,69 @@ func TestAPI(t *testing.T) {
 	testMetadata.ModificationTime = dirInodeMetadataAfterCreateDir.ModificationTime
 	testMetadata.AccessTime = dirInodeMetadataAfterCreateDir.AccessTime
 	testMetadata.AttrChangeTime = dirInodeMetadataAfterCreateDir.AttrChangeTime
+
+	timeBeforeOp = time.Now()
+	time.Sleep(positiveDurationToDelayOrSkew)
+
 	err = testVolumeHandle.SetCreationTime(dirInode, testMetadata.CreationTime)
 	if nil != err {
 		t.Fatalf("SetCreationTime(dirInode,) failed: %v", err)
 	}
+	time.Sleep(positiveDurationToDelayOrSkew)
+	timeAfterOp = time.Now()
+
 	dirInodeMetadataAfterSetCreationTime, err := testVolumeHandle.GetMetadata(dirInode)
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
-	checkMetadata(t, dirInodeMetadataAfterSetCreationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetCreationTime()")
+	checkMetadata(t, dirInodeMetadataAfterSetCreationTime, testMetadata, MetadataNotAttrTimeFields,
+		"GetMetadata() after SetCreationTime() test 2")
+	if dirInodeMetadataAfterSetCreationTime.AttrChangeTime.Before(timeBeforeOp) ||
+		dirInodeMetadataAfterSetCreationTime.AttrChangeTime.After(timeAfterOp) {
+		t.Fatalf("dirInodeMetadataAfterSetCreationTime.AttrChangeTime unexpected")
+	}
 
 	testMetadata.ModificationTime = dirInodeMetadataAfterSetCreationTime.ModificationTime.Add(negativeDurationToDelayOrSkew)
+	timeBeforeOp = time.Now()
+	time.Sleep(positiveDurationToDelayOrSkew)
+
 	err = testVolumeHandle.SetModificationTime(dirInode, testMetadata.ModificationTime)
 	if nil != err {
 		t.Fatalf("SetModificationTime(dirInode,) failed: %v", err)
 	}
+	time.Sleep(positiveDurationToDelayOrSkew)
+	timeAfterOp = time.Now()
+
 	dirInodeMetadataAfterSetModificationTime, err := testVolumeHandle.GetMetadata(dirInode)
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
 	checkMetadata(t, dirInodeMetadataAfterSetModificationTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetModificationTime()")
+	if dirInodeMetadataAfterSetModificationTime.AttrChangeTime.Before(timeBeforeOp) ||
+		dirInodeMetadataAfterSetModificationTime.AttrChangeTime.After(timeAfterOp) {
+		t.Fatalf("dirInodeMetadataAfterSetModificationTime.AttrChangeTime unexpected")
+	}
 
 	testMetadata.AccessTime = dirInodeMetadataAfterSetModificationTime.AccessTime.Add(negativeDurationToDelayOrSkew)
+	timeBeforeOp = time.Now()
+	time.Sleep(positiveDurationToDelayOrSkew)
+
 	err = testVolumeHandle.SetAccessTime(dirInode, testMetadata.AccessTime)
 	if nil != err {
 		t.Fatalf("SetAccessTime(dirInode,) failed: %v", err)
 	}
+	time.Sleep(positiveDurationToDelayOrSkew)
+	timeAfterOp = time.Now()
+
 	dirInodeMetadataAfterSetAccessTime, err := testVolumeHandle.GetMetadata(dirInode)
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
 	checkMetadata(t, dirInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after testVolumeHandle.SetAccessTime()")
-
-	testMetadata.AttrChangeTime = dirInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
-	err = testVolumeHandle.SetAttrChangeTime(dirInode, testMetadata.AttrChangeTime)
-	if nil != err {
-		t.Fatalf("SetAccessTime(dirInode,) failed: %v", err)
+	if dirInodeMetadataAfterSetAccessTime.AttrChangeTime.Before(timeBeforeOp) ||
+		dirInodeMetadataAfterSetAccessTime.AttrChangeTime.After(timeAfterOp) {
+		t.Fatalf("dirInodeMetadataAfterSetAccessTime.AttrChangeTime unexpected")
 	}
-	dirInodeMetadataAfterSetAttrChangeTime, err := testVolumeHandle.GetMetadata(dirInode)
-	if nil != err {
-		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
-	}
-	checkMetadata(t, dirInodeMetadataAfterSetAttrChangeTime, testMetadata, MetadataTimeFields, "GetMetadata() after testVolumeHandle.SetAttrChangeTime()")
 
 	timeBeforeDirInodePutStream := time.Now()
 
@@ -1745,9 +1772,9 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
-	testMetadata.CreationTime = dirInodeMetadataAfterSetAttrChangeTime.CreationTime
-	testMetadata.ModificationTime = dirInodeMetadataAfterSetAttrChangeTime.ModificationTime
-	testMetadata.AccessTime = dirInodeMetadataAfterSetAttrChangeTime.AccessTime
+	testMetadata.CreationTime = dirInodeMetadataAfterSetAccessTime.CreationTime
+	testMetadata.ModificationTime = dirInodeMetadataAfterSetAccessTime.ModificationTime
+	testMetadata.AccessTime = dirInodeMetadataAfterSetAccessTime.AccessTime
 	checkMetadata(t, dirInodeMetadataAfterPutStream, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after PutStream()")
 	if dirInodeMetadataAfterPutStream.AttrChangeTime.Before(timeBeforeDirInodePutStream) || dirInodeMetadataAfterPutStream.AttrChangeTime.After(timeAfterDirInodePutStream) {
 		t.Fatalf("dirInodeMetadataAfterPutStream.AttrChangeTime unexpected")
@@ -1809,15 +1836,27 @@ func TestAPI(t *testing.T) {
 	testMetadata.ModificationTime = fileInodeMetadataAfterCreateFile.ModificationTime
 	testMetadata.AccessTime = fileInodeMetadataAfterCreateFile.AccessTime
 	testMetadata.AttrChangeTime = fileInodeMetadataAfterCreateFile.AttrChangeTime
+
+	timeBeforeOp = time.Now()
+	time.Sleep(positiveDurationToDelayOrSkew)
+
 	err = testVolumeHandle.SetCreationTime(fileInode, testMetadata.CreationTime)
 	if nil != err {
 		t.Fatalf("SetCreationTime(fileInode,) failed: %v", err)
 	}
+	time.Sleep(positiveDurationToDelayOrSkew)
+	timeAfterOp = time.Now()
+
 	fileInodeMetadataAfterSetCreationTime, err := testVolumeHandle.GetMetadata(fileInode)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInode) failed: %v", err)
 	}
-	checkMetadata(t, fileInodeMetadataAfterSetCreationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetCreationTime()")
+	checkMetadata(t, fileInodeMetadataAfterSetCreationTime, testMetadata, MetadataNotAttrTimeFields,
+		"GetMetadata() after SetCreationTime() test 3")
+	if fileInodeMetadataAfterSetCreationTime.AttrChangeTime.Before(timeBeforeOp) ||
+		fileInodeMetadataAfterSetCreationTime.AttrChangeTime.After(timeAfterOp) {
+		t.Fatalf("fileInodeMetadataAfterSetCreationTime.AttrChangeTime unexpected")
+	}
 
 	testMetadata.ModificationTime = fileInodeMetadataAfterSetCreationTime.ModificationTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetModificationTime(fileInode, testMetadata.ModificationTime)
@@ -1840,17 +1879,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(fileInode) failed: %v", err)
 	}
 	checkMetadata(t, fileInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetAccessTime() test 1")
-
-	testMetadata.AttrChangeTime = fileInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
-	err = testVolumeHandle.SetAttrChangeTime(fileInode, testMetadata.AttrChangeTime)
-	if nil != err {
-		t.Fatalf("SetAccessTime(fileInode,) failed: %v", err)
-	}
-	fileInodeMetadataAfterSetAttrChangeTime, err := testVolumeHandle.GetMetadata(fileInode)
-	if nil != err {
-		t.Fatalf("GetMetadata(fileInode) failed: %v", err)
-	}
-	checkMetadata(t, fileInodeMetadataAfterSetAttrChangeTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetAttrChangeTime()")
 
 	timeBeforeFileInodePutStream := time.Now()
 
@@ -1936,15 +1964,26 @@ func TestAPI(t *testing.T) {
 	testMetadata.ModificationTime = symlinkInodeMetadataAfterCreateSymlink.ModificationTime
 	testMetadata.AccessTime = symlinkInodeMetadataAfterCreateSymlink.AccessTime
 	testMetadata.AttrChangeTime = symlinkInodeMetadataAfterCreateSymlink.AttrChangeTime
+	timeBeforeOp = time.Now()
+	time.Sleep(positiveDurationToDelayOrSkew)
+
 	err = testVolumeHandle.SetCreationTime(symlinkInode, testMetadata.CreationTime)
 	if nil != err {
 		t.Fatalf("SetCreationTime(symlinkInode,) failed: %v", err)
 	}
+	time.Sleep(positiveDurationToDelayOrSkew)
+	timeAfterOp = time.Now()
+
 	symlinkInodeMetadataAfterSetCreationTime, err := testVolumeHandle.GetMetadata(symlinkInode)
 	if nil != err {
 		t.Fatalf("GetMetadata(symlinkInode) failed: %v", err)
 	}
-	checkMetadata(t, symlinkInodeMetadataAfterSetCreationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetCreationTime()")
+	checkMetadata(t, symlinkInodeMetadataAfterSetCreationTime, testMetadata, MetadataNotAttrTimeFields,
+		"GetMetadata() after SetCreationTime() test 4")
+	if symlinkInodeMetadataAfterSetCreationTime.AttrChangeTime.Before(timeBeforeOp) ||
+		symlinkInodeMetadataAfterSetCreationTime.AttrChangeTime.After(timeAfterOp) {
+		t.Fatalf("symlinkInodeMetadataAfterSetCreationTime.AttrChangeTime unexpected")
+	}
 
 	testMetadata.ModificationTime = symlinkInodeMetadataAfterSetCreationTime.ModificationTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetModificationTime(symlinkInode, testMetadata.ModificationTime)
@@ -1967,17 +2006,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(symlinkInode) failed: %v", err)
 	}
 	checkMetadata(t, symlinkInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetAccessTime() test 2")
-
-	testMetadata.AttrChangeTime = symlinkInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
-	err = testVolumeHandle.SetAttrChangeTime(symlinkInode, testMetadata.AttrChangeTime)
-	if nil != err {
-		t.Fatalf("SetAccessTime(symlinkInode,) failed: %v", err)
-	}
-	symlinkInodeMetadataAfterSetAttrChangeTime, err := testVolumeHandle.GetMetadata(symlinkInode)
-	if nil != err {
-		t.Fatalf("GetMetadata(symlinkInode) failed: %v", err)
-	}
-	checkMetadata(t, symlinkInodeMetadataAfterSetAttrChangeTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetAttrChangeTime()")
 
 	timeBeforeSymlinkInodePutStream := time.Now()
 

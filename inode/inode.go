@@ -855,6 +855,7 @@ func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime ti
 	}
 
 	inode.dirty = true
+	inode.AttrChangeTime = time.Now()
 	inode.CreationTime = CreationTime
 
 	err = vS.flushInode(inode)
@@ -874,7 +875,7 @@ func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, Modificatio
 	}
 
 	inode.dirty = true
-	inode.AttrChangeTime = ModificationTime
+	inode.AttrChangeTime = time.Now()
 	inode.ModificationTime = ModificationTime
 
 	err = vS.flushInode(inode)
@@ -895,27 +896,8 @@ func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.T
 	}
 
 	inode.dirty = true
+	inode.AttrChangeTime = time.Now()
 	inode.AccessTime = accessTime
-
-	err = vS.flushInode(inode)
-	if err != nil {
-		logger.ErrorWithError(err)
-		return err
-	}
-
-	return
-}
-
-func (vS *volumeStruct) SetAttrChangeTime(inodeNumber InodeNumber, attrChangeTime time.Time) (err error) {
-	// NOTE: Errors are logged by the caller
-
-	inode, err := vS.fetchInode(inodeNumber)
-	if err != nil {
-		return err
-	}
-
-	inode.dirty = true
-	inode.AttrChangeTime = attrChangeTime
 
 	err = vS.flushInode(inode)
 	if err != nil {
