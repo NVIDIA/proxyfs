@@ -2866,11 +2866,7 @@ int proxyfs_write_recv(void*   in_request_id,
 #endif
 
 // Flag to control debug prints. Defaulted to on for now.
-#ifdef ENABLE_LOGGING
-int debug_flag = 1;
-#else
 int debug_flag = 0;
-#endif
 
 void proxyfs_set_verbose()
 {
