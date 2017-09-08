@@ -223,9 +223,9 @@ var MetadataSizeField = map[string]bool{
 
 var MetadataTimeFields = map[string]bool{
 	"CreationTime":     true,
+	"AttrChangeTime":   true,
 	"ModificationTime": true,
 	"AccessTime":       true,
-	"AttrChangeTime":   true,
 }
 
 var MetadataNotAttrTimeFields = map[string]bool{
@@ -239,115 +239,113 @@ var MetadataNumWritesField = map[string]bool{
 }
 
 func checkMetadata(t *testing.T, md *MetadataStruct, expMd *MetadataStruct, fieldsToCheck map[string]bool, errorPrefix string) {
-	field := "InodeType"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.InodeType
-		expValue := expMd.InodeType
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "LinkCount"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.LinkCount
-		expValue := expMd.LinkCount
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "Size"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.Size
-		expValue := expMd.Size
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "CreationTime"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.CreationTime
-		expValue := expMd.CreationTime
-		if !value.Equal(expValue) {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "ModificationTime"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.ModificationTime
-		expValue := expMd.ModificationTime
-		if !value.Equal(expValue) {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "AccessTime"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.AccessTime
-		expValue := expMd.AccessTime
-		if !value.Equal(expValue) {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "AttrChangeTime"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.AttrChangeTime
-		expValue := expMd.AttrChangeTime
-		if !value.Equal(expValue) {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "NumWrites"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.NumWrites
-		expValue := expMd.NumWrites
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "InodeStreamNameSlice"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := len(md.InodeStreamNameSlice)
-		expValue := len(expMd.InodeStreamNameSlice)
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-		for i, streamName := range md.InodeStreamNameSlice {
-			value := streamName
-			expValue := expMd.InodeStreamNameSlice[i]
+	for field := range fieldsToCheck {
+		switch field {
+
+		case "InodeType":
+			value := md.InodeType
+			expValue := expMd.InodeType
 			if value != expValue {
-				t.Fatalf("%s returned %s[%d] %v, expected %v", errorPrefix, field, i, value, expValue)
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
 			}
-		}
-	}
-	field = "Mode"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.Mode
-		expValue := expMd.Mode
-		// Add the file type to the expected mode
-		if md.InodeType == DirType {
-			expValue |= PosixModeDir
-		} else if md.InodeType == SymlinkType {
-			expValue |= PosixModeSymlink
-		} else if md.InodeType == FileType {
-			expValue |= PosixModeFile
-		}
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "UserID"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.UserID
-		expValue := expMd.UserID
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
-		}
-	}
-	field = "GroupID"
-	if _, ok := fieldsToCheck[field]; ok {
-		value := md.GroupID
-		expValue := expMd.GroupID
-		if value != expValue {
-			t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+
+		case "LinkCount":
+			value := md.LinkCount
+			expValue := expMd.LinkCount
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "Size":
+			value := md.Size
+			expValue := expMd.Size
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "CreationTime":
+			value := md.CreationTime
+			expValue := expMd.CreationTime
+			if !value.Equal(expValue) {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "ModificationTime":
+			value := md.ModificationTime
+			expValue := expMd.ModificationTime
+			if !value.Equal(expValue) {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "AccessTime":
+			value := md.AccessTime
+			expValue := expMd.AccessTime
+			if !value.Equal(expValue) {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "AttrChangeTime":
+			value := md.AttrChangeTime
+			expValue := expMd.AttrChangeTime
+			if !value.Equal(expValue) {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "NumWrites":
+			value := md.NumWrites
+			expValue := expMd.NumWrites
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "InodeStreamNameSlice":
+			value := len(md.InodeStreamNameSlice)
+			expValue := len(expMd.InodeStreamNameSlice)
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+			for i, streamName := range md.InodeStreamNameSlice {
+				value := streamName
+				expValue := expMd.InodeStreamNameSlice[i]
+				if value != expValue {
+					t.Fatalf("%s returned %s[%d] %v, expected %v", errorPrefix,
+						field, i, value, expValue)
+				}
+			}
+
+		case "Mode":
+			value := md.Mode
+			expValue := expMd.Mode
+
+			// Add the file type to the expected mode
+			if md.InodeType == DirType {
+				expValue |= PosixModeDir
+			} else if md.InodeType == SymlinkType {
+				expValue |= PosixModeSymlink
+			} else if md.InodeType == FileType {
+				expValue |= PosixModeFile
+			}
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "UserID":
+			value := md.UserID
+			expValue := expMd.UserID
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		case "GroupID":
+			value := md.GroupID
+			expValue := expMd.GroupID
+			if value != expValue {
+				t.Fatalf("%s returned %s %v, expected %v", errorPrefix, field, value, expValue)
+			}
+
+		default:
+			// catch field name typos
+			t.Fatalf("%s specified unknown field '%v'", errorPrefix, field)
 		}
 	}
 }
@@ -1319,7 +1317,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataSizeField, "GetMetadata() after SetSize()")
-	checkMetadataTimeChanges(t, preResizeMetadata, postMetadata, false, true, true, true, "SetSize changed metadata times inappropriately")
+	checkMetadataTimeChanges(t, preResizeMetadata, postMetadata, false, true, false, true, "SetSize changed metadata times inappropriately")
 
 	err = testVolumeHandle.Flush(fileInodeNumber, true)
 	if nil != err {
@@ -1707,7 +1705,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
-	checkMetadata(t, dirInodeMetadataAfterSetModificationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetModificationTime()")
+	checkMetadata(t, dirInodeMetadataAfterSetModificationTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetModificationTime()")
 
 	testMetadata.AccessTime = dirInodeMetadataAfterSetModificationTime.AccessTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAccessTime(dirInode, testMetadata.AccessTime)
@@ -1718,7 +1716,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
-	checkMetadata(t, dirInodeMetadataAfterSetAccessTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetModificationTime()")
+	checkMetadata(t, dirInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after testVolumeHandle.SetAccessTime()")
 
 	testMetadata.AttrChangeTime = dirInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAttrChangeTime(dirInode, testMetadata.AttrChangeTime)
@@ -1729,7 +1727,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(dirInode) failed: %v", err)
 	}
-	checkMetadata(t, dirInodeMetadataAfterSetAttrChangeTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetModificationTime()")
+	checkMetadata(t, dirInodeMetadataAfterSetAttrChangeTime, testMetadata, MetadataTimeFields, "GetMetadata() after testVolumeHandle.SetAttrChangeTime()")
 
 	timeBeforeDirInodePutStream := time.Now()
 
@@ -1739,7 +1737,6 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("PutStream(dirInode,,) failed: %v", err)
 	}
-
 	time.Sleep(positiveDurationToDelayOrSkew)
 
 	timeAfterDirInodePutStream := time.Now()
@@ -1831,7 +1828,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInode) failed: %v", err)
 	}
-	checkMetadata(t, fileInodeMetadataAfterSetModificationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetModificationTime()")
+	checkMetadata(t, fileInodeMetadataAfterSetModificationTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetModificationTime()")
 
 	testMetadata.AccessTime = fileInodeMetadataAfterSetModificationTime.AccessTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAccessTime(fileInode, testMetadata.AccessTime)
@@ -1842,7 +1839,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInode) failed: %v", err)
 	}
-	checkMetadata(t, fileInodeMetadataAfterSetAccessTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetAccessTime()")
+	checkMetadata(t, fileInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetAccessTime() test 1")
 
 	testMetadata.AttrChangeTime = fileInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAttrChangeTime(fileInode, testMetadata.AttrChangeTime)
@@ -1958,7 +1955,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(symlinkInode) failed: %v", err)
 	}
-	checkMetadata(t, symlinkInodeMetadataAfterSetModificationTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetModificationTime()")
+	checkMetadata(t, symlinkInodeMetadataAfterSetModificationTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetModificationTime()")
 
 	testMetadata.AccessTime = symlinkInodeMetadataAfterSetModificationTime.AccessTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAccessTime(symlinkInode, testMetadata.AccessTime)
@@ -1969,7 +1966,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(symlinkInode) failed: %v", err)
 	}
-	checkMetadata(t, symlinkInodeMetadataAfterSetAccessTime, testMetadata, MetadataTimeFields, "GetMetadata() after SetAccessTime()")
+	checkMetadata(t, symlinkInodeMetadataAfterSetAccessTime, testMetadata, MetadataNotAttrTimeFields, "GetMetadata() after SetAccessTime() test 2")
 
 	testMetadata.AttrChangeTime = symlinkInodeMetadataAfterSetAccessTime.AttrChangeTime.Add(negativeDurationToDelayOrSkew)
 	err = testVolumeHandle.SetAttrChangeTime(symlinkInode, testMetadata.AttrChangeTime)
@@ -2054,16 +2051,15 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterLink.ModificationTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.ModificationTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.ModificationTime unexpected")
 	}
-	if dirInodeMetadataAfterLink.AccessTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AccessTime.After(timeAfterLink) {
-		t.Fatalf("dirInodeMetadataAfterLink.AccessTime unexpected")
+	if !dirInodeMetadataAfterLink.AccessTime.Equal(dirInodeMetadataAfterDeleteStream.AccessTime) {
+		t.Fatalf("dirInodeMetadataAfterLink.AccessTime unexpected changed")
 	}
 	if dirInodeMetadataAfterLink.AttrChangeTime.Before(timeBeforeLink) || dirInodeMetadataAfterLink.AttrChangeTime.After(timeAfterLink) {
 		t.Fatalf("dirInodeMetadataAfterLink.AttrChangeTime unexpected")
 	}
-	if !dirInodeMetadataAfterLink.AccessTime.Equal(dirInodeMetadataAfterLink.ModificationTime) {
-		t.Fatalf("dirInodeMetadataAfterLink.AccessTime should equal dirInodeMetadataAfterLink.ModificationTime")
+	if !dirInodeMetadataAfterLink.AttrChangeTime.Equal(dirInodeMetadataAfterLink.ModificationTime) {
+		t.Fatalf("dirInodeMetadataAfterLink.AttrChangeTime should equal dirInodeMetadataAfterLink.ModificationTime")
 	}
-
 	if !fileInodeMetadataAfterLink.CreationTime.Equal(fileInodeMetadataAfterDeleteStream.CreationTime) {
 		t.Fatalf("fileInodeMetadataAfterLink.CreationTime unexpected")
 	}
@@ -2103,16 +2099,12 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterMove.ModificationTime.Before(timeAfterLink) || dirInodeMetadataAfterMove.ModificationTime.After(timeAfterMove) {
 		t.Fatalf("dirInodeMetadataAfterMove.ModificationTime unexpected")
 	}
-	if dirInodeMetadataAfterMove.AccessTime.Before(timeAfterLink) || dirInodeMetadataAfterMove.AccessTime.After(timeAfterMove) {
-		t.Fatalf("dirInodeMetadataAfterMove.AccessTime unexpected")
+	if !dirInodeMetadataAfterMove.AccessTime.Equal(dirInodeMetadataAfterLink.AccessTime) {
+		t.Fatalf("dirInodeMetadataAfterMove.AccessTime unexpected change")
 	}
-	if !dirInodeMetadataAfterMove.AttrChangeTime.Equal(dirInodeMetadataAfterLink.AttrChangeTime) {
-		t.Fatalf("dirInodeMetadataAfterMove.AttrChangeTime unexpected")
+	if dirInodeMetadataAfterMove.AttrChangeTime.Equal(dirInodeMetadataAfterLink.AttrChangeTime) {
+		t.Fatalf("dirInodeMetadataAfterMove.AttrChangeTime unchanged")
 	}
-	if !dirInodeMetadataAfterMove.AccessTime.Equal(dirInodeMetadataAfterMove.ModificationTime) {
-		t.Fatalf("dirInodeMetadataAfterMove.AccessTime should equal dirInodeMetadataAfterMove.ModificationTime")
-	}
-
 	if !fileInodeMetadataAfterMove.CreationTime.Equal(fileInodeMetadataAfterLink.CreationTime) {
 		t.Fatalf("fileInodeMetadataAfterMove.CreationTime unexpected")
 	}
@@ -2152,16 +2144,12 @@ func TestAPI(t *testing.T) {
 	if dirInodeMetadataAfterUnlink.ModificationTime.Before(timeAfterMove) || dirInodeMetadataAfterUnlink.ModificationTime.After(timeAfterUnlink) {
 		t.Fatalf("dirInodeMetadataAfterUnlink.ModificationTime unexpected")
 	}
-	if dirInodeMetadataAfterUnlink.AccessTime.Before(timeAfterMove) || dirInodeMetadataAfterUnlink.AccessTime.After(timeAfterUnlink) {
-		t.Fatalf("dirInodeMetadataAfterUnlink.AccessTime unexpected")
+	if !dirInodeMetadataAfterUnlink.AccessTime.Equal(dirInodeMetadataAfterMove.AccessTime) {
+		t.Fatalf("dirInodeMetadataAfterUnlink.AccessTime unexpected change")
 	}
 	if dirInodeMetadataAfterUnlink.AttrChangeTime.Before(timeAfterMove) || dirInodeMetadataAfterUnlink.AttrChangeTime.After(timeAfterUnlink) {
 		t.Fatalf("dirInodeMetadataAfterUnlink.AttrChangeTime unexpected")
 	}
-	if !dirInodeMetadataAfterUnlink.AccessTime.Equal(dirInodeMetadataAfterUnlink.ModificationTime) {
-		t.Fatalf("dirInodeMetadataAfterUnlink.AccessTime should equal dirInodeMetadataAfterUnlink.ModificationTime")
-	}
-
 	if !fileInodeMetadataAfterUnlink.CreationTime.Equal(fileInodeMetadataAfterMove.CreationTime) {
 		t.Fatalf("fileInodeMetadataAfterUnlink.CreationTime unexpected")
 	}
@@ -2197,14 +2185,11 @@ func TestAPI(t *testing.T) {
 	if fileInodeMetadataAfterWrite.ModificationTime.Before(timeAfterUnlink) || fileInodeMetadataAfterWrite.ModificationTime.After(timeAfterWrite) {
 		t.Fatalf("fileInodeMetadataAfterWrite.ModificationTime unexpected")
 	}
-	if fileInodeMetadataAfterWrite.AccessTime.Before(timeAfterUnlink) || fileInodeMetadataAfterWrite.AccessTime.After(timeAfterWrite) {
-		t.Fatalf("fileInodeMetadataAfterWrite.AccessTime unexpected")
-	}
-	if !fileInodeMetadataAfterWrite.AttrChangeTime.Equal(fileInodeMetadataAfterUnlink.AttrChangeTime) {
+	if !fileInodeMetadataAfterWrite.AttrChangeTime.Equal(fileInodeMetadataAfterWrite.ModificationTime) {
 		t.Fatalf("fileInodeMetadataAfterWrite.AttrChangeTime unexpected")
 	}
-	if !fileInodeMetadataAfterWrite.AccessTime.Equal(fileInodeMetadataAfterWrite.ModificationTime) {
-		t.Fatalf("fileInodeMetadataAfterWrite.AccessTime should equal fileInodeMetadataAfterWrite.ModificationTime")
+	if !fileInodeMetadataAfterWrite.AccessTime.Equal(fileInodeMetadataAfterUnlink.AccessTime) {
+		t.Fatalf("fileInodeMetadataAfterWrite.AccessTime unexpected change")
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)
@@ -2233,14 +2218,11 @@ func TestAPI(t *testing.T) {
 	if fileInodeMetadataAfterWrote.ModificationTime.Before(timeAfterWrite) || fileInodeMetadataAfterWrote.ModificationTime.After(timeAfterWrote) {
 		t.Fatalf("fileInodeMetadataAfterWrote.ModificationTime unexpected")
 	}
-	if fileInodeMetadataAfterWrote.AccessTime.Before(timeAfterWrite) || fileInodeMetadataAfterWrote.AccessTime.After(timeAfterWrote) {
-		t.Fatalf("fileInodeMetadataAfterWrote.AccessTime unexpected")
+	if !fileInodeMetadataAfterWrote.AttrChangeTime.Equal(fileInodeMetadataAfterWrote.ModificationTime) {
+		t.Fatalf("fileInodeMetadataAfterWrote.AttrChangeTime should equal fileInodeMetadataAfterWrote.ModificationTime")
 	}
-	if fileInodeMetadataAfterWrote.AttrChangeTime.Before(timeAfterWrite) || fileInodeMetadataAfterWrote.AttrChangeTime.After(timeAfterWrote) {
-		t.Fatalf("fileInodeMetadataAfterWrote.AttrChangeTime unexpected")
-	}
-	if !fileInodeMetadataAfterWrote.AccessTime.Equal(fileInodeMetadataAfterWrote.ModificationTime) {
-		t.Fatalf("fileInodeMetadataAfterWrote.AccessTime should equal fileInodeMetadataAfterWrote.ModificationTime")
+	if !fileInodeMetadataAfterWrote.AccessTime.Equal(fileInodeMetadataAfterWrite.AccessTime) {
+		t.Fatalf("fileInodeMetadataAfterWrote.AccessTime unexpected change")
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)
@@ -2265,14 +2247,11 @@ func TestAPI(t *testing.T) {
 	if fileInodeMetadataAfterSetSize.ModificationTime.Before(timeAfterWrote) || fileInodeMetadataAfterSetSize.ModificationTime.After(timeAfterSetSize) {
 		t.Fatalf("fileInodeMetadataAfterSetSize.ModificationTime unexpected")
 	}
-	if fileInodeMetadataAfterSetSize.AccessTime.Before(timeAfterWrote) || fileInodeMetadataAfterSetSize.AccessTime.After(timeAfterSetSize) {
-		t.Fatalf("fileInodeMetadataAfterSetSize.AccessTime unexpected")
+	if !fileInodeMetadataAfterSetSize.AttrChangeTime.Equal(fileInodeMetadataAfterSetSize.ModificationTime) {
+		t.Fatalf("fileInodeMetadataAfterSetsize.AttrChangeTime should equal fileInodeMetadataAfterSetSize.ModificationTime")
 	}
-	if fileInodeMetadataAfterSetSize.AttrChangeTime.Before(timeAfterWrote) || fileInodeMetadataAfterSetSize.AttrChangeTime.After(timeAfterSetSize) {
-		t.Fatalf("fileInodeMetadataAfterSetSize.AttrChangeTime unexpected")
-	}
-	if !fileInodeMetadataAfterSetSize.AccessTime.Equal(fileInodeMetadataAfterSetSize.ModificationTime) {
-		t.Fatalf("fileInodeMetadataAfterSetSize.AccessTime should equal fileInodeMetadataAfterSetSize.ModificationTime")
+	if !fileInodeMetadataAfterSetSize.AccessTime.Equal(fileInodeMetadataAfterWrote.AccessTime) {
+		t.Fatalf("fileInodeMetadataAfterSetSize.AccessTime unexpected change")
 	}
 
 	// TODO: Once implemented, need to test GetFragmentationReport() & Optimize()

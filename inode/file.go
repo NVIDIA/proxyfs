@@ -144,11 +144,11 @@ func setSizeInMemory(fileInode *inMemoryInodeStruct, size uint64) (err error) {
 		}
 	}
 
+	fileInode.dirty = true
 	fileInode.Size = size
 
 	updateTime := time.Now()
 	fileInode.ModificationTime = updateTime
-	fileInode.AccessTime = updateTime
 	fileInode.AttrChangeTime = updateTime
 	return
 }
@@ -602,8 +602,8 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	stats.IncrementOperationsBucketedBytesAndAppendedOverwritten(stats.FileWrite, length, appendedBytes, overwrittenBytes)
 
 	updateTime := time.Now()
+	fileInode.AttrChangeTime = updateTime
 	fileInode.ModificationTime = updateTime
-	fileInode.AccessTime = updateTime
 	fileInode.NumWrites++
 
 	return
@@ -666,7 +666,7 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 
 		updateTime := time.Now()
 		fileInode.ModificationTime = updateTime
-		fileInode.AccessTime = updateTime
+		fileInode.AttrChangeTime = updateTime
 	} else {
 		err = setSizeInMemory(fileInode, length)
 		if err != nil {
@@ -675,6 +675,7 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 		}
 	}
 
+	fileInode.dirty = true
 	err = fileInode.volume.flushInode(fileInode)
 	if err != nil {
 		logger.ErrorWithError(err)
@@ -890,8 +891,8 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 	}
 
 	updateTime := time.Now()
+	combinationInode.AttrChangeTime = updateTime
 	combinationInode.ModificationTime = updateTime
-	combinationInode.AccessTime = updateTime
 
 	combinationInodeNumber = combinationInode.InodeNumber
 	numWrites = combinationInode.NumWrites
