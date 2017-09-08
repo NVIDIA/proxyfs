@@ -27,5 +27,7 @@ sudo echo "export GOPATH=/vagrant" >> /etc/profile
 sudo echo "export PATH=\$PATH:\$GOPATH/bin" >> /etc/profile
 sudo echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> /etc/profile
 sudo yum -y install json-c-devel
+sudo yum -y install fuse
+sudo echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Swift - TODO (2 replica-1 policies... in one drive)
