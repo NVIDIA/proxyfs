@@ -214,16 +214,6 @@ int io_workers_start(char *server, int port, int count)
             free(worker_config);
             return ret; // TODO cleanup
         }
-
-        /*
-        ret = pthread_detach(worker_thread);
-        if (ret != 0) {
-            DPRINTF("Failed to detach the io worker thread #%d: error: %d\n", i, ret);
-            free(worker_config->worker_pool);
-            free(worker_config);
-            return; // TODO cleanup
-        }
-        */
     }
 
     return 0;
