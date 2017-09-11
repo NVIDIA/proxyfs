@@ -100,6 +100,8 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		flushFirst bool
 		inodeLock  *dlm.RWLockStruct
 	)
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
+		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 
 	select {
 	case flushFirst = <-inFlightFileInodeData.control:
@@ -107,22 +109,27 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	case <-time.After(inFlightFileInodeData.volStruct.maxFlushTime):
 		flushFirst = true
 	}
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %d flushfirst %t",
+		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
 	if flushFirst {
 		// As if a package fs client called Flush()... so take out a WriteLock around all activity
 
 		inodeLock, err = inFlightFileInodeData.volStruct.initInodeLock(inFlightFileInodeData.InodeNumber, nil)
 		if nil != err {
-			panic(err)
+			logger.PanicfWithError(err, "volumeStruct.initInodeLock() for volume '%s' inode %d failed",
+				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 		err = inodeLock.WriteLock()
 		if nil != err {
-			panic(err)
+			logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed",
+				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 
 		err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
 		if nil != err {
-			panic(err)
+			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d",
+				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 
 		inFlightFileInodeData.volStruct.Lock()
@@ -131,7 +138,8 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 
 		err = inodeLock.Unlock()
 		if nil != err {
-			panic(err)
+			logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed",
+				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 	} else {
 		// Assume we were triggered while holding a WriteLock... just remove self from map
@@ -2659,8 +2667,6 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 		return
 	}
 
-	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
-
 	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename)
 	if nil != err {
 		return
@@ -2672,6 +2678,7 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 
 	if 0 == basenameLinkCount {
+		mS.volStruct.untrackInFlightFileInodeData(basenameInodeNumber, false)
 		err = mS.volStruct.VolumeHandle.Destroy(basenameInodeNumber)
 		if nil != err {
 			return
@@ -2698,6 +2705,10 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
+
+	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
+		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
+
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -2724,6 +2735,8 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	if err != nil {
 		return 0, err
 	}
+
+	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
 	stats.IncrementOperations(&stats.FsWriteOps)
