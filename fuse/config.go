@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"syscall"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/platform"
+)
+
+const (
+	maxRetryCount uint32 = 100
+	retryGap             = 100 * time.Millisecond
 )
 
 type mountPointStruct struct {
@@ -253,52 +258,88 @@ func Down() (err error) {
 	return
 }
 
-func isMountPoint(path string) (toReturn bool) {
-	cmd := exec.Command("mountpoint", "-q", path)
-	err := cmd.Run()
-	toReturn = (nil == err)
-	return
-}
-
-func fetchInodeNumber(path string) (inodeNumber uint64, err error) {
+func fetchInodeDevice(path string) (missing bool, inodeDevice int64, err error) {
 	fi, err := os.Stat(path)
 	if nil != err {
-		err = fmt.Errorf("fetchInodeNumber(): os.Stat() failed: %v\n", err)
+		if os.IsNotExist(err) {
+			missing = true
+			err = nil
+		} else {
+			err = fmt.Errorf("fetchInodeDevice(%v): os.Stat() failed: %v", path, err)
+		}
 		return
 	}
 	if nil == fi.Sys() {
-		err = fmt.Errorf("fetchInodeNumber(): fi.Sys() was nil\n")
+		err = fmt.Errorf("fetchInodeDevice(%v): fi.Sys() was nil", path)
 		return
 	}
 	stat, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
-		err = fmt.Errorf("fetchInodeNumber(): fi.Sys().(*syscall.Stat_t) returned ok == false\n")
+		err = fmt.Errorf("fetchInodeDevice(%v): fi.Sys().(*syscall.Stat_t) returned ok == false", path)
 		return
 	}
-	inodeNumber = uint64(stat.Ino)
+	missing = false
+	inodeDevice = int64(stat.Dev)
 	return
 }
 
 func performMount(mountPoint *mountPointStruct) (err error) {
 	var (
-		conn                *fuselib.Conn
-		endingInodeNumber   uint64
-		mountHandle         fs.MountHandle
-		startingInodeNumber uint64
+		conn                          *fuselib.Conn
+		curRetryCount                 uint32
+		lazyUnmountCmd                *exec.Cmd
+		missing                       bool
+		mountHandle                   fs.MountHandle
+		mountPointContainingDirDevice int64
+		mountPointDevice              int64
 	)
 
-	lazyUnmountCmd := exec.Command("fusermount", "-uz", mountPoint.mountPointName)
-	err = lazyUnmountCmd.Run()
+	mountPoint.mounted = false
+
+	missing, mountPointContainingDirDevice, err = fetchInodeDevice(path.Dir(mountPoint.mountPointName))
 	if nil != err {
-		logger.Infof("Unable to lazily unmount %v - got err == %v", mountPoint.mountPointName, err)
+		return
+	}
+	if missing {
+		logger.Infof("Unable to serve %s.FUSEMountPoint == %s (mount point dir's parent does not exist)", mountPoint.volumeName, mountPoint.mountPointName)
+		return
+	}
+	missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
+	if nil == err {
+		if missing {
+			logger.Infof("Unable to serve %s.FUSEMountPoint == %s (mount point dir does not exist)", mountPoint.volumeName, mountPoint.mountPointName)
+			return
+		}
 	}
 
-	if platform.IsDarwin {
-		startingInodeNumber, err = fetchInodeNumber(mountPoint.mountPointName)
+	if (nil != err) || (mountPointDevice != mountPointContainingDirDevice) {
+		// Presumably, the mount point is (still) currently mounted, so attempt to unmount it first
+
+		lazyUnmountCmd = exec.Command("fusermount", "-uz", mountPoint.mountPointName)
+		err = lazyUnmountCmd.Run()
 		if nil != err {
-			logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case One]", mountPoint.mountPointName)
-			err = nil
 			return
+		}
+
+		curRetryCount = 0
+
+		for {
+			time.Sleep(retryGap) // Try again in a bit
+			missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
+			if nil == err {
+				if missing {
+					err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s disappeared [case 1]", mountPoint.volumeName, mountPoint.mountPointName)
+					return
+				}
+				if mountPointDevice == mountPointContainingDirDevice {
+					break
+				}
+			}
+			curRetryCount++
+			if curRetryCount >= maxRetryCount {
+				err = fmt.Errorf("MaxRetryCount exceeded for %s.FUSEMountPoint == %s [case 1]", mountPoint.volumeName, mountPoint.mountPointName)
+				return
+			}
 		}
 	}
 
@@ -310,9 +351,8 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 		fuselib.LocalVolume(),
 		fuselib.VolumeName(mountPoint.mountPointName),
 	)
-
 	if nil != err {
-		logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Two]", mountPoint.mountPointName)
+		logger.WarnfWithError(err, "Couldn't mount %s.FUSEMountPoint == %s", mountPoint.volumeName, mountPoint.mountPointName)
 		err = nil
 		return
 	}
@@ -325,37 +365,50 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 	fs := &ProxyFUSE{mountHandle: mountHandle}
 
 	go func(mountPointName string, conn *fuselib.Conn) {
-		logger.Infof("Serving %v", mountPointName)
 		defer conn.Close()
 		fusefslib.Serve(conn, fs)
 	}(mountPoint.mountPointName, conn)
 
-	if platform.IsDarwin {
-		for {
-			endingInodeNumber, err = fetchInodeNumber(mountPoint.mountPointName)
-			if nil != err {
-				logger.WarnfWithError(err, "Couldn't mount %v; (continuing with remaining volumes ...) [Case Three]", mountPoint.mountPointName)
-				err = nil
-				return
-			}
+	// Finally, await mount point becoming available
 
-			if startingInodeNumber != endingInodeNumber { // Indicates the FUSE Mount has completed
-				mountPoint.mounted = true
-				err = nil
-				return
-			}
-
-			time.Sleep(10 * time.Millisecond) // Try again in a bit
+	missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
+	if nil == err {
+		if missing {
+			err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s disappeared [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
+			return
 		}
-	} else { // platform.IsLinux
-		for {
-			if isMountPoint(mountPoint.mountPointName) {
-				mountPoint.mounted = true
-				err = nil
+	} else {
+		err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s now inaccessible [case 1]", mountPoint.volumeName, mountPoint.mountPointName)
+		return
+	}
+
+	curRetryCount = 0
+
+	for mountPointDevice == mountPointContainingDirDevice {
+		time.Sleep(retryGap) // Try again in a bit
+		missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
+		if nil == err {
+			if missing {
+				err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s disappeared [case 3]", mountPoint.volumeName, mountPoint.mountPointName)
 				return
 			}
-
-			time.Sleep(10 * time.Millisecond) // Try again in a bit
+		} else {
+			err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s now inaccessible [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
+			return
+		}
+		curRetryCount++
+		if curRetryCount >= maxRetryCount {
+			err = fmt.Errorf("MaxRetryCount exceeded for %s.FUSEMountPoint == %s [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
+			return
 		}
 	}
+
+	// If we made it to here, all was ok
+
+	logger.Infof("Now serving %s.FUSEMountPoint == %s", mountPoint.volumeName, mountPoint.mountPointName)
+
+	mountPoint.mounted = true
+
+	err = nil
+	return
 }
