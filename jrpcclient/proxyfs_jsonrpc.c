@@ -202,6 +202,8 @@ void pfs_rpc_close(jsonrpc_handle_t* handle)
         return;
     }
 
+    io_workers_stop();
+
     // TODO: Socket pool once created remains active.. do not remove it.
     // sock_pool_t *local_pool = global_sock_pool;
     // global_sock_pool = NULL;
