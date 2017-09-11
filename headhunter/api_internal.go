@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
-
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/swiftstack/cstruct"
+	"github.com/swiftstack/sortedmap"
 )
 
 // TODO: allowFormat should change to doFormat when controller/runway pre-formats
@@ -1036,7 +1036,7 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err e
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
+		err = fmt.Errorf("inode %d not found in volume '%v' inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -1049,6 +1049,9 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err e
 }
 
 func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
+
+	logger.Tracef("headhunger.PutInodeRec(): volume '%s' inode %d", volume.volumeName, inodeNumber)
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -1072,6 +1075,9 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 }
 
 func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
+
+	logger.Tracef("headhunter.PutInodeRecs(): volume '%s' inodes %v", volume.volumeName, inodeNumbers)
+
 	if len(inodeNumbers) != len(values) {
 		err = fmt.Errorf("InodeNumber and Values array don't match")
 		return
