@@ -1,4 +1,4 @@
-// Worker threads to handle aio requests from file server. Each worker will do synchronous request to 
+// Worker threads to handle aio requests from file server. Each worker will do synchronous request to
 // proxyfs file server. That means the max outstanding concurrent request will be equal to thread pool size.
 
 // API:
@@ -20,14 +20,22 @@
 #include "proxyfs.h"
 
 typedef struct io_worker_s {
+    pthread_t thread_id;
     int num_ops_started;
     int num_ops_finished;
 } io_worker_t;
+
+typedef enum io_workers_state_e {
+    RUNNING,
+    STOPPED,
+} io_workers_state_t;
 
 typedef struct io_worker_config_s {
     char *server;
     int  port;
     int  worker_count;
+
+    io_workers_state_t state;
 
     pthread_mutex_t request_queue_lock;
     pthread_cond_t  request_queue_cv;
@@ -175,6 +183,7 @@ int io_workers_start(char *server, int port, int count)
     if (worker_config == NULL) {
         return ENOMEM;
     }
+    bzero(worker_config, sizeof(io_worker_config_t));
 
     worker_config->worker_pool = (io_worker_t *)malloc(sizeof(io_worker_t) * count);
     if (worker_config->worker_pool == NULL) {
@@ -191,30 +200,59 @@ int io_workers_start(char *server, int port, int count)
     pthread_cond_init(&worker_config->request_queue_cv, NULL);
     TAILQ_INIT(&worker_config->request_queue);
 
+    worker_config->state = RUNNING;
+
     int i;
     for (i = 0; i < count; i++) {
 
         concDurationUs[i] = 0;
 
-        pthread_t worker_thread;
-        int ret = pthread_create(&worker_thread, NULL, &io_worker, &worker_config->worker_pool[i]);
+        int ret = pthread_create(&worker_config->worker_pool[i].thread_id, NULL, &io_worker, &worker_config->worker_pool[i]);
         if (ret != 0) {
             DPRINTF("Failed to create io worker thread #%d: error: %d\n", i, ret);
             free(worker_config->worker_pool);
             free(worker_config);
-            return; // TODO cleanup
-        }
-
-        ret = pthread_detach(worker_thread);
-        if (ret != 0) {
-            DPRINTF("Failed to detach the io worker thread #%d: error: %d\n", i, ret);
-            free(worker_config->worker_pool);
-            free(worker_config);
-            return; // TODO cleanup
+            return ret; // TODO cleanup
         }
     }
 
     return 0;
+}
+
+void io_workers_stop()
+{
+    // This code assumes worker_config can be re-initalized. However, there is a race condition between
+    // destroying and reinitalizing worker_config, since it is not protected by any lock.
+    // The following logic is only mitigating the issue and not closing it. However what is saving us here, is
+    // we will only initialize it once for every mount.
+
+    if (worker_config == NULL || (worker_config->state != RUNNING)) {
+        return;
+    }
+
+    pthread_mutex_lock(&worker_config->request_queue_lock);
+    worker_config->state = STOPPED;
+    pthread_cond_broadcast(&worker_config->request_queue_cv);
+    pthread_mutex_unlock(&worker_config->request_queue_lock);
+
+    int i;
+    for (i = 0; i < worker_config->worker_count; i++) {
+        int ret = pthread_join(worker_config->worker_pool[i].thread_id, NULL);
+        if (ret != 0) {
+            DPRINTF("Failed to stop the io worker thread - thread index %d\n", i);
+        }
+    }
+
+    free(worker_config->worker_pool);
+    free(worker_config->server);
+
+    pthread_mutex_destroy(&worker_config->request_queue_lock);
+    pthread_cond_destroy(&worker_config->request_queue_cv);
+    free(worker_config);
+
+    worker_config = NULL;
+
+    return;
 }
 
 void *io_worker(void *arg)
@@ -226,16 +264,24 @@ void *io_worker(void *arg)
     worker->num_ops_finished = 0;
 
     int sock_fd = -1;
+    pthread_mutex_lock(&worker_config->request_queue_lock);
     while (1) {
-        pthread_mutex_lock(&worker_config->request_queue_lock);
-        while (TAILQ_EMPTY(&worker_config->request_queue)) {
+        if (TAILQ_EMPTY(&worker_config->request_queue)) {
+            // We check if we are unmounting and exit only after draining the queue.
+            if (worker_config->state != RUNNING) {
+                break;
+            }
+
            pthread_cond_wait(&worker_config->request_queue_cv, &worker_config->request_queue_lock);
+           continue;
         }
+
         worker->num_ops_started++;
         inc_running_worker();
 
         proxyfs_io_request_t *req = TAILQ_FIRST(&worker_config->request_queue);
         TAILQ_REMOVE(&worker_config->request_queue, req, request_queue_entry);
+
         pthread_mutex_unlock(&worker_config->request_queue_lock);
 
         if (sock_fd < 0) {
@@ -267,7 +313,12 @@ callback:
         req->done_cb(req);
         worker->num_ops_finished++;
         dec_running_worker();
+
+        pthread_mutex_lock(&worker_config->request_queue_lock);
     }
+
+    pthread_mutex_unlock(&worker_config->request_queue_lock);
+    return NULL;
 }
 
 int schedule_io_work(proxyfs_io_request_t *req)
