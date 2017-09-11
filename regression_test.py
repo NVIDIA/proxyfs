@@ -211,12 +211,14 @@ def build_libs(options):
                     install_cmd = ['make', 'install']
                     if not options.deb_builder:
                         install_cmd.insert(0, 'sudo')
+                        install_cmd.insert(1, '-E')
                     make_success = not(bool(subprocess.call(install_cmd)))
                     failures += not make_success
                 if 'CentOS Linux' == platform.linux_distribution()[0]:
                     install_cmd = ['make', 'installcentos']
                     if not options.deb_builder:
                         install_cmd.insert(0, 'sudo')
+                        install_cmd.insert(1, '-E')
                     make_success = not(bool(subprocess.call(install_cmd)))
                     failures += not make_success
     report("build_libs()", not failures)

@@ -135,7 +135,6 @@ type VolumeHandle interface {
 	SetCreationTime(inodeNumber InodeNumber, creationTime time.Time) (err error)
 	SetModificationTime(inodeNumber InodeNumber, modificationTime time.Time) (err error)
 	SetAccessTime(inodeNumber InodeNumber, accessTime time.Time) (err error)
-	SetAttrChangeTime(inodeNumber InodeNumber, attrChangeTime time.Time) (err error)
 	SetPermMode(inodeNumber InodeNumber, filePerm InodeMode) (err error)
 	SetOwnerUserID(inodeNumber InodeNumber, userID InodeUserID) (err error)
 	SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID) (err error)

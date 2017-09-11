@@ -3,6 +3,17 @@
 # A simple script to start the services and mount the sample mount point
 # The PATH, etc should already be setup by systemctl environment
 
+if [ $# -gt 0 ]; then
+    MOUNT_TYPE="$1"
+    MOUNT_TYPE=${MOUNT_TYPE,,}
+    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
+        echo "Invalid argument $1"
+        exit 1
+    fi
+else
+    MOUNT_TYPE=all
+fi
+
 MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
 SHARE_NFS=/mnt/nfs_proxyfs_mount/
 
@@ -83,36 +94,40 @@ else
     sudo /usr/sbin/service nfs-idmap start
 fi
 
-mountpoint -q $SHARE_NFS
-if [ $? -ne 0 ]; then
-    for i in `seq 5`; do
-        sleep 5
-        sudo $MOUNT -t nfs -o vers=3 $MOUNT_POINT_NFS $SHARE_NFS && break
-        echo "Mount of $SHARE_NFS failed.  Retrying..." 
-    done
+if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
+    mountpoint -q $SHARE_NFS
+    if [ $? -ne 0 ]; then
+        for i in `seq 5`; do
+            sleep 5
+            sudo $MOUNT -t nfs -o vers=3 $MOUNT_POINT_NFS $SHARE_NFS && break
+            echo "Mount of $SHARE_NFS failed.  Retrying..."
+        done
+    fi
+
+    mountpoint -q $SHARE_NFS
+    if [ $? -ne 0 ]; then
+        echo "ERROR:  Could not mount $SHARE_NFS."
+        exit 1
+    else
+        echo "$SHARE_NFS successfully mounted"
+    fi
 fi
 
-mountpoint -q $SHARE_NFS
-if [ $? -ne 0 ]; then
-    echo "ERROR:  Could not mount $SHARE_NFS."
-    exit 1
-else
-    echo "$SHARE_NFS successfully mounted"
-fi
+if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ]; then
+    mountpoint -q $SHARE_SMB
+    if [ $? -ne 0 ]; then
+        for i in `seq 5`; do
+            sleep 5
+            sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
+            echo "Mount of $SHARE_SMB failed.  Retrying..."
+        done
+    fi
 
-mountpoint -q $SHARE_SMB
-if [ $? -ne 0 ]; then
-    for i in `seq 5`; do
-        sleep 5
-        sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
-        echo "Mount of $SHARE_SMB failed.  Retrying..." 
-    done
-fi
-
-mountpoint -q $SHARE_SMB
-if [ $? -ne 0 ]; then
-    echo "ERROR:  Could not mount $SHARE_SMB."
-    exit 1
-else
-    echo "$SHARE_SMB successfully mounted"
+    mountpoint -q $SHARE_SMB
+    if [ $? -ne 0 ]; then
+        echo "ERROR:  Could not mount $SHARE_SMB."
+        exit 1
+    else
+        echo "$SHARE_SMB successfully mounted"
+    fi
 fi
