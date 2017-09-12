@@ -129,9 +129,15 @@ var debugLevelEnabled = false
 // config variable, the package must be in this map with a value of false (or true).
 //
 var packageTraceSettings = map[string]bool{
-	"jrpcfs": false,
-	"inode":  false,
-	"logger": false,
+	"dlm":         false,
+	"fs":          false,
+	"fuse":        false,
+	"headhunter":  false,
+	"inode":       false,
+	"jrpcfs":      false,
+	"logger":      false,
+	"proxyfsd":    false,
+	"swiftclient": false,
 }
 
 func setTraceLoggingLevel(confStrSlice []string) {

@@ -18,6 +18,8 @@
   "ec_disks": 8,
   "swift_user": "swift",
   "swift_group": "swift",
+  "swift_uid": 1000,
+  "swift_gid": 1000,
   "proxyfs_user": "swift",
   "proxyfs_group": "swift",
   "swift_repo": "git://github.com/openstack/swift.git",

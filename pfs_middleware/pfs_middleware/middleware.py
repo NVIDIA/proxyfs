@@ -632,22 +632,26 @@ class PfsMiddleware(object):
 
         self.logger = logger or get_logger(conf, log_route='pfs')
 
-        proxyfsd_host = conf.get('proxyfsd_host', '127.0.0.1')
+        proxyfsd_hosts = [h.strip() for h
+                          in conf.get('proxyfsd_host', '127.0.0.1').split(',')]
         self.proxyfsd_port = int(conf.get('proxyfsd_port', '12345'))
 
-        try:
-            # If hostname resolution fails, we'll cause the proxy to fail to
-            # start. This is probably better than returning 500 to every
-            # single request, but maybe not.
-            #
-            # To ensure that proxy startup works, use an IP address for
-            # proxyfsd_host. Then socket.getaddrinfo() will always work.
-            self.proxyfsd_addrinfo = socket.getaddrinfo(
-                proxyfsd_host, self.proxyfsd_port,
-                socket.AF_UNSPEC, socket.SOCK_STREAM)[0]
-        except socket.gaierror:
-            self.logger.error("Error resolving hostname %r", proxyfsd_host)
-            raise
+        self.proxyfsd_addrinfos = []
+        for host in proxyfsd_hosts:
+            try:
+                # If hostname resolution fails, we'll cause the proxy to
+                # fail to start. This is probably better than returning 500
+                # to every single request, but maybe not.
+                #
+                # To ensure that proxy startup works, use IP addresses for
+                # proxyfsd_host. Then socket.getaddrinfo() will always work.
+                addrinfo = socket.getaddrinfo(
+                    host, self.proxyfsd_port,
+                    socket.AF_UNSPEC, socket.SOCK_STREAM)[0]
+                self.proxyfsd_addrinfos.append(addrinfo)
+            except socket.gaierror:
+                self.logger.error("Error resolving hostname %r", host)
+                raise
 
         self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
         self.bimodal_recheck_interval = float(conf.get(
@@ -1440,7 +1444,7 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPNoContent(request=req, headers=headers)
+        return swob.HTTPOk(request=req, headers=headers)
 
     def coalesce_object(self, ctx):
         req = ctx.req
@@ -1532,7 +1536,7 @@ class PfsMiddleware(object):
         iab_req = rpc.is_account_bimodal_request(account_name)
         is_bimodal, proxyfsd_ip_or_hostname = \
             rpc.parse_is_account_bimodal_response(
-                self._rpc_call(self.proxyfsd_addrinfo, iab_req))
+                self._rpc_call(self.proxyfsd_addrinfos, iab_req))
 
         if is_bimodal:
             if not proxyfsd_ip_or_hostname:
@@ -1590,24 +1594,45 @@ class PfsMiddleware(object):
             have an errno in it, then the exception's errno attribute will
             be None.
         """
-        return self._rpc_call(ctx.proxyfsd_addrinfo, rpc_request)
+        return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
 
-    def _rpc_call(self, addrinfo, rpc_request):
-        rpc_client = JsonRpcClient(addrinfo)
-        try:
-            result = rpc_client.call(rpc_request, self.proxyfsd_rpc_timeout)
-        except eventlet.Timeout:
-            errstr = "Timeout ({0:.6f}s) calling {1}".format(
-                self.proxyfsd_rpc_timeout,
-                rpc_request.get("method", "<unknown method>"))
-            raise RpcTimeout(errstr)
+    def _rpc_call(self, addrinfos, rpc_request):
+        addrinfos = set(addrinfos)
 
-        errstr = result.get("error")
-        if errstr:
-            errno = extract_errno(errstr)
-            raise RpcError(errno, errstr)
+        # We can get fast errors or slow errors here; we retry across all
+        # hosts on fast errors, but immediately raise a slow error. HTTP
+        # clients won't wait forever for a response, so we can't retry slow
+        # errors across all hosts.
+        #
+        # Fast errors are things like "connection refused" or "no route to
+        # host". Slow errors are timeouts.
+        result = None
+        while addrinfos:
+            addrinfo = addrinfos.pop()
+            rpc_client = JsonRpcClient(addrinfo)
+            try:
+                result = rpc_client.call(rpc_request,
+                                         self.proxyfsd_rpc_timeout)
+            except socket.error as err:
+                if addrinfos:
+                    self.logger.debug("Error communicating with %r: %s. "
+                                      "Trying again with another host.",
+                                      addrinfo, err)
+                    continue
+                else:
+                    raise
+            except eventlet.Timeout:
+                errstr = "Timeout ({0:.6f}s) calling {1}".format(
+                    self.proxyfsd_rpc_timeout,
+                    rpc_request.get("method", "<unknown method>"))
+                raise RpcTimeout(errstr)
 
-        return result["result"]
+            errstr = result.get("error")
+            if errstr:
+                errno = extract_errno(errstr)
+                raise RpcError(errno, errstr)
+
+            return result["result"]
 
 
 def filter_factory(global_conf, **local_conf):

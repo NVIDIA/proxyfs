@@ -553,8 +553,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		flowControl                                    *flowControlStruct
 		flowControlWeightSum                           uint64
 		fsid                                           uint64
-		maxEntriesPerDirNode                           uint64
-		maxExtentsPerFileNode                          uint64
 		newlyActiveVolumeSet                           map[string]*volumeStruct
 		ok                                             bool
 		peerName                                       string
@@ -625,20 +623,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		} else {
 			err = fmt.Errorf("%s.PrimaryPeer cannot have multiple values", volumeName)
 			return
-		}
-
-		maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
-		if nil != err {
-			// TODO: eventually, just err = nonShadowingErr & return
-			maxEntriesPerDirNode = 32
-			err = nil
-		}
-
-		maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
-		if nil != err {
-			// TODO: eventually, just err = nonShadowingErr & return
-			maxExtentsPerFileNode = 32
-			err = nil
 		}
 
 		newlyActiveVolumeSet = make(map[string]*volumeStruct)
@@ -722,8 +706,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				accountName:                    accountName,
 				active:                         active,
 				activePeerPrivateIPAddr:        activePeerPrivateIPAddr,
-				maxEntriesPerDirNode:           maxEntriesPerDirNode,
-				maxExtentsPerFileNode:          maxExtentsPerFileNode,
 				physicalContainerLayoutSet:     make(map[string]struct{}),
 				physicalContainerNamePrefixSet: make(map[string]struct{}),
 				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
@@ -744,6 +726,20 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			// The expectation is that, at some point, multiple container layouts may be supported along with
 			// a set of policies used to determine which one to apply. At such time, the following code will
 			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
+
+			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
+			if nil != err {
+				// TODO: eventually, just err = nonShadowingErr & return
+				volume.maxEntriesPerDirNode = 32
+				err = nil
+			}
+
+			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
+			if nil != err {
+				// TODO: eventually, just err = nonShadowingErr & return
+				volume.maxExtentsPerFileNode = 32
+				err = nil
+			}
 
 			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
 			if nil != err {

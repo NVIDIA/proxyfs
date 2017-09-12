@@ -1,5 +1,29 @@
 # ProxyFS Release Notes
 
+## 0.53.0 (September 11, 2017)
+
+### Features:
+
+* Added avaibility improvements for ProxyFS Swift clusters to continue when a ProxyFS node is down
+* Significantly improved logging during startup and shutdown
+* New `mkproxyfs` tool now available to format Volumes (Swift Accounts)
+
+### Bug Fixes:
+
+* Embedded HTTP Server now reports current configuration once startup/restart (SIGHUP) completes
+* HTTP Head on ProxyFS-hosted Objects now returns proper HTTPStatus
+* Resolved incomplete file locking semantics for SMB
+* Resolved issue where a file being written is deleted before its data has been flushed
+* Corrected behavior of readdir() enabling callers to bound the size of the returned list
+* Corrected permissions checking & metadata updating
+* Resolved NFS (FUSE) issue where the underlying file system state failed to reset during restart
+* Resolved SMB (smbd) memory leak resulting from restarting the ProxyFS process (proxyfsd) underneath it
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.52.0 (August 21, 2017)
 
 ### Features:

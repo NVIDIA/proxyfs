@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"syscall"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -106,7 +108,7 @@ func testSetup() (err error) {
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
 	err = stats.Up(testConfMap)
 	if nil != err {
@@ -562,6 +564,40 @@ func TestBadLinks(t *testing.T) {
 	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
 }
 
+func TestMkdir(t *testing.T) {
+	testDirInode := createTestDirectory(t, "Mkdir")
+	longButLegalFilename := strings.Repeat("x", FileNameMax)
+	nameTooLong := strings.Repeat("x", FileNameMax+1)
+
+	_, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, inode.PosixModePerm)
+	if nil != err {
+		if blunder.IsNot(err, blunder.NameTooLongError) {
+			t.Fatalf("Mkdir() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
+		}
+	} else {
+		t.Fatal("Mkdir() unexpectedly succeeded on too-long filename!")
+	}
+
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, longButLegalFilename, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Mkdir() returned error: %v", err)
+	}
+
+	entriesExpected := []string{".", "..", longButLegalFilename}
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+
+	longButLegalFullPath := "/Mkdir/" + longButLegalFilename
+	ino, err := mS.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, longButLegalFullPath)
+	if err != nil {
+		t.Fatalf("LookupPath() returned error: %v", err)
+	}
+
+	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino))
+	if err != nil {
+		t.Fatalf("GetStat() returned error: %v", err)
+	}
+}
+
 // TODO: flesh this out with other boundary condition testing for Rename
 func TestBadRename(t *testing.T) {
 	testDirInode := createTestDirectory(t, "BadRename")
@@ -569,7 +605,7 @@ func TestBadRename(t *testing.T) {
 
 	validFile := "PerfectlyValidFile"
 	_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
-	if err != nil {
+	if nil != err {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
@@ -687,21 +723,21 @@ func TestFlock(t *testing.T) {
 	}
 
 	// Try another write lock from a different pid, it should fail:
-	lock.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	var lock1 FlockStruct
+	lock1 = lock
+	lock1.Pid = 2
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock on a locked file should fail with EAGAIN instead got : %v", err)
 	}
 
-	// Lock again, it should succeed:
-	//lock.Pid = 1
-	//_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
-	//if err != nil {
-	//	t.Fatalf("Relocking from same PID on file failed: %v", err)
-	//}
+	// Lock again from pid1, it should succeed:
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	if err != nil {
+		t.Fatalf("Relocking from same PID on file failed: %v", err)
+	}
 
 	lock.Type = syscall.F_UNLCK
-	lock.Pid = 1
 	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Unlock failed : %v", err)
@@ -709,51 +745,198 @@ func TestFlock(t *testing.T) {
 
 	// Read lock test:
 	lock.Type = syscall.F_RDLCK
-	lock.Pid = 1
 	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Read lock pid - 1 failed: %v", err)
 	}
 
-	lock.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock1.Type = syscall.F_RDLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if err != nil {
 		t.Fatalf("Read lock pid - 2 failed: %v", err)
 	}
 
 	// Try write lock it should fail:
-	lock.Type = syscall.F_WRLCK
-	lock.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock3 := lock
+	lock3.Type = syscall.F_WRLCK
+	lock3.Pid = 3
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock should have failed with EAGAIN instead got - %v", err)
 	}
 
-	lock.Pid = 2
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock11 := lock1
+	lock11.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock11)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 2 failed: %v", err)
 	}
 
-	lock.Pid = 1
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock01 := lock
+	lock01.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock01)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 1 failed: %v", err)
 	}
 
-	lock.Type = syscall.F_WRLCK
-	lock.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
-		t.Fatalf("Write lock should have succeeded instead got - %v", err)
+		t.Fatalf("Write lock should have succeeded instead got - %v", err.Error())
 	}
 
-	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	lock3.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
 		t.Fatalf("Unlock of (write after read) failed: %v", err)
+	}
+
+	// Multiple Range lock testing:
+
+	var lock10 FlockStruct
+	lock10.Pid = 1
+	lock10.Start = 100
+	lock10.Len = 100
+	lock10.Type = syscall.F_WRLCK
+	lock10.Whence = 0
+
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock10)
+	if err != nil {
+		t.Fatalf("Range test failed to lock range (100 - 200), err %v", err)
+	}
+
+	lock201 := lock10
+	lock201.Pid = 2
+	lock201.Type = syscall.F_RDLCK
+	lock201.Start = 10
+	lock201.Len = 10
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock201)
+	if err != nil {
+		t.Fatalf("Range test failed to read lock range (10 - 20) by pid2, err %v", err)
+	}
+
+	lock202 := lock201
+	lock202.Start = 90
+	lock202.Len = 10
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock202)
+	if err != nil {
+		t.Fatalf("Range test failed to read lock range (90 - 100) by pid2, err %v", err)
+	}
+
+	lock203 := lock202
+	lock203.Start = 80
+	lock203.Len = 40
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
+	if err == nil {
+		t.Fatalf("Range test read lock of range (80 - 120) should have failed for pid2  err %v", err)
+	}
+
+	lock204 := lock203
+	lock204.Start = 180
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
+	if err == nil {
+		t.Fatalf("Range test read lock of range (180 - 220) should have failed for pid2  err %v", err)
+	}
+
+	lock205 := lock204
+	lock205.Start = 200
+	lock205.Len = 10
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock205)
+	if err != nil {
+		t.Fatalf("Range test read lock of range (200 - 210) should have succeeded for pid2  err %v", err)
+	}
+
+	lock206 := lock205
+	lock206.Start = 240
+	lock206.Len = 10
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock206)
+	if err != nil {
+		t.Fatalf("Range test read lock of range (240 - 250) should have succeeded for pid2  err %v", err)
+	}
+
+	lock101 := lock10
+	lock101.Type = syscall.F_RDLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock101)
+	if err != nil {
+		t.Fatalf("Range test converting write lock to read lock of pid1 range 100 - 200 failed, err %v", err)
+	}
+
+	// Now, lock 203 and 204 should succceed.
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
+	if err != nil {
+		t.Fatalf("Range test read lock of range (80 - 120) should have succeeded for pid2  err %v", err)
+	}
+
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
+	if err != nil {
+		t.Fatalf("Range test read lock of range (180 - 220) should have succeeded for pid2  err %v", err)
+	}
+
+	lock30 := lock10
+	lock30.Pid = 3
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	if err == nil {
+		t.Fatalf("Range test write lock of range 100 - 200 should have failed for pid3 err %v", err)
+	}
+
+	lock102 := lock10
+	lock102.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock102)
+	if err != nil {
+		t.Fatalf("Range test unlock of range 100 - 200 for pid1 should have succeeded, err - %v", err)
+	}
+
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	if err == nil {
+		t.Fatalf("Range test write lock of range 100 - 200 should have failed for pid3 err %v", err)
+	}
+
+	lock207 := lock10
+	lock207.Type = syscall.F_UNLCK
+	lock207.Pid = 2
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock207)
+	if err != nil {
+		t.Fatalf("Range test unlock of range 100 - 200 for pid2 should have succeeded, err - %v", err)
+	}
+
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	if err != nil {
+		t.Fatalf("Range test write lock of range 100 - 200 should have succeeded for pid3 err %v", err)
+	}
+
+	lock301 := lock30
+	lock301.Type = syscall.F_UNLCK
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock301)
+	if err != nil {
+		t.Fatalf("Range test unlock of range 100 - 200 should have succeeded for pid3 err %v", err)
+	}
+
+	lock2u1 := lock201
+	lock2u1.Type = syscall.F_UNLCK
+	lock2u1.Start = 0
+	lock2u1.Len = 150
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u1)
+	if err != nil {
+		t.Fatalf("Range test unlock of range 0 - 150 should have succeeded for pid2 err %v", err)
+	}
+
+	lock2u2 := lock2u1
+	lock2u2.Start = 150
+	lock2u2.Len = 150
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u2)
+	if err != nil {
+		t.Fatalf("Range test unlock of range 150 - 300 should have succeeded for pid2 err %v", err)
+	}
+
+	lock30.Start = 0
+	lock30.Len = 250
+	lock30.Type = syscall.F_WRLCK
+	lockHeld, err := mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_GETLK, &lock30)
+	if err != nil {
+		t.Fatalf("Range test GET write lock of range 0 - 250 should have succeeded for pid3 err %v lockHeld %+v", err, lockHeld)
+	}
+
+	if lock30.Type != syscall.F_UNLCK {
+		t.Fatalf("GetLock should have succeeded for range 0 - 250 for pid 3, err %v", err)
 	}
 
 	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)

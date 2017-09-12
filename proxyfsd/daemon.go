@@ -1,7 +1,7 @@
 package proxyfsd
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -23,7 +23,7 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -66,18 +66,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
 
-	// Start up dæmon packages
-
-	err = stats.Up(confMap)
-	if nil != err {
-		errChan <- err
-		return
-	}
-	wg.Add(1)
-	defer func() {
-		stats.Down()
-		wg.Done()
-	}()
+	// Start up dæmon packages (logger starts first and finishes last)
 
 	err = logger.Up(confMap)
 	if nil != err {
@@ -85,96 +74,148 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		return
 	}
 	wg.Add(1)
+	logger.Infof("proxyfsd is starting up (PID %d)", os.Getpid())
 	defer func() {
-		logger.Down()
+		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
+		err = logger.Down()
+		if nil != err {
+			logger.Errorf("logger.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
+		}
+		wg.Done()
+	}()
+
+	err = stats.Up(confMap)
+	if nil != err {
+		logger.Errorf("stats.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = stats.Down()
+		if nil != err {
+			logger.Errorf("stats.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = swiftclient.Up(confMap)
 	if nil != err {
+		logger.Errorf("swiftclient.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		swiftclient.Down()
+		err = swiftclient.Down()
+		if nil != err {
+			logger.Errorf("swiftclient.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = headhunter.Up(confMap)
 	if nil != err {
+		logger.Errorf("headhunter.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		headhunter.Down()
+		err = headhunter.Down()
+		if nil != err {
+			logger.Errorf("headhunter.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = inode.Up(confMap)
 	if nil != err {
+		logger.Errorf("inode.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		inode.Down()
+		err = inode.Down()
+		if nil != err {
+			logger.Errorf("inode.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = dlm.Up(confMap)
 	if nil != err {
+		logger.Errorf("dlm.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		dlm.Down()
+		err = dlm.Down()
+		if nil != err {
+			logger.Errorf("dlm.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = fs.Up(confMap)
 	if nil != err {
+		logger.Errorf("fs.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		fs.Down()
+		err = fs.Down()
+		if nil != err {
+			logger.Errorf("fs.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = fuse.Up(confMap)
 	if nil != err {
+		logger.Errorf("fuse.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		fuse.Down()
+		err = fuse.Down()
+		if nil != err {
+			logger.Errorf("fuse.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
 	err = jrpcfs.Up(confMap)
 	if nil != err {
+		logger.Errorf("jrpcfs.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		jrpcfs.Down()
+		err = jrpcfs.Down()
+		if nil != err {
+			logger.Errorf("jrpcfs.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
-	err = httpserver.Up(confMap)
+	err = httpserver.Up(confMap) // Note: Must be the last .Up() step as it is used to indicate "up" status via HTTP
 	if nil != err {
+		logger.Errorf("httpserver.Up() failed: %v", err)
 		errChan <- err
 		return
 	}
 	wg.Add(1)
 	defer func() {
-		httpserver.Down()
+		err = httpserver.Down()
+		if nil != err {
+			logger.Errorf("httpserver.Down() failed: %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -185,7 +226,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 
 	signalChan := make(chan os.Signal, 1)
 
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
+	signal.Notify(signalChan, signals...)
 
 	if nil != signalHandlerIsArmed {
 		*signalHandlerIsArmed = true
@@ -195,149 +236,169 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 
 	for {
 		signalReceived = <-signalChan
-		logger.Infof("Received signal %v", signalReceived)
+		logger.Infof("Received signal: '%v'", signalReceived)
 
-		if unix.SIGHUP == signalReceived {
-			// recompute confMap and re-apply
+		if unix.SIGHUP != signalReceived { // signalReceived either SIGINT or SIGTERM... so just exit
+
+			errChan <- nil
+
+			// if the following message doesn't appear in the log,
+			// it may be because the caller has not called wg.Wait()
+			// to wait for all of the defer'ed routines (above) to
+			// finish before it exits
+			logger.Infof("signal catcher is shutting down proxyfsd (PID %d)", os.Getpid())
+			return
+		}
+
+		// caught SIGHUP -- recompute confMap and re-apply
+		// break out of loop at first error and handle it
+		for {
+			logger.Infof("Reconfig started; pausing daemons")
 
 			confMap, err = conf.MakeConfMapFromFile(confFile)
 			if nil != err {
-				log.Fatalf("failed to load updated config: %v", err)
+				err = fmt.Errorf("failed to load updated config: %v", err)
+				break
 			}
 
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
-				log.Fatalf("failed to reapply config overrides: %v", err)
+				err = fmt.Errorf("failed to reapply config overrides: %v", err)
+				break
 			}
 
 			// tell each daemon to pause and apply "contracting" confMap changes
-
 			err = httpserver.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("httpserver.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = jrpcfs.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("jrpcfs.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = fuse.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("fuse.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = fs.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("fs.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = dlm.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("dlm.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = inode.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("inode.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = headhunter.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("headhunter.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = swiftclient.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
-			}
-
-			err = logger.PauseAndContract(confMap)
-			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("swiftclient.PauseAndContract(): %v", err)
+				break
 			}
 
 			err = stats.PauseAndContract(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("stats.PauseAndContract(): %v", err)
+				break
+			}
+
+			err = logger.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("logger.PauseAndContract(): %v", err)
+				break
 			}
 
 			// tell each daemon to apply "expanding" confMap changes and result
-
-			err = stats.ExpandAndResume(confMap)
-			if nil != err {
-				errChan <- err
-				return
-			}
+			logger.Infof("Reconfig starting; resuming daemons")
 
 			err = logger.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("logger.ExpandAndResume(): %v", err)
+				break
+			}
+
+			err = stats.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("stats.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = swiftclient.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("swiftclient.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = headhunter.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("headhunter.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = inode.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("inode.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = dlm.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("dlm.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = fs.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("fs.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = fuse.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("fuse.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = jrpcfs.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("jrpcfs.ExpandAndResume(): %v", err)
+				break
 			}
 
 			err = httpserver.ExpandAndResume(confMap)
 			if nil != err {
-				errChan <- err
-				return
+				err = fmt.Errorf("httpserver.ExpandAndResume(): %v", err)
+				break
 			}
-		} else {
-			// signalReceived either SIGINT or SIGTERM... so just exit
 
-			errChan <- nil
+			logger.Infof("Reconfig finished successfully")
+			break
+		}
 
+		// if one of the daemons didn't make it, log the error
+		if nil != err {
+			logger.Errorf("Reconfig failed: %v", err)
+			errChan <- err
 			return
 		}
 	}

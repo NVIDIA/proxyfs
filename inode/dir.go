@@ -102,8 +102,8 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 		panic(err)
 	}
 	if !ok {
-		err = fmt.Errorf("%s: failed to create hardlink %v to inode %v in directory inode %v: entry exists", utils.GetFnName(), basename, targetInode.InodeNumber, dirInode.InodeNumber)
-		logger.ErrorWithError(err)
+		err = fmt.Errorf("%s: failed to create link '%v' to inode %v in directory inode %v: entry exists",
+			utils.GetFnName(), basename, targetInode.InodeNumber, dirInode.InodeNumber)
 		return blunder.AddError(err, blunder.FileExistsError)
 	}
 
@@ -118,12 +118,12 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 		dirInode.LinkCount++
 	}
 
-	dirInode.ModificationTime = updateTime
-	dirInode.AccessTime = updateTime
 	dirInode.AttrChangeTime = updateTime
+	dirInode.ModificationTime = updateTime
 	return nil
 }
 
+// This is by both the link(2) and create(2) operations (mountstruct.Link() and mountstruct.Create())
 func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber) (err error) {
 	stats.IncrementOperations(&stats.DirLinkOps)
 
@@ -198,9 +198,8 @@ func removeDirEntryInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemo
 
 	updateTime := time.Now()
 
-	dirInode.ModificationTime = updateTime
-	dirInode.AccessTime = updateTime
 	dirInode.AttrChangeTime = updateTime
+	dirInode.ModificationTime = updateTime
 
 	untargetInode.AttrChangeTime = updateTime
 	return
@@ -316,6 +315,7 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		dstInode = nil
 	}
 
+	// I believe this is allowed so long at the dstInode is empty --craig
 	if (nil != dstInode) && (DirType == dstInode.InodeType) {
 		err = fmt.Errorf("%v: Target of Move() is an existing directory: %v/%v", utils.GetFnName(), dstDirInodeNumber, dstBasename)
 		logger.ErrorWithError(err)
@@ -347,14 +347,14 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 	inodes := make([]*inMemoryInodeStruct, 0, 4)
 
 	srcDirInode.dirty = true
+	srcDirInode.AttrChangeTime = updateTime
 	srcDirInode.ModificationTime = updateTime
-	srcDirInode.AccessTime = updateTime
 	inodes = append(inodes, srcDirInode)
 
 	if srcDirInodeNumber != dstDirInodeNumber {
 		dstDirInode.dirty = true
+		dstDirInode.AttrChangeTime = updateTime
 		dstDirInode.ModificationTime = updateTime
-		dstDirInode.AccessTime = updateTime
 		inodes = append(inodes, dstDirInode)
 
 		if DirType == srcInode.InodeType {

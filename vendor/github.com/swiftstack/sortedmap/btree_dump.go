@@ -34,12 +34,6 @@ func (tree *btreeTreeStruct) dumpNode(node *btreeNodeStruct, indent string) (err
 	fmt.Printf("%v  .root                = %v\n", indent, node.root)
 	fmt.Printf("%v  .leaf                = %v\n", indent, node.leaf)
 
-	if nil == node.clonedFromNode {
-		fmt.Printf("%v  .clonedFromNode      = nil\n", indent)
-	} else {
-		fmt.Printf("%v  .clonedFromNode      = %p\n", indent, node.clonedFromNode)
-	}
-
 	if nil == node.parentNode {
 		fmt.Printf("%v  .parentNode          = nil\n", indent)
 	} else {

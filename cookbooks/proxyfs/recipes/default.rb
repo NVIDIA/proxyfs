@@ -63,6 +63,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
+    file.insert_line_if_no_match(/ls -la/, "alias la='ls -la'")
+    file.insert_line_if_no_match(/ls -lia/, "alias li='ls -lia'")
+    file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
     file.write_file
 
     unless File.exist?(ROOT_DOT_BASH_PROFILE)
@@ -88,6 +91,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
+    file.insert_line_if_no_match(/ls -la/, "alias la='ls -la'")
+    file.insert_line_if_no_match(/ls -lia/, "alias li='ls -lia'")
+    file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
     file.write_file
 
   end
@@ -162,6 +168,8 @@ template "/usr/bin/start_and_mount_pfs" do
   source "usr/bin/start_and_mount_pfs.erb"
   variables({
     :swift_user => node['swift_user'],
+    :swift_uid => node['swift_uid'],
+    :swift_gid => node['swift_gid']
   })
 end
 
@@ -413,7 +421,7 @@ ruby_block "Create exports entry" do
     end
 
     editor = Chef::Util::FileEdit.new("/etc/exports")
-    editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,fsid=1000,anonuid=1000,anongid=1000,no_subtree_check,no_root_squash) 192.168.0.0/255.255.255.0(rw,sync,fsid=1000,no_subtree_check,anonuid=1000,anongid=1000)")
+    editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,sync,fsid=1000,no_subtree_check,no_root_squash)")
     editor.write_file
   end 
 end

@@ -15,9 +15,13 @@
 
 import base64
 import collections
+import errno
+import eventlet
 import hashlib
 import json
 import mock
+import os
+import socket
 import unittest
 from StringIO import StringIO
 from swift.common import swob
@@ -107,7 +111,7 @@ class FakeJsonRpc(object):
     """
     Fake out JSON-RPC calls.
 
-    This object is used to replace the "rpc_call" method on the middleware.
+    This object is used to replace the JsonRpcClient helper object.
     """
     def __init__(self):
         self._calls = []
@@ -171,6 +175,22 @@ class FakeJsonRpc(object):
         else:
             rpc_response['id'] = call_id
         return rpc_response
+
+
+class FakeJsonRpcWithErrors(FakeJsonRpc):
+    def __init__(self, *a, **kw):
+        super(FakeJsonRpcWithErrors, self).__init__(*a, **kw)
+        self._errors = []
+
+    def add_call_error(self, ex):
+        self._errors.append(ex)
+
+    def call(self, *a, **kw):
+        # Call super() so we get call tracking.
+        retval = super(FakeJsonRpcWithErrors, self).call(*a, **kw)
+        if self._errors:
+            raise self._errors.pop(0)
+        return retval
 
 
 class FakeLogger(object):
@@ -3046,6 +3066,70 @@ class TestAuth(BaseMiddlewareTest):
                      'swift.authorize': auth_its_fine})
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+
+
+class TestRetry(unittest.TestCase):
+    def setUp(self):
+        self.app = FakeProxy()
+        self.pfs = mware.PfsMiddleware(self.app, {
+            'bimodal_recheck_interval': '5.0',
+            'proxyfsd_host': '10.1.1.1, 10.2.2.2',
+        })
+        self.fake_rpc = FakeJsonRpcWithErrors()
+        patcher = mock.patch('pfs_middleware.middleware.JsonRpcClient',
+                             lambda *_: self.fake_rpc)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.app.register('HEAD', '/v1/AUTH_test', 204, {}, '')
+
+        def fake_RpcIsAccountBimodal(request):
+            return {
+                "error": None,
+                "result": {
+                    "IsBimodal": True,
+                    "ActivePeerPrivateIPAddr": "10.9.8.7",
+                }}
+
+        self.fake_rpc.register_handler("Server.RpcIsAccountBimodal",
+                                       fake_RpcIsAccountBimodal)
+
+    def test_retry_socketerror(self):
+        self.fake_rpc.add_call_error(
+            socket.error(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)))
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test",
+            environ={'REQUEST_METHOD': 'HEAD'})
+        resp = req.get_response(self.pfs)
+        self.assertEqual(resp.status_int, 204)
+
+        self.assertEqual(self.fake_rpc.calls, (
+            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),
+            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},))))
+
+    def test_no_retry_timeout(self):
+        err = eventlet.Timeout(None)  # don't really time anything out
+        self.fake_rpc.add_call_error(err)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test",
+            environ={'REQUEST_METHOD': 'HEAD'})
+        resp = req.get_response(self.pfs)
+        self.assertEqual(resp.status_int, 500)
+
+        self.assertEqual(self.fake_rpc.calls, (
+            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),))
+
+    def test_no_catch_other_error(self):
+        self.fake_rpc.add_call_error(ZeroDivisionError)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test",
+            environ={'REQUEST_METHOD': 'HEAD'})
+
+        self.assertRaises(ZeroDivisionError, req.get_response, self.pfs)
+        self.assertEqual(self.fake_rpc.calls, (
+            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),))
 
 
 class TestBimodalCaching(unittest.TestCase):

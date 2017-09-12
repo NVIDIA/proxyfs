@@ -402,7 +402,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 
 	releaseNonChunkedConnection(tcpConn, parseConnection(headers))
 
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjGet, uint64(contentLength))
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjGet, uint64(len(buf)))
 
 	return
 }

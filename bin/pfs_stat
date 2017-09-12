@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import json
+import os.path
 import re
 import sys
 import time
@@ -10,6 +12,106 @@ import subprocess
 # TODO:
 # * humanize stats if humanize is installed
 # * better print formatting; use tables if appropriate module is installed
+
+CONFIG_FILE_PATHS = [
+    "/opt/ss/etc/proxyfs.conf",
+    "/etc/proxyfsd/saioproxyfsd0.conf"
+]
+
+PFSCONFJSON_PATHS = [
+    "/opt/ss/bin/pfsconfjson",
+    "/home/swift/code/ProxyFS/bin/pfsconfjson"
+]
+
+DEFAULT_CONFIG = {
+    "hostname": "localhost",
+    "port": 15346
+}
+
+
+def find_config_file_path():
+    for file_path in CONFIG_FILE_PATHS:
+        if os.path.isfile(file_path):
+            return file_path
+    return None
+
+
+def get_values_to_return(provided_hostname, provided_port, calculated_hostname,
+                         calculated_port):
+    if provided_hostname is not None:
+        return_hostname = provided_hostname
+    else:
+        return_hostname = calculated_hostname
+
+    if provided_port is not None:
+        return_port = provided_port
+    else:
+        return_port = calculated_port
+
+    return return_hostname, return_port
+
+
+def get_pfsconfjson_path():
+    try:
+        path = subprocess.check_output("which pfsconfjsons",
+                                       stderr=subprocess.PIPE, shell=True)
+        return path.strip()
+    except:
+        pass
+
+    for file_path in PFSCONFJSON_PATHS:
+        if os.path.isfile(file_path):
+            return file_path
+
+    try:
+        paths = subprocess.check_output("find / -iname 'pfsconfjson'",
+                                        shell=True,
+                                        stderr=subprocess.PIPE).splitlines()
+    except subprocess.CalledProcessError as ex:
+        paths = [line for line in ex.output.splitlines() if
+                 "Permission denied" not in line]
+    finally:
+        if len(paths) > 0:
+            return paths[0].strip()
+
+    return None
+
+
+def get_config_hostname_and_port(config_file_path, pfsconfjson_path):
+    pfsconfjson_call = "{} {}".format(pfsconfjson_path, config_file_path)
+    config_json_str = subprocess.check_output(pfsconfjson_call, shell=True)
+    config = json.loads(config_json_str)
+    whoami = config["Cluster"]["WhoAmI"][0]
+    hostname = config[whoami]["PrivateIPAddr"][0]
+    port = int(config["HTTPServer"]["TCPPort"][0])
+    return hostname, port
+
+
+def get_hostname_and_port(provided_hostname, provided_port):
+    if provided_hostname is not None and provided_port is not None:
+        return provided_hostname, provided_port
+
+    config_file_path = find_config_file_path()
+    if config_file_path is None:
+        return get_values_to_return(provided_hostname, provided_port,
+                                    DEFAULT_CONFIG["hostname"],
+                                    DEFAULT_CONFIG["port"])
+
+    pfsconfjson_path = get_pfsconfjson_path()
+    if pfsconfjson_path is None:
+        return get_values_to_return(provided_hostname, provided_port,
+                                    DEFAULT_CONFIG["hostname"],
+                                    DEFAULT_CONFIG["port"])
+
+    try:
+        config_hostname, config_port = get_config_hostname_and_port(
+            config_file_path, pfsconfjson_path)
+        return get_values_to_return(provided_hostname, provided_port,
+                                    config_hostname, config_port)
+    except:
+        return get_values_to_return(provided_hostname, provided_port,
+                                    DEFAULT_CONFIG["hostname"],
+                                    DEFAULT_CONFIG["port"])
 
 
 def print_stats(s, exclude=[], show_all=False, diff=True):
@@ -67,13 +169,14 @@ def read_stats_from_file(fn):
         stats = parse_stats(text)
         return stats
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Show Proxyfs stats')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='verbose output')
-    parser.add_argument('--hostname', '-H', type=str, default="localhost",
+    parser.add_argument('--hostname', '-H', type=str, default=None,
                         help='Hostname of proxyfs stat server (probably localhost)')
-    parser.add_argument('--port', '-p', type=int, default=15346,
+    parser.add_argument('--port', '-p', type=int, default=None,
                         help='Port used by proxyfs stat server')
     parser.add_argument('--file', '-f', type=str,
                         help='Read starting stats from a file')
@@ -83,22 +186,24 @@ if __name__ == '__main__':
 
     excludes = ['go_runtime', 'logging_level']
 
+    hostname, port = get_hostname_and_port(args.hostname, args.port)
+
     if args.cmd or args.file:
         start_stats = None
         if args.file:
             start_stats = read_stats_from_file(args.file)
         else:
-            start_stats = get_stats_from_proxyfsd(args.hostname, args.port)
+            start_stats = get_stats_from_proxyfsd(hostname, port)
 
         if args.cmd:
             subprocess.call(args.cmd)
 
-        end_stats = get_stats_from_proxyfsd(args.hostname, args.port)
+        end_stats = get_stats_from_proxyfsd(hostname, port)
         diff = stat_diff(start_stats, end_stats)
 
         if args.cmd:
             print("\n--")
         print_stats(diff, exclude=excludes, show_all=args.verbose)
     else:
-        stats = get_stats_from_proxyfsd(args.hostname, args.port)
+        stats = get_stats_from_proxyfsd(hostname, port)
         print_stats(stats, diff=False, exclude=excludes, show_all=args.verbose)

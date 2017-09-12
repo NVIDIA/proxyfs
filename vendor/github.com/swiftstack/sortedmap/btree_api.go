@@ -12,22 +12,16 @@ var OnDiskByteOrder = cstruct.LittleEndian
 // LayoutReport is a map where key is an objectNumber and value is objectBytes used in that objectNumber
 type LayoutReport map[uint64]uint64
 
-// FlushedList is an opaque list of flushed B+Tree nodes to pass to TouchFlushedList() if necessary
-type FlushedList interface{}
-
 // BPlusTree interface declares the available methods available for a B+Tree
 type BPlusTree interface {
 	SortedMap
 	FetchLayoutReport() (layoutReport LayoutReport, err error)
-	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, flushedList FlushedList, err error)
+	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error)
 	Purge(full bool) (err error)
 	Touch() (err error)
 	TouchItem(thisItemIndexToTouch uint64) (nextItemIndexToTouch uint64, err error)
-	TouchFlushedList(flushedList FlushedList) (err error)
 	Prune() (err error)
 	Discard() (err error)
-	Clone(andUnTouch bool, callbacks BPlusTreeCallbacks) (newTree BPlusTree, err error)
-	UpdateCloneSource() (err error)
 }
 
 // BPlusTreeCallbacks specifies the interface to a set of callbacks provided by the client
@@ -64,7 +58,6 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 		root:                true,
 		leaf:                true,
 		tree:                nil, //                          To be set just below
-		clonedFromNode:      nil,
 		parentNode:          nil,
 		kvLLRB:              NewLLRBTree(compare, callbacks),
 		nonLeafLeftChild:    nil,
@@ -107,7 +100,6 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 		root:                true,
 		leaf:                true, //          To be updated once root node is loaded
 		tree:                nil,  //          To be set just below
-		clonedFromNode:      nil,
 		parentNode:          nil,
 		kvLLRB:              nil, //           To be filled in once root node is loaded
 		nonLeafLeftChild:    nil, //           To be filled in once root node is loaded

@@ -3,6 +3,7 @@ package inode
 import (
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -85,33 +86,37 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 		version                           Version
 	)
 
+	logger.Tracef("inode.fetchOnDiskInode(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+
 	inodeRec, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil != err {
-		err = fmt.Errorf("%s: unable to get inodeRec for inodeNumber 0x%016X: %v", utils.GetFnName(), inodeNumber, err)
+		stackStr := string(debug.Stack())
+		err = fmt.Errorf("%s: unable to get inodeRec for inode %d: %v stack: %s",
+			utils.GetFnName(), inodeNumber, err, stackStr)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		return
 	}
 
 	bytesConsumedByCorruptionDetected, err = cstruct.Unpack(inodeRec, &corruptionDetected, cstruct.LittleEndian)
 	if nil != err {
-		err = fmt.Errorf("%s: unable to parse inodeRec.CorruptionDetected for inodeNumber 0x%016X: %v", utils.GetFnName(), inodeNumber, err)
+		err = fmt.Errorf("%s: unable to parse inodeRec.CorruptionDetected for inode %d: %v", utils.GetFnName(), inodeNumber, err)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 	if corruptionDetected {
-		err = fmt.Errorf("%s: inodeNumber 0x%016X has been marked corrupted", utils.GetFnName(), inodeNumber)
+		err = fmt.Errorf("%s: inode %d has been marked corrupted", utils.GetFnName(), inodeNumber)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 
 	bytesConsumedByVersion, err = cstruct.Unpack(inodeRec[bytesConsumedByCorruptionDetected:], &version, cstruct.LittleEndian)
 	if nil != err {
-		err = fmt.Errorf("%s: unable to get inodeRec.Version for inodeNumber 0x%016X: %v", utils.GetFnName(), inodeNumber, err)
+		err = fmt.Errorf("%s: unable to get inodeRec.Version for inode %d: %v", utils.GetFnName(), inodeNumber, err)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 	if V1 != version {
-		err = fmt.Errorf("%s: inodeRec.Version for inodeNumber 0x%016X (%v) not supported", utils.GetFnName(), inodeNumber, version)
+		err = fmt.Errorf("%s: inodeRec.Version for inode %d (%v) not supported", utils.GetFnName(), inodeNumber, version)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
@@ -120,7 +125,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 
 	err = json.Unmarshal(inodeRec[bytesConsumedByCorruptionDetected+bytesConsumedByVersion:], onDiskInodeV1)
 	if nil != err {
-		err = fmt.Errorf("%s: inodeRec.<body> for inodeNumber 0x%016X json.Unmarshal() failed: %v", utils.GetFnName(), inodeNumber, err)
+		err = fmt.Errorf("%s: inodeRec.<body> for inode %d json.Unmarshal() failed: %v", utils.GetFnName(), inodeNumber, err)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
@@ -141,7 +146,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 		} else {
 			inMemoryInode.payload, err = sortedmap.OldBPlusTree(inMemoryInode.PayloadObjectNumber, onDiskInodeV1PayloadObjectOffset, inMemoryInode.PayloadObjectLength, sortedmap.CompareString, &dirInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}})
 			if nil != err {
-				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for DirType inodeNumber 0x%016X failed: %v", utils.GetFnName(), inodeNumber, err)
+				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for DirType inode %d failed: %v", utils.GetFnName(), inodeNumber, err)
 				err = blunder.AddError(err, blunder.CorruptInodeError)
 				return
 			}
@@ -152,7 +157,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 		} else {
 			inMemoryInode.payload, err = sortedmap.OldBPlusTree(inMemoryInode.PayloadObjectNumber, onDiskInodeV1PayloadObjectOffset, inMemoryInode.PayloadObjectLength, sortedmap.CompareUint64, &fileInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}})
 			if nil != err {
-				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for FileType inodeNumber 0x%016X failed: %v", utils.GetFnName(), inodeNumber, err)
+				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for FileType inode %d failed: %v", utils.GetFnName(), inodeNumber, err)
 				err = blunder.AddError(err, blunder.CorruptInodeError)
 				return
 			}
@@ -160,7 +165,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	case SymlinkType:
 		// Nothing special here
 	default:
-		err = fmt.Errorf("%s: inodeRec.InodeType for inodeNumber 0x%016X (%v) not supported", utils.GetFnName(), inodeNumber, inMemoryInode.InodeType)
+		err = fmt.Errorf("%s: inodeRec.InodeType for inode %d (%v) not supported", utils.GetFnName(), inodeNumber, inMemoryInode.InodeType)
 		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
@@ -304,7 +309,7 @@ func (inMemoryInode *inMemoryInodeStruct) convertToOnDiskInodeV1() (onDiskInodeV
 
 	if (DirType == inMemoryInode.InodeType) || (FileType == inMemoryInode.InodeType) {
 		content := inMemoryInode.payload.(sortedmap.BPlusTree)
-		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, _, flushErr := content.Flush(false)
+		payloadObjectNumber, payloadObjectOffset, payloadObjectLength, flushErr := content.Flush(false)
 		if nil != flushErr {
 			panic(flushErr)
 		}
@@ -392,7 +397,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		if SymlinkType != inode.InodeType {
 			// (FileType == inode.InodeType || (DirType == inode.InodeType)
 			payloadAsBPlusTree = inode.payload.(sortedmap.BPlusTree)
-			payloadObjectNumber, _, payloadObjectLength, _, err = payloadAsBPlusTree.Flush(false)
+			payloadObjectNumber, _, payloadObjectLength, err = payloadAsBPlusTree.Flush(false)
 			if nil != err {
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)
@@ -635,6 +640,12 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 		return
 	}
 
+	// On a local file system, the owner of a file can *not* write to the
+	// file unless the permission bits say so.  However, NFS relaxes this to
+	// allow the owner of a file to write to it because NFS does not have an
+	// open state (there's no file descriptor that tracks if the file was
+	// opened with write permission).  But I'm not sure that other operations
+	// that require write permission, like truncate(2) work the same way.
 	if (InodeRootUserID == userID) || (InodeRootGroupID == groupID) {
 		accessReturn = true
 		return
@@ -706,6 +717,9 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 }
 
 func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
+
+	logger.Tracef("inode.Destroy(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+
 	ourInode, err := vS.fetchInode(inodeNumber)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -846,6 +860,7 @@ func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime ti
 	}
 
 	inode.dirty = true
+	inode.AttrChangeTime = time.Now()
 	inode.CreationTime = CreationTime
 
 	err = vS.flushInode(inode)
@@ -865,6 +880,7 @@ func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, Modificatio
 	}
 
 	inode.dirty = true
+	inode.AttrChangeTime = time.Now()
 	inode.ModificationTime = ModificationTime
 
 	err = vS.flushInode(inode)
@@ -885,27 +901,8 @@ func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.T
 	}
 
 	inode.dirty = true
+	inode.AttrChangeTime = time.Now()
 	inode.AccessTime = accessTime
-
-	err = vS.flushInode(inode)
-	if err != nil {
-		logger.ErrorWithError(err)
-		return err
-	}
-
-	return
-}
-
-func (vS *volumeStruct) SetAttrChangeTime(inodeNumber InodeNumber, attrChangeTime time.Time) (err error) {
-	// NOTE: Errors are logged by the caller
-
-	inode, err := vS.fetchInode(inodeNumber)
-	if err != nil {
-		return err
-	}
-
-	inode.dirty = true
-	inode.AttrChangeTime = attrChangeTime
 
 	err = vS.flushInode(inode)
 	if err != nil {
@@ -931,7 +928,7 @@ func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode,
 	// bits as well. Since we need to work with whatever samba does, let's just silently
 	// mask off the other bits.
 	if filePerm&^PosixModePerm != 0 {
-		logger.Tracef("invalid file mode 0x%x (max 0x%x); removing file type bits.", uint32(filePerm), uint32(PosixModePerm))
+		logger.Tracef("inode.determineMode(): invalid file mode 0x%x (max 0x%x); removing file type bits.", uint32(filePerm), uint32(PosixModePerm))
 	}
 
 	// Build fileMode starting with the file permission bits
