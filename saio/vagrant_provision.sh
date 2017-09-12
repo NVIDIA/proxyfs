@@ -12,7 +12,7 @@ cd /tmp
 wget -q https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
 tar -C /usr/local -xf go1.9.linux-amd64.tar.gz
 rm go1.9.linux-amd64.tar.gz
-echo "export PATH=\$PATH:/usr/local/go/bin" >> /etc/profile
+echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Install Git
 
@@ -29,22 +29,22 @@ pip install --upgrade pip
 pip install requests
 yum -y install json-c-devel
 yum -y install fuse
-echo "export GOPATH=/vagrant" >> /etc/profile
-echo "export PATH=\$PATH:\$GOPATH/bin" >> /etc/profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> /etc/profile
+echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
+echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc
-yum -y install gcc-c++
-yum -y install python-devel
-yum -y install gnutls-devel
-yum -y install libacl-devel
-yum -y install openldap-devel
-yum -y install samba
-yum -y install samba-client
-yum -y install cifs-utils
+yum -y install gcc \
+               gcc-c++ \
+               python-devel \
+               gnutls-devel \
+               libacl-devel \
+               openldap-devel \
+               samba \
+               samba-client \
+               cifs-utils
 cd /vagrant/src/github.com/swiftstack/ProxyFS/saio
 if [[ -d samba4-4-centos ]]
 then
@@ -96,7 +96,7 @@ then
 else
     make GEN_NDR_TABLES
 fi
-echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> /etc/profile
+echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> ~vagrant/.bash_profile
 
 # Setup Swift
 #
@@ -105,6 +105,7 @@ echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba"
 # [Setup Swift] Create the swift:swift user
 
 useradd --user-group --groups wheel swift
+chmod 755 ~swift
 
 # Using a loopback device for storage
 
@@ -151,16 +152,8 @@ yum -y install memcached sqlite xfsprogs \
                python-netifaces python-pip python-dns \
                python-mock
 
-yum -y install make autoconf automake libtool
-
-cd ~swift
-git clone -b master --single-branch --depth 1 https://github.com/openstack/liberasurecode.git
-cd liberasurecode
-./autogen.sh
-./configure
-make
-make test
-make install
+yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-1.1.1-1.fc25.x86_64.rpm
+yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.1.1-1.fc25.x86_64.rpm
 
 cd ~swift
 git clone -b master --single-branch --depth 1 https://github.com/openstack/python-swiftclient.git
@@ -197,16 +190,28 @@ systemctl start memcached.service
 # [Setup Swift] Configuring each node
 
 rm -rf /etc/swift
+cp -R /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/swift /etc/swift
+chown -R swift:swift /etc/swift
 
-cd ~swift/swift/doc
-cp -r saio/swift /etc/swift
-chown swift:swift /etc/swift
+# [Setup Swift] Setting up scripts for running Swift
 
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/ /etc/
+mkdir -p ~swift/bin
 
-# TODO: [Setup Swift] Setting up scripts for running Swift
+cd ~swift/bin
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/* .
+echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
-# TODO - may be some "changeme's" in those canned scripts/.conf files
+~swift/bin/remakerings
+
+# Ensure proxyfsd logging will work
+
+rm -rf /var/log/proxyfsd
+mkdir -p /var/log/proxyfsd
+touch /var/log/proxyfsd/proxyfsd.log
+chmod 777 /var
+chmod 777 /var/log
+chmod 777 /var/log/proxyfsd
+chmod 666 /var/log/proxyfsd/proxyfsd.log
 
 # All done
 
