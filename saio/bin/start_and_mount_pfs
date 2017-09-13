@@ -3,6 +3,36 @@
 # A simple script to start the services and mount the sample mount point
 # The PATH, etc should already be setup by systemctl environment
 
+function await_proxyfsd_shutdown {
+    while true
+    do
+        pidof proxyfsd > /dev/null
+        if [ $? -ne 0 ]
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
+function await_proxyfsd_startup {
+    /usr/bin/systemctl -q is-active proxyfsd
+    if [ $? -ne 0 ]
+    then
+        echo "ProfyFS failed to start. Exiting..."
+        exit 1
+    fi
+    while true
+    do
+        curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
 if [ $# -gt 0 ]; then
     MOUNT_TYPE="$1"
     MOUNT_TYPE=${MOUNT_TYPE,,}
@@ -43,6 +73,7 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl stop nmb
     # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
+    await_proxyfsd_shutdown
     sudo /usr/bin/swift-init main stop
     # sudo /usr/bin/systemctl stop swift
     sudo /usr/bin/systemctl stop memcached
@@ -51,6 +82,7 @@ if [ -f /usr/bin/systemctl ]; then
     # sudo /usr/bin/systemctl start swift
     sudo /usr/bin/swift-init main start
     sudo /usr/bin/systemctl start proxyfsd
+    await_proxyfsd_startup
     # sudo /usr/bin/systemctl start winbind
     sudo /usr/bin/systemctl start nmb
     sudo /usr/bin/systemctl start smb
@@ -58,14 +90,6 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start nfs-server
     sudo /usr/bin/systemctl start nfs-lock
     sudo /usr/bin/systemctl start nfs-idmap
-
-    /usr/bin/systemctl -q is-active proxyfsd
-    if [ $? -ne 0 ]; then
-        echo "ProfyFS failed to start. Exiting..."
-        exit 1
-    else
-        echo "ProxyFS successfully started"
-    fi
 else
     # Ubuntu (not tested!)
     MOUNT=/bin/mount
@@ -77,6 +101,7 @@ else
     sudo /usr/sbin/service nmbd stop
     # sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
+    await_proxyfsd_shutdown
     sudo /usr/bin/swift-init main stop
     # sudo /usr/sbin/service swift stop
     sudo /usr/sbin/service memcached stop
@@ -85,6 +110,7 @@ else
     # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
     sudo /usr/sbin/service proxyfsd start
+    await_proxyfsd_startup
     # sudo /usr/sbin/service winbindd start
     sudo /usr/sbin/service nmbd start
     sudo /usr/sbin/service smbd start
@@ -93,6 +119,8 @@ else
     sudo /usr/sbin/service nfs-lock start
     sudo /usr/sbin/service nfs-idmap start
 fi
+
+echo "ProxyFS successfully started"
 
 if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
     mountpoint -q $SHARE_NFS
