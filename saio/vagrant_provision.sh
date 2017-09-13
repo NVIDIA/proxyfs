@@ -198,7 +198,7 @@ chown -R swift:swift /etc/swift
 mkdir -p ~swift/bin
 
 cd ~swift/bin
-cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/* .
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/home/swift/bin/* .
 echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
@@ -212,6 +212,28 @@ chmod 777 /var
 chmod 777 /var/log
 chmod 777 /var/log/proxyfsd
 chmod 666 /var/log/proxyfsd/proxyfsd.log
+
+# Create Mount Points for ProxyFS (FUSE, NFS, & SMB)
+
+rm -rf /CommonMountPoint
+mkdir /CommonMountPoint
+chmod 777 /CommonMountPoint
+
+rm -rf /mnt/nfs_proxyfs_mount
+mkdir /mnt/nfs_proxyfs_mount
+chmod 777 /mnt/nfs_proxyfs_mount
+
+rm -rf /mnt/smb_proxyfs_mount
+mkdir /mnt/smb_proxyfs_mount
+chmod 777 /mnt/smb_proxyfs_mount
+
+# Install systemd .service files for ProxyFS
+
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+
+# Enable start/stop tools
+
+echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
 
 # All done
 
