@@ -203,6 +203,11 @@ echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
+# Install ProxyFS's pfs_middleware
+
+cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+python setup.py develop
+
 # Ensure proxyfsd logging will work
 
 rm -rf /var/log/proxyfsd
