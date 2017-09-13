@@ -227,6 +227,12 @@ rm -rf /mnt/smb_proxyfs_mount
 mkdir /mnt/smb_proxyfs_mount
 chmod 777 /mnt/smb_proxyfs_mount
 
+# Configure exports (NFS) / shares (SMB)
+
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/exports /etc/exports
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/samba/smb.conf /etc/samba/smb.conf
+echo -e "swift\nswift" | smbpasswd -a swift
+
 # Install systemd .service files for ProxyFS
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
