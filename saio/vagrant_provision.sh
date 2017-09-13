@@ -246,6 +246,16 @@ cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyf
 
 echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
 
+# Install wireshark
+
+yum -y install wireshark-gnome \
+               xorg-x11-fonts-Type1 \
+               xorg-x11-xauth \
+               xeyes
+echo "X11Forwarding yes" >> /etc/sysconfig/sshd
+systemctl restart sshd
+usermod -aG wireshark vagrant
+
 # All done
 
 echo "SAIO for ProxyFS provisioned"
