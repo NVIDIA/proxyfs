@@ -91,11 +91,13 @@ then
     echo "./configure has already been run"
 else
     ./configure
+    make clean
 fi
 if [[ -f bin/default/librpc/gen_ndr/ndr_smb_acl.h ]]
 then
     echo "make GEN_NDR_TABLES has already been run"
 else
+    make clean
     make GEN_NDR_TABLES
 fi
 echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> ~vagrant/.bash_profile

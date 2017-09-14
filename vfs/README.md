@@ -31,9 +31,9 @@
 
 	4. cd /vagrant/src/github.com/swiftstack/samba
 	
-	5. make clean
+	5. ./configure
 
-	6. ./configure
+	6. make clean
 
 	7. Compile the source just enough to generate the header files.
 	   make GEN_NDR_TABLES
