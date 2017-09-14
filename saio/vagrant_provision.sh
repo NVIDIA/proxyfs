@@ -5,153 +5,6 @@
 set -e
 set -x
 
-# Experiments getting a 4.4 version of Samba installed
-
-cd /tmp
-mkdir samba
-cd samba
-
-wget -q http://pkgs.fedoraproject.org/repo/pkgs/samba/samba-4.4.14.tar.xz/sha512/6fce503974e48ad120c42bc53b88c67b4b9ccd72b921cd854f6e46d51fe29db7ff37316c3317c8b16ac74fcb8cad1924aa490fa0d1fee2a8152e94ff75d8ce38/samba-4.4.14.tar.xz
-
-yum -y install cups-devel
-: '
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/c/cups-2.1.4-7.fc24.x86_64.rpm
-rpm -i cups-2.1.4-7.fc24.x86_64.rpm
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora-secondary/updates/24/s390x/s/samba-common-4.4.14-0.fc24.noarch.rpm
-rpm -i samba-common-4.4.14-0.fc24.noarch.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/l/libtdb-1.3.9-1.fc24.x86_64.rpm
-rpm -i libtdb-1.3.9-1.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/l/libldb-1.1.26-1.fc24.x86_64.rpm
-rpm -i libldb-1.1.26-1.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/g/glibc-all-langpacks-2.23.1-12.fc24.x86_64.rpm
-rpm -i --nodeps --replacefiles glibc-all-langpacks-2.23.1-12.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/g/glibc-2.23.1-12.fc24.x86_64.rpm
-rpm -i --nodeps --replacefiles glibc-2.23.1-12.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/g/glibc-common-2.23.1-12.fc24.x86_64.rpm
-rpm -i --nodeps --replacefiles glibc-common-2.23.1-12.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/n/nettle-3.2-2.fc24.x86_64.rpm
-rpm -i --replacefiles nettle-3.2-2.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/c/crypto-policies-20151104-2.gitf1cba5f.fc24.noarch.rpm
-rpm -i crypto-policies-20151104-2.gitf1cba5f.fc24.noarch.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/l/libtasn1-4.9-1.fc24.x86_64.rpm
-rpm -i --replacefiles libtasn1-4.9-1.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/g/gnutls-3.4.17-2.fc24.x86_64.rpm
-rpm -i --replacefiles gnutls-3.4.17-2.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/l/libacl-2.2.52-11.fc24.x86_64.rpm
-rpm -i --replacefiles libacl-2.2.52-11.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/l/libarchive-3.1.2-17.fc24.x86_64.rpm
-rpm -i libarchive-3.1.2-17.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/n/ncurses-base-6.0-6.20160709.fc24.noarch.rpm
-rpm -i --replacefiles ncurses-base-6.0-6.20160709.fc24.noarch.rpm
-
-echo "Still working on the below..."
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/n/ncurses-libs-6.0-5.20160116.fc24.x86_64.rpm
-: rpm -i ncurses-libs-6.0-5.20160116.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/n/ncurses-libs-6.0-6.20160709.fc24.x86_64.rpm
-: rpm -i ncurses-libs-6.0-6.20160709.fc24.x86_64.rpm
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/l/lua-5.3.2-3.fc24.x86_64.rpm
-: rpm -i --replacefiles lua-5.3.2-3.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	rpm = 4.13.0-0.rc1.27.fc24 is needed by rpm-libs-4.13.0-0.rc1.27.fc24.x86_64
-	rpm-plugin-selinux(x86-64) = 4.13.0-0.rc1.27.fc24 is needed by rpm-libs-4.13.0-0.rc1.27.fc24.x86_64'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/r/rpm-libs-4.13.0-0.rc1.27.fc24.x86_64.rpm
-: rpm -i rpm-libs-4.13.0-0.rc1.27.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	librpm.so.7()(64bit) is needed by rpm-4.13.0.1-1.fc24.x86_64
-	librpmio.so.7()(64bit) is needed by rpm-4.13.0.1-1.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/r/rpm-4.13.0.1-1.fc24.x86_64.rpm
-: rpm -i rpm-4.13.0.1-1.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	librpm.so.7()(64bit) is needed by rpm-plugin-selinux-4.13.0-0.rc1.27.fc24.x86_64
-	librpmio.so.7()(64bit) is needed by rpm-plugin-selinux-4.13.0-0.rc1.27.fc24.x86_64
-	rpm-libs(x86-64) = 4.13.0-0.rc1.27.fc24 is needed by rpm-plugin-selinux-4.13.0-0.rc1.27.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/r/rpm-plugin-selinux-4.13.0-0.rc1.27.fc24.x86_64.rpm
-: rpm -i rpm-plugin-selinux-4.13.0-0.rc1.27.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	rpm = 4.13.0-0.rc1.27.fc24 is needed by rpm-libs-4.13.0-0.rc1.27.fc24.x86_64
-	rpm-plugin-selinux(x86-64) = 4.13.0-0.rc1.27.fc24 is needed by rpm-libs-4.13.0-0.rc1.27.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/releases/24/Everything/x86_64/os/Packages/r/rpm-libs-4.13.0-0.rc1.27.fc24.x86_64.rpm
-: rpm -i rpm-libs-4.13.0-0.rc1.27.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	librpm.so.7()(64bit) is needed by rpm-4.13.0.1-1.fc24.x86_64
-	librpmio.so.7()(64bit) is needed by rpm-4.13.0.1-1.fc24.x86_64
-'
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/r/rpm-4.13.0.1-1.fc24.x86_64.rpm
-: rpm -i rpm-4.13.0.1-1.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	libreplace-samba4.so()(64bit) is needed by libwbclient-2:4.4.14-0.fc24.x86_64
-	libreplace-samba4.so(SAMBA_4.4.14)(64bit) is needed by libwbclient-2:4.4.14-0.fc24.x86_64
-	samba-client-libs = 2:4.4.14-0.fc24 is needed by libwbclient-2:4.4.14-0.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/l/libwbclient-4.4.14-0.fc24.x86_64.rpm
-: rpm -i libwbclient-4.4.14-0.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	libwbclient = 2:4.4.14-0.fc24 is needed by samba-client-libs-2:4.4.14-0.fc24.x86_64
-	libwbclient.so.0()(64bit) is needed by samba-client-libs-2:4.4.14-0.fc24.x86_64
-	libwbclient.so.0(WBCLIENT_0.9)(64bit) is needed by samba-client-libs-2:4.4.14-0.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/s/samba-client-libs-4.4.14-0.fc24.x86_64.rpm
-: rpm -i samba-client-libs-4.4.14-0.fc24.x86_64.rpm
-
-: '
-error: Failed dependencies:
-	nss-softokn < 3.28.3 conflicts with nss-softokn-freebl-3.30.2-1.0.fc24.x86_64
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/n/nss-softokn-freebl-3.30.2-1.0.fc24.x86_64.rpm
-: rpm -i nss-softokn-freebl-3.30.2-1.0.fc24.x86_64.rpm
-
-: '
-Lots :-(
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/s/samba-common-libs-4.4.14-0.fc24.x86_64.rpm
-: rpm -i samba-common-libs-4.4.14-0.fc24.x86_64.rpm
-
-: '
-Lots :-(
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/s/samba-common-tools-4.4.14-0.fc24.x86_64.rpm
-: rpm -i samba-common-tools-4.4.14-0.fc24.x86_64.rpm
-
-: '
-Lots :-(
-'
-
-wget -q ftp://fr2.rpmfind.net/linux/fedora/linux/updates/24/x86_64/s/samba-4.4.14-0.fc24.x86_64.rpm
-: rpm -i samba-4.4.14-0.fc24.x86_64.rpm
-
-echo "All done with samba manual provision"
-
-: exit 0
-
 # Install Golang
 
 yum -y install gcc
@@ -193,33 +46,34 @@ yum -y install gcc \
                samba-client \
                cifs-utils
 cd /vagrant/src/github.com/swiftstack/ProxyFS/saio
-if [[ -d samba4-4-centos ]]
+if [[ -d samba4-6-centos ]]
 then
-    if [[ -L samba4-4-centos ]]
+    if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
         exit 1
     else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos assumed to be as desired"
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos assumed to be as desired"
     fi
 else
-    if [[ -L samba4-4-centos ]]
+    if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
         exit 1
     else
-        git clone -b v4-4-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-4-centos
+        git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos
     fi
 fi
 if [[ -L samba ]]
 then
     samba_symlink_target=`readlink "samba"`
-    if [[ "samba4-4-centos" == "$samba_symlink_target" ]]
+    if [[ "samba4-6-centos" == "$samba_symlink_target" ]]
     then
-        echo "symlink samba -> samba4-4-centos already"
+        echo "symlink samba -> samba4-6-centos already"
     else
-        echo "symlink samba must point to samba4-4-centos"
-        exit 1
+        echo "redirecting samba -> samba4-6-centos"
+        rm samba
+        ln -s samba4-6-centos samba
     fi
 else
     if [[ -e samba ]]
@@ -227,7 +81,8 @@ else
         echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba cannot pre-exist"
         exit 1
     else
-        ln -s samba4-4-centos samba
+        echo "establishing samba -> samba4-6-centos"
+        ln -s samba4-6-centos samba
     fi
 fi
 cd samba
