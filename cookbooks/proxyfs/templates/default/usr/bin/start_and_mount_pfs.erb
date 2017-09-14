@@ -69,8 +69,8 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl stop nfs-lock
     sudo /usr/bin/systemctl stop nfs-server
     sudo /usr/bin/systemctl stop rpcbind
-    sudo /usr/bin/systemctl stop smb
-    sudo /usr/bin/systemctl stop nmb
+    sudo /usr/bin/systemctl stop ss-smb
+    sudo /usr/bin/systemctl stop ss-nmb
     # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
     await_proxyfsd_shutdown
@@ -84,8 +84,8 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start proxyfsd
     await_proxyfsd_startup
     # sudo /usr/bin/systemctl start winbind
-    sudo /usr/bin/systemctl start nmb
-    sudo /usr/bin/systemctl start smb
+    sudo /usr/bin/systemctl start ss-nmb
+    sudo /usr/bin/systemctl start ss-smb
     sudo /usr/bin/systemctl start rpcbind
     sudo /usr/bin/systemctl start nfs-server
     sudo /usr/bin/systemctl start nfs-lock
