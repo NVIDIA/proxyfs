@@ -27,8 +27,8 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl stop nfs-lock
     sudo /usr/bin/systemctl stop nfs-server
     sudo /usr/bin/systemctl stop rpcbind
-    sudo /usr/bin/systemctl stop ss-smb
-    sudo /usr/bin/systemctl stop ss-nmb
+    sudo /usr/bin/systemctl stop smb
+    sudo /usr/bin/systemctl stop nmb
     # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
     sudo /usr/bin/swift-init main stop

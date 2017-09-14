@@ -199,25 +199,6 @@ cookbook_file "/etc/init/proxyfsd.conf" do
   only_if { ::File.directory?("/etc/init") }
 end
 
-cookbook_file "/usr/lib/systemd/system/ss-nmb.service" do
-  source "usr/lib/systemd/system/ss-nmb.service"
-  only_if { ::File.directory?("/usr/lib/systemd/system/") }
-end
-
-cookbook_file "/usr/lib/systemd/system/ss-smb.service" do
-  source "usr/lib/systemd/system/ss-smb.service"
-  only_if { ::File.directory?("/usr/lib/systemd/system/") }
-end
-
-bash 'Add SwiftStack repo in order to install old Samba' do
-  code <<-EOH
-    export RELEASEVER=`sed 's/.* release //' /etc/redhat-release | cut -d ' ' -f 1 | cut -d. -f1`
-    curl -so /etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller "https://demo.swiftstack.com:443/yum_repos/RPM-GPG-KEY-swiftstack-controller"
-    rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller
-    curl -so /etc/yum.repos.d/swiftstack-controller.repo "https://demo.swiftstack.com:443/yum_repos/el${RELEASEVER}/swiftstack-controller.repo"
-    yum makecache
-  EOH
-end
 
 #
 # Dependency lists by OS
@@ -225,7 +206,7 @@ end
 if node[:platform_family].include?("rhel")
 
   # packages
-  samba_package = ["ss-samba", "samba-client"]
+  samba_package = ["samba", "samba-client"]
 
   samba_deps = %w(
     gcc
@@ -234,7 +215,7 @@ if node[:platform_family].include?("rhel")
     gnutls-devel
     libacl-devel
     openldap-devel
-    ss-samba
+    samba
     cifs-utils
   )
 
@@ -255,7 +236,7 @@ if node[:platform_family].include?("rhel")
 else # assume debian
 
   # packages
-  samba_package = ["ss-samba", "smbclient"]
+  samba_package = ["samba", "smbclient"]
 
   samba_deps = %w(
     gcc
@@ -263,7 +244,7 @@ else # assume debian
     libgnutls-dev
     libacl1-dev
     libldap2-dev
-    ss-samba
+    samba
     pkg-config
     cifs-utils
   )
@@ -369,24 +350,14 @@ execute "Setup Samba password" do
   command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | smbpasswd -a -s #{node['swift_user']}"
 end
 
-cookbook_file "/opt/ss/etc/samba/smb.conf" do
-  source "opt/ss/etc/samba/smb.conf"
-#   only_if { ::File.directory?("/opt/ss/etc/samba/") }
-end
-
-execute "Print warning in /etc/samba/smb.conf" do
-  command "echo \"# WARNING! This file is no longer used. Use /opt/ss/etc/samba/smb.conf instead.\" >> /etc/samba/smb.conf "
-  cwd "#{PROXYFS_SRC_DIR}/vfs"
-end
-
-execute "Setup /opt/ss/etc/samba/smb.conf" do
-  command "cat sample_entry_smb_conf.txt >> /opt/ss/etc/samba/smb.conf "
+execute "Setup /etc/samba/smb.conf" do
+  command "cat sample_entry_smb_conf.txt >> /etc/samba/smb.conf "
   cwd "#{PROXYFS_SRC_DIR}/vfs"
 end
 
 ruby_block "update_smb_conf" do
   block do
-    smb_conf = "/opt/ss/etc/samba/smb.conf"
+    smb_conf = "/etc/samba/smb.conf"
 
     file = Chef::Util::FileEdit.new(smb_conf)
     file.search_file_replace(/valid users = CHANGEME/, "valid users = #{node['swift_user']}")
