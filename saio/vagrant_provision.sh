@@ -5,6 +5,10 @@
 set -e
 set -x
 
+# Install tools needed above what's in a minimal base box
+
+yum -y install wget git nfs-utils
+
 # Install Golang
 
 yum -y install gcc
@@ -13,10 +17,6 @@ wget -q https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
 tar -C /usr/local -xf go1.9.linux-amd64.tar.gz
 rm go1.9.linux-amd64.tar.gz
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
-
-# Install Git
-
-yum -y install git
 
 # Install Python pip
 

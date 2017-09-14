@@ -4,15 +4,14 @@
 # Notes:
 #
 #  1) vboxnet0 is assumed to be a host-only network @ address 172.28.128.1 (DHCP disabled)
-#  2) centos/7 is missing vboxsf (VirtualBox Guest Additions), so using bento/centos-7.3 instead
+#  2) centos/7 is missing vboxsf (VirtualBox Guest Additions), so using centos-74-minimal-20170913 instead
 #  3) GOPATH must be defined prior to launch
 #  4) ProxyFS repo git clone'd to $GOPATH/src/github.com/swiftstack/
-#  5) samba4-4-centos repo git clone'd to $GOPATH/src/github.com/swiftstack/
-#  6) symlink from samba -> samba4-4-centos in $GOPATH/src/github.com/swiftstack/
-#  7) Swift repos et. al. git clone'd to $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
+#  5) samba repo automatically staged in $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
+#  6) Swift repos et. al. git clone'd to $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
 
 Vagrant.configure(2) do |config|
-  config.vm.box = "bento/centos-7.3"
+  config.vm.box = "centos-74-minimal-20170913"
   config.vm.provider :virtualbox do |vb|
     vb.name = "SAIO for ProxyFS"
     vb.cpus = Integer(ENV['VAGRANT_CPUS'] || 2)
