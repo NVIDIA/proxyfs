@@ -508,6 +508,9 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("testVolumeHandle.fetchInode() failed: %v", err)
 	}
+	if fileInode.InodeType == FreeType {
+		t.Fatalf("testVolumeHandle.fetchInode() returned a free inode")
+	}
 
 	extents := fileInode.payload.(sortedmap.BPlusTree)
 

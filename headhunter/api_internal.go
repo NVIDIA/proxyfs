@@ -1027,7 +1027,7 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 	return
 }
 
-func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
+func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
 	volume.Lock()
 	valueAsValue, ok, err := volume.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
 	if nil != err {
@@ -1036,7 +1036,6 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err e
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("inode %d not found in volume '%v' inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)

@@ -49,8 +49,8 @@ func TestValidate(t *testing.T) {
 	testVolume := testVolumeHandle.(*volumeStruct)
 
 	// Grab the InodeRec
-	inodeRec, err := testVolume.headhunterVolumeHandle.GetInodeRec(uint64(fileInodeNumber))
-	if err != nil {
+	inodeRec, ok, err := testVolume.headhunterVolumeHandle.GetInodeRec(uint64(fileInodeNumber))
+	if err != nil || !ok {
 		t.Fatalf("failed to fetch InodeRec for inode 0x%016X", fileInodeNumber)
 	}
 

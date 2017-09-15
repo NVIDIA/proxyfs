@@ -1494,6 +1494,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetLinkCount(subDirInode) returned unexpected linkCount: %v", subDirLinkCount)
 	}
 
+	// it should be illeagal to link to a directory
 	err = testVolumeHandle.Link(RootDirInodeNumber, "subDir", subDirInode)
 	if nil != err {
 		t.Fatalf("Link(RootDirInodeNumber, \"subDir\", subDirInode) failed: %v", err)
