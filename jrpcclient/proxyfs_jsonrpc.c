@@ -431,13 +431,19 @@ void rpc_get_response(int sockfd)
     profiler_t* profiler = NewProfiler(SOCK_RECEIVE);
     AddProfilerEvent(profiler, AFTER_SOCK_READ);
 
-    if (resp[0].rsp_err != 0) {
-        DPRINTF("Error %d reading from socket.\n", resp[0].rsp_err);
-        goto done;
-    } else if (bytesRead < 0) {
+    if ((resp[0].rsp_err == 0) && (bytesRead < 0)) {
         resp[0].rsp_err = EIO;
         DPRINTF("Error, read %d bytes from socket, returning error=%d.\n", bytesRead, resp[0].rsp_err);
-        goto done;
+    }
+
+    if (resp[0].rsp_err != 0) {
+        DPRINTF("Error %d reading from socket.\n", resp[0].rsp_err);
+        if ((resp[0].rsp_err == EPIPE) || (resp[0].rsp_err == ENODEV) || (resp[0].rsp_err == EBADF)) {
+            // The socket got disconnected.
+            // Close and reopen the socket to clear the error
+            jsonrpc_rpc_bounce(NULL);
+            goto done;
+        }
     }
     //DPRINTF("Read from socket: %s\n",resp[0].readBuf);
     DPRINTF("Read %ld bytes into resp[0].readBuf %p from socket.\n", strlen(resp[0].readBuf),resp[0].readBuf);

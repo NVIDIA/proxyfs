@@ -51,7 +51,7 @@ sock_pool_t *sock_pool_create(char *server, int port, int count)
         return NULL;
     }
 
-    pool->network = "tcp";
+    pool->network = strdup("tcp");
 
     strcpy(pool->server, server);
     pool->port = port;
@@ -246,9 +246,19 @@ int sock_pool_destroy(sock_pool_t *pool, bool force)
     pthread_cond_destroy(&pool->pool_cv);
     pthread_mutex_unlock(&pool->pool_lock);
     pthread_mutex_destroy(&pool->pool_lock);
-    free(pool->fd_list);
-    free(pool->server);
-    free(pool->network);
+
+    if (pool->fd_list != NULL) {
+        free(pool->fd_list);
+    }
+
+    if (pool->network != NULL) {
+        free(pool->network);
+    }
+
+    if (pool->server != NULL) {
+        free(pool->server);
+    }
+
     free(pool);
 
     return 0;
