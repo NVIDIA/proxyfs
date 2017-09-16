@@ -9,9 +9,12 @@
 #  4) ProxyFS repo git clone'd to $GOPATH/src/github.com/swiftstack/
 #  5) samba repo automatically staged in $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
 #  6) Swift repos et. al. git clone'd to $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
+#
+#  7) Due to a regression preventing smbd from connecting to proxyfsd,
+#     we address temporarily reverting to bento/centos-7.3
 
 Vagrant.configure(2) do |config|
-  config.vm.box = "centos-74-minimal-20170913"
+  config.vm.box = "bento/centos-7.3"
   config.vm.provider :virtualbox do |vb|
     vb.name = "SAIO for ProxyFS"
     vb.cpus = Integer(ENV['VAGRANT_CPUS'] || 2)
