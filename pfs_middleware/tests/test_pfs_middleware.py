@@ -1,4 +1,4 @@
-# Copyright (c) 2016 SwiftStack, Inc.
+# Copyright (c) 2016-2017 SwiftStack, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,182 +15,17 @@
 
 import base64
 import collections
-import errno
-import eventlet
 import hashlib
 import json
 import mock
-import os
-import socket
 import unittest
 from StringIO import StringIO
 from swift.common import swob
 from xml.etree import ElementTree
 
 import pfs_middleware.middleware as mware
-
-
-class FakeProxy(object):
-    """
-    Vaguely Swift-proxy-server-ish WSGI application used in testing the
-    ProxyFS middleware.
-    """
-    def __init__(self):
-        self._calls = []
-
-        # key is a 2-tuple (request-method, url-path)
-        #
-        # value is how many WSGI iterables were created but not destroyed;
-        # if all is well-behaved, the value should be 0 upon completion of
-        # the user's request.
-        self._unclosed_req_paths = collections.defaultdict(int)
-
-        # key is a 2-tuple (request-method, url-path)
-        #
-        # value is a 3-tuple (response status, headers, body)
-        self._responses = {}
-
-    @property
-    def calls(self):
-        return tuple(self._calls)
-
-    def register(self, method, path, response_status, headers, body=''):
-        self._responses[(method, path)] = (response_status, headers, body)
-
-    def __call__(self, env, start_response):
-        method = env['REQUEST_METHOD']
-        path = env['PATH_INFO']
-
-        req = swob.Request(env)
-        self._calls.append((method, path, swob.HeaderKeyDict(req.headers)))
-
-        if (env.get('swift.authorize') and not env.get(
-                'swift.authorize_override')):
-            denial_response = env['swift.authorize'](req)
-            if denial_response:
-                return denial_response
-
-        try:
-            status_int, headers, body = self._responses[(method, path)]
-        except KeyError:
-            print("Didn't find \"%s %s\" in registered responses" % (
-                method, path))
-            raise
-
-        if method == 'PUT':
-            bytes_read = 0
-            # consume the whole request body, just like a PUT would
-            for chunk in iter(env['wsgi.input'].read, ''):
-                bytes_read += len(chunk)
-            cl = req.headers.get('Content-Length')
-
-            if cl is not None and cl != bytes_read:
-                error_resp = swob.HTTPClientDisconnect(
-                    request=req,
-                    body=("Content-Length didn't match"
-                          " body length (says FakeProxy)"))
-                return error_resp(env, start_response)
-
-            if cl is None \
-               and "chunked" not in req.headers.get("Transfer-Encoding", ""):
-                error_resp = swob.HTTPLengthRequired(
-                    request=req,
-                    body="No Content-Length (says FakeProxy)")
-                return error_resp(env, start_response)
-
-        resp = swob.Response(
-            body=body, status=status_int, headers=headers,
-            # We cheat a little here and use swob's handling of the Range
-            # header instead of doing it ourselves.
-            conditional_response=True)
-
-        return resp(env, start_response)
-
-
-class FakeJsonRpc(object):
-    """
-    Fake out JSON-RPC calls.
-
-    This object is used to replace the JsonRpcClient helper object.
-    """
-    def __init__(self):
-        self._calls = []
-        self._rpc_handlers = {}
-
-    @property
-    def calls(self):
-        return tuple(self._calls)
-
-    def register_handler(self, method, handler):
-        """
-        :param method: name of JSON-RPC method, e.g. Server.RpcGetObject
-
-        :param handler: callable to handle that method. Callable must take
-            one JSON-RPC object (dict) as argument and return a single
-            JSON-RPC object (dict).
-        """
-        self._rpc_handlers[method] = handler
-
-    def call(self, rpc_request, _timeout):
-        # Note: rpc_request here is a JSON-RPC request object. In Python
-        # terms, it's a dictionary with a particular format.
-
-        call_id = rpc_request.get('id')
-
-        # let any exceptions out so callers can see them and fix their
-        # request generators
-        assert rpc_request['jsonrpc'] == '2.0'
-        method = rpc_request['method']
-
-        # rpc.* are reserved by JSON-RPC 2.0
-        assert not method.startswith("rpc.")
-
-        # let KeyError out so callers can see it and fix their mocks
-        handler = self._rpc_handlers[method]
-
-        # params may be omitted, a list (positional), or a dict (by name)
-        if 'params' not in rpc_request:
-            rpc_response = handler()
-            self._calls.append((method, ()))
-        elif isinstance(rpc_request['params'], (list, tuple)):
-            rpc_response = handler(*(rpc_request['params']))
-            self._calls.append((method, tuple(rpc_request['params'])))
-        elif isinstance(rpc_request['params'], (dict,)):
-            raise NotImplementedError("haven't needed this yet")
-        else:
-            raise ValueError(
-                "FakeJsonRpc can't handle params of type %s (%r)" %
-                (type(rpc_request['params']), rpc_request['params']))
-
-        if call_id is None:
-            # a JSON-RPC request without an "id" parameter is a
-            # "notification", i.e. a special request that receives no
-            # response.
-            return None
-        elif 'id' in rpc_response and rpc_response['id'] != call_id:
-            # We don't enforce that the handler pay any attention to 'id',
-            # but if it does, it has to get it right.
-            raise ValueError("handler for %s set 'id' attr to bogus value" %
-                             (method,))
-        else:
-            rpc_response['id'] = call_id
-        return rpc_response
-
-
-class FakeJsonRpcWithErrors(FakeJsonRpc):
-    def __init__(self, *a, **kw):
-        super(FakeJsonRpcWithErrors, self).__init__(*a, **kw)
-        self._errors = []
-
-    def add_call_error(self, ex):
-        self._errors.append(ex)
-
-    def call(self, *a, **kw):
-        # Call super() so we get call tracking.
-        retval = super(FakeJsonRpcWithErrors, self).call(*a, **kw)
-        if self._errors:
-            raise self._errors.pop(0)
-        return retval
+import pfs_middleware.bimodal_checker as bimodal_checker
+from . import helpers
 
 
 class FakeLogger(object):
@@ -213,48 +48,13 @@ class FakeLogger(object):
         pass
 
 
-class TestHelperFunctions(unittest.TestCase):
-    def test_extract_errno(self):
-        self.assertEqual(2, mware.extract_errno("errno: 2"))
-        self.assertEqual(17, mware.extract_errno("errno: 17"))
-        self.assertEqual(None, mware.extract_errno("it broke"))
-
-    def test_parse_path(self):
-        self.assertEqual(
-            mware.parse_path("/v1/a/c/o"),
-            ["v1", "a", "c", "o"])
-        self.assertEqual(
-            mware.parse_path("/v1/a/c/obj/with/slashes"),
-            ["v1", "a", "c", "obj/with/slashes"])
-        self.assertEqual(
-            mware.parse_path("/v1/a/c/obj/trailing/slashes///"),
-            ["v1", "a", "c", "obj/trailing/slashes///"])
-        self.assertEqual(
-            mware.parse_path("/v1/a/c/"),
-            ["v1", "a", "c", None])
-        self.assertEqual(
-            mware.parse_path("/v1/a/c"),
-            ["v1", "a", "c", None])
-        self.assertEqual(
-            mware.parse_path("/v1/a/"),
-            ["v1", "a", None, None])
-        self.assertEqual(
-            mware.parse_path("/v1/a"),
-            ["v1", "a", None, None])
-        self.assertEqual(
-            mware.parse_path("/info"),
-            ["info", None, None, None])
-        self.assertEqual(
-            mware.parse_path("/"),
-            [None, None, None, None])
-
-
 class BaseMiddlewareTest(unittest.TestCase):
     # no test cases in here, just common setup and utility functions
     def setUp(self):
         super(BaseMiddlewareTest, self).setUp()
-        self.app = FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {
+        self.app = helpers.FakeProxy()
+        self.pfs = mware.PfsMiddleware(self.app, {}, FakeLogger())
+        self.bimodal_checker = bimodal_checker.BimodalChecker(self.pfs, {
             'bimodal_recheck_interval': 'inf',  # avoid timing dependencies
         }, FakeLogger())
         self.bimodal_accounts = {"AUTH_test"}
@@ -294,8 +94,8 @@ class BaseMiddlewareTest(unittest.TestCase):
                 },
                 "tempauth": {"account_acls": True}}))
 
-        self.fake_rpc = FakeJsonRpc()
-        patcher = mock.patch('pfs_middleware.middleware.JsonRpcClient',
+        self.fake_rpc = helpers.FakeJsonRpc()
+        patcher = mock.patch('pfs_middleware.utils.JsonRpcClient',
                              lambda *_: self.fake_rpc)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -347,7 +147,7 @@ class BaseMiddlewareTest(unittest.TestCase):
             return status[0], headers[0], body
 
     def call_pfs(self, req, **kwargs):
-        return self.call_app(req, app=self.pfs, **kwargs)
+        return self.call_app(req, app=self.bimodal_checker, **kwargs)
 
 
 class TestAccountGet(BaseMiddlewareTest):
@@ -3100,170 +2900,3 @@ class TestAuth(BaseMiddlewareTest):
                      'swift.authorize': auth_its_fine})
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
-
-
-class TestRetry(unittest.TestCase):
-    def setUp(self):
-        self.app = FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {
-            'bimodal_recheck_interval': '5.0',
-            'proxyfsd_host': '10.1.1.1, 10.2.2.2',
-        })
-        self.fake_rpc = FakeJsonRpcWithErrors()
-        patcher = mock.patch('pfs_middleware.middleware.JsonRpcClient',
-                             lambda *_: self.fake_rpc)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.app.register('HEAD', '/v1/AUTH_test', 204, {}, '')
-
-        def fake_RpcIsAccountBimodal(request):
-            return {
-                "error": None,
-                "result": {
-                    "IsBimodal": True,
-                    "ActivePeerPrivateIPAddr": "10.9.8.7",
-                }}
-
-        self.fake_rpc.register_handler("Server.RpcIsAccountBimodal",
-                                       fake_RpcIsAccountBimodal)
-
-    def test_retry_socketerror(self):
-        self.fake_rpc.add_call_error(
-            socket.error(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED)))
-
-        req = swob.Request.blank(
-            "/v1/AUTH_test",
-            environ={'REQUEST_METHOD': 'HEAD'})
-        resp = req.get_response(self.pfs)
-        self.assertEqual(resp.status_int, 204)
-
-        self.assertEqual(self.fake_rpc.calls, (
-            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),
-            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},))))
-
-    def test_no_retry_timeout(self):
-        err = eventlet.Timeout(None)  # don't really time anything out
-        self.fake_rpc.add_call_error(err)
-
-        req = swob.Request.blank(
-            "/v1/AUTH_test",
-            environ={'REQUEST_METHOD': 'HEAD'})
-        resp = req.get_response(self.pfs)
-        self.assertEqual(resp.status_int, 500)
-
-        self.assertEqual(self.fake_rpc.calls, (
-            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),))
-
-    def test_no_catch_other_error(self):
-        self.fake_rpc.add_call_error(ZeroDivisionError)
-
-        req = swob.Request.blank(
-            "/v1/AUTH_test",
-            environ={'REQUEST_METHOD': 'HEAD'})
-
-        self.assertRaises(ZeroDivisionError, req.get_response, self.pfs)
-        self.assertEqual(self.fake_rpc.calls, (
-            ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},)),))
-
-
-class TestBimodalCaching(unittest.TestCase):
-    def setUp(self):
-        self.app = FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {
-            'bimodal_recheck_interval': '5.0',
-        })
-        self.fake_rpc = FakeJsonRpc()
-        patcher = mock.patch('pfs_middleware.middleware.JsonRpcClient',
-                             lambda *_: self.fake_rpc)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-        self.app.register('HEAD', '/v1/alice', 204, {}, '')
-        self.app.register('HEAD', '/v1/bob', 204, {}, '')
-        self.app.register('HEAD', '/v1/carol', 204, {}, '')
-        self.app.register('HEAD', '/v1/david', 204, {}, '')
-
-    def test_caching(self):
-        the_time = [12345.6]
-        rpc_iab_calls = []
-
-        def fake_time_function():
-            now = the_time[0]
-            the_time[0] += 0.001
-            return now
-
-        fake_time_module = mock.Mock(time=fake_time_function)
-
-        def fake_RpcIsAccountBimodal(request):
-            acc = request["AccountName"]
-            rpc_iab_calls.append(acc)
-
-            if acc == 'bob':
-                # Normal, happy bimodal account
-                return {
-                    "error": None,
-                    "result": {
-                        "IsBimodal": True,
-                        "ActivePeerPrivateIPAddr": "10.221.76.210"}}
-            elif acc == 'david':
-                # Temporarily in limbo as it's being moved from one proxyfsd
-                # to another
-                return {
-                    "error": None,
-                    "result": {
-                        "IsBimodal": True,
-                        "ActivePeerPrivateIPAddr": ""}}
-            else:
-                return {
-                    "error": None,
-                    "result": {
-                        "IsBimodal": False,
-                        "ActivePeerPrivateIPAddr": ""}}
-        self.fake_rpc.register_handler("Server.RpcIsAccountBimodal",
-                                       fake_RpcIsAccountBimodal)
-
-        status = [None]
-
-        def start_response(s, h, ei=None):
-            status[0] = s
-
-        with mock.patch('pfs_middleware.middleware.time', fake_time_module):
-            a_req = swob.Request.blank("/v1/alice",
-                                       environ={"REQUEST_METHOD": "HEAD"})
-            b_req = swob.Request.blank("/v1/bob",
-                                       environ={"REQUEST_METHOD": "HEAD"})
-            d_req = swob.Request.blank("/v1/david",
-                                       environ={"REQUEST_METHOD": "HEAD"})
-
-            # First time, we have a completely empty cache, so an RPC is made
-            list(self.pfs(a_req.environ, start_response))
-            self.assertEqual(status[0], '204 No Content')  # sanity check
-            self.assertEqual(rpc_iab_calls, ["alice"])
-
-            # A couple seconds later, a second request for the same account
-            # comes in, and is handled from cache
-            the_time[0] += 2
-            del rpc_iab_calls[:]
-            list(self.pfs(a_req.environ, start_response))
-            self.assertEqual(status[0], '204 No Content')  # sanity check
-            self.assertEqual(rpc_iab_calls, [])
-
-            # If a request for another account comes in, it is cached
-            # separately.
-            del rpc_iab_calls[:]
-            list(self.pfs(b_req.environ, start_response))
-            self.assertEqual(status[0], '204 No Content')  # sanity check
-            self.assertEqual(rpc_iab_calls, ["bob"])
-
-            # Each account has its own cache time
-            the_time[0] += 3  # "alice" is now invalid, "bob" remains valid
-            del rpc_iab_calls[:]
-            list(self.pfs(a_req.environ, start_response))
-            list(self.pfs(b_req.environ, start_response))
-            self.assertEqual(rpc_iab_calls, ["alice"])
-
-            # In-transit accounts don't get cached
-            del rpc_iab_calls[:]
-            list(self.pfs(d_req.environ, start_response))
-            list(self.pfs(d_req.environ, start_response))
-            self.assertEqual(rpc_iab_calls, ["david", "david"])

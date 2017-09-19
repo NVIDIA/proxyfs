@@ -1,4 +1,4 @@
-# Copyright (c) 2016 SwiftStack, Inc.
+# Copyright (c) 2016-2017 SwiftStack, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
-from . import pfs_errno, rpc, swift_code
+from . import pfs_errno, rpc, swift_code, utils
 
 # Generally speaking, let's try to keep the use of Swift code to a
 # reasonable level. Using dozens of random functions from swift.common.utils
@@ -132,29 +132,6 @@ SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Versions-Location"}
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
-
-
-def parse_path(path):
-    """
-    Takes the path component of an URL and returns a 4-element list of (API
-    version, account, container, object).
-
-    Similar to, but distinct from, swift.common.utils.split_path().
-
-    >>> parse_path("/v1/AUTH_test/con/obj")
-    ("v1", "AUTH_test", "con", "obj")
-    >>> parse_path("/v1/AUTH_test/con")
-    ("v1", "AUTH_test", "con", None)
-    >>> parse_path("/info")
-    ("info", None, None, None)
-    """
-    segs = urllib_parse.unquote(path).split('/', 4)
-    # throw away the first segment; paths start with /, so the first segment
-    # is always empty
-    segs = [(s if s else None) for s in segs[1:]]
-    if len(segs) < 4:
-        segs.extend([None] * (4 - len(segs)))
-    return segs
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -380,20 +357,6 @@ def extract_container_metadata_from_headers(headers):
     return meta_headers
 
 
-PFS_ERRNO_RE = re.compile("^errno: (\d+)$")
-
-
-def extract_errno(errstr):
-    """
-    Given an error response from a proxyfs RPC, extracts the error number
-    from it, or None if the error isn't in the usual format.
-    """
-    # A proxyfs error response looks like "errno: 18"
-    m = re.match(PFS_ERRNO_RE, errstr)
-    if m:
-        return int(m.group(1))
-
-
 def construct_etag(account_name, ino, num_writes):
     return '"pfsv1/{}/{:08X}/{:08X}"'.format(
         urllib_parse.quote(account_name), ino, num_writes)
@@ -405,20 +368,6 @@ def iterator_posthook(iterable, posthook, *posthook_args, **posthook_kwargs):
             yield x
     finally:
         posthook(*posthook_args, **posthook_kwargs)
-
-
-class NoSuchHostnameError(Exception):
-    pass
-
-
-class RpcError(Exception):
-    def __init__(self, errno, *a, **kw):
-        self.errno = errno
-        super(RpcError, self).__init__(*a, **kw)
-
-
-class RpcTimeout(Exception):
-    pass
 
 
 class ZeroFiller(object):
@@ -567,57 +516,9 @@ class RequestContext(object):
         self.object_name = object_name
 
 
-class JsonRpcClient(object):
-    def __init__(self, addrinfo):
-        self.addrinfo = addrinfo
-
-    def call(self, rpc_request, timeout):
-        """
-        Call a remote procedure using JSON-RPC.
-
-        :param rpc_request: Python dictionary containing the request
-            (method, args, etc.) in JSON-RPC format.
-
-        :returns: the (deserialized) result of the RPC, whatever that looks
-            like
-
-        :raises: eventlet.Timeout if the RPC takes too long.
-        """
-        serialized_req = json.dumps(rpc_request).encode("utf-8")
-
-        # for the format of self.addrinfo, see the docs for
-        # socket.getaddrinfo()
-        addr_family = self.addrinfo[0]
-        sock_type = self.addrinfo[1]
-        sock_proto = self.addrinfo[2]
-        # self.addrinfo[3] is the canonical name, which isn't useful here
-        addr = self.addrinfo[4]
-
-        # XXX TODO keep sockets around in a pool or something?
-        sock = socket.socket(addr_family, sock_type, sock_proto)
-        with eventlet.Timeout(timeout):
-            sock.connect(addr)
-            with contextlib.closing(sock):
-                sock.send(serialized_req)
-                # This is JSON-RPC over TCP: we write a JSON document to the
-                # socket, then read a JSON document back. The only way we know
-                # when we're done is when what we've read is valid JSON.
-                #
-                # Of course, Python's builtin JSON can't consume just one
-                # document from a file, so for now, we'll use the fact that
-                # the sender is sending one JSON object per line and just
-                # call readline(). At some point, we should replace this
-                # with a real incremental JSON parser like ijson.
-                sock_filelike = sock.makefile("r")
-                with contextlib.closing(sock_filelike):
-                    response = json.loads(sock_filelike.readline())
-                return response
-
-
 class PfsMiddleware(object):
     def __init__(self, app, conf, logger=None):
         self._cached_proxy_info = None
-        self._cached_is_bimodal = {}
         self.app = app
         self.zero_filler_app = ZeroFiller(app)
         self.conf = conf
@@ -659,7 +560,7 @@ class PfsMiddleware(object):
 
     @swob.wsgify
     def __call__(self, req):
-        vrs, acc, con, obj = parse_path(req.path)
+        vrs, acc, con, obj = utils.parse_path(req.path)
 
         if not acc:
             # could be a GET /info request or something made up by some
@@ -669,12 +570,7 @@ class PfsMiddleware(object):
         try:
             # Check account to see if this is a bimodal-access account or
             # not. ProxyFS is the sole source of truth on this matter.
-            try:
-                is_bimodal, proxyfsd_addrinfo = self._fetch_owning_proxyfs(acc)
-            except NoSuchHostnameError as err:
-                # proxyfsd gave us a hostname to connect to, but we couldn't
-                # resolve it
-                return swob.HTTPInternalServerError(request=req, body=str(err))
+            is_bimodal, proxyfsd_addrinfo = self._unpack_owning_proxyfs(req)
 
             if not is_bimodal and proxyfsd_addrinfo is None:
                 # This is a plain old Swift account, so we get out of the
@@ -751,13 +647,13 @@ class PfsMiddleware(object):
         # Provide some top-level exception handling and logging for
         # exceptional exceptions. Non-exceptional exceptions will be handled
         # closer to where they were raised.
-        except RpcTimeout as err:
+        except utils.RpcTimeout as err:
             self.logger.error("RPC timeout: %s", err)
             return swob.HTTPInternalServerError(
                 request=req,
                 headers={"Content-Type": "text/plain"},
                 body="RPC timeout: {0}".format(err))
-        except RpcError as err:
+        except utils.RpcError as err:
             self.logger.error(
                 "RPC error: %s; consulting proxyfsd logs may be helpful", err)
             return swob.HTTPInternalServerError(
@@ -786,13 +682,17 @@ class PfsMiddleware(object):
         is handled by the auth callback.
         """
 
+        bimodal_checker = ctx.req.environ[utils.ENV_BIMODAL_CHECKER]
+
         if ctx.req.method in ('GET', 'HEAD') and ctx.container_name:
-            container_info = get_container_info(ctx.req.environ, self,
-                                                swift_source="PFS")
+            container_info = get_container_info(
+                ctx.req.environ, bimodal_checker,
+                swift_source="PFS")
             return container_info['read_acl']
         elif ctx.req.method in ('PUT', 'POST', 'DELETE') and ctx.object_name:
-            container_info = get_container_info(ctx.req.environ, self,
-                                                swift_source="PFS")
+            container_info = get_container_info(
+                ctx.req.environ, bimodal_checker,
+                swift_source="PFS")
             return container_info['write_acl']
         else:
             return None
@@ -829,8 +729,9 @@ class PfsMiddleware(object):
 
         # For accounts, the meta/sysmeta is stored in the account DB in
         # Swift, not in ProxyFS.
-        account_info = get_account_info(req.environ, self.app,
-                                        swift_source="PFS")
+        account_info = get_account_info(
+            req.environ, req.environ[utils.ENV_BIMODAL_CHECKER],
+            swift_source="PFS")
         for key, value in account_info["meta"].items():
             resp.headers["X-Account-Meta-" + key] = value
         for key, value in account_info["sysmeta"].items():
@@ -897,7 +798,7 @@ class PfsMiddleware(object):
         head_request = rpc.head_request(urllib_parse.unquote(ctx.req.path))
         try:
             head_response = self.rpc_call(ctx, head_request)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=ctx.req)
             else:
@@ -917,7 +818,7 @@ class PfsMiddleware(object):
                 ctx, rpc.head_request(container_path))
             raw_old_metadata, _, _, _, _, _ = rpc.parse_head_response(
                 head_response)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
@@ -947,7 +848,7 @@ class PfsMiddleware(object):
                 ctx, rpc.head_request(container_path))
             raw_old_metadata, _, _, _, _, _ = rpc.parse_head_response(
                 head_response)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
             else:
@@ -1012,7 +913,7 @@ class PfsMiddleware(object):
             urllib_parse.unquote(req.path), marker, limit, prefix)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
             else:
@@ -1111,8 +1012,17 @@ class PfsMiddleware(object):
     def put_object(self, ctx):
         req = ctx.req
         # Make sure the (virtual) container exists
-        container_info = get_container_info(req.environ, self,
-                                            swift_source="PFS")
+        #
+        # We have to dig out an earlier-in-the-chain middleware here because
+        # Swift's get_container_info() function has an internal whitelist of
+        # environ keys that it'll keep, and our is-bimodal stuff isn't
+        # included. To work around this, we pass in the middleware chain
+        # starting with the bimodal checker so it can repopulate our environ
+        # keys. At least the RpcIsBimodal response is cached, so this
+        # shouldn't be too slow.
+        container_info = get_container_info(
+            req.environ, req.environ[utils.ENV_BIMODAL_CHECKER],
+            swift_source="PFS")
         if not 200 <= container_info["status"] < 300:
             return swob.HTTPNotFound(request=req)
 
@@ -1242,7 +1152,7 @@ class PfsMiddleware(object):
             # useful in the response.
             mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.IsDirError:
                 return swob.HTTPConflict(
                     request=req,
@@ -1283,7 +1193,7 @@ class PfsMiddleware(object):
             head_response = self.rpc_call(ctx, rpc.head_request(path))
             raw_old_metadata, mtime, _, _, inode_number, num_writes = \
                 rpc.parse_head_response(head_response)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
             else:
@@ -1314,7 +1224,7 @@ class PfsMiddleware(object):
         try:
             object_response = self.rpc_call(ctx, rpc.get_object_request(
                 urllib_parse.unquote(req.path), byteranges))
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
@@ -1397,7 +1307,7 @@ class PfsMiddleware(object):
 
             try:
                 self.rpc_call(ctx, rpc.renew_lease_request(lease_id))
-            except (RpcError, RpcTimeout):
+            except (utils.RpcError, utils.RpcTimeout):
                 # If there's an error renewing the lease, stop pestering
                 # proxyfsd about it. We'll keep serving the object
                 # anyway, and we'll just hope no log segments vanish
@@ -1430,7 +1340,7 @@ class PfsMiddleware(object):
         try:
             self.rpc_call(ctx, rpc.delete_request(
                 urllib_parse.unquote(ctx.req.path)))
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=ctx.req)
             elif err.errno == pfs_errno.NotEmptyError:
@@ -1444,7 +1354,7 @@ class PfsMiddleware(object):
         head_request = rpc.head_request(urllib_parse.unquote(req.path))
         try:
             head_response = self.rpc_call(ctx, head_request)
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
             else:
@@ -1499,7 +1409,7 @@ class PfsMiddleware(object):
             coalesce_response = self.rpc_call(
                 ctx, rpc.coalesce_object_request(
                     object_path, decoded_json["elements"]))
-        except RpcError as err:
+        except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(
                     request=req,
@@ -1531,71 +1441,19 @@ class PfsMiddleware(object):
 
         return swob.HTTPCreated(request=req, headers=headers)
 
-    def _fetch_owning_proxyfs(self, account_name):
+    def _unpack_owning_proxyfs(self, req):
         """
         Checks to see if an account is bimodal or not, and if so, which proxyfs
         daemon is responsible for it.
 
-        Will check a local cache first, falling back to a ProxyFS RPC call
-        if necessary.
-
-        Results are cached in memory locally, not memcached. ProxyFS has an
-        in-memory list (or whatever data structure it uses) of known
-        accounts, so it can answer the RPC request very quickly. Storing
-        that result in memcached wouldn't be any faster than asking ProxyFS.
+        This is done by looking in the request environment; there's another
+        middleware (BimodalChecker) that populates these fields.
 
         :returns: 2-tuple (is-bimodal, proxyfsd-addrinfo).
         """
-        cached_result = self._cached_is_bimodal.get(account_name)
-        if cached_result:
-            res, res_time = cached_result
-            if res_time + self.bimodal_recheck_interval >= time.time():
-                # cache is populated and fresh; use it
-                return res
 
-        # We know where one proxyfsd is, and they'll all respond identically
-        # to the same query.
-        iab_req = rpc.is_account_bimodal_request(account_name)
-        is_bimodal, proxyfsd_ip_or_hostname = \
-            rpc.parse_is_account_bimodal_response(
-                self._rpc_call(self.proxyfsd_addrinfos, iab_req))
-
-        if is_bimodal:
-            if not proxyfsd_ip_or_hostname:
-                # When an account is moving between proxyfsd nodes, it's
-                # bimodal but nobody owns it. This is usually a
-                # very-short-lived temporary condition, so we don't cache
-                # this result.
-                return (True, None)
-            # Just run whatever we got through socket.getaddrinfo(). If we
-            # got an IPv4 or IPv6 address, it'll come out the other side
-            # unchanged. If we got a hostname, it'll get resolved.
-            try:
-                # Someday, ProxyFS will probably start giving us port
-                # numbers, too. Until then, assume they all use the same
-                # port.
-                addrinfos = socket.getaddrinfo(
-                    proxyfsd_ip_or_hostname, self.proxyfsd_port,
-                    socket.AF_UNSPEC, socket.SOCK_STREAM)
-            except socket.gaierror:
-                raise NoSuchHostnameError(
-                    "Owning ProxyFS is at %s, but that could not "
-                    "be resolved to an IP address" % (
-                        proxyfsd_ip_or_hostname))
-
-            # socket.getaddrinfo returns things already sorted according
-            # to the various rules in RFC 3484, so instead of thinking
-            # we're smarter than Python and glibc, we'll just take the
-            # first (i.e. best) one.
-            #
-            # Since we didn't get an exception, we resolved the hostname
-            # to *something*, which means there's at least one element
-            # in addrinfos.
-            res = (True, addrinfos[0])
-        else:
-            res = (False, None)
-        self._cached_is_bimodal[account_name] = (res, time.time())
-        return res
+        return (req.environ.get(utils.ENV_IS_BIMODAL),
+                req.environ.get(utils.ENV_OWNING_PROXYFS))
 
     def rpc_call(self, ctx, rpc_request):
         """
@@ -1608,9 +1466,9 @@ class PfsMiddleware(object):
 
         :returns: the result of the RPC, whatever that looks like
 
-        :raises: RpcTimeout if the RPC takes too long
+        :raises: utils.RpcTimeout if the RPC takes too long
 
-        :raises: RpcError if the RPC returns an error. Inspecting this
+        :raises: utils.RpcError if the RPC returns an error. Inspecting this
             exception's "errno" attribute may be useful. However, errno may
             not always be set; if the error returned from proxyfsd does not
             have an errno in it, then the exception's errno attribute will
@@ -1631,7 +1489,7 @@ class PfsMiddleware(object):
         result = None
         while addrinfos:
             addrinfo = addrinfos.pop()
-            rpc_client = JsonRpcClient(addrinfo)
+            rpc_client = utils.JsonRpcClient(addrinfo)
             try:
                 result = rpc_client.call(rpc_request,
                                          self.proxyfsd_rpc_timeout)
@@ -1647,21 +1505,11 @@ class PfsMiddleware(object):
                 errstr = "Timeout ({0:.6f}s) calling {1}".format(
                     self.proxyfsd_rpc_timeout,
                     rpc_request.get("method", "<unknown method>"))
-                raise RpcTimeout(errstr)
+                raise utils.RpcTimeout(errstr)
 
             errstr = result.get("error")
             if errstr:
-                errno = extract_errno(errstr)
-                raise RpcError(errno, errstr)
+                errno = utils.extract_errno(errstr)
+                raise utils.RpcError(errno, errstr)
 
             return result["result"]
-
-
-def filter_factory(global_conf, **local_conf):
-    conf = global_conf.copy()
-    conf.update(local_conf)
-
-    def pfs_filter(app):
-        return PfsMiddleware(app, conf)
-
-    return pfs_filter

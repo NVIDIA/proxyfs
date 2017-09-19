@@ -13,16 +13,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .bimodal_checker import BimodalChecker  # flake8: noqa
-from .middleware import PfsMiddleware  # flake8: noqa
-from .s3_compat import S3Compat  # flake8: noqa
+import unittest
+
+from . import helpers
+import pfs_middleware.s3_compat as s3_compat
 
 
-def filter_factory(global_conf, **local_conf):
-    conf = global_conf.copy()
-    conf.update(local_conf)
+class TestS3Compat(unittest.TestCase):
+    def setUp(self):
+        super(TestS3Compat, self).setUp()
+        self.app = helpers.FakeProxy()
+        self.s3_compat = s3_compat.S3Compat(self.app, {})
 
-    def pfs_filter(app):
-        return BimodalChecker(S3Compat(PfsMiddleware(app, conf), conf), conf)
+    def test_passthrough(self):
+        pass
 
-    return pfs_filter
+    def test_not_bimodal(self):
+        pass
+
+    def test_bimodal_but_not_swift3(self):
+        pass
