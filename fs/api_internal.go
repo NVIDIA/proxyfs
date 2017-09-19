@@ -1958,10 +1958,12 @@ retryLock:
 	}
 
 	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		srcDirLock.Unlock()
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
 	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		srcDirLock.Unlock()
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1981,11 +1983,13 @@ retryLock:
 
 		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 			srcDirLock.Unlock()
+			dstDirLock.Unlock()
 			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 			return
 		}
 		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 			srcDirLock.Unlock()
+			dstDirLock.Unlock()
 			err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 			return
 		}
