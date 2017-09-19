@@ -717,7 +717,7 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 
 func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err error) {
 
-	fileInode, err := vS.fetchInode(fileInodeNumber)
+	fileInode, ok, err := vS.fetchInode(fileInodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software bug
 		// (err includes volume name and inode number)
@@ -725,16 +725,16 @@ func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err e
 			utils.GetFnName(), fileInodeNumber, vS.volumeName)
 		return
 	}
+	if !ok {
+		// this can happen if background flush loses a race with unlink()
+		logger.Infof("%s: request to flush free inode %d volume '%s' ignored",
+			utils.GetFnName(), fileInodeNumber, vS.volumeName)
+		return
+	}
 	if fileInode.InodeType != FileType {
-		if fileInode.InodeType == FreeType {
-			// this can happen if background flush loses a race with unlink()
-			logger.Infof("%s: request to flush free inode %d volume '%s' ignored",
-				utils.GetFnName(), fileInodeNumber, vS.volumeName)
-		} else {
-			// this should never happen unless there's disk corruption
-			logger.Errorf("%s: request to flush inode %d volume '%s' type '%v' ignored",
-				utils.GetFnName(), fileInodeNumber, vS.volumeName, fileInode.InodeType)
-		}
+		// this should never happen unless there's disk corruption
+		logger.Errorf("%s: request to flush inode %d volume '%s' type '%v' ignored",
+			utils.GetFnName(), fileInodeNumber, vS.volumeName, fileInode.InodeType)
 		return
 	}
 

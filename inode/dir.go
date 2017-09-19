@@ -134,7 +134,7 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 		return err
 	}
 
-	targetInode, err := vS.fetchInode(targetInodeNumber)
+	targetInode, ok, err := vS.fetchInode(targetInodeNumber)
 	if err != nil {
 		// the inode is locked so this should never happen (unless the inode
 		// was evicted from the cache and it was corrupt when re-read from disk)
@@ -142,7 +142,7 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 		logger.ErrorfWithError(err, "%s: targetInode fetch error", utils.GetFnName())
 		return err
 	}
-	if targetInode.InodeType == FreeType {
+	if !ok {
 		// this should never happen (see above)
 		err = fmt.Errorf("%s: Link failing request to link to inode %d volume '%s' because its unallocated",
 			utils.GetFnName(), targetInode.InodeNumber, vS.volumeName)
@@ -231,7 +231,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string) (err
 		return err
 	}
 
-	untargetInode, err := vS.fetchInode(untargetInodeNumber)
+	untargetInode, ok, err := vS.fetchInode(untargetInodeNumber)
 	if nil != err {
 		// the inode is locked so this should never happen (unless the inode
 		// was evicted from the cache and it was corrupt when re-read from disk)
@@ -239,7 +239,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string) (err
 		logger.ErrorfWithError(err, "%s: fetch of target inode failed", utils.GetFnName())
 		return err
 	}
-	if untargetInode.InodeType == FreeType {
+	if !ok {
 		// this should never happen (see above)
 		err = fmt.Errorf("%s: failing request to Unlink inode %d volume '%s' because its unallocated",
 			utils.GetFnName(), untargetInode.InodeNumber, vS.volumeName)
@@ -312,7 +312,7 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 	}
 	srcInodeNumber := srcInodeNumberAsValue.(InodeNumber)
 
-	srcInode, err := vS.fetchInode(srcInodeNumber)
+	srcInode, ok, err := vS.fetchInode(srcInodeNumber)
 	if nil != err {
 		// the inode is locked so this should never happen (unless the inode
 		// was evicted from the cache and it was corrupt when re-read from disk)
@@ -320,7 +320,7 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		logger.ErrorfWithError(err, "%s: fetch of src inode failed", utils.GetFnName())
 		return err
 	}
-	if srcInode.InodeType == FreeType {
+	if !ok {
 		// this should never happen (see above)
 		err = fmt.Errorf("%s: failing request because src inode %d volume '%s' is unallocated",
 			utils.GetFnName(), srcInode.InodeNumber, vS.volumeName)
@@ -341,14 +341,14 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 	if ok {
 		dstInodeNumber = dstInodeNumberAsValue.(InodeNumber)
 
-		dstInode, err = vS.fetchInode(dstInodeNumber)
+		dstInode, ok, err = vS.fetchInode(dstInodeNumber)
 		if nil != err {
 			// this indicates disk corruption or software bug
 			// (err includes volume name and inode number)
 			logger.ErrorfWithError(err, "%s: dstInode fetch error", utils.GetFnName())
 			panic(err)
 		}
-		if dstInode.InodeType == FreeType {
+		if !ok {
 			// disk corruption or software bug
 			err = fmt.Errorf("%s: dstInode inode %d volume '%s' is unallocated",
 				utils.GetFnName(), dstInode.InodeNumber, vS.volumeName)

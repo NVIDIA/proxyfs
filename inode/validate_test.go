@@ -80,8 +80,8 @@ func TestValidate(t *testing.T) {
 	}
 
 	// Try to fetch from disk, observe that corruption was marked in the headhunter database
-	_, corruptionErr := testVolume.fetchOnDiskInode(fileInodeNumber)
-	if corruptionErr == nil {
+	_, ok, corruptionErr := testVolume.fetchOnDiskInode(fileInodeNumber)
+	if corruptionErr == nil && ok {
 		t.Fatalf("expected not to get inode pointer when fetching presumptively corrupt inode %v", fileInodeNumber)
 	}
 }

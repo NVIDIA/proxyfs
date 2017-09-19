@@ -24,14 +24,10 @@ const (
 
 // NOTE: Using unix.DT_* constants for these types makes it easier
 //       to expose this information in a standardized way with our RPC APIs.
-//
-// unix.DT_UNKNOWN is both 0 and distinct from the other DT_* values on every
-// platform under golang.org/x/sys/unix.
 const (
 	DirType     InodeType = unix.DT_DIR
 	FileType    InodeType = unix.DT_REG
 	SymlinkType InodeType = unix.DT_LNK
-	FreeType    InodeType = unix.DT_UNKNOWN
 )
 
 // The following are used in calls to Access()... either F_OK or bitwise or of R_OK, W_OK, and X_OK

@@ -504,11 +504,11 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 		t.Fatalf("CreateFile() failed: %v", err)
 	}
 
-	fileInode, err := (testVolumeHandle.(*volumeStruct)).fetchInode(fileInodeNumber)
+	fileInode, ok, err := (testVolumeHandle.(*volumeStruct)).fetchInode(fileInodeNumber)
 	if err != nil {
 		t.Fatalf("testVolumeHandle.fetchInode() failed: %v", err)
 	}
-	if fileInode.InodeType == FreeType {
+	if !ok {
 		t.Fatalf("testVolumeHandle.fetchInode() returned a free inode")
 	}
 
