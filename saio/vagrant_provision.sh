@@ -246,6 +246,12 @@ echo -e "swift\nswift" | smbpasswd -a swift
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
 
+# Enable Samba service in an SELinux environment
+
+yum -y install policycoreutils-python
+semanage port -a -t smbd_port_t -p tcp 12345
+semanage port -a -t smbd_port_t -p tcp 32345
+
 # Enable start/stop tools
 
 echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
