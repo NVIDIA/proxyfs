@@ -71,3 +71,6 @@ pfs_middleware/.coverage
 # runway by-products
 ci/ansible/chef_files/local-mode-cache/
 nodes/
+
+# IDE-related stuff
+.idea

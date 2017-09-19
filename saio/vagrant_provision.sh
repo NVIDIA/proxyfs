@@ -5,6 +5,10 @@
 set -e
 set -x
 
+# Install tools needed above what's in a minimal base box
+
+yum -y install wget git nfs-utils
+
 # Install Golang
 
 yum -y install gcc
@@ -12,11 +16,7 @@ cd /tmp
 wget -q https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
 tar -C /usr/local -xf go1.9.linux-amd64.tar.gz
 rm go1.9.linux-amd64.tar.gz
-echo "export PATH=\$PATH:/usr/local/go/bin" >> /etc/profile
-
-# Install Git
-
-yum -y install git
+echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Install Python pip
 
@@ -29,50 +29,51 @@ pip install --upgrade pip
 pip install requests
 yum -y install json-c-devel
 yum -y install fuse
-echo "export GOPATH=/vagrant" >> /etc/profile
-echo "export PATH=\$PATH:\$GOPATH/bin" >> /etc/profile
-echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> /etc/profile
+echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
+echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
+echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc
-yum -y install gcc-c++
-yum -y install python-devel
-yum -y install gnutls-devel
-yum -y install libacl-devel
-yum -y install openldap-devel
-yum -y install samba
-yum -y install samba-client
-yum -y install cifs-utils
+yum -y install gcc \
+               gcc-c++ \
+               python-devel \
+               gnutls-devel \
+               libacl-devel \
+               openldap-devel \
+               samba \
+               samba-client \
+               cifs-utils
 cd /vagrant/src/github.com/swiftstack/ProxyFS/saio
-if [[ -d samba4-4-centos ]]
+if [[ -d samba4-6-centos ]]
 then
-    if [[ -L samba4-4-centos ]]
+    if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
         exit 1
     else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos assumed to be as desired"
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos assumed to be as desired"
     fi
 else
-    if [[ -L samba4-4-centos ]]
+    if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-4-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
         exit 1
     else
-        git clone -b v4-4-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-4-centos
+        git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos
     fi
 fi
 if [[ -L samba ]]
 then
     samba_symlink_target=`readlink "samba"`
-    if [[ "samba4-4-centos" == "$samba_symlink_target" ]]
+    if [[ "samba4-6-centos" == "$samba_symlink_target" ]]
     then
-        echo "symlink samba -> samba4-4-centos already"
+        echo "symlink samba -> samba4-6-centos already"
     else
-        echo "symlink samba must point to samba4-4-centos"
-        exit 1
+        echo "redirecting samba -> samba4-6-centos"
+        rm samba
+        ln -s samba4-6-centos samba
     fi
 else
     if [[ -e samba ]]
@@ -80,7 +81,8 @@ else
         echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba cannot pre-exist"
         exit 1
     else
-        ln -s samba4-4-centos samba
+        echo "establishing samba -> samba4-6-centos"
+        ln -s samba4-6-centos samba
     fi
 fi
 cd samba
@@ -89,14 +91,16 @@ then
     echo "./configure has already been run"
 else
     ./configure
+    make clean
 fi
 if [[ -f bin/default/librpc/gen_ndr/ndr_smb_acl.h ]]
 then
     echo "make GEN_NDR_TABLES has already been run"
 else
+    make clean
     make GEN_NDR_TABLES
 fi
-echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> /etc/profile
+echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> ~vagrant/.bash_profile
 
 # Setup Swift
 #
@@ -105,6 +109,7 @@ echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba"
 # [Setup Swift] Create the swift:swift user
 
 useradd --user-group --groups wheel swift
+chmod 755 ~swift
 
 # Using a loopback device for storage
 
@@ -151,16 +156,8 @@ yum -y install memcached sqlite xfsprogs \
                python-netifaces python-pip python-dns \
                python-mock
 
-yum -y install make autoconf automake libtool
-
-cd ~swift
-git clone -b master --single-branch --depth 1 https://github.com/openstack/liberasurecode.git
-cd liberasurecode
-./autogen.sh
-./configure
-make
-make test
-make install
+yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-1.1.1-1.fc25.x86_64.rpm
+yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.1.1-1.fc25.x86_64.rpm
 
 cd ~swift
 git clone -b master --single-branch --depth 1 https://github.com/openstack/python-swiftclient.git
@@ -197,16 +194,71 @@ systemctl start memcached.service
 # [Setup Swift] Configuring each node
 
 rm -rf /etc/swift
+cp -R /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/swift /etc/swift
+chown -R swift:swift /etc/swift
 
-cd ~swift/swift/doc
-cp -r saio/swift /etc/swift
-chown swift:swift /etc/swift
+# [Setup Swift] Setting up scripts for running Swift
 
-cp -R /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/ /etc/
+mkdir -p ~swift/bin
 
-# TODO: [Setup Swift] Setting up scripts for running Swift
+cd ~swift/bin
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/home/swift/bin/* .
+echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
-# TODO - may be some "changeme's" in those canned scripts/.conf files
+~swift/bin/remakerings
+
+# Install ProxyFS's pfs_middleware
+
+cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+python setup.py develop
+
+# Ensure proxyfsd logging will work
+
+rm -rf /var/log/proxyfsd
+mkdir -p /var/log/proxyfsd
+touch /var/log/proxyfsd/proxyfsd.log
+chmod 777 /var
+chmod 777 /var/log
+chmod 777 /var/log/proxyfsd
+chmod 666 /var/log/proxyfsd/proxyfsd.log
+
+# Create Mount Points for ProxyFS (FUSE, NFS, & SMB)
+
+rm -rf /CommonMountPoint
+mkdir /CommonMountPoint
+chmod 777 /CommonMountPoint
+
+rm -rf /mnt/nfs_proxyfs_mount
+mkdir /mnt/nfs_proxyfs_mount
+chmod 777 /mnt/nfs_proxyfs_mount
+
+rm -rf /mnt/smb_proxyfs_mount
+mkdir /mnt/smb_proxyfs_mount
+chmod 777 /mnt/smb_proxyfs_mount
+
+# Configure exports (NFS) / shares (SMB)
+
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/exports /etc/exports
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/samba/smb.conf /etc/samba/smb.conf
+echo -e "swift\nswift" | smbpasswd -a swift
+
+# Install systemd .service files for ProxyFS
+
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+
+# Enable start/stop tools
+
+echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
+
+# Install wireshark
+
+yum -y install wireshark-gnome \
+               xorg-x11-fonts-Type1 \
+               xorg-x11-xauth \
+               xeyes
+echo "X11Forwarding yes" >> /etc/sysconfig/sshd
+systemctl restart sshd
+usermod -aG wireshark vagrant
 
 # All done
 

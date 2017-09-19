@@ -219,23 +219,6 @@ if node[:platform_family].include?("rhel")
     cifs-utils
   )
 
-  #
-  # Currently unused
-  #
-  ganesha_dev_packages = [
-    "gcc",
-    "git",
-    "cmake",
-    "autoconf",
-    "libtool",
-    "bison",
-    "flex",
-    "libgssglue-dev", # Website says libgssglue-devel
-    "libssl-dev", # Website says openssl-devel
-    "libnfs-dev", # Website says nfs-utils-lib-devel
-    "doxygen",
-  ]
-
   proxyfs_packages = [
     "json-c-devel",
     "fuse",
@@ -265,23 +248,6 @@ else # assume debian
     pkg-config
     cifs-utils
   )
-
-  #
-  # Currently unused
-  #
-  ganesha_dev_packages = [
-    "gcc",
-    "git",
-    "cmake",
-    "autoconf",
-    "libtool",
-    "bison",
-    "flex",
-    "libgssglue-dev", # Website says libgssglue-devel
-    "libssl-dev", # Website says openssl-devel
-    "libnfs-dev", # Website says nfs-utils-lib-devel
-    "doxygen",
-  ]
 
   proxyfs_packages = [
     "libjson-c-dev",
@@ -340,13 +306,13 @@ end
 #
 if node[:platform_family].include?("rhel")
   execute "Check out samba" do
-    command "git clone -b v4-4-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-4-centos"
+    command "git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos"
     cwd REPO_CLONE_PARENT_DIR
-    not_if { ::File.exists?("#{REPO_CLONE_PARENT_DIR}/samba4-4-centos") }
+    not_if { ::File.exists?("#{REPO_CLONE_PARENT_DIR}/samba4-6-centos") }
   end
 
   link "#{REPO_CLONE_PARENT_DIR}/samba" do
-    to "samba4-4-centos"
+    to "samba4-6-centos"
     link_type :symbolic
   end
 

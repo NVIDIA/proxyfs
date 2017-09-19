@@ -6,15 +6,14 @@
 
 /**
  * @file   vfs_proxyfs.c
- * @author 
- * @date   June 2016
+ * @author SwiftStack
+ * @date   September 2017
  * @brief  Samba VFS module for proxyfs
  *
  * A Samba VFS module for ProxyFS.
  * This is a "bottom" vfs module (not something to be stacked on top of
  * another module), and translates (most) calls to the closest actions
  * available in rpc calls to ProxyFS.
- *
  */
 
 #include <stdio.h>
@@ -36,12 +35,12 @@
 #endif
 
 /*
- * Proxyfs VFS module is written for SAMBA Major version 4 and supports minor versions 2, 3, 4 and 5.
- * The default is 4.3 and exceptions/deviations in the interface are handled for 2, 4 and 5 with #if conditions.
+ * Proxyfs VFS module is written for SAMBA Major version 4 and supports minor versions 2, 3, 4, 5 and 6.
+ * The default is 4.3 and exceptions/deviations in the interface are handled for 2, 4, 5 and 6 with #if conditions.
  */
 
-#if !defined(SAMBA_VERSION_MAJOR) || !defined(SAMBA_VERSION_MINOR) || SAMBA_VERSION_MAJOR != 4 || SAMBA_VERSION_MINOR < 2 || SAMBA_VERSION_MINOR > 5
-#error Samba Major version should be 4 and minor should be between 2 and 5.
+#if !defined(SAMBA_VERSION_MAJOR) || !defined(SAMBA_VERSION_MINOR) || SAMBA_VERSION_MAJOR != 4 || SAMBA_VERSION_MINOR < 2 || SAMBA_VERSION_MINOR > 6
+#error Samba Major version should be 4 and minor should be between 2 and 6 (inclusive).
 #endif
 
 #define vfs_proxyfs_init samba_init_module
@@ -298,7 +297,7 @@ static int vfs_proxyfs_get_quota(struct vfs_handle_struct *handle,
 	return -1;
 }
 
-#if SAMBA_VERSION_MINOR == 4 || SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 4
 static int vfs_proxyfs_get_quota_4_4(struct vfs_handle_struct *handle,
 								 const char *path,
                                  enum SMB_QUOTA_TYPE qtype,
@@ -414,7 +413,7 @@ static DIR *vfs_proxyfs_opendir(struct vfs_handle_struct *handle,
 	return (DIR *) dir;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static DIR *vfs_proxyfs_opendir_4_4(struct vfs_handle_struct *handle,
                                 const struct smb_filename *smb_fname,
                                 const char *mask,
@@ -513,7 +512,7 @@ static int vfs_proxyfs_mkdir(struct vfs_handle_struct *handle,
 	return 0;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_mkdir_4_4(struct vfs_handle_struct *handle,
                              const struct smb_filename *smb_fname,
                              mode_t mode)
@@ -537,7 +536,7 @@ static int vfs_proxyfs_rmdir(struct vfs_handle_struct *handle,
 	return err;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_rmdir_4_4(struct vfs_handle_struct *handle,
                              const struct smb_filename *smb_fname)
 {
@@ -908,7 +907,7 @@ static ssize_t vfs_proxyfs_read_recv(struct tevent_req *req,
 	return pfs_io->out_size;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static ssize_t vfs_proxyfs_read_recv_4_4(struct tevent_req *req,
                                          struct vfs_aio_state *state)
 {
@@ -1058,7 +1057,7 @@ static ssize_t vfs_proxyfs_write_recv(struct tevent_req *req,
 	return pfs_io->out_size;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static ssize_t vfs_proxyfs_write_recv_4_4(struct tevent_req *req,
                                           struct vfs_aio_state *state)
 {
@@ -1209,7 +1208,7 @@ static int vfs_proxyfs_fsync_recv(struct tevent_req *req,
 	return -1;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_fsync_recv_4_4(struct tevent_req *req,
                                   struct vfs_aio_state *state)
 {
@@ -1346,7 +1345,7 @@ static int vfs_proxyfs_chmod(struct vfs_handle_struct *handle,
 	return 0;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_chmod_4_4(struct vfs_handle_struct *handle,
                              const struct smb_filename *smb_fname,
                              mode_t mode)
@@ -1397,7 +1396,7 @@ static int vfs_proxyfs_chown(struct vfs_handle_struct *handle,
 	return 0;
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_chown_4_4(struct vfs_handle_struct *handle,
                                  const struct smb_filename *smb_fname,
                                  uid_t uid,
@@ -1439,7 +1438,7 @@ static int vfs_proxyfs_lchown(struct vfs_handle_struct *handle,
 	return vfs_proxyfs_chown(handle, smb_fname, uid, gid);
 }
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_lchown_4_4(struct vfs_handle_struct *handle,
                               const struct smb_filename *smb_fname,
                               uid_t uid,
@@ -2609,8 +2608,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.connect_fn = vfs_proxyfs_connect,
 	.disconnect_fn = vfs_proxyfs_disconnect,
 	.disk_free_fn = vfs_proxyfs_disk_free,
-#if (SAMBA_VERSION_MINOR == 4) || (SAMBA_VERSION_MINOR == 5)
-
+#if (SAMBA_VERSION_MINOR >= 4)
 	.get_quota_fn = vfs_proxyfs_get_quota_4_4,
 #else
 	.get_quota_fn = vfs_proxyfs_get_quota,
@@ -2623,7 +2621,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 
 	/* Directory Operations */
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.opendir_fn = vfs_proxyfs_opendir_4_4,
 #else
 	.opendir_fn = vfs_proxyfs_opendir,
@@ -2633,7 +2631,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.seekdir_fn = vfs_proxyfs_seekdir,
 	.telldir_fn = vfs_proxyfs_telldir,
 	.rewind_dir_fn = vfs_proxyfs_rewinddir,
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.mkdir_fn = vfs_proxyfs_mkdir_4_4,
 	.rmdir_fn = vfs_proxyfs_rmdir_4_4,
 #else
@@ -2652,7 +2650,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.read_fn = vfs_proxyfs_read,
 	.pread_fn = vfs_proxyfs_pread,
 	.pread_send_fn = vfs_proxyfs_pread_send,
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.pread_recv_fn = vfs_proxyfs_read_recv_4_4,
 #else
 	.pread_recv_fn = vfs_proxyfs_read_recv,
@@ -2660,7 +2658,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.write_fn = vfs_proxyfs_write,
 	.pwrite_fn = vfs_proxyfs_pwrite,
 	.pwrite_send_fn = vfs_proxyfs_pwrite_send,
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.pwrite_recv_fn = vfs_proxyfs_write_recv_4_4,
 #else
 	.pwrite_recv_fn = vfs_proxyfs_write_recv,
@@ -2671,7 +2669,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.rename_fn = vfs_proxyfs_rename,
 	.fsync_fn = vfs_proxyfs_fsync,
 	.fsync_send_fn = vfs_proxyfs_fsync_send,
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.fsync_recv_fn = vfs_proxyfs_fsync_recv_4_4,
 #else
 	.fsync_recv_fn = vfs_proxyfs_fsync_recv,
@@ -2683,7 +2681,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.get_alloc_size_fn = vfs_proxyfs_get_alloc_size,
 	.unlink_fn = vfs_proxyfs_unlink,
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.chmod_fn = vfs_proxyfs_chmod_4_4,
 #else
 	.chmod_fn = vfs_proxyfs_chmod,
@@ -2691,7 +2689,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 
 	.fchmod_fn = vfs_proxyfs_fchmod,
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.chown_fn = vfs_proxyfs_chown_4_4,
 	.lchown_fn = vfs_proxyfs_lchown_4_4,
 #else
@@ -2719,7 +2717,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.copy_chunk_send_fn = NULL,
 	.copy_chunk_recv_fn = NULL,
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.get_compression_fn = NULL,
 	.set_compression_fn = NULL,
 	.snap_check_path_fn = NULL,
@@ -2739,7 +2737,7 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	.translate_name_fn = NULL,
 	.fsctl_fn = NULL,
 
-#if SAMBA_VERSION_MINOR == 5
+#if SAMBA_VERSION_MINOR >= 5
 	.get_dos_attributes_fn = NULL,
 	.fget_dos_attributes_fn = NULL,
 	.set_dos_attributes_fn = NULL,
@@ -2776,9 +2774,11 @@ static struct vfs_fn_pointers proxyfs_fns = {
 	/* AIO Operations */
 	.aio_force_fn = NULL,
 
+#if SAMBA_VERSION_MINOR < 6
 	/* Offline Operations */
 	.is_offline_fn = vfs_proxyfs_is_offline,
 	.set_offline_fn = vfs_proxyfs_set_offline,
+#endif
 
 	/* Durable handle Operations */
 	.durable_cookie_fn = NULL,

@@ -151,12 +151,12 @@ int sock_read(int sockfd, char** bufPtr, int* error)
         if (bytesRecd < 0) {
             DPRINTF("ERROR %s reading from socket\n", strerror(errno));
             *error = errno;
-            allBytesRecd = bytesRecd;
+            free(*bufPtr);
             return -1;
         } else if (bytesRecd == 0) {
             DPRINTF("far end disconnected while reading from socket.\n");
             *error = EPIPE;
-            allBytesRecd = bytesRecd;
+            free(*bufPtr);
             return -1;
         }
 

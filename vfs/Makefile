@@ -29,11 +29,11 @@ proxyfs.so: vfs_proxyfs.o
 
 install:
 	$(INSTALLCMD) -d $(VFS_LIBDIR)
-	$(INSTALLCMD) -m 644 proxyfs.so $(VFS_LIBDIR)
+	$(INSTALLCMD) -m 755 proxyfs.so $(VFS_LIBDIR)
 
 installcentos:
 	$(INSTALLCMD) -d $(VFS_CENTOS_LIBDIR)
-	$(INSTALLCMD) -m 644 proxyfs.so $(VFS_CENTOS_LIBDIR)
+	$(INSTALLCMD) -m 755 proxyfs.so $(VFS_CENTOS_LIBDIR)
 
 clean:
 	rm -f vfs_proxyfs.o proxyfs.so

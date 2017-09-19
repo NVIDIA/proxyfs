@@ -1,5 +1,20 @@
 # ProxyFS Release Notes
 
+## 0.53.0.1 (September 15, 2017)
+
+### Features:
+
+* Added support for Samba version 4.6
+
+### Bug Fixes:
+
+* Fixed memory leak in smbd resulting from a closed TCP connection to proxyfsd
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.53.0 (September 11, 2017)
 
 ### Features:
@@ -17,10 +32,11 @@
 * Corrected behavior of readdir() enabling callers to bound the size of the returned list
 * Corrected permissions checking & metadata updating
 * Resolved NFS (FUSE) issue where the underlying file system state failed to reset during restart
-* Resolved SMB (smbd) memory leak resulting from restarting the ProxyFS process (proxyfsd) underneath it
+* Resolved SMB (smbd) memory leak resulting from unmount/remount sequence
 
 ### Known Issues:
 
+* SMB (smbd) memory leaks resulting from restarting the ProxyFS process (proxyfsd) underneath it
 * Named Streams are disabled in SMB (enabling this is TBD)
 * Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
 
