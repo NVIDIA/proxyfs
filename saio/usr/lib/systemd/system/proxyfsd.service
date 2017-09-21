@@ -4,6 +4,5 @@ Description=Swift ProxyFS service
 [Service]
 ExecStart=/vagrant/bin/proxyfsd /vagrant/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
-ExecStop=/usr/bin/kill -TERM $MAINPID
 Restart=no
 KillMode=process
