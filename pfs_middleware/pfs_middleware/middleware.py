@@ -83,7 +83,7 @@ import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
-from . import pfs_errno, rpc
+from . import pfs_errno, rpc, swift_code
 
 # Generally speaking, let's try to keep the use of Swift code to a
 # reasonable level. Using dozens of random functions from swift.common.utils
@@ -106,14 +106,6 @@ from swift.common.utils import get_logger
 
 # There's a lot of little gotchas in building a WSGI iterable.
 from swift.common.request_helpers import SegmentedIterable
-
-# It's moderately complicated to figure out the content type for a
-# container-GET response.
-#
-# I'm not really sure about importing this one. This is a small enough thing
-# that, if its changes cause trouble, it should probably be rewritten as
-# part of this middleware.
-from swift.common.request_helpers import get_listing_content_type
 
 
 # Used for content type of directories in container listings
@@ -821,7 +813,7 @@ class PfsMiddleware(object):
         get_account_response = self.rpc_call(ctx, get_account_request)
         container_names = rpc.parse_get_account_response(get_account_response)
 
-        resp_content_type = get_listing_content_type(req)
+        resp_content_type = swift_code.get_listing_content_type(req)
         resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
                            request=req)
         if resp_content_type == "text/plain":
@@ -1029,7 +1021,7 @@ class PfsMiddleware(object):
         container_ents, raw_metadata = rpc.parse_get_container_response(
             get_container_response)
 
-        resp_content_type = get_listing_content_type(req)
+        resp_content_type = swift_code.get_listing_content_type(req)
         resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
                            request=req)
         if resp_content_type == "text/plain":
