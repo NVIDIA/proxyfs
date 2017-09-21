@@ -133,6 +133,7 @@ const ( // reset iota to 0
 	UnpackError FsError = 1000 + iota
 	PackError
 	CorruptInodeError
+	NotAnObjectError
 )
 
 // Default errno values for success and failure

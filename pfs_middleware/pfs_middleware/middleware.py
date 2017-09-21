@@ -1117,6 +1117,41 @@ class PfsMiddleware(object):
         return buf.getvalue()
 
     def put_object(self, ctx):
+        req = ctx.req
+        # Make sure the (virtual) container exists
+        container_info = get_container_info(req.environ, self,
+                                            swift_source="PFS")
+        if not 200 <= container_info["status"] < 300:
+            return swob.HTTPNotFound(request=req)
+
+        if (req.headers.get('Content-Type') == DIRECTORY_CONTENT_TYPE and
+                req.headers.get('Content-Length') == '0'):
+            return self.put_object_as_directory(ctx)
+        else:
+            return self.put_object_as_file(ctx)
+
+    def put_object_as_directory(self, ctx):
+        """
+        Create an object as a directory.
+        """
+        req = ctx.req
+
+        path = urllib_parse.unquote(req.path)
+        obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
+            req.headers))
+
+        rpc_req = rpc.middleware_mkdir_request(path, obj_metadata)
+        rpc_resp = self.rpc_call(ctx, rpc_req)
+        mtime_ns, inode, num_writes = rpc.parse_middleware_mkdir_response(
+            rpc_resp)
+
+        resp_headers = {
+            "Etag": construct_etag(ctx.account_name, inode, num_writes),
+            "Content-Type": DIRECTORY_CONTENT_TYPE,
+            "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
+        return swob.HTTPCreated(request=req, headers=resp_headers, body="")
+
+    def put_object_as_file(self, ctx):
         """
         ProxyFS has the concepts of "virtual" and "physical" path. The
         virtual path is the one that the user sees, i.e. /v1/acc/con/obj.
@@ -1129,11 +1164,6 @@ class PfsMiddleware(object):
         ourselves, then tell proxyfsd what we've done.
         """
         req = ctx.req
-        # Make sure the (virtual) container exists
-        container_info = get_container_info(req.environ, self,
-                                            swift_source="PFS")
-        if not 200 <= container_info["status"] < 300:
-            return swob.HTTPNotFound(request=req)
 
         virtual_path = urllib_parse.unquote(req.path)
         put_location_req = rpc.put_location_request(virtual_path)

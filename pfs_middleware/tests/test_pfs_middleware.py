@@ -1995,12 +1995,20 @@ class TestObjectPut(BaseMiddlewareTest):
                 "InodeNumber": 678,
                 "NumWrites": 9}}
 
+        def mock_RpcMiddlewareMkdir(middleware_mkdir_req):
+            return {"error": None, "result": {
+                "ModificationTime": 1504652321749543000,
+                "InodeNumber": 9268022,
+                "NumWrites": 0}}
+
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
         self.fake_rpc.register_handler(
             "Server.RpcPutLocation", mock_RpcPutLocation)
         self.fake_rpc.register_handler(
             "Server.RpcPutComplete", mock_RpcPutComplete)
+        self.fake_rpc.register_handler(
+            "Server.RpcMiddlewareMkdir", mock_RpcMiddlewareMkdir)
 
     def test_basic(self):
         wsgi_input = StringIO("sparkleberry-displeasurably")
@@ -2037,6 +2045,32 @@ class TestObjectPut(BaseMiddlewareTest):
                          "/v1/AUTH_test/a-container/an-object")
         self.assertEqual(args[0]["PhysPaths"], [expected_phys_path])
         self.assertEqual(args[0]["PhysLengths"], [len(wsgi_input.getvalue())])
+
+    def test_directory(self):
+        req = swob.Request.blank(
+            "/v1/AUTH_test/a-container/a-dir",
+            environ={"REQUEST_METHOD": "PUT"},
+            headers={"Content-Length": 0,
+                     "Content-Type": "application/directory",
+                     "X-Object-Sysmeta-Abc": "DEF"},
+            body="")
+
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '201 Created')
+        self.assertEqual(headers["ETag"],
+                         mware.construct_etag("AUTH_test", 9268022, 0))
+
+        rpc_calls = self.fake_rpc.calls
+        self.assertEqual(len(rpc_calls), 3)
+
+        method, args = rpc_calls[2]
+        self.assertEqual(method, "Server.RpcMiddlewareMkdir")
+        self.assertEqual(args[0]["VirtPath"],
+                         "/v1/AUTH_test/a-container/a-dir")
+
+        serialized_metadata = args[0]["Metadata"]
+        metadata = json.loads(base64.b64decode(serialized_metadata))
+        self.assertEqual(metadata.get("X-Object-Sysmeta-Abc"), "DEF")
 
     def test_modification_time(self):
         def mock_RpcPutComplete(put_complete_req):
@@ -2612,7 +2646,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
         self.assertEqual(headers["Content-Length"], "2641863")
         self.assertEqual(headers["Content-Type"], "image/png")
@@ -2630,7 +2664,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Type"], "Pegasus/inartistic")
 
     def test_bogus_meta(self):
@@ -2639,7 +2673,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
     def test_meta(self):
         self.serialized_object_metadata = json.dumps({
@@ -2649,7 +2683,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["X-Object-Sysmeta-Fish"], "cod")
         self.assertEqual(headers["X-Object-Meta-Fish"], "trout")
 
@@ -2661,7 +2695,7 @@ class TestObjectHead(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
 
     def test_special_chars(self):
         def mock_RpcHead(head_object_req):
@@ -2728,7 +2762,7 @@ class TestObjectHeadDir(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c/a-dir",
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '204 No Content')
+        self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Length"], "0")
         self.assertEqual(headers["Content-Type"], "application/directory")
 

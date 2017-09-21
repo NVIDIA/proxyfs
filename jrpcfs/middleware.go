@@ -247,6 +247,28 @@ func (s *Server) RpcPost(in *MiddlewarePostReq, reply *MiddlewarePostReply) (err
 
 }
 
+// Makes a directory. Unlike RpcMkdir, one can invoke this with just a path.
+func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkdirReply) (err error) {
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+
+	_, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+
+	// Require a reference to an object; you can't create a container with this method.
+	if objectName == "" {
+		err = blunder.NewError(blunder.NotAnObjectError, "%s: VirtPath must reference an object, not container or account (%s)", utils.GetFnName(), in.VirtPath)
+		// This is worth logging; a correct middleware will never send such a path.
+		logger.ErrorWithError(err)
+		return err
+	}
+
+	mtime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
+	reply.ModificationTime = mtime
+	reply.InodeNumber = uint64(inodeNumber)
+	reply.NumWrites = numWrites
+	return
+}
+
 // RpcPutComplete is used by PUT HTTP request once data has been put in Swift.
 //
 // Sets up inode, etc.

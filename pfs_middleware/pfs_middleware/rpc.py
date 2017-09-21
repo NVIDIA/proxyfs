@@ -306,6 +306,31 @@ def parse_get_container_response(get_container_response):
     return res["ContainerEntries"], _decode_binary(res["Metadata"])
 
 
+def middleware_mkdir_request(path, obj_metadata):
+    """
+    :param path: URL path component for the dir, e.g. "/v1/acc/con/obj".
+                 Must refer to an object, not a container (use
+                 get_container_request() pfor containers).
+
+    :param metadata: serialized object metadata
+    """
+    # There's also an RpcMkdir, but it's not suitable for our use.
+    return jsonrpc_request("Server.RpcMiddlewareMkdir", [{
+        "VirtPath": path,
+        "Metadata": _encode_binary(obj_metadata)}])
+
+
+def parse_middleware_mkdir_response(mkdir_resp):
+    """
+    Parse a response from RpcMiddlewareMkdir.
+
+    Returns (mtime in nanoseconds, inode number, number of writes)
+    """
+    return (mkdir_resp["ModificationTime"],
+            mkdir_resp["InodeNumber"],
+            mkdir_resp["NumWrites"])
+
+
 def head_request(path):
     """
     Return a JSON-RPC request to HEAD a container or object
