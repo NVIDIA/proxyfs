@@ -10,8 +10,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 

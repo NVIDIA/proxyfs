@@ -22,6 +22,7 @@ import time
 
 PACKAGES = ["blunder",
             "cleanproxyfs",
+            "conf",
             "dlm",
             "fs",
             "fsworkout",

@@ -20,9 +20,9 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
-	"github.com/swiftstack/conf"
 )
 
 type Level int

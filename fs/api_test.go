@@ -9,14 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
-	"syscall"
-
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -25,7 +25,6 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/conf"
 )
 
 // our global mountStruct to be used in tests

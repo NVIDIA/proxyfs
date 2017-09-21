@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/swiftstack/conf"
+	"github.com/swiftstack/ProxyFS/conf"
 )
 
 var (

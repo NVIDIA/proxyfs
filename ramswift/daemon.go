@@ -17,9 +17,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 

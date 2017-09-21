@@ -9,8 +9,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/pkg/profile"
-	"github.com/swiftstack/conf"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/fuse"

@@ -7,8 +7,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"

@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/conf"
 )
 
 type Mode int

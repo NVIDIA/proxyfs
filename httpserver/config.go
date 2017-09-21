@@ -7,9 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/conf"
 	"github.com/swiftstack/sortedmap"
+
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 type volumeStruct struct {

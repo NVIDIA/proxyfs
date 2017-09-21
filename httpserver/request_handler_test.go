@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/swiftstack/conf"
+	"github.com/swiftstack/ProxyFS/conf"
 )
 
 func testSetup() (err error) {

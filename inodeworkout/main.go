@@ -8,8 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"

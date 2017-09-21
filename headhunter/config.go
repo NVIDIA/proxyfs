@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/conf"
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
