@@ -10,7 +10,7 @@ import (
 type VolumeHandle interface {
 	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
-	GetInodeRec(inodeNumber uint64) (value []byte, err error)
+	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)
 	PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error)
 	DeleteInodeRec(inodeNumber uint64) (err error)

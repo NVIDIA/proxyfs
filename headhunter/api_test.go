@@ -20,8 +20,8 @@ func inodeRecPutGet(t *testing.T, volume VolumeHandle, key uint64, value []byte)
 		t.Fatalf("Failed to Put %d %s :	 %v", key, value, err)
 	}
 
-	value1, err := volume.GetInodeRec(key)
-	if nil != err {
+	value1, ok, err := volume.GetInodeRec(key)
+	if nil != err || !ok {
 		t.Fatalf("Failed to Get %d %s :	 %v", key, value, err)
 	}
 
@@ -69,7 +69,10 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 
 	for i := 0; i < 10; i++ {
 		var value []byte
-		value, err = volume.GetInodeRec(keys[i])
+		value, ok, err := volume.GetInodeRec(keys[i])
+		if err != nil || !ok {
+			t.Fatalf("Unable to get inode %d", keys[i])
+		}
 		if bytes.Compare(value, values[i]) != 0 {
 			t.Fatalf("Get Value does not match Initial Value: %v %v %v", keys[i], values[i], value[i])
 		}
