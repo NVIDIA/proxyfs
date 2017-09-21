@@ -129,6 +129,7 @@ type volumeStruct struct {
 	maxDirFileNodesPerMetadataNode uint64
 	checkpointContainerName        string
 	checkpointInterval             time.Duration
+	checkpointFlushedData          bool
 	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
 	checkpointDoneWaitGroup        *sync.WaitGroup
 	nextNonce                      uint64

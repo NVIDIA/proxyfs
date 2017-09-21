@@ -449,6 +449,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBufSize                      uint64
 	)
 
+	volume.checkpointFlushedData = false
+
 	volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
@@ -471,7 +473,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
-	if nil == volume.checkpointChunkedPutContext {
+	if !volume.checkpointFlushedData {
 		return // since nothing was flushed, we can simply return
 	}
 
@@ -807,6 +809,8 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 	if nil != err {
 		return
 	}
+
+	bPlusTreeWrapper.volume.checkpointFlushedData = true
 
 	switch bPlusTreeWrapper.wrapperType {
 	case inodeRecBPlusTreeWrapperType:
