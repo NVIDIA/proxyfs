@@ -124,7 +124,13 @@ class JsonRpcClient(object):
                 # parser like ijson.
                 sock_filelike = sock.makefile("r")
                 with contextlib.closing(sock_filelike):
-                    response = json.loads(sock_filelike.readline())
+                    line = sock_filelike.readline()
+                    try:
+                        response = json.loads(line)
+                    except ValueError as err:
+                        raise ValueError(
+                            "Error decoding JSON: %s (tried to decode %r)"
+                            % (err, line))
 
                 errstr = response.get("error")
                 if errstr:
