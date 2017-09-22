@@ -292,18 +292,36 @@ def parse_get_container_response(get_container_response):
     """
     Parse a response from RpcGetContainer.
 
-    Returns: (container entries, metadata).
+    Returns: (container entries, container metadata).
 
-    The container entries are a list of dictionaries with keys "Basename"
-    (the object name), "FileSize" (the object's size in bytes), and
-    "ModificationTime" (in nanoseconds since the epoch).
+    The container entries are a list of dictionaries with keys:
 
-    The metadata is just a string. Presumably it's some JSON-serialized
-    dictionary that this middleware previously set, but it could really be
-    anything.
+        Basename: the object name
+
+        FileSize: the object's size in bytes
+
+        ModificationTime: object mtime, in nanoseconds since the epoch
+
+        IsDir: True if object is a directory, False otherwise
+
+        InodeNumber: object's inode number
+
+        Metadata: object's serialized metadata, if any
+
+    The container's metadata is just a string. Presumably it's some
+    JSON-serialized dictionary that this middleware previously set, but it
+    could really be anything.
     """
     res = get_container_response
-    return res["ContainerEntries"], _decode_binary(res["Metadata"])
+
+    ents = []
+    for ent in res["ContainerEntries"]:
+        ent = ent.copy()
+        ent["Metadata"] = _decode_binary(ent["Metadata"])
+        ents.append(ent)
+
+    container_meta = _decode_binary(res["Metadata"])
+    return ents, container_meta
 
 
 def middleware_mkdir_request(path, obj_metadata):

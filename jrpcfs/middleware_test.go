@@ -264,6 +264,10 @@ func makeSomeFilesAndSuch() {
 
 	readmeInode := fsCreateFile(mountHandle, cInode, "README")
 	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
+	err = mountHandle.MiddlewarePost("", "c/README", []byte("metadata for c/README"), []byte{})
+	if err != nil {
+		panic(err)
+	}
 
 	animalsInode := fsMkDir(mountHandle, cInode, "animals")
 	files := map[string]string{
@@ -611,6 +615,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	assert.Equal("README", ents[0].Basename)
 	assert.Equal(uint64(37), ents[0].FileSize)
 	assert.Equal(false, ents[0].IsDir)
+	assert.Equal([]byte("metadata for c/README"), ents[0].Metadata)
 
 	assert.Equal("animals", ents[1].Basename)
 	assert.Equal(uint64(0), ents[1].FileSize)

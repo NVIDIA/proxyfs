@@ -19,10 +19,13 @@ Middleware that will provide a Swift-ish API for a ProxyFS account.
 It tries to mimic the Swift API as much as possible, but there are some
 differences that must be called out.
 
-* ETags are different. In Swift, an object's ETag is the MD5 checksum of its
-  contents. With this middleware, an object's ETag is an opaque value
-  sufficient to provide a strong identifier as per RFC 7231, but it is not
-  the MD5 checksum of the object's contents.
+* ETags are sometimes different. In Swift, an object's ETag is the MD5
+  checksum of its contents. With this middleware, an object's ETag is
+  sometimes an opaque value sufficient to provide a strong identifier as per
+  RFC 7231, but it is not the MD5 checksum of the object's contents.
+
+  ETags start out as MD5 checksums, but if files are subsequently modified
+  via SMB or NFS, the ETags become opaque values.
 
 * Container listings lack object count. To get an object count, it would be
   necessary to traverse the entire directory structure underneath the
@@ -132,6 +135,8 @@ SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Versions-Location"}
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
+
+ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -357,8 +362,30 @@ def extract_container_metadata_from_headers(headers):
     return meta_headers
 
 
+def best_possible_etag(obj_metadata, account_name, ino, num_writes):
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        val = obj_metadata[ORIGINAL_MD5_HEADER]
+        try:
+            stored_num_writes, md5sum = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                return md5sum
+        except ValueError:
+            pass
+    return construct_etag(account_name, ino, num_writes)
+
+
 def construct_etag(account_name, ino, num_writes):
-    return '"pfsv1/{}/{:08X}/{:08X}"'.format(
+    # We append -32 in an attempt to placate S3 clients. In S3, the ETag of
+    # a multipart object looks like "hash-N" where <hash> is the MD5 of the
+    # MD5s of the segments and <N> is the number of segments.
+    #
+    # Since this etag is not an MD5 digest value, we append -32 here in
+    # hopes that some S3 clients will be able to download ProxyFS files via
+    # S3 API without complaining about checksums.
+    #
+    # 32 was chosen because it was the ticket number of the author's lunch
+    # order on the day this code was written. It has no significance.
+    return '"pfsv2/{}/{:08X}/{:08X}-32"'.format(
         urllib_parse.quote(account_name), ino, num_writes)
 
 
@@ -957,10 +984,12 @@ class PfsMiddleware(object):
             size = ent["FileSize"]
             last_modified = iso_timestamp_from_epoch_ns(
                 ent["ModificationTime"])
-            etag = construct_etag(account_name, ent["InodeNumber"],
-                                  ent["NumWrites"])
             content_type = guess_content_type(ent["Basename"],
                                               ent["IsDir"])
+            obj_metadata = deserialize_metadata(ent["Metadata"])
+            etag = best_possible_etag(
+                obj_metadata, account_name,
+                ent["InodeNumber"], ent["NumWrites"])
             json_entry = {
                 "name": name,
                 "bytes": size,
@@ -976,6 +1005,11 @@ class PfsMiddleware(object):
 
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
+            obj_metadata = deserialize_metadata(container_entry["Metadata"])
+            etag = best_possible_etag(
+                obj_metadata, account_name,
+                container_entry["InodeNumber"],
+                container_entry["NumWrites"])
             container_node = ET.Element('object')
 
             name_node = ET.Element('name')
@@ -983,9 +1017,7 @@ class PfsMiddleware(object):
             container_node.append(name_node)
 
             hash_node = ET.Element('hash')
-            hash_node.text = construct_etag(
-                account_name, container_entry["InodeNumber"],
-                container_entry["NumWrites"])
+            hash_node.text = etag
             container_node.append(hash_node)
 
             bytes_node = ET.Element('bytes')
@@ -1070,14 +1102,9 @@ class PfsMiddleware(object):
         virtual_path = urllib_parse.unquote(req.path)
         put_location_req = rpc.put_location_request(virtual_path)
 
-        hasher = None
         request_etag = req.headers.get("ETag", "")
-        if looks_like_md5(request_etag):
-            hasher = hashlib.md5()
-
-        wsgi_input = req.environ["wsgi.input"]
-        if hasher is not None:
-            wsgi_input = SnoopingInput(wsgi_input, hasher.update)
+        hasher = hashlib.md5()
+        wsgi_input = SnoopingInput(req.environ["wsgi.input"], hasher.update)
 
         # TODO: when the upload size is known (i.e. Content-Length is set),
         # ask for enough locations up front that we can consume the whole
@@ -1137,22 +1164,29 @@ class PfsMiddleware(object):
             more_to_upload = not subinput.finished_the_input_stream
             i += 1
 
-        if hasher is not None and hasher.hexdigest() != request_etag:
+        if looks_like_md5(request_etag) and hasher.hexdigest() != request_etag:
             return swob.HTTPUnprocessableEntity(request=req)
 
-        # All the data is now in Swift; we just have to tell proxyfsd about it.
-        obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
-            req.headers))
+        # All the data is now in Swift; we just have to tell proxyfsd about
+        # it. We save off the original MD5 checksum and the number of log
+        # segments (this later becomes the NumWrites value) so that we can
+        # provide an ETag that's an MD5 checksum unless the file has been
+        # subsequently written.
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
+        obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
+                                                       hasher.hexdigest())
 
         put_complete_req = rpc.put_complete_request(
-            virtual_path, log_segments, obj_metadata)
-
+            virtual_path, log_segments, serialize_metadata(obj_metadata))
         try:
             # Ignore the return value. On success, there's nothing
             # useful in the response.
             mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
         except utils.RpcError as err:
+            # We deliberately don't try to clean up our log segments on
+            # failure. ProxyFS is responsible for cleaning up unreferenced
+            # log segments.
             if err.errno == pfs_errno.IsDirError:
                 return swob.HTTPConflict(
                     request=req,
@@ -1179,7 +1213,7 @@ class PfsMiddleware(object):
         # We get Content-Length, X-Trans-Id, and Date for free, but we need
         # to fill in the rest.
         resp_headers = {
-            "Etag": construct_etag(ctx.account_name, inode, num_writes),
+            "Etag": hasher.hexdigest(),
             "Content-Type": guess_content_type(req.path, False),
             "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
         return swob.HTTPCreated(request=req, headers=resp_headers, body="")
@@ -1207,8 +1241,8 @@ class PfsMiddleware(object):
             path, raw_old_metadata, raw_merged_metadata))
 
         resp = swob.HTTPAccepted(request=req, body="")
-        resp.headers["ETag"] = construct_etag(
-            ctx.account_name, inode_number, num_writes)
+        resp.headers["ETag"] = best_possible_etag(
+            old_metadata, ctx.account_name, inode_number, num_writes)
         resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime)
         return resp
 
@@ -1252,7 +1286,8 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
-        headers["Etag"] = construct_etag(ctx.account_name, ino, num_writes)
+        headers["Etag"] = best_possible_etag(headers, ctx.account_name,
+                                             ino, num_writes)
 
         listing_iter = listing_iter_from_read_plan(read_plan)
         # Make sure that nobody (like our __call__ method) messes with this
@@ -1370,7 +1405,8 @@ class PfsMiddleware(object):
 
         headers["Content-Length"] = file_size
         headers["Accept-Ranges"] = "bytes"
-        headers["Etag"] = construct_etag(ctx.account_name, ino, num_writes)
+        headers["ETag"] = best_possible_etag(
+            headers, ctx.account_name, ino, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

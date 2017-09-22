@@ -1322,6 +1322,16 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				if !strings.HasPrefix(fileName, prefix) {
 					continue
 				}
+
+				// Alternate data streams live in the inode, so this is almost certainly still cached from the Getstat()
+				// call, and hence is very cheap to retrieve.
+				serializedMetadata, err := mS.volStruct.VolumeHandle.GetStream(dirEnt.InodeNumber, MiddlewareStream)
+
+				// It's okay if there's no such stream; we just treat it as empty metadata. The middleware handles it.
+				if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
+					return err
+				}
+
 				containerEnt := ContainerEntry{
 					Basename:         fileName,
 					FileSize:         statResult[StatSize],
@@ -1329,6 +1339,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					NumWrites:        statResult[StatNumWrites],
 					InodeNumber:      statResult[StatINum],
 					IsDir:            false,
+					Metadata:         serializedMetadata,
 				}
 				containerEnts = append(containerEnts, containerEnt)
 			} else {
