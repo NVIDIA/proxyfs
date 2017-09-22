@@ -39,4 +39,5 @@ class S3Compat(object):
             return self.app
 
     def _is_s3_slo_manifest_put(self, req):
-        ver, acc, con, obj = utils.split_path(req.path)
+        return False  # XXX
+        ver, acc, con, obj = utils.parse_path(req.path)

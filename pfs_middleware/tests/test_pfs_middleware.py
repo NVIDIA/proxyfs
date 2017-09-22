@@ -965,6 +965,39 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/c o n/o b j')
 
+    def test_md5_etag(self):
+        self.app.register(
+            'GET', '/v1/AUTH_test/InternalContainerName/0000000000000456',
+            200, {}, "stuff stuff stuff")
+
+        def mock_RpcGetObject(_):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(json.dumps({
+                        mware.ORIGINAL_MD5_HEADER:
+                        "3:25152b9f7ca24b61eec895be4e89a950",
+                    })),
+                    "ModificationTime": 1506039770222591000,
+                    "FileSize": 17,
+                    "IsDir": False,
+                    "InodeNumber": 1433230,
+                    "NumWrites": 3,
+                    "LeaseId": "leaseid",
+                    "ReadEntsOut": [{
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000000456"),
+                        "Offset": 0,
+                        "Length": 13}]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+
+        req = swob.Request.blank("/v1/AUTH_test/c/an-object.png")
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Etag"], "25152b9f7ca24b61eec895be4e89a950")
+
     def test_lease_maintenance(self):
         self.app.register(
             'GET', '/v1/AUTH_test/InternalContainerName/0000000000000456',
@@ -1819,7 +1852,7 @@ class TestObjectPut(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
         self.assertEqual(headers["ETag"],
-                         mware.construct_etag("AUTH_test", 678, 9))
+                         hashlib.md5(wsgi_input.getvalue()).hexdigest())
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(len(rpc_calls), 4)
@@ -2177,7 +2210,7 @@ class TestObjectPut(BaseMiddlewareTest):
         wsgi_input = StringIO("unsplashed-comprest")
         right_etag = hashlib.md5(wsgi_input.getvalue()).hexdigest()
         wrong_etag = hashlib.md5(wsgi_input.getvalue() + "abc").hexdigest()
-        non_checksum_etag = "pfsv1/AUTH_test/2226116/4341333"
+        non_checksum_etag = "pfsv2/AUTH_test/2226116/4341333-32"
 
         wsgi_input.seek(0)
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
@@ -2273,7 +2306,7 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual("Wed, 21 Dec 2016 18:39:03 GMT",
                          headers["Last-Modified"])
         self.assertEqual("0", headers["Content-Length"])
-        self.assertEqual('"pfsv1/AUTH_test/00637C69/0000017D"',
+        self.assertEqual('"pfsv2/AUTH_test/00637C69/0000017D-32"',
                          headers["Etag"])
         self.assertEqual("text/html; charset=UTF-8", headers["Content-Type"])
         # Date and X-Trans-Id are added in by other parts of the WSGI stack
@@ -2452,7 +2485,7 @@ class TestObjectHead(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"], "image/png")
         self.assertEqual(headers["Accept-Ranges"], "bytes")
         self.assertEqual(headers["ETag"],
-                         '"pfsv1/AUTH_test/000011EF/0000036A"')
+                         '"pfsv2/AUTH_test/000011EF/0000036A-32"')
         self.assertEqual(headers["Last-Modified"],
                          "Tue, 15 Nov 2016 01:26:09 GMT")
         self.assertEqual(headers["X-Timestamp"], "1479173168.01888")
@@ -2539,6 +2572,34 @@ class TestObjectHead(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '500 Internal Error')
 
+    def test_md5_etag(self):
+        self.serialized_object_metadata = json.dumps({
+            "Content-Type": "Pegasus/inartistic",
+            mware.ORIGINAL_MD5_HEADER: "1:b61d068208b52f4acbd618860d30faae",
+        })
+
+        def mock_RpcHead(head_object_req):
+            md = base64.b64encode(self.serialized_object_metadata)
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": md,
+                    "ModificationTime": 1506039770222591000,
+                    "FileSize": 3397331,
+                    "IsDir": False,
+                    "InodeNumber": 1433230,
+                    "NumWrites": 1,
+                }}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
+                                 environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Etag"], "b61d068208b52f4acbd618860d30faae")
+
 
 class TestObjectHeadDir(BaseMiddlewareTest):
     def test_dir(self):
@@ -2614,7 +2675,7 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
         self.assertEqual(headers["Etag"],
-                         '"pfsv1/AUTH_test/00045275/00000006"')
+                         '"pfsv2/AUTH_test/00045275/00000006-32"')
 
         # The first call is a call to RpcIsAccountBimodal, the second is a
         # call to RpcHead, and the third and final call is the one we care
@@ -2900,3 +2961,42 @@ class TestAuth(BaseMiddlewareTest):
                      'swift.authorize': auth_its_fine})
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+
+
+class TestBestPossibleEtag(unittest.TestCase):
+    # Duplicated here so we can't accidentally change it. If we change this
+    # header or its value, we have to consider handling old data.
+    HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+
+    def test_md5_good(self):
+        self.assertEqual(
+            mware.best_possible_etag(
+                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
+                "AUTH_test", 6676743, 1),
+            '5484c2634aa61c69fc02ef5400a61c94')
+
+    def test_modified(self):
+        self.assertEqual(
+            mware.best_possible_etag(
+                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
+                "AUTH_test", 0x16497360, 2),
+            '"pfsv2/AUTH_test/16497360/00000002-32"')
+
+    def test_missing(self):
+        self.assertEqual(
+            mware.best_possible_etag(
+                {}, "AUTH_test", 0x01740209, 1),
+            '"pfsv2/AUTH_test/01740209/00000001-32"')
+
+    def test_bogus(self):
+        self.assertEqual(
+            mware.best_possible_etag(
+                {self.HEADER: "counterfact-preformative"},
+                "AUTH_test", 0x707301, 2),
+            '"pfsv2/AUTH_test/00707301/00000002-32"')
+
+        self.assertEqual(
+            mware.best_possible_etag(
+                {self.HEADER: "magpie:interfollicular"},
+                "AUTH_test", 0x707301, 2),
+            '"pfsv2/AUTH_test/00707301/00000002-32"')
