@@ -114,7 +114,8 @@ chmod 755 ~swift
 # Using a loopback device for storage
 
 mkdir -p /srv
-truncate -s 1GB /srv/swift-disk
+truncate -s 0 /srv/swift-disk
+truncate -s 10GB /srv/swift-disk
 mkfs.xfs -f /srv/swift-disk
 echo "/srv/swift-disk /mnt/sdb1 xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
 mkdir -p /mnt/sdb1
