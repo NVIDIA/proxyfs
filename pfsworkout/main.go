@@ -214,66 +214,45 @@ func main() {
 	if proxyfsRequired {
 		// Start up needed ProxyFS components
 
+		err = logger.Up(confMap)
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+			os.Exit(1)
+		}
+
 		err = stats.Up(confMap)
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "stats.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		err = logger.Up(confMap)
+		err = dlm.Up(confMap)
 		if nil != err {
-			_ = stats.Down()
-			fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "dlm.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = swiftclient.Up(confMap)
 		if nil != err {
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "swiftclient.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = headhunter.Up(confMap)
 		if nil != err {
-			_ = swiftclient.Down()
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "headhunter.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = inode.Up(confMap)
 		if nil != err {
-			_ = headhunter.Down()
-			_ = swiftclient.Down()
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "inode.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		if fsRequired {
-			err = dlm.Up(confMap)
-			if nil != err {
-				_ = inode.Down()
-				_ = swiftclient.Down()
-				_ = headhunter.Down()
-				_ = logger.Down()
-				_ = stats.Down()
-				fmt.Fprintf(os.Stderr, "dlm.Up() failed: %v\n", err)
-				os.Exit(1)
-			}
-
 			err = fs.Up(confMap)
 			if nil != err {
-				_ = dlm.Down()
-				_ = inode.Down()
-				_ = swiftclient.Down()
-				_ = headhunter.Down()
-				_ = logger.Down()
-				_ = stats.Down()
 				fmt.Fprintf(os.Stderr, "fs.Up() failed: %v\n", err)
 				os.Exit(1)
 			}
@@ -281,13 +260,6 @@ func main() {
 			if fuseRequired {
 				err = fuse.Up(confMap)
 				if nil != err {
-					_ = fs.Down()
-					_ = dlm.Down()
-					_ = inode.Down()
-					_ = swiftclient.Down()
-					_ = headhunter.Down()
-					_ = logger.Down()
-					_ = stats.Down()
 					fmt.Fprintf(os.Stderr, "fuse.Up() failed: %v\n", err)
 					os.Exit(1)
 				}
@@ -656,13 +628,6 @@ func main() {
 		if fuseRequired {
 			err = fuse.Down()
 			if nil != err {
-				_ = fs.Down()
-				_ = dlm.Down()
-				_ = inode.Down()
-				_ = swiftclient.Down()
-				_ = headhunter.Down()
-				_ = logger.Down()
-				_ = stats.Down()
 				fmt.Fprintf(os.Stderr, "fuse.Down() failed: %v\n", err)
 				os.Exit(1)
 			}
@@ -671,65 +636,44 @@ func main() {
 		if fsRequired {
 			err = fs.Down()
 			if nil != err {
-				_ = dlm.Down()
-				_ = inode.Down()
-				_ = swiftclient.Down()
-				_ = headhunter.Down()
-				_ = logger.Down()
-				_ = stats.Down()
 				fmt.Fprintf(os.Stderr, "fs.Down() failed: %v\n", err)
-				os.Exit(1)
-			}
-
-			err = dlm.Down()
-			if nil != err {
-				_ = inode.Down()
-				_ = swiftclient.Down()
-				_ = headhunter.Down()
-				_ = logger.Down()
-				_ = stats.Down()
-				fmt.Fprintf(os.Stderr, "dlm.Down() failed: %v\n", err)
 				os.Exit(1)
 			}
 		}
 
 		err = inode.Down()
 		if nil != err {
-			_ = swiftclient.Down()
-			_ = headhunter.Down()
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "inode.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = swiftclient.Down()
 		if nil != err {
-			_ = headhunter.Down()
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "swiftclient.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = headhunter.Down()
 		if nil != err {
-			_ = logger.Down()
-			_ = stats.Down()
 			fmt.Fprintf(os.Stderr, "headhunter.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		err = logger.Down()
+		err = dlm.Down()
 		if nil != err {
-			_ = stats.Down()
-			fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "dlm.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		err = stats.Down()
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "stats.Down() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = logger.Down()
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -132,42 +133,38 @@ func main() {
 
 	// Start up needed ProxyFS components
 
+	err = logger.Up(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "stats.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = logger.Up(confMap)
+	err = dlm.Up(confMap)
 	if nil != err {
-		_ = stats.Down()
-		fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "dlm.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = swiftclient.Up(confMap)
 	if nil != err {
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "swiftclient.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = headhunter.Up(confMap)
 	if nil != err {
-		_ = swiftclient.Down()
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "headhunter.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = inode.Up(confMap)
 	if nil != err {
-		_ = headhunter.Down()
-		_ = swiftclient.Down()
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "inode.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -245,41 +242,37 @@ func main() {
 
 	err = inode.Down()
 	if nil != err {
-		_ = swiftclient.Down()
-		_ = headhunter.Down()
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "inode.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = swiftclient.Down()
 	if nil != err {
-		_ = headhunter.Down()
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "swiftclient.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = headhunter.Down()
 	if nil != err {
-		_ = logger.Down()
-		_ = stats.Down()
 		fmt.Fprintf(os.Stderr, "headhunter.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = logger.Down()
+	err = dlm.Down()
 	if nil != err {
-		_ = stats.Down()
-		fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "dlm.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	err = stats.Down()
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "stats.Down() failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 

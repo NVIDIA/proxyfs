@@ -8,6 +8,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -128,9 +130,19 @@ func TestHeadHunterAPI(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	err = logger.Up(confMap)
+	if nil != err {
+		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 1] returned error: %v", err)
+	}
+
+	err = dlm.Up(confMap)
+	if nil != err {
+		t.Fatalf("dlm.Up() [case 1] returned error: %v", err)
 	}
 
 	err = swiftclient.Up(confMap)
@@ -168,14 +180,34 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("swiftclient.Down() [case 1] returned error: %v", err)
 	}
 
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("dlm.Down() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
 	}
 
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 2] returned error: %v", err)
+	}
+
+	err = dlm.Up(confMap)
+	if nil != err {
+		t.Fatalf("dlm.Up() [case 2] returned error: %v", err)
 	}
 
 	err = swiftclient.Up(confMap)
@@ -239,9 +271,19 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("swiftclient.Down() [case 2] returned error: %v", err)
 	}
 
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("dlm.Down() [case 2] returned error: %v", err)
+	}
+
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()

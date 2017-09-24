@@ -119,6 +119,11 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up stats: %v", err))
 	}
 
+	err = dlm.Up(testConfMap)
+	if nil != err {
+		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
+	}
+
 	err = swiftclient.Up(testConfMap)
 	if err != nil {
 		panic(fmt.Sprintf("failed to bring up swiftclient: %v", err))
@@ -132,11 +137,6 @@ func testSetup() []func() {
 	err = inode.Up(testConfMap)
 	if nil != err {
 		panic(fmt.Sprintf("failed to bring up inode: %v", err))
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
 	}
 
 	err = fs.Up(testConfMap)

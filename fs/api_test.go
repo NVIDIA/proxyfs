@@ -116,45 +116,51 @@ func testSetup() (err error) {
 
 	err = logger.Up(testConfMap)
 	if nil != err {
-		return
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if err != nil {
-		headhunter.Down()
-		stats.Down()
-		return err
-	}
-
-	err = headhunter.Up(testConfMap)
-	if nil != err {
-		stats.Down()
-		return
-	}
-
-	err = inode.Up(testConfMap)
-	if nil != err {
-		swiftclient.Down()
-		headhunter.Down()
 		stats.Down()
 		return
 	}
 
 	err = dlm.Up(testConfMap)
 	if nil != err {
-		inode.Down()
+		logger.Down()
+		stats.Down()
+		return
+	}
+
+	err = swiftclient.Up(testConfMap)
+	if err != nil {
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return err
+	}
+
+	err = headhunter.Up(testConfMap)
+	if nil != err {
 		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return
+	}
+
+	err = inode.Up(testConfMap)
+	if nil != err {
 		headhunter.Down()
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
 		stats.Down()
 		return
 	}
 
 	err = Up(testConfMap)
 	if nil != err {
-		dlm.Down()
 		inode.Down()
-		swiftclient.Down()
 		headhunter.Down()
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
 		stats.Down()
 		return
 	}
@@ -166,8 +172,9 @@ func testSetup() (err error) {
 func testTeardown() (err error) {
 	Down()
 	inode.Down()
-	swiftclient.Down()
 	headhunter.Down()
+	swiftclient.Down()
+	dlm.Down()
 	logger.Down()
 	stats.Down()
 

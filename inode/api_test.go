@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
@@ -119,12 +120,17 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
+	err = logger.Up(testConfMap)
+	if nil != err {
+		return
+	}
+
 	err = stats.Up(testConfMap)
 	if nil != err {
 		return
 	}
 
-	err = logger.Up(testConfMap)
+	err = dlm.Up(testConfMap)
 	if nil != err {
 		return
 	}
@@ -150,10 +156,11 @@ func testSetup() (err error) {
 
 func testTeardown() (err error) {
 	Down()
-	swiftclient.Down()
 	headhunter.Down()
-	logger.Down()
+	swiftclient.Down()
+	dlm.Down()
 	stats.Down()
+	logger.Down()
 
 	testDir, err := os.Getwd()
 	if nil != err {
