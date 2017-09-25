@@ -23,6 +23,9 @@ typedef struct {
 
 #define SECONDS_PER_POLL           1
 
+#define DIR_CREATION_MODE     (S_IRWXU | S_IRWXG | S_IRWXO)
+#define FILE_CREATION_MODE    (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
+
 static const char convert_int_modulo_0_thru_9_A_thru_Z[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 char            *dir_path;
@@ -196,9 +199,9 @@ int main(int argc, const char * argv[]) {
 
     // Build test directory
 
-    posix_ret = mkdir(dir_path, S_IRWXU);
+    posix_ret = mkdir(dir_path, DIR_CREATION_MODE);
     if (0 != posix_ret) {
-        fprintf(stderr, "mkdir(%s) failed: %s\n", dir_path, strerror(errno));
+        fprintf(stderr, "mkdir(%s,) failed: %s\n", dir_path, strerror(errno));
         exit(1);
     }
 
@@ -216,7 +219,7 @@ int main(int argc, const char * argv[]) {
             exit(1);
         }
 
-        fd = open(file_path, O_WRONLY|O_CREAT|O_EXCL, S_IRUSR|S_IWUSR);
+        fd = open(file_path, O_WRONLY|O_CREAT|O_EXCL, FILE_CREATION_MODE);
         if (-1 == fd) {
             fprintf(stderr, "open(%s,,) failed: %s\n", file_path, strerror(errno));
             exit(1);
