@@ -4,6 +4,7 @@
 
 set -e
 set -x
+# Install firefox
 
 # Install tools needed above what's in a minimal base box
 
@@ -13,9 +14,9 @@ yum -y install wget git nfs-utils
 
 yum -y install gcc
 cd /tmp
-wget -q https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
-tar -C /usr/local -xf go1.9.linux-amd64.tar.gz
-rm go1.9.linux-amd64.tar.gz
+wget -q https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
+tar -C /usr/local -xf go1.8.3.linux-amd64.tar.gz
+rm go1.8.3.linux-amd64.tar.gz
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Install Python pip
@@ -266,6 +267,15 @@ yum -y install wireshark-gnome \
 echo "X11Forwarding yes" >> /etc/sysconfig/sshd
 systemctl restart sshd
 usermod -aG wireshark vagrant
+
+# Install firefox
+
+yum -y install gtk3 libXt
+cd /tmp
+wget -q http://ftp.mozilla.org/pub/firefox/releases/55.0/linux-x86_64/en-US/firefox-55.0.tar.bz2
+tar -C /usr/local -xvjf firefox-55.0.tar.bz2
+rm firefox-55.0.tar.bz2
+ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
 # All done
 
