@@ -562,7 +562,7 @@ func (confMap ConfMap) FetchOptionValueDuration(sectionName string, optionName s
 		return
 	}
 
-	if 0.0 >= optionValue.Seconds() {
+	if 0.0 > optionValue.Seconds() {
 		err = fmt.Errorf("[%v]%v is negative", sectionName, optionName)
 		return
 	}

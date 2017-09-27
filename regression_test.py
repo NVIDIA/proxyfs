@@ -41,6 +41,7 @@ PACKAGES = ["blunder",
             "proxyfsd", "proxyfsd/proxyfsd",
             "ramswift", "ramswift/ramswift",
             "stats",
+            "statslogger",
             "swiftclient",
             "utils"]
 

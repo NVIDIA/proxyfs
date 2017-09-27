@@ -82,6 +82,41 @@ func releaseNonChunkedConnection(tcpConn *net.TCPConn, keepAlive bool) {
 	}
 }
 
+func connectionPoolCnt(pool chan *net.TCPConn) (cnt int) {
+
+	// if we're invoked before initialization
+	if pool == nil {
+		return 0
+	}
+
+	// take all of the TCP connections off the queue so we can count them
+	conns := []*net.TCPConn{}
+selectLoop:
+	for {
+		select {
+		case cp := <-pool:
+			conns = append(conns, cp)
+		default:
+			break selectLoop
+		}
+	}
+	cnt = len(conns)
+
+	// now pull them all back
+	for _, cp := range conns {
+		pool <- cp
+	}
+	return
+}
+
+func nonChunkedConnectionFreeCnt() int64 {
+	return int64(connectionPoolCnt(globals.nonChunkedConnectionPool))
+}
+
+func chunkedConnectionFreeCnt() int64 {
+	return int64(connectionPoolCnt(globals.chunkedConnectionPool))
+}
+
 func writeBytesToTCPConn(tcpConn *net.TCPConn, buf []byte) (err error) {
 	var (
 		bufPos  = int(0)

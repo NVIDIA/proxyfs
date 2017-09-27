@@ -32,6 +32,7 @@ selectLoop:
 				globals.statDeltaMap[statNameStr] = oldIncrement + stat.increment
 			} else {
 				globals.statDeltaMap[statNameStr] = stat.increment
+
 				newStatNameLink = &statNameLinkStruct{name: statNameStr, next: nil}
 				if nil == globals.tailStatNameLink {
 					globals.headStatNameLink = newStatNameLink

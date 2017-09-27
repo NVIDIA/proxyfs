@@ -20,6 +20,7 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -125,6 +126,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		err = swiftclient.Down()
 		if nil != err {
 			logger.Errorf("swiftclient.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	err = statslogger.Up(confMap)
+	if nil != err {
+		logger.Errorf("statslogger.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = statslogger.Down()
+		if nil != err {
+			logger.Errorf("statslogger.Down() failed: %v", err)
 		}
 		wg.Done()
 	}()
@@ -310,6 +326,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
+			err = statslogger.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("statslogger.PauseAndContract(): %v", err)
+				break
+			}
+
 			err = dlm.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("dlm.PauseAndContract(): %v", err)
@@ -352,6 +374,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			err = swiftclient.ExpandAndResume(confMap)
 			if nil != err {
 				err = fmt.Errorf("swiftclient.ExpandAndResume(): %v", err)
+				break
+			}
+
+			err = statslogger.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("statslogger.ExpandAndResume(): %v", err)
 				break
 			}
 

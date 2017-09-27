@@ -123,3 +123,13 @@ func ObjectLoad(accountName string, containerName string, objectName string) (bu
 func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
 	return objectTailWithRetry(accountName, containerName, objectName, length)
 }
+
+// Number of non-chunked connections that are idle
+func NonChunkedConnectionFreeCnt() int64 {
+	return nonChunkedConnectionFreeCnt()
+}
+
+// Number of chunked connections that are idle
+func ChunkedConnectionFreeCnt() int64 {
+	return chunkedConnectionFreeCnt()
+}

@@ -52,6 +52,9 @@ func TestDaemon(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+
+		"StatsLogger.Period=10m",
+
 		"Logging.LogFilePath=",
 		"Peer1.PublicIPAddr=127.0.0.1",
 		"Peer1.PrivateIPAddr=127.0.0.1",
@@ -68,6 +71,7 @@ func TestDaemon(t *testing.T) {
 		"Cluster.UDPReadSize=8000",
 		"Cluster.UDPWriteSize=7000",
 		"HTTPServer.TCPPort=53461",
+
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
@@ -78,6 +82,7 @@ func TestDaemon(t *testing.T) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
+
 		"CommonFlowControl.MaxFlushSize=10000000",
 		"CommonFlowControl.MaxFlushTime=10s",
 		"CommonFlowControl.ReadCacheLineSize=1000000",
