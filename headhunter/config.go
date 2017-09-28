@@ -17,7 +17,10 @@ const (
 )
 
 const (
-	CheckpointHeaderName = "X-Container-Meta-Checkpoint"
+	AccountHeaderName           = "X-ProxyFS-BiModal"
+	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
+	AccountHeaderValue          = "true"
+	CheckpointHeaderName        = "X-Container-Meta-Checkpoint"
 )
 
 var (

@@ -18,6 +18,8 @@ import (
 // TODO: allowFormat should change to doFormat when controller/runway pre-formats
 func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 	var (
+		accountHeaderValues                 []string
+		accountHeaders                      map[string][]string
 		bytesConsumed                       uint64
 		checkpointContainerHeaders          map[string][]string
 		checkpointHeader                    checkpointHeaderV2Struct
@@ -72,6 +74,20 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
 
 			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
+			if nil != err {
+				return
+			}
+
+			// Mark Account as bi-modal...
+			// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
+
+			accountHeaderValues = []string{AccountHeaderValue}
+
+			accountHeaders = make(map[string][]string)
+
+			accountHeaders[AccountHeaderName] = accountHeaderValues
+
+			err = swiftclient.AccountPost(volume.accountName, accountHeaders)
 			if nil != err {
 				return
 			}
