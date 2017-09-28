@@ -1226,6 +1226,10 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 			// If we've run out of real directory entries, load some more.
 			if areMoreEntries && len(dirEnts) == 0 {
 				dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirInode, lastBasename, maxEntries-uint64(len(containerEnts)), 0)
+				if err != nil {
+					logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
+					return err
+				}
 				if len(dirEnts) > 0 {
 					// If there's no dirEnts here, then areMoreEntries
 					// is false, so we'll never call Readdir again,
@@ -1233,10 +1237,6 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					// lastBasename is.
 					lastBasename = dirEnts[len(dirEnts)-1].Basename
 				}
-			}
-			if err != nil {
-				logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
-				return err
 			}
 
 			// Ignore these early so we can stop thinking about them
