@@ -12,10 +12,10 @@
             # vagrant plugin install vagrant-vbguest
 
 ## Install samba
-	2. sudo apt-get install samba 
+	2. sudo apt-get install samba
         (Actually, this should already have been done by Chef during VM provisioning.)
 
-## Configure samba 4.3 source
+## Configure samba
 **Required to build proxyfs VFS module.**
 
 	3. Get the samba source (skip if already have it):
@@ -30,7 +30,7 @@
 	   * Back to VM after this step *
 
 	4. cd /vagrant/src/github.com/swiftstack/samba
-	
+
 	5. ./configure
 
 	6. make clean
@@ -39,10 +39,14 @@
 	   make GEN_NDR_TABLES
 
 ## Make & Install ProxyFS and SambaVFS components
-	8. cd /vagrant/src/github.com/swiftstack/ProxyFS
+	8. 8.1 Install Proxyfs
+	   cd /vagrant/src/github.com/swiftstack/ProxyFS
 	   ./regression_test.py
 
-	   This will build and install proxyfsd, libproxyfs (jrpc client to talk to proxyfsd), and the Samba VFS module.
+		8.2 Install libproxyfs (jason rpc client to talk to proxyfsd)
+
+		8.3 Install Proxyfs VFS samba module.
+			run make install in the current directory
 
 ## Configuring samba:
 **In this example we are using local user `vagrant` for the share:
@@ -62,7 +66,7 @@ Note: We assume the default location is /usr/local/samba; if not, the path must 
 		[proxyfs]
 		comment = ProxyFS test volume
 		path = /mnt/CommonVolume
-		vfs objects = acl_xattr proxyfs
+		vfs objects = proxyfs
 		proxyfs:volume = CommonVolume
 		valid users = vagrant
 		public = yes
@@ -88,17 +92,17 @@ Note: We assume the default location is /usr/local/samba; if not, the path must 
 
 	12. Running proxyfsd (Assuming single node):
 	    # TODO: daemonize; hook into startup infrastructure
-	    
+
 		cd /vagrant/src/github.com/swiftstack/ProxyFS
 		# NOTE: you could alternately use the 'cdpfs' alias for the step above 
-		
+
 		# NOTE: To optionally clean up proxyfsd-related files left over from previous runs, call cleanproxyfs proxyfsd/saioproxyfsd0.conf
 
         # Start proxyfsd
 		proxyfsd proxyfsd/saioproxyfsd0.conf &
-		
+
 		NOTE: the log file proxyfsd.log will be created in the directory you start proxyfsd from, if it isn't there already
-		
+
 
 
 ## Running samba daemon and client:

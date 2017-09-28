@@ -1,25 +1,32 @@
 CC           = gcc
 CFLAGS       = -g -Os -fPIC
 INSTALLCMD   = /usr/bin/install -c
-SAMBA_SOURCE ?= ../../samba/
-JRPC_SOURCE  ?= ../jrpcclient/
-JRPC_OBJECT  ?= ../jrpcclient/
-LDFLAGS      = -L$(JRPC_OBJECT) -lproxyfs
+LDFLAGS      = -lproxyfs
 LDSHFLAGS    = -shared
-FLAGS        =  $(CFLAGS) -I$(JRPC_SOURCE) -I$(SAMBA_SOURCE) -I$(SAMBA_SOURCE)/source3 -I$(SAMBA_SOURCE)/source3/include -I$(SAMBA_SOURCE)/lib/talloc -I$(SAMBA_SOURCE)/lib/tevent -I$(SAMBA_SOURCE)/lib/replace -I$(SAMBA_SOURCE)/bin/default -I$(SAMBA_SOURCE)/bin/default/include -I.
+
+ifneq ($(MAKECMDGOALS),clean)
+ifndef SAMBA_SOURCE
+$(error SAMBA_SOURCE must be set to samba source directory)
+endif
+include $(SAMBA_SOURCE)/VERSION
+FLAGS = $(CFLAGS) -I$(SAMBA_SOURCE) -I$(SAMBA_SOURCE)/source3 -I$(SAMBA_SOURCE)/source3/include -I$(SAMBA_SOURCE)/lib/talloc -I$(SAMBA_SOURCE)/lib/tevent -I$(SAMBA_SOURCE)/lib/replace -I$(SAMBA_SOURCE)/bin/default -I$(SAMBA_SOURCE)/bin/default/include -I.
+
+# In case the user wants vfs module to be build without proxyfs rpc client installed, can supply the path to
+# proxyfs rpc library proxfs.h header file.
+ifdef PROXYFS_RPC_INCLUDE
+FLAGS += -I$(PROXYFS_RPC_INCLUDE)
+endif
+endif
+
 DEPS         = vfs_proxyfs.h
 
-# When the VM is provisioned, the cookbooks setup
-include $(SAMBA_SOURCE)/VERSION
-
-#VFS_LIBDIR  ?= /usr/lib
 VFS_CENTOS_LIBDIR   ?= /usr/lib64/samba/vfs
 VFS_LIBDIR   ?= /usr/lib/x86_64-linux-gnu/samba/vfs
-#VFS_LIBDIR  = /usr/local/samba/lib/vfs
 
 all: proxyfs.so
 
 %.o: %.c $(DEPS)
+
 	@echo "Compiling $<"
 	$(CC) -DSAMBA_VERSION_MAJOR=$(SAMBA_VERSION_MAJOR) -DSAMBA_VERSION_MINOR=$(SAMBA_VERSION_MINOR) $(FLAGS) -c $<
 
