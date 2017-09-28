@@ -1,5 +1,5 @@
 {
-  "run_list": [ "recipe[pfs_middleware]", "recipe[proxyfs_swift]", "recipe[proxyfs]" ],
+  "run_list": [ "recipe[pfs_middleware]", "recipe[meta_middleware]", "recipe[proxyfs_swift]", "recipe[proxyfs]" ],
   "full_reprovision": "false",
   "loopback_gb": 4,
   "extra_packages": [],

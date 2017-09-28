@@ -209,9 +209,14 @@ echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
-# Install ProxyFS's pfs_middleware
+# Install ProxyFS's pfs_middleware into the "normal" Swift Proxy pipeline
 
 cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+python setup.py develop
+
+# Install ProxyFS's meta_middleware into the "NoAuth" Swift Proxy pipeline
+
+cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
 python setup.py develop
 
 # Ensure proxyfsd logging will work
