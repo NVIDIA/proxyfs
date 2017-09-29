@@ -320,15 +320,15 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
-			err = swiftclient.PauseAndContract(confMap)
-			if nil != err {
-				err = fmt.Errorf("swiftclient.PauseAndContract(): %v", err)
-				break
-			}
-
 			err = statslogger.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("statslogger.PauseAndContract(): %v", err)
+				break
+			}
+
+			err = swiftclient.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("swiftclient.PauseAndContract(): %v", err)
 				break
 			}
 

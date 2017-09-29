@@ -56,9 +56,11 @@ func TestDaemon(t *testing.T) {
 		"StatsLogger.Period=10m",
 
 		"Logging.LogFilePath=",
+
 		"Peer1.PublicIPAddr=127.0.0.1",
 		"Peer1.PrivateIPAddr=127.0.0.1",
 		"Peer1.ReadCacheQuotaFraction=0.20",
+
 		"Cluster.WhoAmI=Peer1",
 		"Cluster.Peers=Peer1",
 		"Cluster.ServerGuid=a66488e9-a051-4ff7-865d-87bfb84cc2ae",
@@ -70,6 +72,7 @@ func TestDaemon(t *testing.T) {
 		"Cluster.RequestExpiration=1s",
 		"Cluster.UDPReadSize=8000",
 		"Cluster.UDPWriteSize=7000",
+
 		"HTTPServer.TCPPort=53461",
 
 		"SwiftClient.NoAuthTCPPort=45262",
@@ -87,10 +90,12 @@ func TestDaemon(t *testing.T) {
 		"CommonFlowControl.MaxFlushTime=10s",
 		"CommonFlowControl.ReadCacheLineSize=1000000",
 		"CommonFlowControl.ReadCacheWeight=100",
+
 		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
 		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
 		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
+
 		"CommonVolume.FSID=1",
 		"CommonVolume.FUSEMountPointName=CommonMountPoint",
 		"CommonVolume.NFSExportName=CommonExport",
@@ -103,11 +108,14 @@ func TestDaemon(t *testing.T) {
 		"CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"CommonVolume.FlowControl=CommonFlowControl",
 		"CommonVolume.NonceValuesToReserve=100",
+
 		"FSGlobals.VolumeList=CommonVolume",
+
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
 		"JSONRPCServer.DontWriteConf=true",
+
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
