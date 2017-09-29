@@ -1,0 +1,3 @@
+[paste.filter_factory]
+meta = meta_middleware.middleware:filter_factory
+

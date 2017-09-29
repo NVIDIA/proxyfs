@@ -716,9 +716,25 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 }
 
 func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err error) {
-	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
+
+	fileInode, ok, err := vS.fetchInode(fileInodeNumber)
 	if nil != err {
-		logger.ErrorWithError(err)
+		// this indicates disk corruption or software bug
+		// (err includes volume name and inode number)
+		logger.ErrorfWithError(err, "%s: request to flush inode %d volume '%s' failed",
+			utils.GetFnName(), fileInodeNumber, vS.volumeName)
+		return
+	}
+	if !ok {
+		// this can happen if background flush loses a race with unlink()
+		logger.Infof("%s: request to flush free inode %d volume '%s' ignored",
+			utils.GetFnName(), fileInodeNumber, vS.volumeName)
+		return
+	}
+	if fileInode.InodeType != FileType {
+		// this should never happen unless there's disk corruption
+		logger.Errorf("%s: request to flush inode %d volume '%s' type '%v' ignored",
+			utils.GetFnName(), fileInodeNumber, vS.volumeName, fileInode.InodeType)
 		return
 	}
 

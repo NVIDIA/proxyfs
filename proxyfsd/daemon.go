@@ -9,8 +9,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/pkg/profile"
-	"github.com/swiftstack/conf"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/fuse"
@@ -20,6 +20,7 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -99,6 +100,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		wg.Done()
 	}()
 
+	err = dlm.Up(confMap)
+	if nil != err {
+		logger.Errorf("dlm.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = dlm.Down()
+		if nil != err {
+			logger.Errorf("dlm.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
 	err = swiftclient.Up(confMap)
 	if nil != err {
 		logger.Errorf("swiftclient.Up() failed: %v", err)
@@ -110,6 +126,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		err = swiftclient.Down()
 		if nil != err {
 			logger.Errorf("swiftclient.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	err = statslogger.Up(confMap)
+	if nil != err {
+		logger.Errorf("statslogger.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = statslogger.Down()
+		if nil != err {
+			logger.Errorf("statslogger.Down() failed: %v", err)
 		}
 		wg.Done()
 	}()
@@ -140,21 +171,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		err = inode.Down()
 		if nil != err {
 			logger.Errorf("inode.Down() failed: %v", err)
-		}
-		wg.Done()
-	}()
-
-	err = dlm.Up(confMap)
-	if nil != err {
-		logger.Errorf("dlm.Up() failed: %v", err)
-		errChan <- err
-		return
-	}
-	wg.Add(1)
-	defer func() {
-		err = dlm.Down()
-		if nil != err {
-			logger.Errorf("dlm.Down() failed: %v", err)
 		}
 		wg.Done()
 	}()
@@ -292,12 +308,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
-			err = dlm.PauseAndContract(confMap)
-			if nil != err {
-				err = fmt.Errorf("dlm.PauseAndContract(): %v", err)
-				break
-			}
-
 			err = inode.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("inode.PauseAndContract(): %v", err)
@@ -310,9 +320,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
+			err = statslogger.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("statslogger.PauseAndContract(): %v", err)
+				break
+			}
+
 			err = swiftclient.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("swiftclient.PauseAndContract(): %v", err)
+				break
+			}
+
+			err = dlm.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("dlm.PauseAndContract(): %v", err)
 				break
 			}
 
@@ -343,9 +365,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
+			err = dlm.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("dlm.ExpandAndResume(): %v", err)
+				break
+			}
+
 			err = swiftclient.ExpandAndResume(confMap)
 			if nil != err {
 				err = fmt.Errorf("swiftclient.ExpandAndResume(): %v", err)
+				break
+			}
+
+			err = statslogger.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("statslogger.ExpandAndResume(): %v", err)
 				break
 			}
 
@@ -358,12 +392,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			err = inode.ExpandAndResume(confMap)
 			if nil != err {
 				err = fmt.Errorf("inode.ExpandAndResume(): %v", err)
-				break
-			}
-
-			err = dlm.ExpandAndResume(confMap)
-			if nil != err {
-				err = fmt.Errorf("dlm.ExpandAndResume(): %v", err)
 				break
 			}
 

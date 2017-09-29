@@ -12,10 +12,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/conf"
 )
 
 type testObjectCopyCallbackStruct struct {

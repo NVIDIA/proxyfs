@@ -10,10 +10,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
@@ -120,6 +119,11 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up stats: %v", err))
 	}
 
+	err = dlm.Up(testConfMap)
+	if nil != err {
+		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
+	}
+
 	err = swiftclient.Up(testConfMap)
 	if err != nil {
 		panic(fmt.Sprintf("failed to bring up swiftclient: %v", err))
@@ -133,11 +137,6 @@ func testSetup() []func() {
 	err = inode.Up(testConfMap)
 	if nil != err {
 		panic(fmt.Sprintf("failed to bring up inode: %v", err))
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
 	}
 
 	err = fs.Up(testConfMap)
@@ -1728,6 +1727,49 @@ func TestRpcPutContainer(t *testing.T) {
 	err = server.RpcHead(&headRequest, &headReply)
 	assert.Nil(err)
 	assert.Equal(newMetadata, headReply.Metadata)
+}
+
+func TestRpcMiddlewareMkdir(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+	containerName := "rpc-middleware-mkdir-container"
+
+	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	dirName := "rpc-middleware-mkdir-test"
+	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
+	dirMetadata := []byte("some metadata b5fdbc4a0f1484225fcb7aa64b1e6b94")
+	req := MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply := MiddlewareMkdirReply{}
+
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.Nil(err)
+
+	// Check created dir
+	headRequest := HeadReq{
+		VirtPath: dirPath,
+	}
+	headReply := HeadReply{}
+	err = server.RpcHead(&headRequest, &headReply)
+	assert.Nil(err)
+	assert.Equal(headReply.Metadata, dirMetadata)
+	assert.True(headReply.IsDir)
+
+	// You get an error if the file exists (which it does since we just made it)
+	req = MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply = MiddlewareMkdirReply{}
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.NotNil(err)
+	assert.True(blunder.Is(err, blunder.FileExistsError))
 }
 
 func TestRpcCoalesce(t *testing.T) {

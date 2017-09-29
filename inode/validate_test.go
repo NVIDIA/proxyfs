@@ -49,8 +49,8 @@ func TestValidate(t *testing.T) {
 	testVolume := testVolumeHandle.(*volumeStruct)
 
 	// Grab the InodeRec
-	inodeRec, err := testVolume.headhunterVolumeHandle.GetInodeRec(uint64(fileInodeNumber))
-	if err != nil {
+	inodeRec, ok, err := testVolume.headhunterVolumeHandle.GetInodeRec(uint64(fileInodeNumber))
+	if err != nil || !ok {
 		t.Fatalf("failed to fetch InodeRec for inode 0x%016X", fileInodeNumber)
 	}
 
@@ -80,8 +80,8 @@ func TestValidate(t *testing.T) {
 	}
 
 	// Try to fetch from disk, observe that corruption was marked in the headhunter database
-	_, corruptionErr := testVolume.fetchOnDiskInode(fileInodeNumber)
-	if corruptionErr == nil {
+	_, ok, corruptionErr := testVolume.fetchOnDiskInode(fileInodeNumber)
+	if corruptionErr == nil && ok {
 		t.Fatalf("expected not to get inode pointer when fetching presumptively corrupt inode %v", fileInodeNumber)
 	}
 }

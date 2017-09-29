@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/conf"
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -17,7 +17,10 @@ const (
 )
 
 const (
-	CheckpointHeaderName = "X-Container-Meta-Checkpoint"
+	AccountHeaderName           = "X-ProxyFS-BiModal"
+	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
+	AccountHeaderValue          = "true"
+	CheckpointHeaderName        = "X-Container-Meta-Checkpoint"
 )
 
 var (
@@ -129,6 +132,7 @@ type volumeStruct struct {
 	maxDirFileNodesPerMetadataNode uint64
 	checkpointContainerName        string
 	checkpointInterval             time.Duration
+	checkpointFlushedData          bool
 	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
 	checkpointDoneWaitGroup        *sync.WaitGroup
 	nextNonce                      uint64

@@ -5,11 +5,12 @@ import (
 	"net/http"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/conf"
 )
 
 type Mode int
@@ -79,6 +80,14 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	}
 	defer func() {
 		_ = stats.Down()
+	}()
+
+	err = dlm.Up(confMap)
+	if nil != err {
+		return
+	}
+	defer func() {
+		_ = dlm.Down()
 	}()
 
 	err = swiftclient.Up(confMap)

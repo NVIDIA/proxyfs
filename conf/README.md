@@ -57,7 +57,3 @@ func (confMap ConfMap) FetchOptionValueUUID(sectionName string, optionName strin
 ## Contributors
 
  * ed@swiftstack.com
-
-## License
-
-TBD

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/swiftstack/conf"
+	"github.com/swiftstack/ProxyFS/conf"
 )
 
 const (

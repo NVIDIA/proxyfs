@@ -30,22 +30,6 @@
     become_user: root
     when: ansible_os_family == 'RedHat'
 
-  - name: Download and Install liberasurecode
-    yum:
-      name: http://www.rpmfind.net/linux/fedora/linux/releases/23/Everything/x86_64/os/Packages/l/liberasurecode-1.0.9-3.fc23.x86_64.rpm
-      state: present
-    become: yes
-    become_user: root
-    when: ansible_os_family == 'RedHat'
-
-  - name: Download and Install liberasurecode-devel
-    yum:
-      name: http://www.rpmfind.net/linux/fedora/linux/releases/23/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.0.9-3.fc23.x86_64.rpm
-      state: present
-    become: yes
-    become_user: root
-    when: ansible_os_family == 'RedHat'
-
   - name: Create {{ proxyfs_user }} user
     user:
       name: "{{ proxyfs_user }}"

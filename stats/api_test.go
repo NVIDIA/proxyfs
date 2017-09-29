@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/swiftstack/conf"
+	"github.com/swiftstack/ProxyFS/conf"
 )
 
 type testGlobalsStruct struct {

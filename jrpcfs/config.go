@@ -5,8 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
 )

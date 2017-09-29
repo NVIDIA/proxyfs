@@ -4,6 +4,7 @@
 
 set -e
 set -x
+# Install firefox
 
 # Install tools needed above what's in a minimal base box
 
@@ -13,9 +14,9 @@ yum -y install wget git nfs-utils
 
 yum -y install gcc
 cd /tmp
-wget -q https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
-tar -C /usr/local -xf go1.9.linux-amd64.tar.gz
-rm go1.9.linux-amd64.tar.gz
+wget -q https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
+tar -C /usr/local -xf go1.8.3.linux-amd64.tar.gz
+rm go1.8.3.linux-amd64.tar.gz
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Install Python pip
@@ -114,7 +115,8 @@ chmod 755 ~swift
 # Using a loopback device for storage
 
 mkdir -p /srv
-truncate -s 1GB /srv/swift-disk
+truncate -s 0 /srv/swift-disk
+truncate -s 10GB /srv/swift-disk
 mkfs.xfs -f /srv/swift-disk
 echo "/srv/swift-disk /mnt/sdb1 xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
 mkdir -p /mnt/sdb1
@@ -207,9 +209,14 @@ echo "export PATH=\$PATH:~swift/bin" >> ~vagrant/.bash_profile
 
 ~swift/bin/remakerings
 
-# Install ProxyFS's pfs_middleware
+# Install ProxyFS's pfs_middleware into the "normal" Swift Proxy pipeline
 
 cd /vagrant/src/github.com/swiftstack/ProxyFS/pfs_middleware
+python setup.py develop
+
+# Install ProxyFS's meta_middleware into the "NoAuth" Swift Proxy pipeline
+
+cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
 python setup.py develop
 
 # Ensure proxyfsd logging will work
@@ -246,6 +253,12 @@ echo -e "swift\nswift" | smbpasswd -a swift
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
 
+# Enable Samba service in an SELinux environment
+
+yum -y install policycoreutils-python
+semanage port -a -t smbd_port_t -p tcp 12345
+semanage port -a -t smbd_port_t -p tcp 32345
+
 # Enable start/stop tools
 
 echo "export PATH=\$PATH:/vagrant/src/github.com/swiftstack/ProxyFS/saio/bin" >> ~vagrant/.bash_profile
@@ -259,6 +272,15 @@ yum -y install wireshark-gnome \
 echo "X11Forwarding yes" >> /etc/sysconfig/sshd
 systemctl restart sshd
 usermod -aG wireshark vagrant
+
+# Install firefox
+
+yum -y install gtk3 libXt
+cd /tmp
+wget -q http://ftp.mozilla.org/pub/firefox/releases/55.0/linux-x86_64/en-US/firefox-55.0.tar.bz2
+tar -C /usr/local -xvjf firefox-55.0.tar.bz2
+rm firefox-55.0.tar.bz2
+ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
 # All done
 

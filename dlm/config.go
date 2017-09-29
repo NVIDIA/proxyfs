@@ -5,7 +5,7 @@ package dlm
 import (
 	"sync"
 
-	"github.com/swiftstack/conf"
+	"github.com/swiftstack/ProxyFS/conf"
 )
 
 type globalsStruct struct {

@@ -171,6 +171,7 @@ type MountHandle interface {
 	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
 	MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error)
+	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePutContainer(containerName string, oldMetadata []byte, newMetadata []byte) (err error)
 	Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error)

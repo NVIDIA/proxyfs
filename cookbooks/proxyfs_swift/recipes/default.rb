@@ -102,6 +102,21 @@ cookbook_file "#{proxy_conf_dir}/20_settings.conf" do
   group "#{node['swift_group']}"
 end
 
+ruby_block "update_noauth_proxy_server_pipeline" do
+  block do
+    noauth_proxy_server_conf = "/etc/swift/proxy-server/proxy-noauth.conf.d/20_settings.conf"
+
+    if File.file?(noauth_proxy_server_conf)
+      file = Chef::Util::FileEdit.new(noauth_proxy_server_conf)
+      file.search_file_replace(/ dlo /, " dlo meta ")
+      file.insert_line_if_no_match(/filter.meta/, "")
+      file.insert_line_if_no_match(/filter.meta/, "[filter:meta]")
+      file.insert_line_if_no_match(/egg.meta_middleware/, "use = egg:meta_middleware#meta")
+      file.write_file
+    end
+  end
+end
+
 # start main
 
 cookbook_file "/usr/lib/systemd/system/swift.service" do

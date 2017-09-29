@@ -50,6 +50,9 @@ SHARE_NFS=/mnt/nfs_proxyfs_mount/
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
 SHARE_SMB=/mnt/smb_proxyfs_mount
 
+UID_SMB=`id -u`
+GID_SMB=`id -g`
+
 sudo mount -a
 
 mountpoint -q $SHARE_NFS
@@ -146,7 +149,7 @@ if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ]; then
     if [ $? -ne 0 ]; then
         for i in `seq 5`; do
             sleep 5
-            sudo $MOUNT -t cifs -o user=swift,password=swift,domain=LOCALHOST $MOUNT_POINT_SMB $SHARE_SMB && break
+            sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB $MOUNT_POINT_SMB $SHARE_SMB && break
             echo "Mount of $SHARE_SMB failed.  Retrying..."
         done
     fi

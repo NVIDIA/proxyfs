@@ -1517,6 +1517,70 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	return err
 }
 
+func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+	fullObjectPath := vContainerName + "/" + vObjectPath
+	parentDirPath, fileName := filepath.Split(fullObjectPath)
+	parentDirInodeNumber, parentDirInodeType, parentDirInodeLock, err1 := mS.resolvePathForWrite(parentDirPath, nil)
+	if err1 != nil {
+		err = err1
+		return
+	}
+	defer parentDirInodeLock.Unlock()
+
+	if parentDirInodeType != inode.DirType {
+		err = blunder.NewError(blunder.NotDirError, "%s is a file", parentDirPath)
+		return
+	}
+
+	// We won't overwrite an existing directory, file, or anything else
+	_, err = mS.volStruct.VolumeHandle.Lookup(parentDirInodeNumber, fileName)
+	if err != nil && blunder.Is(err, blunder.NotFoundError) {
+		// This is good; no existing dir entry means we can continue
+	} else if err != nil {
+		// Mystery error; just return it
+		return
+	} else {
+		// There's already something by that name
+		err = blunder.NewError(blunder.FileExistsError, "%s already exists", fullObjectPath)
+		return
+	}
+
+	newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
+	if err1 != nil {
+		logger.ErrorWithError(err1)
+		err = err1
+		return
+	}
+
+	if len(metadata) > 0 {
+		err1 = mS.volStruct.VolumeHandle.PutStream(newDirInodeNumber, MiddlewareStream, metadata)
+		if err1 != nil {
+			logger.DebugfIDWithError(internalDebug, err1, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
+				newDirInodeNumber, metadata)
+			err = err1
+			return
+		}
+	}
+
+	err = mS.volStruct.VolumeHandle.Link(parentDirInodeNumber, fileName, newDirInodeNumber)
+	if err != nil {
+		return
+	}
+
+	// Success; go gather the things the caller needs
+	dirMetadata, err1 := mS.volStruct.VolumeHandle.GetMetadata(newDirInodeNumber)
+	if err1 != nil {
+		err = err1
+		return
+	}
+
+	mtime = uint64(dirMetadata.ModificationTime.UnixNano())
+	inodeNumber = newDirInodeNumber
+	numWrites = dirMetadata.NumWrites
+	err = nil
+	return
+}
+
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	// Find the inode of the directory corresponding to the container
 	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber, vContainerName)
@@ -1958,10 +2022,12 @@ retryLock:
 	}
 
 	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		srcDirLock.Unlock()
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
 	if !mS.volStruct.VolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
+		srcDirLock.Unlock()
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -1981,11 +2047,13 @@ retryLock:
 
 		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 			srcDirLock.Unlock()
+			dstDirLock.Unlock()
 			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 			return
 		}
 		if !mS.volStruct.VolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK) {
 			srcDirLock.Unlock()
+			dstDirLock.Unlock()
 			err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 			return
 		}
@@ -2121,10 +2189,12 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	}
 
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		inodeLock.Unlock()
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+		inodeLock.Unlock()
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
@@ -2175,10 +2245,12 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	}
 
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		inodeLock.Unlock()
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.X_OK) {
+		inodeLock.Unlock()
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}

@@ -20,8 +20,6 @@ imports:
   version: 890a5c3458b43e6104ff5da8dfa139d013d77544
   subpackages:
   - assert
-- name: github.com/swiftstack/conf
-  version: febf000c9efef945f1f8691e606ed1664c247aab
 - name: github.com/swiftstack/cstruct
   version: d95eae1090e554a03651062ec2fee2627df9b23b
 - name: github.com/swiftstack/sortedmap

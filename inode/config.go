@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/cstruct"
+
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/platform"
-	"github.com/swiftstack/conf"
-	"github.com/swiftstack/cstruct"
 )
 
 type physicalContainerLayoutStruct struct {
@@ -638,6 +639,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				err = fmt.Errorf("Volume \"%v\" changed its AccountName", volumeName)
 				return
 			}
+
+			volume.activePeerPrivateIPAddr = activePeerPrivateIPAddr
 
 			if active {
 				if volume.active { // also previously active

@@ -22,6 +22,7 @@ import time
 
 PACKAGES = ["blunder",
             "cleanproxyfs",
+            "conf",
             "dlm",
             "fs",
             "fsworkout",
@@ -40,6 +41,7 @@ PACKAGES = ["blunder",
             "proxyfsd", "proxyfsd/proxyfsd",
             "ramswift", "ramswift/ramswift",
             "stats",
+            "statslogger",
             "swiftclient",
             "utils"]
 

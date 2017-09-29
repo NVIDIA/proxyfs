@@ -7,8 +7,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/conf"
-
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -20,8 +21,8 @@ func inodeRecPutGet(t *testing.T, volume VolumeHandle, key uint64, value []byte)
 		t.Fatalf("Failed to Put %d %s :	 %v", key, value, err)
 	}
 
-	value1, err := volume.GetInodeRec(key)
-	if nil != err {
+	value1, ok, err := volume.GetInodeRec(key)
+	if nil != err || !ok {
 		t.Fatalf("Failed to Get %d %s :	 %v", key, value, err)
 	}
 
@@ -69,7 +70,10 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 
 	for i := 0; i < 10; i++ {
 		var value []byte
-		value, err = volume.GetInodeRec(keys[i])
+		value, ok, err := volume.GetInodeRec(keys[i])
+		if err != nil || !ok {
+			t.Fatalf("Unable to get inode %d", keys[i])
+		}
 		if bytes.Compare(value, values[i]) != 0 {
 			t.Fatalf("Get Value does not match Initial Value: %v %v %v", keys[i], values[i], value[i])
 		}
@@ -126,9 +130,19 @@ func TestHeadHunterAPI(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	err = logger.Up(confMap)
+	if nil != err {
+		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 1] returned error: %v", err)
+	}
+
+	err = dlm.Up(confMap)
+	if nil != err {
+		t.Fatalf("dlm.Up() [case 1] returned error: %v", err)
 	}
 
 	err = swiftclient.Up(confMap)
@@ -166,14 +180,34 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("swiftclient.Down() [case 1] returned error: %v", err)
 	}
 
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("dlm.Down() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
 	}
 
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 2] returned error: %v", err)
+	}
+
+	err = dlm.Up(confMap)
+	if nil != err {
+		t.Fatalf("dlm.Up() [case 2] returned error: %v", err)
 	}
 
 	err = swiftclient.Up(confMap)
@@ -237,9 +271,19 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("swiftclient.Down() [case 2] returned error: %v", err)
 	}
 
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("dlm.Down() [case 2] returned error: %v", err)
+	}
+
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()

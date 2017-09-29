@@ -9,14 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
-	"syscall"
-
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -25,7 +25,6 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/conf"
 )
 
 // our global mountStruct to be used in tests
@@ -117,45 +116,51 @@ func testSetup() (err error) {
 
 	err = logger.Up(testConfMap)
 	if nil != err {
-		return
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if err != nil {
-		headhunter.Down()
-		stats.Down()
-		return err
-	}
-
-	err = headhunter.Up(testConfMap)
-	if nil != err {
-		stats.Down()
-		return
-	}
-
-	err = inode.Up(testConfMap)
-	if nil != err {
-		swiftclient.Down()
-		headhunter.Down()
 		stats.Down()
 		return
 	}
 
 	err = dlm.Up(testConfMap)
 	if nil != err {
-		inode.Down()
+		logger.Down()
+		stats.Down()
+		return
+	}
+
+	err = swiftclient.Up(testConfMap)
+	if err != nil {
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return err
+	}
+
+	err = headhunter.Up(testConfMap)
+	if nil != err {
 		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return
+	}
+
+	err = inode.Up(testConfMap)
+	if nil != err {
 		headhunter.Down()
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
 		stats.Down()
 		return
 	}
 
 	err = Up(testConfMap)
 	if nil != err {
-		dlm.Down()
 		inode.Down()
-		swiftclient.Down()
 		headhunter.Down()
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
 		stats.Down()
 		return
 	}
@@ -167,8 +172,9 @@ func testSetup() (err error) {
 func testTeardown() (err error) {
 	Down()
 	inode.Down()
-	swiftclient.Down()
 	headhunter.Down()
+	swiftclient.Down()
+	dlm.Down()
 	logger.Down()
 	stats.Down()
 
@@ -942,5 +948,241 @@ func TestFlock(t *testing.T) {
 	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
 	if err != nil {
 		t.Fatalf("Unlink() %v returned error: %v", basename, err)
+	}
+}
+
+// Verify that the file system API works correctly with stale inode numbers,
+// as can happen if an NFS client cache gets out of sync because another NFS
+// client as removed a file or directory.
+func TestStaleInodes(t *testing.T) {
+	var (
+		rootDirInodeNumber   inode.InodeNumber = inode.RootDirInodeNumber
+		testDirname          string            = "stale_inodes_test"
+		testFileName         string            = "valid_file"
+		staleDirName         string            = "dir"
+		staleFileName        string            = "file"
+		testDirInodeNumber   inode.InodeNumber
+		testFileInodeNumber  inode.InodeNumber
+		staleDirInodeNumber  inode.InodeNumber
+		staleFileInodeNumber inode.InodeNumber
+		err                  error
+	)
+
+	// scratchpad directory for testing
+	testDirInodeNumber, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		rootDirInodeNumber, testDirname, 0755)
+	if nil != err {
+		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
+	}
+
+	// create a valid test file
+	testFileInodeNumber, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, testFileName, 0644)
+	if nil != err {
+		t.Fatalf("Create() '%s' returned error: %v", testFileName, err)
+	}
+
+	// get an inode number that used to belong to a dirctory
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleDirName, 0755)
+	if nil != err {
+		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
+	}
+	staleDirInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleDirName)
+	if err != nil {
+		t.Fatalf("Unexpectedly failed to look up of '%s': %v", testDirname, err)
+	}
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleDirName)
+	if nil != err {
+		t.Fatalf("Rmdir() of '%s' returned error: %v", staleDirName, err)
+	}
+
+	// get an inode number that used to belong to a file (it shouldn't
+	// really matter which type of file the inode used to be, but it doesn't
+	// hurt to have two to play with)
+	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleFileName, 0644)
+	if nil != err {
+		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
+	}
+	staleFileInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleFileName)
+	if err != nil {
+		t.Fatalf("Unexpectedly failed to look up of '%s': %v", testDirname, err)
+	}
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, staleFileName)
+	if nil != err {
+		t.Fatalf("Unlink() of '%s' returned error: %v", staleFileName, err)
+	}
+
+	// Stat
+	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber)
+	if nil == err {
+		t.Fatalf("Getstat() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Getstat() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Mkdir
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "TestSubDirectory", 0755)
+	if nil == err {
+		t.Fatalf("Mkdir() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Mkdir() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Rmdir
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar")
+	if nil == err {
+		t.Fatalf("Rmdir() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Rmdir() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Create
+	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar", 0644)
+	if nil == err {
+		t.Fatalf("Create() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Create() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Lookup
+	_, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar")
+	if nil == err {
+		t.Fatalf("Lookup() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Lookup() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Write
+	bufToWrite := []byte{0x41, 0x42, 0x43}
+	_, err = mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleFileInodeNumber, 0, bufToWrite, nil)
+	if nil == err {
+		t.Fatalf("Write() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Write() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Read
+	_, err = mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
+	if nil == err {
+		t.Fatalf("Read() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Read() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Trunc
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber, 77)
+	if nil == err {
+		t.Fatalf("Resize() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Resize() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Symlink
+	_, err = mS.Symlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "TestSymlink", "fubar")
+	if nil == err {
+		t.Fatalf("Symlink() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Symlink() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Readsymlink (that we didn't create)
+	_, err = mS.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber)
+	if nil == err {
+		t.Fatalf("Readsymlink() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Readsymlink() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Readdir
+	_, _, _, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "", 0, 0)
+	if nil == err {
+		t.Fatalf("Readdir() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Readdir() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Link -- two cases, one with stale directory and one with stale file
+	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar", testFileInodeNumber)
+	if nil == err {
+		t.Fatalf("Link(1) should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Link(1) should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, testFileName, staleFileInodeNumber)
+	if nil == err {
+		t.Fatalf("Link(2) should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Link(2) should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Unlink
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar")
+	if nil == err {
+		t.Fatalf("Unlink() should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Unlink() should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// Rename -- two cases, one with stale src directory and one with stale dest
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, "fubar", staleDirInodeNumber, "barfu")
+	if nil == err {
+		t.Fatalf("Rename(1) should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Rename(1) should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		staleDirInodeNumber, "fubar", testDirInodeNumber, "barfu")
+	if nil == err {
+		t.Fatalf("Rename(2) should not have returned success")
+	}
+	if blunder.IsNot(err, blunder.NotFoundError) {
+		t.Fatalf("Rename(2) should have failed with NotFoundError, instead got: %v", err)
+	}
+
+	// cleanup test file and directory
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		testDirInodeNumber, testFileName)
+	if nil != err {
+		t.Fatalf("Unlink() of '%s' returned error: %v", testFileName, err)
+	}
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+		rootDirInodeNumber, testDirname)
+	if nil != err {
+		t.Fatalf("Rmdir() of '%s' returned error: %v", testDirname, err)
 	}
 }

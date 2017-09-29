@@ -1,5 +1,30 @@
 # ProxyFS Release Notes
 
+## 0.53.0.3 (September 29, 2017)
+
+### Features:
+
+* Added statistics logging
+
+### Bug Fixes:
+
+* Fixed BiModal IP Address reporting following SIGHUP reload
+* Fixed issue with large transfers causing Swift API errors
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
+## 0.53.0.2 (September 19, 2017)
+
+Note: This was just a re-tagging of 0.53.0.1
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.53.0.1 (September 15, 2017)
 
 ### Features:

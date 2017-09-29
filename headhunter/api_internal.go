@@ -18,6 +18,8 @@ import (
 // TODO: allowFormat should change to doFormat when controller/runway pre-formats
 func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 	var (
+		accountHeaderValues                 []string
+		accountHeaders                      map[string][]string
 		bytesConsumed                       uint64
 		checkpointContainerHeaders          map[string][]string
 		checkpointHeader                    checkpointHeaderV2Struct
@@ -72,6 +74,20 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
 
 			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
+			if nil != err {
+				return
+			}
+
+			// Mark Account as bi-modal...
+			// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
+
+			accountHeaderValues = []string{AccountHeaderValue}
+
+			accountHeaders = make(map[string][]string)
+
+			accountHeaders[AccountHeaderName] = accountHeaderValues
+
+			err = swiftclient.AccountPost(volume.accountName, accountHeaders)
 			if nil != err {
 				return
 			}
@@ -449,6 +465,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBufSize                      uint64
 	)
 
+	volume.checkpointFlushedData = false
+
 	volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
@@ -471,7 +489,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
-	if nil == volume.checkpointChunkedPutContext {
+	if !volume.checkpointFlushedData {
 		return // since nothing was flushed, we can simply return
 	}
 
@@ -673,6 +691,7 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContextIfNecessary() (err e
 		if nil == err {
 			if bytesPut >= volume.maxFlushSize {
 				err = volume.checkpointChunkedPutContext.Close()
+				volume.checkpointChunkedPutContext = nil
 			}
 		}
 	}
@@ -684,9 +703,7 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
 		err = fmt.Errorf("closeCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
 	} else {
 		err = volume.checkpointChunkedPutContext.Close()
-		if nil == err {
-			volume.checkpointChunkedPutContext = nil
-		}
+		volume.checkpointChunkedPutContext = nil
 	}
 	return // err set as appropriate regardless of path
 }
@@ -807,6 +824,8 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 	if nil != err {
 		return
 	}
+
+	bPlusTreeWrapper.volume.checkpointFlushedData = true
 
 	switch bPlusTreeWrapper.wrapperType {
 	case inodeRecBPlusTreeWrapperType:
@@ -1027,7 +1046,7 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 	return
 }
 
-func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err error) {
+func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
 	volume.Lock()
 	valueAsValue, ok, err := volume.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
 	if nil != err {
@@ -1036,7 +1055,6 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, err e
 	}
 	if !ok {
 		volume.Unlock()
-		err = fmt.Errorf("inode %d not found in volume '%v' inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
