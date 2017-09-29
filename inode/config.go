@@ -640,6 +640,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				return
 			}
 
+			volume.activePeerPrivateIPAddr = activePeerPrivateIPAddr
+
 			if active {
 				if volume.active { // also previously active
 					flowControlSectionName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
