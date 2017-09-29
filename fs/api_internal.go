@@ -1247,7 +1247,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 			// If we've got pending recursive descents that should go before the next dirEnt, handle them
 			for len(recursiveDescents) > 0 && (len(dirEnts) == 0 || (recursiveDescents[0].name < dirEnts[0].Basename)) {
-				err = recursiveReaddirPlus(recursiveDescents[0].name, recursiveDescents[0].ino)
+				err = recursiveReaddirPlus(recursiveDescents[0].path, recursiveDescents[0].ino)
 				if err != nil {
 					// already logged
 					return err
@@ -1373,7 +1373,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					}
 					containerEnts = append(containerEnts, containerEnt)
 				}
-				recursiveDescents = append(recursiveDescents, dirToDescend{name: fileName + "/", ino: dirEnt.InodeNumber})
+				recursiveDescents = append(recursiveDescents, dirToDescend{path: fileName + "/", name: dirEnt.Basename + "/", ino: dirEnt.InodeNumber})
 			}
 		}
 		return nil
@@ -3132,6 +3132,7 @@ func appendReadPlanEntries(readPlan []inode.ReadPlanStep, readRangeOut *[]inode.
 
 type dirToDescend struct {
 	name string
+	path string
 	ino  inode.InodeNumber
 }
 

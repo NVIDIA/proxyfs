@@ -340,6 +340,16 @@ func makeSomeFilesAndSuch() {
 	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "development")
 	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "stable")
 
+	aInode := fsMkDir(mountHandle, cNestedInode, "a")
+	fsCreateFile(mountHandle, aInode, "b-1")
+	fsCreateFile(mountHandle, aInode, "b-2")
+	abInode := fsMkDir(mountHandle, aInode, "b")
+	fsCreateFile(mountHandle, abInode, "c-1")
+	fsCreateFile(mountHandle, abInode, "c-2")
+	abcInode := fsMkDir(mountHandle, abInode, "c")
+	fsCreateFile(mountHandle, abcInode, "d-1")
+	fsCreateFile(mountHandle, abcInode, "d-2")
+
 	// SomeVolume2 is set up for testing account listings
 	mountHandle2, err := fs.Mount("SomeVolume2", fs.MountOptions(0))
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "alpha")
@@ -501,7 +511,7 @@ func TestRpcGetContainerNested(t *testing.T) {
 	err := server.RpcGetContainer(&request, &response)
 
 	assert.Nil(err)
-	assert.Equal(22, len(response.ContainerEntries))
+	assert.Equal(31, len(response.ContainerEntries))
 	ents := response.ContainerEntries
 	assert.Equal(".DS_Store", ents[0].Basename)
 	assert.Equal(".git", ents[1].Basename)
@@ -525,6 +535,15 @@ func TestRpcGetContainerNested(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[19].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[20].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[21].Basename)
+	assert.Equal("a", ents[22].Basename)
+	assert.Equal("a/b", ents[23].Basename)
+	assert.Equal("a/b-1", ents[24].Basename)
+	assert.Equal("a/b-2", ents[25].Basename)
+	assert.Equal("a/b/c", ents[26].Basename)
+	assert.Equal("a/b/c-1", ents[27].Basename)
+	assert.Equal("a/b/c-2", ents[28].Basename)
+	assert.Equal("a/b/c/d-1", ents[29].Basename)
+	assert.Equal("a/b/c/d-2", ents[30].Basename)
 }
 
 func TestRpcGetContainerPrefix(t *testing.T) {
@@ -570,6 +589,24 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[4].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[5].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[6].Basename)
+
+	request = GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     "a/b/",
+	}
+	response = GetContainerReply{}
+	err = server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(5, len(response.ContainerEntries))
+	ents = response.ContainerEntries
+	assert.Equal("a/b/c", ents[0].Basename)
+	assert.Equal("a/b/c-1", ents[1].Basename)
+	assert.Equal("a/b/c-2", ents[2].Basename)
+	assert.Equal("a/b/c/d-1", ents[3].Basename)
+	assert.Equal("a/b/c/d-2", ents[4].Basename)
 }
 
 func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
