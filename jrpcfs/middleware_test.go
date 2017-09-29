@@ -1802,16 +1802,50 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(headReply.Metadata, dirMetadata)
 	assert.True(headReply.IsDir)
+	oldInodeNumber := headReply.InodeNumber
 
-	// You get an error if the file exists (which it does since we just made it)
+	// If the file exists, we just overwrite it, same as with RpcPutComplete
 	req = MiddlewareMkdirReq{
 		VirtPath: dirPath,
 		Metadata: dirMetadata,
 	}
 	reply = MiddlewareMkdirReply{}
 	err = server.RpcMiddlewareMkdir(&req, &reply)
-	assert.NotNil(err)
-	assert.True(blunder.Is(err, blunder.FileExistsError))
+	assert.Nil(err)
+	assert.NotEqual(reply.InodeNumber, oldInodeNumber)
+}
+
+func TestRpcMiddlewareMkdirNested(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+	containerName := "rpc-middleware-mkdir-container-nested"
+
+	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	dirName := "some/deeply/nested/dir"
+	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
+	dirMetadata := []byte("some metadata eeef146ba9e5875cb52b047ba4f03660")
+	req := MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply := MiddlewareMkdirReply{}
+
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.Nil(err)
+
+	// Check created dir
+	headRequest := HeadReq{
+		VirtPath: dirPath,
+	}
+	headReply := HeadReply{}
+	err = server.RpcHead(&headRequest, &headReply)
+	assert.Nil(err)
+	assert.Equal(headReply.Metadata, dirMetadata)
+	assert.True(headReply.IsDir)
 }
 
 func TestRpcCoalesce(t *testing.T) {
