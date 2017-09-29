@@ -1209,7 +1209,8 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		chunkedPutContext.err = err
 		chunkedPutContext.fatal = true
-		releaseChunkedConnection(chunkedPutContext.tcpConn, false)
+
+		// tcpConn should already be nil
 		chunkedPutContext.tcpConn = nil
 		chunkedPutContext.Unlock()
 		return
