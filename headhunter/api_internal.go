@@ -691,6 +691,7 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContextIfNecessary() (err e
 		if nil == err {
 			if bytesPut >= volume.maxFlushSize {
 				err = volume.checkpointChunkedPutContext.Close()
+				volume.checkpointChunkedPutContext = nil
 			}
 		}
 	}
@@ -702,9 +703,7 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
 		err = fmt.Errorf("closeCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
 	} else {
 		err = volume.checkpointChunkedPutContext.Close()
-		if nil == err {
-			volume.checkpointChunkedPutContext = nil
-		}
+		volume.checkpointChunkedPutContext = nil
 	}
 	return // err set as appropriate regardless of path
 }
