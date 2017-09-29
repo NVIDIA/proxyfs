@@ -64,14 +64,14 @@ class FakeProxy(object):
                 method, path))
             raise
 
-        if method == 'PUT':
+        if method in ('PUT', 'COALESCE'):
             bytes_read = 0
             # consume the whole request body, just like a PUT would
             for chunk in iter(env['wsgi.input'].read, ''):
                 bytes_read += len(chunk)
             cl = req.headers.get('Content-Length')
 
-            if cl is not None and cl != bytes_read:
+            if cl is not None and int(cl) != bytes_read:
                 error_resp = swob.HTTPClientDisconnect(
                     request=req,
                     body=("Content-Length didn't match"

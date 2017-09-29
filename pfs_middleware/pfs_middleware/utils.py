@@ -135,6 +135,7 @@ class JsonRpcClient(object):
                 errstr = response.get("error")
                 if errstr:
                     errno = extract_errno(errstr)
-                    raise RpcError(errno, errstr)
-
+                    raise RpcError(errno, "Error in %s: %s" % (
+                        rpc_request.get("method", "<unknown method>"),
+                        errstr))
                 return response
