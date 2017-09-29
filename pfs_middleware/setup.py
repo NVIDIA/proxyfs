@@ -36,7 +36,7 @@ setup(
     # TODO: classifiers and such
     entry_points={
         'paste.filter_factory': [
-            'pfs = pfs_middleware.middleware:filter_factory',
+            'pfs = pfs_middleware:filter_factory',
         ],
     },
 )

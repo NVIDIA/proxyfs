@@ -1226,6 +1226,10 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 			// If we've run out of real directory entries, load some more.
 			if areMoreEntries && len(dirEnts) == 0 {
 				dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirInode, lastBasename, maxEntries-uint64(len(containerEnts)), 0)
+				if err != nil {
+					logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
+					return err
+				}
 				if len(dirEnts) > 0 {
 					// If there's no dirEnts here, then areMoreEntries
 					// is false, so we'll never call Readdir again,
@@ -1233,10 +1237,6 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					// lastBasename is.
 					lastBasename = dirEnts[len(dirEnts)-1].Basename
 				}
-			}
-			if err != nil {
-				logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
-				return err
 			}
 
 			// Ignore these early so we can stop thinking about them
@@ -1247,7 +1247,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 			// If we've got pending recursive descents that should go before the next dirEnt, handle them
 			for len(recursiveDescents) > 0 && (len(dirEnts) == 0 || (recursiveDescents[0].name < dirEnts[0].Basename)) {
-				err = recursiveReaddirPlus(recursiveDescents[0].name, recursiveDescents[0].ino)
+				err = recursiveReaddirPlus(recursiveDescents[0].path, recursiveDescents[0].ino)
 				if err != nil {
 					// already logged
 					return err
@@ -1322,6 +1322,16 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				if !strings.HasPrefix(fileName, prefix) {
 					continue
 				}
+
+				// Alternate data streams live in the inode, so this is almost certainly still cached from the Getstat()
+				// call, and hence is very cheap to retrieve.
+				serializedMetadata, err := mS.volStruct.VolumeHandle.GetStream(dirEnt.InodeNumber, MiddlewareStream)
+
+				// It's okay if there's no such stream; we just treat it as empty metadata. The middleware handles it.
+				if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
+					return err
+				}
+
 				containerEnt := ContainerEntry{
 					Basename:         fileName,
 					FileSize:         statResult[StatSize],
@@ -1329,6 +1339,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					NumWrites:        statResult[StatNumWrites],
 					InodeNumber:      statResult[StatINum],
 					IsDir:            false,
+					Metadata:         serializedMetadata,
 				}
 				containerEnts = append(containerEnts, containerEnt)
 			} else {
@@ -1362,7 +1373,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					}
 					containerEnts = append(containerEnts, containerEnt)
 				}
-				recursiveDescents = append(recursiveDescents, dirToDescend{name: fileName + "/", ino: dirEnt.InodeNumber})
+				recursiveDescents = append(recursiveDescents, dirToDescend{path: fileName + "/", name: dirEnt.Basename + "/", ino: dirEnt.InodeNumber})
 			}
 		}
 		return nil
@@ -1517,71 +1528,8 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	return err
 }
 
-func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
-	fullObjectPath := vContainerName + "/" + vObjectPath
-	parentDirPath, fileName := filepath.Split(fullObjectPath)
-	parentDirInodeNumber, parentDirInodeType, parentDirInodeLock, err1 := mS.resolvePathForWrite(parentDirPath, nil)
-	if err1 != nil {
-		err = err1
-		return
-	}
-	defer parentDirInodeLock.Unlock()
+func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string, makeInodeFunc func() (inode.InodeNumber, error)) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 
-	if parentDirInodeType != inode.DirType {
-		err = blunder.NewError(blunder.NotDirError, "%s is a file", parentDirPath)
-		return
-	}
-
-	// We won't overwrite an existing directory, file, or anything else
-	_, err = mS.volStruct.VolumeHandle.Lookup(parentDirInodeNumber, fileName)
-	if err != nil && blunder.Is(err, blunder.NotFoundError) {
-		// This is good; no existing dir entry means we can continue
-	} else if err != nil {
-		// Mystery error; just return it
-		return
-	} else {
-		// There's already something by that name
-		err = blunder.NewError(blunder.FileExistsError, "%s already exists", fullObjectPath)
-		return
-	}
-
-	newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
-	if err1 != nil {
-		logger.ErrorWithError(err1)
-		err = err1
-		return
-	}
-
-	if len(metadata) > 0 {
-		err1 = mS.volStruct.VolumeHandle.PutStream(newDirInodeNumber, MiddlewareStream, metadata)
-		if err1 != nil {
-			logger.DebugfIDWithError(internalDebug, err1, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
-				newDirInodeNumber, metadata)
-			err = err1
-			return
-		}
-	}
-
-	err = mS.volStruct.VolumeHandle.Link(parentDirInodeNumber, fileName, newDirInodeNumber)
-	if err != nil {
-		return
-	}
-
-	// Success; go gather the things the caller needs
-	dirMetadata, err1 := mS.volStruct.VolumeHandle.GetMetadata(newDirInodeNumber)
-	if err1 != nil {
-		err = err1
-		return
-	}
-
-	mtime = uint64(dirMetadata.ModificationTime.UnixNano())
-	inodeNumber = newDirInodeNumber
-	numWrites = dirMetadata.NumWrites
-	err = nil
-	return
-}
-
-func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	// Find the inode of the directory corresponding to the container
 	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber, vContainerName)
 	if err != nil {
@@ -1689,43 +1637,14 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 		}
 	}
 
-	// Now, dirInodeNumber is the inode of the lowest existing
-	// directory. Anything else is created by us and isn't part of the
-	// filesystem tree until we Link() it in, so we only need to hold
-	// this one lock.
-	//
-	// Reify the Swift object into a ProxyFS file by making a new,
-	// empty inode and then associating it with the log segment
-	// written by the middleware.
-	fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(inode.PosixModePerm, 0, 0)
+	// Now, dirInodeNumber is the inode of the lowest existing directory. Anything else is created by us and isn't part
+	// of the filesystem tree until we Link() it in, so we only need to hold this one lock. Call the inode-creator
+	// function and start linking stuff together.
+	fileInodeNumber, err = makeInodeFunc()
 	if err != nil {
-		logger.DebugfIDWithError(internalDebug, err, "fs.CreateFile(): %v dirInodeNumber: %v vContainerName: %v failed!",
-			dirInodeNumber, vContainerName)
 		return
 	}
 
-	// Associate fileInodeNumber with log segments written by Swift
-	fileOffset := uint64(0) // Swift only writes whole files
-	pObjectOffset := uint64(0)
-	for i := 0; i < len(pObjectPaths); i++ {
-		err = mS.volStruct.VolumeHandle.Wrote(fileInodeNumber, fileOffset, pObjectPaths[i], pObjectOffset, pObjectLengths[i], i > 0)
-		if err != nil {
-			logger.DebugfIDWithError(internalDebug, err, "mount.Wrote() fileInodeNumber: %v fileOffset: %v pOjectPaths: %v pObjectOffset: %v pObjectLengths: %v i: %v failed!",
-				fileInodeNumber, fileOffset, pObjectPaths, pObjectOffset, pObjectLengths, i)
-			return
-		}
-		fileOffset += pObjectLengths[i]
-	}
-
-	// Set the metadata on the file
-	err = mS.volStruct.VolumeHandle.PutStream(fileInodeNumber, MiddlewareStream, pObjectMetadata)
-	if err != nil {
-		logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
-			fileInodeNumber, pObjectMetadata)
-		return
-	}
-
-	// Build any missing-but-necessary directories
 	highestUnlinkedInodeNumber := fileInodeNumber
 	highestUnlinkedName := vObjectBaseName
 	for i := 0; i < len(dirs); i++ {
@@ -1829,6 +1748,67 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	// fileInodeNumber set above
 	numWrites = metadata.NumWrites
 	return
+}
+
+func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
+
+	reifyTheFile := func() (fileInodeNumber inode.InodeNumber, err error) {
+		// Reify the Swift object into a ProxyFS file by making a new,
+		// empty inode and then associating it with the log segment
+		// written by the middleware.
+		fileInodeNumber, err = mS.volStruct.VolumeHandle.CreateFile(inode.PosixModePerm, 0, 0)
+		if err != nil {
+			logger.DebugfIDWithError(internalDebug, err, "fs.CreateFile(): vContainerName: %v failed!", vContainerName)
+			return
+		}
+
+		// Associate fileInodeNumber with log segments written by Swift
+		fileOffset := uint64(0) // Swift only writes whole files
+		pObjectOffset := uint64(0)
+		for i := 0; i < len(pObjectPaths); i++ {
+			err = mS.volStruct.VolumeHandle.Wrote(fileInodeNumber, fileOffset, pObjectPaths[i], pObjectOffset, pObjectLengths[i], i > 0)
+			if err != nil {
+				logger.DebugfIDWithError(internalDebug, err, "mount.Wrote() fileInodeNumber: %v fileOffset: %v pOjectPaths: %v pObjectOffset: %v pObjectLengths: %v i: %v failed!",
+					fileInodeNumber, fileOffset, pObjectPaths, pObjectOffset, pObjectLengths, i)
+				return
+			}
+			fileOffset += pObjectLengths[i]
+		}
+
+		// Set the metadata on the file
+		err = mS.volStruct.VolumeHandle.PutStream(fileInodeNumber, MiddlewareStream, pObjectMetadata)
+		if err != nil {
+			logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
+				fileInodeNumber, pObjectMetadata)
+			return
+		}
+		return
+	}
+
+	return putObjectHelper(mS, vContainerName, vObjectPath, reifyTheFile)
+}
+
+func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+
+	createTheDirectory := func() (dirInodeNumber inode.InodeNumber, err error) {
+		dirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
+		if err != nil {
+			logger.ErrorWithError(err)
+			return
+		}
+
+		if len(metadata) > 0 {
+			err = mS.volStruct.VolumeHandle.PutStream(dirInodeNumber, MiddlewareStream, metadata)
+			if err != nil {
+				logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
+					dirInodeNumber, metadata)
+				return
+			}
+		}
+		return
+	}
+
+	return putObjectHelper(mS, vContainerName, vObjectPath, createTheDirectory)
 }
 
 func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata []byte, newMetadata []byte) (err error) {
@@ -3125,6 +3105,7 @@ func appendReadPlanEntries(readPlan []inode.ReadPlanStep, readRangeOut *[]inode.
 
 type dirToDescend struct {
 	name string
+	path string
 	ino  inode.InodeNumber
 }
 

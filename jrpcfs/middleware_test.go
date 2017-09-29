@@ -264,6 +264,10 @@ func makeSomeFilesAndSuch() {
 
 	readmeInode := fsCreateFile(mountHandle, cInode, "README")
 	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
+	err = mountHandle.MiddlewarePost("", "c/README", []byte("metadata for c/README"), []byte{})
+	if err != nil {
+		panic(err)
+	}
 
 	animalsInode := fsMkDir(mountHandle, cInode, "animals")
 	files := map[string]string{
@@ -335,6 +339,16 @@ func makeSomeFilesAndSuch() {
 	fsCreateFile(mountHandle, dotGitLogsRefsHeads, ".DS_Store")
 	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "development")
 	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "stable")
+
+	aInode := fsMkDir(mountHandle, cNestedInode, "a")
+	fsCreateFile(mountHandle, aInode, "b-1")
+	fsCreateFile(mountHandle, aInode, "b-2")
+	abInode := fsMkDir(mountHandle, aInode, "b")
+	fsCreateFile(mountHandle, abInode, "c-1")
+	fsCreateFile(mountHandle, abInode, "c-2")
+	abcInode := fsMkDir(mountHandle, abInode, "c")
+	fsCreateFile(mountHandle, abcInode, "d-1")
+	fsCreateFile(mountHandle, abcInode, "d-2")
 
 	// SomeVolume2 is set up for testing account listings
 	mountHandle2, err := fs.Mount("SomeVolume2", fs.MountOptions(0))
@@ -497,7 +511,7 @@ func TestRpcGetContainerNested(t *testing.T) {
 	err := server.RpcGetContainer(&request, &response)
 
 	assert.Nil(err)
-	assert.Equal(22, len(response.ContainerEntries))
+	assert.Equal(31, len(response.ContainerEntries))
 	ents := response.ContainerEntries
 	assert.Equal(".DS_Store", ents[0].Basename)
 	assert.Equal(".git", ents[1].Basename)
@@ -521,6 +535,15 @@ func TestRpcGetContainerNested(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[19].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[20].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[21].Basename)
+	assert.Equal("a", ents[22].Basename)
+	assert.Equal("a/b", ents[23].Basename)
+	assert.Equal("a/b-1", ents[24].Basename)
+	assert.Equal("a/b-2", ents[25].Basename)
+	assert.Equal("a/b/c", ents[26].Basename)
+	assert.Equal("a/b/c-1", ents[27].Basename)
+	assert.Equal("a/b/c-2", ents[28].Basename)
+	assert.Equal("a/b/c/d-1", ents[29].Basename)
+	assert.Equal("a/b/c/d-2", ents[30].Basename)
 }
 
 func TestRpcGetContainerPrefix(t *testing.T) {
@@ -566,6 +589,24 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[4].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[5].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[6].Basename)
+
+	request = GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     "a/b/",
+	}
+	response = GetContainerReply{}
+	err = server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(5, len(response.ContainerEntries))
+	ents = response.ContainerEntries
+	assert.Equal("a/b/c", ents[0].Basename)
+	assert.Equal("a/b/c-1", ents[1].Basename)
+	assert.Equal("a/b/c-2", ents[2].Basename)
+	assert.Equal("a/b/c/d-1", ents[3].Basename)
+	assert.Equal("a/b/c/d-2", ents[4].Basename)
 }
 
 func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
@@ -611,6 +652,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	assert.Equal("README", ents[0].Basename)
 	assert.Equal(uint64(37), ents[0].FileSize)
 	assert.Equal(false, ents[0].IsDir)
+	assert.Equal([]byte("metadata for c/README"), ents[0].Metadata)
 
 	assert.Equal("animals", ents[1].Basename)
 	assert.Equal(uint64(0), ents[1].FileSize)
@@ -1760,16 +1802,50 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(headReply.Metadata, dirMetadata)
 	assert.True(headReply.IsDir)
+	oldInodeNumber := headReply.InodeNumber
 
-	// You get an error if the file exists (which it does since we just made it)
+	// If the file exists, we just overwrite it, same as with RpcPutComplete
 	req = MiddlewareMkdirReq{
 		VirtPath: dirPath,
 		Metadata: dirMetadata,
 	}
 	reply = MiddlewareMkdirReply{}
 	err = server.RpcMiddlewareMkdir(&req, &reply)
-	assert.NotNil(err)
-	assert.True(blunder.Is(err, blunder.FileExistsError))
+	assert.Nil(err)
+	assert.NotEqual(reply.InodeNumber, oldInodeNumber)
+}
+
+func TestRpcMiddlewareMkdirNested(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+	containerName := "rpc-middleware-mkdir-container-nested"
+
+	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	dirName := "some/deeply/nested/dir"
+	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
+	dirMetadata := []byte("some metadata eeef146ba9e5875cb52b047ba4f03660")
+	req := MiddlewareMkdirReq{
+		VirtPath: dirPath,
+		Metadata: dirMetadata,
+	}
+	reply := MiddlewareMkdirReply{}
+
+	err = server.RpcMiddlewareMkdir(&req, &reply)
+	assert.Nil(err)
+
+	// Check created dir
+	headRequest := HeadReq{
+		VirtPath: dirPath,
+	}
+	headReply := HeadReply{}
+	err = server.RpcHead(&headRequest, &headReply)
+	assert.Nil(err)
+	assert.Equal(headReply.Metadata, dirMetadata)
+	assert.True(headReply.IsDir)
 }
 
 func TestRpcCoalesce(t *testing.T) {

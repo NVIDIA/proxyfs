@@ -37,6 +37,7 @@ type ContainerEntry struct {
 	IsDir            bool
 	NumWrites        uint64
 	InodeNumber      uint64
+	Metadata         []byte
 }
 
 type HeadResponse struct {
