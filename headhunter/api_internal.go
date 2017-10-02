@@ -51,6 +51,18 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 		}
 
 		checkpointHeaderValue = checkpointHeaderValues[0]
+
+		// TODO: when mkproxyfs is fully externalized, the following should be removed...
+		accountHeaderValues = []string{AccountHeaderValue}
+
+		accountHeaders = make(map[string][]string)
+
+		accountHeaders[AccountHeaderName] = accountHeaderValues
+
+		err = swiftclient.AccountPost(volume.accountName, accountHeaders)
+		if nil != err {
+			return
+		}
 	} else {
 		if 404 == blunder.HTTPCode(err) {
 			// Checkpoint Container not found... so try to create it with some initial values...
