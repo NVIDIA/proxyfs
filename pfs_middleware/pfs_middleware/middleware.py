@@ -598,7 +598,6 @@ class PfsMiddleware(object):
             # Check account to see if this is a bimodal-access account or
             # not. ProxyFS is the sole source of truth on this matter.
             is_bimodal, proxyfsd_addrinfo = self._unpack_owning_proxyfs(req)
-
             if not is_bimodal and proxyfsd_addrinfo is None:
                 # This is a plain old Swift account, so we get out of the
                 # way.
