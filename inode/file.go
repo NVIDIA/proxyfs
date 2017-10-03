@@ -1,6 +1,7 @@
 package inode
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -867,6 +868,34 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 		if !alreadyFlushing[dirInode.InodeNumber] {
 			toFlush = append(toFlush, dirInode)
 			alreadyFlushing[dirInode.InodeNumber] = true
+		}
+	}
+
+	// Unlink the old dirent, if any, so we can overwrite it atomically
+	obstacle, ok, err := containingDirInode.payload.(sortedmap.BPlusTree).GetByKey(combinationName)
+	if err != nil {
+		panic(err)
+	}
+	if ok {
+		obstacleInodeNumber := obstacle.(InodeNumber)
+		obstacleInode, ok, err1 := vS.fetchInode(obstacleInodeNumber)
+		if !ok {
+			err = errors.New("dir has inode, but we can't fetch it?")
+			return
+		}
+		if err1 != nil {
+			err = err1
+			return
+		}
+		// can't remove a non-empty dir
+		if obstacleInode.InodeType == DirType && obstacleInode.LinkCount > 2 {
+			err = blunder.NewError(blunder.NotEmptyError, "Destination path refers to a non-empty directory")
+			return
+		}
+
+		err = removeDirEntryInMemory(containingDirInode, obstacleInode, combinationName)
+		if err != nil {
+			return
 		}
 	}
 
