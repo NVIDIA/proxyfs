@@ -212,7 +212,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			continue
 		} else if 1 == len(primaryPeerList) {
 			if whoAmI == primaryPeerList[0] {
-				err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+				err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 				if nil != err {
 					return
 				}
@@ -271,7 +271,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for volumeName = range deletedVolumeNames {
-		err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+		err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 		if nil != err {
 			return
 		}
@@ -313,7 +313,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if whoAmI == primaryPeerList[0] {
 				_, ok = globals.volumeMap[volumeName]
 				if !ok {
-					err = addVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+					err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
 					if nil != err {
 						return
 					}
@@ -378,7 +378,7 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
-	err = addVolume(confMap, volumeName, true)
+	err = upVolume(confMap, volumeName, true)
 	if nil != err {
 		return
 	}
@@ -391,7 +391,7 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 }
 
 // TODO: allowFormat should change to doFormat when controller/runway pre-formats
-func addVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err error) {
+func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err error) {
 	var (
 		flowControlName string
 		volume          *volumeStruct

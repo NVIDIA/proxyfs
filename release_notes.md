@@ -1,5 +1,21 @@
 # ProxyFS Release Notes
 
+## 0.54.0 (October 3, 2017)
+
+### Features:
+
+* Improved Object ETag MD5 handling
+* Object SLO uploads converted to COALESCE'd Objects/Files
+
+### Bug Fixes:
+
+* Non BiModal Accounts remain accessible even when no ProxyFS nodes are available
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.53.0.3 (September 29, 2017)
 
 ### Features:
