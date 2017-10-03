@@ -18,6 +18,7 @@ gopkgsubdirs = \
 	stats \
 	statslogger \
 	swiftclient \
+	trackedlock \
 	utils
 
 gobinsubdirs = \
