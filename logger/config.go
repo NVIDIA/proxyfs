@@ -160,10 +160,9 @@ func parseLogEntry(entry string) (fields map[string]string) {
 
 	var fieldRE = regexp.MustCompile(
 		`^time="(?P<time>[-:0-9.ZTt_]+)" level=(?P<level>[a-zA-Z]+) msg="(?P<msg>([^"]|\\")+)" (error="(?P<error>([^"]|\\")+)" )?function=(?P<function>\w+) goroutine=(?P<goroutine>\d+) package=(?P<package>\w+)`)
-
 	matches = fieldRE.FindStringSubmatch(entry)
 	if matches == nil {
-		fmt.Fprintf(os.Stderr, "log entry not matched: '%s'\n", entry)
+		Warnf("log entry not matched by regular expression fieldRE: '%s'", entry)
 		return nil
 	}
 	fields = make(map[string]string)
@@ -210,10 +209,19 @@ func parseLogForFunc(logcopy LogTarget, funcName string, logEntryRE *regexp.Rege
 				funcName, maxEntries)
 			return
 		}
+		if logEntry == "" {
+			err = fmt.Errorf("parseLogForFunc(): exhausted all log entries without finding a match")
+			return
+		}
 
 		fields = ParseLogEntry(logEntry)
-		if fields["msg"] == "" {
+		if fields == nil {
 			err = fmt.Errorf("parseLogForFunc(): log entry unparsable by ParseLogEntry(): '%s'",
+				logEntry)
+		}
+
+		if fields["msg"] == "" {
+			err = fmt.Errorf("parseLogForFunc(): log entry does not contain a 'msg=' string: '%s'",
 				logEntry)
 			return
 		}
@@ -226,7 +234,7 @@ func parseLogForFunc(logcopy LogTarget, funcName string, logEntryRE *regexp.Rege
 			continue
 		}
 
-		// we found a matching log entry; copy the fields and we're // done!
+		// we found a matching log entry; copy the fields and we're done!
 		for idx, name := range logEntryRE.SubexpNames() {
 			if name != "" {
 				fields[name] = matches[idx]
