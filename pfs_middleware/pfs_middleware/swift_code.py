@@ -81,3 +81,17 @@ def get_listing_content_type(req):
     if not out_content_type:
         raise HTTPNotAcceptable(request=req)
     return out_content_type
+
+
+# Taken from swift/common/utils.py, commit d2e32b3
+# Used when reading config values
+TRUE_VALUES = set(('true', '1', 'yes', 'on', 't', 'y'))
+
+
+def config_true_value(value):
+    """
+    Returns True if the value is either True or a string in TRUE_VALUES.
+    Returns False otherwise.
+    """
+    return value is True or \
+        (isinstance(value, six.string_types) and value.lower() in TRUE_VALUES)

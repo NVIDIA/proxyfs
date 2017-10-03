@@ -25,10 +25,16 @@ its own, but it is required for the other middlewares to work.
 import eventlet
 import socket
 import time
+
 from swift.common import swob
 from swift.common.utils import get_logger
+from swift.proxy.controllers.base import get_account_info
 
-from . import rpc, utils
+from . import rpc, utils, swift_code
+
+
+# full header is "X-Account-Sysmeta-Proxyfs-Bimodal"
+SYSMETA_BIMODAL_INDICATOR = 'proxyfs-bimodal'
 
 
 class BimodalChecker(object):
@@ -102,7 +108,7 @@ class BimodalChecker(object):
 
             return result["result"]
 
-    def _fetch_owning_proxyfs(self, account_name):
+    def _fetch_owning_proxyfs(self, req, account_name):
         """
         Checks to see if an account is bimodal or not, and if so, which proxyfs
         daemon owns it. Performs any necessary DNS resolution on the owner's
@@ -133,6 +139,18 @@ class BimodalChecker(object):
                 # cache is populated and fresh; use it
                 return res
 
+        # First, ask Swift if the account is bimodal. This lets us keep
+        # non-ProxyFS accounts functional during a ProxyFS outage.
+        env_copy = req.environ.copy()
+        env_copy[utils.ENV_IS_BIMODAL] = False
+        account_info = get_account_info(env_copy, self.app,
+                                        swift_source="PFS")
+        if not swift_code.config_true_value(account_info["sysmeta"].get(
+                SYSMETA_BIMODAL_INDICATOR)):
+            res = (False, None)
+            self._cached_is_bimodal[account_name] = (res, time.time())
+            return res
+
         # We know where one proxyfsd is, and they'll all respond identically
         # to the same query.
         iab_req = rpc.is_account_bimodal_request(account_name)
@@ -140,40 +158,46 @@ class BimodalChecker(object):
             rpc.parse_is_account_bimodal_response(
                 self._rpc_call(self.proxyfsd_addrinfos, iab_req))
 
-        if is_bimodal:
-            if not proxyfsd_ip_or_hostname:
-                # When an account is moving between proxyfsd nodes, it's
-                # bimodal but nobody owns it. This is usually a
-                # very-short-lived temporary condition, so we don't cache
-                # this result.
-                return (True, None)
-            # Just run whatever we got through socket.getaddrinfo(). If we
-            # got an IPv4 or IPv6 address, it'll come out the other side
-            # unchanged. If we got a hostname, it'll get resolved.
-            try:
-                # Someday, ProxyFS will probably start giving us port
-                # numbers, too. Until then, assume they all use the same
-                # port.
-                addrinfos = socket.getaddrinfo(
-                    proxyfsd_ip_or_hostname, self.proxyfsd_port,
-                    socket.AF_UNSPEC, socket.SOCK_STREAM)
-            except socket.gaierror:
-                raise utils.NoSuchHostnameError(
-                    "Owning ProxyFS is at %s, but that could not "
-                    "be resolved to an IP address" % (
-                        proxyfsd_ip_or_hostname))
+        if not is_bimodal:
+            # Swift account says bimodal, ProxyFS says otherwise.
+            raise swob.HTTPServiceUnavailable(
+                request=req,
+                headers={"Content-Type": "text/plain"},
+                body=("The Swift account says it has bimodal access, but "
+                      "ProxyFS disagrees. Unable to proceed."))
 
-            # socket.getaddrinfo returns things already sorted according
-            # to the various rules in RFC 3484, so instead of thinking
-            # we're smarter than Python and glibc, we'll just take the
-            # first (i.e. best) one.
-            #
-            # Since we didn't get an exception, we resolved the hostname
-            # to *something*, which means there's at least one element
-            # in addrinfos.
-            res = (True, addrinfos[0])
-        else:
-            res = (False, None)
+        if not proxyfsd_ip_or_hostname:
+            # When an account is moving between proxyfsd nodes, it's
+            # bimodal but nobody owns it. This is usually a
+            # very-short-lived temporary condition, so we don't cache
+            # this result.
+            return (True, None)
+
+        # Just run whatever we got through socket.getaddrinfo(). If we
+        # got an IPv4 or IPv6 address, it'll come out the other side
+        # unchanged. If we got a hostname, it'll get resolved.
+        try:
+            # Someday, ProxyFS will probably start giving us port
+            # numbers, too. Until then, assume they all use the same
+            # port.
+            addrinfos = socket.getaddrinfo(
+                proxyfsd_ip_or_hostname, self.proxyfsd_port,
+                socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except socket.gaierror:
+            raise utils.NoSuchHostnameError(
+                "Owning ProxyFS is at %s, but that could not "
+                "be resolved to an IP address" % (
+                    proxyfsd_ip_or_hostname))
+
+        # socket.getaddrinfo returns things already sorted according
+        # to the various rules in RFC 3484, so instead of thinking
+        # we're smarter than Python and glibc, we'll just take the
+        # first (i.e. best) one.
+        #
+        # Since we didn't get an exception, we resolved the hostname
+        # to *something*, which means there's at least one element
+        # in addrinfos.
+        res = (True, addrinfos[0])
         self._cached_is_bimodal[account_name] = (res, time.time())
         return res
 
@@ -187,7 +211,7 @@ class BimodalChecker(object):
             return self.app
 
         try:
-            is_bimodal, owner_addrinfo = self._fetch_owning_proxyfs(acc)
+            is_bimodal, owner_addrinfo = self._fetch_owning_proxyfs(req, acc)
         except (utils.RpcError, utils.RpcTimeout) as err:
             return swob.HTTPServiceUnavailable(
                 request=req,

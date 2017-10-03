@@ -59,7 +59,9 @@ class BaseMiddlewareTest(unittest.TestCase):
         }, FakeLogger())
         self.bimodal_accounts = {"AUTH_test"}
 
-        self.app.register('HEAD', '/v1/AUTH_test', 204, {}, '')
+        self.app.register('HEAD', '/v1/AUTH_test', 204,
+                          {"X-Account-Sysmeta-ProxyFS-Bimodal": "true"},
+                          '')
 
         self.app.register(
             'GET', '/info',
@@ -158,7 +160,8 @@ class TestAccountGet(BaseMiddlewareTest):
             'HEAD', '/v1/AUTH_test',
             204,
             {'X-Account-Meta-Flavor': 'cherry',
-             'X-Account-Sysmeta-Shipping-Class': 'ultraslow'},
+             'X-Account-Sysmeta-Shipping-Class': 'ultraslow',
+             'X-Account-Sysmeta-ProxyFS-Bimodal': 'true'},
             '')
 
         def mock_RpcGetAccount(_):
@@ -292,7 +295,9 @@ class TestAccountGet(BaseMiddlewareTest):
 
     def test_spaces(self):
         self.bimodal_accounts.add('AUTH_test with spaces')
-        self.app.register('HEAD', '/v1/AUTH_test with spaces', 204, {}, '')
+        self.app.register('HEAD', '/v1/AUTH_test with spaces', 204,
+                          {'X-Account-Sysmeta-ProxyFS-Bimodal': 'true'},
+                          '')
         req = swob.Request.blank("/v1/AUTH_test with spaces")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
@@ -307,7 +312,8 @@ class TestAccountHead(BaseMiddlewareTest):
         self.app.register(
             'HEAD', '/v1/AUTH_test',
             204,
-            {'X-Account-Meta-Beans': 'lots of'},
+            {'X-Account-Meta-Beans': 'lots of',
+             'X-Account-Sysmeta-Proxyfs-Bimodal': 'true'},
             '')
 
     def test_indicator_header(self):
@@ -1943,6 +1949,7 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/c o n/o b j",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input})
+
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2022,18 +2029,18 @@ class TestObjectPut(BaseMiddlewareTest):
 
         # check the txids as well
         self.assertEqual(
-            "big-txid-000", self.app.calls[1][2]["X-Trans-Id"])  # 1st PUT
+            "big-txid-000", self.app.calls[2][2]["X-Trans-Id"])  # 1st PUT
         self.assertEqual(
-            "big-txid-001", self.app.calls[2][2]["X-Trans-Id"])  # 2nd PUT
+            "big-txid-001", self.app.calls[3][2]["X-Trans-Id"])  # 2nd PUT
         self.assertEqual(
-            "big-txid-002", self.app.calls[3][2]["X-Trans-Id"])  # 3rd PUT
+            "big-txid-002", self.app.calls[4][2]["X-Trans-Id"])  # 3rd PUT
 
         # If we sent the original Content-Length, the first PUT would fail.
         # At some point, we should send the correct Content-Length value
         # when we can compute it, but for now, we just send nothing.
-        self.assertNotIn("Content-Length", self.app.calls[1][2])  # 1st PUT
-        self.assertNotIn("Content-Length", self.app.calls[2][2])  # 2nd PUT
-        self.assertNotIn("Content-Length", self.app.calls[3][2])  # 3rd PUT
+        self.assertNotIn("Content-Length", self.app.calls[2][2])  # 1st PUT
+        self.assertNotIn("Content-Length", self.app.calls[3][2])  # 2nd PUT
+        self.assertNotIn("Content-Length", self.app.calls[4][2])  # 3rd PUT
 
     def test_big_exact_multiple(self):
         wsgi_input = StringIO('A' * 100 + 'B' * 100)
