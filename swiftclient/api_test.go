@@ -1322,7 +1322,12 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 	// validate proper log entry found, including number of attempts and
 	// elapsed time
 	logEntry = logcopy.LogBuf.LogEntries[0]
-	logval = parseRetryLogEntry(logEntry)
+	if logEntry != "" {
+		logval = parseRetryLogEntry(logEntry)
+	} else {
+		logval = nil
+	}
+
 	switch {
 	case successOn == 1:
 		if logcopy.LogBuf.TotalEntries != totalEntriesPre {
