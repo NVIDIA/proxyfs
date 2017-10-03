@@ -162,6 +162,60 @@ func PathToAcctContObj(path string) (accountName string, containerName string, o
 	return accountName, containerName, objectName, nil
 }
 
+// Given the first line of a stack trace parse out and return the goroutine ID.
+// The first line of a stack trace starts with: "goroutine 7 [runnable]:\n"
+//
+// This function really should have some error checking to insure it matched
+// "goroutine" though there's no way to log a failure.
+//
+func StackTraceToGoId(buf []byte) uint64 {
+	buf = bytes.TrimPrefix(buf, []byte("goroutine "))
+	buf = buf[:bytes.IndexByte(buf, ' ')]
+	n, _ := strconv.ParseUint(string(buf), 10, 64)
+	return n
+}
+
+// Convert a slice filled in by runtime.Stack(buf, true), which contains the
+// stack traceback of one or more go routines, into a map goid -> stack.
+//
+// buffer looks like:
+//
+// goroutine 1 [running]:
+// main.main()
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:27 +0x21e
+//
+// goroutine 5 [runnable]:
+// main.killTime()
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:9
+// created by main.main
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:14 +0x47
+//
+// goroutine 7 [runnable]:
+// main.killTime()
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:9
+// created by main.main
+// /vagrant/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/stacktrace.go:16 +0x77
+//
+func StackTracesToMap(buf []byte) (traceMap map[uint64]string, stateMap map[uint64]string) {
+
+	var (
+		goId  uint64
+		state string
+	)
+	traceMap = make(map[uint64]string)
+	stateMap = make(map[uint64]string)
+
+	allTraces := string(buf)
+	for {
+		n, err := fmt.Sscanf(allTraces, "goroutine %u [%s]\n", &goId, &state)
+		if err != nil || n != 2 {
+			break
+			// return nil, nil
+		}
+	}
+	return
+}
+
 // XXX TODO TEMPORARY:
 //
 // I know our go-overlords would prefer that we knew nothing about goroutines,
@@ -172,11 +226,12 @@ func PathToAcctContObj(path string) (accountName string, containerName string, o
 //
 func GetGID() uint64 {
 	b := make([]byte, 64)
-	b = b[:runtime.Stack(b, false)]
-	b = bytes.TrimPrefix(b, []byte("goroutine "))
-	b = b[:bytes.IndexByte(b, ' ')]
-	n, _ := strconv.ParseUint(string(b), 10, 64)
-	return n
+	_ = runtime.Stack(b, false)
+	return StackTraceToGoId(b)
+}
+
+func GetGoId() uint64 {
+	return GetGID()
 }
 
 // Return a string containing calling function and package
