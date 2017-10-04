@@ -108,6 +108,9 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	if err != nil {
 		logger.ErrorWithError(err, "cannot parse confMap")
 		if oldLogPeriod != 0 {
+			globals.logTicker.Stop()
+			globals.logTicker = nil
+
 			globals.stopChan <- true
 			_ = <-globals.doneChan
 		}
@@ -123,6 +126,9 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		oldLogPeriod/time.Second, globals.statsLogPeriod/time.Second)
 	// shutdown the old logger (if any) and start a new one (if any)
 	if oldLogPeriod != 0 {
+		globals.logTicker.Stop()
+		globals.logTicker = nil
+
 		globals.stopChan <- true
 		_ = <-globals.doneChan
 	}
@@ -135,6 +141,9 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	// shutdown the stats logger (if any)
 	logger.Infof("statslogger.Down() called")
 	if globals.statsLogPeriod != 0 {
+		globals.logTicker.Stop()
+		globals.logTicker = nil
+
 		globals.stopChan <- true
 		_ = <-globals.doneChan
 	}
