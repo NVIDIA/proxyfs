@@ -15,6 +15,24 @@ function await_proxyfsd_shutdown {
     done
 }
 
+function await_proxyfsd_startup {
+    while true
+    do
+        /usr/bin/systemctl -q is-active proxyfsd
+        if [ $? -ne 0 ]
+        then
+            echo "ProfyFS failed to start. Exiting..."
+            exit 1
+        fi
+        curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
 MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
 SHARE_NFS=/mnt/nfs_proxyfs_mount/
 
@@ -51,6 +69,8 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start memcached
     # sudo /usr/bin/systemctl start swift
     sudo /usr/bin/swift-init main start
+    sudo /usr/bin/systemctl start proxyfsd
+    await_proxyfsd_startup
 else
     # Ubuntu (not tested!)
     sudo /usr/sbin/service nfs-idmap stop
@@ -69,4 +89,6 @@ else
     sudo /usr/sbin/service memcached start
     # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
+    sudo /usr/sbin/service proxyfsd start
+    await_proxyfsd_startup
 fi
