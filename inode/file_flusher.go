@@ -321,14 +321,13 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 }
 
 func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (err error) {
-	fileInode.Lock()
 
+	fileInode.Lock()
 	if nil != fileInode.openLogSegment {
 		fileInode.Add(1)
 		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
 	}
-
 	fileInode.Unlock()
 
 	fileInode.Wait()
