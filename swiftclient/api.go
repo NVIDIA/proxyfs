@@ -124,12 +124,12 @@ func ObjectTail(accountName string, containerName string, objectName string, len
 	return objectTailWithRetry(accountName, containerName, objectName, length)
 }
 
-// Number of non-chunked connections that are idle
-func NonChunkedConnectionFreeCnt() int64 {
-	return nonChunkedConnectionFreeCnt()
+// Number of chunked connections that are idle
+func ChunkedConnectionFreeCnt() (freeChunkedConnections int64) {
+	return chunkedConnectionFreeCnt()
 }
 
-// Number of chunked connections that are idle
-func ChunkedConnectionFreeCnt() int64 {
-	return chunkedConnectionFreeCnt()
+// Number of non-chunked connections that are idle
+func NonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
+	return nonChunkedConnectionFreeCnt()
 }
