@@ -65,7 +65,8 @@ func (vS *volumeStruct) trackInFlightFileInodeData(inodeNumber inode.InodeNumber
 		inFlightFileInodeData = &inFlightFileInodeDataStruct{
 			InodeNumber: inodeNumber,
 			volStruct:   vS,
-			control:     make(chan bool, 1),
+			control:     make(chan bool, 5), // Buffered in case Tracker has already done away when signaled
+			//                                  Note: There are potentially multiple initiators of this signal
 		}
 		vS.inFlightFileInodeDataMap[inodeNumber] = inFlightFileInodeData
 		inFlightFileInodeData.wg.Add(1)
@@ -84,13 +85,40 @@ func (vS *volumeStruct) untrackInFlightFileInodeData(inodeNumber inode.InodeNumb
 
 	vS.Lock()
 	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
+	vS.Unlock()
 	if ok {
 		inFlightFileInodeData.control <- flushFirst
+		inFlightFileInodeData.wg.Wait()
+	}
+}
+
+// untrackInFlightFileInodeDataAll is called to flush all current elements
+// of vS.inFlightFileInodeDataMap (if any) during SIGHUP or Down().
+func (vS *volumeStruct) untrackInFlightFileInodeDataAll() {
+	var (
+		inFlightFileInodeNumber          inode.InodeNumber
+		inFlightFileInodeNumbers         []inode.InodeNumber
+		inFlightFileInodeNumbersCapacity int
+	)
+
+	// Snapshot list of inode.InodeNumber's currently in vS.inFlightFileInodeDataMap
+
+	vS.Lock()
+	inFlightFileInodeNumbersCapacity = len(vS.inFlightFileInodeDataMap)
+	if 0 == inFlightFileInodeNumbersCapacity {
+		vS.Unlock()
+		return
+	}
+	inFlightFileInodeNumbers = make([]inode.InodeNumber, 0, inFlightFileInodeNumbersCapacity)
+	for inFlightFileInodeNumber, _ = range vS.inFlightFileInodeDataMap {
+		inFlightFileInodeNumbers = append(inFlightFileInodeNumbers, inFlightFileInodeNumber)
 	}
 	vS.Unlock()
 
-	if ok {
-		inFlightFileInodeData.wg.Wait()
+	// Now go flush each of those
+
+	for _, inFlightFileInodeNumber = range inFlightFileInodeNumbers {
+		vS.untrackInFlightFileInodeData(inFlightFileInodeNumber, true)
 	}
 }
 
@@ -132,22 +160,16 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 
-		inFlightFileInodeData.volStruct.Lock()
-		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
-		inFlightFileInodeData.volStruct.Unlock()
-
 		err = inodeLock.Unlock()
 		if nil != err {
 			logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed",
 				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
-	} else {
-		// Assume we were triggered while holding a WriteLock... just remove self from map
-
-		inFlightFileInodeData.volStruct.Lock()
-		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
-		inFlightFileInodeData.volStruct.Unlock()
 	}
+
+	inFlightFileInodeData.volStruct.Lock()
+	delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
+	inFlightFileInodeData.volStruct.Unlock()
 
 	inFlightFileInodeData.wg.Done()
 }

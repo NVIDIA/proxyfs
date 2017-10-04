@@ -115,17 +115,15 @@ func Up(confMap conf.ConfMap) (err error) {
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
-		id                        MountID
-		inFlightFileInodeDataList []inode.InodeNumber
-		inodeNumber               inode.InodeNumber
-		ok                        bool
-		primaryPeerList           []string
-		removedVolumeList         []string
-		updatedVolumeMap          map[string]bool // key == volumeName; value ignored
-		volStruct                 *volumeStruct
-		volumeList                []string
-		volumeName                string
-		whoAmI                    string
+		id                MountID
+		ok                bool
+		primaryPeerList   []string
+		removedVolumeList []string
+		updatedVolumeMap  map[string]bool // key == volumeName; value ignored
+		volStruct         *volumeStruct
+		volumeList        []string
+		volumeName        string
+		whoAmI            string
 	)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -179,15 +177,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		for _, id = range volStruct.mountList {
 			delete(globals.mountMap, id)
 		}
-		if 0 < len(volStruct.inFlightFileInodeDataMap) {
-			inFlightFileInodeDataList = make([]inode.InodeNumber, 0, len(volStruct.inFlightFileInodeDataMap))
-			for inodeNumber = range volStruct.inFlightFileInodeDataMap {
-				inFlightFileInodeDataList = append(inFlightFileInodeDataList, inodeNumber)
-			}
-			for _, inodeNumber = range inFlightFileInodeDataList {
-				volStruct.untrackInFlightFileInodeData(inodeNumber, true)
-			}
-		}
+		volStruct.untrackInFlightFileInodeDataAll()
 		globals.Lock()
 		delete(globals.volumeMap, volumeName)
 		globals.Unlock()
@@ -261,6 +251,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 					globals.volumeMap[volumeName] = volume
 				}
+
+				volume.untrackInFlightFileInodeDataAll()
 			}
 		} else {
 			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
