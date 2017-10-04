@@ -75,6 +75,9 @@ func Down() (err error) {
 	if globals.statsLogPeriod != 0 {
 		globals.stopChan <- true
 		_ = <-globals.doneChan
+
+		globals.logTicker.Stop()
+		globals.logTicker = nil
 	}
 
 	// err is already nil
@@ -98,6 +101,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	if err != nil {
 		logger.ErrorWithError(err, "cannot parse confMap")
 		if oldLogPeriod != 0 {
+			globals.logTicker.Stop()
+			globals.logTicker = nil
+
 			globals.stopChan <- true
 			_ = <-globals.doneChan
 		}
@@ -113,6 +119,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		oldLogPeriod/time.Second, globals.statsLogPeriod/time.Second)
 	// shutdown the old logger (if any) and start a new one (if any)
 	if oldLogPeriod != 0 {
+		globals.logTicker.Stop()
+		globals.logTicker = nil
+
 		globals.stopChan <- true
 		_ = <-globals.doneChan
 	}

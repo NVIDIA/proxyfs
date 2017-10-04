@@ -440,13 +440,11 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 	)
 
 	fileInode.Lock()
-
 	if nil != fileInode.openLogSegment {
 		inFlightLogSegment = fileInode.openLogSegment
 		fileInode.Add(1)
 		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
 	}
-
 	fileInode.Unlock()
 
 	// Wait for all invocations of inFlightLogSegmentFlusher() for this fileInode have completed
