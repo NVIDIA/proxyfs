@@ -251,8 +251,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 					globals.volumeMap[volumeName] = volume
 				}
-
-				volume.untrackInFlightFileInodeDataAll()
 			}
 		} else {
 			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
