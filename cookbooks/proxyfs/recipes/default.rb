@@ -17,6 +17,8 @@ ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
 SAMBA_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/samba"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
+JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
+VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
 
 remote_file "#{tarfile_path}" do
   source "#{tarfile_url}"
