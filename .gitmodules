@@ -1,0 +1,8 @@
+[submodule "jrpcclient"]
+	path = jrpcclient
+	url = git@github.com:swiftstack/jrpcclient.git
+	branch = master
+[submodule "vfs"]
+	path = vfs
+	url = git@github.com:swiftstack/vfs.git
+	branch = master
