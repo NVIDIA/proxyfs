@@ -5,11 +5,11 @@ LDFLAGS      = -lproxyfs
 LDSHFLAGS    = -shared
 
 ifneq ($(MAKECMDGOALS),clean)
-ifndef SAMBA_SOURCE
-$(error SAMBA_SOURCE must be set to samba source directory)
+ifndef SAMBA_PATH
+$(error SAMBA_PATH must be set to samba source directory)
 endif
-include $(SAMBA_SOURCE)/VERSION
-FLAGS = $(CFLAGS) -I$(SAMBA_SOURCE) -I$(SAMBA_SOURCE)/source3 -I$(SAMBA_SOURCE)/source3/include -I$(SAMBA_SOURCE)/lib/talloc -I$(SAMBA_SOURCE)/lib/tevent -I$(SAMBA_SOURCE)/lib/replace -I$(SAMBA_SOURCE)/bin/default -I$(SAMBA_SOURCE)/bin/default/include -I.
+include $(SAMBA_PATH)/VERSION
+FLAGS = $(CFLAGS) -I$(SAMBA_PATH) -I$(SAMBA_PATH)/source3 -I$(SAMBA_PATH)/source3/include -I$(SAMBA_PATH)/lib/talloc -I$(SAMBA_PATH)/lib/tevent -I$(SAMBA_PATH)/lib/replace -I$(SAMBA_PATH)/bin/default -I$(SAMBA_PATH)/bin/default/include -I.
 
 # In case the user wants vfs module to be build without proxyfs rpc client installed, can supply the path to
 # proxyfs rpc library proxfs.h header file.
