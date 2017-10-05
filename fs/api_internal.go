@@ -59,20 +59,22 @@ func (vS *volumeStruct) trackInFlightFileInodeData(inodeNumber inode.InodeNumber
 		ok                    bool
 	)
 
+	globals.Lock()
 	vS.Lock()
 	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
 	if !ok {
 		inFlightFileInodeData = &inFlightFileInodeDataStruct{
 			InodeNumber: inodeNumber,
 			volStruct:   vS,
-			control:     make(chan bool, 5), // Buffered in case Tracker has already done away when signaled
-			//                                  Note: There are potentially multiple initiators of this signal
+			control:     make(chan bool, inFlightFileInodeDataControlBuffering),
 		}
 		vS.inFlightFileInodeDataMap[inodeNumber] = inFlightFileInodeData
+		inFlightFileInodeData.globalsListElement = globals.inFlightFileInodeDataList.PushBack(inFlightFileInodeData)
 		inFlightFileInodeData.wg.Add(1)
 		go inFlightFileInodeData.inFlightFileInodeDataTracker()
 	}
 	vS.Unlock()
+	globals.Unlock()
 }
 
 // untrackInFlightInodeData is called once it is known a Flush() is no longer needed
@@ -167,9 +169,12 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		}
 	}
 
+	globals.Lock()
 	inFlightFileInodeData.volStruct.Lock()
 	delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
+	_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
 	inFlightFileInodeData.volStruct.Unlock()
+	globals.Unlock()
 
 	inFlightFileInodeData.wg.Done()
 }
