@@ -975,7 +975,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 		err = fmt.Errorf("Coalesce target must not be in the root directory")
 		return
 	}
-	destDirName = destDirName[0 : len(destDirName)-1]
+	destDirName = destDirName[0 : len(destDirName)-1] // chop off trailing slash
 
 	// We lock things in whatever order the caller provides them. To protect against deadlocks with other concurrent
 	// calls to this function, we first obtain a write lock on the root inode.
@@ -995,14 +995,93 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 	}
 	heldLocks = append(heldLocks, rootDirInodeLock)
 
-	destDirInodeNumber, destDirInodeType, destDirInodeLock, err := mS.resolvePathForWrite(destDirName, callerID)
-	if err != nil {
-		return
+	// Walk the path one directory at a time, stopping when we either encounter a missing path component or when we've
+	// gone through the whole path.
+	destDirPathComponents := strings.Split(destDirName, "/")
+
+	cursorInodeNumber := inode.RootDirInodeNumber
+	var cursorInodeLock *dlm.RWLockStruct // deliberately starts as nil; we have a lock on the root dir already
+
+	defer func() {
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+	}()
+
+	// Resolve as much of the path as exists
+	for len(destDirPathComponents) > 0 {
+		pathComponent := destDirPathComponents[0]
+		// We have to look up the dirent ourselves instead of letting resolvePath do it so we can distinguish between
+		// the following cases:
+		//
+		// (A) dirent doesn't exist, in which case we break out of this loop and start creating directories
+		//
+		// (B) dirent does exist, but references a broken symlink, so resolvePath returns NotFoundError, in which case
+		// we return an error
+		_, err1 := mS.volStruct.VolumeHandle.Lookup(cursorInodeNumber, pathComponent)
+		if err1 != nil {
+			if blunder.Is(err1, blunder.NotFoundError) {
+				// We found a dir entry that doesn't exist; now we start making directories.
+				break
+			} else {
+				// Mystery error; bail out
+				err = err1
+				return
+			}
+		}
+
+		// Resolve one path component and advance the cursor
+		nextCursorInodeNumber, nextCursorInodeType, nextCursorInodeLock, err1 := mS.resolvePath(pathComponent, callerID, cursorInodeNumber, mS.volStruct.ensureWriteLock)
+		if err1 != nil {
+			err = err1
+			return
+		}
+		if nextCursorInodeType != inode.DirType {
+			// Every path component must resolve to a directory. There may be symlinks along the way, but resolvePath
+			// takes care of following those.
+			err = blunder.NewError(blunder.NotDirError, "%v is not a directory", pathComponent)
+			return
+		}
+
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+		cursorInodeNumber = nextCursorInodeNumber
+		cursorInodeLock = nextCursorInodeLock
+		destDirPathComponents = destDirPathComponents[1:]
 	}
-	heldLocks = append(heldLocks, destDirInodeLock)
-	if destDirInodeType != inode.DirType {
-		err = blunder.NewError(blunder.NotDirError, "%s is not a directory", destDirName)
-		return
+
+	// Make any missing directory entires
+	for len(destDirPathComponents) > 0 {
+		pathComponent := destDirPathComponents[0]
+		// can't use Mkdir since it wants to take its own lock, so we make and link the dir ourselves
+
+		newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeRootGroupID)
+		if err1 != nil {
+			logger.ErrorWithError(err1)
+			err = err1
+			return
+		}
+
+		err = mS.volStruct.VolumeHandle.Link(cursorInodeNumber, pathComponent, newDirInodeNumber)
+		if err != nil {
+			destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
+			if destroyErr != nil {
+				logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.MiddlewareCoalesce", newDirInodeNumber)
+			}
+			return
+		}
+
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+		destDirPathComponents = destDirPathComponents[1:]
+		cursorInodeNumber = newDirInodeNumber
+		cursorInodeLock, err1 = mS.volStruct.ensureWriteLock(newDirInodeNumber, callerID)
+		if err1 != nil {
+			err = err1
+			return
+		}
 	}
 
 	for _, entry := range elementDirAndFileNames {
@@ -1058,7 +1137,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
 	// do something useful
-	destInodeNumber, mtime, numWrites, err := mS.volStruct.VolumeHandle.Coalesce(destDirInodeNumber, destFileName, coalesceElements)
+	destInodeNumber, mtime, numWrites, err := mS.volStruct.VolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
 	ino = uint64(destInodeNumber)
 	modificationTime = uint64(mtime.UnixNano())
 	return
@@ -2848,14 +2927,14 @@ func revSplitPath(fullpath string) []string {
 // non-symlink may be a directory, a file, or something that does not
 // exist.
 func (mS *mountStruct) resolvePathForRead(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureReadLock)
+	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.ensureReadLock)
 }
 
 func (mS *mountStruct) resolvePathForWrite(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureWriteLock)
+	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.ensureWriteLock)
 }
 
-func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
+func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, startingInode inode.InodeNumber, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
 	// pathSegments is the reversed split path. For example, if
 	// fullpath is "/etc/thing/default.conf", then pathSegments is
 	// ["default.conf", "thing", "etc"].
@@ -2871,7 +2950,7 @@ func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLo
 	var cursorInodeNumber inode.InodeNumber
 	var cursorInodeType inode.InodeType
 	var cursorInodeLock *dlm.RWLockStruct
-	dirInodeNumber := inode.RootDirInodeNumber
+	dirInodeNumber := startingInode
 	dirInodeLock, err := getLock(dirInodeNumber, callerID)
 
 	// Use defer for cleanup so that we don't have to think as hard
