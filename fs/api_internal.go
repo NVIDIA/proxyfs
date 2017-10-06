@@ -1061,6 +1061,9 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 		if nextCursorInodeType != inode.DirType {
 			// Every path component must resolve to a directory. There may be symlinks along the way, but resolvePath
 			// takes care of following those.
+			if nextCursorInodeLock != nil {
+				nextCursorInodeLock.Unlock()
+			}
 			err = blunder.NewError(blunder.NotDirError, "%v is not a directory", pathComponent)
 			return
 		}
