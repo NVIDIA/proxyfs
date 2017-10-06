@@ -5,7 +5,6 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -17,6 +16,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -33,7 +33,7 @@ var (
 	measureStat     bool
 	mountHandle     fs.MountHandle
 	perThreadDir    bool
-	rootDirMutex    sync.Mutex
+	rootDirMutex    trackedlock.Mutex
 	stepErrChan     chan error
 	threads         uint64
 	volumeHandle    inode.VolumeHandle
@@ -153,6 +153,12 @@ func main() {
 	err = evtlog.Up(confMap)
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "trackedlock.Up() returned error: %v", err)
 		os.Exit(1)
 	}
 
@@ -302,6 +308,12 @@ func main() {
 	err = stats.Down()
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "stats.Down() failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = trackedlock.Down()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "trackedlock.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 

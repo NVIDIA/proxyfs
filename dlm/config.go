@@ -3,13 +3,12 @@ package dlm
 // Configuration variables for DLM
 
 import (
-	"sync"
-
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 
 	// Map used to store locks owned locally
 	// NOTE: This map is protected by the Mutex

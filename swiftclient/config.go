@@ -10,6 +10,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type connectionStruct struct {

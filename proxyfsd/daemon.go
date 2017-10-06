@@ -25,6 +25,7 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -113,6 +114,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		err = evtlog.Down()
 		if nil != err {
 			logger.Errorf("evtlog.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		logger.Errorf("trackedlock.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = trackedlock.Down()
+		if nil != err {
+			logger.Errorf("trackedlock.Down() failed: %v", err)
 		}
 		wg.Done()
 	}()
@@ -436,6 +452,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
+			err = trackedlock.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("trackedlock.PauseAndContract(): %v", err)
+				break
+			}
+
 			err = halter.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("halter.PauseAndContract(): %v", err)
@@ -471,6 +493,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			}
 
 			evtlog.Record(evtlog.FormatExpandAndResumeSequenceStart)
+
+			err = trackedlock.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("trackedlock.ExpandAndResume(): %v", err)
+				break
+			}
 
 			err = stats.ExpandAndResume(confMap)
 			if nil != err {

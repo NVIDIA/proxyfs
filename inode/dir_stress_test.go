@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 const (
@@ -23,10 +24,10 @@ const (
 )
 
 type testDirStressGlobalsStruct struct {
-	sync.Mutex // Used to emulate the exclusive lock used in package fs on RootDirInodeNumber
-	nonce      uint64
-	waitGroup  sync.WaitGroup
-	err        []error
+	trackedlock.Mutex // Used to emulate the exclusive lock used in package fs on RootDirInodeNumber
+	nonce             uint64
+	waitGroup         sync.WaitGroup
+	err               []error
 }
 
 var testDirStressGlobals = &testDirStressGlobalsStruct{}

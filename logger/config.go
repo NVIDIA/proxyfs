@@ -147,11 +147,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 //
 // Match log entries look like:
 //
-// time="2017-07-27T01:30:46Z" level=info msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) succeeded after 4 attempts in 0.031 sec" function=RequestWithRetry goroutine=6 package=swiftclient
+// time="2017-07-27T01:30:46.060080Z" level=info msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) succeeded after 4 attempts in 0.031 sec" function=RequestWithRetry goroutine=6 package=swiftclient
 //
-// time="2017-07-27T02:18:19Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 7 attempts in 0.053 sec with retriable error" error="Simulate a retriable errror" function=RequestWithRetry goroutine=6 package=swiftclient
+// time="2017-07-27T02:18:19.214012Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 7 attempts in 0.053 sec with retriable error" error="Simulate a retriable errror" function=RequestWithRetry goroutine=6 package=swiftclient
 //
-// time="2017-07-27T02:09:32Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
+// time="2017-07-27T02:09:32.259383Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
 //
 func parseLogEntry(entry string) (fields map[string]string) {
 	var (
@@ -159,7 +159,7 @@ func parseLogEntry(entry string) (fields map[string]string) {
 	)
 
 	var fieldRE = regexp.MustCompile(
-		`^time="(?P<time>[-:0-9A-Z]+)" level=(?P<level>[a-zA-Z]+) msg="(?P<msg>([^"]|\\")+)" (error="(?P<error>([^"]|\\")+)" )?function=(?P<function>\w+) goroutine=(?P<goroutine>\d+) package=(?P<package>\w+)`)
+		`^time="(?P<time>[-:0-9A-Z.]+)" level=(?P<level>[a-zA-Z]+) msg="(?P<msg>([^"]|\\")+)" (error="(?P<error>([^"]|\\")+)" )?function=(?P<function>\w+) goroutine=(?P<goroutine>\d+) package=(?P<package>\w+)`)
 
 	matches = fieldRE.FindStringSubmatch(entry)
 	if matches == nil {

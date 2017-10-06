@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 func objectContentLengthWithRetry(accountName string, containerName string, objectName string) (uint64, error) {
@@ -818,7 +819,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 }
 
 type chunkedPutContextStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	accountName   string
 	containerName string
 	objectName    string

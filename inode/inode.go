@@ -18,6 +18,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -66,11 +67,11 @@ type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMem
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex     //                                                Used to synchronize with background fileInodeFlusherDaemon
-	sync.WaitGroup //                                                FileInode Flush requests wait on this
-	dirty          bool
-	volume         *volumeStruct
-	payload        interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
+	trackedlock.Mutex //                                                Used to synchronize with background fileInodeFlusherDaemon
+	sync.WaitGroup    //                                                FileInode Flush requests wait on this
+	dirty             bool
+	volume            *volumeStruct
+	payload           interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
 	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
 	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
 	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber

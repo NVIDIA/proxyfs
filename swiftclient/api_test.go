@@ -18,6 +18,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type testObjectCopyCallbackStruct struct {
@@ -37,6 +38,9 @@ func (tOCCS *testObjectCopyCallbackStruct) BytesRemaining(bytesRemaining uint64)
 
 func TestAPI(t *testing.T) {
 	confStrings := []string{
+		"TrackedLock.LockHoldTimeLimit=0s",
+		"TrackedLock.LockCheckPeriod=0s",
+
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -102,6 +106,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("trackedlock.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
@@ -145,6 +155,18 @@ func TestAPI(t *testing.T) {
 	err = stats.Down()
 	if nil != err {
 		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = trackedlock.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("trackedlock.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -995,11 +1017,11 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 //
 // matching log entries look like:
 //
-// time="2017-07-27T01:30:46Z" level=info msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) succeeded after 4 attempts in 0.031 sec" function=RequestWithRetry goroutine=6 package=swiftclient
+// time="2017-07-27T01:30:46.060080Z" level=info msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) succeeded after 4 attempts in 0.031 sec" function=RequestWithRetry goroutine=6 package=swiftclient
 //
-// time="2017-07-27T02:18:19Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 7 attempts in 0.053 sec with retriable error" error="Simulate a retriable errror" function=RequestWithRetry goroutine=6 package=swiftclient
+// time="2017-07-27T02:18:19.214012Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 7 attempts in 0.053 sec with retriable error" error="Simulate a retriable errror" function=RequestWithRetry goroutine=6 package=swiftclient
 //
-// time="2017-07-27T02:09:32Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
+// time="2017-07-27T02:09:32.259383Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
 //
 func parseRetryLogEntry(entry string) map[string]string {
 	var (

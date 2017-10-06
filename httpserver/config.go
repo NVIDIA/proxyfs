@@ -12,6 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -50,7 +51,7 @@ type JobStatusJSONPackedStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	name             string
 	headhunterHandle headhunter.VolumeHandle
 	fsckActiveJob    *jobStruct
@@ -60,7 +61,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	active            bool
 	jobHistoryMaxSize uint32
 	whoAmI            string

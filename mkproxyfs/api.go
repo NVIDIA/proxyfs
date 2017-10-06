@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -94,6 +95,14 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	}
 	defer func() {
 		_ = evtlog.Down()
+	}()
+
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		return
+	}
+	defer func() {
+		_ = trackedlock.Down()
 	}()
 
 	err = stats.Up(confMap)

@@ -16,6 +16,7 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 func inodeRecPutGet(t *testing.T, volume VolumeHandle, key uint64, value []byte) {
@@ -95,6 +96,10 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+
+		"TrackedLock.LockHoldTimeLimit=0s",
+		"TrackedLock.LockCheckPeriod=0s",
+
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -183,6 +188,11 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
 	}
 
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		t.Fatalf("trackedlock.Up() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 1] returned error: %v", err)
@@ -238,6 +248,11 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
 	}
 
+	err = trackedlock.Down()
+	if nil != err {
+		t.Fatalf("trackedlock.Down() [case 1] returned error: %v", err)
+	}
+
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() [case 1] returned error: %v", err)
@@ -248,6 +263,8 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
 	}
 
+	/* ----------- start up ------------- */
+
 	err = logger.Up(confMap)
 	if nil != err {
 		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
@@ -256,6 +273,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = evtlog.Up(confMap)
 	if nil != err {
 		t.Fatalf("evtlog.Up() [case 2] returned error: %v", err)
+	}
+
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		t.Fatalf("trackedlock.Up() [case 1] returned error: %v", err)
 	}
 
 	err = stats.Up(confMap)
@@ -348,6 +370,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
+	}
+
+	err = trackedlock.Down()
+	if nil != err {
+		t.Fatalf("trackedlock.Down() [case 1] returned error: %v", err)
 	}
 
 	err = evtlog.Down()

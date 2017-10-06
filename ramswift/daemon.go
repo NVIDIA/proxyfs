@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -21,11 +20,12 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type swiftAccountStruct struct {
-	sync.Mutex         //                    protects swiftAccountStruct.headers & swiftContainerTree
+	trackedlock.Mutex  //                    protects swiftAccountStruct.headers & swiftContainerTree
 	name               string
 	headers            http.Header
 	swiftContainerTree sortedmap.LLRBTree // key is swiftContainerStruct.name, value is *swiftContainerStruct
@@ -36,11 +36,11 @@ type swiftAccountContext struct {
 }
 
 type swiftContainerStruct struct {
-	sync.Mutex      //                     protects swiftContainerStruct.headers & swiftContainerStruct.swiftObjectTree
-	name            string
-	swiftAccount    *swiftAccountStruct // back-reference to swiftAccountStruct
-	headers         http.Header
-	swiftObjectTree sortedmap.LLRBTree //  key is swiftObjectStruct.name, value is *swiftObjectStruct
+	trackedlock.Mutex //                     protects swiftContainerStruct.headers & swiftContainerStruct.swiftObjectTree
+	name              string
+	swiftAccount      *swiftAccountStruct // back-reference to swiftAccountStruct
+	headers           http.Header
+	swiftObjectTree   sortedmap.LLRBTree //  key is swiftObjectStruct.name, value is *swiftObjectStruct
 }
 
 type swiftContainerContext struct {
@@ -48,10 +48,10 @@ type swiftContainerContext struct {
 }
 
 type swiftObjectStruct struct {
-	sync.Mutex     //                       protects swiftObjectStruct.contents
-	name           string
-	swiftContainer *swiftContainerStruct // back-reference to swiftContainerStruct
-	contents       []byte
+	trackedlock.Mutex //                       protects swiftObjectStruct.contents
+	name              string
+	swiftContainer    *swiftContainerStruct // back-reference to swiftContainerStruct
+	contents          []byte
 }
 
 type methodStruct struct {
@@ -63,7 +63,7 @@ type methodStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex                      // protects globalsStruct.swiftAccountMap
+	trackedlock.Mutex               // protects globalsStruct.swiftAccountMap
 	whoAmI                          string
 	noAuthTCPPort                   uint16
 	swiftAccountMap                 map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
