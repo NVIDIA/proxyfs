@@ -85,11 +85,20 @@ func (vS *volumeStruct) untrackInFlightFileInodeData(inodeNumber inode.InodeNumb
 		ok                    bool
 	)
 
+	globals.Lock()
 	vS.Lock()
 	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
+	if !ok {
+		vS.Unlock()
+		globals.Unlock()
+		return
+	}
+	delete(vS.inFlightFileInodeDataMap, inodeNumber)
+	_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
+	inFlightFileInodeData.control <- flushFirst
 	vS.Unlock()
-	if ok {
-		inFlightFileInodeData.control <- flushFirst
+	globals.Unlock()
+	if flushFirst {
 		inFlightFileInodeData.wg.Wait()
 	}
 }
@@ -126,10 +135,12 @@ func (vS *volumeStruct) untrackInFlightFileInodeDataAll() {
 
 func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
 	var (
-		err        error
-		flushFirst bool
-		inodeLock  *dlm.RWLockStruct
+		err         error
+		flushFirst  bool
+		inodeLock   *dlm.RWLockStruct
+		stillExists bool
 	)
+
 	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 
@@ -139,6 +150,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	case <-time.After(inFlightFileInodeData.volStruct.maxFlushTime):
 		flushFirst = true
 	}
+
 	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %d flushfirst %t",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
@@ -156,10 +168,13 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 
-		err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
-		if nil != err {
-			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
+		stillExists = inFlightFileInodeData.volStruct.VolumeHandle.Access(inFlightFileInodeData.InodeNumber, inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.F_OK)
+		if stillExists {
+			err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
+			if nil != err {
+				logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d",
+					inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
+			}
 		}
 
 		err = inodeLock.Unlock()
@@ -168,13 +183,6 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 		}
 	}
-
-	globals.Lock()
-	inFlightFileInodeData.volStruct.Lock()
-	delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
-	_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
-	inFlightFileInodeData.volStruct.Unlock()
-	globals.Unlock()
 
 	inFlightFileInodeData.wg.Done()
 }
