@@ -275,7 +275,7 @@ int main(int argc, char *argv[])
         } else if (do_writes) {
             err = proxyfs_write(handle, file_inode, offset, (uint8_t*)io_buffer, io_size, &expectedBytes);
         } else {
-            PANIC("Neither read nor write is set!");
+            DPANIC("Neither read nor write is set!");
             err = EINVAL;
         }
 

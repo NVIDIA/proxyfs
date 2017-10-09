@@ -1239,6 +1239,11 @@ int read_from_socket(int sockfd, void *bufptr, int length) {
             }
             return -errno;
         }
+
+        if (ret == 0) {
+            DPRINTF("proxyfsd server side disconnected while reading reply from socket.\n");
+            return -EPIPE;
+        }
         total += ret;
     }
 
@@ -1477,6 +1482,11 @@ int proxyfs_read_req(proxyfs_io_request_t *req, int sock_fd)
     if (0 < resp_hdr.io_size) {
         sock_ret = read_from_socket(sock_fd, req->data, resp_hdr.io_size);
         if (0 != sock_ret) {
+            int err = -sock_ret;
+            if ((err == EPIPE) || (err == ENODEV) || (err = EBADF)) {
+                // TBD: Build a proper error handling mechanism to retry the operation.
+                PANIC("Failed to read response from proxyfsd <-> rpc client socket\n");
+            }
             req->error = EIO;
             goto done;
         }
@@ -2668,6 +2678,11 @@ int proxyfs_write_req(proxyfs_io_request_t *req, int sock_fd)
     // Receive response header
     sock_ret = read_from_socket(sock_fd, &resp_hdr, sizeof(resp_hdr));
     if (0 != sock_ret) {
+        int err = -sock_ret;
+        if ((err == EPIPE) || (err == ENODEV) || (err = EBADF)) {
+            // TBD: Build a proper error handling mechanism to retry the operation.
+            PANIC("Failed to read response from proxyfsd <-> rpc client socket\n");
+        }
         req->error = EIO;
         goto done;
     }

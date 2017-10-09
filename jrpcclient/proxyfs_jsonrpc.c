@@ -46,18 +46,18 @@ void get_rpc_config()
 
         slash_pos = length - 1;
         while ((0 <= slash_pos) && ('/' != rpc_override_string[slash_pos])) slash_pos--;
-        if (0 > slash_pos) PANIC("Failed to find delimiting '|' between TCPPort & FastTCPPort in rpc_override_string");
-        if (1 == (length - slash_pos)) PANIC("FastTCPPort following '|' zero-length");
-        if (16 < (length - slash_pos)) PANIC("FastTCPPort field too long (%d - should be no more than 15)", length - slash_pos - 1);
+        if (0 > slash_pos) DPANIC("Failed to find delimiting '|' between TCPPort & FastTCPPort in rpc_override_string");
+        if (1 == (length - slash_pos)) DPANIC("FastTCPPort following '|' zero-length");
+        if (16 < (length - slash_pos)) DPANIC("FastTCPPort field too long (%d - should be no more than 15)", length - slash_pos - 1);
 
         colon_pos = slash_pos - 1;
         while ((0 <= colon_pos) && (':' != rpc_override_string[colon_pos])) colon_pos--;
-        if (0 > colon_pos) PANIC("Failed to find delimiting ':' between IPAddr & TCPPort in rpc_override_string");
-        if (1 == (slash_pos - colon_pos)) PANIC("TCPPort following ':' zero-length");
-        if (16 < (slash_pos - colon_pos)) PANIC("TCPPort field too long (%d - should be no more than 15)", slash_pos - colon_pos - 1);
+        if (0 > colon_pos) DPANIC("Failed to find delimiting ':' between IPAddr & TCPPort in rpc_override_string");
+        if (1 == (slash_pos - colon_pos)) DPANIC("TCPPort following ':' zero-length");
+        if (16 < (slash_pos - colon_pos)) DPANIC("TCPPort field too long (%d - should be no more than 15)", slash_pos - colon_pos - 1);
 
-        if (0 == colon_pos) PANIC("IPAddr preceding ':' zero-length");
-        if (128 < colon_pos) PANIC("IPAddr field too long (%d - should be no more than 127)", colon_pos - 1);
+        if (0 == colon_pos) DPANIC("IPAddr preceding ':' zero-length");
+        if (128 < colon_pos) DPANIC("IPAddr field too long (%d - should be no more than 127)", colon_pos - 1);
 
         strncpy(&rpc_server[0], &rpc_override_string[0], colon_pos);
         rpc_server[colon_pos] = '\0';
@@ -321,8 +321,8 @@ void complete_response_work(int response_id)
     if (responses_needed > 0) {
         responses_needed--;
     } else {
-        // We've had some sort of race condition. Panic so that we can find the logic problem.
-        PANIC("FATAL, called to decrement responses_needed for response_id=%d but it's already %d!\n", response_id, responses_needed);
+        // We've had some sort of race condition. PANIC so that we can find the logic problem.
+        DPANIC("FATAL, called to decrement responses_needed for response_id=%d but it's already %d!\n", response_id, responses_needed);
         return;
     }
 
@@ -439,9 +439,9 @@ void rpc_get_response(int sockfd)
     if (resp[0].rsp_err != 0) {
         DPRINTF("Error %d reading from socket.\n", resp[0].rsp_err);
         if ((resp[0].rsp_err == EPIPE) || (resp[0].rsp_err == ENODEV) || (resp[0].rsp_err == EBADF)) {
-            // The socket got disconnected.
-            // Close and reopen the socket to clear the error
-            jsonrpc_rpc_bounce(NULL);
+            // The socket got disconnected. Force a DPANIC.
+            // TBD: Build a proper error handling mechanism to retry the operation.
+            PANIC("Failed to read reply from proxyfsd <-> rpc client socket.\n");
             goto done;
         }
     }
@@ -483,7 +483,7 @@ void rpc_get_response(int sockfd)
         // Range check for our response structures
         if (num_responses > MAX_CONCURRENT_RESPONSES) {
             // Oops, can't handle this one!
-            PANIC("FATAL: received more responses (%d) than we can handle!\n", num_responses);
+            DPANIC("FATAL: received more responses (%d) than we can handle!\n", num_responses);
             return;
         }
 
@@ -496,7 +496,7 @@ void rpc_get_response(int sockfd)
         size_t readSize = strlen(raw_json_response)+1;
         char*  readBuf  = malloc(readSize);
         if (readBuf == NULL) {
-            PANIC("FATAL: unable to allocate %ld bytes for response %d!\n", readSize, num_responses);
+            DPANIC("FATAL: unable to allocate %ld bytes for response %d!\n", readSize, num_responses);
             return;
         }
         // Copy response into readBuf and make sure it is null-terminated

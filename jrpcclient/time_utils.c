@@ -135,7 +135,7 @@ int64_t Elapsed(stopwatch_t* sw) {
 	// else not running, return elapsed time when stopped
 
     if (elapsed < 0) {
-        PANIC("*** Negative elapsed time=%ld! StopTime=%ld StartTime=%ld\n",
+        DPANIC("*** Negative elapsed time=%ld! StopTime=%ld StartTime=%ld\n",
               elapsed, sw->StartTime.tv_nsec, sw->StopTime.tv_nsec);
         return -1;
     }
@@ -196,7 +196,7 @@ void AddProfilerEventTime(profiler_t* profiler, time_event_type_t event, struct 
 {
     if (profiler == NULL) return;
     if (profiler->numEvents >= MAX_TIME_EVENTS) {
-        PANIC("Number of events is too big! numEvents=%d max=%d\n", profiler->numEvents, MAX_TIME_EVENTS);
+        DPANIC("Number of events is too big! numEvents=%d max=%d\n", profiler->numEvents, MAX_TIME_EVENTS);
         return;
     }
 
