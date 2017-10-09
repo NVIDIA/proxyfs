@@ -66,6 +66,7 @@ type globalsStruct struct {
 	connectionNonce                 uint64        // incremented each SIGHUP... older connections always closed
 	chunkedConnectionPool           connectionPoolStruct
 	nonChunkedConnectionPool        connectionPoolStruct
+	starvationCallbackFrequency     time.Duration
 	maxIntAsUint64                  uint64
 	pendingDeletes                  *pendingDeletesStruct
 	chaosSendChunkFailureRate       uint64 // set only during testing
@@ -211,6 +212,15 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < nonChunkedConnectionPoolSize; freeConnectionIndex++ {
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
+	}
+
+	globals.starvationCallbackFrequency, err = confMap.FetchOptionValueDuration("SwiftClient", "StarvationCallbackFrequency")
+	if nil != err {
+		// TODO: eventually, just return
+		globals.starvationCallbackFrequency, err = time.ParseDuration("100ms")
+		if nil != err {
+			return
+		}
 	}
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
