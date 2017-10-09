@@ -26,6 +26,21 @@ type ChunkedPutContext interface {
 	SendChunk(buf []byte) (err error)                          // Send the supplied "chunk" via this ChunkedPutContext
 }
 
+// StavationCallbackFunc specifies the signature of a callback function to be invoked when
+// the Chunked PUT Connection Pool is exhausted and would like the callback function to
+// relieve this exhaustion.
+type StarvationCallbackFunc func()
+
+// SetStarvationCallbackFunc sets (or resets, if passed nil) the callback function to be
+// invoked when the Chunked PUT Connection Pool is exhausted and would like the callback
+// function to relieve this exhaustion.
+//
+// Note: The function will be called continually, at a rate determined by [SwiftClient]StarvationCallbackFrequency,
+//       until the exhauted state is relieved.
+func SetStarvationCallbackFunc(starvationCallback StarvationCallbackFunc) {
+	globals.starvationCallback = starvationCallback
+}
+
 // AccountDelete invokes HTTP DELETE on the named Swift Account.
 func AccountDelete(accountName string) (err error) {
 	return accountDeleteWithRetry(accountName)

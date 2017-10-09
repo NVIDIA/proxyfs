@@ -9,6 +9,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -118,6 +119,8 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.lastMountID = MountID(0)
 	globals.inFlightFileInodeDataList = list.New()
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	return
 }
 
@@ -133,6 +136,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volumeName        string
 		whoAmI            string
 	)
+
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -266,6 +271,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
@@ -274,6 +281,8 @@ func Down() (err error) {
 	var (
 		volume *volumeStruct
 	)
+
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	for _, volume = range globals.volumeMap {
 		volume.untrackInFlightFileInodeDataAll()
