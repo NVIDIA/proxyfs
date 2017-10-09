@@ -94,7 +94,10 @@ func (vS *volumeStruct) untrackInFlightFileInodeData(inodeNumber inode.InodeNumb
 		return
 	}
 	delete(vS.inFlightFileInodeDataMap, inodeNumber)
-	_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
+	if nil != inFlightFileInodeData.globalsListElement {
+		_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
+		inFlightFileInodeData.globalsListElement = nil
+	}
 	inFlightFileInodeData.control <- flushFirst
 	vS.Unlock()
 	globals.Unlock()
@@ -185,6 +188,25 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	}
 
 	inFlightFileInodeData.wg.Done()
+}
+
+func chunkedPutConnectionPoolStarvationCallback() {
+	var (
+		globalsListElement    *list.Element
+		inFlightFileInodeData *inFlightFileInodeDataStruct
+	)
+
+	globals.Lock()
+	globalsListElement = globals.inFlightFileInodeDataList.Front()
+	if nil == globalsListElement {
+		globals.Unlock()
+		return
+	}
+	_ = globals.inFlightFileInodeDataList.Remove(globalsListElement)
+	inFlightFileInodeData = globalsListElement.Value.(*inFlightFileInodeDataStruct)
+	inFlightFileInodeData.globalsListElement = nil
+	globals.Unlock()
+	inFlightFileInodeData.volStruct.Flush(inFlightFileInodeData.InodeNumber, false)
 }
 
 func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
