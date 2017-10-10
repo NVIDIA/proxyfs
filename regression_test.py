@@ -203,12 +203,9 @@ def build_jrpcclient(options):
 
 def build_vfs(options):
     proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
-    samba_dir = os.path.abspath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), '..', 'samba'))
     vfs_dir = os.path.join(proxyfs_dir, "vfs")
     failures = 0
-    env_vars = {'SAMBA_PATH': samba_dir}
-    failures += bool(subprocess.call('make', env=env_vars, cwd=vfs_dir))
+    failures += bool(subprocess.call('make', cwd=vfs_dir))
     if failures:
         return failures
     distro = platform.linux_distribution()[0]
@@ -216,8 +213,7 @@ def build_vfs(options):
         make_option = 'installcentos'
     else:
         make_option = 'install'
-    failures += bool(subprocess.call(('make', make_option), env=env_vars,
-                                     cwd=vfs_dir))
+    failures += bool(subprocess.call(('make', make_option), cwd=vfs_dir))
     return failures
 
 
