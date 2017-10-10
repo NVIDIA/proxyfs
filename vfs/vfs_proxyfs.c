@@ -464,8 +464,8 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 		free(stats);
 	}
 
-	dir->offset = dir_ent->d_off;
-	return dir_ent;
+	dir->offset = dir->dir_ent.d_off;
+	return &dir->dir_ent;
 }
 
 static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
