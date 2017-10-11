@@ -99,6 +99,10 @@ ruby_block "update_profile_and_bashrc" do
   end
 end
 
+cookbook_file "/usr/local/go/src/runtime/runtime-gdb.py" do
+  source "usr/local/go/src/runtime/runtime-gdb.py"
+end
+
 if node[:platform_family].include?("rhel")
   # Centos uses SELinux which causes Samba problems mounting.
   # Disable SeLinux.
@@ -415,4 +419,16 @@ link '/usr/bin/proxyfsd' do
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
+end
+
+cookbook_file "#{HOME_DIR}/.gdbinit" do
+  source "root/.gdbinit"
+  owner "#{proxyfs_user}"
+  group "#{proxyfs_group}"
+end
+
+cookbook_file "/root/.gdbinit" do
+  source "root/.gdbinit"
+  owner "root"
+  group "root"
 end
