@@ -48,11 +48,14 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.RetryDelayObject=250ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=2.0",
-
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
+		"SwiftClient.StarvationCallbackFrequency=100ms",
+
 		"Cluster.WhoAmI=Peer0",
+
 		"FSGlobals.VolumeList=",
+
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",

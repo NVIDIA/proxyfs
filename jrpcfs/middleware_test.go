@@ -54,6 +54,7 @@ func testSetup() []func() {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
+		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=256",
@@ -1915,4 +1916,337 @@ func TestRpcCoalesce(t *testing.T) {
 	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, combinedInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow"), combinedContents)
+}
+
+func TestRpcCoalesceOverwrite(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-Callynteria-sapor"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/" + "combined"
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.Nil(err)
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
+
+	// Now overwrite it
+	coalesceRequest = CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/green",
+			"/" + containerName + "/blue",
+			"/" + containerName + "/indigo",
+			"/" + containerName + "/violet",
+		},
+	}
+	coalesceReply = CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.Nil(err)
+
+	combinedContents, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("green blue indigo violet "), combinedContents)
+
+}
+
+func TestRpcCoalesceOverwriteEmptyDir(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-brushwood-Batis"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/" + "combined"
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	fsMkDir(mountHandle, containerInode, "combined")
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.Nil(err)
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
+}
+
+func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-speller-spinally"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/" + "combined"
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	combinedInode := fsMkDir(mountHandle, containerInode, "combined")
+	fsMkDir(mountHandle, combinedInode, "now-its-not-empty")
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.NotNil(err)
+
+	// The old dir is still there
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/combined")
+	assert.Equal(combinedInode, ino)
+}
+
+func TestRpcCoalesceMakesDirs(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-subsaturation-rowy"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/a/b/c/d/e/f/combined"
+
+	// The directory structure partially exists, but not totally
+	aInode := fsMkDir(mountHandle, containerInode, "a")
+	bInode := fsMkDir(mountHandle, aInode, "b")
+	fsMkDir(mountHandle, bInode, "c")
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.Nil(err)
+
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/a/b/c/d/e/f/combined")
+	assert.Nil(err)
+	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
+
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
+}
+
+func TestRpcCoalesceSymlinks(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-salpingian-utilizer"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/a/b-sl/abs-a-sl/b-sl/c/combined"
+
+	// The directory structure partially exists, but not totally
+	aInode := fsMkDir(mountHandle, containerInode, "a")
+	fsCreateSymlink(mountHandle, aInode, "b-sl", "b")
+	bInode := fsMkDir(mountHandle, aInode, "b")
+	fsCreateSymlink(mountHandle, bInode, "abs-a-sl", "/"+containerName+"/a")
+	fsMkDir(mountHandle, bInode, "c")
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.Nil(err)
+
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/a/b/c/combined")
+	assert.Nil(err)
+	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
+
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
+}
+
+func TestRpcCoalesceBrokenSymlink(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-Clathrus-playmonger"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/a/busted/c/combined"
+
+	// The directory structure partially exists, but not totally
+	aInode := fsMkDir(mountHandle, containerInode, "a")
+	fsCreateSymlink(mountHandle, aInode, "busted", "this-symlink-is-broken")
+	bInode := fsMkDir(mountHandle, aInode, "b")
+	fsMkDir(mountHandle, bInode, "c")
+
+	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.NotNil(err)
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
+}
+
+func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-coalesce-fanam-outswim"
+	containerPath := testVerAccountName + "/" + containerName
+	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+
+	destinationPath := containerPath + "/a/b-is-a-file/c/combined"
+
+	// The directory structure partially exists, but not totally
+	aInode := fsMkDir(mountHandle, containerInode, "a")
+	fsCreateFile(mountHandle, aInode, "b-is-a-file")
+
+	filesToWrite := []string{"red", "orange", "yellow"}
+	for _, fileName := range filesToWrite {
+		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
+		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create the file
+	coalesceRequest := CoalesceReq{
+		VirtPath: destinationPath,
+		ElementAccountRelativePaths: []string{
+			"/" + containerName + "/red",
+			"/" + containerName + "/orange",
+			"/" + containerName + "/yellow",
+		},
+	}
+	coalesceReply := CoalesceReply{}
+	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
+	assert.NotNil(err)
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotDirError), err.Error())
 }

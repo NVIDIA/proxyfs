@@ -1,6 +1,6 @@
 /*
  * Unix SMB/CIFS implementation.
- * 
+ *
  * VFS module to invoke ProxyFS built on swift object store.
  */
 
@@ -456,13 +456,16 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 		return NULL;
 	}
 
+	memcpy(&dir->dir_ent, dir_ent, sizeof(struct dirent));
+	free(dir_ent);
+
 	if (sbuf != NULL) {
 		smb_stat_ex_from_stat(sbuf, &stats[0]);
 		free(stats);
 	}
 
-	dir->offset = dir_ent->d_off;
-	return dir_ent;
+	dir->offset = dir->dir_ent.d_off;
+	return &dir->dir_ent;
 }
 
 static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
@@ -577,7 +580,7 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 		return -1;
 	}
 	bzero(fd, sizeof(file_handle_t));
-	
+
 	if (flags & O_DIRECTORY) {
 		path = resolve_path(handle, smb_fname->base_name);
 		err = proxyfs_lookup_path(MOUNT_HANDLE(handle), path, &fd->inum);
@@ -605,7 +608,7 @@ static int vfs_proxyfs_open(struct vfs_handle_struct *handle,
 		} else {
 			err = proxyfs_create_path(MOUNT_HANDLE(handle), path, uid, gid, mode, &fd->inum);
 		}
-		
+
 		free(tmp_path);
 		free(path);
 
@@ -1805,7 +1808,7 @@ static char *vfs_proxyfs_realpath(struct vfs_handle_struct *handle,
 	}
 
 	DEBUG(10, ("vfs_proxyfs_realpath: %s -> %s\n", path, rpath));
-	
+
 	return rpath;
 }
 
@@ -1943,7 +1946,7 @@ static NTSTATUS vfs_proxyfs_brl_lock_windows(struct vfs_handle_struct *handle,
 	DEBUG(10, ("vfs_proxyfs_brl_lock_windows: %s\n", handle->conn->connectpath));
 	errno = ENOTSUP;
 	return NT_STATUS_NOT_IMPLEMENTED;
-}	
+}
 
 static bool vfs_proxyfs_brl_unlock_windows(struct vfs_handle_struct *handle,
                                            struct messaging_context *msg_ctx,
@@ -2006,7 +2009,7 @@ static NTSTATUS vfs_proxyfs_fsctl(struct vfs_handle_struct *handle,
 	DEBUG(10, ("vfs_proxyfs_fsctl is not supported\n"));
 	errno = ENOTSUP;
 	return NT_STATUS_NOT_IMPLEMENTED;
-}	
+}
 static NTSTATUS vfs_proxyfs_get_dos_attributes(struct vfs_handle_struct *handle,
                                                struct smb_filename *smb_fname,
                                                uint32_t *dosmode)

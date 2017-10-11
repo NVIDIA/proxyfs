@@ -193,6 +193,7 @@ var (
 	SwiftChunkedConnsReuseOps         = "proxyfs.swiftclient.chunked-connections-reuse.operations"
 	SwiftNonchunkedConnsCreateOps     = "proxyfs.swiftclient.non-chunked-connections-create.operations"
 	SwiftNonchunkedConnsReuseOps      = "proxyfs.swiftclient.non-chunked-connections-reuse.operations"
+	SwiftChunkedStarvationCallbacks   = "proxyfs.swiftclient.chunked-connections-starved-callback.operations"
 
 	SwiftAccountDeleteRetryOps        = "proxyfs.swiftclient.account-delete.retry.operations"         // failed operations that were retried (*not* number of retries)
 	SwiftAccountDeleteRetrySuccessOps = "proxyfs.swiftclient.account-delete.retry.success.operations" // failed operations where retry fixed the problem

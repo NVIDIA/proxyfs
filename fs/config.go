@@ -8,14 +8,21 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 type inFlightFileInodeDataStruct struct {
-	inode.InodeNumber                // Indicates the InodeNumber of a fileInode with unflushed
-	volStruct         *volumeStruct  // Synchronized via volStruct's sync.Mutex
-	control           chan bool      // Signal with true to flush (and exit), false to simply exit
-	wg                sync.WaitGroup // Client can know when done
+	inode.InodeNumber                 // Indicates the InodeNumber of a fileInode with unflushed
+	volStruct          *volumeStruct  // Synchronized via volStruct's sync.Mutex
+	control            chan bool      // Signal with true to flush (and exit), false to simply exit
+	wg                 sync.WaitGroup // Client can know when done
+	globalsListElement *list.Element  // Back-pointer to wrapper used to insert into globals.inFlightFileInodeDataList
 }
+
+// inFlightFileInodeDataControlBuffering specifies the inFlightFileInodeDataStruct.control channel buffer size
+// Note: There are potentially multiple initiators of this signal
+const inFlightFileInodeDataControlBuffering = 100
 
 type mountStruct struct {
 	id        MountID
@@ -35,10 +42,11 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	whoAmI      string
-	volumeMap   map[string]*volumeStruct
-	mountMap    map[MountID]*mountStruct
-	lastMountID MountID
+	whoAmI                    string
+	volumeMap                 map[string]*volumeStruct
+	mountMap                  map[MountID]*mountStruct
+	lastMountID               MountID
+	inFlightFileInodeDataList *list.List
 }
 
 var globals globalsStruct
@@ -109,24 +117,27 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.mountMap = make(map[MountID]*mountStruct)
 	globals.lastMountID = MountID(0)
+	globals.inFlightFileInodeDataList = list.New()
+
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
 
 	return
 }
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
 	var (
-		id                        MountID
-		inFlightFileInodeDataList []inode.InodeNumber
-		inodeNumber               inode.InodeNumber
-		ok                        bool
-		primaryPeerList           []string
-		removedVolumeList         []string
-		updatedVolumeMap          map[string]bool // key == volumeName; value ignored
-		volStruct                 *volumeStruct
-		volumeList                []string
-		volumeName                string
-		whoAmI                    string
+		id                MountID
+		ok                bool
+		primaryPeerList   []string
+		removedVolumeList []string
+		updatedVolumeMap  map[string]bool // key == volumeName; value ignored
+		volume            *volumeStruct
+		volumeList        []string
+		volumeName        string
+		whoAmI            string
 	)
+
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -175,19 +186,11 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range removedVolumeList {
-		volStruct = globals.volumeMap[volumeName]
-		for _, id = range volStruct.mountList {
+		volume = globals.volumeMap[volumeName]
+		for _, id = range volume.mountList {
 			delete(globals.mountMap, id)
 		}
-		if 0 < len(volStruct.inFlightFileInodeDataMap) {
-			inFlightFileInodeDataList = make([]inode.InodeNumber, 0, len(volStruct.inFlightFileInodeDataMap))
-			for inodeNumber = range volStruct.inFlightFileInodeDataMap {
-				inFlightFileInodeDataList = append(inFlightFileInodeDataList, inodeNumber)
-			}
-			for _, inodeNumber = range inFlightFileInodeDataList {
-				volStruct.untrackInFlightFileInodeData(inodeNumber, true)
-			}
-		}
+		volume.untrackInFlightFileInodeDataAll()
 		globals.Lock()
 		delete(globals.volumeMap, volumeName)
 		globals.Unlock()
@@ -268,27 +271,25 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
 
 func Down() (err error) {
 	var (
-		inFlightFileInodeDataList []inode.InodeNumber
-		inodeNumber               inode.InodeNumber
-		volume                    *volumeStruct
+		volume *volumeStruct
 	)
 
+	swiftclient.SetStarvationCallbackFunc(nil)
+
 	for _, volume = range globals.volumeMap {
-		if 0 < len(volume.inFlightFileInodeDataMap) {
-			inFlightFileInodeDataList = make([]inode.InodeNumber, 0, len(volume.inFlightFileInodeDataMap))
-			for inodeNumber = range volume.inFlightFileInodeDataMap {
-				inFlightFileInodeDataList = append(inFlightFileInodeDataList, inodeNumber)
-			}
-			for _, inodeNumber = range inFlightFileInodeDataList {
-				volume.untrackInFlightFileInodeData(inodeNumber, true)
-			}
-		}
+		volume.untrackInFlightFileInodeDataAll()
+	}
+
+	if 0 < globals.inFlightFileInodeDataList.Len() {
+		logger.Fatalf("fs.Down() has completed all un-mount's... but found non-empty globals.inFlightFileInodeDataList")
 	}
 
 	err = nil

@@ -126,7 +126,7 @@ int alloc_read_buf(char** bufPtr)
     // We'll allocate a buffer for our response, and set the read buffer in the context
     *bufPtr = malloc(readSize);
     if (*bufPtr == NULL) {
-        PANIC("FATAL: unable to allocate %d bytes for socket read!\n", readSize);
+        DPANIC("FATAL: unable to allocate %d bytes for socket read!\n", readSize);
         return -1;
     }
 
@@ -183,7 +183,7 @@ int sock_read(int sockfd, char** bufPtr, int* error)
                 // Let's make sure we haven't already reallocated...
                 if (max_read_size == big_buffer_size) {
                     // Uh oh, we ran out of space in our biggest buffer.
-                    PANIC("FATAL: Ran out of buffer space when reading socket! Bytes read: %d\n", max_read_size);
+                    DPANIC("FATAL: Ran out of buffer space when reading socket! Bytes read: %d\n", max_read_size);
                     return -1;
                 }
 

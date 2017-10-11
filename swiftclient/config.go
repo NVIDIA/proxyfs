@@ -1,6 +1,7 @@
 package swiftclient
 
 import (
+	"container/list"
 	"fmt"
 	"net"
 	"strconv"
@@ -10,6 +11,28 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
 )
+
+type connectionStruct struct {
+	connectionNonce uint64 // globals.connectionNonce at time connection was established
+	tcpConn         *net.TCPConn
+}
+
+type connectionPoolStruct struct {
+	sync.Mutex
+	poolCapacity            uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
+	poolInUse               uint16              // Active (i.e. not in LIFO) *connectionStruct's
+	lifoIndex               uint16              // Indicates where next released *connectionStruct will go
+	lifoOfActiveConnections []*connectionStruct // LIFO of available active connections
+	waiters                 *list.List          // Contains sync.Cond's of waiters
+	//                                             At time of connection release:
+	//                                               If poolInUse < poolCapacity,
+	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
+	//                                               If poolInUse == poolCapacity,
+	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
+	//                                                 sync.Cond at front of waitors is awakened
+	//                                               If poolInUse > poolCapacity,
+	//                                                 poolInUse is decremented and connection is discarded
+}
 
 type pendingDeleteStruct struct {
 	next           *pendingDeleteStruct
@@ -40,9 +63,13 @@ type globalsStruct struct {
 	retryDelayObject                time.Duration // delay before first retry for object ops
 	retryExpBackoff                 float64       // increase delay by this factor each try (exponential backoff)
 	retryExpBackoffObject           float64       // increase delay by this factor each try for object ops
-	nilTCPConn                      *net.TCPConn
-	chunkedConnectionPool           chan *net.TCPConn
-	nonChunkedConnectionPool        chan *net.TCPConn
+	connectionNonce                 uint64        // incremented each SIGHUP... older connections always closed
+	chunkedConnectionPool           connectionPoolStruct
+	nonChunkedConnectionPool        connectionPoolStruct
+	starvationCallbackFrequency     time.Duration
+	starvationUnderway              bool
+	stavationResolvedChan           chan bool // Signal this chan to halt calls to starvationCallback
+	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
 	pendingDeletes                  *pendingDeletesStruct
 	chaosSendChunkFailureRate       uint64 // set only during testing
@@ -150,7 +177,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
 		globals.retryExpBackoffObject)
 
-	globals.nilTCPConn = nil
+	globals.connectionNonce = 0
 
 	chunkedConnectionPoolSize, err = confMap.FetchOptionValueUint16("SwiftClient", "ChunkedConnectionPoolSize")
 	if nil != err {
@@ -161,10 +188,14 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.chunkedConnectionPool = make(chan *net.TCPConn, chunkedConnectionPoolSize)
+	globals.chunkedConnectionPool.poolCapacity = chunkedConnectionPoolSize
+	globals.chunkedConnectionPool.poolInUse = 0
+	globals.chunkedConnectionPool.lifoIndex = 0
+	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, chunkedConnectionPoolSize)
+	globals.chunkedConnectionPool.waiters = list.New()
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < chunkedConnectionPoolSize; freeConnectionIndex++ {
-		globals.chunkedConnectionPool <- globals.nilTCPConn
+		globals.chunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
 	}
 
 	nonChunkedConnectionPoolSize, err = confMap.FetchOptionValueUint16("SwiftClient", "NonChunkedConnectionPoolSize")
@@ -176,11 +207,28 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.nonChunkedConnectionPool = make(chan *net.TCPConn, nonChunkedConnectionPoolSize)
+	globals.nonChunkedConnectionPool.poolCapacity = nonChunkedConnectionPoolSize
+	globals.nonChunkedConnectionPool.poolInUse = 0
+	globals.nonChunkedConnectionPool.lifoIndex = 0
+	globals.nonChunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, nonChunkedConnectionPoolSize)
+	globals.nonChunkedConnectionPool.waiters = list.New()
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < nonChunkedConnectionPoolSize; freeConnectionIndex++ {
-		globals.nonChunkedConnectionPool <- globals.nilTCPConn
+		globals.nonChunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
 	}
+
+	globals.starvationCallbackFrequency, err = confMap.FetchOptionValueDuration("SwiftClient", "StarvationCallbackFrequency")
+	if nil != err {
+		// TODO: eventually, just return
+		globals.starvationCallbackFrequency, err = time.ParseDuration("100ms")
+		if nil != err {
+			return
+		}
+	}
+
+	globals.starvationUnderway = false
+	globals.stavationResolvedChan = make(chan bool, 1)
+	globals.starvationCallback = nil
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
 
@@ -213,14 +261,16 @@ func Up(confMap conf.ConfMap) (err error) {
 
 // PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
+	globals.connectionNonce++
+	drainConnectionPools()
 	err = nil
 	return
 }
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
+	globals.connectionNonce++
+	drainConnectionPools()
 	err = nil
 	return
 }

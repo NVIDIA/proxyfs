@@ -59,19 +59,22 @@ func (vS *volumeStruct) trackInFlightFileInodeData(inodeNumber inode.InodeNumber
 		ok                    bool
 	)
 
+	globals.Lock()
 	vS.Lock()
 	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
 	if !ok {
 		inFlightFileInodeData = &inFlightFileInodeDataStruct{
 			InodeNumber: inodeNumber,
 			volStruct:   vS,
-			control:     make(chan bool, 1),
+			control:     make(chan bool, inFlightFileInodeDataControlBuffering),
 		}
 		vS.inFlightFileInodeDataMap[inodeNumber] = inFlightFileInodeData
+		inFlightFileInodeData.globalsListElement = globals.inFlightFileInodeDataList.PushBack(inFlightFileInodeData)
 		inFlightFileInodeData.wg.Add(1)
 		go inFlightFileInodeData.inFlightFileInodeDataTracker()
 	}
 	vS.Unlock()
+	globals.Unlock()
 }
 
 // untrackInFlightInodeData is called once it is known a Flush() is no longer needed
@@ -82,24 +85,94 @@ func (vS *volumeStruct) untrackInFlightFileInodeData(inodeNumber inode.InodeNumb
 		ok                    bool
 	)
 
+	globals.Lock()
 	vS.Lock()
 	inFlightFileInodeData, ok = vS.inFlightFileInodeDataMap[inodeNumber]
-	if ok {
-		inFlightFileInodeData.control <- flushFirst
+	if !ok {
+		vS.Unlock()
+		globals.Unlock()
+		return
+	}
+	delete(vS.inFlightFileInodeDataMap, inodeNumber)
+	if nil != inFlightFileInodeData.globalsListElement {
+		_ = globals.inFlightFileInodeDataList.Remove(inFlightFileInodeData.globalsListElement)
+		inFlightFileInodeData.globalsListElement = nil
+	}
+	inFlightFileInodeData.control <- flushFirst
+	vS.Unlock()
+	globals.Unlock()
+	if flushFirst {
+		inFlightFileInodeData.wg.Wait()
+	}
+}
+
+// untrackInFlightFileInodeDataAll is called to flush all current elements
+// of vS.inFlightFileInodeDataMap (if any) during SIGHUP or Down().
+func (vS *volumeStruct) untrackInFlightFileInodeDataAll() {
+	var (
+		inFlightFileInodeNumber          inode.InodeNumber
+		inFlightFileInodeNumbers         []inode.InodeNumber
+		inFlightFileInodeNumbersCapacity int
+	)
+
+	// Snapshot list of inode.InodeNumber's currently in vS.inFlightFileInodeDataMap
+
+	vS.Lock()
+	inFlightFileInodeNumbersCapacity = len(vS.inFlightFileInodeDataMap)
+	if 0 == inFlightFileInodeNumbersCapacity {
+		vS.Unlock()
+		return
+	}
+	inFlightFileInodeNumbers = make([]inode.InodeNumber, 0, inFlightFileInodeNumbersCapacity)
+	for inFlightFileInodeNumber, _ = range vS.inFlightFileInodeDataMap {
+		inFlightFileInodeNumbers = append(inFlightFileInodeNumbers, inFlightFileInodeNumber)
 	}
 	vS.Unlock()
 
-	if ok {
-		inFlightFileInodeData.wg.Wait()
+	// Now go flush each of those
+
+	for _, inFlightFileInodeNumber = range inFlightFileInodeNumbers {
+		vS.untrackInFlightFileInodeData(inFlightFileInodeNumber, true)
+	}
+}
+
+func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumber) {
+	var (
+		err         error
+		inodeLock   *dlm.RWLockStruct
+		stillExists bool
+	)
+
+	// Act as if a package fs client called Flush()...
+
+	inodeLock, err = vS.initInodeLock(inodeNumber, nil)
+	if nil != err {
+		logger.PanicfWithError(err, "volumeStruct.initInodeLock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+	}
+	err = inodeLock.WriteLock()
+	if nil != err {
+		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+	}
+
+	stillExists = vS.VolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.F_OK)
+	if stillExists {
+		err = vS.VolumeHandle.Flush(inodeNumber, false)
+		if nil != err {
+			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d", vS.volumeName, inodeNumber)
+		}
+	}
+
+	err = inodeLock.Unlock()
+	if nil != err {
+		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
 	}
 }
 
 func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
 	var (
-		err        error
 		flushFirst bool
-		inodeLock  *dlm.RWLockStruct
 	)
+
 	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 
@@ -109,47 +182,34 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	case <-time.After(inFlightFileInodeData.volStruct.maxFlushTime):
 		flushFirst = true
 	}
+
 	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %d flushfirst %t",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
 	if flushFirst {
-		// As if a package fs client called Flush()... so take out a WriteLock around all activity
-
-		inodeLock, err = inFlightFileInodeData.volStruct.initInodeLock(inFlightFileInodeData.InodeNumber, nil)
-		if nil != err {
-			logger.PanicfWithError(err, "volumeStruct.initInodeLock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-		err = inodeLock.WriteLock()
-		if nil != err {
-			logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-
-		err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
-		if nil != err {
-			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-
-		inFlightFileInodeData.volStruct.Lock()
-		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
-		inFlightFileInodeData.volStruct.Unlock()
-
-		err = inodeLock.Unlock()
-		if nil != err {
-			logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-	} else {
-		// Assume we were triggered while holding a WriteLock... just remove self from map
-
-		inFlightFileInodeData.volStruct.Lock()
-		delete(inFlightFileInodeData.volStruct.inFlightFileInodeDataMap, inFlightFileInodeData.InodeNumber)
-		inFlightFileInodeData.volStruct.Unlock()
+		inFlightFileInodeData.volStruct.inFlightFileInodeDataFlusher(inFlightFileInodeData.InodeNumber)
 	}
 
 	inFlightFileInodeData.wg.Done()
+}
+
+func chunkedPutConnectionPoolStarvationCallback() {
+	var (
+		globalsListElement    *list.Element
+		inFlightFileInodeData *inFlightFileInodeDataStruct
+	)
+
+	globals.Lock()
+	globalsListElement = globals.inFlightFileInodeDataList.Front()
+	if nil == globalsListElement {
+		globals.Unlock()
+		return
+	}
+	_ = globals.inFlightFileInodeDataList.Remove(globalsListElement)
+	inFlightFileInodeData = globalsListElement.Value.(*inFlightFileInodeDataStruct)
+	inFlightFileInodeData.globalsListElement = nil
+	globals.Unlock()
+	inFlightFileInodeData.volStruct.inFlightFileInodeDataFlusher(inFlightFileInodeData.InodeNumber)
 }
 
 func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
@@ -975,7 +1035,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 		err = fmt.Errorf("Coalesce target must not be in the root directory")
 		return
 	}
-	destDirName = destDirName[0 : len(destDirName)-1]
+	destDirName = destDirName[0 : len(destDirName)-1] // chop off trailing slash
 
 	// We lock things in whatever order the caller provides them. To protect against deadlocks with other concurrent
 	// calls to this function, we first obtain a write lock on the root inode.
@@ -995,14 +1055,96 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 	}
 	heldLocks = append(heldLocks, rootDirInodeLock)
 
-	destDirInodeNumber, destDirInodeType, destDirInodeLock, err := mS.resolvePathForWrite(destDirName, callerID)
-	if err != nil {
-		return
+	// Walk the path one directory at a time, stopping when we either encounter a missing path component or when we've
+	// gone through the whole path.
+	destDirPathComponents := strings.Split(destDirName, "/")
+
+	cursorInodeNumber := inode.RootDirInodeNumber
+	var cursorInodeLock *dlm.RWLockStruct // deliberately starts as nil; we have a lock on the root dir already
+
+	defer func() {
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+	}()
+
+	// Resolve as much of the path as exists
+	for len(destDirPathComponents) > 0 {
+		pathComponent := destDirPathComponents[0]
+		// We have to look up the dirent ourselves instead of letting resolvePath do it so we can distinguish between
+		// the following cases:
+		//
+		// (A) dirent doesn't exist, in which case we break out of this loop and start creating directories
+		//
+		// (B) dirent does exist, but references a broken symlink, so resolvePath returns NotFoundError, in which case
+		// we return an error
+		_, err1 := mS.volStruct.VolumeHandle.Lookup(cursorInodeNumber, pathComponent)
+		if err1 != nil {
+			if blunder.Is(err1, blunder.NotFoundError) {
+				// We found a dir entry that doesn't exist; now we start making directories.
+				break
+			} else {
+				// Mystery error; bail out
+				err = err1
+				return
+			}
+		}
+
+		// Resolve one path component and advance the cursor
+		nextCursorInodeNumber, nextCursorInodeType, nextCursorInodeLock, err1 := mS.resolvePath(pathComponent, callerID, cursorInodeNumber, mS.volStruct.ensureWriteLock)
+		if err1 != nil {
+			err = err1
+			return
+		}
+		if nextCursorInodeType != inode.DirType {
+			// Every path component must resolve to a directory. There may be symlinks along the way, but resolvePath
+			// takes care of following those.
+			if nextCursorInodeLock != nil {
+				nextCursorInodeLock.Unlock()
+			}
+			err = blunder.NewError(blunder.NotDirError, "%v is not a directory", pathComponent)
+			return
+		}
+
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+		cursorInodeNumber = nextCursorInodeNumber
+		cursorInodeLock = nextCursorInodeLock
+		destDirPathComponents = destDirPathComponents[1:]
 	}
-	heldLocks = append(heldLocks, destDirInodeLock)
-	if destDirInodeType != inode.DirType {
-		err = blunder.NewError(blunder.NotDirError, "%s is not a directory", destDirName)
-		return
+
+	// Make any missing directory entires
+	for len(destDirPathComponents) > 0 {
+		pathComponent := destDirPathComponents[0]
+		// can't use Mkdir since it wants to take its own lock, so we make and link the dir ourselves
+
+		newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeRootGroupID)
+		if err1 != nil {
+			logger.ErrorWithError(err1)
+			err = err1
+			return
+		}
+
+		err = mS.volStruct.VolumeHandle.Link(cursorInodeNumber, pathComponent, newDirInodeNumber)
+		if err != nil {
+			destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
+			if destroyErr != nil {
+				logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.MiddlewareCoalesce", newDirInodeNumber)
+			}
+			return
+		}
+
+		if cursorInodeLock != nil {
+			cursorInodeLock.Unlock()
+		}
+		destDirPathComponents = destDirPathComponents[1:]
+		cursorInodeNumber = newDirInodeNumber
+		cursorInodeLock, err1 = mS.volStruct.ensureWriteLock(newDirInodeNumber, callerID)
+		if err1 != nil {
+			err = err1
+			return
+		}
 	}
 
 	for _, entry := range elementDirAndFileNames {
@@ -1058,7 +1200,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
 	// do something useful
-	destInodeNumber, mtime, numWrites, err := mS.volStruct.VolumeHandle.Coalesce(destDirInodeNumber, destFileName, coalesceElements)
+	destInodeNumber, mtime, numWrites, err := mS.volStruct.VolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
 	ino = uint64(destInodeNumber)
 	modificationTime = uint64(mtime.UnixNano())
 	return
@@ -2848,14 +2990,14 @@ func revSplitPath(fullpath string) []string {
 // non-symlink may be a directory, a file, or something that does not
 // exist.
 func (mS *mountStruct) resolvePathForRead(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureReadLock)
+	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.ensureReadLock)
 }
 
 func (mS *mountStruct) resolvePathForWrite(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, mS.volStruct.ensureWriteLock)
+	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.ensureWriteLock)
 }
 
-func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
+func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, startingInode inode.InodeNumber, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
 	// pathSegments is the reversed split path. For example, if
 	// fullpath is "/etc/thing/default.conf", then pathSegments is
 	// ["default.conf", "thing", "etc"].
@@ -2871,7 +3013,7 @@ func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, getLo
 	var cursorInodeNumber inode.InodeNumber
 	var cursorInodeType inode.InodeType
 	var cursorInodeLock *dlm.RWLockStruct
-	dirInodeNumber := inode.RootDirInodeNumber
+	dirInodeNumber := startingInode
 	dirInodeLock, err := getLock(dirInodeNumber, callerID)
 
 	// Use defer for cleanup so that we don't have to think as hard
