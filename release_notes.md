@@ -1,5 +1,24 @@
 # ProxyFS Release Notes
 
+## 0.54.1 (October 10, 2017)
+
+### Features:
+
+* Updates to HTTP COALESCE Method
+* Improved flushing of affected Swift connections during SIGHUP (reload)
+* Improved dataflow during high number of unflushed open file traffic
+
+### Bug Fixes:
+
+* Resolved memory leaks in Samba processes during heavy Robocopy activity
+* Resolved potential deadlock for unflushed files that are removed
+* Hardened error handling between Samba & ProxyFS processes
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.54.0 (October 3, 2017)
 
 ### Features:
