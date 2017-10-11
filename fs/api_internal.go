@@ -136,12 +136,41 @@ func (vS *volumeStruct) untrackInFlightFileInodeDataAll() {
 	}
 }
 
-func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
+func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumber) {
 	var (
 		err         error
-		flushFirst  bool
 		inodeLock   *dlm.RWLockStruct
 		stillExists bool
+	)
+
+	// Act as if a package fs client called Flush()...
+
+	inodeLock, err = vS.initInodeLock(inodeNumber, nil)
+	if nil != err {
+		logger.PanicfWithError(err, "volumeStruct.initInodeLock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+	}
+	err = inodeLock.WriteLock()
+	if nil != err {
+		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+	}
+
+	stillExists = vS.VolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.F_OK)
+	if stillExists {
+		err = vS.VolumeHandle.Flush(inodeNumber, false)
+		if nil != err {
+			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d", vS.volumeName, inodeNumber)
+		}
+	}
+
+	err = inodeLock.Unlock()
+	if nil != err {
+		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+	}
+}
+
+func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
+	var (
+		flushFirst bool
 	)
 
 	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
@@ -158,33 +187,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
 	if flushFirst {
-		// As if a package fs client called Flush()... so take out a WriteLock around all activity
-
-		inodeLock, err = inFlightFileInodeData.volStruct.initInodeLock(inFlightFileInodeData.InodeNumber, nil)
-		if nil != err {
-			logger.PanicfWithError(err, "volumeStruct.initInodeLock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-		err = inodeLock.WriteLock()
-		if nil != err {
-			logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
-
-		stillExists = inFlightFileInodeData.volStruct.VolumeHandle.Access(inFlightFileInodeData.InodeNumber, inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.F_OK)
-		if stillExists {
-			err = inFlightFileInodeData.volStruct.VolumeHandle.Flush(inFlightFileInodeData.InodeNumber, false)
-			if nil != err {
-				logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d",
-					inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-			}
-		}
-
-		err = inodeLock.Unlock()
-		if nil != err {
-			logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed",
-				inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-		}
+		inFlightFileInodeData.volStruct.inFlightFileInodeDataFlusher(inFlightFileInodeData.InodeNumber)
 	}
 
 	inFlightFileInodeData.wg.Done()
@@ -206,7 +209,7 @@ func chunkedPutConnectionPoolStarvationCallback() {
 	inFlightFileInodeData = globalsListElement.Value.(*inFlightFileInodeDataStruct)
 	inFlightFileInodeData.globalsListElement = nil
 	globals.Unlock()
-	inFlightFileInodeData.volStruct.Flush(inFlightFileInodeData.InodeNumber, false)
+	inFlightFileInodeData.volStruct.inFlightFileInodeDataFlusher(inFlightFileInodeData.InodeNumber)
 }
 
 func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
