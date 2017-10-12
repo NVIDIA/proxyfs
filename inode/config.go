@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/cstruct"
+	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
@@ -73,6 +74,8 @@ type globalsStruct struct {
 	sync.Mutex
 	whoAmI                       string
 	myPrivateIPAddr              string
+	dirEntryCache                sortedmap.BPlusTreeCache
+	fileExtentMapCache           sortedmap.BPlusTreeCache
 	volumeMap                    map[string]*volumeStruct      // key == volumeStruct.volumeName
 	accountMap                   map[string]*volumeStruct      // key == volumeStruct.accountName
 	flowControlMap               map[string]*flowControlStruct // key == flowControlStruct.flowControlName
@@ -97,6 +100,10 @@ func Up(confMap conf.ConfMap) (err error) {
 		corruptionDetectedFalse                        = CorruptionDetected(false)
 		corruptionDetectedTrue                         = CorruptionDetected(true)
 		defaultPhysicalContainerLayoutName             string
+		dirEntryCacheEvictHighLimit                    uint64
+		dirEntryCacheEvictLowLimit                     uint64
+		fileExtentMapEvictHighLimit                    uint64
+		fileExtentMapEvictLowLimit                     uint64
 		flowControl                                    *flowControlStruct
 		flowControlSectionName                         string
 		flowControlWeightSum                           uint64
@@ -144,6 +151,33 @@ func Up(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("Cluster.WhoAmI (\"%v\") not in Cluster.Peers list", globals.whoAmI)
 		return
 	}
+
+	// TODO - here !
+	dirEntryCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		dirEntryCacheEvictLowLimit = 10000
+	}
+	dirEntryCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		dirEntryCacheEvictHighLimit = 10010
+	}
+
+	globals.dirEntryCache = sortedmap.NewBPlusTreeCache(dirEntryCacheEvictLowLimit, dirEntryCacheEvictHighLimit)
+
+	fileExtentMapEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		fileExtentMapEvictLowLimit = 10000
+	}
+	fileExtentMapEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		fileExtentMapEvictHighLimit = 10010
+	}
+
+	globals.fileExtentMapCache = sortedmap.NewBPlusTreeCache(fileExtentMapEvictLowLimit, fileExtentMapEvictHighLimit)
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.accountMap = make(map[string]*volumeStruct)

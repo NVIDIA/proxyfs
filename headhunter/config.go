@@ -151,6 +151,9 @@ type volumeStruct struct {
 type globalsStruct struct {
 	checkpointObjectTrailerStructSize  uint64
 	elementOfBPlusTreeLayoutStructSize uint64
+	inodeRecCache                      sortedmap.BPlusTreeCache
+	logSegmentRecCache                 sortedmap.BPlusTreeCache
+	bPlusTreeObjectCache               sortedmap.BPlusTreeCache
 	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
@@ -159,8 +162,14 @@ var globals globalsStruct
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
 	var (
+		bPlusTreeObjectCacheEvictHighLimit   uint64
+		bPlusTreeObjectCacheEvictLowLimit    uint64
 		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
 		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
+		inodeRecCacheEvictHighLimit          uint64
+		inodeRecCacheEvictLowLimit           uint64
+		logSegmentRecCacheEvictHighLimit     uint64
+		logSegmentRecCacheEvictLowLimit      uint64
 		primaryPeerList                      []string
 		trailingByteSlice                    bool
 		volumeName                           string
@@ -199,6 +208,45 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
+
+	inodeRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		inodeRecCacheEvictLowLimit = 10000
+	}
+	inodeRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		inodeRecCacheEvictHighLimit = 10010
+	}
+
+	globals.inodeRecCache = sortedmap.NewBPlusTreeCache(inodeRecCacheEvictLowLimit, inodeRecCacheEvictHighLimit)
+
+	logSegmentRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		logSegmentRecCacheEvictLowLimit = 10000
+	}
+	logSegmentRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		logSegmentRecCacheEvictHighLimit = 10010
+	}
+
+	globals.logSegmentRecCache = sortedmap.NewBPlusTreeCache(logSegmentRecCacheEvictLowLimit, logSegmentRecCacheEvictHighLimit)
+
+	bPlusTreeObjectCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		bPlusTreeObjectCacheEvictLowLimit = 10000
+	}
+	bPlusTreeObjectCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		bPlusTreeObjectCacheEvictHighLimit = 10010
+	}
+
+	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
