@@ -111,6 +111,16 @@ func TestDaemon(t *testing.T) {
 		"CommonVolume.NonceValuesToReserve=100",
 
 		"FSGlobals.VolumeList=CommonVolume",
+		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
+		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
+		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
+		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
+		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
+		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.DirEntryCacheEvictLowLimit=10000",
+		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
+		"FSGlobals.FileExtentMapEvictLowLimit=10000",
+		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
