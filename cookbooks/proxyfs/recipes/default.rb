@@ -237,6 +237,11 @@ if node[:platform_family].include?("rhel")
     "nfs-utils"
   ]
 
+  gdb_packages = [
+    "gdb",
+    "yum-utils"
+  ]
+
 else # assume debian
 
   # packages
@@ -268,10 +273,16 @@ else # assume debian
     "nfs-common"
   ]
 
+  # Not sure if we need anything else on Debian besides gdb itself
+  gdb_packages = [
+    "gdb"
+  ]
+
 end
 
 packages = samba_package + samba_deps + proxyfs_packages + nfs_packages
 packages += wireshark_packages if is_dev
+packages += gdb_packages if is_dev
 
 packages.each do |pkg|
   package pkg do
@@ -422,13 +433,16 @@ link '/usr/bin/proxyfsd' do
 end
 
 cookbook_file "#{HOME_DIR}/.gdbinit" do
-  source "root/.gdbinit"
+  source "home/unprivileged_user/.gdbinit"
   owner "#{proxyfs_user}"
   group "#{proxyfs_group}"
 end
 
-cookbook_file "/root/.gdbinit" do
-  source "root/.gdbinit"
+template "/root/.gdbinit" do
+  source "root/.gdbinit.erb"
   owner "root"
   group "root"
+  variables({
+    :proxyfs_user => "#{proxyfs_user}"
+  })
 end

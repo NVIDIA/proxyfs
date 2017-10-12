@@ -106,4 +106,3 @@ set logging on
 # Emacs also as a "gdb mode" that runs gdb as a sub-shell with emacs
 # editing available.  It looks promising.
 #
- 
