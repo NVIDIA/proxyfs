@@ -285,9 +285,8 @@ else # assume debian
 
 end
 
-packages = samba_package + samba_deps + proxyfs_packages + nfs_packages
+packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages
 packages += wireshark_packages if is_dev
-packages += gdb_packages if is_dev
 
 packages.each do |pkg|
   package pkg do
