@@ -206,7 +206,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxInodesPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.inodeRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.inodeRecCache)
 			volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = 0
 		} else {
@@ -217,7 +217,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.inodeRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.inodeRecCache)
 			if nil != err {
 				return
 			}
@@ -234,7 +234,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxLogSegmentsPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.logSegmentRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.logSegmentRecCache)
 			volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = 0
 		} else {
@@ -245,7 +245,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.logSegmentRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.logSegmentRecCache)
 			if nil != err {
 				return
 			}
@@ -262,7 +262,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxDirFileNodesPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.bPlusTreeObjectWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.bPlusTreeObjectCache)
 			volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
 			volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = 0
 		} else {
@@ -273,7 +273,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.bPlusTreeObjectWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.bPlusTreeObjectCache)
 			if nil != err {
 				return
 			}
@@ -403,7 +403,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxInodesPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.inodeRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.inodeRecCache)
 		} else {
 			volume.inodeRecWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
@@ -412,7 +412,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.inodeRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.inodeRecCache)
 			if nil != err {
 				return
 			}
@@ -424,7 +424,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxLogSegmentsPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.logSegmentRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.logSegmentRecCache)
 		} else {
 			volume.logSegmentRecWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
@@ -433,7 +433,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.logSegmentRecWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.logSegmentRecCache)
 			if nil != err {
 				return
 			}
@@ -445,7 +445,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.maxDirFileNodesPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.bPlusTreeObjectWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.bPlusTreeObjectCache)
 		} else {
 			volume.bPlusTreeObjectWrapper.bPlusTree, err =
 				sortedmap.OldBPlusTree(
@@ -454,7 +454,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 					volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
 					sortedmap.CompareUint64,
 					volume.bPlusTreeObjectWrapper,
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.bPlusTreeObjectCache)
 			if nil != err {
 				return
 			}

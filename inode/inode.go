@@ -150,7 +150,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 					vS.maxEntriesPerDirNode,
 					sortedmap.CompareString,
 					&dirInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}},
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.dirEntryCache)
 		} else {
 			inMemoryInode.payload, err =
 				sortedmap.OldBPlusTree(
@@ -159,7 +159,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 					inMemoryInode.PayloadObjectLength,
 					sortedmap.CompareString,
 					&dirInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}},
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.dirEntryCache)
 			if nil != err {
 				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for DirType inode %d failed: %v", utils.GetFnName(), inodeNumber, err)
 				err = blunder.AddError(err, blunder.CorruptInodeError)
@@ -173,7 +173,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 					vS.maxExtentsPerFileNode,
 					sortedmap.CompareUint64,
 					&fileInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}},
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.fileExtentMapCache)
 		} else {
 			inMemoryInode.payload, err =
 				sortedmap.OldBPlusTree(
@@ -182,7 +182,7 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 					inMemoryInode.PayloadObjectLength,
 					sortedmap.CompareUint64,
 					&fileInodeCallbacks{treeNodeLoadable{inode: inMemoryInode}},
-					nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+					globals.fileExtentMapCache)
 			if nil != err {
 				err = fmt.Errorf("%s: sortedmap.OldBPlusTree(inodeRec.<body>.PayloadObjectNumber) for FileType inode %d failed: %v", utils.GetFnName(), inodeNumber, err)
 				err = blunder.AddError(err, blunder.CorruptInodeError)

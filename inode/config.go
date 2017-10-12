@@ -152,7 +152,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	// TODO - here !
 	dirEntryCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictLowLimit")
 	if nil != err {
 		// TODO: eventually, just return

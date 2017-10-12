@@ -41,7 +41,7 @@ func (vS *volumeStruct) createRootOrSubDir(filePerm InodeMode, userID InodeUserI
 			vS.maxEntriesPerDirNode,
 			sortedmap.CompareString,
 			&dirInodeCallbacks{treeNodeLoadable{inode: dirInode}},
-			nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
+			globals.dirEntryCache)
 
 	ok, err := dirMapping.Put(".", dirInode.InodeNumber)
 	if (nil != err) || (!ok) {
