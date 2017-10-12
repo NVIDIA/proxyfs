@@ -6,11 +6,36 @@ func (tree *btreeTreeStruct) Dump() (err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
-	if nil == tree.clonedFromTree {
-		fmt.Printf("B+Tree @ %p has Root Node @ %p with %v activeClones\n", tree, tree.root, tree.activeClones)
-	} else {
-		fmt.Printf("B+Tree @ %p has Root Node @ %p with %v activeClones (clone of B+Tree @ %p)\n", tree, tree.root, tree.activeClones, tree.clonedFromTree)
+	if nil != tree.nodeCache {
+		fmt.Printf("B+Tree @ %p has Node Cache @ %p\n", tree, tree.nodeCache)
+		fmt.Printf("  .evictLowLimit  = %v\n", tree.nodeCache.evictLowLimit)
+		fmt.Printf("  .evictHighLimit = %v\n", tree.nodeCache.evictHighLimit)
+		if nil == tree.nodeCache.cleanLRUHead {
+			fmt.Printf("  .cleanLRUHead   = nil\n")
+		} else {
+			fmt.Printf("  .cleanLRUHead   = %p\n", tree.nodeCache.cleanLRUHead)
+		}
+		if nil == tree.nodeCache.cleanLRUTail {
+			fmt.Printf("  .cleanLRUTail   = nil\n")
+		} else {
+			fmt.Printf("  .cleanLRUTail   = %p\n", tree.nodeCache.cleanLRUTail)
+		}
+		fmt.Printf("  .cleanLRUItems  = %v\n", tree.nodeCache.cleanLRUItems)
+		if nil == tree.nodeCache.dirtyLRUHead {
+			fmt.Printf("  .dirtyLRUHead   = nil\n")
+		} else {
+			fmt.Printf("  .dirtyLRUHead   = %p\n", tree.nodeCache.dirtyLRUHead)
+		}
+		if nil == tree.nodeCache.dirtyLRUTail {
+			fmt.Printf("  .dirtyLRUTail   = nil\n")
+		} else {
+			fmt.Printf("  .dirtyLRUTail   = %p\n", tree.nodeCache.dirtyLRUTail)
+		}
+		fmt.Printf("  .dirtyLRUItems  = %v\n", tree.nodeCache.dirtyLRUItems)
+		fmt.Printf("  .drainerActive  = %v\n", tree.nodeCache.drainerActive)
 	}
+
+	fmt.Printf("B+Tree @ %p has Root Node @ %p\n", tree, tree.root)
 
 	err = tree.dumpNode(tree.root, "")
 
@@ -22,6 +47,32 @@ func (tree *btreeTreeStruct) dumpNode(node *btreeNodeStruct, indent string) (err
 		err = node.tree.loadNode(node)
 		if nil != err {
 			return
+		}
+	}
+
+	if nil != tree.nodeCache {
+		switch node.btreeNodeCacheElement.btreeNodeCacheTag {
+		case noLRU:
+			fmt.Printf("%v  .btreeNodeCacheTag   = noLRU (%v)\n", indent, noLRU)
+		case cleanLRU:
+			fmt.Printf("%v  .btreeNodeCacheTag   = cleanLRU (%v)\n", indent, cleanLRU)
+		case dirtyLRU:
+			fmt.Printf("%v  .btreeNodeCacheTag   = dirtyLRU (%v)\n", indent, dirtyLRU)
+		default:
+			fmt.Printf("%v  .btreeNodeCacheTag   = <unknown> (%v)\n", indent, node.btreeNodeCacheElement.btreeNodeCacheTag)
+		}
+
+		if noLRU != node.btreeNodeCacheElement.btreeNodeCacheTag {
+			if nil == node.btreeNodeCacheElement.nextBTreeNode {
+				fmt.Printf("%v  .nextBTreeNode       = nil\n", indent)
+			} else {
+				fmt.Printf("%v  .nextBTreeNode       = %p\n", indent, node.btreeNodeCacheElement.nextBTreeNode)
+			}
+			if nil == node.btreeNodeCacheElement.prevBTreeNode {
+				fmt.Printf("%v  .prevBTreeNode       = nil\n", indent)
+			} else {
+				fmt.Printf("%v  .prevBTreeNode       = %p\n", indent, node.btreeNodeCacheElement.prevBTreeNode)
+			}
 		}
 	}
 

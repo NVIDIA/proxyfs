@@ -50,7 +50,12 @@ func (vS *volumeStruct) createFileInode(filePerm InodeMode, userID InodeUserID, 
 	// The payload of a file inode is a B+-tree map whose keys are uint64 file
 	// offsets and whose values are `fileExtent`s.
 
-	extents := sortedmap.NewBPlusTree(vS.maxExtentsPerFileNode, sortedmap.CompareUint64, &fileInodeCallbacks{treeNodeLoadable{inode: fileInode}})
+	extents :=
+		sortedmap.NewBPlusTree(
+			vS.maxExtentsPerFileNode,
+			sortedmap.CompareUint64,
+			&fileInodeCallbacks{treeNodeLoadable{inode: fileInode}},
+			nil) // TODO: supply appropriate sortedmap.BPlusTreeCache here
 
 	fileInode.payload = extents
 

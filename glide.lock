@@ -1,5 +1,5 @@
 hash: 203b9e910318e7042372cb61f10b971f00e649347370fb6a70004e9775e2d18a
-updated: 2017-08-25T11:40:44.763207776-07:00
+updated: 2017-10-12T13:34:37.639-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -21,24 +21,24 @@ imports:
   subpackages:
   - assert
 - name: github.com/swiftstack/cstruct
-  version: d95eae1090e554a03651062ec2fee2627df9b23b
+  version: 5cd42baaed4905eb5e0e8efcaf9015f477bade63
 - name: github.com/swiftstack/sortedmap
-  version: d98d4f5b9b0754df5d03efb7e9281a103536eef8
+  version: a70c71dcedd209d295a08eb5f6138a046760832f
 - name: golang.org/x/crypto
-  version: eb71ad9bd329b5ac0fd0148dd99bd62e8be8e035
+  version: 9419663f5a44be8b34ca85f08abc5fe1be11f8a3
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
-  version: 57efc9c3d9f91fb3277f8da1cff370539c4d3dc5
+  version: a04bdaca5b32abe1c069418fb7088ae607de5bd0
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 22e23b74325bf60e4cc1ce7bdc157eda0d8b5c13
+  version: 43eea11bc92608addb41b8a406b0407495c106f6
   subpackages:
   - unix
   - windows
 - name: golang.org/x/tools
-  version: 1807494da808122833b9bd8e3e5fa179ef237d41
+  version: f57adc18217d779aa42266ea71a545827755a77b
   subpackages:
   - cmd/stringer
 testImports:

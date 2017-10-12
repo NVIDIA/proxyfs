@@ -2,12 +2,43 @@ package sortedmap
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/swiftstack/cstruct"
 )
 
+type btreeNodeCacheTag uint32
+
+const (
+	noLRU btreeNodeCacheTag = iota // must be zero
+	cleanLRU
+	dirtyLRU
+)
+
+type btreeNodeCacheElement struct { //    only accessed while holding btreeNodeCacheStruct.Mutex
+	btreeNodeCacheTag                  // default value of zero indicates not on either cleanLRU or dirtyLRU
+	nextBTreeNode     *btreeNodeStruct // nil if at tail of LRU
+	prevBTreeNode     *btreeNodeStruct // nil if at head of LRU
+}
+
+type btreeNodeCacheStruct struct {
+	sync.Mutex //            protects both this btreeNodeCacheStruct & every btreeNodeCacheElement
+	//                         {clean|dirty}LRUs are populated while holding a btreeTreeStruct.Mutex
+	//                         {clean|dirty}LRUs are drained in a separate goroutine to avoid deadlock
+	evictLowLimit  uint64 // evictions continue until evictLowLimit  >= cleanLRUItems + dirtyLRUItems
+	evictHighLimit uint64 // evictions begin    when  evictHighLimit <  cleanLRUItems + dirtyLRUItems
+	cleanLRUHead   *btreeNodeStruct
+	cleanLRUTail   *btreeNodeStruct
+	cleanLRUItems  uint64
+	dirtyLRUHead   *btreeNodeStruct
+	dirtyLRUTail   *btreeNodeStruct
+	dirtyLRUItems  uint64
+	drainerActive  bool // if true, btreeNodeCacheDrainer() is already attempting to evict cleanLRU elements
+}
+
 type btreeNodeStruct struct {
+	btreeNodeCacheElement
 	objectNumber uint64 //                  if != 0, log* fields identify on-disk copy of this btreeNodeStruct
 	objectOffset uint64
 	objectLength uint64
@@ -63,17 +94,16 @@ type onDiskReferencesContext struct { // Used as context for LLRBTreeCallbacks f
 
 type btreeTreeStruct struct {
 	sync.Mutex
-	minKeysPerNode uint64 //                                only applies to non-Root nodes
-	//                                                      "order" according to Bayer & McCreight (1972) & Comer (1979)
-	maxKeysPerNode uint64 //                                "order" according to Knuth (1998)
+	minKeysPerNode uint64 //                  only applies to non-Root nodes
+	//                                        "order" according to Bayer & McCreight (1972) & Comer (1979)
+	maxKeysPerNode uint64 //                  "order" according to Knuth (1998)
 	Compare
 	BPlusTreeCallbacks
-	root                  *btreeNodeStruct //               should never be nil
-	activeClones          uint64
-	clonedFromTree        *btreeTreeStruct
-	staleOnDiskReferences LLRBTree //                       previously posted node locations yet to be discarded
-	//                                                        key   is an onDiskReferenceKeyStruct objectNumber, objectOffset tuple
-	//                                                        value is a simple objectLength value
+	root                  *btreeNodeStruct // should never be nil
+	staleOnDiskReferences LLRBTree         // previously posted node locations yet to be discarded
+	//                                          key   is an onDiskReferenceKeyStruct objectNumber, objectOffset tuple
+	//                                          value is a simple objectLength value
+	nodeCache *btreeNodeCacheStruct //   likely shared with other btreeTreeStruct's
 }
 
 // API functions (see api.go)
@@ -86,8 +116,10 @@ func (tree *btreeTreeStruct) BisectLeft(key Key) (index int, found bool, err err
 	indexDelta := uint64(0)
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -198,8 +230,10 @@ func (tree *btreeTreeStruct) BisectRight(key Key) (index int, found bool, err er
 	indexDelta := uint64(0)
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -303,6 +337,10 @@ func (tree *btreeTreeStruct) BisectRight(key Key) (index int, found bool, err er
 }
 
 func (tree *btreeTreeStruct) DeleteByIndex(index int) (ok bool, err error) {
+	var (
+		leftChildPrefixSumItems uint64
+	)
+
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -322,8 +360,10 @@ func (tree *btreeTreeStruct) DeleteByIndex(index int) (ok bool, err error) {
 	netIndex := uint64(index)
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -334,16 +374,15 @@ func (tree *btreeTreeStruct) DeleteByIndex(index int) (ok bool, err error) {
 			if nil != err {
 				return
 			}
+			tree.markNodeDirty(node)
 			tree.updatePrefixSumTreeLeafToRoot(node)
-			tree.rebalanceHere(node, parentIndexStack)
+			tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
 			ok = true
 			err = nil
 			return
 		}
 
 		node = node.rootPrefixSumChild
-
-		var leftChildPrefixSumItems uint64
 
 		for {
 			if nil == node.prefixSumLeftChild {
@@ -378,8 +417,10 @@ func (tree *btreeTreeStruct) DeleteByKey(key Key) (ok bool, err error) {
 	//                                 if i >=  0 indicates we followed ParentNode's kvLLRB.GetByIndex(i)'s Value
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -391,8 +432,9 @@ func (tree *btreeTreeStruct) DeleteByKey(key Key) (ok bool, err error) {
 				return
 			}
 			if ok {
+				tree.markNodeDirty(node)
 				tree.updatePrefixSumTreeLeafToRoot(node)
-				tree.rebalanceHere(node, parentIndexStack)
+				tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
 			}
 			err = nil
 			return
@@ -437,6 +479,10 @@ func (tree *btreeTreeStruct) DeleteByKey(key Key) (ok bool, err error) {
 }
 
 func (tree *btreeTreeStruct) GetByIndex(index int) (key Key, value Value, ok bool, err error) {
+	var (
+		leftChildPrefixSumItems uint64
+	)
+
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -451,8 +497,10 @@ func (tree *btreeTreeStruct) GetByIndex(index int) (key Key, value Value, ok boo
 	netIndex := uint64(index)
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -469,8 +517,6 @@ func (tree *btreeTreeStruct) GetByIndex(index int) (key Key, value Value, ok boo
 		}
 
 		node = node.rootPrefixSumChild
-
-		var leftChildPrefixSumItems uint64
 
 		for {
 			if nil == node.prefixSumLeftChild {
@@ -499,8 +545,10 @@ func (tree *btreeTreeStruct) GetByKey(key Key) (value Value, ok bool, err error)
 	node := tree.root
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -563,6 +611,10 @@ func (tree *btreeTreeStruct) Len() (numberOfItems int, err error) {
 }
 
 func (tree *btreeTreeStruct) PatchByIndex(index int, value Value) (ok bool, err error) {
+	var (
+		leftChildPrefixSumItems uint64
+	)
+
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -577,23 +629,23 @@ func (tree *btreeTreeStruct) PatchByIndex(index int, value Value) (ok bool, err 
 	netIndex := uint64(index)
 
 	for {
-		if !node.loaded {
-			err = tree.loadNode(node)
+		if node.loaded {
+			tree.markNodeUsed(node)
+		} else {
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
 		}
 
 		if node.leaf {
-			tree.touchLoadedNodeToRoot(node)
+			tree.touchLoadedNodeToRoot(node) // will also mark node dirty/used in LRU
 			_, err = node.kvLLRB.PatchByIndex(int(netIndex), value)
 			ok = true
 			return
 		}
 
 		node = node.rootPrefixSumChild
-
-		var leftChildPrefixSumItems uint64
 
 		for {
 			if nil == node.prefixSumLeftChild {
@@ -623,14 +675,14 @@ func (tree *btreeTreeStruct) PatchByKey(key Key, value Value) (ok bool, err erro
 
 	for {
 		if !node.loaded {
-			err = tree.loadNode(node)
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
 		}
 
 		if node.leaf {
-			tree.touchLoadedNodeToRoot(node)
+			tree.touchLoadedNodeToRoot(node) // will also mark node dirty/used in LRU
 			ok, err = node.kvLLRB.PatchByKey(key, value)
 			return
 		}
@@ -677,7 +729,7 @@ func (tree *btreeTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 
 	for {
 		if !node.loaded {
-			err = tree.loadNode(node)
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -693,7 +745,7 @@ func (tree *btreeTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 			if keyAlreadyPresent {
 				ok = false
 			} else {
-				err = tree.insertHere(node, key, value)
+				err = tree.insertHere(node, key, value) // will also mark affected nodes dirty/used in LRU
 				ok = true
 				return
 			}
@@ -753,7 +805,7 @@ func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, root
 
 	// First flush (and optionally purge) B+Tree
 
-	err = tree.flushNode(tree.root, andPurge)
+	err = tree.flushNode(tree.root, andPurge) // will also mark node clean/used or evicted in LRU
 	if nil != err {
 		return
 	}
@@ -772,7 +824,7 @@ func (tree *btreeTreeStruct) Purge(full bool) (err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
-	err = tree.purgeNode(tree.root, full)
+	err = tree.purgeNode(tree.root, full) // will also mark node evicted in LRU
 
 	return
 }
@@ -781,12 +833,16 @@ func (tree *btreeTreeStruct) Touch() (err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
-	err = tree.touchNode(tree.root)
+	err = tree.touchNode(tree.root) // will also mark node dirty/used in LRU
 
 	return
 }
 
 func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemIndexToTouch uint64, err error) {
+	var (
+		leftChildPrefixSumItems uint64
+	)
+
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -809,7 +865,7 @@ func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemInd
 
 	for {
 		if !node.loaded {
-			err = tree.loadNode(node)
+			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				// Upon detected corruption, just return
 				nextItemIndexToTouch = 0
@@ -820,7 +876,7 @@ func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemInd
 		if node.leaf {
 			// Touch this node up to root
 
-			tree.touchLoadedNodeToRoot(node)
+			tree.touchLoadedNodeToRoot(node) // will also mark node dirty/used in LRU
 
 			// Return nextItemIndexToTouch as index beyond this leaf node
 
@@ -839,8 +895,6 @@ func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemInd
 		}
 
 		node = node.rootPrefixSumChild
-
-		var leftChildPrefixSumItems uint64
 
 		for {
 			if nil == node.prefixSumLeftChild {
@@ -873,16 +927,6 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 
 	tree.Lock()
 	defer tree.Unlock()
-
-	if nil != tree.clonedFromTree {
-		err = fmt.Errorf("Prune() called on B+Tree that is a clone of another B+Tree")
-		return
-	}
-
-	if 0 != tree.activeClones {
-		err = fmt.Errorf("Prune() called on B+Tree with active clones")
-		return
-	}
 
 	// Discard all stale OnDisk node references
 
@@ -921,77 +965,18 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 }
 
 func (tree *btreeTreeStruct) Discard() (err error) {
-	var (
-		keyAsKey                      Key
-		keyAsOnDiskReferenceKeyStruct *onDiskReferenceKeyStruct
-		objectLengthAsValue           Value
-		objectLengthAsUint64          uint64
-		ok                            bool
-	)
-
 	tree.Lock()
 	defer tree.Unlock()
 
-	// Following logic dependent upon whether or not tree is a clone of some other B+Tree
+	// Mark all loaded nodes as evicted in LRU
 
-	if nil == tree.clonedFromTree {
-		// Make sure there are no active clones
-
-		if 0 != tree.activeClones {
-			err = fmt.Errorf("Discard() called on B+Tree with active clones")
-			return
-		}
-
-		// Discard all nodes recursively
-
-		err = tree.discardNode(tree.root)
-		if nil != err {
-			return
-		}
-
-		// Discard all stale OnDisk node references
-
-		keyAsKey, objectLengthAsValue, ok, err = tree.staleOnDiskReferences.GetByIndex(0)
-
-		for ok {
-			keyAsOnDiskReferenceKeyStruct, ok = keyAsKey.(*onDiskReferenceKeyStruct)
-			if !ok {
-				err = fmt.Errorf("Logic error... tree.staleOnDiskReferences contained bad Key")
-				return
-			}
-			objectLengthAsUint64, ok = objectLengthAsValue.(uint64)
-			if !ok {
-				err = fmt.Errorf("Logic error... tree.staleOnDiskReferences contained bad Value")
-				return
-			}
-			err = tree.BPlusTreeCallbacks.DiscardNode(keyAsOnDiskReferenceKeyStruct.objectNumber, keyAsOnDiskReferenceKeyStruct.objectOffset, objectLengthAsUint64)
-			if nil != err {
-				return
-			}
-			ok, err = tree.staleOnDiskReferences.DeleteByIndex(0)
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("Logic error... unable to delete previously fetched first element of tree.staleOnDiskReferences")
-				return
-			}
-			keyAsKey, objectLengthAsValue, ok, err = tree.staleOnDiskReferences.GetByIndex(0)
-		}
-	} else {
-		// This is a cloned B+Tree, so merely update clonedFromTree's activeClones count
-
-		tree.clonedFromTree.Lock()
-		tree.clonedFromTree.activeClones--
-		tree.clonedFromTree.Unlock()
-	}
+	tree.discardNode(tree.root)
 
 	// Reset btreeTreeStruct to trigger Golang Garbage Collection now (and prevent further use)
 
 	tree.Compare = nil
 	tree.BPlusTreeCallbacks = nil
 	tree.root = nil
-	tree.clonedFromTree = nil
 
 	// All done
 
@@ -1055,10 +1040,8 @@ func (context *onDiskReferencesContext) DumpValue(value Value) (valueAsString st
 
 func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
 	if !node.loaded {
-		err = tree.loadNode(node)
-		if nil != err {
-			return
-		}
+		err = nil
+		return
 	}
 
 	if !node.leaf {
@@ -1094,6 +1077,8 @@ func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
 		}
 	}
 
+	tree.markNodeEvicted(node)
+
 	if 0 == node.objectLength {
 		err = nil
 	} else {
@@ -1104,10 +1089,15 @@ func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
 }
 
 func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, value Value) (err error) {
+	var (
+		splitKey   Key
+		splitValue Value
+	)
+
 	insertNode.kvLLRB.Put(key, value)
 
 	if insertNode.leaf {
-		tree.updatePrefixSumTreeLeafToRoot(insertNode)
+		tree.updatePrefixSumTreeLeafToRoot(insertNode) // will also mark affected nodes dirty/used in LRU
 	}
 
 	llrbLen, err := insertNode.kvLLRB.Len()
@@ -1135,9 +1125,6 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 			prefixSumLeftChild:  nil, //                                             Not applicable to root node
 			prefixSumRightChild: nil, //                                             Not applicable to root node
 		}
-
-		var splitKey Key
-		var splitValue Value
 
 		for {
 			llrbLen, nonShadowingErr := insertNode.kvLLRB.Len()
@@ -1214,11 +1201,20 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 			newRightSiblingNode.parentNode = tree.root
 
 			tree.root.kvLLRB.Put(splitKey, newRightSiblingNode)
+
+			tree.initNodeAsEvicted(newRightSiblingNode)
+			tree.markNodeDirty(newRightSiblingNode)
+
+			tree.initNodeAsEvicted(tree.root)
+			tree.markNodeDirty(tree.root)
 		} else {
 			_, err = insertNode.parentNode.kvLLRB.Put(splitKey, newRightSiblingNode)
 			if nil != err {
 				return
 			}
+
+			tree.initNodeAsEvicted(newRightSiblingNode)
+			tree.markNodeDirty(newRightSiblingNode)
 		}
 
 		tree.rearrangePrefixSumTreeToRoot(insertNode.parentNode)
@@ -1229,6 +1225,11 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 }
 
 func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, parentIndexStack []int) (err error) {
+	var (
+		leftSiblingNode  *btreeNodeStruct
+		rightSiblingNode *btreeNodeStruct
+	)
+
 	if rebalanceNode.root {
 		err = nil
 		return
@@ -1245,9 +1246,6 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 	}
 
 	parentNode := rebalanceNode.parentNode
-
-	var leftSiblingNode *btreeNodeStruct
-	var rightSiblingNode *btreeNodeStruct
 
 	parentIndexStackTailIndex := len(parentIndexStack) - 1
 	parentNodeIndex := parentIndexStack[parentIndexStackTailIndex]
@@ -1267,8 +1265,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			leftSiblingNode = leftSiblingNodeAsValue.(*btreeNodeStruct)
 		}
 
-		if !leftSiblingNode.loaded {
-			err = tree.loadNode(leftSiblingNode)
+		if leftSiblingNode.loaded {
+			tree.markNodeUsed(leftSiblingNode)
+		} else {
+			err = tree.loadNode(leftSiblingNode) // will also mark leftSiblingNode clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -1372,8 +1372,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		}
 		rightSiblingNode = rightSiblingNodeAsValue.(*btreeNodeStruct)
 
-		if !rightSiblingNode.loaded {
-			err = tree.loadNode(rightSiblingNode)
+		if rightSiblingNode.loaded {
+			tree.markNodeUsed(rightSiblingNode)
+		} else {
+			err = tree.loadNode(rightSiblingNode) // will also mark rightSiblingNode clean/used in LRU
 			if nil != err {
 				return
 			}
@@ -1524,6 +1526,7 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			tree.rebalanceHere(parentNode, parentIndexStackPruned)
 		}
 
+		tree.markNodeEvicted(rebalanceNode)
 		tree.markNodeDirty(leftSiblingNode)
 	} else if nil != rightSiblingNode {
 		// move keys from rightSiblingNode to rebalanceNode (along with former splitKey for non-leaf case)
@@ -1591,7 +1594,8 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			tree.rebalanceHere(parentNode, parentIndexStackPruned)
 		}
 
-		tree.markNodeDirty(rightSiblingNode)
+		tree.markNodeEvicted(rightSiblingNode)
+		tree.markNodeDirty(rebalanceNode)
 	} else {
 		// non-root node must have had a sibling, so if we reach here, we have a logic problem
 
@@ -1643,10 +1647,12 @@ func (tree *btreeTreeStruct) flushNode(node *btreeNodeStruct, andPurge bool) (er
 	}
 
 	if node.dirty {
-		tree.postNode(node)
+		tree.postNode(node) // will also mark node clean/used in LRU
 	}
 
 	if andPurge {
+		tree.markNodeEvicted(node)
+
 		node.kvLLRB = nil
 		node.nonLeafLeftChild = nil
 		node.rootPrefixSumChild = nil
@@ -1703,6 +1709,8 @@ func (tree *btreeTreeStruct) purgeNode(node *btreeNodeStruct, full bool) (err er
 	}
 
 	if !node.dirty {
+		tree.markNodeEvicted(node)
+
 		node.kvLLRB = nil
 		node.nonLeafLeftChild = nil
 		node.rootPrefixSumChild = nil
@@ -1714,40 +1722,190 @@ func (tree *btreeTreeStruct) purgeNode(node *btreeNodeStruct, full bool) (err er
 	return
 }
 
+func (tree *btreeTreeStruct) initNodeAsEvicted(node *btreeNodeStruct) {
+	if nil != tree.nodeCache {
+		node.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
+		node.btreeNodeCacheElement.nextBTreeNode = nil
+		node.btreeNodeCacheElement.prevBTreeNode = nil
+	}
+}
+
+func (tree *btreeTreeStruct) markNodeUsed(node *btreeNodeStruct) {
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		switch node.btreeNodeCacheTag {
+		case noLRU:
+			err := fmt.Errorf("Logic error in markNodeUsed() with node.btreeNodeCacheTag == noLRU (%v)", noLRU)
+			panic(err)
+		case cleanLRU:
+			// Move node to the MRU end of tree.nodeCache's cleanLRU (if necessary)
+			if node != tree.nodeCache.cleanLRUTail {
+				if node == tree.nodeCache.cleanLRUHead {
+					tree.nodeCache.cleanLRUHead = node.nextBTreeNode
+					tree.nodeCache.cleanLRUHead.prevBTreeNode = nil
+
+					node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+					node.nextBTreeNode = nil
+
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = node
+					tree.nodeCache.cleanLRUTail = node
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = node
+					tree.nodeCache.cleanLRUTail = node
+				}
+			}
+		case dirtyLRU:
+			// Move node to the MRU end of tree.nodeCache's dirtyLRU (if necessary)
+			if node != tree.nodeCache.dirtyLRUTail {
+				if node == tree.nodeCache.dirtyLRUHead {
+					tree.nodeCache.dirtyLRUHead = node.nextBTreeNode
+					tree.nodeCache.dirtyLRUHead.prevBTreeNode = nil
+
+					node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+					node.nextBTreeNode = nil
+
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = node
+					tree.nodeCache.dirtyLRUTail = node
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = node
+					tree.nodeCache.dirtyLRUTail = node
+				}
+			}
+		}
+		tree.nodeCache.Unlock()
+	}
+}
+
+func (tree *btreeTreeStruct) markNodeClean(node *btreeNodeStruct) {
+	node.dirty = false
+
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		switch node.btreeNodeCacheTag {
+		case noLRU:
+			// Place node at the MRU end of tree.nodeCache's cleanLRU
+			if 0 == tree.nodeCache.cleanLRUItems {
+				tree.nodeCache.cleanLRUHead = node
+				tree.nodeCache.cleanLRUTail = node
+				tree.nodeCache.cleanLRUItems = 1
+
+				node.btreeNodeCacheTag = cleanLRU
+			} else {
+				node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+				node.prevBTreeNode.nextBTreeNode = node
+
+				tree.nodeCache.cleanLRUTail = node
+				tree.nodeCache.cleanLRUItems++
+
+				node.btreeNodeCacheTag = cleanLRU
+			}
+		case cleanLRU:
+			// Move node to the MRU end of tree.nodeCache's cleanLRU (if necessary)
+			if node != tree.nodeCache.cleanLRUTail {
+				if node == tree.nodeCache.cleanLRUHead {
+					tree.nodeCache.cleanLRUHead = node.nextBTreeNode
+					tree.nodeCache.cleanLRUHead.prevBTreeNode = nil
+
+					node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+					node.nextBTreeNode = nil
+
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = node
+					tree.nodeCache.cleanLRUTail = node
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = node
+					tree.nodeCache.cleanLRUTail = node
+				}
+			}
+		case dirtyLRU:
+			// Move node from dirtyLRU to the MRU end of tree.nodeCache's cleanLRU
+			if node == tree.nodeCache.dirtyLRUHead {
+				if node == tree.nodeCache.dirtyLRUTail {
+					tree.nodeCache.dirtyLRUHead = nil
+					tree.nodeCache.dirtyLRUTail = nil
+					tree.nodeCache.dirtyLRUItems = 0
+				} else {
+					tree.nodeCache.dirtyLRUHead = node.nextBTreeNode
+					tree.nodeCache.dirtyLRUHead.prevBTreeNode = nil
+					tree.nodeCache.dirtyLRUItems--
+
+					node.nextBTreeNode = nil
+				}
+			} else {
+				if node == tree.nodeCache.dirtyLRUTail {
+					tree.nodeCache.dirtyLRUTail = node.prevBTreeNode
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = nil
+					tree.nodeCache.dirtyLRUItems--
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+					tree.nodeCache.dirtyLRUItems--
+
+					node.nextBTreeNode = nil
+				}
+			}
+
+			if 0 == tree.nodeCache.cleanLRUItems {
+				node.btreeNodeCacheTag = cleanLRU
+				node.prevBTreeNode = nil
+
+				tree.nodeCache.cleanLRUHead = node
+				tree.nodeCache.cleanLRUTail = node
+				tree.nodeCache.cleanLRUItems = 1
+			} else {
+				node.btreeNodeCacheTag = cleanLRU
+				node.prevBTreeNode = tree.nodeCache.cleanLRUTail
+
+				tree.nodeCache.cleanLRUTail.nextBTreeNode = node
+				tree.nodeCache.cleanLRUTail = node
+				tree.nodeCache.cleanLRUItems++
+			}
+		}
+		if !tree.nodeCache.drainerActive && (tree.nodeCache.evictHighLimit < (tree.nodeCache.cleanLRUItems + tree.nodeCache.dirtyLRUItems)) {
+			tree.nodeCache.drainerActive = true
+			go tree.nodeCache.btreeNodeCacheDrainer()
+		}
+		tree.nodeCache.Unlock()
+	}
+}
+
 func (tree *btreeTreeStruct) markNodeDirty(node *btreeNodeStruct) {
 	node.dirty = true
 
-	// Did node come from a now-stale copy on disk?
-
 	if 0 != node.objectLength {
-		// Schedule stale on-disk reference to be reclaimed in (this or top-level ancestor) non-clone B+Tree
-
-		thisTree := tree
-		for nil != thisTree.clonedFromTree {
-			parentTree := thisTree.clonedFromTree
-			parentTree.Lock()
-			if tree != thisTree {
-				thisTree.Unlock()
-			}
-			thisTree = parentTree
-		}
-
-		// Mark node's prior on-disk reference as stale
+		// Node came from a now-stale copy on disk...
+		//   so schedule stale on-disk reference to be reclaimed in a subsequent Prune() call
 
 		staleOnDiskReferenceKey := &onDiskReferenceKeyStruct{
 			objectNumber: node.objectNumber,
 			objectOffset: node.objectOffset,
 		}
 
-		_, err := thisTree.staleOnDiskReferences.Put(staleOnDiskReferenceKey, node.objectLength)
+		ok, err := tree.staleOnDiskReferences.Put(staleOnDiskReferenceKey, node.objectLength)
 		if nil != err {
 			err = fmt.Errorf("Logic error inserting into staleOnDiskReferences LLRB Tree: %v", err)
 			panic(err)
 		}
-		// if ok were false, that just means it was already there which is just fine
-
-		if tree != thisTree {
-			thisTree.Unlock()
+		if !ok {
+			err = fmt.Errorf("Logic error inserting into staleOnDiskReferences LLRB Tree: ok == false")
+			panic(err)
 		}
 
 		// Zero-out on-disk reference so that the above is only done once for this now dirty node
@@ -1756,6 +1914,246 @@ func (tree *btreeTreeStruct) markNodeDirty(node *btreeNodeStruct) {
 		node.objectOffset = 0
 		node.objectLength = 0
 	}
+
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		switch node.btreeNodeCacheTag {
+		case noLRU:
+			// Place node at the MRU end of tree.nodeCache's dirtyLRU
+			if 0 == tree.nodeCache.dirtyLRUItems {
+				tree.nodeCache.dirtyLRUHead = node
+				tree.nodeCache.dirtyLRUTail = node
+				tree.nodeCache.dirtyLRUItems = 1
+
+				node.btreeNodeCacheTag = dirtyLRU
+			} else {
+				node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+				node.prevBTreeNode.nextBTreeNode = node
+
+				tree.nodeCache.dirtyLRUTail = node
+				tree.nodeCache.dirtyLRUItems++
+
+				node.btreeNodeCacheTag = dirtyLRU
+			}
+		case cleanLRU:
+			// Move node from cleanLRU to the MRU end of tree.nodeCache's dirtyLRU
+			if node == tree.nodeCache.cleanLRUHead {
+				if node == tree.nodeCache.cleanLRUTail {
+					tree.nodeCache.cleanLRUHead = nil
+					tree.nodeCache.cleanLRUTail = nil
+					tree.nodeCache.cleanLRUItems = 0
+				} else {
+					tree.nodeCache.cleanLRUHead = node.nextBTreeNode
+					tree.nodeCache.cleanLRUHead.prevBTreeNode = nil
+					tree.nodeCache.cleanLRUItems--
+
+					node.nextBTreeNode = nil
+				}
+			} else {
+				if node == tree.nodeCache.cleanLRUTail {
+					tree.nodeCache.cleanLRUTail = node.prevBTreeNode
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = nil
+					tree.nodeCache.cleanLRUItems--
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+					tree.nodeCache.cleanLRUItems--
+
+					node.nextBTreeNode = nil
+				}
+			}
+
+			if 0 == tree.nodeCache.dirtyLRUItems {
+				node.btreeNodeCacheTag = dirtyLRU
+				node.prevBTreeNode = nil
+
+				tree.nodeCache.dirtyLRUHead = node
+				tree.nodeCache.dirtyLRUTail = node
+				tree.nodeCache.dirtyLRUItems = 1
+			} else {
+				node.btreeNodeCacheTag = dirtyLRU
+				node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+
+				tree.nodeCache.dirtyLRUTail.nextBTreeNode = node
+				tree.nodeCache.dirtyLRUTail = node
+				tree.nodeCache.dirtyLRUItems++
+			}
+		case dirtyLRU:
+			// Move node to the MRU end of tree.nodeCache's dirtyLRU (if necessary)
+			if node != tree.nodeCache.dirtyLRUTail {
+				if node == tree.nodeCache.dirtyLRUHead {
+					tree.nodeCache.dirtyLRUHead = node.nextBTreeNode
+					tree.nodeCache.dirtyLRUHead.prevBTreeNode = nil
+
+					node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+					node.nextBTreeNode = nil
+
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = node
+					tree.nodeCache.dirtyLRUTail = node
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = tree.nodeCache.dirtyLRUTail
+
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = node
+					tree.nodeCache.dirtyLRUTail = node
+				}
+			}
+		}
+		tree.nodeCache.Unlock()
+	}
+}
+
+func (tree *btreeTreeStruct) markNodeEvicted(node *btreeNodeStruct) {
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		switch node.btreeNodeCacheTag {
+		case noLRU:
+			err := fmt.Errorf("Logic error in markNodeUsed() with node.btreeNodeCacheTag == noLRU (%v)", noLRU)
+			panic(err)
+		case cleanLRU:
+			// Remove node from tree.nodeCache's cleanLRU
+			if node == tree.nodeCache.cleanLRUHead {
+				if node == tree.nodeCache.cleanLRUTail {
+					tree.nodeCache.cleanLRUHead = nil
+					tree.nodeCache.cleanLRUTail = nil
+					tree.nodeCache.cleanLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+				} else {
+					tree.nodeCache.cleanLRUHead = node.nextBTreeNode
+					tree.nodeCache.cleanLRUHead.prevBTreeNode = nil
+					tree.nodeCache.cleanLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.nextBTreeNode = nil
+				}
+			} else {
+				if node == tree.nodeCache.cleanLRUTail {
+					tree.nodeCache.cleanLRUTail = node.prevBTreeNode
+					tree.nodeCache.cleanLRUTail.nextBTreeNode = nil
+					tree.nodeCache.cleanLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.prevBTreeNode = nil
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+					tree.nodeCache.cleanLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = nil
+				}
+			}
+		case dirtyLRU:
+			// Remove node from tree.nodeCache's dirtyLRU
+			if node == tree.nodeCache.dirtyLRUHead {
+				if node == tree.nodeCache.dirtyLRUTail {
+					tree.nodeCache.dirtyLRUHead = nil
+					tree.nodeCache.dirtyLRUTail = nil
+					tree.nodeCache.dirtyLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+				} else {
+					tree.nodeCache.dirtyLRUHead = node.nextBTreeNode
+					tree.nodeCache.dirtyLRUHead.prevBTreeNode = nil
+					tree.nodeCache.dirtyLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.nextBTreeNode = nil
+				}
+			} else {
+				if node == tree.nodeCache.dirtyLRUTail {
+					tree.nodeCache.dirtyLRUTail = node.prevBTreeNode
+					tree.nodeCache.dirtyLRUTail.nextBTreeNode = nil
+					tree.nodeCache.dirtyLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.prevBTreeNode = nil
+				} else {
+					node.prevBTreeNode.nextBTreeNode = node.nextBTreeNode
+					node.nextBTreeNode.prevBTreeNode = node.prevBTreeNode
+					tree.nodeCache.dirtyLRUItems--
+
+					node.btreeNodeCacheTag = noLRU
+					node.nextBTreeNode = nil
+					node.prevBTreeNode = nil
+				}
+			}
+		}
+		tree.nodeCache.Unlock()
+	}
+}
+
+// btreeNodeCacheDrainer is a goroutine used to reduce the number of clean B+Tree Nodes
+// so that the combined number of clean and dirty B+Tree Nodes is at or below the
+// evictLowLimit specified in the associated btreeNodeCacheStruct.
+//
+// Note that the btreeNodeCacheStruct's sync.Mutex is obtained by the above markNode...()
+// functions while their callers hold the B+Tree's btreeTreeStruct sync.Mutex. Hence, it
+// would be a deadlock-inducing activity to grab these sync.Mutex's in the reverse order.
+// Care must be taken to avoid this. The challenge is that a given btreeNodeCacheStruct
+// is likely to be shared among multiple btreeTreeStruct's. So processing the cleanLRU
+// doubly-linked list, while only holding the btreeNodeCacheStruct's sync.Mutex, will
+// ultimately require holding both that sync.Mutex and the associated btreeTreeStruct's
+// sync.Mutex in order to "evict" it. This will necessitate the following sequence:
+//
+//   1 - release the btreeNodeCacheStruct's sync.Mutex
+//   2 - obtain the selected btreeNodeStruct's btreeTreeStruct's sync.Mutex
+//   3 - verifying the selected btreeNodeStruct is still appropriate for eviction
+//   4 - performing the eviction
+//
+// Note also that non-leaf btreeNodeStruct's with loaded children cannot be evicted.
+// Instead, all loaded descendants that are themselves evictable, should first be evicted.
+// This will be accomplished by simply invoking purgeNode(,full==true) which should not
+// find any dirty nodes at or beneath the btreeNodeStruct selected for eviction.
+func (bPlusTreeCache *btreeNodeCacheStruct) btreeNodeCacheDrainer() {
+	var (
+		err                  error
+		nodeToEvict          *btreeNodeStruct
+		treeBeingEvictedFrom *btreeTreeStruct
+	)
+
+	for {
+		bPlusTreeCache.Lock()
+		if (0 == bPlusTreeCache.cleanLRUItems) || (bPlusTreeCache.evictLowLimit >= (bPlusTreeCache.cleanLRUItems + bPlusTreeCache.dirtyLRUItems)) {
+			bPlusTreeCache.drainerActive = false
+			bPlusTreeCache.Unlock()
+			runtime.Goexit()
+		}
+
+		nodeToEvict = bPlusTreeCache.cleanLRUHead
+		treeBeingEvictedFrom = nodeToEvict.tree
+		bPlusTreeCache.Unlock()
+		treeBeingEvictedFrom.Lock()
+
+		if cleanLRU != nodeToEvict.btreeNodeCacheTag {
+			// Between bPlusTreeCache.Unlock() & nodeToEvict.tree.Lock(), nodeToEvict no longer evictable
+			treeBeingEvictedFrom.Unlock()
+			continue
+		}
+
+		err = treeBeingEvictedFrom.purgeNode(nodeToEvict, true)
+		if nil != err {
+			panic(err)
+		}
+
+		treeBeingEvictedFrom.Unlock()
+	}
+}
+
+func (bPlusTreeCache *btreeNodeCacheStruct) UpdateLimits(evictLowLimit uint64, evictHighLimit uint64) {
+	bPlusTreeCache.Lock()
+	bPlusTreeCache.evictLowLimit = evictLowLimit
+	bPlusTreeCache.evictHighLimit = evictHighLimit
+	if !bPlusTreeCache.drainerActive && (0 < bPlusTreeCache.cleanLRUItems) && (bPlusTreeCache.evictHighLimit < (bPlusTreeCache.cleanLRUItems + bPlusTreeCache.dirtyLRUItems)) {
+		bPlusTreeCache.drainerActive = true
+		go bPlusTreeCache.btreeNodeCacheDrainer()
+	}
+	bPlusTreeCache.Unlock()
 }
 
 func (tree *btreeTreeStruct) touchNode(node *btreeNodeStruct) (err error) {
@@ -1945,14 +2343,20 @@ func (tree *btreeTreeStruct) updatePrefixSumTreeLeafToRoot(leafNode *btreeNodeSt
 }
 
 func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
+	var (
+		maxKeysPerNodeStruct  onDiskUint64Struct
+		numChildrenStruct     onDiskUint64Struct
+		numKeysStruct         onDiskUint64Struct
+		onDiskNode            onDiskNodeStruct
+		onDiskReferenceToNode onDiskReferenceToNodeStruct
+	)
+
 	nodeByteSlice, err := tree.BPlusTreeCallbacks.GetNode(node.objectNumber, node.objectOffset, node.objectLength)
 	if nil != err {
 		return
 	}
 
 	node.kvLLRB = NewLLRBTree(node.tree.Compare, node.tree.BPlusTreeCallbacks)
-
-	var onDiskNode onDiskNodeStruct
 
 	_, err = cstruct.Unpack(nodeByteSlice, &onDiskNode, OnDiskByteOrder)
 	if nil != err {
@@ -1966,8 +2370,6 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 	payload := onDiskNode.Payload
 
 	if node.root {
-		var maxKeysPerNodeStruct onDiskUint64Struct
-
 		bytesConsumed, unpackErr := cstruct.Unpack(payload, &maxKeysPerNodeStruct, OnDiskByteOrder)
 		if nil != unpackErr {
 			err = unpackErr
@@ -1981,8 +2383,6 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 	}
 
 	if node.leaf {
-		var numKeysStruct onDiskUint64Struct
-
 		bytesConsumed, unpackErr := cstruct.Unpack(payload, &numKeysStruct, OnDiskByteOrder)
 		if nil != unpackErr {
 			err = unpackErr
@@ -2017,8 +2417,6 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 
 		node.rootPrefixSumChild = nil
 	} else {
-		var numChildrenStruct onDiskUint64Struct
-
 		bytesConsumed, unpackErr := cstruct.Unpack(payload, &numChildrenStruct, OnDiskByteOrder)
 		if nil != unpackErr {
 			err = unpackErr
@@ -2030,8 +2428,6 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 		if 0 == numChildrenStruct.U64 {
 			node.nonLeafLeftChild = nil
 		} else {
-			var onDiskReferenceToNode onDiskReferenceToNodeStruct
-
 			bytesConsumed, unpackErr := cstruct.Unpack(payload, &onDiskReferenceToNode, OnDiskByteOrder)
 			if nil != unpackErr {
 				err = unpackErr
@@ -2052,6 +2448,8 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 			}
 
 			node.nonLeafLeftChild = childNode
+
+			tree.initNodeAsEvicted(childNode)
 
 			for i := uint64(1); i < numChildrenStruct.U64; i++ {
 				key, bytesConsumed, unpackKeyErr := node.tree.BPlusTreeCallbacks.UnpackKey(payload)
@@ -2082,6 +2480,8 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 				}
 
 				node.kvLLRB.Put(key, childNode)
+
+				tree.initNodeAsEvicted(childNode)
 			}
 
 			tree.arrangePrefixSumTree(node)
@@ -2094,13 +2494,19 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 	}
 
 	node.loaded = true
-	node.dirty = false
+
+	tree.markNodeClean(node)
 
 	err = nil
 	return
 }
 
 func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
+	var (
+		numChildren           int
+		onDiskReferenceToNode onDiskReferenceToNodeStruct
+	)
+
 	if !node.dirty {
 		err = nil
 		return
@@ -2167,8 +2573,6 @@ func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
 			onDiskNode.Payload = append(onDiskNode.Payload, packedValue...)
 		}
 	} else {
-		var numChildren int
-
 		llrbLen, nonShadowingErr := node.kvLLRB.Len()
 		if nil != nonShadowingErr {
 			err = nonShadowingErr
@@ -2195,8 +2599,6 @@ func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
 		}
 
 		onDiskNode.Payload = append(onDiskNode.Payload, numChildrenBuf...)
-
-		var onDiskReferenceToNode onDiskReferenceToNodeStruct
 
 		for i := 0; i < numChildren; i++ {
 			if 0 == i {
@@ -2272,7 +2674,7 @@ func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
 	node.objectOffset = objectOffset
 	node.objectLength = uint64(len(onDiskNodeBuf))
 
-	node.dirty = false
+	tree.markNodeClean(node)
 
 	err = nil
 	return
@@ -2332,7 +2734,7 @@ func (tree *btreeTreeStruct) updateLayoutReport(layoutReport LayoutReport, node 
 	}
 
 	if !wasLoaded {
-		err = tree.purgeNode(node, true)
+		err = tree.purgeNode(node, true) // will also mark node evicted in LRU
 		if nil != err {
 			return
 		}
