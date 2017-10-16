@@ -156,9 +156,9 @@ int proxyfs_create(mount_handle_t* in_mount_handle,
 // Path-based create
 int proxyfs_create_path(mount_handle_t* in_mount_handle,
                         char*           in_fullpath,
-                        mode_t          in_mode,
                         uid_t           in_uid,
                         gid_t           in_gid,
+                        mode_t          in_mode,
                         uint64_t*       out_inode_number);
 
 // flock: byte range file lock, inode based only.

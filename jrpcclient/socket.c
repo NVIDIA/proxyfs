@@ -149,7 +149,17 @@ int sock_read(int sockfd, char** bufPtr, int* error)
     while (1) {
         bytesRecd = read(sockfd, buf + allBytesRecd, max_read_size - allBytesRecd);
         if (bytesRecd < 0) {
-            DPRINTF("ERROR %s reading from socket\n", strerror(errno));
+            if (errno == EAGAIN) {
+                continue;
+            }
+
+            if (errno == 0) {
+                DPRINTF("ERROR reading from socket - no errno set, setting errno to EIO.\n");
+                errno = EIO;
+            } else {
+                DPRINTF("ERROR %s reading from socket\n", strerror(errno));
+            }
+
             *error = errno;
             free(*bufPtr);
             return -1;
