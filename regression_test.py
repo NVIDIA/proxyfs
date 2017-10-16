@@ -198,7 +198,9 @@ def build_dependencies(options):
 def build_jrpcclient(options):
     proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
     jrpcclient_dir = os.path.join(proxyfs_dir, "jrpcclient")
-    command = ['./regression_test.py'] + sys.argv[1:]
+    command = ['./regression_test.py']
+    if options.deb_builder:
+        command.append('--deb-builder')
     return bool(subprocess.call(command, cwd=jrpcclient_dir))
 
 
