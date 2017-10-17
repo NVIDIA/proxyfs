@@ -61,6 +61,8 @@ func TestAPI(t *testing.T) {
 
 	testLogTargets(t)
 
+	testParseLogEntry(t)
+
 	err = stats.Down()
 	if nil != err {
 		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
@@ -101,4 +103,106 @@ func testLogTargets(t *testing.T) {
 		t.Error("log target doesn't count correctly")
 	}
 
+	fields := ParseLogEntry(targ.LogBuf.LogEntries[0])
+	names := []string{
+		"time", "level", "msg", "goroutine", "package",
+	}
+	for _, nm := range names {
+		if fields[nm] == "" {
+			t.Errorf("unable to parse field '%s' in log entry '%s'",
+				nm, targ.LogBuf.LogEntries[0])
+		}
+	}
+}
+
+func testParseLogEntry(t *testing.T) {
+	var targ LogTarget
+	targ.Init(10)
+
+	// targ will get a copy of each log entry (and will live on after this
+	// function returns)
+	AddLogTarget(targ)
+
+	var (
+		fields map[string]string
+		names  []string
+	)
+
+	// test a trace log entry (logs as level=info
+	Tracef("%s %s", "Hello,", "World")
+
+	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	names = []string{
+		"time", "level", "msg", "goroutine", "package",
+	}
+	for _, nm := range names {
+		if fields[nm] == "" {
+			t.Errorf("unable to parse field '%s' in log entry '%s'",
+				nm, targ.LogBuf.LogEntries[0])
+		}
+	}
+	if fields["error"] != "" {
+		t.Errorf("found 'error' field containing '%s' in log entry '%s'",
+			fields["error"], targ.LogBuf.LogEntries[0])
+	}
+	if fields["level"] != "info" {
+		t.Errorf("'level' field contains '%s' should be 'trace' in entry '%s'",
+			fields["level"], targ.LogBuf.LogEntries[0])
+	}
+	if fields["msg"] != "Hello, World" {
+		t.Errorf("'msg' field contains '%s' should be 'Hello, World' in entry '%s'",
+			fields["trace"], targ.LogBuf.LogEntries[0])
+	}
+
+	// test an error entry
+	err := fmt.Errorf("this is the error")
+	ErrorfWithError(err, "we had an error!")
+
+	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	names = []string{
+		"time", "level", "msg", "goroutine", "package", "error",
+	}
+	for _, nm := range names {
+		if fields[nm] == "" {
+			t.Errorf("unable to parse field '%s' in log entry '%s'",
+				nm, targ.LogBuf.LogEntries[0])
+		}
+	}
+	if fields["error"] != "this is the error" {
+		t.Errorf("field 'error' contains '%s' should be 'this is the error' in log entry '%s'",
+			fields["error"], targ.LogBuf.LogEntries[0])
+	}
+	if fields["level"] != "error" {
+		t.Errorf("'level' field contains '%s' should be 'error' in entry '%s'",
+			fields["level"], targ.LogBuf.LogEntries[0])
+	}
+	if fields["msg"] != "we had an error!" {
+		t.Errorf("'msg' field contains '%s' should be 'we had an error!' in entry '%s'",
+			fields["msg"], targ.LogBuf.LogEntries[0])
+	}
+
+	msg_in := `When you put "something" in double quotes it means "something else"`
+	msg_out := `When you put \"something\" in double quotes it means \"something else\"`
+	Tracef(msg_in)
+	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	if fields["msg"] != msg_out {
+		t.Errorf("'msg' field contains '%s' should be '%s' in entry '%s'",
+			fields["msg"], msg_out, targ.LogBuf.LogEntries[0])
+	}
+
+	// Double-plus ungood (both msg and error have nested '"')
+	errmsg_in := `Finding " when you don't expect " can drive you """`
+	errmsg_out := `Finding \" when you don't expect \" can drive you \"\"\"`
+	err = fmt.Errorf(errmsg_in)
+	ErrorfWithError(err, msg_in)
+
+	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	if fields["msg"] != msg_out {
+		t.Errorf("'msg' field contains '%s' should be '%s' in entry '%s'",
+			fields["msg"], msg_out, targ.LogBuf.LogEntries[0])
+	}
+	if fields["error"] != errmsg_out {
+		t.Errorf("'error' field contains '%s' should be '%s' in entry '%s'",
+			fields["error"], errmsg_out, targ.LogBuf.LogEntries[0])
+	}
 }
