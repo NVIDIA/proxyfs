@@ -11,6 +11,7 @@
 #include <debug.h>
 #include <fault_inj.h>
 #include <string.h>
+#include <syslog.h>
 
 static char rpc_server[128];
 static int  rpc_port;
@@ -438,12 +439,8 @@ void rpc_get_response(int sockfd)
 
     if (resp[0].rsp_err != 0) {
         DPRINTF("Error %d reading from socket.\n", resp[0].rsp_err);
-        if ((resp[0].rsp_err == EPIPE) || (resp[0].rsp_err == ENODEV) || (resp[0].rsp_err == EBADF)) {
-            // The socket got disconnected. Force a DPANIC.
-            // TBD: Build a proper error handling mechanism to retry the operation.
-            PANIC("Failed to read reply from proxyfsd <-> rpc client socket.\n");
-            goto done;
-        }
+        syslog(LOG_ERR, "ProxyfsRpcClient: Error reading from Swift Proxyfs server, exiting...\n");
+        exit(1);
     }
     //DPRINTF("Read from socket: %s\n",resp[0].readBuf);
     DPRINTF("Read %ld bytes into resp[0].readBuf %p from socket.\n", strlen(resp[0].readBuf),resp[0].readBuf);
@@ -579,12 +576,6 @@ done:
 
             // Free the buffer; the data is all in the json response now.
             jsonrpc_free_read_buf(ctx[resp_index]);
-
-            if ((resp_ptr->rsp_err == EPIPE) || (resp_ptr->rsp_err == ENODEV) || (resp_ptr->rsp_err == EBADF)) {
-                // The socket got disconnected.
-                // Close and reopen the socket to clear the error
-                jsonrpc_rpc_bounce(&ctx[resp_index]->rpc_handle);
-            }
         }
     }
 
