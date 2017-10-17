@@ -45,7 +45,6 @@ PACKAGES = ["blunder",
             "swiftclient",
             "utils"]
 
-LIBS = ["jrpcclient", "vfs"]
 
 COLORS = {"bright red": '1;31', "bright green": '1;32'}
 
@@ -196,162 +195,29 @@ def build_dependencies(options):
     return failures
 
 
-def build_libs(options):
-    failures = 0
+def build_jrpcclient(options):
     proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
-    for lib in LIBS:
-        print("Building " + lib)
-        full_lib_path = os.path.join(proxyfs_dir, lib)
-        with return_to_wd():
-            os.chdir(full_lib_path)
-            make_success = not(bool(subprocess.call((['make', 'clean']))))
-            failures += not make_success
-            make_success = not(bool(subprocess.call((['make', 'all']))))
-            failures += not make_success
-            if not options.no_install:
-                if 'Ubuntu' == platform.linux_distribution()[0]:
-                    install_cmd = ['make', 'install']
-                    if not options.deb_builder:
-                        install_cmd.insert(0, 'sudo')
-                        install_cmd.insert(1, '-E')
-                    make_success = not(bool(subprocess.call(install_cmd)))
-                    failures += not make_success
-                if 'CentOS Linux' == platform.linux_distribution()[0]:
-                    install_cmd = ['make', 'installcentos']
-                    if not options.deb_builder:
-                        install_cmd.insert(0, 'sudo')
-                        install_cmd.insert(1, '-E')
-                    make_success = not(bool(subprocess.call(install_cmd)))
-                    failures += not make_success
-    report("build_libs()", not failures)
+    jrpcclient_dir = os.path.join(proxyfs_dir, "jrpcclient")
+    command = ['./regression_test.py']
+    if options.deb_builder:
+        command.append('--deb-builder')
+    return bool(subprocess.call(command, cwd=jrpcclient_dir))
+
+
+def build_vfs(options):
+    proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
+    vfs_dir = os.path.join(proxyfs_dir, "vfs")
+    failures = 0
+    failures += bool(subprocess.call('make', cwd=vfs_dir))
+    if failures:
+        return failures
+    distro = platform.linux_distribution()[0]
+    if 'centos' in distro.lower():
+        make_option = 'installcentos'
+    else:
+        make_option = 'install'
+    failures += bool(subprocess.call(('make', make_option), cwd=vfs_dir))
     return failures
-
-
-def wait_for_proxyfsd(address, port, interval=0.5, max_iterations=60):
-    # We're importing requests here to allow build process to work without
-    # requests.
-    import requests
-
-    current_iteration = 0
-    is_proxyfs_up = False
-    while not is_proxyfs_up and current_iteration < max_iterations:
-        time.sleep(interval)
-        try:
-            r = requests.get('http://{}:{}'.format(address, port), timeout=3)
-            if r.status_code == 200:
-                is_proxyfs_up = True
-        except Exception:
-            pass
-        current_iteration += 1
-    return is_proxyfs_up
-
-
-def test_jrpcclient():
-    private_ip_addr  = "127.0.0.1"
-    ramswift_port    =  4592 # arbitrary
-    jsonrpc_port     = 12347 # 12347 instead of 12345 so that test can run if proxyfsd is already running
-    jsonrpc_fastport = 32347 # 32347 instead of 32345 so that test can run if proxyfsd is already running
-    http_port        = 15347 # 15347 instead of 15346 so that test can run if proxyfsd is already running
-
-    color_printer = color_print if sys.stdout.isatty() else lambda *a, **kw: print(*a)
-
-    with self_cleaning_tempdir() as our_tempdir, open(os.devnull) as dev_null:
-        ramswift = subprocess.Popen(
-            [proxyfs_binary_path("ramswift"),
-             "saioramswift0.conf",
-             "Peer0.PrivateIPAddr={}".format(private_ip_addr),
-             "SwiftClient.NoAuthTCPPort={}".format(ramswift_port)],
-             stdout=dev_null, stderr=dev_null,
-             cwd=proxyfs_package_path("ramswift")
-        )
-
-        proxyfsd = subprocess.Popen(
-            [proxyfs_binary_path("proxyfsd"),
-             "saioproxyfsd0.conf",
-             "Logging.LogFilePath={}/{}".format(our_tempdir, "proxyfsd_jrpcclient.log"),
-             "Peer0.PrivateIPAddr={}".format(private_ip_addr),
-             "SwiftClient.NoAuthTCPPort={}".format(ramswift_port),
-             "JSONRPCServer.TCPPort={}".format(jsonrpc_port),
-             "JSONRPCServer.FastTCPPort={}".format(jsonrpc_fastport),
-             "JSONRPCServer.DontWriteConf=true",
-             "HTTPServer.TCPPort={}".format(http_port)],
-            stdout=dev_null, stderr=dev_null,
-            cwd=proxyfs_package_path("proxyfsd")
-        )
-
-        # Make sure proxyfsd hasn't exited before we start the tests
-        proxyfsd.poll()
-        if proxyfsd.returncode:
-            color_printer("Before starting test, nonzero exit status returned from proxyfsd daemon: {}".format(proxyfsd.returncode), color="bright red")
-            report("jrpcclient tests", not proxyfsd.returncode)
-
-            # Print out proxyfsd's stdout since it exited unexpectedly
-            proxyfsd_logfile = "{}/{}".format(our_tempdir, "proxyfsd_jrpcclient.log")
-            logfile = open(proxyfsd_logfile, 'r')
-            print(logfile.read())
-            logfile.close()
-
-            # Clean up
-            ramswift.terminate()
-            return proxyfsd.returncode
-
-        config_override_string = "{}:{}/{}".format(private_ip_addr,
-                                                   jsonrpc_port,
-                                                   jsonrpc_fastport)
-
-        # wait a moment for proxyfsd to get set "Up()"
-        # wait_for_proxyfs(...) returns a boolean, but we'll let the rest of
-        # this script manage everything, just as it has been done until now and
-        # specifically manage the case where ProxyFS isn't up.
-        wait_for_proxyfsd(private_ip_addr, http_port)
-
-        jrpcclient_tests = subprocess.Popen(
-            [os.path.join(".", "test"),
-             "-o", config_override_string],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            cwd=proxyfs_package_path("jrpcclient")
-        )
-
-        # Put a time limit on the tests, in case they hang
-        def kill_proc(p):
-            color_printer("jrpcclient tests timed out!", color="bright red")
-            p.kill()
-
-        timeout_sec = 200
-        timer = Timer(timeout_sec, kill_proc, [jrpcclient_tests])
-
-        try:
-            timer.start()
-
-            if not options.verbose_jrpcclient:
-                # This line gets all jrpcclient stdout at once, waits till it's over
-                jrpcclient_test_stdout, _ = jrpcclient_tests.communicate()
-
-                # Emit test stdout only if there was a failure
-                if jrpcclient_tests.returncode:
-                    print(jrpcclient_test_stdout)
-
-            else:
-                # I'm not confident in this code yet; deadlock may be possible.
-
-                # Get all jrpcclient stdout line by line.
-                # Doesn't continue until the test is done.
-                # (if thread is still running, it won't return)
-                while True:
-                    line = jrpcclient_tests.stdout.readline()
-                    print(line, end="")
-                    if (line == '' and jrpcclient_tests.poll() != None):
-                        break
-        finally:
-            timer.cancel()
-
-        proxyfsd.terminate()
-        time.sleep(0.5)  # wait a moment for proxyfsd to get set "Down()"
-        ramswift.terminate()
-
-    report("jrpcclient tests", not jrpcclient_tests.returncode)
-
-    return jrpcclient_tests.returncode
 
 
 def main(options):
@@ -362,23 +228,21 @@ def main(options):
     if not options.quiet:
         logging.basicConfig(format="%(message)s", level=logging.INFO)
 
-    if not options.just_libs and not options.just_build_libs:
-        failures = build_dependencies(options)
-        if failures:
-            return failures
+    failures = build_dependencies(options)
+    if failures:
+        return failures
 
-        failures += build_proxyfs(options)
-        if failures:
-            return failures
+    failures += build_proxyfs(options)
+    if failures:
+        return failures
 
-    if platform.system() != "Darwin":
-        if not options.no_libs:
-            if options.just_libs or options.just_build_libs:
-                failures = build_libs(options)
-            else:
-                failures += build_libs(options)
-            if not options.deb_builder and not options.just_build_libs:
-                failures += test_jrpcclient()
+    failures += build_jrpcclient(options)
+    if failures:
+        return failures
+
+    failures += build_vfs(options)
+    if failures:
+        return failures
 
     return failures
 
@@ -395,19 +259,6 @@ if __name__ == "__main__":
                             help="invoke `go get` to retrieve new dependencies")
     arg_parser.add_argument('--packages', '-p', action='store', nargs='*',
                             help="specific packages to process")
-    libs_group = arg_parser.add_mutually_exclusive_group()
-    libs_group.add_argument('--no-libs', action='store_true',
-                            help="don't build C libraries or run C tests")
-    libs_group.add_argument('--just-build-libs', action='store_true',
-                            help="only build C libraries")
-    libs_group.add_argument('--just-libs', action='store_true',
-                            help="only build C libraries and run C tests")
-    arg_parser.add_argument('--verbose-jrpcclient', action='store_true',
-                            help="EXPERIMENTAL, DO NOT USE! "
-                            "emit jrpcclient test stdout even if no failures")
-    arg_parser.add_argument('--no-install', action='store_true',
-                            help="When building C libraries, do not attempt "
-                                 "to install resulting objects")
     arg_parser.add_argument('--deb-builder', action='store_true',
                             help="Modify commands to run inside "
                                  "swift-deb-builder")

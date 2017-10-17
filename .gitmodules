@@ -1,0 +1,8 @@
+[submodule "proxyfs-jrpc-client"]
+	path = jrpcclient
+	url = git@github.com:swiftstack/proxyfs-jrpc-client.git
+	branch = master
+[submodule "proxyfs-vfs"]
+	path = vfs
+	url = git@github.com:swiftstack/proxyfs-vfs.git
+	branch = master
