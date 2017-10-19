@@ -14,13 +14,14 @@ import (
 // This struct is used by LLM to track a lock.
 type localLockTrack struct {
 	trackedlock.Mutex
-	lockId       string // For debugging use
+	lockId       string // lock identity (must be unique)
 	owners       uint64 // Count of threads which own lock
 	waiters      uint64 // Count of threads which want to own the lock (either shared or exclusive)
 	state        lockState
 	exclOwner    CallerID
 	listOfOwners []CallerID
-	waitReqQ     *list.List // List of requests waiting for lock
+	waitReqQ     *list.List               // List of requests waiting for lock
+	rwMutexTrack trackedlock.RWMutexTrack // Track the lock to see how long its held
 }
 
 type localLockRequest struct {
@@ -287,6 +288,13 @@ func (l *RWLockStruct) commonLock(requestedState lockState, try bool) (err error
 			*track.exclOwner, track.listOfOwners))
 	}
 
+	// let trackedlock package track how long we hold the lock
+	if track.state == exclusive {
+		track.rwMutexTrack.LockTrack(track)
+	} else {
+		track.rwMutexTrack.RLockTrack(track)
+	}
+
 	// At this point, we got the lock either by the call to processLocalQ() above
 	// or as a result of processLocalQ() being called from the unlock() path.
 
@@ -341,6 +349,8 @@ func (l *RWLockStruct) unlock() (err error) {
 			panic("track.owners < 0!!!")
 		}
 	}
+	// record the release of the lock
+	track.rwMutexTrack.DLMUnlockTrack(track)
 
 	// See if any locks can be granted
 	processLocalQ(track)

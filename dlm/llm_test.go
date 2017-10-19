@@ -53,6 +53,11 @@ var testConfMap conf.ConfMap
 
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
+	confStrings := []string{
+		"TrackedLock.LockHoldTimeLimit=2s",
+		"TrackedLock.LockCheckPeriod=1s",
+	}
+
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
 	if nil != err {
 		return
@@ -65,7 +70,15 @@ func testSetup() (err error) {
 
 	err = os.Mkdir("TestVolume", os.ModePerm)
 
-	testConfMap := conf.MakeConfMap()
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		return
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		return
+	}
 
 	// Setup channel used to synchronize multiple test thread operations
 	globalSyncPt = make(chan testReq)
@@ -83,6 +96,7 @@ func testSetup() (err error) {
 
 	err = transitions.Up(testConfMap)
 	if nil != err {
+		logger.ErrorWithError(err, "transitions.Up() failed")
 		return
 	}
 
@@ -93,6 +107,7 @@ func testSetup() (err error) {
 func testTeardown() (err error) {
 	err = transitions.Down(testConfMap)
 	if nil != err {
+		logger.ErrorWithError(err, "transitions.Down() failed")
 		return
 	}
 
@@ -127,7 +142,7 @@ func TestMain(m *testing.M) {
 
 	err = testTeardown()
 	if nil != err {
-		logger.ErrorWithError(err)
+		logger.ErrorWithError(err, "testTeardown failed")
 	}
 
 	os.Exit(testResults)
