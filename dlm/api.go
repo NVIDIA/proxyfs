@@ -91,8 +91,9 @@ var nextCallerID uint64 = 1000
 func GenerateCallerID() (callerID CallerID) {
 
 	// TODO - we need to use a nonce value instead of this when we have clustering
-	// include the goroutine ID to aid debugging
-	var goID uint64 = utils.GetGID()
+	//
+	// include the goroutine ID in CallerID to aid debugging
+	var goID uint64 = utils.GetGoId()
 
 	callerIDLock.Lock()
 

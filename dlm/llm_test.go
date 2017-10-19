@@ -50,6 +50,11 @@ var globalSyncPt chan testReq // Channel used to synchronize test threads to sim
 
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
+	confStrings := []string{
+		"TrackedLock.LockHoldTimeLimit=2s",
+		"TrackedLock.LockCheckPeriod=1s",
+	}
+
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
 	if nil != err {
 		return
@@ -62,13 +67,28 @@ func testSetup() (err error) {
 
 	err = os.Mkdir("TestVolume", os.ModePerm)
 
-	testConfMap := conf.MakeConfMap()
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		return
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		return
+	}
+
+	err = trackedlock.Up(confMap)
+	if nil != err {
+		logger.ErrorWithError(err, "trackedlock.Up() failed")
+		return
+	}
 
 	// Setup channel used to synchronize multiple test thread operations
 	globalSyncPt = make(chan testReq)
 
-	err = Up(testConfMap)
+	err = Up(confMap)
 	if nil != err {
+		logger.ErrorWithError(err, "dlm.Up() failed")
 		return
 	}
 
@@ -94,6 +114,23 @@ func testTeardown() (err error) {
 		return
 	}
 
+	err = Down()
+	if nil != err {
+		logger.ErrorWithError(err, "dlm.Down() failed")
+		return
+	}
+
+	err = trackedlock.Down()
+	if nil != err {
+		logger.ErrorWithError(err, "trackedlock.Down() failed")
+		return
+	}
+
+	err = logger.Down()
+	if nil != err {
+		return
+	}
+
 	return
 }
 
@@ -110,7 +147,7 @@ func TestMain(m *testing.M) {
 
 	err = testTeardown()
 	if nil != err {
-		logger.ErrorWithError(err)
+		logger.ErrorWithError(err, "testTeardown failed")
 	}
 
 	os.Exit(testResults)
