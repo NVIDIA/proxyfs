@@ -212,11 +212,17 @@ def build_vfs(options):
     if failures:
         return failures
     distro = platform.linux_distribution()[0]
-    if 'centos' in distro.lower():
-        make_option = 'installcentos'
+    if options.deb_builder:
+        if 'centos' in distro.lower():
+            install_cmd = ('make', 'installcentos')
+        else:
+            install_cmd = ('make', 'install')
     else:
-        make_option = 'install'
-    failures += bool(subprocess.call(('make', make_option), cwd=vfs_dir))
+        if 'centos' in distro.lower():
+            install_cmd = ('sudo', '-E', 'make', 'installcentos')
+        else:
+            install_cmd = ('sudo', '-E', 'make', 'install')
+    failures += bool(subprocess.call(install_cmd, cwd=vfs_dir))
     return failures
 
 
