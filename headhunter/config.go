@@ -244,6 +244,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		// TODO: eventually, just return
 		bPlusTreeObjectCacheEvictHighLimit = 10010
+		err = nil
 	}
 
 	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
