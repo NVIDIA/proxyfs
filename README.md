@@ -13,9 +13,7 @@ Swift presents a hierarchy consisting of Accounts and Containers. Within each Co
 
 ProxyFS was created to extend the applicability of Swift Clusters to address such file system-oriented use cases.
 
-## Installation
-
-### Development
+## Development
 
 Make sure you've [installed and set up Go](https://golang.org/doc/install#install).
 
@@ -27,6 +25,13 @@ Choose a go base directory and set it to $GOPATH in your environment. Then:
     cd !$
     git clone git@github.com:swiftstack/ProxyFS
     cd ProxyFS
+    git submodule update --init --recursive
+
+If updating from a pre-submodule ProxyFS repo:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS
+    git pull
+    git checkout development
     rm -rf jrpcclient
     rm -rf vfs
     git submodule update --init --recursive
@@ -63,11 +68,10 @@ To restore your submodules to their "(HEAD detached at ...)" branch:
 
     cd $GOPATH/src/github.com/swiftstack/ProxyFS
     git pull
-    rm -rf jrpcclient
-    rm -rf vfs
-    git submodule update --init --recursive
+    git checkout development
+    git submodule update --recursive
 
-To build/test/install ProxyFS (only currently supported on CentOS):
+To build/test/install ProxyFS:
 
     cd $GOPATH/src/github.com/swiftstack/ProxyFS
     ./regression_test.py
