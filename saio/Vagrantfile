@@ -5,6 +5,8 @@
 #
 #  1) vboxnet0 is assumed to be a host-only network @ address 172.28.128.1 (DHCP disabled)
 #  2) centos/7 is missing vboxsf (VirtualBox Guest Additions), so using centos-74-minimal-20170913 instead
+#       curl -O https://o.swiftstack.org/v1/AUTH_misc/vagrant_boxes/centos-74-minimal-20170913.box
+#       vagrant box add centos-74-minimal-20170913.box --name centos-74-minimal-20170913
 #  3) GOPATH must be defined prior to launch
 #  4) ProxyFS repo git clone'd to $GOPATH/src/github.com/swiftstack/
 #  5) samba repo automatically staged in $GOPATH/src/github.com/swiftstack/ProxyFS/saio/
