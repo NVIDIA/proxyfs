@@ -199,8 +199,12 @@ def build_jrpcclient(options):
     proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
     jrpcclient_dir = os.path.join(proxyfs_dir, "jrpcclient")
     command = ['./regression_test.py']
+    if options.no_install:
+        command.append('--no-install')
     if options.deb_builder:
         command.append('--deb-builder')
+    if options.just_build_libs:
+        command.append('--just-build-libs')
     return bool(subprocess.call(command, cwd=jrpcclient_dir))
 
 
@@ -208,47 +212,59 @@ def build_vfs(options):
     proxyfs_dir = os.path.dirname(os.path.abspath(__file__))
     vfs_dir = os.path.join(proxyfs_dir, "vfs")
     failures = 0
+    clean_cmd = ('make', 'clean')
+    failures += bool(subprocess.call(clean_cmd, cwd=vfs_dir))
+    if failures:
+        return failures
     failures += bool(subprocess.call('make', cwd=vfs_dir))
     if failures:
         return failures
     distro = platform.linux_distribution()[0]
-    if options.deb_builder:
-        if 'centos' in distro.lower():
-            install_cmd = ('make', 'installcentos')
+    if not options.no_install:
+        if options.deb_builder:
+            if 'centos' in distro.lower():
+                install_cmd = ('make', 'installcentos')
+            else:
+                install_cmd = ('make', 'install')
         else:
-            install_cmd = ('make', 'install')
-    else:
-        if 'centos' in distro.lower():
-            install_cmd = ('sudo', '-E', 'make', 'installcentos')
-        else:
-            install_cmd = ('sudo', '-E', 'make', 'install')
-    failures += bool(subprocess.call(install_cmd, cwd=vfs_dir))
+            if 'centos' in distro.lower():
+                install_cmd = ('sudo', '-E', 'make', 'installcentos')
+            else:
+                install_cmd = ('sudo', '-E', 'make', 'install')
+        failures += bool(subprocess.call(install_cmd, cwd=vfs_dir))
     return failures
 
 
 def main(options):
-    failures = ""
-    go_version = subprocess.check_output((['go', 'version']))
-    color_print(go_version[:-1], "bright green")
+    failures = 0
 
-    if not options.quiet:
-        logging.basicConfig(format="%(message)s", level=logging.INFO)
+    if not options.just_libs and not options.just_build_libs:
 
-    failures = build_dependencies(options)
-    if failures:
-        return failures
+        go_version = subprocess.check_output((['go', 'version']))
+        color_print(go_version[:-1], "bright green")
 
-    failures += build_proxyfs(options)
-    if failures:
-        return failures
+        if not options.quiet:
+            logging.basicConfig(format="%(message)s", level=logging.INFO)
 
-    failures += build_jrpcclient(options)
-    if failures:
-        return failures
+        failures += build_dependencies(options)
+        if failures:
+            return failures
 
-    failures += build_vfs(options)
-    if failures:
-        return failures
+        failures += build_proxyfs(options)
+        if failures:
+            return failures
+
+    if platform.system() != "Darwin":
+
+        if not options.no_libs:
+
+            failures += build_jrpcclient(options)
+            if failures:
+                return failures
+
+            failures += build_vfs(options)
+            if failures:
+                return failures
 
     return failures
 
@@ -265,11 +281,21 @@ if __name__ == "__main__":
                             help="invoke `go get` to retrieve new dependencies")
     arg_parser.add_argument('--packages', '-p', action='store', nargs='*',
                             help="specific packages to process")
+    arg_parser.add_argument('--no-install', action='store_true',
+                            help="When building C libraries, do not attempt "
+                                 "to install resulting objects")
     arg_parser.add_argument('--deb-builder', action='store_true',
                             help="Modify commands to run inside "
                                  "swift-deb-builder")
     arg_parser.add_argument('--quiet', '-q', action='store_true',
                             help="suppress printing of what commands are being run")
+    libs_group = arg_parser.add_mutually_exclusive_group()
+    libs_group.add_argument('--no-libs', action='store_true',
+                            help="don't build C libraries or run C tests")
+    libs_group.add_argument('--just-build-libs', action='store_true',
+                            help="only build C libraries")
+    libs_group.add_argument('--just-libs', action='store_true',
+                            help="only build C libraries and run C tests")
     options = arg_parser.parse_args()
 
     exit(main(options))
