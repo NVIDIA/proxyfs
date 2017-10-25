@@ -15,7 +15,6 @@ import (
 
 type physicalContainerLayoutStruct struct {
 	physicalContainerLayoutName         string
-	physicalContainerStoragePolicyIndex uint32
 	physicalContainerNamePrefix         string   // == prefix for every PhysicalContainer in this PhysicalContainerLayout
 	physicalContainerNameSlice          []string // == slice of current PhysicalContainers for this PhysicalContainerLayout
 	physicalContainerCountMax           uint64   // [<LayoutSectionName>]ContainersPerPeer
@@ -281,11 +280,6 @@ func Up(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
-
-				physicalContainerLayout.physicalContainerStoragePolicyIndex, err = confMap.FetchOptionValueUint32(physicalContainerLayoutSectionName, "ContainerStoragePolicyIndex")
-				if nil != err {
-					return
-				}
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {
@@ -794,11 +788,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
-
-				physicalContainerLayout.physicalContainerStoragePolicyIndex, err = confMap.FetchOptionValueUint32(physicalContainerLayoutSectionName, "ContainerStoragePolicyIndex")
-				if nil != err {
-					return
-				}
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {

@@ -78,7 +78,6 @@ func testSetup() (err error) {
 		"TestFlowControl.MaxFlushTime=10s",
 		"TestFlowControl.ReadCacheLineSize=1000000",
 		"TestFlowControl.ReadCacheWeight=100",
-		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
 		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
 		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
