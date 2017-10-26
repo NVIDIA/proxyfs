@@ -171,7 +171,7 @@ if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ] || [ $MOUNT_TYPE = "smb1" 
     if [ $? -ne 0 ]; then
         for i in `seq 5`; do
             sleep 5
-            sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB,vers=$SMB_VERS $MOUNT_POINT_SMB $SHARE_SMB && break
+            sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB,vers=$SMB_VERS,iocharset=utf8 $MOUNT_POINT_SMB $SHARE_SMB && break
             echo "Mount of $SHARE_SMB failed.  Retrying..."
         done
     fi
