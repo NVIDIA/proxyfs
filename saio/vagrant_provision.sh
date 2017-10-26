@@ -8,7 +8,7 @@ set -x
 
 # Install tools needed above what's in a minimal base box
 
-yum -y install wget git nfs-utils
+yum -y install wget git nfs-utils vim
 
 # Install Golang
 
