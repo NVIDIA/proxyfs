@@ -15,6 +15,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -41,13 +42,14 @@ func Up(confMap conf.ConfMap) (err error) {
 		mountPoint             *mountPointStruct
 		mountPointName         string
 		primaryPeerNameList    []string
+		volumeList             []string
 		volumeName             string
-		volumeNameSlice        []string
+		volumeSectionName      string
 	)
 
 	globals.mountPointMap = make(map[string]*mountPointStruct)
 
-	volumeNameSlice, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
@@ -57,8 +59,10 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	for _, volumeName = range volumeNameSlice {
-		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+	for _, volumeName = range volumeList {
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -67,7 +71,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			continue
 		} else if 1 == len(primaryPeerNameList) {
 			if globals.whoAmI == primaryPeerNameList[0] {
-				mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
+				mountPointName, err = confMap.FetchOptionValueString(volumeSectionName, "FUSEMountPointName")
 				if nil != err {
 					return
 				}
@@ -137,7 +141,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	for _, volumeName = range volumeList {
 		_, ok = removedVolumeMap[volumeName]
 		if ok {
-			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 			if nil != err {
 				return
 			}
@@ -186,6 +190,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		primaryPeerNameList []string
 		volumeList          []string
 		volumeName          string
+		volumeSectionName   string
 	)
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
@@ -195,7 +200,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -204,7 +211,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			continue
 		} else if 1 == len(primaryPeerNameList) {
 			if globals.whoAmI == primaryPeerNameList[0] {
-				mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
+				mountPointName, err = confMap.FetchOptionValueString(volumeSectionName, "FUSEMountPointName")
 				if nil != err {
 					return
 				}

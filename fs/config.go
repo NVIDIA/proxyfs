@@ -10,6 +10,7 @@ import (
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -53,11 +54,13 @@ var globals globalsStruct
 
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		flowControlName string
-		primaryPeerList []string
-		volume          *volumeStruct
-		volumeList      []string
-		volumeName      string
+		flowControlName        string
+		flowControlSectionName string
+		primaryPeerList        []string
+		volume                 *volumeStruct
+		volumeList             []string
+		volumeName             string
+		volumeSectionName      string
 	)
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -75,7 +78,9 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -92,12 +97,13 @@ func Up(confMap conf.ConfMap) (err error) {
 					mountList:                make([]MountID, 0),
 				}
 
-				flowControlName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+				flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 				if nil != err {
 					return
 				}
+				flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
 
-				volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlName, "MaxFlushTime")
+				volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 				if nil != err {
 					return
 				}
@@ -158,7 +164,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -202,13 +208,15 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		flowControlName string
-		ok              bool
-		primaryPeerList []string
-		volume          *volumeStruct
-		volumeList      []string
-		volumeName      string
-		whoAmI          string
+		flowControlName        string
+		flowControlSectionName string
+		ok                     bool
+		primaryPeerList        []string
+		volume                 *volumeStruct
+		volumeList             []string
+		volumeName             string
+		volumeSectionName      string
+		whoAmI                 string
 	)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -228,7 +236,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -247,12 +257,13 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						mountList:                make([]MountID, 0),
 					}
 
-					flowControlName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+					flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 					if nil != err {
 						return
 					}
+					flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
 
-					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlName, "MaxFlushTime")
+					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 					if nil != err {
 						return
 					}

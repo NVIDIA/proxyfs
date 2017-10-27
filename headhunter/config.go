@@ -10,6 +10,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -173,7 +174,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		primaryPeerList                      []string
 		trailingByteSlice                    bool
 		volumeName                           string
-		volumeNames                          []string
+		volumeList                           []string
 		whoAmI                               string
 	)
 
@@ -204,7 +205,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
@@ -256,8 +257,8 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
-	for _, volumeName = range volumeNames {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+	for _, volumeName = range volumeList {
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -286,7 +287,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		deletedVolumeNames map[string]bool
 		primaryPeerList    []string
 		volumeName         string
-		volumeNames        []string
+		volumeList         []string
 		whoAmI             string
 	)
 
@@ -301,13 +302,13 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeName = range volumeNames {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+	for _, volumeName = range volumeList {
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -341,7 +342,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		ok              bool
 		primaryPeerList []string
 		volumeName      string
-		volumeNames     []string
+		volumeList      []string
 		whoAmI          string
 	)
 
@@ -350,13 +351,13 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeName = range volumeNames {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+	for _, volumeName = range volumeList {
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -447,9 +448,13 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 // TODO: allowFormat should change to doFormat when controller/runway pre-formats
 func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err error) {
 	var (
-		flowControlName string
-		volume          *volumeStruct
+		flowControlName        string
+		flowControlSectionName string
+		volume                 *volumeStruct
+		volumeSectionName      string
 	)
+
+	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
 		volumeName:                  volumeName,
@@ -458,50 +463,51 @@ func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err er
 		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
 	}
 
-	volume.accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
+	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 	if nil != err {
 		return
 	}
 
-	flowControlName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+	flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
+	if nil != err {
+		return
+	}
+	flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+
+	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
 	if nil != err {
 		return
 	}
 
-	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlName, "MaxFlushSize")
+	volume.nonceValuesToReserve, err = confMap.FetchOptionValueUint16(volumeSectionName, "NonceValuesToReserve")
 	if nil != err {
 		return
 	}
 
-	volume.nonceValuesToReserve, err = confMap.FetchOptionValueUint16(volumeName, "NonceValuesToReserve")
-	if nil != err {
-		return
-	}
-
-	volume.maxInodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxInodesPerMetadataNode")
+	volume.maxInodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxInodesPerMetadataNode")
 	if nil != err {
 		// TODO: eventually, just return
 		volume.maxInodesPerMetadataNode = 32
 	}
 
-	volume.maxLogSegmentsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxLogSegmentsPerMetadataNode")
+	volume.maxLogSegmentsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxLogSegmentsPerMetadataNode")
 	if nil != err {
 		// TODO: eventually, just return
 		volume.maxLogSegmentsPerMetadataNode = 64
 	}
 
-	volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxDirFileNodesPerMetadataNode")
+	volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxDirFileNodesPerMetadataNode")
 	if nil != err {
 		// TODO: eventually, just return
 		volume.maxDirFileNodesPerMetadataNode = 16
 	}
 
-	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeName, "CheckpointContainerName")
+	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")
 	if nil != err {
 		return
 	}
 
-	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeName, "CheckpointInterval")
+	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "CheckpointInterval")
 	if nil != err {
 		return
 	}

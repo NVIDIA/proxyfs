@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	tempFile1Name = tempFile1.Name()
 
 	io.WriteString(tempFile1, "# A comment on it's own line\n")
-	io.WriteString(tempFile1, "[Test_-_Section]\n")
+	io.WriteString(tempFile1, "[TestNamespace:Test_-_Section]\n")
 	io.WriteString(tempFile1, "Test_-_Option : TestValue1,TestValue2 # A comment at the end of a line\n")
 
 	tempFile1.Close()
@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 	tempFile2Name = tempFile2.Name()
 
 	io.WriteString(tempFile2, "; A comment on it's own line\n")
-	io.WriteString(tempFile2, "[Test_-_Section] ; A comment at the end of a line\n")
+	io.WriteString(tempFile2, "[TestNamespace:Test_-_Section] ; A comment at the end of a line\n")
 	io.WriteString(tempFile2, "Test_-_Option =\n")
 
 	tempFile2.Close()
@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 
 	tempFile3Name = tempFile3.Name()
 
-	io.WriteString(tempFile3, "[Test_-_Section]\n")
+	io.WriteString(tempFile3, "[TestNamespace:Test_-_Section]\n")
 	io.WriteString(tempFile3, "Test_-_Option = http://Test.Value.3/ TestValue4\tTestValue5\n")
 
 	tempFile3.Close()
@@ -104,12 +104,12 @@ func TestMain(m *testing.M) {
 
 	tempFile6Name = tempFile6.Name()
 
-	io.WriteString(tempFile6, "[Test_-_Section_-_1]\n")
+	io.WriteString(tempFile6, "[TestNamespace:Test_-_Section_-_1]\n")
 	io.WriteString(tempFile6, "Option_-_1_-_No_-_Values  :\n")
 	io.WriteString(tempFile6, "Option_-_2_-_One_-_Value  : Value_-_1\n")
 	io.WriteString(tempFile6, "Option_-_3_-_Two_-_Values : Value_-_1, Value_-_2\n")
 	io.WriteString(tempFile6, "\n")
-	io.WriteString(tempFile6, "[Test_-_Section_-_2]\n")
+	io.WriteString(tempFile6, "[TestNamespace:Test_-_Section_-_2]\n")
 	io.WriteString(tempFile6, "Option : Value\n")
 
 	tempFile6.Close()
@@ -131,8 +131,8 @@ func TestMain(m *testing.M) {
 
 	tempFile7.Close()
 
-	confStringToTest1 = "Test_-_Section.Test_-_Option = TestValue6,http://Test.Value_-_7/"
-	confStringToTest2 = "Test_-_Section.Test_-_Option ="
+	confStringToTest1 = "TestNamespace:Test_-_Section.Test_-_Option = TestValue6,http://Test.Value_-_7/"
+	confStringToTest2 = "TestNamespace:Test_-_Section.Test_-_Option ="
 
 	mRunReturn := m.Run()
 
@@ -155,9 +155,9 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("UpdateConfMapFromFile(\"%v\") returned: \"%v\"", tempFile1Name, err)
 	}
 
-	confMapSection, ok := confMap["Test_-_Section"]
+	confMapSection, ok := confMap["TestNamespace:Test_-_Section"]
 	if !ok {
-		t.Fatalf("confMap[\"%v\"] missing", "Test_-_Section")
+		t.Fatalf("confMap[\"%v\"] missing", "TestNamespace:Test_-_Section")
 	}
 
 	confMapOption, ok := confMapSection["Test_-_Option"]
@@ -182,7 +182,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("UpdateConfMapFromFile(\"%v\") returned: \"%v\"", tempFile2Name, err)
 	}
 
-	confMapSection, ok = confMap["Test_-_Section"]
+	confMapSection, ok = confMap["TestNamespace:Test_-_Section"]
 	if !ok {
 		t.Fatalf("confMap[\"%v\"] missing", "Test_-_Section")
 	}
@@ -201,7 +201,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("UpdateConfMapFromFile(\"%v\") returned: \"%v\"", tempFile3Name, err)
 	}
 
-	confMapSection, ok = confMap["Test_-_Section"]
+	confMapSection, ok = confMap["TestNamespace:Test_-_Section"]
 	if !ok {
 		t.Fatalf("confMap[\"%v\"] missing", "Test_-_Section")
 	}
@@ -233,7 +233,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("UpdateConfMapFromString(\"%v\") returned: \"%v\"", confStringToTest1, err)
 	}
 
-	confMapSection, ok = confMap["Test_-_Section"]
+	confMapSection, ok = confMap["TestNamespace:Test_-_Section"]
 	if !ok {
 		t.Fatalf("confMap[\"%v\"] missing", "Test_-_Section")
 	}
@@ -274,7 +274,7 @@ func TestUpdate(t *testing.T) {
 func TestFromFileConstructor(t *testing.T) {
 	confMap, err := MakeConfMapFromFile(tempFile3Name)
 
-	values, err := confMap.FetchOptionValueStringSlice("Test_-_Section", "Test_-_Option")
+	values, err := confMap.FetchOptionValueStringSlice("TestNamespace:Test_-_Section", "Test_-_Option")
 	if err != nil {
 		t.Fatalf("expected err to be nil, got %#v", err)
 	}
@@ -297,139 +297,139 @@ func TestFetch(t *testing.T) {
 
 	var err error
 
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionStringSlice1=")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1=")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionStringSlice1=: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionStringSlice1=: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionStringSlice2=TestString1,TestString2")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionStringSlice2=TestString1,TestString2")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionStringSlice2=TestString1,TestString2: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionStringSlice2=TestString1,TestString2: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionString=TestString3")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionString=TestString3")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionString=TestString3: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionString=TestString3: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionBool=true")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionBool=true")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionBool=true: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionBool=true: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionUint16=12")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionUint16=12")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionUint16=12: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionUint16=12: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionUint32=345")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionUint32=345")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionUint32=345: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionUint32=345: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionUint64=6789")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionUint64=6789")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionUint64=6789: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionUint64=6789: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionMilliseconds32=0.123")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32=0.123")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionMilliseconds32=0.123: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32=0.123: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionMilliseconds64=0.456")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64=0.456")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionMilliseconds64=0.456: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64=0.456: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionDuration=1.2s")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionDuration=1.2s")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionDuration=1.2s: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionDuration=1.2s: %v", err)
 	}
-	err = confMap.UpdateFromString("Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC")
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC")
 	if nil != err {
-		t.Fatalf("Couldn't add Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC: %v", err)
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC: %v", err)
 	}
 
-	err = confMap.VerifyOptionValueIsEmpty("Test_-_Section", "Test_-_OptionStringSlice1")
+	err = confMap.VerifyOptionValueIsEmpty("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice1")
 	if nil != err {
-		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice1 should have verified as empty")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1 should have verified as empty")
 	}
-	err = confMap.VerifyOptionValueIsEmpty("Test_-_Section", "Test_-_OptionStringSlice2")
+	err = confMap.VerifyOptionValueIsEmpty("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice2")
 	if nil == err {
-		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice2 should have verified as empty")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice2 should have verified as empty")
 	}
 
-	testStringSlice1, err := confMap.FetchOptionValueStringSlice("Test_-_Section", "Test_-_OptionStringSlice1")
+	testStringSlice1, err := confMap.FetchOptionValueStringSlice("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice1")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionStringSlice1: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionStringSlice1: %v", err)
 	}
-	testStringSlice2, err := confMap.FetchOptionValueStringSlice("Test_-_Section", "Test_-_OptionStringSlice2")
+	testStringSlice2, err := confMap.FetchOptionValueStringSlice("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice2")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionStringSlice2: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionStringSlice2: %v", err)
 	}
-	testString, err := confMap.FetchOptionValueString("Test_-_Section", "Test_-_OptionString")
+	testString, err := confMap.FetchOptionValueString("TestNamespace:Test_-_Section", "Test_-_OptionString")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionString: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionString: %v", err)
 	}
-	testBool, err := confMap.FetchOptionValueBool("Test_-_Section", "Test_-_OptionBool")
+	testBool, err := confMap.FetchOptionValueBool("TestNamespace:Test_-_Section", "Test_-_OptionBool")
 	if err != nil {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionBool: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionBool: %v", err)
 	}
-	testUint16, err := confMap.FetchOptionValueUint16("Test_-_Section", "Test_-_OptionUint16")
+	testUint16, err := confMap.FetchOptionValueUint16("TestNamespace:Test_-_Section", "Test_-_OptionUint16")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionUint16: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint16: %v", err)
 	}
-	testUint32, err := confMap.FetchOptionValueUint32("Test_-_Section", "Test_-_OptionUint32")
+	testUint32, err := confMap.FetchOptionValueUint32("TestNamespace:Test_-_Section", "Test_-_OptionUint32")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionUint32: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint32: %v", err)
 	}
-	testUint64, err := confMap.FetchOptionValueUint64("Test_-_Section", "Test_-_OptionUint64")
+	testUint64, err := confMap.FetchOptionValueUint64("TestNamespace:Test_-_Section", "Test_-_OptionUint64")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionUint64: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint64: %v", err)
 	}
-	testScaledUint32, err := confMap.FetchOptionValueFloatScaledToUint32("Test_-_Section", "Test_-_OptionMilliseconds32", 1000)
+	testScaledUint32, err := confMap.FetchOptionValueFloatScaledToUint32("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds32", 1000)
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionMilliseconds32: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32: %v", err)
 	}
-	testScaledUint64, err := confMap.FetchOptionValueFloatScaledToUint64("Test_-_Section", "Test_-_OptionMilliseconds64", 1000)
+	testScaledUint64, err := confMap.FetchOptionValueFloatScaledToUint64("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds64", 1000)
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionMilliseconds64: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64: %v", err)
 	}
-	testDuration, err := confMap.FetchOptionValueDuration("Test_-_Section", "Test_-_OptionDuration")
+	testDuration, err := confMap.FetchOptionValueDuration("TestNamespace:Test_-_Section", "Test_-_OptionDuration")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.TestDuration: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.TestDuration: %v", err)
 	}
-	testGUID, err := confMap.FetchOptionValueUUID("Test_-_Section", "Test_-_OptionGUIDString")
+	testGUID, err := confMap.FetchOptionValueUUID("TestNamespace:Test_-_Section", "Test_-_OptionGUIDString")
 	if nil != err {
-		t.Fatalf("Couldn't fetch Test_-_Section.Test_-_OptionGUIDString: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionGUIDString: %v", err)
 	}
 
 	if 0 != len(testStringSlice1) {
-		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice1 contained unexpected value(s)")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1 contained unexpected value(s)")
 	}
 	if (2 != len(testStringSlice2)) || ("TestString1" != testStringSlice2[0]) || ("TestString2" != testStringSlice2[1]) {
-		t.Fatalf("Test_-_Section.Test_-_OptionStringSlice2 contained unexpected value(s)")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice2 contained unexpected value(s)")
 	}
 	if "TestString3" != testString {
-		t.Fatalf("Test_-_Section.Test_-_OptionString contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionString contained unexpected value")
 	}
 	if testBool != true {
-		t.Fatalf("Test_-_Section.TestBool contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.TestBool contained unexpected value")
 	}
 	if uint16(12) != testUint16 {
-		t.Fatalf("Test_-_Section.Test_-_OptionUint16 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint16 contained unexpected value")
 	}
 	if uint32(345) != testUint32 {
-		t.Fatalf("Test_-_Section.Test_-_OptionUint32 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint32 contained unexpected value")
 	}
 	if uint64(6789) != testUint64 {
-		t.Fatalf("Test_-_Section.Test_-_OptionUint64 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint64 contained unexpected value")
 	}
 	if uint32(123) != testScaledUint32 {
-		t.Fatalf("Test_-_Section.Test_-_OptionMilliseconds32 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 contained unexpected value")
 	}
 	if uint64(456) != testScaledUint64 {
-		t.Fatalf("Test_-_Section.Test_-_OptionMilliseconds64 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 contained unexpected value")
 	}
 	timeBase := time.Time{}
 	timeBasePlusTestDuration := timeBase.Add(testDuration)
 	if (1 != timeBasePlusTestDuration.Second()) || (200000000 != timeBasePlusTestDuration.Nanosecond()) {
-		t.Fatalf("Test_-_Section.TestDuration contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.TestDuration contained unexpected value")
 	}
 	if 0 != bytes.Compare([]byte{0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC}, testGUID) {
-		t.Fatalf("Test_-_Section.Test_-_OptionGUIDString contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionGUIDString contained unexpected value")
 	}
 }
 
