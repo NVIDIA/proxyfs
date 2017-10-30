@@ -36,12 +36,34 @@ function await_proxyfsd_startup {
 if [ $# -gt 0 ]; then
     MOUNT_TYPE="$1"
     MOUNT_TYPE=${MOUNT_TYPE,,}
-    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
-        echo "Invalid argument $1"
+    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "smb1" ] && [ "$MOUNT_TYPE" != "smb2" ] && [ "$MOUNT_TYPE" != "smb3" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
+        echo "Invalid argument '$1'."
+        echo
+        echo "Usage: $0 [mount type]"
+        echo "Mount type options:"
+        echo "    all: NFS v3 and SMB v1.0 (default option)"
+        echo "    nfs: NFS v3"
+        echo "    smb: SMB v1.0"
+        echo "    smb1: SMB v1.0"
+        echo "    smb2: SMB v2.1"
+        echo "    smb3: SMB v3.0"
         exit 1
     fi
 else
     MOUNT_TYPE=all
+fi
+
+if [ "$MOUNT_TYPE" == "all" ]; then
+    NFS_VERS=3
+    SMB_VERS=1.0
+elif [ "$MOUNT_TYPE" == "nfs" ]; then
+    NFS_VERS=3
+elif [ "$MOUNT_TYPE" == "smb" ] || [ "$MOUNT_TYPE" == "smb1" ]; then
+    SMB_VERS=1.0
+elif [ "$MOUNT_TYPE" == "smb2" ]; then
+    SMB_VERS=2.1
+elif [ "$MOUNT_TYPE" == "smb3" ]; then
+    SMB_VERS=3.0
 fi
 
 MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
@@ -130,7 +152,7 @@ if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
     if [ $? -ne 0 ]; then
         for i in `seq 5`; do
             sleep 5
-            sudo $MOUNT -t nfs -o vers=3 $MOUNT_POINT_NFS $SHARE_NFS && break
+            sudo $MOUNT -t nfs -o vers=$NFS_VERS $MOUNT_POINT_NFS $SHARE_NFS && break
             echo "Mount of $SHARE_NFS failed.  Retrying..."
         done
     fi
@@ -144,12 +166,12 @@ if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
     fi
 fi
 
-if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ]; then
+if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ] || [ $MOUNT_TYPE = "smb1" ] || [ $MOUNT_TYPE = "smb2" ] || [ $MOUNT_TYPE = "smb3" ]; then
     mountpoint -q $SHARE_SMB
     if [ $? -ne 0 ]; then
         for i in `seq 5`; do
             sleep 5
-            sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB $MOUNT_POINT_SMB $SHARE_SMB && break
+            sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB,vers=$SMB_VERS,iocharset=utf8,actimeo=0 $MOUNT_POINT_SMB $SHARE_SMB && break
             echo "Mount of $SHARE_SMB failed.  Retrying..."
         done
     fi

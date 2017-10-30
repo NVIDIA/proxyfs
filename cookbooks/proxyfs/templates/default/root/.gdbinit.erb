@@ -1,0 +1,9 @@
+# Don't auto-load .gdbinit if its found in the current directory
+# (probably not a good idea; definitely not good if we're root).
+#
+set auto-load local-gdbinit off
+
+# Use the same .gdbinit as user swift (who is probably doing
+# "sudo gdb -p ...".
+#
+source /home/<%= @proxyfs_user %>/.gdbinit

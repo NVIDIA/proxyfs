@@ -92,7 +92,6 @@ func TestDaemon(t *testing.T) {
 		"CommonFlowControl.ReadCacheLineSize=1000000",
 		"CommonFlowControl.ReadCacheWeight=100",
 
-		"PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicyIndex=0",
 		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
 		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
@@ -111,11 +110,20 @@ func TestDaemon(t *testing.T) {
 		"CommonVolume.NonceValuesToReserve=100",
 
 		"FSGlobals.VolumeList=CommonVolume",
+		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
+		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
+		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
+		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
+		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
+		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.DirEntryCacheEvictLowLimit=10000",
+		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
+		"FSGlobals.FileExtentMapEvictLowLimit=10000",
+		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
-		"JSONRPCServer.DontWriteConf=true",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",

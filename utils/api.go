@@ -13,6 +13,26 @@ import (
 	"time"
 )
 
+func VolumeNameConfSection(volumeName string) (sectionName string) {
+	sectionName = volumeName // TODO: convert to "Volume:" + volumeName
+	return
+}
+
+func PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName string) (sectionName string) {
+	sectionName = physicalContainerLayoutName // TODO: convert to "PhysicalContainerLayout:" + physicalContainerLayoutName
+	return
+}
+
+func FlowControlNameConfSection(flowControlName string) (sectionName string) {
+	sectionName = flowControlName // TODO: convert to "FlowControl:" + flowControlName
+	return
+}
+
+func PeerNameConfSection(peerName string) (sectionName string) {
+	sectionName = peerName // TODO: convert to "Peer:" + peerName
+	return
+}
+
 // TryLockMutex is used to support a timeout a the lock request
 type TryLockMutex struct {
 	c chan struct{} // a  lock()    request             writes a struct{} to   c

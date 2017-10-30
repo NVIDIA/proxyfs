@@ -1074,11 +1074,13 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
-		err              error
-		errno            syscall.Errno
-		primaryPeerList  []string
-		swiftAccountName string
-		volumeList       []string
+		err               error
+		errno             syscall.Errno
+		primaryPeerList   []string
+		swiftAccountName  string
+		volumeList        []string
+		volumeName        string
+		volumeSectionName string
 	)
 
 	// Find out who "we" are
@@ -1100,7 +1102,8 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
 	}
 
-	for _, volumeSectionName := range volumeList {
+	for _, volumeName = range volumeList {
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
@@ -1147,6 +1150,8 @@ func updateConf(confMap conf.ConfMap) {
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
 		swiftAccountName            string
 		volumeListUpdate            []string
+		volumeName                  string
+		volumeSectionName           string
 		whoAmIUpdate                string
 	)
 
@@ -1189,7 +1194,8 @@ func updateConf(confMap conf.ConfMap) {
 
 	swiftAccountNameListUpdate = make(map[string]bool)
 
-	for _, volumeSectionName := range volumeListUpdate {
+	for _, volumeName = range volumeListUpdate {
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)

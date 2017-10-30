@@ -61,13 +61,6 @@ a:hover,
 	text-decoration: none;
 }
 
-.permalink {
-	display: none;
-}
-:hover > .permalink {
-	display: inline;
-}
-
 p, li {
 	max-width: 800px;
 	word-wrap: break-word;
@@ -144,6 +137,9 @@ div#nav table td {
 }
 
 
+#pkg-index h3 {
+	font-size: 16px;
+}
 .pkg-dir {
 	padding: 0 10px;
 }

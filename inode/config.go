@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/swiftstack/cstruct"
+	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type physicalContainerLayoutStruct struct {
 	physicalContainerLayoutName         string
-	physicalContainerStoragePolicyIndex uint32
 	physicalContainerNamePrefix         string   // == prefix for every PhysicalContainer in this PhysicalContainerLayout
 	physicalContainerNameSlice          []string // == slice of current PhysicalContainers for this PhysicalContainerLayout
 	physicalContainerCountMax           uint64   // [<LayoutSectionName>]ContainersPerPeer
@@ -73,6 +74,8 @@ type globalsStruct struct {
 	sync.Mutex
 	whoAmI                       string
 	myPrivateIPAddr              string
+	dirEntryCache                sortedmap.BPlusTreeCache
+	fileExtentMapCache           sortedmap.BPlusTreeCache
 	volumeMap                    map[string]*volumeStruct      // key == volumeStruct.volumeName
 	accountMap                   map[string]*volumeStruct      // key == volumeStruct.accountName
 	flowControlMap               map[string]*flowControlStruct // key == flowControlStruct.flowControlName
@@ -97,7 +100,12 @@ func Up(confMap conf.ConfMap) (err error) {
 		corruptionDetectedFalse                        = CorruptionDetected(false)
 		corruptionDetectedTrue                         = CorruptionDetected(true)
 		defaultPhysicalContainerLayoutName             string
+		dirEntryCacheEvictHighLimit                    uint64
+		dirEntryCacheEvictLowLimit                     uint64
+		fileExtentMapEvictHighLimit                    uint64
+		fileExtentMapEvictLowLimit                     uint64
 		flowControl                                    *flowControlStruct
+		flowControlName                                string
 		flowControlSectionName                         string
 		flowControlWeightSum                           uint64
 		ok                                             bool
@@ -106,8 +114,9 @@ func Up(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddr                              string
 		peerPrivateIPAddrMap                           map[string]string
 		physicalContainerLayout                        *physicalContainerLayoutStruct
+		physicalContainerLayoutName                    string
+		physicalContainerLayoutNameSlice               []string
 		physicalContainerLayoutSectionName             string
-		physicalContainerLayoutSectionNameSlice        []string
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
 		readCacheMemSize                               uint64
@@ -115,8 +124,9 @@ func Up(confMap conf.ConfMap) (err error) {
 		readCacheTotalSize                             uint64
 		versionV1                                      = Version(V1)
 		volume                                         *volumeStruct
+		volumeList                                     []string
+		volumeName                                     string
 		volumeSectionName                              string
-		volumeSectionNameSlice                         []string
 	)
 
 	peerPrivateIPAddrMap = make(map[string]string)
@@ -127,7 +137,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -145,18 +155,46 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	dirEntryCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		dirEntryCacheEvictLowLimit = 10000
+	}
+	dirEntryCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		dirEntryCacheEvictHighLimit = 10010
+	}
+
+	globals.dirEntryCache = sortedmap.NewBPlusTreeCache(dirEntryCacheEvictLowLimit, dirEntryCacheEvictHighLimit)
+
+	fileExtentMapEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictLowLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		fileExtentMapEvictLowLimit = 10000
+	}
+	fileExtentMapEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictHighLimit")
+	if nil != err {
+		// TODO: eventually, just return
+		fileExtentMapEvictHighLimit = 10010
+	}
+
+	globals.fileExtentMapCache = sortedmap.NewBPlusTreeCache(fileExtentMapEvictLowLimit, fileExtentMapEvictHighLimit)
+
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
-	volumeSectionNameSlice, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeSectionName = range volumeSectionNameSlice {
+	for _, volumeName = range volumeList {
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
 		volume = &volumeStruct{
-			volumeName:                     volumeSectionName,
+			volumeName:                     volumeName,
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
 			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
@@ -225,7 +263,7 @@ func Up(confMap conf.ConfMap) (err error) {
 				volume.maxExtentsPerFileNode = 32
 			}
 
-			// [Case 1] For now, physicalContainerLayoutSectionNameSlice will simply contain only defaultPhysicalContainerLayoutName
+			// [Case 1] For now, physicalContainerLayoutNameSlice will simply contain only defaultPhysicalContainerLayoutName
 			//
 			// The expectation is that, at some point, multiple container layouts may be supported along with
 			// a set of policies used to determine which one to apply. At such time, the following code will
@@ -236,23 +274,20 @@ func Up(confMap conf.ConfMap) (err error) {
 				return
 			}
 
-			physicalContainerLayoutSectionNameSlice = []string{defaultPhysicalContainerLayoutName}
+			physicalContainerLayoutNameSlice = []string{defaultPhysicalContainerLayoutName}
 
-			for _, physicalContainerLayoutSectionName = range physicalContainerLayoutSectionNameSlice {
-				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
+			for _, physicalContainerLayoutName = range physicalContainerLayoutNameSlice {
+				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutName]
 				if alreadyInGlobalsPhysicalContainerLayoutSet {
-					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutSectionName)
+					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutName)
 					return
 				}
 
 				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
-				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
+				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
-				physicalContainerLayout.physicalContainerStoragePolicyIndex, err = confMap.FetchOptionValueUint32(physicalContainerLayoutSectionName, "ContainerStoragePolicyIndex")
-				if nil != err {
-					return
-				}
+				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {
@@ -279,9 +314,9 @@ func Up(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout.physicalContainerNameSliceNextIndex = 0
 				physicalContainerLayout.physicalContainerNameSliceLoopCount = 0
 
-				volume.physicalContainerLayoutMap[physicalContainerLayoutSectionName] = physicalContainerLayout
+				volume.physicalContainerLayoutMap[physicalContainerLayoutName] = physicalContainerLayout
 
-				volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName] = struct{}{}
+				volume.physicalContainerLayoutSet[physicalContainerLayoutName] = struct{}{}
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
 			}
 
@@ -291,16 +326,17 @@ func Up(confMap conf.ConfMap) (err error) {
 				return
 			}
 
-			flowControlSectionName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
+			flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 			if nil != err {
 				return
 			}
+			flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
 
-			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlSectionName]
+			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlName]
 
 			if !alreadyInFlowControlMap {
 				flowControl = &flowControlStruct{
-					flowControlName: flowControlSectionName,
+					flowControlName: flowControlName,
 					refCount:        0,
 					readCache:       make(map[readCacheKeyStruct]*readCacheElementStruct),
 					readCacheMRU:    nil,
@@ -331,10 +367,10 @@ func Up(confMap conf.ConfMap) (err error) {
 					}
 				}
 
-				globals.flowControlMap[flowControlSectionName] = flowControl
+				globals.flowControlMap[flowControlName] = flowControl
 			}
 
-			volume.flowControl = globals.flowControlMap[flowControlSectionName]
+			volume.flowControl = globals.flowControlMap[flowControlName]
 			volume.flowControl.refCount++
 
 			volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
@@ -351,7 +387,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
 		// TODO: eventually, just return
 		readCacheQuotaPercentage = 20
@@ -414,8 +450,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddr       string
 		peerPrivateIPAddrMap    map[string]string
 		volume                  *volumeStruct
+		volumeList              []string
 		volumeName              string
-		volumeSectionNameSlice  []string
 		volumesDeletedSet       map[string]bool
 		volumesNewlyInactiveSet map[string]bool
 		whoAmI                  string
@@ -429,7 +465,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -455,14 +491,14 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	volumeSectionNameSlice, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
 	newVolumeSet = make(map[string]bool)
 
-	for _, volumeName = range volumeSectionNameSlice {
+	for _, volumeName = range volumeList {
 		newVolumeSet[volumeName] = true
 	}
 
@@ -472,7 +508,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	for volumeName, volume = range globals.volumeMap {
 		_, ok = newVolumeSet[volumeName]
 		if ok {
-			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 			if nil != err {
 				return
 			}
@@ -507,7 +543,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	for volumeName = range volumesNewlyInactiveSet {
 		volume = globals.volumeMap[volumeName]
 		volume.active = false
-		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -550,6 +586,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		alreadyInGlobalsPhysicalContainerNamePrefixSet bool
 		alreadyInVolumePhysicalContainerLayoutMap      bool
 		defaultPhysicalContainerLayoutName             string
+		flowControlName                                string
 		flowControlSectionName                         string
 		flowControl                                    *flowControlStruct
 		flowControlWeightSum                           uint64
@@ -561,8 +598,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddr                              string
 		peerPrivateIPAddrMap                           map[string]string
 		physicalContainerLayout                        *physicalContainerLayoutStruct
+		physicalContainerLayoutName                    string
+		physicalContainerLayoutNameSlice               []string
 		physicalContainerLayoutSectionName             string
-		physicalContainerLayoutSectionNameSlice        []string
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
 		readCacheLineSize                              uint64
@@ -570,8 +608,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		readCacheQuotaPercentage                       uint64
 		readCacheTotalSize                             uint64
 		volume                                         *volumeStruct
+		volumeList                                     []string
 		volumeName                                     string
-		volumeNames                                    []string
+		volumeSectionName                              string
 	)
 
 	peerPrivateIPAddrMap = make(map[string]string)
@@ -582,7 +621,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(peerName, "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -590,23 +629,25 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
 	}
 
-	volumeNames, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
 	}
 
-	for _, volumeName = range volumeNames {
-		fsid, err = confMap.FetchOptionValueUint64(volumeName, "FSID")
+	for _, volumeName = range volumeList {
+		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+
+		fsid, err = confMap.FetchOptionValueUint64(volumeSectionName, "FSID")
 		if nil != err {
 			return
 		}
 
-		accountName, err = confMap.FetchOptionValueString(volumeName, "AccountName")
+		accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
 			return
 		}
 
-		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -644,14 +685,15 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			if active {
 				if volume.active { // also previously active
-					flowControlSectionName, err = confMap.FetchOptionValueString(volumeName, "FlowControl")
+					flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 					if nil != err {
 						return
 					}
+					flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
 
 					flowControl = volume.flowControl
 
-					if flowControlSectionName == flowControl.flowControlName {
+					if flowControlName == flowControl.flowControlName {
 						flowControl.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
 						if nil != err {
 							return
@@ -724,48 +766,47 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 
 		for _, volume = range newlyActiveVolumeSet {
-			// [Case 2] For now, physicalContainerLayoutSectionNameSlice will simply contain only defaultPhysicalContainerLayoutName
+			// [Case 2] For now, physicalContainerLayoutNameSlice will simply contain only defaultPhysicalContainerLayoutName
 			//
 			// The expectation is that, at some point, multiple container layouts may be supported along with
 			// a set of policies used to determine which one to apply. At such time, the following code will
 			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
 
-			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxEntriesPerDirNode")
+			volumeSectionName = utils.VolumeNameConfSection(volume.volumeName)
+
+			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
 				// TODO: eventually, just err = nonShadowingErr & return
 				volume.maxEntriesPerDirNode = 32
 				err = nil
 			}
 
-			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeName, "MaxExtentsPerFileNode")
+			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxExtentsPerFileNode")
 			if nil != err {
 				// TODO: eventually, just err = nonShadowingErr & return
 				volume.maxExtentsPerFileNode = 32
 				err = nil
 			}
 
-			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volume.volumeName, "DefaultPhysicalContainerLayout")
+			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
 			if nil != err {
 				return
 			}
 
-			physicalContainerLayoutSectionNameSlice = []string{defaultPhysicalContainerLayoutName}
+			physicalContainerLayoutNameSlice = []string{defaultPhysicalContainerLayoutName}
 
-			for _, physicalContainerLayoutSectionName = range physicalContainerLayoutSectionNameSlice {
-				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName]
+			for _, physicalContainerLayoutName = range physicalContainerLayoutNameSlice {
+				_, alreadyInGlobalsPhysicalContainerLayoutSet = volume.physicalContainerLayoutSet[physicalContainerLayoutName]
 				if alreadyInGlobalsPhysicalContainerLayoutSet {
-					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutSectionName)
+					err = fmt.Errorf("PhysicalContainerLayout \"%v\" only allowed once", physicalContainerLayoutName)
 					return
 				}
 
 				physicalContainerLayout = &physicalContainerLayoutStruct{}
 
-				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutSectionName
+				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
-				physicalContainerLayout.physicalContainerStoragePolicyIndex, err = confMap.FetchOptionValueUint32(physicalContainerLayoutSectionName, "ContainerStoragePolicyIndex")
-				if nil != err {
-					return
-				}
+				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {
@@ -792,9 +833,9 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout.physicalContainerNameSliceNextIndex = 0
 				physicalContainerLayout.physicalContainerNameSliceLoopCount = 0
 
-				volume.physicalContainerLayoutMap[physicalContainerLayoutSectionName] = physicalContainerLayout
+				volume.physicalContainerLayoutMap[physicalContainerLayoutName] = physicalContainerLayout
 
-				volume.physicalContainerLayoutSet[physicalContainerLayoutSectionName] = struct{}{}
+				volume.physicalContainerLayoutSet[physicalContainerLayoutName] = struct{}{}
 				volume.physicalContainerNamePrefixSet[physicalContainerLayout.physicalContainerNamePrefix] = struct{}{}
 			}
 
@@ -804,16 +845,17 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				return
 			}
 
-			flowControlSectionName, err = confMap.FetchOptionValueString(volume.volumeName, "FlowControl")
+			flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 			if nil != err {
 				return
 			}
+			flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
 
-			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlSectionName]
+			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlName]
 
 			if !alreadyInFlowControlMap {
 				flowControl = &flowControlStruct{
-					flowControlName: flowControlSectionName,
+					flowControlName: flowControlName,
 					refCount:        0,
 					readCache:       make(map[readCacheKeyStruct]*readCacheElementStruct),
 					readCacheMRU:    nil,
@@ -844,10 +886,10 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					}
 				}
 
-				globals.flowControlMap[flowControlSectionName] = flowControl
+				globals.flowControlMap[flowControlName] = flowControl
 			}
 
-			volume.flowControl = globals.flowControlMap[flowControlSectionName]
+			volume.flowControl = globals.flowControlMap[flowControlName]
 			volume.flowControl.refCount++
 
 			volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
@@ -861,7 +903,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(globals.whoAmI, "ReadCacheQuotaFraction", 100)
+	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
 		// TODO: eventually, just return
 		readCacheQuotaPercentage = 20

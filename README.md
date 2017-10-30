@@ -13,9 +13,7 @@ Swift presents a hierarchy consisting of Accounts and Containers. Within each Co
 
 ProxyFS was created to extend the applicability of Swift Clusters to address such file system-oriented use cases.
 
-## Installation
-
-### Development
+## Development
 
 Make sure you've [installed and set up Go](https://golang.org/doc/install#install).
 
@@ -27,26 +25,66 @@ Choose a go base directory and set it to $GOPATH in your environment. Then:
     cd !$
     git clone git@github.com:swiftstack/ProxyFS
     cd ProxyFS
-    ./regression_test.py -g
+    git submodule update --init --recursive
 
-$ go test github.com/swiftstack/ProxyFS/fs
+If updating from a pre-submodule ProxyFS repo:
 
-## API Reference
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS
+    git pull
+    git checkout development
+    rm -rf jrpcclient
+    rm -rf vfs
+    git submodule update --init --recursive
 
-TBD
+To work on files in the ProxyFS repo:
 
-## Tests
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS
+    git pull
+    git checkout development
+    ...
 
-TBD
+To work on files in the vfs (similar steps for jrpcclient) submodule repo:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
+    git pull
+    git checkout master
+    ...
+
+To check-in changes in the vfs (similar steps for jrpcclient) submodule repo:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
+    git commit <your changes>
+    cd ..
+    git commit <updated vfs dir/submodule tag>
+
+To push your changes to the vfs (similar steps for jrpcclient) submodule to origin:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
+    git push
+    cd ..
+    git push
+
+To restore your submodules to their "(HEAD detached at ...)" branch:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS
+    git pull
+    git checkout development
+    git submodule update --recursive
+
+To build/test/install ProxyFS:
+
+    cd $GOPATH/src/github.com/swiftstack/ProxyFS
+    ./regression_test.py
 
 ## Contributors
 
  * balaji@swiftstack.com
- * ed@swiftstack.com
- * zdavis@swiftstack.com
- * kmalone@swiftstack.com
  * bschatz@swiftstack.com
+ * charmer@swiftstack.com
+ * ed@swiftstack.com
+ * kmalone@swiftstack.com
  * orion@swiftstack.com
+ * zdavis@swiftstack.com
 
 ## License
 

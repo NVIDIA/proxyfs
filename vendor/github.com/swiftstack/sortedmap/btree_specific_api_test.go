@@ -181,6 +181,8 @@ func uint32To8ReplicaByteArray(u32 uint32) (b8 [8]byte) {
 
 func TestBPlusTreeSpecific(t *testing.T) {
 	var (
+		btreeCacheNew              BPlusTreeCache
+		btreeCacheOld              BPlusTreeCache
 		btreeLen                   int
 		btreeNew                   BPlusTree
 		btreeOld                   BPlusTree
@@ -204,7 +206,9 @@ func TestBPlusTreeSpecific(t *testing.T) {
 
 	persistentContext = &specificBPlusTreeTestContextStruct{t: t, lastLogSegmentNumberGenerated: 0, lastLogOffsetGenerated: 0, logSegmentChunkMap: make(map[uint64]*logSegmentChunkStruct)}
 
-	btreeNew = NewBPlusTree(specificBPlusTreeTestNumKeysMaxSmall, CompareUint32, persistentContext)
+	btreeCacheNew = NewBPlusTreeCache(100, 200)
+
+	btreeNew = NewBPlusTree(specificBPlusTreeTestNumKeysMaxSmall, CompareUint32, persistentContext, btreeCacheNew)
 
 	valueAsValueStructToInsert = valueStruct{u32: 5, s8: uint32To8ReplicaByteArray(5)}
 	ok, err = btreeNew.Put(uint32(5), valueAsValueStructToInsert)
@@ -288,6 +292,8 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		}
 	}
 
+	btreeCacheNew.UpdateLimits(200, 300)
+
 	err = btreeNew.Purge(true)
 	if nil != err {
 		t.Fatalf("btreeNew.Purge(true) should not have failed")
@@ -308,7 +314,9 @@ func TestBPlusTreeSpecific(t *testing.T) {
 
 	btreeNew = nil // Just let Go Garbage Collection have it (similating a crash/restart)
 
-	btreeOld, err = OldBPlusTree(rootLogSegmentNumber, rootLogOffset, rootLogLength, CompareUint32, persistentContext)
+	btreeCacheOld = NewBPlusTreeCache(100, 200)
+
+	btreeOld, err = OldBPlusTree(rootLogSegmentNumber, rootLogOffset, rootLogLength, CompareUint32, persistentContext, btreeCacheOld)
 	if nil != err {
 		t.Fatalf("OldBPlusTree() should not have failed")
 	}

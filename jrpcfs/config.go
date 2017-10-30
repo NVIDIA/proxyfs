@@ -8,6 +8,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type globalsStruct struct {
@@ -57,7 +58,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		logger.ErrorfWithError(err, "failed to get Cluster.WhoAmI from config file")
 		return
 	}
-	globals.ipAddr, err = confMap.FetchOptionValueString(globals.whoAmI, "PrivateIPAddr")
+	globals.ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(globals.whoAmI), "PrivateIPAddr")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get %s.PrivateIPAddr from config file", globals.whoAmI)
 		return
@@ -77,6 +78,23 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	// TODO: Remove below here once SSController populates smb.conf
+	swiftClientNoAuthTCPPort, _ := confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if 8090 == swiftClientNoAuthTCPPort {
+		rpcConfFile, rpcConfFileErr := os.Create("/tmp/rpc_server.conf")
+		if nil == rpcConfFileErr {
+			rpcConfigString := fmt.Sprintf("%s:%s/%s", globals.ipAddr, globals.portString, globals.fastPortString)
+			fmt.Fprintf(rpcConfFile, "%s\n", rpcConfigString)
+			rpcConfFile.Close()
+			logger.Infof("/tmp/rpc_server.conf populated with rpcConfigString == %s", rpcConfigString)
+		} else {
+			logger.InfofWithError(rpcConfFileErr, "Unable to create /tmp/rpc_server.conf")
+		}
+	} else {
+		logger.Infof("SwiftClient.NoAuthTCPPort != 8090, so skipping creation of /tmp/rpc_server.conf")
+	}
+	// TODO: Remove above here once SSController populates smb.conf
+
 	// Set data path logging level to true, so that all trace logging is controlled by settings
 	// in the logger package. To enable jrpcfs trace logging, set Logging.TraceLevelLogging to jrpcfs.
 	// This will enable all jrpcfs trace logs, including those formerly controled by globals.dataPathLogging.
@@ -85,34 +103,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get JSONRPCServer.DataPathLogging from config file")
 		return
-	}
-
-	// Optionally (and typically for now)...
-	//   copy the contents of rpc_server.conf to somewhere the samba json rpc client can see it
-	rpcDontWriteConf, err := confMap.FetchOptionValueBool("JSONRPCServer", "DontWriteConf")
-	if (nil != err) || !rpcDontWriteConf {
-		// NOTE: We used to only write to the file if it didn't already exist.
-		//       But now we write it every time. The side effect of this logic
-		//       is that one cannot manually change this file, since any changes
-		//       will be overwritten the next time this code runs.
-		destFilename := "/tmp/rpc_server.conf"
-		out, nonShadowingErr := os.OpenFile(destFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if nil != nonShadowingErr {
-			logger.ErrorfWithError(nonShadowingErr, "failed to open /tmp/rpc_server.conf")
-			err = nonShadowingErr
-			return
-		}
-
-		_, err = out.WriteString("[JSONRPCServer]\n")
-		_, err = out.WriteString("IPAddr: " + globals.ipAddr + "\n")
-		_, err = out.WriteString("TCPPort: " + globals.portString + "\n")
-		_, err = out.WriteString("FastTCPPort: " + globals.fastPortString + "\n")
-
-		err = out.Close()
-		if nil != err {
-			logger.ErrorfWithError(err, "failed to close /tmp/rpc_server.conf")
-			return
-		}
 	}
 
 	// Compute volumeMap
@@ -125,7 +115,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -180,7 +170,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	ipAddr, err = confMap.FetchOptionValueString(whoAmI, "PrivateIPAddr")
+	ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(whoAmI), "PrivateIPAddr")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
 		return
@@ -231,7 +221,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -297,7 +287,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return

@@ -36,12 +36,31 @@ type BPlusTreeCallbacks interface {
 	UnpackValue(payloadData []byte) (value Value, bytesConsumed uint64, err error)
 }
 
+type BPlusTreeCache interface {
+	UpdateLimits(evictLowLimit uint64, evictHighLimit uint64)
+}
+
+func NewBPlusTreeCache(evictLowLimit uint64, evictHighLimit uint64) (bPlusTreeCache BPlusTreeCache) {
+	bPlusTreeCache = &btreeNodeCacheStruct{
+		evictLowLimit:  evictLowLimit,
+		evictHighLimit: evictHighLimit,
+		cleanLRUHead:   nil,
+		cleanLRUTail:   nil,
+		cleanLRUItems:  0,
+		dirtyLRUHead:   nil,
+		dirtyLRUTail:   nil,
+		dirtyLRUItems:  0,
+		drainerActive:  false,
+	}
+	return
+}
+
 // NewBPlusTree is used to construct an in-memory B+Tree supporting the Tree interface
 //
 // Note that if the B+Tree will reside only in memory, callback argument may be nil.
 // That said, there is no advantage to using a B+Tree for an in-memory collection over
 // the llrb-provided collection implementing the same APIs.
-func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCallbacks) (tree BPlusTree) {
+func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCallbacks, bPlusTreeCache BPlusTreeCache) (tree BPlusTree) {
 	minKeysPerNode := maxKeysPerNode >> 1
 	if (0 == maxKeysPerNode) != ((2 * minKeysPerNode) != maxKeysPerNode) {
 		err := fmt.Errorf("maxKeysPerNode (%v) invalid - must be a positive number that is a multiple of 2", maxKeysPerNode)
@@ -54,7 +73,7 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 		objectLength:        0, //                            To be filled in once root node is posted
 		items:               0,
 		loaded:              true, //                         Special case in that objectNumber == 0 means it has no onDisk copy
-		dirty:               true,
+		dirty:               true, //                         To be set just below
 		root:                true,
 		leaf:                true,
 		tree:                nil, //                          To be set just below
@@ -68,20 +87,29 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 		prefixSumRightChild: nil, //                          Not applicable to root node
 	}
 
+	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
+
 	staleOnDiskReferencesContext := &onDiskReferencesContext{}
 
 	treePtr := &btreeTreeStruct{
-		minKeysPerNode:        minKeysPerNode,
-		maxKeysPerNode:        maxKeysPerNode,
-		Compare:               compare,
-		BPlusTreeCallbacks:    callbacks,
-		root:                  rootNode,
-		activeClones:          0,
-		clonedFromTree:        nil,
+		minKeysPerNode:     minKeysPerNode,
+		maxKeysPerNode:     maxKeysPerNode,
+		Compare:            compare,
+		BPlusTreeCallbacks: callbacks,
+		root:               rootNode,
 		staleOnDiskReferences: NewLLRBTree(compareOnDiskReferenceKey, staleOnDiskReferencesContext),
 	}
 
+	if nil == bPlusTreeCache {
+		treePtr.nodeCache = nil
+	} else {
+		treePtr.nodeCache = bPlusTreeCache.(*btreeNodeCacheStruct)
+	}
+
 	rootNode.tree = treePtr
+
+	treePtr.initNodeAsEvicted(rootNode)
+	treePtr.markNodeDirty(rootNode)
 
 	tree = treePtr
 
@@ -89,7 +117,7 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 }
 
 // OldBPlusTree is used to re-construct a B+Tree previously persisted
-func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, compare Compare, callbacks BPlusTreeCallbacks) (tree BPlusTree, err error) {
+func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, compare Compare, callbacks BPlusTreeCallbacks, bPlusTreeCache BPlusTreeCache) (tree BPlusTree, err error) {
 	rootNode := &btreeNodeStruct{
 		objectNumber:        rootObjectNumber,
 		objectOffset:        rootObjectOffset,
@@ -110,24 +138,32 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 		prefixSumRightChild: nil, //           Not applicable to root node
 	}
 
+	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
+
 	staleOnDiskReferencesContext := &onDiskReferencesContext{}
 
 	treePtr := &btreeTreeStruct{
-		minKeysPerNode:        0, //              To be filled in once root node is loaded
-		maxKeysPerNode:        0, //              To be filled in once root node is loaded
-		Compare:               compare,
-		BPlusTreeCallbacks:    callbacks,
-		root:                  rootNode,
-		activeClones:          0,
-		clonedFromTree:        nil,
+		minKeysPerNode:     0, //              To be filled in once root node is loaded
+		maxKeysPerNode:     0, //              To be filled in once root node is loaded
+		Compare:            compare,
+		BPlusTreeCallbacks: callbacks,
+		root:               rootNode,
 		staleOnDiskReferences: NewLLRBTree(compareOnDiskReferenceKey, staleOnDiskReferencesContext),
+	}
+
+	if nil == bPlusTreeCache {
+		treePtr.nodeCache = nil
+	} else {
+		treePtr.nodeCache = bPlusTreeCache.(*btreeNodeCacheStruct)
 	}
 
 	rootNode.tree = treePtr
 
+	treePtr.initNodeAsEvicted(rootNode)
+
 	tree = treePtr
 
-	err = treePtr.loadNode(rootNode)
+	err = treePtr.loadNode(rootNode) // Return from loadNode() sufficient for return from this func
 
 	return
 }

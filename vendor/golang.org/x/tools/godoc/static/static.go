@@ -445,7 +445,7 @@ var Files = map[string]string{
 				<div class="buttons">
 					<a class="run" title="Run this code [shift-enter]">Run</a>
 					<a class="fmt" title="Format this code">Format</a>
-					{{if $.Share}}
+					{{if not $.GoogleCN}}
 					<a class="share" title="Share this code">Share</a>
 					{{end}}
 				</div>
@@ -496,7 +496,9 @@ var Files = map[string]string{
 <a href="/pkg/">Packages</a>
 <a href="/project/">The Project</a>
 <a href="/help/">Help</a>
+{{if not .GoogleCN}}
 <a href="/blog/">Blog</a>
+{{end}}
 {{if .Playground}}
 <a id="playgroundButton" href="http://play.golang.org/" title="Show Go Playground">Play</a>
 {{end}}
@@ -519,7 +521,7 @@ func main() {
 	<div class="buttons">
 		<a class="run" title="Run this code [shift-enter]">Run</a>
 		<a class="fmt" title="Format this code">Format</a>
-		{{if $.Share}}
+		{{if not $.GoogleCN}}
 		<a class="share" title="Share this code">Share</a>
 		{{end}}
 	</div>
@@ -559,7 +561,7 @@ Except as <a href="https://developers.google.com/site-policies#restrictions">not
 the content of this page is licensed under the
 Creative Commons Attribution 3.0 License,
 and code is licensed under a <a href="/LICENSE">BSD license</a>.<br>
-<a href="/doc/tos.html">Terms of Service</a> | 
+<a href="/doc/tos.html">Terms of Service</a> |
 <a href="http://www.google.com/intl/en/policies/privacy/">Privacy Policy</a>
 </div>
 
@@ -793,7 +795,7 @@ function setupInlinePlayground() {
 			code.on('keyup', resize);
 			code.keyup(); // resize now.
 		};
-		
+
 		// If example already visible, set up playground now.
 		if ($(el).is(':visible')) {
 			setup();
@@ -927,7 +929,7 @@ function addPermalinks() {
       // Already attached.
       return;
     }
-    parent.append(" ").append($("<a class='permalink'>&#xb6;</a>").attr("href", "#" + id));
+    parent.append(" ").append($("<a class='permalink' title='permalink' aria-label='permalink'>&#xb6;</a>").attr("href", "#" + id));
   }
 
   $("#page .container").find("h2[id], h3[id]").each(function() {
@@ -1740,7 +1742,7 @@ function cgAddChild(tree, ul, cgn) {
 
 		{{if $.Examples}}
 		<div id="pkg-examples">
-			<h4>Examples</h4>
+			<h3>Examples</h3>
 			<dl>
 			{{range $.Examples}}
 			<dd><a class="exampleLink" href="#example_{{.Name}}">{{example_name .Name}}</a></dd>
@@ -1750,7 +1752,7 @@ function cgAddChild(tree, ul, cgn) {
 		{{end}}
 
 		{{with .Filenames}}
-			<h4>Package files</h4>
+			<h3>Package files</h3>
 			<p>
 			<span style="font-size:90%">
 			{{range .}}
@@ -1817,7 +1819,7 @@ function cgAddChild(tree, ul, cgn) {
 			{{/* Name is a string - no need for FSet */}}
 			{{$name_html := html .Name}}
 			<h2 id="{{$name_html}}">func <a href="{{posLink_url $ .Decl}}">{{$name_html}}</a>
-				<a class="permalink" href="#{{$name_html}}">&#xb6;</a>
+				<a class="permalink" title="permalink" aria-label="permalink" href="#{{$name_html}}">&#xb6;</a>
 			</h2>
 			<pre>{{node_html $ .Decl true}}</pre>
 			{{comment_html .Doc}}
@@ -1829,7 +1831,7 @@ function cgAddChild(tree, ul, cgn) {
 			{{$tname := .Name}}
 			{{$tname_html := html .Name}}
 			<h2 id="{{$tname_html}}">type <a href="{{posLink_url $ .Decl}}">{{$tname_html}}</a>
-				<a class="permalink" href="#{{$tname_html}}">&#xb6;</a>
+				<a class="permalink" title="permalink" aria-label="permalink" href="#{{$tname_html}}">&#xb6;</a>
 			</h2>
 			{{comment_html .Doc}}
 			<pre>{{node_html $ .Decl true}}</pre>
@@ -1851,7 +1853,7 @@ function cgAddChild(tree, ul, cgn) {
 			{{range .Funcs}}
 				{{$name_html := html .Name}}
 				<h3 id="{{$name_html}}">func <a href="{{posLink_url $ .Decl}}">{{$name_html}}</a>
-					<a class="permalink" href="#{{$name_html}}">&#xb6;</a>
+					<a class="permalink" title="permalink" aria-label="permalink" href="#{{$name_html}}">&#xb6;</a>
 				</h3>
 				<pre>{{node_html $ .Decl true}}</pre>
 				{{comment_html .Doc}}
@@ -1862,7 +1864,7 @@ function cgAddChild(tree, ul, cgn) {
 			{{range .Methods}}
 				{{$name_html := html .Name}}
 				<h3 id="{{$tname_html}}.{{$name_html}}">func ({{html .Recv}}) <a href="{{posLink_url $ .Decl}}">{{$name_html}}</a>
-					<a class="permalink" href="#{{$tname_html}}.{{$name_html}}">&#xb6;</a>
+					<a class="permalink" title="permalink" aria-label="permalink" href="#{{$tname_html}}.{{$name_html}}">&#xb6;</a>
 				</h3>
 				<pre>{{node_html $ .Decl true}}</pre>
 				{{comment_html .Doc}}
@@ -1906,7 +1908,7 @@ function cgAddChild(tree, ul, cgn) {
 			</dl>
 		</div>
 		<h2 id="stdlib">Standard library</h2>
-		<img class="gopher" src="/doc/gopher/pkg.png"/>
+		<img alt="" class="gopher" src="/doc/gopher/pkg.png"/>
 	{{end}}
 
 
@@ -2966,13 +2968,6 @@ a:hover,
 	text-decoration: none;
 }
 
-.permalink {
-	display: none;
-}
-:hover > .permalink {
-	display: inline;
-}
-
 p, li {
 	max-width: 800px;
 	word-wrap: break-word;
@@ -3007,7 +3002,7 @@ h1 {
 	line-height: 1;
 }
 h1 .text-muted {
-  color:#777;
+	color:#777;
 }
 h2 {
 	font-size: 20px;
@@ -3049,6 +3044,9 @@ div#nav table td {
 }
 
 
+#pkg-index h3 {
+	font-size: 16px;
+}
 .pkg-dir {
 	padding: 0 10px;
 }

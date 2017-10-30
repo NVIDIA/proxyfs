@@ -15,8 +15,13 @@ DOT_BASHRC = "#{HOME_DIR}/.bashrc"
 ROOT_DOT_BASH_PROFILE = "/root/.bash_profile"
 ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
-SAMBA_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/samba"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
+VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
+# SAMBA_PARENT_DIR == VFS_SRC_DIR
+# We're doing this to only need to change SAMBA_PARENT_DIR in case we decide to
+# change the location of samba again in the future.
+SAMBA_PARENT_DIR = "#{VFS_SRC_DIR}"
+SAMBA_SRC_DIR = "#{SAMBA_PARENT_DIR}/samba"
 
 remote_file "#{tarfile_path}" do
   source "#{tarfile_url}"
@@ -97,6 +102,10 @@ ruby_block "update_profile_and_bashrc" do
     file.write_file
 
   end
+end
+
+cookbook_file "/usr/local/go/src/runtime/runtime-gdb.py" do
+  source "usr/local/go/src/runtime/runtime-gdb.py"
 end
 
 if node[:platform_family].include?("rhel")
@@ -233,6 +242,11 @@ if node[:platform_family].include?("rhel")
     "nfs-utils"
   ]
 
+  gdb_packages = [
+    "gdb",
+    "yum-utils"
+  ]
+
 else # assume debian
 
   # packages
@@ -264,9 +278,14 @@ else # assume debian
     "nfs-common"
   ]
 
+  # Not sure if we need anything else on Debian besides gdb itself
+  gdb_packages = [
+    "gdb"
+  ]
+
 end
 
-packages = samba_package + samba_deps + proxyfs_packages + nfs_packages
+packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages
 packages += wireshark_packages if is_dev
 
 packages.each do |pkg|
@@ -296,7 +315,7 @@ end
 #
 execute "Remove samba symbolic link" do
   command "rm -f samba"
-  cwd REPO_CLONE_PARENT_DIR
+  cwd SAMBA_PARENT_DIR
   not_if { ::File.exists?(SAMBA_SRC_DIR) }
 end
 
@@ -307,11 +326,11 @@ end
 if node[:platform_family].include?("rhel")
   execute "Check out samba" do
     command "git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos"
-    cwd REPO_CLONE_PARENT_DIR
-    not_if { ::File.exists?("#{REPO_CLONE_PARENT_DIR}/samba4-6-centos") }
+    cwd SAMBA_PARENT_DIR
+    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-centos") }
   end
 
-  link "#{REPO_CLONE_PARENT_DIR}/samba" do
+  link "#{SAMBA_SRC_DIR}" do
     to "samba4-6-centos"
     link_type :symbolic
   end
@@ -319,11 +338,11 @@ if node[:platform_family].include?("rhel")
 else
   execute "Check out samba" do
     command "git clone -b v4-3-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-3-ubuntu"
-    cwd REPO_CLONE_PARENT_DIR
-    not_if { ::File.exists?("#{REPO_CLONE_PARENT_DIR}/samba4-3-ubuntu") }
+    cwd SAMBA_PARENT_DIR
+    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-3-ubuntu") }
   end
 
-  link "#{REPO_CLONE_PARENT_DIR}/samba" do
+  link "#{SAMBA_SRC_DIR}" do
     to "samba4-3-ubuntu"
     link_type :symbolic
   end
@@ -352,7 +371,7 @@ end
 
 execute "Setup /etc/samba/smb.conf" do
   command "cat sample_entry_smb_conf.txt >> /etc/samba/smb.conf "
-  cwd "#{PROXYFS_SRC_DIR}/vfs"
+  cwd "#{VFS_SRC_DIR}"
 end
 
 ruby_block "update_smb_conf" do
@@ -370,7 +389,7 @@ end
 #
 execute "Create SMB mount point" do
   command "mkdir /mnt/smb_proxyfs_mount"
-  cwd "#{PROXYFS_SRC_DIR}/vfs"
+  cwd "#{VFS_SRC_DIR}"
   not_if { ::Dir.exists?("/mnt/smb_proxyfs_mount") }
 end
 
@@ -415,4 +434,19 @@ link '/usr/bin/proxyfsd' do
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
+end
+
+cookbook_file "#{HOME_DIR}/.gdbinit" do
+  source "home/unprivileged_user/.gdbinit"
+  owner "#{proxyfs_user}"
+  group "#{proxyfs_group}"
+end
+
+template "/root/.gdbinit" do
+  source "root/.gdbinit.erb"
+  owner "root"
+  group "root"
+  variables({
+    :proxyfs_user => "#{proxyfs_user}"
+  })
 end

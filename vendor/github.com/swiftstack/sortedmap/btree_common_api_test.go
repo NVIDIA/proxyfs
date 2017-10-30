@@ -138,198 +138,198 @@ func (context *commonBPlusTreeBenchmarkContextStruct) UnpackValue(payloadData []
 
 func TestBPlusTreeAllButDeleteSimple(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestAllButDeleteSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestAllButDeleteSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestAllButDeleteSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestAllButDeleteSimple(t, context.tree)
 }
 
 func TestBPlusTreeDeleteByIndexSimple(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestDeleteByIndexSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestDeleteByIndexSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestDeleteByIndexSimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestDeleteByIndexSimple(t, context.tree)
 }
 
 func TestBPlusTreeDeleteByKeySimple(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestDeleteByKeySimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestDeleteByKeySimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestDeleteByKeySimple(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestDeleteByKeySimple(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByIndexTrivial(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexTrivial(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByIndexSmall(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexSmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexSmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexSmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexSmall(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByIndexLarge(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexLarge(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByIndexHuge(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByIndexHuge(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByKeyTrivial(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyTrivial(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyTrivial(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByKeySmall(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeySmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeySmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeySmall(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeySmall(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByKeyLarge(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyLarge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyLarge(t, context.tree)
 }
 
 func TestBPlusTreeInsertGetDeleteByKeyHuge(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyHuge(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestInsertGetDeleteByKeyHuge(t, context.tree)
 }
 
 func TestBPlusTreeBisect(t *testing.T) {
 	context := &commonBPlusTreeTestContextStruct{t: t}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxSmall, CompareInt, context, nil)
 	metaTestBisect(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxModest, CompareInt, context, nil)
 	metaTestBisect(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaTestBisect(t, context.tree)
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxLarge, CompareInt, context, nil)
 	metaTestBisect(t, context.tree)
 }
 
 func BenchmarkBPlusTreePut(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkPut(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeGetByIndex(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkGetByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreePatchByIndex(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkPatchByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeDeleteByIndex(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkDeleteByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeGetByKey(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkGetByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeBisectLeft(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkBisectLeft(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeBisectRight(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkBisectRight(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreePatchByKey(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkPatchByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeDeleteByKey(b *testing.B) {
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
 	metaBenchmarkDeleteByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }

@@ -44,6 +44,16 @@ func testSetup() []func() {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"FSGlobals.VolumeList=SomeVolume,SomeVolume2",
+		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
+		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
+		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
+		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
+		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
+		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.DirEntryCacheEvictLowLimit=10000",
+		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
+		"FSGlobals.FileExtentMapEvictLowLimit=10000",
+		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
@@ -84,18 +94,15 @@ func testSetup() []func() {
 		"JrpcfsTestFlowControl.MaxFlushTime=2s",
 		"JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
 		"JrpcfsTestFlowControl.ReadCacheWeight=100",
-		"SomeContainerLayout.ContainerStoragePolicyIndex=0",
 		"SomeContainerLayout.ContainerNamePrefix=kittens",
 		"SomeContainerLayout.ContainersPerPeer=1000",
 		"SomeContainerLayout.MaxObjectsPerContainer=1000000",
-		"SomeContainerLayout2.ContainerStoragePolicyIndex=0",
 		"SomeContainerLayout2.ContainerNamePrefix=puppies",
 		"SomeContainerLayout2.ContainersPerPeer=1234",
 		"SomeContainerLayout2.MaxObjectsPerContainer=1234567",
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
-		"JSONRPCServer.DontWriteConf=true",
 	}
 
 	tempDir, err := ioutil.TempDir("", "jrpcfs_test")

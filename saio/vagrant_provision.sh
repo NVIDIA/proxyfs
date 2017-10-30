@@ -8,7 +8,7 @@ set -x
 
 # Install tools needed above what's in a minimal base box
 
-yum -y install wget git nfs-utils
+yum -y install wget git nfs-utils vim
 
 # Install Golang
 
@@ -34,6 +34,7 @@ echo "set print object on" >> /home/vagrant/.gdbinit
 echo "set pagination off" >> /home/vagrant/.gdbinit
 chown vagrant:vagrant /home/vagrant/.gdbinit
 chmod 644 /home/vagrant/.gdbinit
+cp /home/vagrant/.gdbinit /root/.
 
 # Install Python pip
 
@@ -62,20 +63,20 @@ yum -y install gcc \
                samba \
                samba-client \
                cifs-utils
-cd /vagrant/src/github.com/swiftstack/ProxyFS/saio
+cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
 if [[ -d samba4-6-centos ]]
 then
     if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
         exit 1
     else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos assumed to be as desired"
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos assumed to be as desired"
     fi
 else
     if [[ -L samba4-6-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba4-6-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
         exit 1
     else
         git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos
@@ -95,7 +96,7 @@ then
 else
     if [[ -e samba ]]
     then
-        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba cannot pre-exist"
+        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
         exit 1
     else
         echo "establishing samba -> samba4-6-centos"
@@ -117,7 +118,7 @@ else
     make clean
     make GEN_NDR_TABLES
 fi
-echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/saio/samba" >> ~vagrant/.bash_profile
+echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba" >> ~vagrant/.bash_profile
 
 # Setup Swift
 #
@@ -173,6 +174,8 @@ yum -y install memcached sqlite xfsprogs \
                python-greenlet python-paste-deploy \
                python-netifaces python-pip python-dns \
                python-mock
+
+pip install --upgrade setuptools
 
 yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-1.1.1-1.fc25.x86_64.rpm
 yum -y install http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.1.1-1.fc25.x86_64.rpm
