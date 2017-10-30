@@ -1,5 +1,22 @@
 # ProxyFS Release Notes
 
+## 0.55.0 (October 30, 2017)
+
+### Features:
+
+* Caching of metadata in RAM now configurable
+* Samba parameters now specified via the standard /etc/samba/smb.conf mechanism
+
+### Bug Fixes:
+
+* Fixed memory leaks in readdir() APIs issued via SMB
+* Fixed metadata on objects set via Swift/S3 API
+
+### Known Issues:
+
+* Named Streams are disabled in SMB (enabling this is TBD)
+* Upgrading metadata checkpointing from V1 to V2 experiences process hangs in some cases
+
 ## 0.54.1 (October 10, 2017)
 
 ### Features:
