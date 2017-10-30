@@ -294,8 +294,12 @@ def deserialize_metadata(raw_metadata):
             metadata = {}
     else:
         metadata = {}
-    return {k.encode("utf-8"): v.encode("utf-8")
-            for k, v in metadata.iteritems()}
+    encoded_metadata = {}
+    for k, v in metadata.iteritems():
+        key = unicode(k).encode("utf-8") if isinstance(k, basestring) else k
+        value = unicode(v).encode("utf-8") if isinstance(v, basestring) else v
+        encoded_metadata[key] = value
+    return encoded_metadata
 
 
 serialize_metadata = json.dumps
