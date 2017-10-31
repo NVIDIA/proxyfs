@@ -4,7 +4,6 @@
 
 set -e
 set -x
-# Install firefox
 
 # Install tools needed above what's in a minimal base box
 

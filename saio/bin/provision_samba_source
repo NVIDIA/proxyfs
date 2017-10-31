@@ -1,0 +1,59 @@
+#!/bin/bash
+
+# Setup Samba Source
+
+cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
+if [[ -d samba4-6-centos ]]
+then
+    if [[ -L samba4-6-centos ]]
+    then
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
+        exit 1
+    else
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos assumed to be as desired"
+    fi
+else
+    if [[ -L samba4-6-centos ]]
+    then
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
+        exit 1
+    else
+        git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos
+    fi
+fi
+if [[ -L samba ]]
+then
+    samba_symlink_target=`readlink "samba"`
+    if [[ "samba4-6-centos" == "$samba_symlink_target" ]]
+    then
+        echo "symlink samba -> samba4-6-centos already"
+    else
+        echo "redirecting samba -> samba4-6-centos"
+        rm samba
+        ln -s samba4-6-centos samba
+    fi
+else
+    if [[ -e samba ]]
+    then
+        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
+        exit 1
+    else
+        echo "establishing samba -> samba4-6-centos"
+        ln -s samba4-6-centos samba
+    fi
+fi
+cd samba
+if [[ -d bin ]]
+then
+    echo "./configure has already been run"
+else
+    ./configure
+    make clean
+fi
+if [[ -f bin/default/librpc/gen_ndr/ndr_smb_acl.h ]]
+then
+    echo "make GEN_NDR_TABLES has already been run"
+else
+    make clean
+    make GEN_NDR_TABLES
+fi
