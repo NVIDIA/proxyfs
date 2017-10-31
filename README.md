@@ -88,4 +88,4 @@ To build/test/install ProxyFS:
 
 ## License
 
-TBD
+See LICENSE file
