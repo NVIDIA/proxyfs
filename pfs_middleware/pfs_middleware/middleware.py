@@ -1253,11 +1253,6 @@ class PfsMiddleware(object):
     def get_object(self, ctx):
         req = ctx.req
         byteranges = req.range.ranges if req.range else ()
-        if len(byteranges) > 1:
-            # XXX TODO: this will just work once Swift merges change
-            # I24716e3271cf3370642e3755447e717fd7d9957c
-            req.headers.pop('Range', None)
-            byteranges = ()
 
         try:
             object_response = self.rpc_call(ctx, rpc.get_object_request(
