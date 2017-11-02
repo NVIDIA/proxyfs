@@ -2,12 +2,6 @@
 Logging package for ProxyFS
 
 
-**IMPORTANT** 
-
-- TO DO:
-	- Support for setting trace and debug logging configuration via .conf files
-
-
 ## About
 
 This package is implemented on top of the [logrus](https://github.com/Sirupsen/logrus) package to provide structured logging functionality for ProxyFS. It uses logrus's log fields functionality to generate logs that are easily parsed by log tools.
@@ -165,43 +159,9 @@ The log fields that are currently supported by this package are:
 * **ss_transid**: swift transaction ID for inode/sock_swift logic
 
 
-
-**FUTURE**
-
-As logs are used for debugging, we will want to add support for more fields. Here are some ideas of fields that may be useful:
-
-* **context**: IO context ID, used to track an IO through system, multinode eventually.
-	* This ID would be provided at the IO ingress point (JSON RPC or Swift MW)
-	* Some sort of context would need to be passed through the IO path so that any function along the way can log with this context
-	* This kind of thing can really help in tracking IOs through the node/cluster
-* **nodeid**: Node ID of node that generated the log. This will become essential once we have more than one node.
-* **inode**: Inode number, for package inode logic
-* **filename**: File name, for package fs logic
-* anything else that is found to be useful
-
-
 ## Function context
 `FuncCtx` is a context structure that is used by some of the Logger APIs. This struct is an optimization so that package and function are only extracted once per function.
 
 The package, function and other fields are stored in the `FuncCtx` in a `logrus.Entry*`.
 
 This construct is mainly used inside the logger package, but is used by `TraceExit`/`TraceExitErr` as well.
-
-
-
-## Development
-The more fields that are supported, the more easily parseable our logs are.
-
-To add API support for a new field...
-
-TBD (to be documented)
-
-
-
-## Contributors
-
- * kmalone@swiftstack.com
-
-## License
-
-<put license info here>
