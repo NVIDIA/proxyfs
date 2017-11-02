@@ -29,4 +29,4 @@ func Unpack(src []byte, dstObjIF interface{}, byteOrder binary.ByteOrder) (bytes
 
 ## License
 
-TBD
+See the included LICENSE file
