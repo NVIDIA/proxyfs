@@ -1,8 +1,0 @@
-setup.py
-meta_middleware/__init__.py
-meta_middleware/middleware.py
-meta_middleware.egg-info/PKG-INFO
-meta_middleware.egg-info/SOURCES.txt
-meta_middleware.egg-info/dependency_links.txt
-meta_middleware.egg-info/entry_points.txt
-meta_middleware.egg-info/top_level.txt

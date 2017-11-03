@@ -61,6 +61,7 @@ tags
 
 # setuptools leaves egg stuff around
 pfs_middleware/*.egg-info
+meta_middleware/*.egg-info
 
 # tox's virtualenvs
 .tox
