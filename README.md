@@ -7,7 +7,9 @@ ProxyFS provides a POSIX-ish hierarchical file system backed by a Swift cluster,
 
 ## Development
 
-TODO
+The officially supported development environment for ProxyFS is
+[Runway](https://github.com/swiftstack/runway). Please Runway's documentation
+and make sure to run the ProxyFS manifest instead of the default one.
 
 ## Contributors
 
@@ -15,6 +17,7 @@ TODO
  * bschatz@swiftstack.com
  * charmer@swiftstack.com
  * ed@swiftstack.com
+ * gerard@swiftstack.com
  * kmalone@swiftstack.com
  * orion@swiftstack.com
  * zdavis@swiftstack.com
