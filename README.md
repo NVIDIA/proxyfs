@@ -1,9 +1,15 @@
 # ProxyFS
-File Server for Swift Clusters
+Integrated File and Object Access for Swift Object Storage
 
 ## Synopsis
 
-ProxyFS provides a POSIX-ish hierarchical file system backed by a Swift cluster, making it available via SMB, NFS, and the Swift and S3 APIs.
+ProxyFS provides integrated file and object API access for data stored with Swift object storage for the same data. 
+
+ProxyFS supports SMB and NFS along with AWS S3 and Swift object protocols. 
+
+ProxyFS is a hierarchical file system that supports POSIX requirements.
+
+ProxyFS enables filesystem clients to mount and read/write data that is simultaneously accessible to object API clients.
 
 ## Development Environment
 
@@ -28,16 +34,9 @@ one.
 * cd $GOPATH/src/github.com/swiftstack/ProxyFS
 * ./regression_test.py
 
-## Contributors
+## Commercial Deployment
 
- * balaji@swiftstack.com
- * bschatz@swiftstack.com
- * charmer@swiftstack.com
- * ed@swiftstack.com
- * gerard@swiftstack.com
- * kmalone@swiftstack.com
- * orion@swiftstack.com
- * zdavis@swiftstack.com
+See: http://swiftstack.com
 
 ## License
 
