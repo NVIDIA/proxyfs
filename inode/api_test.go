@@ -105,6 +105,11 @@ func testSetup() (err error) {
 		"TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"TestVolume.FlowControl=TestFlowControl",
 		"TestVolume.NonceValuesToReserve=100",
+		"TestVolume.MaxEntriesPerDirNode=32",
+		"TestVolume.MaxExtentsPerFileNode=32",
+		"TestVolume.MaxInodesPerMetadataNode=32",
+		"TestVolume.MaxLogSegmentsPerMetadataNode=64",
+		"TestVolume.MaxDirFileNodesPerMetadataNode=16",
 		"FSGlobals.VolumeList=TestVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
@@ -2299,5 +2304,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("fileInodeMetadataAfterSetSize.AccessTime unexpected change")
 	}
 
-	// TODO: Once implemented, need to test GetFragmentationReport() & Optimize()
+	// TODO: Need to test GetFragmentationReport()
+
+	// TODO: Once implemented, need to test Optimize()
 }

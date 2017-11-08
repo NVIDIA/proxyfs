@@ -108,6 +108,11 @@ func TestDaemon(t *testing.T) {
 		"CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"CommonVolume.FlowControl=CommonFlowControl",
 		"CommonVolume.NonceValuesToReserve=100",
+		"CommonVolume.MaxEntriesPerDirNode=32",
+		"CommonVolume.MaxExtentsPerFileNode=32",
+		"CommonVolume.MaxInodesPerMetadataNode=32",
+		"CommonVolume.MaxLogSegmentsPerMetadataNode=64",
+		"CommonVolume.MaxDirFileNodesPerMetadataNode=16",
 
 		"FSGlobals.VolumeList=CommonVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",

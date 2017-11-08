@@ -253,14 +253,12 @@ func Up(confMap conf.ConfMap) (err error) {
 		if volume.active {
 			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
-				// TODO: eventually, just return
-				volume.maxEntriesPerDirNode = 32
+				return
 			}
 
 			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxExtentsPerFileNode")
 			if nil != err {
-				// TODO: eventually, just return
-				volume.maxExtentsPerFileNode = 32
+				return
 			}
 
 			// [Case 1] For now, physicalContainerLayoutNameSlice will simply contain only defaultPhysicalContainerLayoutName
@@ -776,16 +774,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
-				// TODO: eventually, just err = nonShadowingErr & return
-				volume.maxEntriesPerDirNode = 32
-				err = nil
+				return
 			}
 
 			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxExtentsPerFileNode")
 			if nil != err {
-				// TODO: eventually, just err = nonShadowingErr & return
-				volume.maxExtentsPerFileNode = 32
-				err = nil
+				return
 			}
 
 			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")

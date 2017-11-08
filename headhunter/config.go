@@ -486,20 +486,17 @@ func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err er
 
 	volume.maxInodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxInodesPerMetadataNode")
 	if nil != err {
-		// TODO: eventually, just return
-		volume.maxInodesPerMetadataNode = 32
+		return
 	}
 
 	volume.maxLogSegmentsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxLogSegmentsPerMetadataNode")
 	if nil != err {
-		// TODO: eventually, just return
-		volume.maxLogSegmentsPerMetadataNode = 64
+		return
 	}
 
 	volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxDirFileNodesPerMetadataNode")
 	if nil != err {
-		// TODO: eventually, just return
-		volume.maxDirFileNodesPerMetadataNode = 16
+		return
 	}
 
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")
