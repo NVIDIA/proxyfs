@@ -832,6 +832,62 @@ type chunkedPutContextStruct struct {
 	//                                  Value == []byte       of bytes sent to SendChunk()
 }
 
+// A pool of unused chunkedPutContextStruct that we draw on as necesary
+//
+type chunkedPutContextPoolStruct struct {
+	sync.Pool
+}
+
+var chunkedPutContextPool = chunkedPutContextPoolStruct{
+
+	sync.Pool{
+		New: func() interface{} {
+			var cpc = &chunkedPutContextStruct{
+				accountName:   "",
+				containerName: "",
+				objectName:    "",
+				err:           nil,
+				active:        false,
+				connection:    nil,
+				bytesPut:      0,
+			}
+
+			cpc.bytesPutTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, cpc)
+			return cpc
+		},
+	},
+}
+
+func (this *chunkedPutContextPoolStruct) GetChunkedPutContext(accountName string, containerName string,
+	objectName string, connection *connectionStruct) (cpc *chunkedPutContextStruct) {
+
+	cpc = this.Pool.Get().(*chunkedPutContextStruct)
+	cpc.accountName = accountName
+	cpc.containerName = containerName
+	cpc.objectName = objectName
+	cpc.connection = connection
+	cpc.active = true
+
+	return cpc
+}
+
+func (this *chunkedPutContextPoolStruct) PutChunkedPutContext(cpc *chunkedPutContextStruct) {
+
+	// Put the chunkedPutContext object into the same state as one returned
+	// by this.New().  Also makes objects available for GC earlier.
+	cpc.accountName = ""
+	cpc.containerName = ""
+	cpc.objectName = ""
+	cpc.connection = nil
+	cpc.active = false
+
+	cpc.bytesPut = 0
+	cpc.bytesPutTree.Reset()
+	cpc.err = nil
+
+	this.Pool.Put(cpc)
+}
+
 func (chunkedPutContext *chunkedPutContextStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	keyAsUint64, ok := key.(uint64)
 	if !ok {
@@ -916,18 +972,8 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 		return
 	}
 
-	chunkedPutContext = &chunkedPutContextStruct{
-		accountName:   accountName,
-		containerName: containerName,
-		objectName:    objectName,
-		err:           nil,
-		active:        true,
-		connection:    connection,
-		bytesPut:      0,
-	}
-
-	chunkedPutContext.bytesPutTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
-
+	chunkedPutContext =
+		chunkedPutContextPool.GetChunkedPutContext(accountName, containerName, objectName, connection)
 	stats.IncrementOperations(&stats.SwiftObjPutCtxFetchOps)
 
 	return
@@ -948,13 +994,17 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 
 	err = chunkedPutContext.closeHelper()
 	if nil == err {
+		chunkedPutContextPool.PutChunkedPutContext(chunkedPutContext)
 		return
 	}
 
 	// fatal errors cannot be retried because we don't have the data that needs
 	// to be resent available (it could not be stored)
 	if chunkedPutContext.fatal {
-		return chunkedPutContext.err
+		err = chunkedPutContext.err
+		chunkedPutContextPool.PutChunkedPutContext(chunkedPutContext)
+
+		return
 	}
 
 	// There was a problem completing the ObjectPut.  Retry the operation.
@@ -986,6 +1036,8 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 			retrySuccessCnt: &stats.SwiftObjPutCtxtCloseRetrySuccessOps}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+
+	chunkedPutContextPool.PutChunkedPutContext(chunkedPutContext)
 	return err
 }
 

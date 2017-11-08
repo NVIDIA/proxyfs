@@ -19,7 +19,7 @@ type connectionStruct struct {
 }
 
 type connectionPoolStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	poolCapacity            uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
 	poolInUse               uint16              // Active (i.e. not in LIFO) *connectionStruct's
 	lifoIndex               uint16              // Indicates where next released *connectionStruct will go
@@ -46,7 +46,7 @@ type pendingDeleteStruct struct {
 }
 
 type pendingDeletesStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	armed              bool
 	cond               *sync.Cond // Signal if adding 1st pendingDeleteStruct or shutting down
 	head               *pendingDeleteStruct
