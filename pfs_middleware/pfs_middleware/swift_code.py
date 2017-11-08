@@ -27,7 +27,8 @@ swift/common/request_helpers.py in the OpenStack Swift source distribution.
 """
 
 import six
-from swift.common.swob import HTTPBadRequest, HTTPNotAcceptable
+from swift.common.swob import HTTPBadRequest, HTTPNotAcceptable, \
+    HTTPNotImplemented, HTTPLengthRequired
 
 
 # Taken from swift/common/constraints.py, commit d2e32b3
@@ -95,3 +96,32 @@ def config_true_value(value):
     """
     return value is True or \
         (isinstance(value, six.string_types) and value.lower() in TRUE_VALUES)
+
+def check_object_creation(req):
+    """
+    Check to ensure that everything is alright about an object to be created.
+    :param req: HTTP request object
+    :returns: HTTPLengthRequired -- missing content-length header and not
+                                    a chunked request
+    :returns: HTTPBadRequest -- missing or bad content-type header, or
+                                bad metadata
+    :returns: HTTPNotImplemented -- unsupported transfer-encoding header value
+    """
+    try:
+        ml = req.message_length()
+    except ValueError as e:
+        return HTTPBadRequest(request=req, content_type='text/plain',
+                              body=str(e))
+    except AttributeError as e:
+        return HTTPNotImplemented(request=req, content_type='text/plain',
+                                  body=str(e))
+    if req.content_length is None and \
+            req.headers.get('transfer-encoding') != 'chunked':
+        return HTTPLengthRequired(body='Missing Content-Length header.',
+                                  request=req,
+                                  content_type='text/plain')
+
+    if 'Content-Type' not in req.headers:
+        return HTTPBadRequest(request=req, content_type='text/plain',
+                              body='No content type')
+    return None

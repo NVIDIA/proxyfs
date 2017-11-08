@@ -1125,6 +1125,10 @@ class PfsMiddleware(object):
                 self.rpc_call(ctx, put_location_req))
             for _ in itertools.repeat(None))
 
+        error_response = swift_code.check_object_creation(req)
+        if error_response:
+            return error_response
+
         # If these make it to Swift, they can goof up our log segment behind
         # proxyfs's back.
         for forbidden_header in FORBIDDEN_OBJECT_HEADERS:
