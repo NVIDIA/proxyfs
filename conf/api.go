@@ -483,7 +483,42 @@ func (confMap ConfMap) FetchOptionValueUint64(sectionName string, optionName str
 	return
 }
 
-// FetchOptionValueFloatScaledToUint32 returns [sectionName]valueName's single string value converted to a float, multiplied by the multiplier, as a uint32
+// FetchOptionValueFloat32 returns [sectionName]valueName's single string value converted to a float32
+func (confMap ConfMap) FetchOptionValueFloat32(sectionName string, optionName string) (optionValue float32, err error) {
+	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
+	if nil != err {
+		return
+	}
+
+	optionValueAsFloat64, strconvErr := strconv.ParseFloat(optionValueString, 32)
+	if nil != strconvErr {
+		err = fmt.Errorf("[%v]%v strconv.ParseFloat() error: %v", sectionName, optionName, strconvErr)
+		return
+	}
+
+	optionValue = float32(optionValueAsFloat64) // strconv.ParseFloat(,32) guarantees this will work
+	err = nil
+	return
+}
+
+// FetchOptionValueFloat64 returns [sectionName]valueName's single string value converted to a float32
+func (confMap ConfMap) FetchOptionValueFloat64(sectionName string, optionName string) (optionValue float64, err error) {
+	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
+	if nil != err {
+		return
+	}
+
+	optionValue, strconvErr := strconv.ParseFloat(optionValueString, 64)
+	if nil != strconvErr {
+		err = fmt.Errorf("[%v]%v strconv.ParseFloat() error: %v", sectionName, optionName, strconvErr)
+		return
+	}
+
+	err = nil
+	return
+}
+
+// FetchOptionValueFloatScaledToUint32 returns [sectionName]valueName's single string value converted to a float64, multiplied by the uint32 multiplier, as a uint32
 func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, optionName string, multiplier uint32) (optionValue uint32, err error) {
 	optionValue = 0
 
@@ -516,7 +551,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, o
 	return
 }
 
-// FetchOptionValueFloatScaledToUint64 returns [sectionName]valueName's single string value converted to a float, multiplied by the multiplier, as a uint64
+// FetchOptionValueFloatScaledToUint64 returns [sectionName]valueName's single string value converted to a float64, multiplied by the uint64 multiplier, as a uint64
 func (confMap ConfMap) FetchOptionValueFloatScaledToUint64(sectionName string, optionName string, multiplier uint64) (optionValue uint64, err error) {
 	optionValue = 0
 

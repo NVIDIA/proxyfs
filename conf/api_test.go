@@ -379,13 +379,21 @@ func TestFetch(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint64: %v", err)
 	}
+	testFloat32, err := confMap.FetchOptionValueFloat32("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds32")
+	if nil != err {
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 as float32: %v", err)
+	}
+	testFloat64, err := confMap.FetchOptionValueFloat64("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds64")
+	if nil != err {
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 as float64: %v", err)
+	}
 	testScaledUint32, err := confMap.FetchOptionValueFloatScaledToUint32("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds32", 1000)
 	if nil != err {
-		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 as uint32: %v", err)
 	}
 	testScaledUint64, err := confMap.FetchOptionValueFloatScaledToUint64("TestNamespace:Test_-_Section", "Test_-_OptionMilliseconds64", 1000)
 	if nil != err {
-		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64: %v", err)
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 as uint64: %v", err)
 	}
 	testDuration, err := confMap.FetchOptionValueDuration("TestNamespace:Test_-_Section", "Test_-_OptionDuration")
 	if nil != err {
@@ -417,11 +425,17 @@ func TestFetch(t *testing.T) {
 	if uint64(6789) != testUint64 {
 		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint64 contained unexpected value")
 	}
+	if float32(0.123) != testFloat32 {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 contained unexpected float32 value")
+	}
+	if float64(0.456) != testFloat64 {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 contained unexpected float64 value")
+	}
 	if uint32(123) != testScaledUint32 {
-		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds32 contained unexpected uint32 value")
 	}
 	if uint64(456) != testScaledUint64 {
-		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 contained unexpected value")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionMilliseconds64 contained unexpected uint64 value")
 	}
 	timeBase := time.Time{}
 	timeBasePlusTestDuration := timeBase.Add(testDuration)
