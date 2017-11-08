@@ -109,68 +109,33 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	// take care of both RetryLimit and RetryLimitObject at same time
-	var retryLimitMap = map[string]*uint16{
-		"RetryLimit":       &globals.retryLimit,
-		"RetryLimitObject": &globals.retryLimitObject,
+	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
+	if nil != err {
+		return
 	}
-	for name, ptr := range retryLimitMap {
-		*ptr, err = confMap.FetchOptionValueUint16("SwiftClient", name)
-		if nil != err {
-			// TODO: once controller understands RetryDelay paramater, return if undefined
-			// return
-			*ptr = 21
-		}
-		if *ptr > 20 {
-			logger.Warnf("config variable 'SwiftClient.%s' at %v is too big; changing to 5",
-				name, *ptr)
-			*ptr = 5
-		}
+	globals.retryLimitObject, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimitObject")
+	if nil != err {
+		return
 	}
 
-	// take care of both RetryDelay and RetryDelayObject at same time
-	var retryDelayMap = map[string]*time.Duration{
-		"RetryDelay":       &globals.retryDelay,
-		"RetryDelayObject": &globals.retryDelayObject,
+	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
+	if nil != err {
+		return
 	}
-	for name, ptr := range retryDelayMap {
-		*ptr, err = confMap.FetchOptionValueDuration("SwiftClient", name)
-		if nil != err {
-			// TODO: once controller understands RetryDelay*
-			// paramater, return if not defined
-			*ptr = 0
-		}
-		if *ptr < 50*time.Millisecond || *ptr > 30*time.Second {
-			logger.Warnf("config variable 'SwiftClient.%s' at %d msec is too big or too small; changing to 1s",
-				name, *ptr/time.Millisecond)
-			*ptr, err = time.ParseDuration("1s")
-		}
+	globals.retryDelayObject, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelayObject")
+	if nil != err {
+		return
 	}
 
-	// take care of both RetryExpBackoff and RetryExpBackoffObject at same time
-	var retryExpBackoffMap = map[string]*float64{
-		"RetryExpBackoff":       &globals.retryExpBackoff,
-		"RetryExpBackoffObject": &globals.retryExpBackoffObject,
+	globals.retryExpBackoff, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoff")
+	if nil != err {
+		return
 	}
-	for name, ptr := range retryExpBackoffMap {
-		var expBackoff uint32
-		expBackoff, err = confMap.FetchOptionValueFloatScaledToUint32("SwiftClient", name, 1000)
-		if nil != err {
-			// TODO: once controller understands RetryExpBackoff*
-			// paramater, return if not defined
-			expBackoff = 0
-		}
-		*ptr = float64(expBackoff) / float64(1000)
-		if *ptr < 0.5 || *ptr > 3.0 {
-			var ebo float64 = 2.0
-			if name == "RetryExpBackoff" {
-				ebo = 1.2
-			}
-			logger.Warnf("config variable 'SwiftClient.%s' at %2.1f is too big or too small; changing to %2.1f",
-				name, *ptr, ebo)
-			*ptr = ebo
-		}
+	globals.retryExpBackoffObject, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoffObject")
+	if nil != err {
+		return
 	}
+
 	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
 		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
 	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
