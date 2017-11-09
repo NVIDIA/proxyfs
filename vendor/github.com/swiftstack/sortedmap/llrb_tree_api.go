@@ -2,6 +2,7 @@ package sortedmap
 
 type LLRBTree interface {
 	SortedMap
+	Reset()
 }
 
 // LLRBTreeCallbacks specifies the interface to a set of callbacks provided by the client

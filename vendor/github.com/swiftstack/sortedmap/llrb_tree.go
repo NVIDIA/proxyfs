@@ -450,6 +450,10 @@ func (tree *llrbTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 	return
 }
 
+func (tree *llrbTreeStruct) Reset() {
+	tree.root = nil
+}
+
 // Recursive functions
 
 func (tree *llrbTreeStruct) insert(oldNexusNode *llrbNodeStruct, key Key, value Value) (newNexusNode *llrbNodeStruct, ok bool, err error) {

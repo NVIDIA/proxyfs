@@ -977,6 +977,8 @@ func (tree *btreeTreeStruct) Discard() (err error) {
 	tree.Compare = nil
 	tree.BPlusTreeCallbacks = nil
 	tree.root = nil
+	tree.staleOnDiskReferences = nil
+	tree.nodeCache = nil
 
 	// All done
 

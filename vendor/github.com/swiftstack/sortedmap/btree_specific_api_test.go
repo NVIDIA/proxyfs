@@ -409,7 +409,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 
 	err = btreeOld.Discard()
 	if nil != err {
-		t.Fatalf("btreeOld.Discard() with no active clones should not have failed")
+		t.Fatalf("btreeOld.Discard() should not have failed")
 	}
 }
 
