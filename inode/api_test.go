@@ -647,10 +647,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
 
@@ -665,10 +665,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1)) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1)) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1)) returned unexpected dirEntrySlice[1]")
 	}
 
@@ -683,10 +683,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"\") should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"\") returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"\") returned unexpected dirEntrySlice[1]")
 	}
 
@@ -939,7 +939,7 @@ func TestAPI(t *testing.T) {
 	if 1 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 1, 0) should have returned dirEntrySlice with 1 element, got %v elements", len(dirEntrySlice))
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 1, 0) returned unexpected dirEntrySlice[0]")
 	}
 
@@ -954,10 +954,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, InodeDirLocation(0)) should have returned dirEntrySlice with 2 elements, got %v elements", len(dirEntrySlice))
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != "..") || (dirEntrySlice[0].DirLocation != 1) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != "..") || (dirEntrySlice[0].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, InodeDirLocation(0)) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != fileInodeNumber) || (dirEntrySlice[1].Basename != "link_1_to_file_inode") || (dirEntrySlice[1].DirLocation != 2) {
+	if (dirEntrySlice[1].InodeNumber != fileInodeNumber) || (dirEntrySlice[1].Basename != "link_1_to_file_inode") || (dirEntrySlice[1].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, InodeDirLocation(0)) returned unexpected dirEntrySlice[1]")
 	}
 
@@ -971,10 +971,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, \".\") should have returned dirEntrySlice with 2 elements, got %v elements", len(dirEntrySlice))
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != "..") || (dirEntrySlice[0].DirLocation != 1) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != "..") || (dirEntrySlice[0].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, \".\") returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != fileInodeNumber) || (dirEntrySlice[1].Basename != "link_1_to_file_inode") || (dirEntrySlice[1].DirLocation != 2) {
+	if (dirEntrySlice[1].InodeNumber != fileInodeNumber) || (dirEntrySlice[1].Basename != "link_1_to_file_inode") || (dirEntrySlice[1].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, \".\") returned unexpected dirEntrySlice[1]")
 	}
 
@@ -988,10 +988,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(2)) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != fileInodeNumber) || (dirEntrySlice[0].Basename != "link_2_to_file_inode") || (dirEntrySlice[0].DirLocation != 3) {
+	if (dirEntrySlice[0].InodeNumber != fileInodeNumber) || (dirEntrySlice[0].Basename != "link_2_to_file_inode") || (dirEntrySlice[0].NextDirLocation != 4) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(2)) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != symlinkInodeToLink1ToFileInode) || (dirEntrySlice[1].Basename != "symlink_to_link_1_to_file_inode") || (dirEntrySlice[1].DirLocation != 4) {
+	if (dirEntrySlice[1].InodeNumber != symlinkInodeToLink1ToFileInode) || (dirEntrySlice[1].Basename != "symlink_to_link_1_to_file_inode") || (dirEntrySlice[1].NextDirLocation != 5) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(2)) returned unexpected dirEntrySlice[1]")
 	}
 
@@ -1005,10 +1005,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"link_1_to_file_inode\") should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != fileInodeNumber) || (dirEntrySlice[0].Basename != "link_2_to_file_inode") || (dirEntrySlice[0].DirLocation != 3) {
+	if (dirEntrySlice[0].InodeNumber != fileInodeNumber) || (dirEntrySlice[0].Basename != "link_2_to_file_inode") || (dirEntrySlice[0].NextDirLocation != 4) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"link_1_to_file_inode\") returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != symlinkInodeToLink1ToFileInode) || (dirEntrySlice[1].Basename != "symlink_to_link_1_to_file_inode") || (dirEntrySlice[1].DirLocation != 4) {
+	if (dirEntrySlice[1].InodeNumber != symlinkInodeToLink1ToFileInode) || (dirEntrySlice[1].Basename != "symlink_to_link_1_to_file_inode") || (dirEntrySlice[1].NextDirLocation != 5) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"link_1_to_file_inode\") returned unexpected dirEntrySlice[1]")
 	}
 
@@ -1386,16 +1386,16 @@ func TestAPI(t *testing.T) {
 	if 4 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "1stLocation") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "1stLocation") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
-	if (dirEntrySlice[3].InodeNumber != file2Inode) || (dirEntrySlice[3].Basename != "3rdLocation") || (dirEntrySlice[3].DirLocation != 3) {
+	if (dirEntrySlice[3].InodeNumber != file2Inode) || (dirEntrySlice[3].Basename != "3rdLocation") || (dirEntrySlice[3].NextDirLocation != 4) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
@@ -1414,16 +1414,16 @@ func TestAPI(t *testing.T) {
 	if 4 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "2ndLocation") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "2ndLocation") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
-	if (dirEntrySlice[3].InodeNumber != file2Inode) || (dirEntrySlice[3].Basename != "3rdLocation") || (dirEntrySlice[3].DirLocation != 3) {
+	if (dirEntrySlice[3].InodeNumber != file2Inode) || (dirEntrySlice[3].Basename != "3rdLocation") || (dirEntrySlice[3].NextDirLocation != 4) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
@@ -1446,13 +1446,13 @@ func TestAPI(t *testing.T) {
 	if 3 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "3rdLocation") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "3rdLocation") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
@@ -1554,16 +1554,16 @@ func TestAPI(t *testing.T) {
 	if 4 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements, got %#v, which is of length %v", dirEntrySlice, len(dirEntrySlice))
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "3rdLocation") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "3rdLocation") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
-	if (dirEntrySlice[3].InodeNumber != subDirInode) || (dirEntrySlice[3].Basename != "subDir") || (dirEntrySlice[3].DirLocation != 3) {
+	if (dirEntrySlice[3].InodeNumber != subDirInode) || (dirEntrySlice[3].Basename != "subDir") || (dirEntrySlice[3].NextDirLocation != 4) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[3]")
 	}
 
@@ -1577,10 +1577,10 @@ func TestAPI(t *testing.T) {
 	if 2 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != subDirInode) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != subDirInode) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
 
@@ -1599,13 +1599,13 @@ func TestAPI(t *testing.T) {
 	if 3 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements, got %#v", dirEntrySlice)
 	}
-	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != subDirInode) || (dirEntrySlice[2].Basename != "subDir") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != subDirInode) || (dirEntrySlice[2].Basename != "subDir") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
@@ -1619,13 +1619,13 @@ func TestAPI(t *testing.T) {
 	if 3 != len(dirEntrySlice) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
-	if (dirEntrySlice[0].InodeNumber != subDirInode) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].DirLocation != 0) {
+	if (dirEntrySlice[0].InodeNumber != subDirInode) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[0]")
 	}
-	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].DirLocation != 1) {
+	if (dirEntrySlice[1].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[1].Basename != "..") || (dirEntrySlice[1].NextDirLocation != 2) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
-	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "4thLocation") || (dirEntrySlice[2].DirLocation != 2) {
+	if (dirEntrySlice[2].InodeNumber != file1Inode) || (dirEntrySlice[2].Basename != "4thLocation") || (dirEntrySlice[2].NextDirLocation != 3) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 

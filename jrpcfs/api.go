@@ -176,10 +176,10 @@ type CreatePathRequest struct {
 // FileType here will be a uint16 containing DT_DIR|DT_REG|DT_LNK.
 //
 type DirEntry struct {
-	InodeNumber uint64
-	FileType    uint16
-	Basename    string
-	DirLocation uint32
+	InodeNumber     uint64
+	FileType        uint16
+	Basename        string
+	NextDirLocation uint32
 }
 
 // FlushRequest is the request object for RpcFlush.

@@ -1321,7 +1321,7 @@ func (dirEnt *DirEntry) fsDirentToDirEntryStruct(fsDirent inode.DirEntry) {
 	dirEnt.InodeNumber = uint64(fsDirent.InodeNumber)
 	dirEnt.Basename = fsDirent.Basename
 	dirEnt.FileType = uint16(fsDirent.Type)
-	dirEnt.DirLocation = uint32(fsDirent.DirLocation)
+	dirEnt.NextDirLocation = uint32(fsDirent.NextDirLocation)
 }
 
 func (s *Server) RpcReaddir(in *ReaddirRequest, reply *ReaddirReply) (err error) {
