@@ -326,7 +326,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for volumeName = range deletedVolumeNames {
-		err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+		err = downVolume(volumeName)
 		if nil != err {
 			return
 		}

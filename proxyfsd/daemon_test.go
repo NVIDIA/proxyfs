@@ -13,9 +13,15 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 func TestMain(m *testing.M) {
@@ -35,6 +41,7 @@ func TestDaemon(t *testing.T) {
 		ramswiftDoneChan             chan bool
 		ramswiftSignalHandlerIsArmed bool
 		readData                     []byte
+		testConfMap                  conf.ConfMap
 		testVersion                  uint64
 		testVersionConfFile          *os.File
 		testVersionConfFileName      string
@@ -159,6 +166,58 @@ func TestDaemon(t *testing.T) {
 
 	for !ramswiftSignalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Format CommonVolume
+
+	testConfMap, err = conf.MakeConfMapFromStrings(confMapStrings)
+	if nil != err {
+		t.Fatalf("While doing pre-format, conf.MakeConfMapFromStrings() failed: %v", err)
+	}
+
+	err = logger.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
+	}
+
+	err = stats.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, stats.Up() failed: %v", err)
+	}
+
+	err = dlm.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, dlm.Up() failed: %v", err)
+	}
+
+	err = swiftclient.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, swiftclient.Up() failed: %v", err)
+	}
+
+	err = headhunter.Format(testConfMap, "CommonVolume")
+	if nil != err {
+		t.Fatalf("headhunter.Format() failed: %v", err)
+	}
+
+	err = swiftclient.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, swiftclient.Down() failed: %v", err)
+	}
+
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, dlm.Down() failed: %v", err)
+	}
+
+	err = stats.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, stats.Down() failed: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
 	}
 
 	// Launch an instance of proxyfsd using that same config

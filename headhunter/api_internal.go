@@ -64,7 +64,8 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 			return
 		}
 	} else {
-		if 404 == blunder.HTTPCode(err) {
+		// TODO: allowFormat should change to doFormat when controller/runway pre-formats
+		if (allowFormat) && (404 == blunder.HTTPCode(err)) {
 			// Checkpoint Container not found... so try to create it with some initial values...
 
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = 0

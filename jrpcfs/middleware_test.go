@@ -147,6 +147,16 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed to bring up swiftclient: %v", err))
 	}
 
+	err = headhunter.Format(testConfMap, "SomeVolume")
+	if nil != err {
+		panic(fmt.Sprintf("failed to format SomeVolume: %v", err))
+	}
+
+	err = headhunter.Format(testConfMap, "SomeVolume2")
+	if nil != err {
+		panic(fmt.Sprintf("failed to format SomeVolume2: %v", err))
+	}
+
 	err = headhunter.Up(testConfMap)
 	if nil != err {
 		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))

@@ -155,6 +155,11 @@ func testSetup() (err error) {
 		return
 	}
 
+	err = headhunter.Format(testConfMap, "TestVolume")
+	if nil != err {
+		return
+	}
+
 	err = headhunter.Up(testConfMap)
 	if nil != err {
 		return

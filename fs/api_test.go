@@ -150,6 +150,15 @@ func testSetup() (err error) {
 		return err
 	}
 
+	err = headhunter.Format(testConfMap, "TestVolume")
+	if nil != err {
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return
+	}
+
 	err = headhunter.Up(testConfMap)
 	if nil != err {
 		swiftclient.Down()
