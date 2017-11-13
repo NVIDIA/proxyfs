@@ -300,6 +300,10 @@ tar -C /usr/local -xvjf firefox-55.0.tar.bz2
 rm firefox-55.0.tar.bz2
 ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
+# Install benchmark support tools
+
+yum -y install bc gawk
+
 # All done
 
 echo "SAIO for ProxyFS provisioned"
