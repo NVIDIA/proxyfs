@@ -330,6 +330,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		if nil != err {
 			return
 		}
+
+		delete(globals.volumeMap, volumeName)
 	}
 
 	err = nil
