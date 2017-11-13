@@ -358,11 +358,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 				if nil != err {
-					// TODO: eventually, just return
-					flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-					if nil != err {
-						return
-					}
+					return
 				}
 
 				globals.flowControlMap[flowControlName] = flowControl
@@ -712,11 +708,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 						flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 						if nil != err {
-							// TODO: eventually, just return
-							flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-							if nil != err {
-								return
-							}
+							return
 						}
 
 					} else {
@@ -872,11 +864,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 				if nil != err {
-					// TODO: eventually, just return
-					flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-					if nil != err {
-						return
-					}
+					return
 				}
 
 				globals.flowControlMap[flowControlName] = flowControl
