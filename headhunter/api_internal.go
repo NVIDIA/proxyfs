@@ -15,8 +15,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 )
 
-// TODO: allowFormat should change to doFormat when controller/runway pre-formats
-func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
+func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 	var (
 		accountHeaderValues                 []string
 		accountHeaders                      map[string][]string
@@ -51,21 +50,8 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 		}
 
 		checkpointHeaderValue = checkpointHeaderValues[0]
-
-		// TODO: when mkproxyfs is fully externalized, the following should be removed...
-		accountHeaderValues = []string{AccountHeaderValue}
-
-		accountHeaders = make(map[string][]string)
-
-		accountHeaders[AccountHeaderName] = accountHeaderValues
-
-		err = swiftclient.AccountPost(volume.accountName, accountHeaders)
-		if nil != err {
-			return
-		}
 	} else {
-		// TODO: allowFormat should change to doFormat when controller/runway pre-formats
-		if (allowFormat) && (404 == blunder.HTTPCode(err)) {
+		if (autoFormat) && (404 == blunder.HTTPCode(err)) {
 			// Checkpoint Container not found... so try to create it with some initial values...
 
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = 0
