@@ -387,8 +387,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
-		// TODO: eventually, just return
-		readCacheQuotaPercentage = 20
+		return
 	}
 	if 100 < readCacheQuotaPercentage {
 		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
@@ -899,8 +898,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
-		// TODO: eventually, just return
-		readCacheQuotaPercentage = 20
+		return
 	}
 	if 100 < readCacheQuotaPercentage {
 		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
