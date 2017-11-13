@@ -48,6 +48,15 @@ function await_swift_startup {
     done
 }
 
+function format_volume_if_necessary {
+    $GOPATH/bin/mkproxyfs -I $1 $GOPATH/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
+    if [ $? -ne 0 ]
+    then
+        echo "Could not pre-format $1"
+        exit 1
+    fi
+}
+
 if [ $# -gt 0 ]; then
     MOUNT_TYPE="$1"
     MOUNT_TYPE=${MOUNT_TYPE,,}
@@ -122,6 +131,7 @@ if [ -f /usr/bin/systemctl ]; then
     # sudo /usr/bin/systemctl start swift
     sudo /usr/bin/swift-init main start
     await_swift_startup
+    format_volume_if_necessary CommonVolume
     sudo /usr/bin/systemctl start proxyfsd
     await_proxyfsd_startup
     # sudo /usr/bin/systemctl start winbind
@@ -151,6 +161,7 @@ else
     # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
     await_swift_startup
+    format_volume_if_necessary CommonVolume
     sudo /usr/sbin/service proxyfsd start
     await_proxyfsd_startup
     # sudo /usr/sbin/service winbindd start

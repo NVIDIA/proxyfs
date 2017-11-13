@@ -33,8 +33,21 @@ function await_proxyfsd_startup {
     done
 }
 
+function await_swift_startup {
+    while true
+    do
+        curl http://127.0.0.1:8090/info 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]
+        then
+            break
+        fi
+        echo "Waiting for Swift to be started..."
+        sleep 1
+    done
+}
+
 function format_volume_if_necessary {
-    /vagrant/bin/mkproxyfs -I $1 /vagrant/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
+    $GOPATH/bin/mkproxyfs -I $1 $GOPATH/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
     if [ $? -ne 0 ]
     then
         echo "Could not pre-format $1"
@@ -115,6 +128,7 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start memcached
     # sudo /usr/bin/systemctl start swift
     sudo /usr/bin/swift-init main start
+    await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/bin/systemctl start proxyfsd
     await_proxyfsd_startup
@@ -144,6 +158,7 @@ else
     sudo /usr/sbin/service memcached start
     # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
+    await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/sbin/service proxyfsd start
     await_proxyfsd_startup
