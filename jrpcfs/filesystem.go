@@ -636,19 +636,19 @@ func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
 	parentDir, basename := splitPath(in.Fullpath)
 
 	// Get the inode for the (source) parent dir
-	src_ino, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
+	src_ino, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDir)
 	if err != nil {
 		goto Done
 	}
 
 	// Get the inode for the target dir
-	tgt_ino, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.TargetFullpath)
+	tgt_ino, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.TargetFullpath)
 	if err != nil {
 		goto Done
 	}
 
 	// Do the link
-	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, src_ino, basename, tgt_ino)
+	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil, src_ino, basename, tgt_ino)
 
 Done:
 	err = fmt.Errorf("errno: %d", blunder.Errno(err))
@@ -689,7 +689,7 @@ func (s *Server) RpcChown(in *ChownRequest, reply *Reply) (err error) {
 	if in.GroupID != -1 {
 		stat[fs.StatGroupID] = uint64(in.GroupID)
 	}
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }
 
@@ -710,7 +710,7 @@ func (s *Server) RpcChownPath(in *ChownPathRequest, reply *Reply) (err error) {
 	//       We do not check/enforce it; that is the caller's responsibility.
 
 	// Get the inode
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
@@ -723,7 +723,7 @@ func (s *Server) RpcChownPath(in *ChownPathRequest, reply *Reply) (err error) {
 	if in.GroupID != -1 {
 		stat[fs.StatGroupID] = uint64(in.GroupID)
 	}
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, stat)
 	return
 }
 
@@ -745,7 +745,7 @@ func (s *Server) RpcChmod(in *ChmodRequest, reply *Reply) (err error) {
 
 	stat := make(fs.Stat)
 	stat[fs.StatMode] = uint64(in.FileMode)
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }
 
@@ -766,7 +766,7 @@ func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
 	//       We do not check/enforce it; that is the caller's responsibility.
 
 	// Get the inode
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
@@ -774,7 +774,7 @@ func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
 	// Do the Setstat
 	stat := make(fs.Stat)
 	stat[fs.StatMode] = uint64(in.FileMode)
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, stat)
 	return
 }
 
@@ -853,7 +853,7 @@ func (s *Server) RpcFlock(in *FlockRequest, reply *FlockReply) (err error) {
 	flock.Len = in.FlockLen
 	flock.Pid = in.FlockPid
 
-	lockStruct, err := mountHandle.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.FlockCmd, &flock)
+	lockStruct, err := mountHandle.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.FlockCmd, &flock)
 	if lockStruct != nil {
 		reply.FlockType = lockStruct.Type
 		reply.FlockWhence = lockStruct.Whence
@@ -900,7 +900,7 @@ func (s *Server) RpcFlush(in *FlushRequest, reply *Reply) (err error) {
 	profiler.AddEventNow("before fs.Flush()")
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		err = mountHandle.Flush(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber))
+		err = mountHandle.Flush(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	}
 	profiler.AddEventNow("after fs.Flush()")
 
@@ -945,7 +945,7 @@ func (s *Server) RpcGetStat(in *GetStatRequest, reply *StatStruct) (err error) {
 	profiler.AddEventNow("before fs.Getstat()")
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		stat, err = mountHandle.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber))
+		stat, err = mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	}
 	profiler.AddEventNow("after fs.Getstat()")
 	if err == nil {
@@ -976,7 +976,7 @@ func (s *Server) RpcGetStatPath(in *GetStatPathRequest, reply *StatStruct) (err 
 
 	// Get the inode
 	profiler.AddEventNow("before fs.LookupPath()")
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	profiler.AddEventNow("after fs.LookupPath()")
 	if err != nil {
 		// Save profiler with server op stats
@@ -987,7 +987,7 @@ func (s *Server) RpcGetStatPath(in *GetStatPathRequest, reply *StatStruct) (err 
 
 	// Do the GetStat
 	profiler.AddEventNow("before fs.Getstat()")
-	stat, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino))
+	stat, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino))
 	profiler.AddEventNow("after fs.Getstat()")
 	if err == nil {
 		reply.fsStatToStatStruct(stat)
@@ -1013,7 +1013,7 @@ func (s *Server) RpcGetXAttr(in *GetXAttrRequest, reply *GetXAttrReply) (err err
 	profiler.AddEventNow("before fs.GetXAttr()")
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		reply.AttrValue, err = mountHandle.GetXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.AttrName)
+		reply.AttrValue, err = mountHandle.GetXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.AttrName)
 	}
 	profiler.AddEventNow("after fs.GetXAttr()")
 
@@ -1040,7 +1040,7 @@ func (s *Server) RpcGetXAttrPath(in *GetXAttrPathRequest, reply *GetXAttrReply) 
 	}
 
 	profiler.AddEventNow("before fs.LookupPath()")
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	profiler.AddEventNow("after fs.LookupPath()")
 	if err != nil {
 		// Save profiler with server op stats
@@ -1050,7 +1050,7 @@ func (s *Server) RpcGetXAttrPath(in *GetXAttrPathRequest, reply *GetXAttrReply) 
 	}
 
 	profiler.AddEventNow("before fs.GetXAttr()")
-	reply.AttrValue, err = mountHandle.GetXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino), in.AttrName)
+	reply.AttrValue, err = mountHandle.GetXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino), in.AttrName)
 	profiler.AddEventNow("after fs.GetXAttr()")
 	if err == nil {
 		reply.AttrValueSize = uint64(len(reply.AttrValue))
@@ -1087,7 +1087,7 @@ func (s *Server) RpcLookupPath(in *LookupPathRequest, reply *InodeReply) (err er
 	}
 
 	profiler.AddEventNow("before fs.LookupPath()")
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	profiler.AddEventNow("after fs.LookupPath()")
 	if err == nil {
 		reply.InodeNumber = uint64(ino)
@@ -1113,7 +1113,7 @@ func (s *Server) RpcLink(in *LinkRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Basename, inode.InodeNumber(in.TargetInodeNumber))
+	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Basename, inode.InodeNumber(in.TargetInodeNumber))
 	return
 }
 
@@ -1134,19 +1134,19 @@ func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
 	parentDir, basename := splitPath(in.Fullpath)
 
 	// Get the inode for the (source) parent dir
-	srcIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
+	srcIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDir)
 	if err != nil {
 		return
 	}
 
 	// Get the inode for the target
-	tgtIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.TargetFullpath)
+	tgtIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.TargetFullpath)
 	if err != nil {
 		return
 	}
 
 	// Do the link
-	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, srcIno, basename, tgtIno)
+	err = mountHandle.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil, srcIno, basename, tgtIno)
 	return
 }
 
@@ -1163,7 +1163,7 @@ func (s *Server) RpcListXAttr(in *ListXAttrRequest, reply *ListXAttrReply) (err 
 		return
 	}
 
-	reply.AttrNames, err = mountHandle.ListXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber))
+	reply.AttrNames, err = mountHandle.ListXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	return
 }
 
@@ -1180,12 +1180,12 @@ func (s *Server) RpcListXAttrPath(in *ListXAttrPathRequest, reply *ListXAttrRepl
 		return
 	}
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
 
-	reply.AttrNames, err = mountHandle.ListXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino))
+	reply.AttrNames, err = mountHandle.ListXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino))
 	if err != nil {
 		return
 	}
@@ -1209,7 +1209,7 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 	}
 
 	profiler.AddEventNow("before fs.Lookup()")
-	ino, err := mountHandle.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Basename)
+	ino, err := mountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Basename)
 	profiler.AddEventNow("after fs.Lookup()")
 	// line below is for testing fault injection
 	//err = blunder.AddError(err, blunder.TryAgainError)
@@ -1327,7 +1327,7 @@ func (s *Server) RpcRead(in *ReadRequest, reply *ReadReply) (err error) {
 
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		reply.Buf, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Length, nil)
+		reply.Buf, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Length, nil)
 	}
 
 	reply.RequestTimeSec = UnixSec(requestRecTime)
@@ -1394,7 +1394,7 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 	}
 
 	profiler.AddEventNow("before fs.ReaddirOne()")
-	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
+	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
 	profiler.AddEventNow("after fs.ReaddirOne()")
 	if err == nil {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
@@ -1453,7 +1453,7 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 	}
 
 	profiler.AddEventNow("before fs.ReaddirOnePlus()")
-	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
+	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
 
 	profiler.AddEventNow("after fs.ReaddirOnePlus()")
 	if err == nil {
@@ -1484,7 +1484,7 @@ func (s *Server) RpcReadSymlink(in *ReadSymlinkRequest, reply *ReadSymlinkReply)
 		return
 	}
 
-	target, err := mountHandle.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber))
+	target, err := mountHandle.Readsymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	reply.Target = target
 	return
 }
@@ -1503,12 +1503,12 @@ func (s *Server) RpcReadSymlinkPath(in *ReadSymlinkPathRequest, reply *ReadSymli
 	}
 
 	// Get the inode
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
 
-	target, err := mountHandle.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino)
+	target, err := mountHandle.Readsymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino)
 	reply.Target = target
 	return
 }
@@ -1526,7 +1526,7 @@ func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err erro
 		return
 	}
 
-	err = mountHandle.RemoveXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.AttrName)
+	err = mountHandle.RemoveXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.AttrName)
 	return
 }
 
@@ -1543,12 +1543,12 @@ func (s *Server) RpcRemoveAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (er
 		return
 	}
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
 
-	err = mountHandle.RemoveXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino), in.AttrName)
+	err = mountHandle.RemoveXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino), in.AttrName)
 	return
 }
 
@@ -1565,7 +1565,7 @@ func (s *Server) RpcRename(in *RenameRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.SrcDirInodeNumber), in.SrcBasename, inode.InodeNumber(in.DstDirInodeNumber), in.DstBasename)
+	err = mountHandle.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.SrcDirInodeNumber), in.SrcBasename, inode.InodeNumber(in.DstDirInodeNumber), in.DstBasename)
 	return
 }
 
@@ -1586,7 +1586,7 @@ func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) 
 	srcParentDir, srcBasename := splitPath(in.Fullpath)
 
 	// Get the inode for the (source) parent dir
-	srcIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, srcParentDir)
+	srcIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, srcParentDir)
 	if err != nil {
 		return
 	}
@@ -1595,13 +1595,13 @@ func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) 
 	dstParentDir, dstBasename := splitPath(in.DstFullpath)
 
 	// Get the inode for the dest parent dir
-	dstIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dstParentDir)
+	dstIno, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dstParentDir)
 	if err != nil {
 		return
 	}
 
 	// Do the rename
-	err = mountHandle.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, srcIno, srcBasename, dstIno, dstBasename)
+	err = mountHandle.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil, srcIno, srcBasename, dstIno, dstBasename)
 	return
 }
 
@@ -1618,7 +1618,7 @@ func (s *Server) RpcResize(in *ResizeRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.NewSize)
+	err = mountHandle.Resize(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.NewSize)
 	return
 }
 
@@ -1635,7 +1635,7 @@ func (s *Server) RpcRmdir(in *UnlinkRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Basename)
+	err = mountHandle.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Basename)
 	return
 }
 
@@ -1656,13 +1656,13 @@ func (s *Server) RpcRmdirPath(in *UnlinkPathRequest, reply *Reply) (err error) {
 	parentDir, basename := splitPath(in.Fullpath)
 
 	// Get the inode for the parent dir
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDir)
 	if err != nil {
 		return
 	}
 
 	// Do the rmdir
-	err = mountHandle.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, basename)
+	err = mountHandle.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, basename)
 	return
 }
 
@@ -1687,7 +1687,7 @@ func (s *Server) RpcSetstat(in *SetstatRequest, reply *Reply) (err error) {
 	stat[fs.StatSize] = in.Size
 	stat[fs.StatNLink] = in.NumLinks
 	// XXX TODO: add in mode/userid/groupid?
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }
 
@@ -1707,7 +1707,7 @@ func (s *Server) RpcSetTime(in *SetTimeRequest, reply *Reply) (err error) {
 	stat := make(fs.Stat)
 	stat[fs.StatMTime] = in.MTimeNs
 	stat[fs.StatATime] = in.ATimeNs
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }
 
@@ -1725,7 +1725,7 @@ func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error
 	}
 
 	// Get the inode
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
@@ -1733,7 +1733,7 @@ func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error
 	stat := make(fs.Stat)
 	stat[fs.StatMTime] = in.MTimeNs
 	stat[fs.StatATime] = in.ATimeNs
-	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, stat)
+	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, stat)
 	return
 }
 
@@ -1750,7 +1750,7 @@ func (s *Server) RpcSetXAttr(in *SetXAttrRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.SetXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.AttrName, in.AttrValue, in.AttrFlags)
+	err = mountHandle.SetXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.AttrName, in.AttrValue, in.AttrFlags)
 	return
 }
 
@@ -1767,12 +1767,12 @@ func (s *Server) RpcSetXAttrPath(in *SetXAttrPathRequest, reply *Reply) (err err
 		return
 	}
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, in.Fullpath)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	if err != nil {
 		return
 	}
 
-	err = mountHandle.SetXAttr(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino), in.AttrName, in.AttrValue, in.AttrFlags)
+	err = mountHandle.SetXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino), in.AttrName, in.AttrValue, in.AttrFlags)
 	return
 }
 
@@ -1866,7 +1866,7 @@ func (s *Server) RpcType(in *TypeRequest, reply *TypeReply) (err error) {
 		return
 	}
 
-	ftype, err := mountHandle.GetType(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber))
+	ftype, err := mountHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	// Cast as a uint16 here to get the underlying DT_* constant
 	reply.FileType = uint16(ftype)
 	return
@@ -1885,7 +1885,7 @@ func (s *Server) RpcUnlink(in *UnlinkRequest, reply *Reply) (err error) {
 		return
 	}
 
-	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Basename)
+	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Basename)
 	return
 }
 
@@ -1906,13 +1906,13 @@ func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) 
 	parentDir, basename := splitPath(in.Fullpath)
 
 	// Get the inode for the parent dir
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, parentDir)
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDir)
 	if err != nil {
 		return
 	}
 
 	// Do the unlink
-	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, basename)
+	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, basename)
 	return
 }
 
@@ -1953,7 +1953,7 @@ func (s *Server) RpcWrite(in *WriteRequest, reply *WriteReply) (err error) {
 
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		size, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Buf, nil)
+		size, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Buf, nil)
 		reply.Size = uint64(size)
 	}
 

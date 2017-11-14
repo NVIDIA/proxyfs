@@ -18,8 +18,7 @@ type InodeGroupID uint32
 type InodeDirLocation int64
 
 const (
-	InodeRootUserID  = InodeUserID(0)
-	InodeRootGroupID = InodeGroupID(0)
+	InodeRootUserID = InodeUserID(0)
 )
 
 // NOTE: Using unix.DT_* constants for these types makes it easier

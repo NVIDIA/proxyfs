@@ -155,7 +155,7 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
 	}
 
-	stillExists = vS.VolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.F_OK)
+	stillExists = vS.VolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.F_OK)
 	if stillExists {
 		err = vS.VolumeHandle.Flush(inodeNumber, false)
 		if nil != err {
@@ -1192,7 +1192,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 		pathComponent := destDirPathComponents[0]
 		// can't use Mkdir since it wants to take its own lock, so we make and link the dir ourselves
 
-		newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeRootGroupID)
+		newDirInodeNumber, err1 := mS.volStruct.VolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeGroupID(0))
 		if err1 != nil {
 			logger.ErrorWithError(err1)
 			err = err1
@@ -1374,7 +1374,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 	lastBasename := marker
 	for areMoreEntries && uint64(len(accountEnts)) < maxEntries {
 		var dirEnts []inode.DirEntry
-		dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber, lastBasename, maxEntries-uint64(len(accountEnts)), 0)
+		dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, lastBasename, maxEntries-uint64(len(accountEnts)), 0)
 		if err != nil {
 			if blunder.Is(err, blunder.NotFoundError) {
 				// Readdir gives you a NotFoundError if you ask for a
@@ -1400,7 +1400,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 				continue
 			}
 
-			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber)
+			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEnt.InodeNumber)
 			if err1 != nil {
 				err = err1
 				return
@@ -1458,7 +1458,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 		for (areMoreEntries || len(dirEnts) > 0 || len(recursiveDescents) > 0) && uint64(len(containerEnts)) < maxEntries {
 			// If we've run out of real directory entries, load some more.
 			if areMoreEntries && len(dirEnts) == 0 {
-				dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirInode, lastBasename, maxEntries-uint64(len(containerEnts)), 0)
+				dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInode, lastBasename, maxEntries-uint64(len(containerEnts)), 0)
 				if err != nil {
 					logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
 					return err
@@ -1540,7 +1540,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				continue
 			}
 
-			statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber) // TODO: fix this
+			statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEnt.InodeNumber) // TODO: fix this
 			if err != nil {
 				logger.ErrorfWithError(err, "MiddlewareGetContainer: error in Getstat of %s", fileName)
 				return err
@@ -1773,7 +1773,7 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string, makeInodeFunc func() (inode.InodeNumber, error)) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 
 	// Find the inode of the directory corresponding to the container
-	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber, vContainerName)
+	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, vContainerName)
 	if err != nil {
 		return
 	}
