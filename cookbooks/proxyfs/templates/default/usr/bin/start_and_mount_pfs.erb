@@ -49,7 +49,7 @@ function await_swift_startup {
 }
 
 function format_volume_if_necessary {
-    $GOPATH/bin/mkproxyfs -I $1 $GOPATH/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
+    sudo $GOPATH/bin/mkproxyfs -I $1 $GOPATH/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
     if [ $? -ne 0 ]
     then
         echo "Could not pre-format $1"
