@@ -107,6 +107,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Volume:TestVolume.PrimaryPeer=Peer0",
 		"Volume:TestVolume.AccountName=TestAccount",
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
+		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10s",
 		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.FlowControl=TestFlowControl",

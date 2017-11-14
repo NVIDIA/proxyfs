@@ -99,6 +99,7 @@ func TestDaemon(t *testing.T) {
 		"FlowControl:CommonFlowControl.ReadCacheLineSize=1000000",
 		"FlowControl:CommonFlowControl.ReadCacheWeight=100",
 
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
@@ -110,6 +111,7 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.PrimaryPeer=Peer0",
 		"Volume:CommonVolume.AccountName=AUTH_CommonAccount",
 		"Volume:CommonVolume.CheckpointContainerName=.__checkpoint__",
+		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:CommonVolume.CheckpointInterval=10s",
 		"Volume:CommonVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",

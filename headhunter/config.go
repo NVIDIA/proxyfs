@@ -124,29 +124,30 @@ type checkpointRequestStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	volumeName                     string
-	accountName                    string
-	maxFlushSize                   uint64
-	nonceValuesToReserve           uint16
-	maxInodesPerMetadataNode       uint64
-	maxLogSegmentsPerMetadataNode  uint64
-	maxDirFileNodesPerMetadataNode uint64
-	checkpointContainerName        string
-	checkpointInterval             time.Duration
-	checkpointFlushedData          bool
-	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
-	checkpointDoneWaitGroup        *sync.WaitGroup
-	nextNonce                      uint64
-	checkpointRequestChan          chan *checkpointRequestStruct
-	checkpointHeaderVersion        uint64
-	checkpointHeader               *checkpointHeaderV2Struct
-	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                *bPlusTreeWrapperStruct
-	logSegmentRecWrapper           *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
+	volumeName                       string
+	accountName                      string
+	maxFlushSize                     uint64
+	nonceValuesToReserve             uint16
+	maxInodesPerMetadataNode         uint64
+	maxLogSegmentsPerMetadataNode    uint64
+	maxDirFileNodesPerMetadataNode   uint64
+	checkpointContainerName          string
+	checkpointContainerStoragePolicy string
+	checkpointInterval               time.Duration
+	checkpointFlushedData            bool
+	checkpointChunkedPutContext      swiftclient.ChunkedPutContext
+	checkpointDoneWaitGroup          *sync.WaitGroup
+	nextNonce                        uint64
+	checkpointRequestChan            chan *checkpointRequestStruct
+	checkpointHeaderVersion          uint64
+	checkpointHeader                 *checkpointHeaderV2Struct
+	checkpointObjectTrailer          *checkpointObjectTrailerV2Struct
+	inodeRecWrapper                  *bPlusTreeWrapperStruct
+	logSegmentRecWrapper             *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper           *bPlusTreeWrapperStruct
+	inodeRecBPlusTreeLayout          sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout     sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout   sortedmap.LayoutReport
 }
 
 type globalsStruct struct {
@@ -501,6 +502,11 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	}
 
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")
+	if nil != err {
+		return
+	}
+
+	volume.checkpointContainerStoragePolicy, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerStoragePolicy")
 	if nil != err {
 		return
 	}
