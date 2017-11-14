@@ -1367,6 +1367,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
+	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	if nil != err {
+		log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
+	}
+
 	// Kick off NoAuth Swift Proxy Emulator
 
 	go serveNoAuthSwift(confMap)
@@ -1400,6 +1406,12 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
 				log.Fatalf("failed to reapply config overrides: %v", err)
+			}
+
+			// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+			err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+			if nil != err {
+				log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
 			}
 
 			updateConf(confMap)

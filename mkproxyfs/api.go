@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type Mode int
@@ -54,6 +55,13 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	err = confMap.UpdateFromStrings(confStrings)
 	if nil != err {
 		err = fmt.Errorf("failed to apply config overrides: %v", err)
+		return
+	}
+
+	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	if nil != err {
+		err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
 		return
 	}
 

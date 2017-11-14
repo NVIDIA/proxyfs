@@ -200,6 +200,13 @@ func main() {
 			}
 		}
 
+		// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+		err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
+			os.Exit(1)
+		}
+
 		volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v\n", err)

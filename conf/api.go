@@ -53,11 +53,11 @@ func MakeConfMapFromStrings(confStrings []string) (confMap ConfMap, err error) {
 //     or
 //   <section_name_1>.<option_name_1> = <value_1>
 //     or
-//   <section_name_2>.<option_name_2> : <value_2>, <value_3>
+//   <section_name_2>.<option_name_2> = <value_2>, <value_3>
 //     or
 //   <section_name_3>.<option_name_3> = <value_4> <value_5>,<value_6>
 
-var stringRE = regexp.MustCompile("^[0-9A-Za-z_\\-:]+\\.[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
+var stringRE = regexp.MustCompile("^[0-9A-Za-z_\\-:]+\\.[0-9A-Za-z_\\-]+[ \t]*[=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
 var sectionNameOptionNameSeparatorRE = regexp.MustCompile("\\.")
 
 // A .INI/.conf file to load typically looks like:
