@@ -57,7 +57,7 @@ func MakeConfMapFromStrings(confStrings []string) (confMap ConfMap, err error) {
 //     or
 //   <section_name_3>.<option_name_3> = <value_4> <value_5>,<value_6>
 
-var stringRE = regexp.MustCompile("^[0-9A-Za-z_\\-:]+\\.[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\-\\.\\[\\]]*$")
+var stringRE = regexp.MustCompile("^[0-9A-Za-z_\\-:]+\\.[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
 var sectionNameOptionNameSeparatorRE = regexp.MustCompile("\\.")
 
 // A .INI/.conf file to load typically looks like:
@@ -91,7 +91,7 @@ var sectionNameRE = regexp.MustCompile("[0-9A-Za-z_\\-:]+")
 
 // Option Name:Value lines are of the form:
 
-var optionLineRE = regexp.MustCompile("^[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\-\\.\\[\\]]*$")
+var optionLineRE = regexp.MustCompile("^[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
 var optionNameOptionValuesSeparatorRE = regexp.MustCompile("[ \t]*[:=][ \t]*")
 var optionValueSeparatorRE = regexp.MustCompile("[ \t]*[ \t,][ \t]*")
 
