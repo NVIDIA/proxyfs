@@ -97,6 +97,10 @@ def config_true_value(value):
     return value is True or \
         (isinstance(value, six.string_types) and value.lower() in TRUE_VALUES)
 
+
+# Taken from swift/common/constraints.py, commit 1962b18
+#
+# Modified to not check maximum object size; ProxyFS doesn't enforce one.
 def check_object_creation(req):
     """
     Check to ensure that everything is alright about an object to be created.
@@ -108,7 +112,7 @@ def check_object_creation(req):
     :returns: HTTPNotImplemented -- unsupported transfer-encoding header value
     """
     try:
-        ml = req.message_length()
+        req.message_length()
     except ValueError as e:
         return HTTPBadRequest(request=req, content_type='text/plain',
                               body=str(e))

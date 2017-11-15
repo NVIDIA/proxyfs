@@ -115,6 +115,9 @@ class BaseMiddlewareTest(unittest.TestCase):
                                        fake_RpcIsAccountBimodal)
 
     def call_app(self, req, app=None, expect_exception=False):
+        # Normally this happens in eventlet.wsgi.HttpProtocol.get_environ().
+        req.environ.setdefault('CONTENT_TYPE', None)
+
         if app is None:
             app = self.app
 
@@ -1863,10 +1866,12 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_basic(self):
         wsgi_input = StringIO("sparkleberry-displeasurably")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
         self.assertEqual(headers["ETag"],
@@ -1934,10 +1939,12 @@ class TestObjectPut(BaseMiddlewareTest):
             "Server.RpcPutComplete", mock_RpcPutComplete)
 
         wsgi_input = StringIO("Rhodothece-cholesterinuria")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, "201 Created")
         self.assertEqual(headers["Last-Modified"],
@@ -1945,10 +1952,12 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_special_chars(self):
         wsgi_input = StringIO("pancreas-mystagogically")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/c o n/o b j",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
 
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
@@ -2044,11 +2053,13 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_big_exact_multiple(self):
         wsgi_input = StringIO('A' * 100 + 'B' * 100)
+        cl = str(len(wsgi_input.getvalue()))
         self.pfs.max_log_segment_size = 100
 
         req = swob.Request.blank("/v1/AUTH_test/con/obj",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input},
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl},
                                  headers={"X-Trans-Id": "big-txid"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
@@ -2109,6 +2120,7 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_metadata(self):
         wsgi_input = StringIO("extranean-paleophysiology")
+        cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {
             "X-Object-Meta-Color": "puce",
@@ -2131,7 +2143,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  headers=headers_in,
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2150,6 +2163,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
         wsgi_input = StringIO("Celestine-malleal")
+        cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_isdir(head_container_req):
             # This is what you get when there's a nonempty directory in
@@ -2163,7 +2177,8 @@ class TestObjectPut(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/d1/d2/thing.txt",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -2171,6 +2186,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
         wsgi_input = StringIO("Celestine-malleal")
+        cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_notdir(head_container_req):
             # This is what you get when there's a file where your path
@@ -2184,7 +2200,8 @@ class TestObjectPut(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/a-file/thing.txt",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -2200,6 +2217,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # POST-as-COPY work despite ProxyFS's ETag values not being MD5
         # checksums.
         wsgi_input = StringIO("extranean-paleophysiology")
+        cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {"X-Delete-After": 86400,
                       "ETag": hashlib.md5(wsgi_input.getvalue()).hexdigest()}
@@ -2207,7 +2225,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  headers=headers_in,
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2230,12 +2249,14 @@ class TestObjectPut(BaseMiddlewareTest):
         right_etag = hashlib.md5(wsgi_input.getvalue()).hexdigest()
         wrong_etag = hashlib.md5(wsgi_input.getvalue() + "abc").hexdigest()
         non_checksum_etag = "pfsv2/AUTH_test/2226116/4341333-32"
+        cl = str(len(wsgi_input.getvalue()))
 
         wsgi_input.seek(0)
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": right_etag})
+                                 headers={"ETag": right_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2243,7 +2264,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": wrong_etag})
+                                 headers={"ETag": wrong_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '422 Unprocessable Entity')
 
@@ -2251,7 +2273,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": non_checksum_etag})
+                                 headers={"ETag": non_checksum_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
