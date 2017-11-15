@@ -22,6 +22,7 @@ func TestViaNoAuthClient(t *testing.T) {
 			"SwiftClient.NoAuthTCPPort=" + noAuthTCPPort,
 			"Cluster.WhoAmI=Peer0",
 			"FSGlobals.VolumeList=",
+			"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 			"RamSwiftInfo.MaxAccountNameLength=256",
 			"RamSwiftInfo.MaxContainerNameLength=256",
 			"RamSwiftInfo.MaxObjectNameLength=1024",
