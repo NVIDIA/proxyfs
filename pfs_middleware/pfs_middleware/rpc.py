@@ -328,7 +328,7 @@ def middleware_mkdir_request(path, obj_metadata):
     """
     :param path: URL path component for the dir, e.g. "/v1/acc/con/obj".
                  Must refer to an object, not a container (use
-                 get_container_request() pfor containers).
+                 get_container_request() for containers).
 
     :param metadata: serialized object metadata
     """
