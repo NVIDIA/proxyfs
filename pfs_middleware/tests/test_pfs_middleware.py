@@ -799,13 +799,6 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(status, '416 Requested Range Not Satisfiable')
 
     def test_GET_multiple_ranges(self):
-        # Until Swift supports multiple ranges for large objects, we don't
-        # either; this is one of the perils of code re-use. OTOH, using
-        # SegmentedIterable saved us a whole bunch of work.
-        #
-        # This change has been proposed upstream; see
-        # I24716e3271cf3370642e3755447e717fd7d9957c at
-        # https://review.openstack.org for details.
         self.app.register(
             'GET', '/v1/AUTH_test/InternalContainerName/0000000000000001',
             200, {}, "abcd1234efgh5678")
@@ -813,7 +806,11 @@ class TestObjectGet(BaseMiddlewareTest):
         def mock_RpcGetObject(get_object_req):
             self.assertEqual(get_object_req['VirtPath'],
                              "/v1/AUTH_test/c/crud")
-            self.assertEqual(get_object_req['ReadEntsIn'], [])
+            self.assertEqual(get_object_req['ReadEntsIn'], [
+                {'Len': 3, 'Offset': 2},
+                {'Len': 3, 'Offset': 6},
+                {'Len': 3, 'Offset': 10},
+            ])
 
             return {
                 "error": None,
@@ -827,19 +824,53 @@ class TestObjectGet(BaseMiddlewareTest):
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
                                        "Name/0000000000000001"),
-                        "Offset": 0,
-                        "Length": 16}]}}
+                        "Offset": 2,
+                        "Length": 3,
+                    }, {
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000000001"),
+                        "Offset": 6,
+                        "Length": 3,
+                    }, {
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000000001"),
+                        "Offset": 10,
+                        "Length": 3,
+                    }]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
 
         req = swob.Request.blank('/v1/AUTH_test/c/crud',
                                  headers={"Range": "bytes=2-4,6-8,10-12"})
 
-        self.fake_rpc.register_handler(
-            "Server.RpcGetObject", mock_RpcGetObject)
-        status, headers, body = self.call_pfs(req)
+        # Lock down the MIME boundary so it doesn't change on every test run
+        with mock.patch('random.randint',
+                        lambda u, l: 0xf0a9157cb1757bfb124aef22fee31051):
+            status, headers, body = self.call_pfs(req)
 
-        self.assertEqual(status, '200 OK')
-        self.assertNotIn('Content-Range', headers)
-        self.assertEqual(body, 'abcd1234efgh5678')
+        self.assertEqual(status, '206 Partial Content')
+        self.assertEqual(
+            headers.get('Content-Type'),
+            'multipart/byteranges;boundary=f0a9157cb1757bfb124aef22fee31051')
+        self.assertEqual(
+            body,
+            ('--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: text/html; charset=UTF-8\r\n'
+             'Content-Range: bytes 2-4/16\r\n'
+             '\r\n'
+             'cd1\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: text/html; charset=UTF-8\r\n'
+             'Content-Range: bytes 6-8/16\r\n'
+             '\r\n'
+             '34e\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: text/html; charset=UTF-8\r\n'
+             'Content-Range: bytes 10-12/16\r\n'
+             '\r\n'
+             'gh5\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051--'))
 
     def test_GET_metadata(self):
         self.app.register(
