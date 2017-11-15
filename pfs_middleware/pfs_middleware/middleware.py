@@ -1286,7 +1286,13 @@ class PfsMiddleware(object):
         channel = eventlet.queue.Queue(0)
         eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
 
-        headers = deserialize_metadata(raw_metadata)
+        headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
+
+        if "Content-Type" not in headers:
+            headers["Content-Type"] = guess_content_type(req.path,
+                                                         is_dir=False)
+
+        headers["Accept-Ranges"] = "bytes"
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
