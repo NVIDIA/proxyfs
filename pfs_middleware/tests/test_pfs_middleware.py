@@ -184,6 +184,7 @@ class TestAccountGet(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(body, "chickens\ncows\ngoats\npigs\n")
 
     def test_json(self):
@@ -412,6 +413,7 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(headers["Last-Modified"],
                          "Wed, 07 Dec 2016 23:08:55 GMT")
         self.assertEqual(headers["ETag"],
@@ -1114,6 +1116,7 @@ class TestContainerHead(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a container')
 
@@ -1124,6 +1127,7 @@ class TestContainerHead(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
@@ -1273,6 +1277,7 @@ class TestContainerGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(headers["X-Container-Sysmeta-Fish"], "tilefish")
         self.assertEqual(headers["X-Container-Meta-Fish"], "haddock")
 
@@ -1777,7 +1782,7 @@ class TestContainerDelete(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "DELETE"})
         status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
-
+        self.assertNotIn("Accept-Ranges", req.headers)
         self.assertEqual(2, len(self.fake_rpc.calls))
         self.assertEqual("/v1/AUTH_test/empty-con",
                          self.fake_rpc.calls[1][1][0]["VirtPath"])

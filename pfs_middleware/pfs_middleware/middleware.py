@@ -642,37 +642,42 @@ class PfsMiddleware(object):
                 # Authorization succeeded; dispatch to a helper method
                 method = req.method
                 if method == 'GET' and obj:
-                    return self.get_object(ctx)
+                    resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
-                    return self.head_object(ctx)
+                    resp = self.head_object(ctx)
                 elif method == 'PUT' and obj:
-                    return self.put_object(ctx)
+                    resp = self.put_object(ctx)
                 elif method == 'POST' and obj:
-                    return self.post_object(ctx)
+                    resp = self.post_object(ctx)
                 elif method == 'DELETE' and obj:
-                    return self.delete_object(ctx)
+                    resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
-                    return self.coalesce_object(ctx)
+                    resp = self.coalesce_object(ctx)
 
                 elif method == 'GET' and con:
-                    return self.get_container(ctx)
+                    resp = self.get_container(ctx)
                 elif method == 'HEAD' and con:
-                    return self.head_container(ctx)
+                    resp = self.head_container(ctx)
                 elif method == 'PUT' and con:
-                    return self.put_container(ctx)
+                    resp = self.put_container(ctx)
                 elif method == 'POST' and con:
-                    return self.post_container(ctx)
+                    resp = self.post_container(ctx)
                 elif method == 'DELETE' and con:
-                    return self.delete_container(ctx)
+                    resp = self.delete_container(ctx)
 
                 elif method == 'GET':
-                    return self.get_account(ctx)
+                    resp = self.get_account(ctx)
                 elif method == 'HEAD':
-                    return self.head_account(ctx)
+                    resp = self.head_account(ctx)
                 # account HEAD, PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
                     return self.app
+
+                if req.method in ('GET', 'HEAD'):
+                    resp.headers["Accept-Ranges"] = "bytes"
+
+                return resp
 
         # Provide some top-level exception handling and logging for
         # exceptional exceptions. Non-exceptional exceptions will be handled
@@ -1411,7 +1416,6 @@ class PfsMiddleware(object):
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
 
         headers["Content-Length"] = file_size
-        headers["Accept-Ranges"] = "bytes"
         headers["ETag"] = best_possible_etag(
             headers, ctx.account_name, ino, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
