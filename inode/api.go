@@ -30,13 +30,21 @@ const (
 )
 
 // The following are used in calls to Access()... either F_OK or bitwise or of R_OK, W_OK, and X_OK
-
 const (
 	F_OK = InodeMode(unix.F_OK)                               //         check for existence
 	R_OK = InodeMode(unix.R_OK)                               // UID:GID check for read    permission
 	W_OK = InodeMode(unix.W_OK)                               // UID:GID check for write   permission
 	X_OK = InodeMode(unix.X_OK)                               // UID:GID check for execute permission
-	P_OK = InodeMode((unix.R_OK | unix.W_OK | unix.X_OK) + 1) //         check for ownership
+	P_OK = InodeMode((unix.R_OK | unix.W_OK | unix.X_OK) + 1) //         check for ownership permissions
+)
+
+// AccessOverride.Owner means Access() grants permission to the owner of the
+// file even if the permission bits disallow it.
+type AccessOverride uint32
+
+const (
+	NoOverride AccessOverride = iota
+	OwnerOverride
 )
 
 // The following line of code is a directive to go generate that tells it to create a
@@ -124,7 +132,7 @@ type VolumeHandle interface {
 
 	// Common Inode methods, implemented in inode.go
 
-	Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode) (accessReturn bool)
+	Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode, override AccessOverride) (accessReturn bool)
 	Purge(inodeNumber InodeNumber) (err error)
 	Destroy(inodeNumber InodeNumber) (err error)
 	GetMetadata(inodeNumber InodeNumber) (metadata *MetadataStruct, err error)
