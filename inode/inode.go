@@ -585,7 +585,11 @@ func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *phys
 
 		newContainerName := fmt.Sprintf("%s%s", physicalContainerLayout.physicalContainerNamePrefix, utils.Uint64ToHexStr(physicalContainerNameSuffix))
 
-		err = swiftclient.ContainerPut(vS.accountName, newContainerName, make(map[string][]string))
+		storagePolicyHeaderValues := []string{vS.defaultPhysicalContainerLayout.physicalContainerStoragePolicy}
+		newContainerHeaders := make(map[string][]string)
+		newContainerHeaders["X-Storage-Policy"] = storagePolicyHeaderValues
+
+		err = swiftclient.ContainerPut(vS.accountName, newContainerName, newContainerHeaders)
 		if nil != err {
 			return
 		}

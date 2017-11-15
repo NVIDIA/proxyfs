@@ -22,6 +22,7 @@ const (
 	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
 	AccountHeaderValue          = "true"
 	CheckpointHeaderName        = "X-Container-Meta-Checkpoint"
+	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
 var (

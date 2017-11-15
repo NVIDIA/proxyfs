@@ -31,6 +31,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		expectedCheckpointObjectTrailerSize uint64
 		layoutReportIndex                   uint64
 		ok                                  bool
+		storagePolicyHeaderValues           []string
 	)
 
 	volume.inodeRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
@@ -68,9 +69,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			checkpointHeaderValues = []string{checkpointHeaderValue}
 
+			storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
+
 			checkpointContainerHeaders = make(map[string][]string)
 
 			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
+			checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
 
 			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 			if nil != err {
