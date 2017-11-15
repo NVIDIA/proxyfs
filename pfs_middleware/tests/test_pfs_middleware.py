@@ -1203,7 +1203,8 @@ class TestContainerGet(BaseMiddlewareTest):
                         "IsDir": False,
                         "InodeNumber": 9213768,
                         "NumWrites": 2,
-                        "Metadata": "",
+                        "Metadata": base64.b64encode(json.dumps({
+                            "Content-Type": "snack/millenial"})),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
@@ -1303,7 +1304,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(resp_data[1], {
             "name": "images/avocado.png",
             "bytes": 3503770,
-            "content_type": "image/png",
+            "content_type": "snack/millenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1389,7 +1390,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         content_type_node = obj_attr_tags[3]
         self.assertEqual(content_type_node.tag, 'content_type')
-        self.assertEqual(content_type_node.text, 'image/png')
+        self.assertEqual(content_type_node.text, 'snack/millenial')
         self.assertEqual(content_type_node.attrib, {})
 
         last_modified_node = obj_attr_tags[4]
