@@ -96,6 +96,12 @@ SHARE_NFS=/mnt/nfs_proxyfs_mount/
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
 SHARE_SMB=/mnt/smb_proxyfs_mount
 
+# Making sure $GOPATH contains something:
+source ~/.bashrc
+if [ -z "$GOPATH" ]; then
+    GOPATH=/home/swift/code/ProxyFS
+fi
+
 UID_SMB=`id -u`
 GID_SMB=`id -g`
 
