@@ -987,9 +987,11 @@ class PfsMiddleware(object):
             size = ent["FileSize"]
             last_modified = iso_timestamp_from_epoch_ns(
                 ent["ModificationTime"])
-            content_type = guess_content_type(ent["Basename"],
-                                              ent["IsDir"])
             obj_metadata = deserialize_metadata(ent["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(ent["Basename"],
+                                                  ent["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 ent["InodeNumber"], ent["NumWrites"])
@@ -1009,6 +1011,10 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(
+                    container_entry["Basename"], container_entry["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
@@ -1028,8 +1034,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = guess_content_type(container_entry["Basename"],
-                                              container_entry["IsDir"])
+            ct_node.text = content_type
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
