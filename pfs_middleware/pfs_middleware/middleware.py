@@ -107,9 +107,6 @@ from swift.common import swob
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
 from swift.common.utils import get_logger
 
-# There's a lot of little gotchas in building a WSGI iterable.
-from swift.common.request_helpers import SegmentedIterable
-
 
 # Used for content type of directories in container listings
 DIRECTORY_CONTENT_TYPE = "application/directory"
@@ -1326,7 +1323,7 @@ class PfsMiddleware(object):
         wrapped_listing_iter = iterator_posthook(
             listing_iter, done_with_object_get)
 
-        seg_iter = SegmentedIterable(
+        seg_iter = swift_code.SegmentedIterable(
             copied_req, self.zero_filler_app, wrapped_listing_iter,
             self.max_get_time,
             self.logger, 'PFS', 'PFS',
