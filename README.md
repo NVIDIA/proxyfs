@@ -31,6 +31,7 @@ one.
 ## How to run unit tests (in your Development Environment)
 
 * Install/update to at least Go 1.8.3 (if not using Runway)
+* Ensure $GOPATH/bin is in your $PATH
 * cd $GOPATH/src/github.com/swiftstack/ProxyFS
 * ./regression_test.py
 
