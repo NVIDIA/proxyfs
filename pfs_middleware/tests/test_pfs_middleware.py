@@ -1135,6 +1135,9 @@ class TestContainerHead(BaseMiddlewareTest):
         self.assertEqual(headers["X-Container-Object-Count"], "0")
         self.assertEqual(headers["X-Container-Bytes-Used"], "0")
         self.assertEqual(headers["X-Storage-Policy"], "default")
+        self.assertEqual(headers["Last-Modified"],
+                         "Tue, 15 Nov 2016 20:06:38 GMT")
+        self.assertEqual(headers["X-Timestamp"], "1479240397.18958")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 

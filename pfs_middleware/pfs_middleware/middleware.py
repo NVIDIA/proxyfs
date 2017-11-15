@@ -848,9 +848,12 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        raw_metadata, _, _, _, _, _ = rpc.parse_head_response(head_response)
+        raw_metadata, mtime_ns, _, _, _, _ = rpc.parse_head_response(
+            head_response)
         metadata = deserialize_metadata(raw_metadata)
         resp = swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
         self._add_required_container_headers(resp)
         return resp
 
