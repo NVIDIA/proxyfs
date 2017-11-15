@@ -43,6 +43,7 @@ func AdjustConfSectionNamespacingAsNecessary(confMap conf.ConfMap) (err error) {
 
 	if (!unNamespacedWhoAmISectionExists && !namespacedWhoAmISectionExists) || (unNamespacedWhoAmISectionExists && namespacedWhoAmISectionExists) {
 		err = fmt.Errorf("Precisely one of [%s] or [%s] must exist in confMap", unNamespacedWhoAmISectionName, namespacedWhoAmISectionName)
+		return
 	}
 
 	if unNamespacedWhoAmISectionExists {

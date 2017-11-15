@@ -67,7 +67,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 
 	// Fetch confMap particulars needed below
 
-	accountName, err = confMap.FetchOptionValueString(volumeNameToFormat, "AccountName")
+	accountName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "AccountName")
 	if nil != err {
 		return
 	}
