@@ -314,8 +314,10 @@ def merge_container_metadata(old, new):
 
 def merge_object_metadata(old, new):
     merged = new.copy()
-    if "Content-Type" in old and "Content-Type" not in new:
-        merged["Content-Type"] = old["Content-Type"]
+    old_ct = old.get("Content-Type")
+    new_ct = new.get("Content-Type")
+    if old_ct is not None and new_ct is None:
+        merged["Content-Type"] = old_ct
     return merged
 
 
