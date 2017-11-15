@@ -90,7 +90,11 @@ class BaseMiddlewareTest(unittest.TestCase):
                     "policies": [{
                         "aliases": "default",
                         "default": True,
-                        "name": "default"}],
+                        "name": "default",
+                    }, {
+                        "aliases": "not-default",
+                        "name": "not-default",
+                    }],
                     "strict_cors_mode": True,
                     "version": "2.9.1.dev47"
                 },
@@ -1128,6 +1132,9 @@ class TestContainerHead(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
         self.assertEqual(headers.get("Accept-Ranges"), "bytes")
+        self.assertEqual(headers["X-Container-Object-Count"], "0")
+        self.assertEqual(headers["X-Container-Bytes-Used"], "0")
+        self.assertEqual(headers["X-Storage-Policy"], "default")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
@@ -1278,6 +1285,10 @@ class TestContainerGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers.get("Accept-Ranges"), "bytes")
+        self.assertEqual(headers["X-Container-Object-Count"], "0")
+        self.assertEqual(headers["X-Container-Bytes-Used"], "0")
+        self.assertEqual(headers["X-Storage-Policy"], "default")
+
         self.assertEqual(headers["X-Container-Sysmeta-Fish"], "tilefish")
         self.assertEqual(headers["X-Container-Meta-Fish"], "haddock")
 
@@ -2074,19 +2085,20 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertEqual(args[0]["PhysLengths"], [100, 100, 75])
 
         # check the txids as well
+        put_calls = [c for c in self.app.calls if c[0] == 'PUT']
         self.assertEqual(
-            "big-txid-000", self.app.calls[2][2]["X-Trans-Id"])  # 1st PUT
+            "big-txid-000", put_calls[0][2]["X-Trans-Id"])  # 1st PUT
         self.assertEqual(
-            "big-txid-001", self.app.calls[3][2]["X-Trans-Id"])  # 2nd PUT
+            "big-txid-001", put_calls[1][2]["X-Trans-Id"])  # 2nd PUT
         self.assertEqual(
-            "big-txid-002", self.app.calls[4][2]["X-Trans-Id"])  # 3rd PUT
+            "big-txid-002", put_calls[2][2]["X-Trans-Id"])  # 3rd PUT
 
         # If we sent the original Content-Length, the first PUT would fail.
         # At some point, we should send the correct Content-Length value
         # when we can compute it, but for now, we just send nothing.
-        self.assertNotIn("Content-Length", self.app.calls[2][2])  # 1st PUT
-        self.assertNotIn("Content-Length", self.app.calls[3][2])  # 2nd PUT
-        self.assertNotIn("Content-Length", self.app.calls[4][2])  # 3rd PUT
+        self.assertNotIn("Content-Length", put_calls[0][2])  # 1st PUT
+        self.assertNotIn("Content-Length", put_calls[1][2])  # 2nd PUT
+        self.assertNotIn("Content-Length", put_calls[2][2])  # 3rd PUT
 
     def test_big_exact_multiple(self):
         wsgi_input = StringIO('A' * 100 + 'B' * 100)

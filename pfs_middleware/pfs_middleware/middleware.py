@@ -131,6 +131,15 @@ SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Sync-To",
     "X-Versions-Location"}
 
+# ProxyFS directories don't know how many objects are under them, nor how
+# many bytes each one uses. (Yes, a directory knows how many files and
+# subdirectories it contains, but that doesn't include things in those
+# subdirectories.)
+CONTAINER_HEADERS_WE_LIE_ABOUT = {
+    "X-Container-Object-Count": "0",
+    "X-Container-Bytes-Used": "0",
+}
+
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
@@ -841,7 +850,9 @@ class PfsMiddleware(object):
 
         raw_metadata, _, _, _, _, _ = rpc.parse_head_response(head_response)
         metadata = deserialize_metadata(raw_metadata)
-        return swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp = swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        self._add_required_container_headers(resp)
+        return resp
 
     def put_container(self, ctx):
         req = ctx.req
@@ -931,12 +942,23 @@ class PfsMiddleware(object):
         proxy_info = self._proxy_info()
         return proxy_info["swift"]["container_listing_limit"]
 
+    def _default_storage_policy(self):
+        proxy_info = self._proxy_info()
+        # Swift guarantees that exactly one default storage policy exists.
+        return [pol["name"]
+                for pol in proxy_info["swift"]["policies"]
+                if pol.get("default", False)][0]
+
     def _proxy_info(self):
         if self._cached_proxy_info is None:
             req = swob.Request.blank("/info")
             resp = req.get_response(self.app)
             self._cached_proxy_info = json.loads(resp.body)
         return self._cached_proxy_info
+
+    def _add_required_container_headers(self, resp):
+        resp.headers.update(CONTAINER_HEADERS_WE_LIE_ABOUT)
+        resp.headers["X-Storage-Policy"] = self._default_storage_policy()
 
     def get_container(self, ctx):
         req = ctx.req
@@ -975,6 +997,7 @@ class PfsMiddleware(object):
 
         metadata = deserialize_metadata(raw_metadata)
         resp.headers.update(metadata)
+        self._add_required_container_headers(resp)
 
         return resp
 
