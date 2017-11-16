@@ -928,6 +928,24 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '404 Not Found')
 
+    def test_GET_file_as_dir(self):
+        # Subdirectories of files don't exist, but asking for one returns a
+        # different error code than asking for a file that could exist but
+        # doesn't.
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/c/thing.txt/kitten.png")
+
+            return {
+                "error": "errno: 20",
+                "result": None}
+
+        req = swob.Request.blank('/v1/AUTH_test/c/thing.txt/kitten.png')
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '404 Not Found')
+
     def test_GET_weird_error(self):
         def mock_RpcGetObject(get_object_req):
             self.assertEqual(get_object_req['VirtPath'],

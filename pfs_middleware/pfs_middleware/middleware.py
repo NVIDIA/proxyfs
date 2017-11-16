@@ -1301,6 +1301,8 @@ class PfsMiddleware(object):
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
+            elif err.errno == pfs_errno.NotDirError:
+                return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
                     request=req, body="",
