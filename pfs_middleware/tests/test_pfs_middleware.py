@@ -2394,6 +2394,7 @@ class TestObjectPost(BaseMiddlewareTest):
     def test_existing_object(self):
         old_meta = json.dumps({
             "Content-Type": "application/fishy",
+            mware.ORIGINAL_MD5_HEADER: "1:a860580f9df567516a3f0b55c6b93b67",
             "X-Object-Meta-One-Fish": "two fish"})
 
         def mock_RpcHead(_):
@@ -2405,7 +2406,7 @@ class TestObjectPost(BaseMiddlewareTest):
                     "FileSize": 551155,
                     "IsDir": False,
                     "InodeNumber": 6519913,
-                    "NumWrites": 381}}
+                    "NumWrites": 1}}
 
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
@@ -2434,8 +2435,7 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual("Wed, 21 Dec 2016 18:39:03 GMT",
                          headers["Last-Modified"])
         self.assertEqual("0", headers["Content-Length"])
-        self.assertEqual('"pfsv2/AUTH_test/00637C69/0000017D-32"',
-                         headers["Etag"])
+        self.assertEqual("a860580f9df567516a3f0b55c6b93b67", headers["Etag"])
         self.assertEqual("text/html; charset=UTF-8", headers["Content-Type"])
         # Date and X-Trans-Id are added in by other parts of the WSGI stack
 
@@ -2455,10 +2455,51 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
         self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
-        # old Content-Type persists, all else is replaced
         self.assertEqual(new_meta["X-Object-Meta-Red-Fish"], "blue fish")
         self.assertEqual(new_meta["Content-Type"], "application/fishy")
         self.assertNotIn("X-Object-Meta-One-Fish", new_meta)
+
+    def test_preservation(self):
+        old_meta = json.dumps({
+            "Content-Type": "application/fishy",
+            mware.ORIGINAL_MD5_HEADER: "1:a860580f9df567516a3f0b55c6b93b67",
+            "X-Static-Large-Object": "true",
+            "X-Object-Manifest": "solo/duet",
+            "X-Object-Sysmeta-Dog": "collie",
+            "X-Object-Meta-Fish": "perch"})
+
+        def mock_RpcHead(_):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(old_meta),
+                    "ModificationTime": 1510873171878460000,
+                    "FileSize": 7748115,
+                    "IsDir": False,
+                    "InodeNumber": 3741569,
+                    "NumWrites": 1}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        self.fake_rpc.register_handler(
+            "Server.RpcPost", lambda *a: {"error": None, "result": {}})
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "POST"},
+            headers={"X-Object-Meta-Fish": "trout"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("202 Accepted", status)  # sanity check
+
+        method, args = self.fake_rpc.calls[2]
+        self.assertEqual(method, "Server.RpcPost")
+        new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
+        self.assertEqual(new_meta["Content-Type"], "application/fishy")
+        self.assertEqual(new_meta["X-Object-Sysmeta-Dog"], "collie")
+        self.assertEqual(new_meta["X-Static-Large-Object"], "true")
+        self.assertEqual(new_meta["X-Object-Manifest"], "solo/duet")
+        self.assertEqual(new_meta["X-Object-Meta-Fish"], "trout")
 
     def test_change_content_type(self):
         old_meta = json.dumps({"Content-Type": "old/type"})

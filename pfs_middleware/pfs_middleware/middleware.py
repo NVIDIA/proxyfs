@@ -117,12 +117,21 @@ LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 FORBIDDEN_OBJECT_HEADERS = {"X-Delete-At", "X-Delete-After", "Etag"}
 
+ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+
+# They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
     "Content-Type",
     "Content-Disposition",
     "Content-Encoding",
     "X-Object-Manifest",
     "X-Static-Large-Object"}
+
+# These are not mutated on object POST.
+STICKY_OBJECT_METADATA_HEADERS = {
+    "X-Object-Manifest",
+    "X-Static-Large-Object",
+    ORIGINAL_MD5_HEADER}
 
 SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Read",
@@ -141,8 +150,6 @@ CONTAINER_HEADERS_WE_LIE_ABOUT = {
 }
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
-
-ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -320,10 +327,17 @@ def merge_container_metadata(old, new):
 
 def merge_object_metadata(old, new):
     merged = new.copy()
+
+    for header, value in old.items():
+        if (header.startswith("X-Object-Sysmeta-") or
+                header in STICKY_OBJECT_METADATA_HEADERS):
+            merged[header] = value
+
     old_ct = old.get("Content-Type")
     new_ct = new.get("Content-Type")
     if old_ct is not None and new_ct is None:
         merged["Content-Type"] = old_ct
+
     return merged
 
 
