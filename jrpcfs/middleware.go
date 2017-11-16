@@ -198,6 +198,7 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 	}
 	reply.ContainerEntries = entries
 	reply.Metadata = resp.Metadata
+	reply.ModificationTime = resp.ModificationTime
 	return nil
 }
 

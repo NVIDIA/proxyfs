@@ -527,6 +527,9 @@ func TestRpcGetContainerMetadata(t *testing.T) {
 	err := server.RpcGetContainer(&request, &response)
 	assert.Nil(err)
 	assert.Equal([]byte("metadata for c"), response.Metadata)
+
+	statResult := fsStatPath(testVerAccountName, "c")
+	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 }
 
 func TestRpcGetContainerNested(t *testing.T) {

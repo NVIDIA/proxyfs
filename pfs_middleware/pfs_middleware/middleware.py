@@ -979,8 +979,8 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        container_ents, raw_metadata = rpc.parse_get_container_response(
-            get_container_response)
+        container_ents, raw_metadata, mtime_ns = \
+            rpc.parse_get_container_response(get_container_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
         resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
@@ -1001,6 +1001,8 @@ class PfsMiddleware(object):
         metadata = deserialize_metadata(raw_metadata)
         resp.headers.update(metadata)
         self._add_required_container_headers(resp)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
 
         return resp
 

@@ -1202,6 +1202,7 @@ class TestContainerGet(BaseMiddlewareTest):
                 "result": {
                     "Metadata": base64.b64encode(
                         self.serialized_container_metadata),
+                    "ModificationTime": 1510790796076041000,
                     "ContainerEntries": [{
                         "Basename": "images",
                         "FileSize": 0,
@@ -1291,7 +1292,9 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["X-Container-Object-Count"], "0")
         self.assertEqual(headers["X-Container-Bytes-Used"], "0")
         self.assertEqual(headers["X-Storage-Policy"], "default")
-
+        self.assertEqual(headers["X-Timestamp"], "1510790796.07604")
+        self.assertEqual(headers["Last-Modified"],
+                         "Thu, 16 Nov 2017 00:06:37 GMT")
         self.assertEqual(headers["X-Container-Sysmeta-Fish"], "tilefish")
         self.assertEqual(headers["X-Container-Meta-Fish"], "haddock")
 

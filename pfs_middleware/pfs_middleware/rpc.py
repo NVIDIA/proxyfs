@@ -292,7 +292,7 @@ def parse_get_container_response(get_container_response):
     """
     Parse a response from RpcGetContainer.
 
-    Returns: (container entries, container metadata).
+    Returns: (container entries, container metadata, container mtime).
 
     The container entries are a list of dictionaries with keys:
 
@@ -311,6 +311,9 @@ def parse_get_container_response(get_container_response):
     The container's metadata is just a string. Presumably it's some
     JSON-serialized dictionary that this middleware previously set, but it
     could really be anything.
+
+    The container's mtime is the modification time of the directory, in
+    nanoseconds since the epoch.
     """
     res = get_container_response
 
@@ -321,7 +324,8 @@ def parse_get_container_response(get_container_response):
         ents.append(ent)
 
     container_meta = _decode_binary(res["Metadata"])
-    return ents, container_meta
+    container_mtime = res["ModificationTime"]
+    return ents, container_meta, container_mtime
 
 
 def middleware_mkdir_request(path, obj_metadata):

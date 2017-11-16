@@ -588,6 +588,7 @@ type HeadReq struct {
 // GetContainerReply is the response object for RpcGetContainer
 type GetContainerReply struct {
 	ContainerEntries []fs.ContainerEntry
+	ModificationTime uint64
 	Metadata         []byte // container metadata, serialized
 }
 
