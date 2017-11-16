@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -201,10 +202,12 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 		ok, err = statsLLRB.Put(statKey, statValueAsString)
 		if nil != err {
-			panic(fmt.Errorf("statsLLRB.Put(%v, %v) failed: %v", statKey, statValueAsString, err))
+			err = fmt.Errorf("statsLLRB.Put(%v, %v) failed: %v", statKey, statValueAsString, err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			panic(fmt.Errorf("statsLLRB.Put(%v, %v) returned ok == false", statKey, statValueAsString))
+			err = fmt.Errorf("statsLLRB.Put(%v, %v) returned ok == false", statKey, statValueAsString)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 	}
 
@@ -212,10 +215,12 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 
 	lenStatsLLRB, err = statsLLRB.Len()
 	if nil != err {
-		panic(fmt.Errorf("statsLLRB.Len()) failed: %v", err))
+		err = fmt.Errorf("statsLLRB.Len()) failed: %v", err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 	if len(statsMap) != lenStatsLLRB {
-		panic(fmt.Errorf("len(statsMap) != lenStatsLLRB"))
+		err = fmt.Errorf("len(statsMap) != lenStatsLLRB")
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 
 	responseWriter.Header().Set("Content-Type", "text/plain")
@@ -224,10 +229,12 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 	for i = 0; i < lenStatsLLRB; i++ {
 		keyAsKey, valueAsValue, ok, err = statsLLRB.GetByIndex(i)
 		if nil != err {
-			panic(fmt.Errorf("statsLLRB.GetByIndex(%v) failed: %v", i, err))
+			err = fmt.Errorf("statsLLRB.GetByIndex(%v) failed: %v", i, err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			panic(fmt.Errorf("statsLLRB.GetByIndex(%v) returned ok == false", i))
+			err = fmt.Errorf("statsLLRB.GetByIndex(%v) returned ok == false", i)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		keyAsString = keyAsKey.(string)
 		valueAsString = valueAsValue.(string)
@@ -317,7 +324,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	if 1 == numPathParts {
 		volumeListLen, err = globals.volumeLLRB.Len()
 		if nil != err {
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		volumeList = make([]string, 0, volumeListLen)
@@ -325,11 +332,11 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			// GetByIndex(index int) (key Key, value Value, ok bool, err error)
 			volumeNameAsKey, _, ok, err = globals.volumeLLRB.GetByIndex(volumeListIndex)
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
 				err = fmt.Errorf("httpserver.doGetOfVolume() indexing globals.volumeLLRB failed")
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			volumeName = volumeNameAsKey.(string)
 
@@ -342,7 +349,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 			volumeListJSONPacked, err = json.Marshal(volumeList)
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
 			if formatResponseCompactly {
@@ -383,7 +390,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
-		panic(err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 	if !ok {
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -402,25 +409,43 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	if 3 == numPathParts {
 		fsckJobsCount, err = volume.fsckJobs.Len()
 		if nil != err {
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		fsckJobsIDList = make([]uint64, 0, fsckJobsCount)
 		for fsckJobsIndex = fsckJobsCount - 1; fsckJobsIndex >= 0; fsckJobsIndex-- {
 			fsckJobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(fsckJobsIndex)
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
 				err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			fsckJobID = fsckJobIDAsKey.(uint64)
 
 			fsckJobsIDList = append(fsckJobsIDList, fsckJobID)
 		}
 
-		fsckInactive = (nil == volume.fsckActiveJob)
+		if nil == volume.fsckActiveJob {
+			fsckInactive = true
+		} else {
+			// We know fsckJobRunning == volume.fsckActiveJob.state
+			select {
+			case volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan:
+				// FSCK finished at some point... make it look like it just finished now
+
+				volume.fsckActiveJob.state = fsckJobCompleted
+				volume.fsckActiveJob.endTime = time.Now()
+				volume.fsckActiveJob = nil
+
+				fsckInactive = true
+			default:
+				// FSCK must still be running
+
+				fsckInactive = false
+			}
+		}
 
 		volume.Unlock()
 
@@ -430,7 +455,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 			fsckJobsIDListJSONPacked, err = json.Marshal(fsckJobsIDList)
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
 			if formatResponseCompactly {
@@ -484,7 +509,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
 	if nil != err {
-		panic(err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 	if !ok {
 		volume.Unlock()
@@ -531,7 +556,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			}
 		}
 		if nil != err {
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		if formatResponseCompactly {
@@ -653,7 +678,7 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 
 	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
 	if nil != err {
-		panic(err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 	if !ok {
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -671,15 +696,27 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 
 	if 3 == numPathParts {
 		if nil != volume.fsckActiveJob {
-			volume.Unlock()
-			responseWriter.WriteHeader(http.StatusPreconditionFailed)
-			return
+			// We know fsckJobRunning == volume.fsckActiveJob.state
+			select {
+			case volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan:
+				// FSCK finished at some point... make it look like it just finished now
+
+				volume.fsckActiveJob.state = fsckJobCompleted
+				volume.fsckActiveJob.endTime = time.Now()
+				volume.fsckActiveJob = nil
+			default:
+				// FSCK must still be running
+
+				volume.Unlock()
+				responseWriter.WriteHeader(http.StatusPreconditionFailed)
+				return
+			}
 		}
 
 		for {
 			fsckJobsCount, err = volume.fsckJobs.Len()
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
 			if fsckJobsCount < fsckJobsHistoryMaxSize {
@@ -688,11 +725,11 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 
 			ok, err = volume.fsckJobs.DeleteByIndex(0)
 			if nil != err {
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
 				err = fmt.Errorf("httpserver.doPost() delete of oldest element of volume.fsckJobs failed")
-				panic(err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 		}
 
@@ -706,16 +743,16 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 
 		fsckJob.id, err = volume.headhunterHandle.FetchNonce()
 		if nil != err {
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		ok, err = volume.fsckJobs.Put(fsckJob.id, fsckJob)
 		if nil != err {
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
 			err = fmt.Errorf("httpserver.doPost() PUT to volume.fsckJobs failed")
-			panic(err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		volume.fsckActiveJob = fsckJob
@@ -741,7 +778,7 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 
 	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
 	if nil != err {
-		panic(err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 	if !ok {
 		volume.Unlock()
