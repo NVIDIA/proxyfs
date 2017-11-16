@@ -2498,8 +2498,8 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual(new_meta["Content-Type"], "application/fishy")
         self.assertEqual(new_meta["X-Object-Sysmeta-Dog"], "collie")
         self.assertEqual(new_meta["X-Static-Large-Object"], "true")
-        self.assertEqual(new_meta["X-Object-Manifest"], "solo/duet")
         self.assertEqual(new_meta["X-Object-Meta-Fish"], "trout")
+        self.assertNotIn("X-Object-Manifest", new_meta)
 
     def test_change_content_type(self):
         old_meta = json.dumps({"Content-Type": "old/type"})

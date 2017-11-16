@@ -129,7 +129,6 @@ SPECIAL_OBJECT_METADATA_HEADERS = {
 
 # These are not mutated on object POST.
 STICKY_OBJECT_METADATA_HEADERS = {
-    "X-Object-Manifest",
     "X-Static-Large-Object",
     ORIGINAL_MD5_HEADER}
 
