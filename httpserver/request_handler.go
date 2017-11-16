@@ -670,6 +670,12 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	if 3 == numPathParts {
+		if nil != volume.fsckActiveJob {
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+
 		for {
 			fsckJobsCount, err = volume.fsckJobs.Len()
 			if nil != err {
