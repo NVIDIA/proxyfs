@@ -744,6 +744,27 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		checkpointRequest.err = volume.putCheckpoint()
 
+		if nil != checkpointRequest.err {
+			// As part of conducting the checkpoint - and depending upon where the early non-nil
+			// error was reported - it is highly likely that e.g. pages of the B+Trees have been
+			// marked clean even though either their dirty data has not been successfully posted
+			// to Swift and/or the Checkpoint Header that points to it has not been successfully
+			// recorded in Swift. In either case, a subsequent checkpoint may, indeed, appear to
+			// succeed and quite probably miss some of the references nodes of the B+Trees not
+			// having made it to Swift... and, yet, wrongly presume all is (now) well.
+
+			// It should also be noted that other activity (e.g. garbage collection of usually
+			// now unreferenced data) awaiting completion of this checkpoint should not have
+			// been allowed to proceed.
+
+			// For now, we will instead promptly fail right here thus preventing that subsequent
+			// checkpoint from masking the data loss. While there are alternatives (e.g. going
+			// back and marking every node of the B+Trees as being dirty - or at least those that
+			// were marked clean), such an approach will not be pursued at this time.
+
+			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+		}
+
 		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
 
 		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
