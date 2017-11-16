@@ -298,7 +298,7 @@ class TestAccountGet(BaseMiddlewareTest):
             "Server.RpcGetAccount", last_page_RpcGetAccount)
         req = swob.Request.blank("/v1/AUTH_test?marker=zzz")
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '200 OK')
+        self.assertEqual(status, '204 No Content')
         self.assertEqual(body, '')
 
     def test_spaces(self):
@@ -311,6 +311,19 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(status, '200 OK')
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test with spaces')
+
+    def test_empty(self):
+        def mock_RpcGetAccount(_):
+            return {
+                "error": None,
+                "result": {
+                    "AccountEntries": []}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+        req = swob.Request.blank("/v1/AUTH_test")
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')
 
 
 class TestAccountHead(BaseMiddlewareTest):

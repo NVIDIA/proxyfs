@@ -758,18 +758,20 @@ class PfsMiddleware(object):
         container_names = rpc.parse_get_account_response(get_account_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
-        resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
-                           request=req)
         if resp_content_type == "text/plain":
-            resp.body = self._plaintext_account_get_response(container_names)
+            body = self._plaintext_account_get_response(container_names)
         elif resp_content_type == "application/json":
-            resp.body = self._json_account_get_response(container_names)
+            body = self._json_account_get_response(container_names)
         elif resp_content_type.endswith("/xml"):
-            resp.body = self._xml_account_get_response(container_names,
-                                                       ctx.account_name)
+            body = self._xml_account_get_response(container_names,
+                                                  ctx.account_name)
         else:
             raise Exception("unexpected content type %r" %
                             (resp_content_type,))
+
+        resp_class = swob.HTTPOk if body else swob.HTTPNoContent
+        resp = resp_class(content_type=resp_content_type, charset="utf-8",
+                          request=req, body=body)
 
         # For accounts, the meta/sysmeta is stored in the account DB in
         # Swift, not in ProxyFS.
