@@ -67,9 +67,9 @@ type FragmentationReport struct {
 
 type DirEntry struct {
 	InodeNumber
-	Basename    string
-	Type        InodeType
-	DirLocation InodeDirLocation
+	Basename        string
+	Type            InodeType
+	NextDirLocation InodeDirLocation
 }
 
 type CoalesceElement struct {
@@ -80,7 +80,7 @@ type CoalesceElement struct {
 
 func (de *DirEntry) Size() int {
 	// sizeof(InodeNumber) + sizeof(InodeType) + sizeof(DirLocation) + string data + null byte delimiter
-	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.DirLocation)) + len(de.Basename) + 1
+	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.NextDirLocation)) + len(de.Basename) + 1
 }
 
 type ReadPlanStep struct {

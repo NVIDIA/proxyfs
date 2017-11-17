@@ -107,9 +107,6 @@ from swift.common import swob
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
 from swift.common.utils import get_logger
 
-# There's a lot of little gotchas in building a WSGI iterable.
-from swift.common.request_helpers import SegmentedIterable
-
 
 # Used for content type of directories in container listings
 DIRECTORY_CONTENT_TYPE = "application/directory"
@@ -120,12 +117,20 @@ LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 FORBIDDEN_OBJECT_HEADERS = {"X-Delete-At", "X-Delete-After", "Etag"}
 
+ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+
+# They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
     "Content-Type",
     "Content-Disposition",
     "Content-Encoding",
     "X-Object-Manifest",
     "X-Static-Large-Object"}
+
+# These are not mutated on object POST.
+STICKY_OBJECT_METADATA_HEADERS = {
+    "X-Static-Large-Object",
+    ORIGINAL_MD5_HEADER}
 
 SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Read",
@@ -134,9 +139,16 @@ SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Sync-To",
     "X-Versions-Location"}
 
-MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
+# ProxyFS directories don't know how many objects are under them, nor how
+# many bytes each one uses. (Yes, a directory knows how many files and
+# subdirectories it contains, but that doesn't include things in those
+# subdirectories.)
+CONTAINER_HEADERS_WE_LIE_ABOUT = {
+    "X-Container-Object-Count": "0",
+    "X-Container-Bytes-Used": "0",
+}
 
-ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -314,8 +326,17 @@ def merge_container_metadata(old, new):
 
 def merge_object_metadata(old, new):
     merged = new.copy()
-    if "Content-Type" in old and "Content-Type" not in new:
-        merged["Content-Type"] = old["Content-Type"]
+
+    for header, value in old.items():
+        if (header.startswith("X-Object-Sysmeta-") or
+                header in STICKY_OBJECT_METADATA_HEADERS):
+            merged[header] = value
+
+    old_ct = old.get("Content-Type")
+    new_ct = new.get("Content-Type")
+    if old_ct is not None and new_ct is None:
+        merged["Content-Type"] = old_ct
+
     return merged
 
 
@@ -643,37 +664,42 @@ class PfsMiddleware(object):
                 # Authorization succeeded; dispatch to a helper method
                 method = req.method
                 if method == 'GET' and obj:
-                    return self.get_object(ctx)
+                    resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
-                    return self.head_object(ctx)
+                    resp = self.head_object(ctx)
                 elif method == 'PUT' and obj:
-                    return self.put_object(ctx)
+                    resp = self.put_object(ctx)
                 elif method == 'POST' and obj:
-                    return self.post_object(ctx)
+                    resp = self.post_object(ctx)
                 elif method == 'DELETE' and obj:
-                    return self.delete_object(ctx)
+                    resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
-                    return self.coalesce_object(ctx)
+                    resp = self.coalesce_object(ctx)
 
                 elif method == 'GET' and con:
-                    return self.get_container(ctx)
+                    resp = self.get_container(ctx)
                 elif method == 'HEAD' and con:
-                    return self.head_container(ctx)
+                    resp = self.head_container(ctx)
                 elif method == 'PUT' and con:
-                    return self.put_container(ctx)
+                    resp = self.put_container(ctx)
                 elif method == 'POST' and con:
-                    return self.post_container(ctx)
+                    resp = self.post_container(ctx)
                 elif method == 'DELETE' and con:
-                    return self.delete_container(ctx)
+                    resp = self.delete_container(ctx)
 
                 elif method == 'GET':
-                    return self.get_account(ctx)
+                    resp = self.get_account(ctx)
                 elif method == 'HEAD':
-                    return self.head_account(ctx)
+                    resp = self.head_account(ctx)
                 # account HEAD, PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
                     return self.app
+
+                if req.method in ('GET', 'HEAD'):
+                    resp.headers["Accept-Ranges"] = "bytes"
+
+                return resp
 
         # Provide some top-level exception handling and logging for
         # exceptional exceptions. Non-exceptional exceptions will be handled
@@ -745,18 +771,20 @@ class PfsMiddleware(object):
         container_names = rpc.parse_get_account_response(get_account_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
-        resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
-                           request=req)
         if resp_content_type == "text/plain":
-            resp.body = self._plaintext_account_get_response(container_names)
+            body = self._plaintext_account_get_response(container_names)
         elif resp_content_type == "application/json":
-            resp.body = self._json_account_get_response(container_names)
+            body = self._json_account_get_response(container_names)
         elif resp_content_type.endswith("/xml"):
-            resp.body = self._xml_account_get_response(container_names,
-                                                       ctx.account_name)
+            body = self._xml_account_get_response(container_names,
+                                                  ctx.account_name)
         else:
             raise Exception("unexpected content type %r" %
                             (resp_content_type,))
+
+        resp_class = swob.HTTPOk if body else swob.HTTPNoContent
+        resp = resp_class(content_type=resp_content_type, charset="utf-8",
+                          request=req, body=body)
 
         # For accounts, the meta/sysmeta is stored in the account DB in
         # Swift, not in ProxyFS.
@@ -835,9 +863,14 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        raw_metadata, _, _, _, _, _ = rpc.parse_head_response(head_response)
+        raw_metadata, mtime_ns, _, _, _, _ = rpc.parse_head_response(
+            head_response)
         metadata = deserialize_metadata(raw_metadata)
-        return swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp = swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
+        self._add_required_container_headers(resp)
+        return resp
 
     def put_container(self, ctx):
         req = ctx.req
@@ -927,12 +960,23 @@ class PfsMiddleware(object):
         proxy_info = self._proxy_info()
         return proxy_info["swift"]["container_listing_limit"]
 
+    def _default_storage_policy(self):
+        proxy_info = self._proxy_info()
+        # Swift guarantees that exactly one default storage policy exists.
+        return [pol["name"]
+                for pol in proxy_info["swift"]["policies"]
+                if pol.get("default", False)][0]
+
     def _proxy_info(self):
         if self._cached_proxy_info is None:
             req = swob.Request.blank("/info")
             resp = req.get_response(self.app)
             self._cached_proxy_info = json.loads(resp.body)
         return self._cached_proxy_info
+
+    def _add_required_container_headers(self, resp):
+        resp.headers.update(CONTAINER_HEADERS_WE_LIE_ABOUT)
+        resp.headers["X-Storage-Policy"] = self._default_storage_policy()
 
     def get_container(self, ctx):
         req = ctx.req
@@ -950,8 +994,8 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        container_ents, raw_metadata = rpc.parse_get_container_response(
-            get_container_response)
+        container_ents, raw_metadata, mtime_ns = \
+            rpc.parse_get_container_response(get_container_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
         resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
@@ -971,6 +1015,9 @@ class PfsMiddleware(object):
 
         metadata = deserialize_metadata(raw_metadata)
         resp.headers.update(metadata)
+        self._add_required_container_headers(resp)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
 
         return resp
 
@@ -988,9 +1035,11 @@ class PfsMiddleware(object):
             size = ent["FileSize"]
             last_modified = iso_timestamp_from_epoch_ns(
                 ent["ModificationTime"])
-            content_type = guess_content_type(ent["Basename"],
-                                              ent["IsDir"])
             obj_metadata = deserialize_metadata(ent["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(ent["Basename"],
+                                                  ent["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 ent["InodeNumber"], ent["NumWrites"])
@@ -1010,6 +1059,10 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(
+                    container_entry["Basename"], container_entry["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
@@ -1029,8 +1082,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = guess_content_type(container_entry["Basename"],
-                                              container_entry["IsDir"])
+            ct_node.text = content_type
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
@@ -1264,6 +1316,8 @@ class PfsMiddleware(object):
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(request=req)
+            elif err.errno == pfs_errno.NotDirError:
+                return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
                     request=req, body="",
@@ -1284,7 +1338,13 @@ class PfsMiddleware(object):
         channel = eventlet.queue.Queue(0)
         eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
 
-        headers = deserialize_metadata(raw_metadata)
+        headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
+
+        if "Content-Type" not in headers:
+            headers["Content-Type"] = guess_content_type(req.path,
+                                                         is_dir=False)
+
+        headers["Accept-Ranges"] = "bytes"
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
@@ -1324,7 +1384,7 @@ class PfsMiddleware(object):
         wrapped_listing_iter = iterator_posthook(
             listing_iter, done_with_object_get)
 
-        seg_iter = SegmentedIterable(
+        seg_iter = swift_code.SegmentedIterable(
             copied_req, self.zero_filler_app, wrapped_listing_iter,
             self.max_get_time,
             self.logger, 'PFS', 'PFS',
@@ -1407,7 +1467,6 @@ class PfsMiddleware(object):
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
 
         headers["Content-Length"] = file_size
-        headers["Accept-Ranges"] = "bytes"
         headers["ETag"] = best_possible_etag(
             headers, ctx.account_name, ino, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(

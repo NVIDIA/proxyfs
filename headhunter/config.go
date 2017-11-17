@@ -22,6 +22,7 @@ const (
 	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
 	AccountHeaderValue          = "true"
 	CheckpointHeaderName        = "X-Container-Meta-Checkpoint"
+	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
 var (
@@ -124,29 +125,30 @@ type checkpointRequestStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	volumeName                     string
-	accountName                    string
-	maxFlushSize                   uint64
-	nonceValuesToReserve           uint16
-	maxInodesPerMetadataNode       uint64
-	maxLogSegmentsPerMetadataNode  uint64
-	maxDirFileNodesPerMetadataNode uint64
-	checkpointContainerName        string
-	checkpointInterval             time.Duration
-	checkpointFlushedData          bool
-	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
-	checkpointDoneWaitGroup        *sync.WaitGroup
-	nextNonce                      uint64
-	checkpointRequestChan          chan *checkpointRequestStruct
-	checkpointHeaderVersion        uint64
-	checkpointHeader               *checkpointHeaderV2Struct
-	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                *bPlusTreeWrapperStruct
-	logSegmentRecWrapper           *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
+	volumeName                       string
+	accountName                      string
+	maxFlushSize                     uint64
+	nonceValuesToReserve             uint16
+	maxInodesPerMetadataNode         uint64
+	maxLogSegmentsPerMetadataNode    uint64
+	maxDirFileNodesPerMetadataNode   uint64
+	checkpointContainerName          string
+	checkpointContainerStoragePolicy string
+	checkpointInterval               time.Duration
+	checkpointFlushedData            bool
+	checkpointChunkedPutContext      swiftclient.ChunkedPutContext
+	checkpointDoneWaitGroup          *sync.WaitGroup
+	nextNonce                        uint64
+	checkpointRequestChan            chan *checkpointRequestStruct
+	checkpointHeaderVersion          uint64
+	checkpointHeader                 *checkpointHeaderV2Struct
+	checkpointObjectTrailer          *checkpointObjectTrailerV2Struct
+	inodeRecWrapper                  *bPlusTreeWrapperStruct
+	logSegmentRecWrapper             *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper           *bPlusTreeWrapperStruct
+	inodeRecBPlusTreeLayout          sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout     sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout   sortedmap.LayoutReport
 }
 
 type globalsStruct struct {
@@ -267,7 +269,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			continue
 		} else if 1 == len(primaryPeerList) {
 			if whoAmI == primaryPeerList[0] {
-				err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+				err = upVolume(confMap, volumeName, false)
 				if nil != err {
 					return
 				}
@@ -326,10 +328,12 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for volumeName = range deletedVolumeNames {
-		err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+		err = downVolume(volumeName)
 		if nil != err {
 			return
 		}
+
+		delete(globals.volumeMap, volumeName)
 	}
 
 	err = nil
@@ -368,7 +372,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if whoAmI == primaryPeerList[0] {
 				_, ok = globals.volumeMap[volumeName]
 				if !ok {
-					err = upVolume(confMap, volumeName, true) // TODO: ultimately change this to false
+					err = upVolume(confMap, volumeName, false)
 					if nil != err {
 						return
 					}
@@ -445,8 +449,7 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	return
 }
 
-// TODO: allowFormat should change to doFormat when controller/runway pre-formats
-func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err error) {
+func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err error) {
 	var (
 		flowControlName        string
 		flowControlSectionName string
@@ -504,12 +507,17 @@ func upVolume(confMap conf.ConfMap, volumeName string, allowFormat bool) (err er
 		return
 	}
 
+	volume.checkpointContainerStoragePolicy, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerStoragePolicy")
+	if nil != err {
+		return
+	}
+
 	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "CheckpointInterval")
 	if nil != err {
 		return
 	}
 
-	err = volume.getCheckpoint(allowFormat) // TODO: change to doFormat ultimately
+	err = volume.getCheckpoint(autoFormat)
 	if nil != err {
 		return
 	}

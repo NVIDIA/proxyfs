@@ -16,6 +16,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -131,6 +132,13 @@ func main() {
 			fmt.Fprintf(os.Stderr, "confMap.UpdateFromStrings(%#v) failed: %v\n", os.Args[5:], err)
 			os.Exit(1)
 		}
+	}
+
+	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Start up needed ProxyFS components

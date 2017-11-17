@@ -10,20 +10,59 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+const (
+	fsckJobsHistoryMaxSize = 5 // TODO: May want to parameterize this ultimately
+)
+
+type fsckJobState uint8
+
+const (
+	fsckJobRunning fsckJobState = iota
+	fsckJobHalted
+	fsckJobCompleted
+)
+
+type fsckJobStruct struct {
+	id        uint64
+	volume    *volumeStruct
+	stopChan  chan bool
+	errChan   chan error
+	state     fsckJobState
+	startTime time.Time
+	endTime   time.Time
+	err       error
+}
+
+type fsckRunningJobStruct struct {
+	StartTime string `json:"start time"`
+}
+
+type fsckHaltedJobStruct struct {
+	StartTime string `json:"start time"`
+	HaltTime  string `json:"halt time"`
+}
+
+type fsckCompletedJobNoErrorStruct struct {
+	StartTime string `json:"start time"`
+	DoneTime  string `json:"done time"`
+}
+
+type fsckCompletedJobWithErrorStruct struct {
+	StartTime string `json:"start time"`
+	DoneTime  string `json:"done time"`
+	Error     string `json:"errors"`
+}
+
 type volumeStruct struct {
 	sync.Mutex
-	name           string
-	lastStartTime  *time.Time
-	lastStopTime   *time.Time
-	lastFinishTime *time.Time
-	lastRunErr     error
-	fsckRunning    bool
-	stopChan       chan bool
-	errChan        chan error
+	name             string
+	headhunterHandle headhunter.VolumeHandle
+	fsckActiveJob    *fsckJobStruct
+	fsckJobs         sortedmap.LLRBTree // Key == fsckJobStruct.id, Value == *fsckJobStruct
 }
 
 type globalsStruct struct {
@@ -78,15 +117,16 @@ func Up(confMap conf.ConfMap) (err error) {
 		} else if 1 == len(primaryPeerList) {
 			if globals.whoAmI == primaryPeerList[0] {
 				volume = &volumeStruct{
-					name:           volumeName,
-					lastStartTime:  nil,
-					lastStopTime:   nil,
-					lastFinishTime: nil,
-					lastRunErr:     nil,
-					fsckRunning:    false,
-					stopChan:       make(chan bool, 1),
-					errChan:        make(chan error, 1),
+					name:          volumeName,
+					fsckActiveJob: nil,
+					fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 				}
+
+				volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+				if nil != err {
+					return
+				}
+
 				ok, err = globals.volumeLLRB.Put(volumeName, volume)
 				if nil != err {
 					err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
@@ -296,15 +336,16 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				}
 				if !ok {
 					volume = &volumeStruct{
-						name:           volumeName,
-						lastStartTime:  nil,
-						lastStopTime:   nil,
-						lastFinishTime: nil,
-						lastRunErr:     nil,
-						fsckRunning:    false,
-						stopChan:       make(chan bool, 1),
-						errChan:        make(chan error, 1),
+						name:          volumeName,
+						fsckActiveJob: nil,
+						fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 					}
+
+					volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+					if nil != err {
+						return
+					}
+
 					ok, err = globals.volumeLLRB.Put(volumeName, volume)
 					if nil != err {
 						err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
@@ -343,8 +384,6 @@ func Down() (err error) {
 
 func stopRunningFSCKs() (err error) {
 	var (
-		fsckErr       error
-		lastStopTime  time.Time
 		numVolumes    int
 		ok            bool
 		volume        *volumeStruct
@@ -373,22 +412,18 @@ func stopRunningFSCKs() (err error) {
 			return
 		}
 		volume.Lock()
-		if volume.fsckRunning {
-			volume.fsckRunning = false
-			lastStopTime = time.Now()
-			volume.lastStopTime = &lastStopTime
-			volume.stopChan <- true
-			volume.lastRunErr = <-volume.errChan
-			if nil != volume.lastRunErr {
-				fsckErr = fmt.Errorf("FSCK of %v returned error: %v", volume.name, volume.lastRunErr)
-				logger.ErrorWithError(fsckErr)
-			}
+		if nil != volume.fsckActiveJob {
+			volume.fsckActiveJob.stopChan <- true
+			volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan
 			select {
-			case _, _ = <-volume.stopChan:
-				// Swallow our stopChan write that wasn't read before FSCK exited
+			case _, _ = <-volume.fsckActiveJob.stopChan:
+				// Swallow our stopChan write from above if fs.ValidateVolume() finished before reading it
 			default:
-				// Apparently FSCK read our stopChan write
+				// fs.ValidateVolume() must have read and honored our stopChan write
 			}
+			volume.fsckActiveJob.state = fsckJobHalted
+			volume.fsckActiveJob.endTime = time.Now()
+			volume.fsckActiveJob = nil
 		}
 		volume.Unlock()
 	}

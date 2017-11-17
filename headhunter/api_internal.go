@@ -15,8 +15,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 )
 
-// TODO: allowFormat should change to doFormat when controller/runway pre-formats
-func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
+func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 	var (
 		accountHeaderValues                 []string
 		accountHeaders                      map[string][]string
@@ -32,6 +31,7 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 		expectedCheckpointObjectTrailerSize uint64
 		layoutReportIndex                   uint64
 		ok                                  bool
+		storagePolicyHeaderValues           []string
 	)
 
 	volume.inodeRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
@@ -51,20 +51,8 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 		}
 
 		checkpointHeaderValue = checkpointHeaderValues[0]
-
-		// TODO: when mkproxyfs is fully externalized, the following should be removed...
-		accountHeaderValues = []string{AccountHeaderValue}
-
-		accountHeaders = make(map[string][]string)
-
-		accountHeaders[AccountHeaderName] = accountHeaderValues
-
-		err = swiftclient.AccountPost(volume.accountName, accountHeaders)
-		if nil != err {
-			return
-		}
 	} else {
-		if 404 == blunder.HTTPCode(err) {
+		if (autoFormat) && (404 == blunder.HTTPCode(err)) {
 			// Checkpoint Container not found... so try to create it with some initial values...
 
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = 0
@@ -81,9 +69,12 @@ func (volume *volumeStruct) getCheckpoint(allowFormat bool) (err error) {
 
 			checkpointHeaderValues = []string{checkpointHeaderValue}
 
+			storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
+
 			checkpointContainerHeaders = make(map[string][]string)
 
 			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
+			checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
 
 			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 			if nil != err {
@@ -752,6 +743,27 @@ func (volume *volumeStruct) checkpointDaemon() {
 		volume.Lock()
 
 		checkpointRequest.err = volume.putCheckpoint()
+
+		if nil != checkpointRequest.err {
+			// As part of conducting the checkpoint - and depending upon where the early non-nil
+			// error was reported - it is highly likely that e.g. pages of the B+Trees have been
+			// marked clean even though either their dirty data has not been successfully posted
+			// to Swift and/or the Checkpoint Header that points to it has not been successfully
+			// recorded in Swift. In either case, a subsequent checkpoint may, indeed, appear to
+			// succeed and quite probably miss some of the references nodes of the B+Trees not
+			// having made it to Swift... and, yet, wrongly presume all is (now) well.
+
+			// It should also be noted that other activity (e.g. garbage collection of usually
+			// now unreferenced data) awaiting completion of this checkpoint should not have
+			// been allowed to proceed.
+
+			// For now, we will instead promptly fail right here thus preventing that subsequent
+			// checkpoint from masking the data loss. While there are alternatives (e.g. going
+			// back and marking every node of the B+Trees as being dirty - or at least those that
+			// were marked clean), such an approach will not be pursued at this time.
+
+			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+		}
 
 		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
 

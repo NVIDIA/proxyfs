@@ -13,9 +13,15 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
+	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 func TestMain(m *testing.M) {
@@ -35,6 +41,7 @@ func TestDaemon(t *testing.T) {
 		ramswiftDoneChan             chan bool
 		ramswiftSignalHandlerIsArmed bool
 		readData                     []byte
+		testConfMap                  conf.ConfMap
 		testVersion                  uint64
 		testVersionConfFile          *os.File
 		testVersionConfFileName      string
@@ -57,12 +64,12 @@ func TestDaemon(t *testing.T) {
 
 		"Logging.LogFilePath=",
 
-		"Peer1.PublicIPAddr=127.0.0.1",
-		"Peer1.PrivateIPAddr=127.0.0.1",
-		"Peer1.ReadCacheQuotaFraction=0.20",
+		"Peer:Peer0.PublicIPAddr=127.0.0.1",
+		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
+		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
-		"Cluster.WhoAmI=Peer1",
-		"Cluster.Peers=Peer1",
+		"Cluster.WhoAmI=Peer0",
+		"Cluster.Peers=Peer0",
 		"Cluster.ServerGuid=a66488e9-a051-4ff7-865d-87bfb84cc2ae",
 		"Cluster.PrivateClusterUDPPort=5002", // 5002 instead of 5001 so that test can run if proxyfsd is already running
 		"Cluster.HeartBeatInterval=100ms",
@@ -87,32 +94,34 @@ func TestDaemon(t *testing.T) {
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"SwiftClient.StarvationCallbackFrequency=100ms",
 
-		"CommonFlowControl.MaxFlushSize=10000000",
-		"CommonFlowControl.MaxFlushTime=10s",
-		"CommonFlowControl.ReadCacheLineSize=1000000",
-		"CommonFlowControl.ReadCacheWeight=100",
+		"FlowControl:CommonFlowControl.MaxFlushSize=10000000",
+		"FlowControl:CommonFlowControl.MaxFlushTime=10s",
+		"FlowControl:CommonFlowControl.ReadCacheLineSize=1000000",
+		"FlowControl:CommonFlowControl.ReadCacheWeight=100",
 
-		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
-		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
 
-		"CommonVolume.FSID=1",
-		"CommonVolume.FUSEMountPointName=CommonMountPoint",
-		"CommonVolume.NFSExportName=CommonExport",
-		"CommonVolume.SMBShareName=CommonShare",
-		"CommonVolume.PrimaryPeer=Peer1",
-		"CommonVolume.AccountName=AUTH_CommonAccount",
-		"CommonVolume.CheckpointContainerName=.__checkpoint__",
-		"CommonVolume.CheckpointInterval=10s",
-		"CommonVolume.CheckpointIntervalsPerCompaction=100",
-		"CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"CommonVolume.FlowControl=CommonFlowControl",
-		"CommonVolume.NonceValuesToReserve=100",
-		"CommonVolume.MaxEntriesPerDirNode=32",
-		"CommonVolume.MaxExtentsPerFileNode=32",
-		"CommonVolume.MaxInodesPerMetadataNode=32",
-		"CommonVolume.MaxLogSegmentsPerMetadataNode=64",
-		"CommonVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:CommonVolume.FSID=1",
+		"Volume:CommonVolume.FUSEMountPointName=CommonMountPoint",
+		"Volume:CommonVolume.NFSExportName=CommonExport",
+		"Volume:CommonVolume.SMBShareName=CommonShare",
+		"Volume:CommonVolume.PrimaryPeer=Peer0",
+		"Volume:CommonVolume.AccountName=AUTH_CommonAccount",
+		"Volume:CommonVolume.CheckpointContainerName=.__checkpoint__",
+		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
+		"Volume:CommonVolume.CheckpointInterval=10s",
+		"Volume:CommonVolume.CheckpointIntervalsPerCompaction=100",
+		"Volume:CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
+		"Volume:CommonVolume.FlowControl=CommonFlowControl",
+		"Volume:CommonVolume.NonceValuesToReserve=100",
+		"Volume:CommonVolume.MaxEntriesPerDirNode=32",
+		"Volume:CommonVolume.MaxExtentsPerFileNode=32",
+		"Volume:CommonVolume.MaxInodesPerMetadataNode=32",
+		"Volume:CommonVolume.MaxLogSegmentsPerMetadataNode=64",
+		"Volume:CommonVolume.MaxDirFileNodesPerMetadataNode=16",
 
 		"FSGlobals.VolumeList=CommonVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
@@ -159,6 +168,58 @@ func TestDaemon(t *testing.T) {
 
 	for !ramswiftSignalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Format CommonVolume
+
+	testConfMap, err = conf.MakeConfMapFromStrings(confMapStrings)
+	if nil != err {
+		t.Fatalf("While doing pre-format, conf.MakeConfMapFromStrings() failed: %v", err)
+	}
+
+	err = logger.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
+	}
+
+	err = stats.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, stats.Up() failed: %v", err)
+	}
+
+	err = dlm.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, dlm.Up() failed: %v", err)
+	}
+
+	err = swiftclient.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, swiftclient.Up() failed: %v", err)
+	}
+
+	err = headhunter.Format(testConfMap, "CommonVolume")
+	if nil != err {
+		t.Fatalf("headhunter.Format() failed: %v", err)
+	}
+
+	err = swiftclient.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, swiftclient.Down() failed: %v", err)
+	}
+
+	err = dlm.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, dlm.Down() failed: %v", err)
+	}
+
+	err = stats.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, stats.Down() failed: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
 	}
 
 	// Launch an instance of proxyfsd using that same config

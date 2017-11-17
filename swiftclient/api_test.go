@@ -54,6 +54,8 @@ func TestAPI(t *testing.T) {
 
 		"Cluster.WhoAmI=Peer0",
 
+		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
+
 		"FSGlobals.VolumeList=",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",

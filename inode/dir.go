@@ -623,9 +623,9 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		atLeastOneEntryFound = true
 
 		nextEntry = DirEntry{
-			InodeNumber: value.(InodeNumber),
-			Basename:    key.(string),
-			DirLocation: InodeDirLocation(dirIndex),
+			InodeNumber:     value.(InodeNumber),
+			Basename:        key.(string),
+			NextDirLocation: InodeDirLocation(dirIndex) + 1,
 		}
 
 		if (0 != maxEntries) && (uint64(len(dirEntries)+1) > maxEntries) {

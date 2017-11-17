@@ -90,7 +90,11 @@ class BaseMiddlewareTest(unittest.TestCase):
                     "policies": [{
                         "aliases": "default",
                         "default": True,
-                        "name": "default"}],
+                        "name": "default",
+                    }, {
+                        "aliases": "not-default",
+                        "name": "not-default",
+                    }],
                     "strict_cors_mode": True,
                     "version": "2.9.1.dev47"
                 },
@@ -115,6 +119,9 @@ class BaseMiddlewareTest(unittest.TestCase):
                                        fake_RpcIsAccountBimodal)
 
     def call_app(self, req, app=None, expect_exception=False):
+        # Normally this happens in eventlet.wsgi.HttpProtocol.get_environ().
+        req.environ.setdefault('CONTENT_TYPE', None)
+
         if app is None:
             app = self.app
 
@@ -181,6 +188,7 @@ class TestAccountGet(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(body, "chickens\ncows\ngoats\npigs\n")
 
     def test_json(self):
@@ -290,7 +298,7 @@ class TestAccountGet(BaseMiddlewareTest):
             "Server.RpcGetAccount", last_page_RpcGetAccount)
         req = swob.Request.blank("/v1/AUTH_test?marker=zzz")
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '200 OK')
+        self.assertEqual(status, '204 No Content')
         self.assertEqual(body, '')
 
     def test_spaces(self):
@@ -303,6 +311,19 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(status, '200 OK')
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test with spaces')
+
+    def test_empty(self):
+        def mock_RpcGetAccount(_):
+            return {
+                "error": None,
+                "result": {
+                    "AccountEntries": []}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+        req = swob.Request.blank("/v1/AUTH_test")
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')
 
 
 class TestAccountHead(BaseMiddlewareTest):
@@ -409,6 +430,7 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(headers["Last-Modified"],
                          "Wed, 07 Dec 2016 23:08:55 GMT")
         self.assertEqual(headers["ETag"],
@@ -796,13 +818,6 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(status, '416 Requested Range Not Satisfiable')
 
     def test_GET_multiple_ranges(self):
-        # Until Swift supports multiple ranges for large objects, we don't
-        # either; this is one of the perils of code re-use. OTOH, using
-        # SegmentedIterable saved us a whole bunch of work.
-        #
-        # This change has been proposed upstream; see
-        # I24716e3271cf3370642e3755447e717fd7d9957c at
-        # https://review.openstack.org for details.
         self.app.register(
             'GET', '/v1/AUTH_test/InternalContainerName/0000000000000001',
             200, {}, "abcd1234efgh5678")
@@ -810,7 +825,11 @@ class TestObjectGet(BaseMiddlewareTest):
         def mock_RpcGetObject(get_object_req):
             self.assertEqual(get_object_req['VirtPath'],
                              "/v1/AUTH_test/c/crud")
-            self.assertEqual(get_object_req['ReadEntsIn'], [])
+            self.assertEqual(get_object_req['ReadEntsIn'], [
+                {'Len': 3, 'Offset': 2},
+                {'Len': 3, 'Offset': 6},
+                {'Len': 3, 'Offset': 10},
+            ])
 
             return {
                 "error": None,
@@ -824,19 +843,53 @@ class TestObjectGet(BaseMiddlewareTest):
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
                                        "Name/0000000000000001"),
-                        "Offset": 0,
-                        "Length": 16}]}}
+                        "Offset": 2,
+                        "Length": 3,
+                    }, {
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000000001"),
+                        "Offset": 6,
+                        "Length": 3,
+                    }, {
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000000001"),
+                        "Offset": 10,
+                        "Length": 3,
+                    }]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
 
         req = swob.Request.blank('/v1/AUTH_test/c/crud',
                                  headers={"Range": "bytes=2-4,6-8,10-12"})
 
-        self.fake_rpc.register_handler(
-            "Server.RpcGetObject", mock_RpcGetObject)
-        status, headers, body = self.call_pfs(req)
+        # Lock down the MIME boundary so it doesn't change on every test run
+        with mock.patch('random.randint',
+                        lambda u, l: 0xf0a9157cb1757bfb124aef22fee31051):
+            status, headers, body = self.call_pfs(req)
 
-        self.assertEqual(status, '200 OK')
-        self.assertNotIn('Content-Range', headers)
-        self.assertEqual(body, 'abcd1234efgh5678')
+        self.assertEqual(status, '206 Partial Content')
+        self.assertEqual(
+            headers.get('Content-Type'),
+            'multipart/byteranges;boundary=f0a9157cb1757bfb124aef22fee31051')
+        self.assertEqual(
+            body,
+            ('--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: application/octet-stream\r\n'
+             'Content-Range: bytes 2-4/16\r\n'
+             '\r\n'
+             'cd1\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: application/octet-stream\r\n'
+             'Content-Range: bytes 6-8/16\r\n'
+             '\r\n'
+             '34e\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051\r\n'
+             'Content-Type: application/octet-stream\r\n'
+             'Content-Range: bytes 10-12/16\r\n'
+             '\r\n'
+             'gh5\r\n'
+             '--f0a9157cb1757bfb124aef22fee31051--'))
 
     def test_GET_metadata(self):
         self.app.register(
@@ -883,6 +936,24 @@ class TestObjectGet(BaseMiddlewareTest):
                 "result": None}
 
         req = swob.Request.blank('/v1/AUTH_test/c/missing')
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '404 Not Found')
+
+    def test_GET_file_as_dir(self):
+        # Subdirectories of files don't exist, but asking for one returns a
+        # different error code than asking for a file that could exist but
+        # doesn't.
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/c/thing.txt/kitten.png")
+
+            return {
+                "error": "errno: 20",
+                "result": None}
+
+        req = swob.Request.blank('/v1/AUTH_test/c/thing.txt/kitten.png')
         self.fake_rpc.register_handler(
             "Server.RpcGetObject", mock_RpcGetObject)
         status, headers, body = self.call_pfs(req)
@@ -1080,6 +1151,7 @@ class TestContainerHead(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a container')
 
@@ -1090,6 +1162,13 @@ class TestContainerHead(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "HEAD"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
+        self.assertEqual(headers["X-Container-Object-Count"], "0")
+        self.assertEqual(headers["X-Container-Bytes-Used"], "0")
+        self.assertEqual(headers["X-Storage-Policy"], "default")
+        self.assertEqual(headers["Last-Modified"],
+                         "Tue, 15 Nov 2016 20:06:38 GMT")
+        self.assertEqual(headers["X-Timestamp"], "1479240397.18958")
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
@@ -1154,6 +1233,7 @@ class TestContainerGet(BaseMiddlewareTest):
                 "result": {
                     "Metadata": base64.b64encode(
                         self.serialized_container_metadata),
+                    "ModificationTime": 1510790796076041000,
                     "ContainerEntries": [{
                         "Basename": "images",
                         "FileSize": 0,
@@ -1169,7 +1249,8 @@ class TestContainerGet(BaseMiddlewareTest):
                         "IsDir": False,
                         "InodeNumber": 9213768,
                         "NumWrites": 2,
-                        "Metadata": "",
+                        "Metadata": base64.b64encode(json.dumps({
+                            "Content-Type": "snack/millenial"})),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
@@ -1238,6 +1319,13 @@ class TestContainerGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
+        self.assertEqual(headers["X-Container-Object-Count"], "0")
+        self.assertEqual(headers["X-Container-Bytes-Used"], "0")
+        self.assertEqual(headers["X-Storage-Policy"], "default")
+        self.assertEqual(headers["X-Timestamp"], "1510790796.07604")
+        self.assertEqual(headers["Last-Modified"],
+                         "Thu, 16 Nov 2017 00:06:37 GMT")
         self.assertEqual(headers["X-Container-Sysmeta-Fish"], "tilefish")
         self.assertEqual(headers["X-Container-Meta-Fish"], "haddock")
 
@@ -1269,7 +1357,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(resp_data[1], {
             "name": "images/avocado.png",
             "bytes": 3503770,
-            "content_type": "image/png",
+            "content_type": "snack/millenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1355,7 +1443,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         content_type_node = obj_attr_tags[3]
         self.assertEqual(content_type_node.tag, 'content_type')
-        self.assertEqual(content_type_node.text, 'image/png')
+        self.assertEqual(content_type_node.text, 'snack/millenial')
         self.assertEqual(content_type_node.attrib, {})
 
         last_modified_node = obj_attr_tags[4]
@@ -1742,7 +1830,7 @@ class TestContainerDelete(BaseMiddlewareTest):
                                  environ={"REQUEST_METHOD": "DELETE"})
         status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
-
+        self.assertNotIn("Accept-Ranges", req.headers)
         self.assertEqual(2, len(self.fake_rpc.calls))
         self.assertEqual("/v1/AUTH_test/empty-con",
                          self.fake_rpc.calls[1][1][0]["VirtPath"])
@@ -1863,10 +1951,12 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_basic(self):
         wsgi_input = StringIO("sparkleberry-displeasurably")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
         self.assertEqual(headers["ETag"],
@@ -1934,10 +2024,12 @@ class TestObjectPut(BaseMiddlewareTest):
             "Server.RpcPutComplete", mock_RpcPutComplete)
 
         wsgi_input = StringIO("Rhodothece-cholesterinuria")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, "201 Created")
         self.assertEqual(headers["Last-Modified"],
@@ -1945,10 +2037,12 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_special_chars(self):
         wsgi_input = StringIO("pancreas-mystagogically")
+        cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/c o n/o b j",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
 
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
@@ -2028,27 +2122,30 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertEqual(args[0]["PhysLengths"], [100, 100, 75])
 
         # check the txids as well
+        put_calls = [c for c in self.app.calls if c[0] == 'PUT']
         self.assertEqual(
-            "big-txid-000", self.app.calls[2][2]["X-Trans-Id"])  # 1st PUT
+            "big-txid-000", put_calls[0][2]["X-Trans-Id"])  # 1st PUT
         self.assertEqual(
-            "big-txid-001", self.app.calls[3][2]["X-Trans-Id"])  # 2nd PUT
+            "big-txid-001", put_calls[1][2]["X-Trans-Id"])  # 2nd PUT
         self.assertEqual(
-            "big-txid-002", self.app.calls[4][2]["X-Trans-Id"])  # 3rd PUT
+            "big-txid-002", put_calls[2][2]["X-Trans-Id"])  # 3rd PUT
 
         # If we sent the original Content-Length, the first PUT would fail.
         # At some point, we should send the correct Content-Length value
         # when we can compute it, but for now, we just send nothing.
-        self.assertNotIn("Content-Length", self.app.calls[2][2])  # 1st PUT
-        self.assertNotIn("Content-Length", self.app.calls[3][2])  # 2nd PUT
-        self.assertNotIn("Content-Length", self.app.calls[4][2])  # 3rd PUT
+        self.assertNotIn("Content-Length", put_calls[0][2])  # 1st PUT
+        self.assertNotIn("Content-Length", put_calls[1][2])  # 2nd PUT
+        self.assertNotIn("Content-Length", put_calls[2][2])  # 3rd PUT
 
     def test_big_exact_multiple(self):
         wsgi_input = StringIO('A' * 100 + 'B' * 100)
+        cl = str(len(wsgi_input.getvalue()))
         self.pfs.max_log_segment_size = 100
 
         req = swob.Request.blank("/v1/AUTH_test/con/obj",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input},
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl},
                                  headers={"X-Trans-Id": "big-txid"})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
@@ -2109,6 +2206,7 @@ class TestObjectPut(BaseMiddlewareTest):
 
     def test_metadata(self):
         wsgi_input = StringIO("extranean-paleophysiology")
+        cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {
             "X-Object-Meta-Color": "puce",
@@ -2131,7 +2229,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  headers=headers_in,
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2150,6 +2249,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
         wsgi_input = StringIO("Celestine-malleal")
+        cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_isdir(head_container_req):
             # This is what you get when there's a nonempty directory in
@@ -2163,7 +2263,8 @@ class TestObjectPut(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/d1/d2/thing.txt",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -2171,6 +2272,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
         wsgi_input = StringIO("Celestine-malleal")
+        cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_notdir(head_container_req):
             # This is what you get when there's a file where your path
@@ -2184,7 +2286,8 @@ class TestObjectPut(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/a-file/thing.txt",
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -2200,6 +2303,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # POST-as-COPY work despite ProxyFS's ETag values not being MD5
         # checksums.
         wsgi_input = StringIO("extranean-paleophysiology")
+        cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {"X-Delete-After": 86400,
                       "ETag": hashlib.md5(wsgi_input.getvalue()).hexdigest()}
@@ -2207,7 +2311,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  headers=headers_in,
                                  environ={"REQUEST_METHOD": "PUT",
-                                          "wsgi.input": wsgi_input})
+                                          "wsgi.input": wsgi_input,
+                                          "CONTENT_LENGTH": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2230,12 +2335,14 @@ class TestObjectPut(BaseMiddlewareTest):
         right_etag = hashlib.md5(wsgi_input.getvalue()).hexdigest()
         wrong_etag = hashlib.md5(wsgi_input.getvalue() + "abc").hexdigest()
         non_checksum_etag = "pfsv2/AUTH_test/2226116/4341333-32"
+        cl = str(len(wsgi_input.getvalue()))
 
         wsgi_input.seek(0)
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": right_etag})
+                                 headers={"ETag": right_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2243,7 +2350,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": wrong_etag})
+                                 headers={"ETag": wrong_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '422 Unprocessable Entity')
 
@@ -2251,7 +2359,8 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
                                           "wsgi.input": wsgi_input},
-                                 headers={"ETag": non_checksum_etag})
+                                 headers={"ETag": non_checksum_etag,
+                                          "Content-Length": cl})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
@@ -2285,6 +2394,7 @@ class TestObjectPost(BaseMiddlewareTest):
     def test_existing_object(self):
         old_meta = json.dumps({
             "Content-Type": "application/fishy",
+            mware.ORIGINAL_MD5_HEADER: "1:a860580f9df567516a3f0b55c6b93b67",
             "X-Object-Meta-One-Fish": "two fish"})
 
         def mock_RpcHead(_):
@@ -2296,7 +2406,7 @@ class TestObjectPost(BaseMiddlewareTest):
                     "FileSize": 551155,
                     "IsDir": False,
                     "InodeNumber": 6519913,
-                    "NumWrites": 381}}
+                    "NumWrites": 1}}
 
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
@@ -2325,8 +2435,7 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual("Wed, 21 Dec 2016 18:39:03 GMT",
                          headers["Last-Modified"])
         self.assertEqual("0", headers["Content-Length"])
-        self.assertEqual('"pfsv2/AUTH_test/00637C69/0000017D-32"',
-                         headers["Etag"])
+        self.assertEqual("a860580f9df567516a3f0b55c6b93b67", headers["Etag"])
         self.assertEqual("text/html; charset=UTF-8", headers["Content-Type"])
         # Date and X-Trans-Id are added in by other parts of the WSGI stack
 
@@ -2346,10 +2455,51 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
         self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
-        # old Content-Type persists, all else is replaced
         self.assertEqual(new_meta["X-Object-Meta-Red-Fish"], "blue fish")
         self.assertEqual(new_meta["Content-Type"], "application/fishy")
         self.assertNotIn("X-Object-Meta-One-Fish", new_meta)
+
+    def test_preservation(self):
+        old_meta = json.dumps({
+            "Content-Type": "application/fishy",
+            mware.ORIGINAL_MD5_HEADER: "1:a860580f9df567516a3f0b55c6b93b67",
+            "X-Static-Large-Object": "true",
+            "X-Object-Manifest": "solo/duet",
+            "X-Object-Sysmeta-Dog": "collie",
+            "X-Object-Meta-Fish": "perch"})
+
+        def mock_RpcHead(_):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(old_meta),
+                    "ModificationTime": 1510873171878460000,
+                    "FileSize": 7748115,
+                    "IsDir": False,
+                    "InodeNumber": 3741569,
+                    "NumWrites": 1}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        self.fake_rpc.register_handler(
+            "Server.RpcPost", lambda *a: {"error": None, "result": {}})
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "POST"},
+            headers={"X-Object-Meta-Fish": "trout"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("202 Accepted", status)  # sanity check
+
+        method, args = self.fake_rpc.calls[2]
+        self.assertEqual(method, "Server.RpcPost")
+        new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
+        self.assertEqual(new_meta["Content-Type"], "application/fishy")
+        self.assertEqual(new_meta["X-Object-Sysmeta-Dog"], "collie")
+        self.assertEqual(new_meta["X-Static-Large-Object"], "true")
+        self.assertEqual(new_meta["X-Object-Meta-Fish"], "trout")
+        self.assertNotIn("X-Object-Manifest", new_meta)
 
     def test_change_content_type(self):
         old_meta = json.dumps({"Content-Type": "old/type"})

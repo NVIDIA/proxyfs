@@ -3,7 +3,7 @@ import:
 - package: github.com/swiftstack/cstruct
   version: 1.0.0
 - package: github.com/swiftstack/sortedmap
-  version: 89d1d6fac64b62d0c9ecf02a3a9d85cd4d91b5c2
+  version: 1.0.1
 - package: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
