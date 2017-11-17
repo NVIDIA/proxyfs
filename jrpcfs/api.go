@@ -326,10 +326,16 @@ type PathHandle struct {
 // ReaddirPlusRequest is the request object for RpcReaddirPlus.
 type ReaddirPlusRequest struct {
 	InodeHandle
-	PrevDirLocation int64
+	PrevDirEntName string
 }
 
-// ReaddirPlusReply is the reply object for RpcReaddirPlus.
+// ReaddirPlusByLocRequest is the request object for RpcReaddirPlusByLoc.
+type ReaddirPlusByLocRequest struct {
+	InodeHandle
+	PrevDirEntLocation int64
+}
+
+// ReaddirPlusReply is the reply object for RpcReaddirPlus and RpcReaddirPlusByLoc.
 type ReaddirPlusReply struct {
 	DirEnts  []DirEntry
 	StatEnts []StatStruct
@@ -338,10 +344,16 @@ type ReaddirPlusReply struct {
 // ReaddirRequest is the request object for RpcReaddir.
 type ReaddirRequest struct {
 	InodeHandle
-	PrevDirLocation int64
+	PrevDirEntName int64
 }
 
-// ReaddirReply is the reply object for RpcReaddir.
+// ReaddirByLocRequest is the request object for RpcReaddirByLoc.
+type ReaddirByLocRequest struct {
+	InodeHandle
+	PrevDirEntLocation int64
+}
+
+// ReaddirReply is the reply object for RpcReaddir and RpcReaddirByLoc.
 type ReaddirReply struct {
 	DirEnts []DirEntry
 }

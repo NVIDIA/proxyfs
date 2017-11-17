@@ -2267,7 +2267,7 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 	return mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
 }
 
-func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (entries []inode.DirEntry, err error) {
+func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return entries, err
@@ -2288,7 +2288,7 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 	}
 
 	// Call readdirOne helper function to do the work
-	entries, err = mS.readdirOneHelper(inodeNumber, prevDirLocation, inodeLock.GetCallerID())
+	entries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
 	if err != nil {
 		// When the client uses location-based readdir, it knows it is done when it reads beyond
 		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
@@ -2356,7 +2356,7 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	return dirEntries, statEntries, numEntries, areMoreEntries, err
 }
 
-func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
+func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -2378,7 +2378,7 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	}
 
 	// Get dir entries; Call readdirOne helper function to do the work
-	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirLocation, inodeLock.GetCallerID())
+	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
 	inodeLock.Unlock()
 
 	if err != nil {
@@ -3289,7 +3289,7 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 }
 
 // readdirOne is a helper function to do the work of ReaddirOne once we hold the lock.
-func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
+func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMarker interface{}, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
 	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
@@ -3300,7 +3300,7 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLo
 		return
 	}
 
-	entries, _, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirLocation)
+	entries, _, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirMarker)
 	if err != nil {
 		// Note: by convention, we don't log errors in helper functions; the caller should
 		//       be the one to log or not given its use case.
