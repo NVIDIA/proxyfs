@@ -25,7 +25,8 @@ type ReadRangeIn struct {
 
 // Returned by MiddlewareGetAccount
 type AccountEntry struct {
-	Basename string
+	Basename         string
+	ModificationTime uint64 // nanoseconds since epoch
 }
 
 // Returned by MiddlewareGetContainer

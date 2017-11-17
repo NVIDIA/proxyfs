@@ -768,15 +768,15 @@ class PfsMiddleware(object):
         #
         # We let the top-level RpcError handler catch this.
         get_account_response = self.rpc_call(ctx, get_account_request)
-        container_names = rpc.parse_get_account_response(get_account_response)
+        account_entries = rpc.parse_get_account_response(get_account_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
         if resp_content_type == "text/plain":
-            body = self._plaintext_account_get_response(container_names)
+            body = self._plaintext_account_get_response(account_entries)
         elif resp_content_type == "application/json":
-            body = self._json_account_get_response(container_names)
+            body = self._json_account_get_response(account_entries)
         elif resp_content_type.endswith("/xml"):
-            body = self._xml_account_get_response(container_names,
+            body = self._xml_account_get_response(account_entries,
                                                   ctx.account_name)
         else:
             raise Exception("unexpected content type %r" %
@@ -798,18 +798,20 @@ class PfsMiddleware(object):
 
         return resp
 
-    def _plaintext_account_get_response(self, container_names):
+    def _plaintext_account_get_response(self, account_entries):
         chunks = []
-        for container_name in container_names:
-            chunks.append(container_name)
+        for entry in account_entries:
+            chunks.append(entry["Basename"])
             chunks.append("\n")
         return ''.join(chunks)
 
-    def _json_account_get_response(self, container_names):
+    def _json_account_get_response(self, account_entries):
         json_entries = []
-        for name in container_names:
+        for entry in account_entries:
             json_entry = {
-                "name": name,
+                "name": entry["Basename"],
+                "last_modified": last_modified_from_epoch_ns(
+                    entry["ModificationTime"]),
                 # proxyfsd can't compute these without recursively walking
                 # the entire filesystem, so rather than have a built-in DoS
                 # attack, we just put out zeros here.
@@ -822,14 +824,14 @@ class PfsMiddleware(object):
             json_entries.append(json_entry)
         return json.dumps(json_entries)
 
-    def _xml_account_get_response(self, container_names, account_name):
+    def _xml_account_get_response(self, account_entries, account_name):
         root_node = ET.Element('account', name=account_name)
 
-        for container_name in container_names:
+        for entry in account_entries:
             container_node = ET.Element('container')
 
             name_node = ET.Element('name')
-            name_node.text = container_name
+            name_node.text = entry["Basename"]
             container_node.append(name_node)
 
             count_node = ET.Element('count')
@@ -839,6 +841,11 @@ class PfsMiddleware(object):
             bytes_node = ET.Element('bytes')
             bytes_node.text = '0'
             container_node.append(bytes_node)
+
+            lm_node = ET.Element('last_modified')
+            lm_node.text = last_modified_from_epoch_ns(
+                entry["ModificationTime"])
+            container_node.append(lm_node)
 
             root_node.append(container_node)
 

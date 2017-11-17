@@ -839,6 +839,9 @@ func TestRpcGetAccount(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(len(response.AccountEntries), 5)
 	assert.Equal("alpha", response.AccountEntries[0].Basename)
+	statResult := fsStatPath("/v1/"+testAccountName2, "/alpha")
+	assert.Equal(statResult[fs.StatMTime], response.AccountEntries[0].ModificationTime)
+
 	assert.Equal("bravo", response.AccountEntries[1].Basename)
 	assert.Equal("charlie", response.AccountEntries[2].Basename)
 	assert.Equal("delta", response.AccountEntries[3].Basename)

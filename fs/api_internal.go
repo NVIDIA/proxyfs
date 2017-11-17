@@ -1315,16 +1315,19 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 				continue
 			}
 
-			var isItADir bool
-			isItADir, err = mS.IsDir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber)
-			if err != nil {
-				logger.ErrorfWithError(err, "MiddlewareGetAccount: error in IsDir(%v)", dirEnt.InodeNumber)
+			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber)
+			if err1 != nil {
+				err = err1
 				return
 			}
-
-			if isItADir {
-				accountEnts = append(accountEnts, AccountEntry{Basename: dirEnt.Basename})
+			if inode.InodeType(statResult[StatFType]) != inode.DirType {
+				// Yes, there might be files or symlinks in here, but the Swift API wouldn't know what to do with them.
+				continue
 			}
+			accountEnts = append(accountEnts, AccountEntry{
+				Basename:         dirEnt.Basename,
+				ModificationTime: statResult[StatMTime],
+			})
 		}
 		if len(dirEnts) == 0 {
 			break

@@ -175,11 +175,20 @@ class TestAccountGet(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "AccountEntries": [
-                        {"Basename": "chickens"},
-                        {"Basename": "cows"},
-                        {"Basename": "goats"},
-                        {"Basename": "pigs"}]}}
+                    "AccountEntries": [{
+                        "Basename": "chickens",
+                        "ModificationTime": 1510958440808682000,
+                    }, {
+                        "Basename": "cows",
+                        "ModificationTime": 1510958450657045000,
+                    }, {
+                        "Basename": "goats",
+                        "ModificationTime": 1510958452544251000,
+                    }, {
+                        "Basename": "pigs",
+                        "ModificationTime": 1510958459200130000,
+                    }],
+                }}
 
         self.fake_rpc.register_handler(
             "Server.RpcGetAccount", mock_RpcGetAccount)
@@ -192,14 +201,32 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(body, "chickens\ncows\ngoats\npigs\n")
 
     def test_json(self):
+        self.maxDiff = None
+
         req = swob.Request.blank("/v1/AUTH_test?format=json")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(json.loads(body), [
-            {"count": 0, "bytes": 0, "name": "chickens"},
-            {"count": 0, "bytes": 0, "name": "cows"},
-            {"count": 0, "bytes": 0, "name": "goats"},
-            {"count": 0, "bytes": 0, "name": "pigs"}])
+        self.assertEqual(json.loads(body), [{
+            "bytes": 0,
+            "count": 0,
+            "last_modified": "Fri, 17 Nov 2017 22:40:41 GMT",
+            "name": "chickens",
+        }, {
+            "bytes": 0,
+            "count": 0,
+            "last_modified": "Fri, 17 Nov 2017 22:40:51 GMT",
+            "name": "cows",
+        }, {
+            "bytes": 0,
+            "count": 0,
+            "last_modified": "Fri, 17 Nov 2017 22:40:53 GMT",
+            "name": "goats",
+        }, {
+            "bytes": 0,
+            "count": 0,
+            "last_modified": "Fri, 17 Nov 2017 22:41:00 GMT",
+            "name": "pigs"
+        }])
 
     def test_xml(self):
         req = swob.Request.blank("/v1/AUTH_test?format=xml")
@@ -220,7 +247,7 @@ class TestAccountGet(BaseMiddlewareTest):
         # The XML account listing doesn't use XML attributes for data, but
         # rather a sequence of tags like <name>X</name> <bytes>Y</bytes> ...
         con_attr_tags = containers[0].getchildren()
-        self.assertEqual(len(con_attr_tags), 3)
+        self.assertEqual(len(con_attr_tags), 4)
 
         name_node = con_attr_tags[0]
         self.assertEqual(name_node.tag, 'name')
@@ -236,6 +263,11 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(bytes_node.tag, 'bytes')
         self.assertEqual(bytes_node.text, '0')
         self.assertEqual(bytes_node.attrib, {})
+
+        lm_node = con_attr_tags[3]
+        self.assertEqual(lm_node.tag, 'last_modified')
+        self.assertEqual(lm_node.text, 'Fri, 17 Nov 2017 22:40:41 GMT')
+        self.assertEqual(lm_node.attrib, {})
 
     def test_metadata(self):
         req = swob.Request.blank("/v1/AUTH_test")

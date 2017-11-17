@@ -602,7 +602,8 @@ type GetContainerReq struct {
 
 // Response object for RpcGetAccount
 type GetAccountReply struct {
-	AccountEntries []fs.AccountEntry
+	AccountEntries   []fs.AccountEntry
+	ModificationTime uint64
 }
 
 // Request object for RpcGetAccount
