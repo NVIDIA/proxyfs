@@ -743,8 +743,10 @@ func (s *Server) RpcChmod(in *ChmodRequest, reply *Reply) (err error) {
 		return
 	}
 
+	// Samba includes the file mode in in.FileMode, but only the permssion
+	// bits can be changed by SetStat().
 	stat := make(fs.Stat)
-	stat[fs.StatMode] = uint64(in.FileMode)
+	stat[fs.StatMode] = uint64(in.FileMode) & 07777
 	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }
@@ -772,8 +774,11 @@ func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
 	}
 
 	// Do the Setstat
+	//
+	// Samba includes the file mode in in.FileMode, but only the permssion
+	// bits can be changed by SetStat().
 	stat := make(fs.Stat)
-	stat[fs.StatMode] = uint64(in.FileMode)
+	stat[fs.StatMode] = uint64(in.FileMode) & 07777
 	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, stat)
 	return
 }
