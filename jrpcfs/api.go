@@ -344,7 +344,7 @@ type ReaddirPlusReply struct {
 // ReaddirRequest is the request object for RpcReaddir.
 type ReaddirRequest struct {
 	InodeHandle
-	PrevDirEntName int64
+	PrevDirEntName string
 }
 
 // ReaddirByLocRequest is the request object for RpcReaddirByLoc.

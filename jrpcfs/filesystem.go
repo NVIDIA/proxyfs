@@ -1347,15 +1347,18 @@ func (s *Server) RpcReaddirByLoc(in *ReaddirByLocRequest, reply *ReaddirReply) (
 }
 
 func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profiler *utils.Profiler) (err error) {
-	var inByLoc *ReaddirByLocRequest
 	var iH InodeHandle
+	var prevMarker interface{}
+	var inByLoc *ReaddirByLocRequest
 
 	inByName, okByName := in.(*ReaddirRequest)
 	if okByName {
 		iH = inByName.InodeHandle
+		prevMarker = inByName.PrevDirEntName
 	} else {
-		inByLoc, _ := in.(*ReaddirByLocRequest)
+		inByLoc, _ = in.(*ReaddirByLocRequest)
 		iH = inByLoc.InodeHandle
+		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 	}
 
 	globals.gate.RLock()
@@ -1376,13 +1379,7 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 	}
 
 	profiler.AddEventNow("before fs.ReaddirOne()")
-	var dirEnts []inode.DirEntry
-
-	if okByName {
-		dirEnts, err = mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), inByName.PrevDirEntName)
-	} else {
-		dirEnts, err = mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), inByLoc.PrevDirEntLocation)
-	}
+	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
 	profiler.AddEventNow("after fs.ReaddirOne()")
 	if err == nil {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
@@ -1403,7 +1400,7 @@ func (s *Server) RpcReaddirPlus(in *ReaddirPlusRequest, reply *ReaddirPlusReply)
 	return
 }
 
-func (s *Server) RpcReaddirPlusByLoc(in *ReaddirByLocRequest, reply *ReaddirPlusReply) (err error) {
+func (s *Server) RpcReaddirPlusByLoc(in *ReaddirPlusByLocRequest, reply *ReaddirPlusReply) (err error) {
 	profiler := utils.NewProfilerIf(doProfiling, "readdir_plus_by_loc")
 	err = s.rpcReaddirPlusInternal(in, reply, profiler)
 	// Save profiler with server op stats
@@ -1425,7 +1422,7 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 	} else {
 		inByLoc, _ := in.(*ReaddirPlusByLocRequest)
 		iH = inByLoc.InodeHandle
-		prevMarker = inByLoc.PrevDirEntLocation
+		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
 
