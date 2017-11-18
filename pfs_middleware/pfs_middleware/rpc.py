@@ -255,20 +255,23 @@ def parse_get_account_response(get_account_response):
     """
     Parse a response from RpcGetAccount.
 
-    Returns: account entries.
+    Returns: (account mtime, account entries).
+
+    The account mtime is in nanoseconds since the epoch.
 
     The account entries are a list of dictionaries with keys:
 
         Basename: the container name
 
-        ModifiationTime: container mtime, in nanoseconds since the epoch
+        ModificationTime: container mtime, in nanoseconds since the epoch
     """
+    mtime = get_account_response["ModificationTime"]
     account_entries = get_account_response["AccountEntries"]
     if account_entries is None:
         # seems to happen when it's an empty list
-        return []
+        return (mtime, [])
     else:
-        return account_entries
+        return (mtime, account_entries)
 
 
 def get_container_request(path, marker, limit, prefix):

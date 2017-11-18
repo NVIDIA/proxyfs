@@ -175,6 +175,7 @@ class TestAccountGet(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
+                    "ModificationTime": 1498766381451119000,
                     "AccountEntries": [{
                         "Basename": "chickens",
                         "ModificationTime": 1510958440808682000,
@@ -193,11 +194,17 @@ class TestAccountGet(BaseMiddlewareTest):
         self.fake_rpc.register_handler(
             "Server.RpcGetAccount", mock_RpcGetAccount)
 
+    def test_headers(self):
+        req = swob.Request.blank("/v1/AUTH_test")
+        status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
+        self.assertEqual(headers.get("X-Timestamp"), "1498766381.45112")
+
     def test_text(self):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(body, "chickens\ncows\ngoats\npigs\n")
 
     def test_json(self):
@@ -324,7 +331,10 @@ class TestAccountGet(BaseMiddlewareTest):
             return {
                 "error": None,
                 # None, not [], for mysterious reasons
-                "result": {"AccountEntries": None}}
+                "result": {
+                    "ModificationTime": 1510966502886466000,
+                    "AccountEntries": None,
+                }}
 
         self.fake_rpc.register_handler(
             "Server.RpcGetAccount", last_page_RpcGetAccount)
@@ -349,6 +359,7 @@ class TestAccountGet(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
+                    "ModificationTime": 1510966489413995000,
                     "AccountEntries": []}}
 
         self.fake_rpc.register_handler(

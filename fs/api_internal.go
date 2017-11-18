@@ -1280,7 +1280,13 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, err error) {
+func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, err error) {
+	statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber)
+	if err != nil {
+		return
+	}
+	mtime = statResult[StatMTime]
+
 	// List the root directory, starting at the marker, and keep only
 	// the directories. The Swift API doesn't let you have objects in
 	// an account, so files or symlinks don't belong in an account

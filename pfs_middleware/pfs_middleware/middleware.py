@@ -768,7 +768,8 @@ class PfsMiddleware(object):
         #
         # We let the top-level RpcError handler catch this.
         get_account_response = self.rpc_call(ctx, get_account_request)
-        account_entries = rpc.parse_get_account_response(get_account_response)
+        account_mtime, account_entries = rpc.parse_get_account_response(
+            get_account_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
         if resp_content_type == "text/plain":
@@ -795,6 +796,8 @@ class PfsMiddleware(object):
             resp.headers["X-Account-Meta-" + key] = value
         for key, value in account_info["sysmeta"].items():
             resp.headers["X-Account-Sysmeta-" + key] = value
+
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(account_mtime)
 
         return resp
 

@@ -619,7 +619,7 @@ type GetObjectReply struct {
 	ReadEntsOut      []inode.ReadPlanStep // object/length/offset triples where the data is found
 	InodeNumber      uint64
 	NumWrites        uint64
-	Metadata         []byte // serialized object metadata (previously set by middleware; empty if absent)
+	Metadata         []byte // serialized object metadata (previously set by middleware empty if absent)
 	ModificationTime uint64 // file's mtime in nanoseconds since the epoch
 	LeaseId          string
 }
