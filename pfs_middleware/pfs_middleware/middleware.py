@@ -799,6 +799,20 @@ class PfsMiddleware(object):
 
         resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(account_mtime)
 
+        # Pretend the object counts are 0 and that all containers have the
+        # default storage policy. Until (a) containers have some support for
+        # the X-Storage-Policy header, and (b) we get container metadata
+        # back from Server.RpcGetAccount, this is the best we can do.
+        policy = self._default_storage_policy()
+        resp.headers["X-Account-Object-Count"] = "0"
+        resp.headers["X-Account-Bytes-Used"] = "0"
+        resp.headers["X-Account-Container-Count"] = str(len(account_entries))
+
+        resp.headers["X-Account-Storage-Policy-%s-Object-Count" % policy] = "0"
+        resp.headers["X-Account-Storage-Policy-%s-Bytes-Used" % policy] = "0"
+        k = "X-Account-Storage-Policy-%s-Container-Count" % policy
+        resp.headers[k] = str(len(account_entries))
+
         return resp
 
     def _plaintext_account_get_response(self, account_entries):

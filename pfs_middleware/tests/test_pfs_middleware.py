@@ -201,6 +201,23 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(headers.get("Accept-Ranges"), "bytes")
         self.assertEqual(headers.get("X-Timestamp"), "1498766381.45112")
 
+        # These we just lie about for now
+        self.assertEqual(
+            headers.get("X-Account-Object-Count"), "0")
+        self.assertEqual(
+            headers.get("X-Account-Storage-Policy-Default-Object-Count"), "0")
+        self.assertEqual(
+            headers.get("X-Account-Bytes-Used"), "0")
+        self.assertEqual(
+            headers.get("X-Account-Storage-Policy-Default-Bytes-Used"), "0")
+
+        # We pretend all our containers are in the default storage policy.
+        self.assertEqual(
+            headers.get("X-Account-Container-Count"), "4")
+        self.assertEqual(
+            headers.get("X-Account-Storage-Policy-Default-Container-Count"),
+            "4")
+
     def test_text(self):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
