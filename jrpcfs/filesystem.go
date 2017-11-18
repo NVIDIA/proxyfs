@@ -1350,26 +1350,23 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 	var iH InodeHandle
 	var prevMarker interface{}
 	var inByLoc *ReaddirByLocRequest
+	var flog logger.FuncCtx
 
 	inByName, okByName := in.(*ReaddirRequest)
 	if okByName {
 		iH = inByName.InodeHandle
 		prevMarker = inByName.PrevDirEntName
+		flog = logger.TraceEnter("in.", inByName)
 	} else {
 		inByLoc, _ = in.(*ReaddirByLocRequest)
 		iH = inByLoc.InodeHandle
 		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
+		flog = logger.TraceEnter("in.", inByLoc)
 	}
 
 	globals.gate.RLock()
 	defer globals.gate.RUnlock()
 
-	var flog logger.FuncCtx
-	if okByName {
-		flog = logger.TraceEnter("in.", inByName)
-	} else {
-		flog = logger.TraceEnter("in.", inByLoc)
-	}
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
