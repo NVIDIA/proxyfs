@@ -3,15 +3,13 @@ Integrated File and Object Access for Swift Object Storage
 
 ## Synopsis
 
-ProxyFS provides integrated file and object API access for data
-stored with Swift object storage for the same data. 
-
-ProxyFS supports SMB and NFS along with AWS S3 and Swift object protocols. 
-
-ProxyFS is a hierarchical file system that supports POSIX requirements.
-
-ProxyFS enables filesystem clients to mount and read/write data that
-is simultaneously accessible to object API clients.
+ProxyFS is a hierarchical file system that provides integrated file
+and object API access for data stored with
+[Swift object storage](http://swift.openstack.org) for the same
+data. It supports SMB and NFS along with AWS S3 and Swift object
+protocols. We call this "bi-modal access", and it means that filesystem
+clients and mount and read/write data that is simultaneously accessible
+to object API clients.
 
 ## How to Contribute
 
