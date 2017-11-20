@@ -893,6 +893,9 @@ class PfsMiddleware(object):
         resp = swob.HTTPNoContent(request=ctx.req, headers=metadata)
         resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
         resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
+        resp.headers["Content-Type"] = swift_code.get_listing_content_type(
+            ctx.req)
+        resp.charset = "utf-8"
         self._add_required_container_headers(resp)
         return resp
 

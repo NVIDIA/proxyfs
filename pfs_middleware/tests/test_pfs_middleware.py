@@ -1215,6 +1215,28 @@ class TestContainerHead(BaseMiddlewareTest):
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a container')
 
+    def test_content_type(self):
+        req = swob.Request.blank("/v1/AUTH_test/a-container?format=xml",
+                                 environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/xml; charset=utf-8")
+
+        req = swob.Request.blank("/v1/AUTH_test/a-container?format=json",
+                                 environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+
+        req = swob.Request.blank("/v1/AUTH_test/a-container?format=plain",
+                                 environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "text/plain; charset=utf-8")
+
     def test_no_meta(self):
         self.serialized_container_metadata = ""
 
