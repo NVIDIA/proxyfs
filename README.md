@@ -3,13 +3,31 @@ Integrated File and Object Access for Swift Object Storage
 
 ## Synopsis
 
-ProxyFS provides integrated file and object API access for data stored with Swift object storage for the same data. 
+ProxyFS provides integrated file and object API access for data
+stored with Swift object storage for the same data. 
 
 ProxyFS supports SMB and NFS along with AWS S3 and Swift object protocols. 
 
 ProxyFS is a hierarchical file system that supports POSIX requirements.
 
-ProxyFS enables filesystem clients to mount and read/write data that is simultaneously accessible to object API clients.
+ProxyFS enables filesystem clients to mount and read/write data that
+is simultaneously accessible to object API clients.
+
+## How to Contribute
+
+All code contributions for ProxyFS go through GitHub.
+
+https://github.com/swiftstack/ProxyFS
+
+Please feel free to contribute by opening a pull request to the
+`development` branch. If you see an open pull request, feel free to
+review it and leave comments on it. ProxyFS follows a
+[git flow](https://datasift.github.io/gitflow/IntroducingGitFlow.html)
+development model.
+
+If you'd like to ask questions, discuss ideas, or otherwise communicate
+with other ProxyFS contributors, please register for and participate
+in the [ProxyFS dev mailing list](https://lists.proxyfs.org/mailman/listinfo).
 
 ## Development Environment
 
@@ -20,7 +38,8 @@ one.
 
 ## How to get the code (if not using Runway)
 
-* Define your GOPATH as desired (where your bin/, /pkg, and /src/ directory trees will appear)
+* Define your GOPATH as desired (where your bin/, /pkg, and /src/
+  directory trees will appear)
 * cd $GOPATH
 * mkdir -p src/github.com/swiftstack
 * cd src/github.com/swiftstack
