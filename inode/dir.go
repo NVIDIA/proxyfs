@@ -149,7 +149,7 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: Link failing request to link to inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: Link failing request to link to inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), targetInode.InodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		logger.ErrorWithError(err)
@@ -246,7 +246,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string) (err
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request to Unlink inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request to Unlink inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), untargetInode.InodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		logger.ErrorWithError(err)
