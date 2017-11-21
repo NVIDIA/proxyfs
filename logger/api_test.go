@@ -30,7 +30,7 @@ func TestAPI(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
-		"Logging.TraceLevelLogging=logger",
+		"Logging.TraceLevelLogging=logger fs headhunter",
 	}
 
 	confMap, err := conf.MakeConfMapFromStrings(confStrings)

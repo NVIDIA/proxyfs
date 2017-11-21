@@ -321,6 +321,13 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 }
 
 func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (err error) {
+
+	logger.Tracef("volumeStruct.doFileInodeDataFlush(): entry volume '%s'  inode %d  dirty %v  openSegment %p",
+		vS.volumeName, fileInode.onDiskInodeV1Struct.InodeNumber,
+		fileInode.dirty, fileInode.openLogSegment)
+	defer logger.Tracef("volumeStruct.doFileInodeDataFlush(): return volume '%s'  inode %d",
+		vS.volumeName, fileInode.onDiskInodeV1Struct.InodeNumber)
+
 	fileInode.Lock()
 
 	if nil != fileInode.openLogSegment {
