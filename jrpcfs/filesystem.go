@@ -83,7 +83,9 @@ const (
 	GetXattrOp
 	GetXattrPathOp
 	ReaddirOp
+	ReaddirByLocOp
 	ReaddirPlusOp
+	ReaddirPlusByLocOp
 	InvalidOp // Keep this as the last entry!
 )
 
@@ -99,7 +101,9 @@ var opTypeStrs = []string{
 	"GetXattr",
 	"GetXattrPath",
 	"Readdir",
+	"ReaddirByLoc",
 	"ReaddirPlus",
+	"ReaddirPlusByLoc",
 	"InvalidOp",
 }
 
@@ -1325,22 +1329,54 @@ func (dirEnt *DirEntry) fsDirentToDirEntryStruct(fsDirent inode.DirEntry) {
 }
 
 func (s *Server) RpcReaddir(in *ReaddirRequest, reply *ReaddirReply) (err error) {
-	var profiler = utils.NewProfilerIf(doProfiling, "readdir")
+	profiler := utils.NewProfilerIf(doProfiling, "readdir")
+	err = s.rpcReaddirInternal(in, reply, profiler)
+	// Save profiler with server op stats
+	profiler.Close()
+	SaveProfiler(s, ReaddirOp, profiler)
+	return
+}
+
+func (s *Server) RpcReaddirByLoc(in *ReaddirByLocRequest, reply *ReaddirReply) (err error) {
+	profiler := utils.NewProfilerIf(doProfiling, "readdirByLoc")
+	err = s.rpcReaddirInternal(in, reply, profiler)
+	// Save profiler with server op stats
+	profiler.Close()
+	SaveProfiler(s, ReaddirByLocOp, profiler)
+	return
+}
+
+func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profiler *utils.Profiler) (err error) {
+	var iH InodeHandle
+	var prevMarker interface{}
+	var inByLoc *ReaddirByLocRequest
+	var flog logger.FuncCtx
+
+	inByName, okByName := in.(*ReaddirRequest)
+	if okByName {
+		iH = inByName.InodeHandle
+		prevMarker = inByName.PrevDirEntName
+		flog = logger.TraceEnter("in.", inByName)
+	} else {
+		inByLoc, _ = in.(*ReaddirByLocRequest)
+		iH = inByLoc.InodeHandle
+		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
+		flog = logger.TraceEnter("in.", inByLoc)
+	}
 
 	globals.gate.RLock()
 	defer globals.gate.RUnlock()
 
-	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandle(iH.MountID)
 	if nil != err {
 		return
 	}
 
 	profiler.AddEventNow("before fs.ReaddirOne()")
-	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), inode.InodeDirLocation(in.PrevDirLocation))
+	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
 	profiler.AddEventNow("after fs.ReaddirOne()")
 	if err == nil {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
@@ -1349,30 +1385,58 @@ func (s *Server) RpcReaddir(in *ReaddirRequest, reply *ReaddirReply) (err error)
 		}
 	}
 
-	// Save profiler with server op stats
-	profiler.Close()
-	SaveProfiler(s, ReaddirOp, profiler)
-
 	return
 }
 
 func (s *Server) RpcReaddirPlus(in *ReaddirPlusRequest, reply *ReaddirPlusReply) (err error) {
-	var profiler = utils.NewProfilerIf(doProfiling, "readdir_plus")
+	profiler := utils.NewProfilerIf(doProfiling, "readdir_plus")
+	err = s.rpcReaddirPlusInternal(in, reply, profiler)
+	// Save profiler with server op stats
+	profiler.Close()
+	SaveProfiler(s, ReaddirPlusOp, profiler)
+	return
+}
+
+func (s *Server) RpcReaddirPlusByLoc(in *ReaddirPlusByLocRequest, reply *ReaddirPlusReply) (err error) {
+	profiler := utils.NewProfilerIf(doProfiling, "readdir_plus_by_loc")
+	err = s.rpcReaddirPlusInternal(in, reply, profiler)
+	// Save profiler with server op stats
+	profiler.Close()
+	SaveProfiler(s, ReaddirPlusByLocOp, profiler)
+	return
+}
+
+func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply, profiler *utils.Profiler) (err error) {
+	var iH InodeHandle
+	var prevMarker interface{}
+	var flog logger.FuncCtx
+
+	inByName, okByName := in.(*ReaddirPlusRequest)
+	if okByName {
+		iH = inByName.InodeHandle
+		prevMarker = inByName.PrevDirEntName
+		flog = logger.TraceEnter("in.", inByName)
+	} else {
+		inByLoc, _ := in.(*ReaddirPlusByLocRequest)
+		iH = inByLoc.InodeHandle
+		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
+		flog = logger.TraceEnter("in.", inByLoc)
+	}
 
 	globals.gate.RLock()
 	defer globals.gate.RUnlock()
 
-	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
-	if nil != err {
+	mountHandle, err := lookupMountHandle(iH.MountID)
+	if err != nil {
 		return
 	}
 
 	profiler.AddEventNow("before fs.ReaddirOnePlus()")
-	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), inode.InodeDirLocation(in.PrevDirLocation))
+	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
+
 	profiler.AddEventNow("after fs.ReaddirOnePlus()")
 	if err == nil {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
@@ -1385,10 +1449,6 @@ func (s *Server) RpcReaddirPlus(in *ReaddirPlusRequest, reply *ReaddirPlusReply)
 			reply.StatEnts[i].fsStatToStatStruct(statEnts[i])
 		}
 	}
-
-	// Save profiler with server op stats
-	profiler.Close()
-	SaveProfiler(s, ReaddirPlusOp, profiler)
 
 	return
 }
