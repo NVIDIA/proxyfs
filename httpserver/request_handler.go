@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -629,7 +630,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			} else {
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>No%vne</td>\n", fsckJob.err.Error())))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJob.err.Error()))))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 			}
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
