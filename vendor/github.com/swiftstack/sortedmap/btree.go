@@ -693,8 +693,8 @@ func (tree *btreeTreeStruct) PatchByKey(key Key, value Value) (ok bool, err erro
 			return
 		}
 		if nonShadowingOK {
-			compareResult, nonShadowingOK := tree.Compare(key, minKey)
-			if nil != nonShadowingOK {
+			compareResult, nonShadowingErr := tree.Compare(key, minKey)
+			if nil != nonShadowingErr {
 				err = nonShadowingErr
 				return
 			}
@@ -702,13 +702,13 @@ func (tree *btreeTreeStruct) PatchByKey(key Key, value Value) (ok bool, err erro
 				node = node.nonLeafLeftChild
 			} else {
 				nextIndex, _, nonShadowingErr := node.kvLLRB.BisectLeft(key)
-				if nil != nonShadowingOK {
+				if nil != nonShadowingErr {
 					err = nonShadowingErr
 					return
 				}
 
 				_, childNodeAsValue, _, nonShadowingErr := node.kvLLRB.GetByIndex(nextIndex)
-				if nil != nonShadowingOK {
+				if nil != nonShadowingErr {
 					err = nonShadowingErr
 					return
 				}
