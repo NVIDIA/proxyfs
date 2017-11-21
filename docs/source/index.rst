@@ -25,3 +25,13 @@ Architecture information
     :caption: Details about the design of ProxyFS
 
     design/index
+
+
+Contributor information
+-----------------------
+
+.. toctree::
+    :maxdepth: 1
+    :caption: How to contribute and how our community works
+
+    contributing/index
