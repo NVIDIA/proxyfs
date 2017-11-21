@@ -1943,6 +1943,39 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(new_meta["X-Container-Read"], "xcr")
         self.assertEqual(new_meta["X-Container-Write"], "xcw")
 
+    def test_metadata_removal(self):
+        old_meta = json.dumps({
+            "X-Container-Meta-Box": "cardboard"})
+
+        def mock_RpcHead(_):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(old_meta),
+                    "ModificationTime": 1511224700123739000,
+                    "FileSize": 0,
+                    "IsDir": True,
+                    "InodeNumber": 8017342,
+                    "NumWrites": 0}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/new-con",
+            environ={"REQUEST_METHOD": "PUT"},
+            headers={"X-Container-Meta-Box": ""})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("202 Accepted", status)
+
+        rpc_calls = self.fake_rpc.calls
+        method, args = rpc_calls[-1]
+        self.assertEqual(method, "Server.RpcPutContainer")
+        self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
+        self.assertEqual(base64.b64decode(args[0]["OldMetadata"]), old_meta)
+        new_meta = json.loads(base64.b64decode(args[0]["NewMetadata"]))
+        self.assertNotIn("X-Container-Meta-Box", new_meta)
+
 
 class TestContainerDelete(BaseMiddlewareTest):
     def test_success(self):
@@ -2662,6 +2695,42 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertEqual(new_meta["Content-Type"], "new/type")
+
+    def test_metadata_blanks(self):
+        old_meta = json.dumps({"X-Object-Meta-Color": "red"})
+
+        def mock_RpcHead(_):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(old_meta),
+                    "ModificationTime": 1482345542483719281,
+                    "FileSize": 551155,
+                    "IsDir": False,
+                    "InodeNumber": 6519913,
+                    "NumWrites": 381}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        self.fake_rpc.register_handler(
+            "Server.RpcPost", lambda *a: {"error": None, "result": {}})
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "POST"},
+            headers={"X-Object-Meta-Color": ""})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("202 Accepted", status)
+
+        rpc_calls = self.fake_rpc.calls
+
+        method, args = rpc_calls[2]
+        self.assertEqual(method, "Server.RpcPost")
+        self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
+        self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
+        new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
+        self.assertNotIn("X-Object-Meta-Color", new_meta)
 
 
 class TestObjectDelete(BaseMiddlewareTest):

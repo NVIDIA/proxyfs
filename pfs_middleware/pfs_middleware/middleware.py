@@ -321,7 +321,7 @@ def merge_container_metadata(old, new):
     merged = old.copy()
     for k, v in new.items():
         merged[k] = v
-    return merged
+    return {k: v for k, v in merged.items() if v}
 
 
 def merge_object_metadata(old, new):
@@ -337,7 +337,7 @@ def merge_object_metadata(old, new):
     if old_ct is not None and new_ct is None:
         merged["Content-Type"] = old_ct
 
-    return merged
+    return {k: v for k, v in merged.items() if v}
 
 
 def extract_object_metadata_from_headers(headers):
