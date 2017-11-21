@@ -25,7 +25,8 @@ type ReadRangeIn struct {
 
 // Returned by MiddlewareGetAccount
 type AccountEntry struct {
-	Basename string
+	Basename         string
+	ModificationTime uint64 // nanoseconds since epoch
 }
 
 // Returned by MiddlewareGetContainer
@@ -167,7 +168,7 @@ type MountHandle interface {
 	LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error)
 	MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
-	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, err error)
+	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, err error)
 	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error)
 	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
