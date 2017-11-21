@@ -1501,7 +1501,8 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPOk(request=req, headers=headers)
+        return swob.HTTPOk(request=req, headers=headers,
+                           conditional_response=True)
 
     def coalesce_object(self, ctx):
         req = ctx.req

@@ -697,6 +697,50 @@ class TestObjectGet(BaseMiddlewareTest):
             "In an adjective way,\n"
             "Resulting in circumstance C."))
 
+    def test_GET_conditional_if_match(self):
+        obj_etag = "42d0f073592cdef8f602cda59fbb270e"
+        obj_body = "annet-pentahydric-nuculoid-defiber"
+
+        self.app.register(
+            'GET', '/v1/AUTH_test/InternalContainerName/000000000097830c',
+            200, {},
+            "annet-pentahydric-nuculoid-defiber")
+
+        def mock_RpcGetObject(get_object_req):
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 8,
+                    "Metadata": base64.b64encode(
+                        json.dumps({
+                            mware.ORIGINAL_MD5_HEADER: "123:%s" % obj_etag,
+                        })),
+                    "InodeNumber": 1245,
+                    "NumWrites": 123,
+                    "ModificationTime": 1511222561631497000,
+                    "LeaseId": "dontcare",
+                    "ReadEntsOut": [{
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/000000000097830c"),
+                        "Offset": 0,
+                        "Length": len(obj_body)}]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+
+        # matches
+        req = swob.Request.blank('/v1/AUTH_test/hurdy/gurdy',
+                                 headers={"If-Match": obj_etag})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, obj_body)
+
+        # doesn't match
+        req = swob.Request.blank('/v1/AUTH_test/hurdy/gurdy',
+                                 headers={"If-Match": obj_etag + "abc"})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '412 Precondition Failed')
+
     def test_GET_range(self):
         # Typically, a GET response will include data from multiple log
         # segments. Small files written all at once might fit in a single
@@ -2850,6 +2894,43 @@ class TestObjectHead(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Etag"], "b61d068208b52f4acbd618860d30faae")
+
+    def test_conditional_if_match(self):
+        obj_etag = "c2185d19ada5f5c3aa47d6b55dc912df"
+
+        self.serialized_object_metadata = json.dumps({
+            mware.ORIGINAL_MD5_HEADER: "1:%s" % obj_etag,
+        })
+
+        def mock_RpcHead(head_object_req):
+            md = base64.b64encode(self.serialized_object_metadata)
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": md,
+                    "ModificationTime": 1511223407565078000,
+                    "FileSize": 152874,
+                    "IsDir": False,
+                    "InodeNumber": 9566555,
+                    "NumWrites": 1,
+                }}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
+                                 environ={"REQUEST_METHOD": "HEAD"},
+                                 headers={"If-Match": obj_etag})
+        # matches
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+
+        # doesn't match
+        req = swob.Request.blank("/v1/AUTH_test/c/an-object.png",
+                                 environ={"REQUEST_METHOD": "HEAD"},
+                                 headers={"If-Match": obj_etag + "XYZZY"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '412 Precondition Failed')
 
 
 class TestObjectHeadDir(BaseMiddlewareTest):
