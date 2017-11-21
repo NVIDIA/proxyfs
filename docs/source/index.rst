@@ -3,6 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+.. build the docs with `make html` in this docs directory
+
 Welcome to ProxyFS's documentation!
 ===================================
 
@@ -11,7 +13,7 @@ Operator information
 
 .. toctree::
     :maxdepth: 1
-    :caption: Operator information
+    :caption: Information for installing and running ProxyFS
 
     operator/index
 
@@ -20,6 +22,6 @@ Architecture information
 
 .. toctree::
     :maxdepth: 1
-    :caption: Architecture information
+    :caption: Details about the design of ProxyFS
 
     design/index
