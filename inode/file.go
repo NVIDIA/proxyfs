@@ -404,6 +404,14 @@ func decrementLogSegmentMapFileData(fileInode *inMemoryInodeStruct, logSegmentNu
 // `recordWrite` is called by `Write` and `Wrote` to update the file inode
 // payload's record of the extents that compose the file.
 func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint64, logSegmentNumber uint64, logSegmentOffset uint64) (err error) {
+
+	logger.Tracef(
+		"recordWrite() entry: volume '%s'  inode %d  offset %d  len %d  stored in logSegment %d  offset %d",
+		fileInode.volume.volumeName, fileInode.InodeNumber, fileOffset, length,
+		logSegmentNumber, logSegmentOffset)
+	defer logger.Tracef("recordWrite() return: volume '%s'  inode %d  offset %d  len %d",
+		fileInode.volume.volumeName, fileInode.InodeNumber, fileOffset, length)
+
 	extents := fileInode.payload.(sortedmap.BPlusTree)
 
 	// First we need to eliminate extents or portions thereof that overlap the specified write
@@ -426,7 +434,14 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 			}
 			leftExtent := extentValue.(*fileExtentStruct)
 			if (leftExtent.FileOffset + leftExtent.Length) > fileOffset {
+
 				// Yes, we need to split the preceeding extent
+				logger.Tracef("recordWrite(): splitting extent volume '%s'  inode %d"+
+					"  offset %d  len %d  logSegmentNumber %d  logSegmentOffset %d",
+					fileInode.volume.volumeName, fileInode.InodeNumber,
+					leftExtent.FileOffset, leftExtent.Length,
+					leftExtent.LogSegmentNumber, leftExtent.LogSegmentOffset)
+
 				splitOutSize := (leftExtent.FileOffset + leftExtent.Length) - fileOffset
 				leftExtent.Length -= splitOutSize
 				ok, patchByIndexErr := extents.PatchByIndex(extentIndex, leftExtent)
@@ -472,7 +487,14 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 			break
 		}
 		if (fileOffset + length) >= (leftExtent.FileOffset + leftExtent.Length) {
+
 			// This extent entirely overwritten... just delete it
+			logger.Tracef("recordWrite(): deleting extent volume '%s'  inode %d"+
+				"  offset %d  len %d  logSegmentNumber %d  logSegmentOffset %d",
+				fileInode.volume.volumeName, fileInode.InodeNumber,
+				leftExtent.FileOffset, leftExtent.Length,
+				leftExtent.LogSegmentNumber, leftExtent.LogSegmentOffset)
+
 			decrementLogSegmentMapFileData(fileInode, leftExtent.LogSegmentNumber, leftExtent.Length)
 			ok, deleteByIndexErr := extents.DeleteByIndex(extentIndex)
 			if nil != deleteByIndexErr {
@@ -492,6 +514,12 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 				unexpectedErr := fmt.Errorf("unexpected extents indexing problem")
 				panic(unexpectedErr)
 			}
+			logger.Tracef("recordWrite(): pruning extent volume '%s'  inode %d"+
+				"  offset %d  len %d  logSegmentNumber %d  logSegmentOffset %d",
+				fileInode.volume.volumeName, fileInode.InodeNumber,
+				leftExtent.FileOffset, leftExtent.Length,
+				leftExtent.LogSegmentNumber, leftExtent.LogSegmentOffset)
+
 			overlapSize := (fileOffset + length) - leftExtent.FileOffset
 			rightExtent := &fileExtentStruct{
 				FileOffset:       leftExtent.FileOffset + overlapSize,
@@ -541,7 +569,13 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 	}
 
 	if (nil != prevExtent) && (prevExtent.LogSegmentNumber == logSegmentNumber) && ((prevExtent.FileOffset + prevExtent.Length) == fileOffset) && ((prevExtent.LogSegmentOffset + prevExtent.Length) == logSegmentOffset) {
+
 		// APPEND Case: We are able to simply lengthen prevExtent
+		logger.Tracef("recordWrite(): growing extent volume '%s'  inode %d"+
+			"  offset %d  len %d  logSegmentNumber %d  logSegmentOffset %d",
+			fileInode.volume.volumeName, fileInode.InodeNumber,
+			prevExtent.FileOffset, prevExtent.Length,
+			prevExtent.LogSegmentNumber, prevExtent.LogSegmentOffset)
 
 		prevExtent.Length += length
 		ok, patchByIndexErr := extents.PatchByIndex(prevIndex, prevExtent)
@@ -554,6 +588,10 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 		}
 	} else {
 		// Non-APPEND Case: We need to insert a new extent
+		logger.Tracef("recordWrite(): inserting extent volume '%s'  inode %d"+
+			"  offset %d  len %d  logSegmentNumber %d  logSegmentOffset %d",
+			fileInode.volume.volumeName, fileInode.InodeNumber,
+			fileOffset, length, logSegmentNumber, logSegmentOffset)
 
 		newExtent := &fileExtentStruct{
 			FileOffset:       fileOffset,
@@ -584,8 +622,6 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 		return
 	}
 
-	fileInode.dirty = true
-
 	logSegmentNumber, logSegmentOffset, err := vS.doSendChunk(fileInode, buf)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -605,6 +641,10 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	offsetJustAfterWhereBufLogicallyWritten := offset + length
 
 	if offsetJustAfterWhereBufLogicallyWritten > startingSize {
+		logger.Tracef("vs.Write(): growing file size %d to %d  volume '%s'  inode %d  offset %d  len %d",
+			fileInode.Size, offsetJustAfterWhereBufLogicallyWritten,
+			vS.volumeName, fileInodeNumber, offset, len(buf))
+
 		fileInode.Size = offsetJustAfterWhereBufLogicallyWritten
 	}
 
@@ -617,6 +657,7 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	fileInode.AttrChangeTime = updateTime
 	fileInode.ModificationTime = updateTime
 	fileInode.NumWrites++
+	fileInode.dirty = true
 
 	return
 }
@@ -673,6 +714,9 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 
 	if patchOnly {
 		if (fileOffset + length) > fileInode.Size {
+			logger.Tracef("vs.Wrote(): growing file size %d to %d  volume '%s'  inode %d",
+				fileInode.Size, fileOffset+length, vS.volumeName, fileInodeNumber)
+
 			fileInode.Size = fileOffset + length
 		}
 
@@ -680,6 +724,8 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 		fileInode.ModificationTime = updateTime
 		fileInode.AttrChangeTime = updateTime
 	} else {
+		logger.Tracef("vs.Wrote(): setting file size to %d  volume '%s'  inode %d",
+			length, vS.volumeName, fileInodeNumber)
 		err = setSizeInMemory(fileInode, length)
 		if err != nil {
 			logger.ErrorWithError(err)

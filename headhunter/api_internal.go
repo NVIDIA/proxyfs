@@ -72,6 +72,10 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 }
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
+
+	logger.Tracef("headhunger.GetInodeRec() entry: volume '%s' inode %d", volume.volumeName, inodeNumber)
+	defer logger.Tracef("headhunger.GetInodeRec() return: volume '%s' inode %d", volume.volumeName, inodeNumber)
+
 	volume.Lock()
 
 	valueAsValue, ok, err := volume.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
@@ -94,6 +98,10 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 }
 
 func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
+
+	logger.Tracef("headhunger.PutInodeRec() entry: volume '%s' inode %d", volume.volumeName, inodeNumber)
+	defer logger.Tracef("headhunger.PutInodeRec() return: volume '%s' inode %d", volume.volumeName, inodeNumber)
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -121,6 +129,10 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 }
 
 func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
+
+	logger.Tracef("headhunter.PutInodeRecs() entry: volume '%s' inodes %v", volume.volumeName, inodeNumbers)
+	defer logger.Tracef("headhunter.PutInodeRecs() return: volume '%s' inodes %v", volume.volumeName, inodeNumbers)
+
 	if len(inodeNumbers) != len(values) {
 		err = fmt.Errorf("InodeNumber and Values array don't match")
 		return
@@ -195,6 +207,12 @@ func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []b
 }
 
 func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error) {
+
+	logger.Tracef("headhunter.PutLogSegmentRec() entry: volume '%s' Segment %v",
+		volume.volumeName, logSegmentNumber)
+	defer logger.Tracef("headhunter.PutLogSegmentRec() return: volume '%s' Segment %v",
+		volume.volumeName, logSegmentNumber)
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 

@@ -170,13 +170,15 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 }
 
 func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataTracker() {
+
+	logger.Tracef("fs.inFlightFileInodeDataTracker() entry: waiting to flush volume '%s' inode %d",
+		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
+	defer logger.Tracef("fs.inFlightFileInodeDataTracker() return: flush volume '%s' inode %d",
+		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
+
 	var (
 		flushFirst bool
 	)
-
-	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
-		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
-
 	select {
 	case flushFirst = <-inFlightFileInodeData.control:
 		// All we needed was the value of flushFirst from control chan
@@ -310,6 +312,8 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 	var (
 		err error
 	)
+	logger.Tracef("fs.doInlineCheckpoint() entry: volume '%s'", mS.volStruct.volumeName)
+	defer logger.Tracef("fs.doInlineCheckpoint() return: volume '%s'", mS.volStruct.volumeName)
 
 	if !mS.volStruct.doCheckpointPerFlush {
 		return
@@ -329,7 +333,12 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-	defer mS.doInlineCheckpointIfEnabled()
+
+	logger.Tracef("fs.Flush() entry: volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
+	defer logger.Tracef("fs.Flush() return: volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
+
+	// checkpoint after the flush completes
+	defer mS.doInlineCheckpoint()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -342,9 +351,11 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 	defer inodeLock.Unlock()
 
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
+		logger.Tracef("fs.Flush(): volume '%s' inode %d err ENOENT", mS.volStruct.volumeName, inodeNumber)
 		return blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
+		logger.Tracef("fs.Flush(): volume '%s' inode %d err EACCES", mS.volStruct.volumeName, inodeNumber)
 		return blunder.NewError(blunder.PermDeniedError, "EACCES")
 	}
 
@@ -2938,7 +2949,9 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
 
-	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
+	logger.Tracef("fs.Write() entry: volume '%s' inode %d offset %d len %d",
+		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
+	defer logger.Tracef("fs.Write() return: volume '%s' inode %d offset %d len %d",
 		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
@@ -2953,10 +2966,14 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		logger.Tracef("fs.Write() error: volume '%s' inode %d offset %d len %d err %v",
+			mS.volStruct.volumeName, inodeNumber, offset, len(buf), err)
 		return
 	}
 	if !mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		logger.Tracef("fs.Write() error: volume '%s' inode %d offset %d len %d err %v",
+			mS.volStruct.volumeName, inodeNumber, offset, len(buf), err)
 		return
 	}
 
@@ -2965,13 +2982,16 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	profiler.AddEventNow("after inode.Write()")
 	// write to Swift presumably succeeds or fails as a whole
 	if err != nil {
+		logger.Tracef("fs.Write() error: volume '%s' inode %d offset %d len %d err %v",
+			mS.volStruct.volumeName, inodeNumber, offset, len(buf), err)
 		return 0, err
 	}
 
-	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
+	logger.Tracef("fs.Write(): tracking write to volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
 	stats.IncrementOperations(&stats.FsWriteOps)
+
 	return
 }
 

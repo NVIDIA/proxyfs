@@ -48,7 +48,7 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 	UserID              InodeUserID
 	GroupID             InodeGroupID
 	StreamMap           map[string][]byte
-	PayloadObjectNumber uint64            // DirInode:     B+Tree Root with Key == dir_entry_name, Value = InodeNumber
+	PayloadObjectNumber uint64            // DirInode:     B+Tree Root with Key == entry_name, Value = InodeNumber
 	PayloadObjectLength uint64            // FileInode:    B+Tree Root with Key == fileOffset, Value = fileExtent
 	SymlinkTarget       string            // SymlinkInode: target path of symbolic link
 	LogSegmentMap       map[uint64]uint64 // FileInode:    Key == LogSegment#, Value = file user data byte count
@@ -86,7 +86,8 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 		version                           Version
 	)
 
-	logger.Tracef("inode.fetchOnDiskInode(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+	logger.Tracef("inode.fetchOnDiskInode() entry: volume '%s' inode %d", vS.volumeName, inodeNumber)
+	defer logger.Tracef("inode.fetchOnDiskInode() return: volume '%s' inode %d", vS.volumeName, inodeNumber)
 
 	inodeRec, ok, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil != err {
@@ -368,6 +369,9 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	emptyLogSegments = make([]uint64, 0)
 
 	for _, inode = range inodes {
+		logger.Tracef("flushInodes(): flushing volume '%s'  inode %d  dirty %v",
+			vS.volumeName, inode.InodeNumber, inode.dirty)
+
 		if FileType == inode.InodeType {
 			err = vS.doFileInodeDataFlush(inode)
 			if nil != err {
@@ -378,6 +382,12 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 			emptyLogSegmentsThisInode = make([]uint64, 0)
 			for logSegmentNumber, logSegmentValidBytes = range inode.LogSegmentMap {
 				if 0 == logSegmentValidBytes {
+					if !inode.dirty {
+						err = fmt.Errorf(
+							"Logic error: empy log segment so inode.dirty should be true")
+						logger.ErrorWithError(err)
+						return
+					}
 					emptyLogSegmentsThisInode = append(emptyLogSegmentsThisInode, logSegmentNumber)
 				}
 			}
@@ -397,13 +407,16 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 			}
 			if payloadObjectNumber > inode.PayloadObjectNumber {
 				if !inode.dirty {
-					err = fmt.Errorf("Logic error: inode.dirty should have been true")
+					err = fmt.Errorf("Logic error: payload so inode.dirty should be true")
 					logger.ErrorWithError(err)
 					err = blunder.AddError(err, blunder.InodeFlushError)
 					return
 				}
 				inode.PayloadObjectNumber = payloadObjectNumber
 				inode.PayloadObjectLength = payloadObjectLength
+
+				logger.Tracef("flushInodes(): flushed payload for volume '%s'  inode %d to object %d",
+					vS.volumeName, inode.InodeNumber, payloadObjectNumber)
 			}
 		}
 		if inode.dirty {
@@ -429,6 +442,9 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 
 	// Go update HeadHunter (if necessary)
 	if 0 < len(dirtyInodeNumbers) {
+		logger.Tracef("flushInodes(): flushing %d dirty inodes to headhunter on volume '%s'",
+			len(dirtyInodeNumbers), vS.volumeName)
+
 		err = vS.headhunterVolumeHandle.PutInodeRecs(dirtyInodeNumbers, dirtyInodeRecs)
 		if nil != err {
 			logger.ErrorWithError(err)
@@ -446,6 +462,9 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	// Now do phase one of garbage collection
 	if 0 < len(emptyLogSegments) {
 		for _, logSegmentNumber = range emptyLogSegments {
+
+			logger.Tracef("flushInodes(): deleting log segment volume '%s'  log segment %d",
+				vS.volumeName, logSegmentNumber)
 			err = vS.deleteLogSegmentAsync(logSegmentNumber, checkpointDoneWaitGroup)
 			if nil != err {
 				logger.WarnfWithError(err, "couldn't delete garbage log segment")
@@ -747,7 +766,8 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 
 func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 
-	logger.Tracef("inode.Destroy(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+	logger.Tracef("inode.Destroy() entry: volume '%s' inode %d", vS.volumeName, inodeNumber)
+	defer logger.Tracef("inode.Destroy() return: volume '%s' inode %d", vS.volumeName, inodeNumber)
 
 	ourInode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
