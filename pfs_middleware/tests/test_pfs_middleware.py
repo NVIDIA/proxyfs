@@ -1439,6 +1439,18 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
+    def test_dlo(self):
+        req = swob.Request.blank('/v1/AUTH_test/a-container',
+                                 environ={'swift.source': 'DLO'})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        json.loads(body)  # doesn't crash
+        self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
+                         '/v1/AUTH_test/a-container')
+
     def test_metadata(self):
         self.serialized_container_metadata = json.dumps({
             "X-Container-Sysmeta-Fish": "tilefish",
