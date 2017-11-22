@@ -1386,15 +1386,6 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        if size > 0 and read_plan is None:
-            return swob.HTTPRequestedRangeNotSatisfiable(request=req)
-
-        # NB: this is a size-0 queue, so it acts as a channel: a put()
-        # blocks until another greenthread does a get(). This lets us use it
-        # for (very limited) bidirectional communication.
-        channel = eventlet.queue.Queue(0)
-        eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
-
         headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
 
         if "Content-Type" not in headers:
@@ -1408,6 +1399,17 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["Etag"] = best_possible_etag(headers, ctx.account_name,
                                              ino, num_writes)
+
+        if size > 0 and read_plan is None:
+            headers["Content-Range"] = "bytes */%d" % size
+            return swob.HTTPRequestedRangeNotSatisfiable(
+                request=req, headers=headers)
+
+        # NB: this is a size-0 queue, so it acts as a channel: a put()
+        # blocks until another greenthread does a get(). This lets us use it
+        # for (very limited) bidirectional communication.
+        channel = eventlet.queue.Queue(0)
+        eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
 
         listing_iter = listing_iter_from_read_plan(read_plan)
         # Make sure that nobody (like our __call__ method) messes with this

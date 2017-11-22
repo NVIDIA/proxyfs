@@ -909,7 +909,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "FileSize": 62,
                     "Metadata": "",
                     "InodeNumber": 1245,
-                    "NumWrites": 2424,
+                    "NumWrites": 2426,
                     "ModificationTime": 1481152134331862558,
                     "LeaseId": "borkbork",
                     "ReadEntsOut": None}}
@@ -922,6 +922,13 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '416 Requested Range Not Satisfiable')
+        self.assertEqual(headers.get('Content-Range'), 'bytes */62')
+        self.assertEqual(headers.get('ETag'),
+                         mware.construct_etag("AUTH_test", 1245, 2426))
+        self.assertEqual(headers.get('Last-Modified'),
+                         'Wed, 07 Dec 2016 23:08:55 GMT')
+        self.assertEqual(headers.get('X-Timestamp'),
+                         '1481152134.33186')
 
     def test_GET_multiple_ranges(self):
         self.app.register(
