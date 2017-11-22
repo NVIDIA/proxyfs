@@ -100,7 +100,7 @@ func (tWS *treeWalkStruct) validateDirInode(dirInodeNumber inode.InodeNumber) (s
 				inodeType, nonShadowingErr := tWS.volumeHandle.GetType(dirEntry.InodeNumber)
 				if nil != nonShadowingErr {
 					stopped = false
-					err = fmt.Errorf("%v.ReadDir(%v,,) failed: %v", tWS.volumeName, dirEntry.InodeNumber, err)
+					err = fmt.Errorf("%v.ReadDir(%v,,) failed: %v", tWS.volumeName, dirEntry.InodeNumber, nonShadowingErr)
 					return
 				}
 
