@@ -904,6 +904,18 @@ class PfsMiddleware(object):
         container_path = urllib_parse.unquote(req.path)
         new_metadata = extract_container_metadata_from_headers(req.headers)
 
+        # Check name's length. The account name is checked separately (by
+        # Swift, not by this middleware) and has its own limit; we are
+        # concerned only with the container portion of the path.
+        _, _, container_name, _ = utils.parse_path(req.path)
+        maxlen = self._max_container_name_length()
+        if len(container_name) > maxlen:
+            return swob.HTTPBadRequest(
+                request=req,
+                content_type="text/plain",
+                body=('Container name length of %d longer than %d' %
+                      (len(container_name), maxlen)))
+
         try:
             head_response = self.rpc_call(
                 ctx, rpc.head_request(container_path))
@@ -978,6 +990,10 @@ class PfsMiddleware(object):
             limit = default_limit
 
         return limit
+
+    def _max_container_name_length(self):
+        proxy_info = self._proxy_info()
+        return proxy_info["swift"]["max_container_name_length"]
 
     def _default_account_listing_limit(self):
         proxy_info = self._proxy_info()

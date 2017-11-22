@@ -63,42 +63,44 @@ class BaseMiddlewareTest(unittest.TestCase):
                           {"X-Account-Sysmeta-ProxyFS-Bimodal": "true"},
                           '')
 
+        self.swift_info = {
+            # some stuff omitted
+            "slo": {
+                "max_manifest_segments": 1000,
+                "max_manifest_size": 2097152,
+                "min_segment_size": 1},
+            "swift": {
+                "account_autocreate": True,
+                "account_listing_limit": 9876,  # note: not default
+                "allow_account_management": True,
+                "container_listing_limit": 6543,  # note: not default
+                "extra_header_count": 0,
+                "max_account_name_length": 128,
+                "max_container_name_length": 256,
+                "max_file_size": 5368709122,
+                "max_header_size": 8192,
+                "max_meta_count": 90,
+                "max_meta_name_length": 128,
+                "max_meta_overall_size": 4096,
+                "max_meta_value_length": 256,
+                "max_object_name_length": 1024,
+                "policies": [{
+                    "aliases": "default",
+                    "default": True,
+                    "name": "default",
+                }, {
+                    "aliases": "not-default",
+                    "name": "not-default",
+                }],
+                "strict_cors_mode": True,
+                "version": "2.9.1.dev47"
+            },
+            "tempauth": {"account_acls": True}}
+
         self.app.register(
             'GET', '/info',
             200, {'Content-Type': 'application/json'},
-            json.dumps({
-                # some stuff omitted
-                "slo": {
-                    "max_manifest_segments": 1000,
-                    "max_manifest_size": 2097152,
-                    "min_segment_size": 1},
-                "swift": {
-                    "account_autocreate": True,
-                    "account_listing_limit": 9876,  # note: not default
-                    "allow_account_management": True,
-                    "container_listing_limit": 6543,  # note: not default
-                    "extra_header_count": 0,
-                    "max_account_name_length": 256,
-                    "max_container_name_length": 256,
-                    "max_file_size": 5368709122,
-                    "max_header_size": 8192,
-                    "max_meta_count": 90,
-                    "max_meta_name_length": 128,
-                    "max_meta_overall_size": 4096,
-                    "max_meta_value_length": 256,
-                    "max_object_name_length": 1024,
-                    "policies": [{
-                        "aliases": "default",
-                        "default": True,
-                        "name": "default",
-                    }, {
-                        "aliases": "not-default",
-                        "name": "not-default",
-                    }],
-                    "strict_cors_mode": True,
-                    "version": "2.9.1.dev47"
-                },
-                "tempauth": {"account_acls": True}}))
+            json.dumps(self.swift_info))
 
         self.fake_rpc = helpers.FakeJsonRpc()
         patcher = mock.patch('pfs_middleware.utils.JsonRpcClient',
@@ -1895,6 +1897,31 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(
             base64.b64decode(args[0]["NewMetadata"]),
             json.dumps({"X-Container-Meta-Red-Fish": "blue fish"}))
+
+    def test_name_too_long(self):
+        def mock_RpcHead(_):
+            return {"error": "errno: 2", "result": None}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        acceptable_name = 'A' * (
+            self.swift_info['swift']['max_container_name_length'])
+
+        too_long_name = 'A' * (
+            self.swift_info['swift']['max_container_name_length'] + 1)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/%s" % acceptable_name,
+            environ={"REQUEST_METHOD": "PUT"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("201 Created", status)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/%s" % too_long_name,
+            environ={"REQUEST_METHOD": "PUT"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("400 Bad Request", status)
 
     def test_existing_container(self):
         old_meta = json.dumps({
