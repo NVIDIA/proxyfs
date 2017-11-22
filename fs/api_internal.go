@@ -1985,6 +1985,10 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 		return
 	} else if err != nil {
 		// No such container, so we create it
+		err = validateBaseName(containerName)
+		if err != nil {
+			return
+		}
 
 		newDirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 		if err != nil {

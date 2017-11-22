@@ -1905,11 +1905,15 @@ class TestContainerPut(BaseMiddlewareTest):
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
 
+        self.swift_info['swift']['max_container_name_length'] = 50
         acceptable_name = 'A' * (
             self.swift_info['swift']['max_container_name_length'])
-
         too_long_name = 'A' * (
             self.swift_info['swift']['max_container_name_length'] + 1)
+        self.app.register(
+            'GET', '/info',
+            200, {'Content-Type': 'application/json'},
+            json.dumps(self.swift_info))
 
         req = swob.Request.blank(
             "/v1/AUTH_test/%s" % acceptable_name,
@@ -1917,6 +1921,27 @@ class TestContainerPut(BaseMiddlewareTest):
         status, _, _ = self.call_pfs(req)
         self.assertEqual("201 Created", status)
 
+        req = swob.Request.blank(
+            "/v1/AUTH_test/%s" % too_long_name,
+            environ={"REQUEST_METHOD": "PUT"})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual("400 Bad Request", status)
+
+    def test_name_too_long_posix(self):
+        def mock_RpcHead(_):
+            return {"error": "errno: 2", "result": None}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        posix_limit = mware.NAME_MAX
+        self.swift_info['swift']['max_container_name_length'] = posix_limit * 2
+        self.app.register(
+            'GET', '/info',
+            200, {'Content-Type': 'application/json'},
+            json.dumps(self.swift_info))
+
+        too_long_name = 'A' * (posix_limit + 1)
         req = swob.Request.blank(
             "/v1/AUTH_test/%s" % too_long_name,
             environ={"REQUEST_METHOD": "PUT"})

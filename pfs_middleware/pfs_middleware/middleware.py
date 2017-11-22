@@ -108,6 +108,11 @@ from swift.common import swob
 from swift.common.utils import get_logger
 
 
+# POSIX file-path limits. Taken from Linux's limits.h, which is also where
+# ProxyFS gets them.
+NAME_MAX = 255
+PATH_MAX = 4096
+
 # Used for content type of directories in container listings
 DIRECTORY_CONTENT_TYPE = "application/directory"
 
@@ -993,7 +998,8 @@ class PfsMiddleware(object):
 
     def _max_container_name_length(self):
         proxy_info = self._proxy_info()
-        return proxy_info["swift"]["max_container_name_length"]
+        swift_max = proxy_info["swift"]["max_container_name_length"]
+        return min(swift_max, NAME_MAX)
 
     def _default_account_listing_limit(self):
         proxy_info = self._proxy_info()

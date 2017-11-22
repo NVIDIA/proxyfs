@@ -1812,6 +1812,28 @@ func TestRpcPutContainer(t *testing.T) {
 	assert.Equal(newMetadata, headReply.Metadata)
 }
 
+func TestRpcPutContainerTooLong(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-put-container-adnascent-splint-"
+	containerName += strings.Repeat("A", 256-len(containerName))
+	containerPath := testVerAccountName + "/" + containerName
+	req := PutContainerReq{
+		VirtPath:    containerPath,
+		OldMetadata: []byte{},
+		NewMetadata: []byte{},
+	}
+	reply := PutContainerReply{}
+
+	err = server.RpcPutContainer(&req, &reply)
+	assert.NotNil(err)
+}
+
 func TestRpcMiddlewareMkdir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
