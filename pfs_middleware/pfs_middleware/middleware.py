@@ -1023,6 +1023,14 @@ class PfsMiddleware(object):
 
     def get_container(self, ctx):
         req = ctx.req
+        if req.environ.get('swift.source') in ('DLO', 'SW', 'VW'):
+            # Middlewares typically want json, but most *assume* it following
+            # https://github.com/openstack/swift/commit/4806434
+            # TODO: maybe replace with `if req.environ.get('swift.source'):` ??
+            params = req.params
+            params['format'] = 'json'
+            req.params = params
+
         limit = self._get_listing_limit(
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
