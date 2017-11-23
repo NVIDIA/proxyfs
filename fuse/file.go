@@ -131,7 +131,12 @@ func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 }
 
 func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
-	return fuselib.ENOSYS
+	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
+		f.inodeNumber)
+	if nil != err {
+		err = newFuseError(err)
+	}
+	return err
 }
 
 func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.ReadResponse) (err error) {
