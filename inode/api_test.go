@@ -1230,6 +1230,25 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("expected bytes from suffix read plan 0x22, 0x33, 0x04; got %v", bytesFromReadPlan)
 	}
 
+	// Long suffix byte range query, like "Range: bytes=-200" (for a file of size < 200)
+	length = uint64(10) // our file has only 5 bytes
+	testSuffixReadPlan, err = testVolumeHandle.GetReadPlan(fileInodeNumber, nil, &length)
+	if nil != err {
+		t.Fatalf("GetReadPlan(fileInodeNumber, nil, 10) failed: %v", err)
+	}
+	bytesFromReadPlan = []byte{}
+	for _, rps := range testSuffixReadPlan {
+		pathParts := strings.SplitN(rps.ObjectPath, "/", 5)
+		b, err := swiftclient.ObjectGet(pathParts[2], pathParts[3], pathParts[4], rps.Offset, rps.Length)
+		if err != nil {
+			t.Fatalf("ObjectGet() returned unexpected error %v", err)
+		}
+		bytesFromReadPlan = append(bytesFromReadPlan, b...)
+	}
+	if !bytes.Equal(bytesFromReadPlan, []byte{0x00, 0x11, 0x22, 0x33, 0x04}) {
+		t.Fatalf("expected bytes from suffix read plan 0x00, 0x11, 0x22, 0x33, 0x04; got %v", bytesFromReadPlan)
+	}
+
 	// Prefix byte range query, like "Range: bytes=4-"
 	offset = uint64(3)
 	testPrefixReadPlan, err := testVolumeHandle.GetReadPlan(fileInodeNumber, &offset, nil)

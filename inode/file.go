@@ -231,8 +231,14 @@ func (vS *volumeStruct) getReadPlanHelper(fileInode *inMemoryInodeStruct, reques
 		return
 	} else if requestedOffset == nil {
 		// Suffix request, e.g. "bytes=-10", the last 10 bytes of the file
-		offset = fileInode.Size - *requestedLength
-		readPlanBytes = *requestedLength
+		if fileInode.Size > *requestedLength {
+			offset = fileInode.Size - *requestedLength
+			readPlanBytes = *requestedLength
+		} else {
+			// A suffix request for more bytes than the file has must get the whole file.
+			offset = 0
+			readPlanBytes = fileInode.Size
+		}
 	} else if requestedLength == nil {
 		// Prefix request, e.g. "bytes=25-", from byte 25 to the end
 		offset = *requestedOffset
