@@ -26,7 +26,7 @@ import eventlet
 import socket
 import time
 
-from swift.common import swob
+from swift.common import swob, constraints
 from swift.common.utils import get_logger
 from swift.proxy.controllers.base import get_account_info
 
@@ -205,7 +205,7 @@ class BimodalChecker(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc:
+        if not acc or not constraints.valid_api_version(vrs):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app

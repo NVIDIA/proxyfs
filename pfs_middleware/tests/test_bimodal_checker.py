@@ -108,6 +108,19 @@ class TestDecision(unittest.TestCase):
         self.assertEqual(self.fake_rpc.calls, (
             ('Server.RpcIsAccountBimodal', ({'AccountName': 'bob'},)),))
 
+    def test_bad_path(self):
+        self.app.register('GET', '//v1/alice', 404, {}, '')
+        req = swob.Request.blank("//v1/alice")
+        # (in)sanity check
+        self.assertNotEqual(req.environ['PATH_INFO'], '//v1/alice')
+        # fix it
+        req.environ['PATH_INFO'] = '//v1/alice'
+        resp = req.get_response(self.bc)
+
+        self.assertEqual("no", resp.headers["Is-Bimodal"])
+        # We just passed through -- didn't bother with an RPC.
+        self.assertEqual(tuple(), self.fake_rpc.calls)
+
     def test_disagreement(self):
         def fake_RpcIsAccountBimodal(request):
             return {
