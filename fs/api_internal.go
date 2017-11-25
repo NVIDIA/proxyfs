@@ -306,10 +306,14 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
-func (mS *mountStruct) doInlineCheckpoint() {
+func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 	var (
 		err error
 	)
+
+	if !mS.volStruct.doCheckpointPerFlush {
+		return
+	}
 
 	if nil == mS.headhunterVolumeHandle {
 		mS.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(mS.volStruct.volumeName)
@@ -325,7 +329,7 @@ func (mS *mountStruct) doInlineCheckpoint() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-	defer mS.doInlineCheckpoint()
+	defer mS.doInlineCheckpointIfEnabled()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {

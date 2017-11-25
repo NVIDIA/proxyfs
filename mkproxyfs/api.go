@@ -3,6 +3,7 @@ package mkproxyfs
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
@@ -24,13 +25,14 @@ const (
 
 func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings []string) (err error) {
 	var (
-		accountName   string
-		confMap       conf.ConfMap
-		containerList []string
-		containerName string
-		isEmpty       bool
-		objectList    []string
-		objectName    string
+		accountName       string
+		confMap           conf.ConfMap
+		containerList     []string
+		containerName     string
+		isEmpty           bool
+		objectList        []string
+		objectName        string
+		replayLogFileName string
 	)
 
 	// Valid mode?
@@ -155,6 +157,19 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 				if nil != err {
 					err = fmt.Errorf("failed to DELETE %v/%v: %v", accountName, containerName, err)
 					return
+				}
+			}
+
+			replayLogFileName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "ReplayLogFileName")
+			if nil == err {
+				if "" != replayLogFileName {
+					removeReplayLogFileErr := os.Remove(replayLogFileName)
+					if nil != removeReplayLogFileErr {
+						if !os.IsNotExist(removeReplayLogFileErr) {
+							err = fmt.Errorf("os.Remove(replayLogFileName == \"%v\") returned unexpected error: %v", replayLogFileName, removeReplayLogFileErr)
+							return
+						}
+					}
 				}
 			}
 		}

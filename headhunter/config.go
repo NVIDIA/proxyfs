@@ -2,6 +2,8 @@ package headhunter
 
 import (
 	"fmt"
+	"hash/crc64"
+	"os"
 	"sync"
 	"time"
 
@@ -25,86 +27,6 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
-var (
-	LittleEndian = cstruct.LittleEndian // All data cstructs to be serialized in LittleEndian form
-)
-
-const (
-	checkpointHeaderVersion1 uint64 = iota + 1
-	// uint64 in %016X indicating checkpointHeaderVersion1
-	// ' '
-	// uint64 in %016X indicating objectNumber containing inodeRecWrapper.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               inodeRecWrapper.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating length of               inodeRecWrapper.bPlusTree        Root Node
-	// ' '
-	// uint64 in %016X indicating objectNumber containing logSegmentRecWrapper.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               logSegmentRecWrapper.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating length of               logSegmentRecWrapper.bPlusTree   Root Node
-	// ' '
-	// uint64 in %016X indicating objectNumber containing bPlusTreeObjectWrapper.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating offset of               bPlusTreeObjectWrapper.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating length of               bPlusTreeObjectWrapper.bPlusTree Root Node
-	// ' '
-	// uint64 in %016X indicating reservedToNonce
-
-	checkpointHeaderVersion2
-	// uint64 in %016X indicating checkpointHeaderVersion2
-	// ' '
-	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
-	// ' '
-	// uint64 in %016X indicating length of               checkpoint record at tail of object
-	// ' '
-	// uint64 in %016X indicating reservedToNonce
-)
-
-type checkpointHeaderV1Struct struct {
-	InodeRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
-	InodeRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
-	InodeRecBPlusTreeObjectLength        uint64 // ...and length if that root node
-	LogSegmentRecBPlusTreeObjectNumber   uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
-	LogSegmentRecBPlusTreeObjectOffset   uint64 // ...and offset into the Object where root starts
-	LogSegmentRecBPlusTreeObjectLength   uint64 // ...and length if that root node
-	BPlusTreeObjectBPlusTreeObjectNumber uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
-	BPlusTreeObjectBPlusTreeObjectOffset uint64 // ...and offset into the Object where root starts
-	BPlusTreeObjectBPlusTreeObjectLength uint64 // ...and length if that root node
-	ReservedToNonce                      uint64 // highest nonce value reserved
-}
-
-type checkpointHeaderV2Struct struct {
-	CheckpointObjectTrailerV2StructObjectNumber uint64 // checkpointObjectTrailerV2Struct found at "tail" of object
-	CheckpointObjectTrailerV2StructObjectLength uint64 // this length includes the three B+Tree "layouts" appended
-	ReservedToNonce                             uint64 // highest nonce value reserved
-}
-
-type checkpointObjectTrailerV2Struct struct {
-	InodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
-	InodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
-	InodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
-	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV2Struct
-	LogSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
-	LogSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
-	LogSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
-	LogSegmentRecBPlusTreeLayoutNumElements   uint64 // elements immediately follow inodeRecBPlusTreeLayout
-	BPlusTreeObjectBPlusTreeObjectNumber      uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
-	BPlusTreeObjectBPlusTreeObjectOffset      uint64 // ...and offset into the Object where root starts
-	BPlusTreeObjectBPlusTreeObjectLength      uint64 // ...and length if that root node
-	BPlusTreeObjectBPlusTreeLayoutNumElements uint64 // elements immediately follow logSegmentRecBPlusTreeLayout
-	// inodeRecBPlusTreeLayout        serialized as [inodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
-	// logSegmentBPlusTreeLayout      serialized as [logSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
-	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-}
-
-type elementOfBPlusTreeLayoutStruct struct {
-	ObjectNumber uint64
-	ObjectBytes  uint64
-}
-
 const (
 	inodeRecBPlusTreeWrapperType uint32 = iota
 	logSegmentRecBPlusTreeWrapperType
@@ -115,12 +37,6 @@ type bPlusTreeWrapperStruct struct {
 	volume      *volumeStruct
 	wrapperType uint32 // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
 	bPlusTree   sortedmap.BPlusTree
-}
-
-type checkpointRequestStruct struct {
-	waitGroup        sync.WaitGroup
-	err              error
-	exitOnCompletion bool
 }
 
 type volumeStruct struct {
@@ -135,29 +51,37 @@ type volumeStruct struct {
 	checkpointContainerName          string
 	checkpointContainerStoragePolicy string
 	checkpointInterval               time.Duration
-	checkpointFlushedData            bool
-	checkpointChunkedPutContext      swiftclient.ChunkedPutContext
-	checkpointDoneWaitGroup          *sync.WaitGroup
-	nextNonce                        uint64
-	checkpointRequestChan            chan *checkpointRequestStruct
-	checkpointHeaderVersion          uint64
-	checkpointHeader                 *checkpointHeaderV2Struct
-	checkpointObjectTrailer          *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                  *bPlusTreeWrapperStruct
-	logSegmentRecWrapper             *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper           *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout          sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout     sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout   sortedmap.LayoutReport
+	replayLogFileName                string   // if != "", use replay log to reduce RPO to zero
+	replayLogFile                    *os.File //   opened on first Put or Delete after checkpoint
+	//                                             closed/deleted on successful checkpoint
+	defaultReplayLogWriteBuffer    []byte //       used for O_DIRECT writes to replay log
+	checkpointFlushedData          bool
+	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
+	checkpointDoneWaitGroup        *sync.WaitGroup
+	nextNonce                      uint64
+	checkpointRequestChan          chan *checkpointRequestStruct
+	checkpointHeaderVersion        uint64
+	checkpointHeader               *checkpointHeaderV2Struct
+	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
+	inodeRecWrapper                *bPlusTreeWrapperStruct
+	logSegmentRecWrapper           *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
+	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
 }
 
 type globalsStruct struct {
-	checkpointObjectTrailerStructSize  uint64
-	elementOfBPlusTreeLayoutStructSize uint64
-	inodeRecCache                      sortedmap.BPlusTreeCache
-	logSegmentRecCache                 sortedmap.BPlusTreeCache
-	bPlusTreeObjectCache               sortedmap.BPlusTreeCache
-	volumeMap                          map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+	crc64ECMATable                          *crc64.Table
+	uint64Size                              uint64
+	checkpointHeaderV2StructSize            uint64
+	checkpointObjectTrailerStructSize       uint64
+	elementOfBPlusTreeLayoutStructSize      uint64
+	replayLogTransactionFixedPartStructSize uint64
+	inodeRecCache                           sortedmap.BPlusTreeCache
+	logSegmentRecCache                      sortedmap.BPlusTreeCache
+	bPlusTreeObjectCache                    sortedmap.BPlusTreeCache
+	volumeMap                               map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
 var globals globalsStruct
@@ -165,38 +89,49 @@ var globals globalsStruct
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		bPlusTreeObjectCacheEvictHighLimit   uint64
-		bPlusTreeObjectCacheEvictLowLimit    uint64
-		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
-		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
-		inodeRecCacheEvictHighLimit          uint64
-		inodeRecCacheEvictLowLimit           uint64
-		logSegmentRecCacheEvictHighLimit     uint64
-		logSegmentRecCacheEvictLowLimit      uint64
-		primaryPeerList                      []string
-		trailingByteSlice                    bool
-		volumeName                           string
-		volumeList                           []string
-		whoAmI                               string
+		bPlusTreeObjectCacheEvictHighLimit       uint64
+		bPlusTreeObjectCacheEvictLowLimit        uint64
+		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
+		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
+		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
+		dummyUint64                              uint64
+		inodeRecCacheEvictHighLimit              uint64
+		inodeRecCacheEvictLowLimit               uint64
+		logSegmentRecCacheEvictHighLimit         uint64
+		logSegmentRecCacheEvictLowLimit          uint64
+		primaryPeerList                          []string
+		volumeName                               string
+		volumeList                               []string
+		whoAmI                                   string
 	)
 
-	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
+	// Pre-compute crc64 ECMA Table & useful cstruct sizes
 
-	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
+
+	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
 	if nil != err {
 		return
 	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
-		return
-	}
 
-	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
 	if nil != err {
 		return
 	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
+
+	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	if nil != err {
+		return
+	}
+
+	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+
+	globals.replayLogTransactionFixedPartStructSize, _, err = cstruct.Examine(dummyReplayLogTransactionFixedPartStruct)
+	if nil != err {
 		return
 	}
 
@@ -408,28 +343,39 @@ func Down() (err error) {
 // Format runs an instance of the headhunter package for formatting a new volume
 func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		dummyCheckpointObjectTrailerV2Struct checkpointObjectTrailerV2Struct
-		dummyElementOfBPlusTreeLayoutStruct  elementOfBPlusTreeLayoutStruct
-		trailingByteSlice                    bool
+		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
+		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
+		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
+		dummyUint64                              uint64
 	)
 
-	// Pre-compute sizeof(checkpointObjectTrailerV2Struct) & sizeof(elementOfBPlusTreeLayoutStruct)
+	// Pre-compute crc64 ECMA Table & useful cstruct sizes
 
-	globals.checkpointObjectTrailerStructSize, trailingByteSlice, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
+
+	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
 	if nil != err {
 		return
 	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(checkpointObjectTrailerV2Struct) returned trailingByteSlice == true")
-		return
-	}
 
-	globals.elementOfBPlusTreeLayoutStructSize, trailingByteSlice, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
 	if nil != err {
 		return
 	}
-	if trailingByteSlice {
-		err = fmt.Errorf("Logic error: cstruct.Examine(elementOfBPlusTreeLayoutStruct) returned trailingByteSlice == true")
+
+	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	if nil != err {
+		return
+	}
+
+	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+
+	globals.replayLogTransactionFixedPartStructSize, _, err = cstruct.Examine(dummyReplayLogTransactionFixedPartStruct)
+	if nil != err {
 		return
 	}
 
@@ -515,6 +461,15 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volume.checkpointInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "CheckpointInterval")
 	if nil != err {
 		return
+	}
+
+	volume.replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
+	if nil == err {
+		// Provision aligned buffer used to write to Replay Log
+		volume.defaultReplayLogWriteBuffer = constructReplayLogWriteBuffer(replayLogWriteBufferDefaultSize)
+	} else {
+		// Disable Replay Log
+		volume.replayLogFileName = ""
 	}
 
 	err = volume.getCheckpoint(autoFormat)

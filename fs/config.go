@@ -36,6 +36,7 @@ type mountStruct struct {
 type volumeStruct struct {
 	sync.Mutex
 	volumeName               string
+	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
@@ -59,6 +60,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		flowControlName        string
 		flowControlSectionName string
 		primaryPeerList        []string
+		replayLogFileName      string
 		volume                 *volumeStruct
 		volumeList             []string
 		volumeName             string
@@ -98,6 +100,14 @@ func Up(confMap conf.ConfMap) (err error) {
 					inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
 					mountList:                make([]MountID, 0),
 				}
+
+				replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
+				if nil == err {
+					volume.doCheckpointPerFlush = ("" == replayLogFileName)
+				} else {
+					volume.doCheckpointPerFlush = true
+				}
+				logger.Infof("Checkpoint per Flush for volume %v is %v", volume.volumeName, volume.doCheckpointPerFlush)
 
 				flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 				if nil != err {
@@ -214,6 +224,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		flowControlSectionName string
 		ok                     bool
 		primaryPeerList        []string
+		replayLogFileName      string
 		volume                 *volumeStruct
 		volumeList             []string
 		volumeName             string
@@ -257,6 +268,13 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						FLockMap:                 make(map[inode.InodeNumber]*list.List),
 						inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
 						mountList:                make([]MountID, 0),
+					}
+
+					replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
+					if nil == err {
+						volume.doCheckpointPerFlush = ("" == replayLogFileName)
+					} else {
+						volume.doCheckpointPerFlush = true
 					}
 
 					flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")

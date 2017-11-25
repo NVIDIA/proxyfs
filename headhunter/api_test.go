@@ -2,6 +2,8 @@ package headhunter
 
 import (
 	"bytes"
+	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -128,10 +130,28 @@ func TestHeadHunterAPI(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	// Construct replayLogFileName to use as Volume:TestVolume.ReplayLogFileName
+
+	replayLogFile, err := ioutil.TempFile("", "TestVolume_Replay_Log_")
 	if nil != err {
-		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+		t.Fatalf("ioutil.TempFile() returned error: %v", err)
 	}
+
+	replayLogFileName := replayLogFile.Name()
+
+	err = replayLogFile.Close()
+	if nil != err {
+		t.Fatalf("replayLogFile.Close() returned error: %v", err)
+	}
+
+	err = os.Remove(replayLogFileName)
+	if nil != err {
+		t.Fatalf("os.Remove(replayLogFileName) returned error: %v", err)
+	}
+
+	confStrings = append(confStrings, "Volume:TestVolume.ReplayLogFileName="+replayLogFileName)
+
+	// Launch a ramswift instance
 
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
@@ -141,6 +161,13 @@ func TestHeadHunterAPI(t *testing.T) {
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
 	}
+
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if nil != err {
+		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+	}
+
+	// Perform test
 
 	err = logger.Up(confMap)
 	if nil != err {
@@ -278,6 +305,17 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("headhunter.Down() [case 2] returned error: %v", err)
 	}
 
+	err = os.Remove(replayLogFileName)
+	if nil == err {
+		t.Fatal("os.Remove(replayLogFileName) should not have succeeded")
+	} else {
+		if os.IsNotExist(err) {
+			// This is what we expect
+		} else {
+			t.Fatalf("os.Remove(replayLogFileName) returned unexpected error: %v", err)
+		}
+	}
+
 	err = swiftclient.Down()
 	if nil != err {
 		t.Fatalf("swiftclient.Down() [case 2] returned error: %v", err)
@@ -297,6 +335,8 @@ func TestHeadHunterAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
+
+	// Ensure Down()
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
 
