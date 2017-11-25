@@ -304,6 +304,10 @@ ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
 yum -y install bc gawk
 
+# Install ssh helper
+
+yum -y install sshpass
+
 # All done
 
 echo "SAIO for ProxyFS provisioned"

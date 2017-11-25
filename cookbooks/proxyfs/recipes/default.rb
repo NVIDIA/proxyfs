@@ -238,6 +238,10 @@ if node[:platform_family].include?("rhel")
     "libcap",
   ]
 
+  ssh_packages = [
+    "sshpass",
+  ]
+
   nfs_packages = [
     "nfs-utils"
   ]
@@ -273,6 +277,10 @@ else # assume debian
     "libcap2-bin",
   ]
 
+  ssh_packages = [
+    "sshpass",
+  ]
+
   nfs_packages = [
     "nfs-kernel-server",
     "nfs-common"
@@ -287,6 +295,7 @@ end
 
 packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages
 packages += wireshark_packages if is_dev
+packages += ssh_packages if is_dev
 
 packages.each do |pkg|
   package pkg do
