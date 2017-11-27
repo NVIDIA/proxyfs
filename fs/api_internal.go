@@ -14,6 +14,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -305,7 +306,27 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
+func (mS *mountStruct) doInlineCheckpoint() {
+	var (
+		err error
+	)
+
+	if nil == mS.headhunterVolumeHandle {
+		mS.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(mS.volStruct.volumeName)
+		if nil != err {
+			logger.Fatalf("fs.doInlineCheckpoint() call to headhunter.FetchVolumeHandle() failed: %v", err)
+		}
+	}
+
+	err = mS.headhunterVolumeHandle.DoCheckpoint()
+	if nil != err {
+		logger.Fatalf("fs.doInlineCheckpoint() call to headhunter.DoCheckpoint() failed: %v", err)
+	}
+}
+
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
+	defer mS.doInlineCheckpoint()
+
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return

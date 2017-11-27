@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -26,9 +27,10 @@ type inFlightFileInodeDataStruct struct {
 const inFlightFileInodeDataControlBuffering = 100
 
 type mountStruct struct {
-	id        MountID
-	options   MountOptions
-	volStruct *volumeStruct
+	id                     MountID
+	options                MountOptions
+	volStruct              *volumeStruct
+	headhunterVolumeHandle headhunter.VolumeHandle
 }
 
 type volumeStruct struct {
