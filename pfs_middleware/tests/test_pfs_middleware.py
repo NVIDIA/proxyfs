@@ -1850,8 +1850,10 @@ class TestContainerPost(BaseMiddlewareTest):
             "/v1/AUTH_test/new-con",
             environ={"REQUEST_METHOD": "POST"},
             headers={"X-Container-Meta-One-Fish": "two fish"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -1895,8 +1897,10 @@ class TestContainerPut(BaseMiddlewareTest):
             "/v1/AUTH_test/new-con",
             environ={"REQUEST_METHOD": "PUT"},
             headers={"X-Container-Meta-Red-Fish": "blue fish"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("201 Created", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -1991,8 +1995,10 @@ class TestContainerPut(BaseMiddlewareTest):
             "/v1/AUTH_test/new-con",
             environ={"REQUEST_METHOD": "PUT"},
             headers={"X-Container-Meta-Red-Fish": "blue fish"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("202 Accepted", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -2058,12 +2064,14 @@ class TestContainerDelete(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/empty-con",
                                  environ={"REQUEST_METHOD": "DELETE"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
         self.assertNotIn("Accept-Ranges", req.headers)
         self.assertEqual(2, len(self.fake_rpc.calls))
         self.assertEqual("/v1/AUTH_test/empty-con",
                          self.fake_rpc.calls[1][1][0]["VirtPath"])
+        cic.assert_called()
 
     def test_special_chars(self):
         def mock_RpcDelete(_):

@@ -97,7 +97,8 @@ from . import pfs_errno, rpc, swift_code, utils
 # Were we to make an account HEAD request instead of calling
 # get_account_info, we'd lose the benefit of Swift's caching. This would
 # slow down requests *a lot*. Same for containers.
-from swift.proxy.controllers.base import get_account_info, get_container_info
+from swift.proxy.controllers.base import (
+    get_account_info, get_container_info, clear_info_cache)
 
 # Plain WSGI is annoying to work with, and nobody wants a dependency on
 # webob.
@@ -703,7 +704,6 @@ class PfsMiddleware(object):
 
                 if req.method in ('GET', 'HEAD'):
                     resp.headers["Accept-Ranges"] = "bytes"
-
                 return resp
 
         # Provide some top-level exception handling and logging for
@@ -928,6 +928,8 @@ class PfsMiddleware(object):
                 head_response)
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
+                clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                                 container=ctx.container_name)
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
                     "",
@@ -941,6 +943,8 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.put_container_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -967,6 +971,8 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        clear_info_cache(None, req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.post_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -975,6 +981,8 @@ class PfsMiddleware(object):
     def delete_container(self, ctx):
         # Turns out these are the same RPC with the same error handling, so
         # why not?
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         return self.delete_object(ctx)
 
     def _get_listing_limit(self, req, default_limit):
