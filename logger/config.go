@@ -10,6 +10,10 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 )
 
+// RFC3339 format with microsecond precision
+//
+const timeFormat = "2006-01-02T15:04:05.000000Z07:00"
+
 var logFile *os.File = nil
 
 // multiWriter groups multiple io.Writers into a single io.Writer. (Our
@@ -56,7 +60,7 @@ func addLogTarget(writer io.Writer) {
 }
 
 func up(confMap conf.ConfMap) (err error) {
-	log.SetFormatter(&log.TextFormatter{DisableColors: true})
+	log.SetFormatter(&log.TextFormatter{DisableColors: true, TimestampFormat: timeFormat})
 
 	// Fetch log file info, if provided
 	logFilePath, _ := confMap.FetchOptionValueString("Logging", "LogFilePath")
