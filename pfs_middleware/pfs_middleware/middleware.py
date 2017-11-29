@@ -958,7 +958,8 @@ class PfsMiddleware(object):
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
                     "",
-                    serialize_metadata(new_metadata)))
+                    serialize_metadata({
+                        k: v for k, v in new_metadata.items() if v})))
                 return swob.HTTPCreated(request=req)
             else:
                 raise
