@@ -102,7 +102,7 @@ from swift.proxy.controllers.base import (
 
 # Plain WSGI is annoying to work with, and nobody wants a dependency on
 # webob.
-from swift.common import swob
+from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
@@ -641,7 +641,7 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc:
+        if not acc or not constraints.valid_api_version(vrs):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
