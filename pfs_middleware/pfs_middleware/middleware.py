@@ -154,6 +154,17 @@ CONTAINER_HEADERS_WE_LIE_ABOUT = {
     "X-Container-Bytes-Used": "0",
 }
 
+SWIFT_OWNER_HEADERS = {
+    "X-Container-Read",
+    "X-Container-Write",
+    "X-Container-Sync-Key",
+    "X-Container-Sync-To",
+    "X-Account-Meta-Temp-Url-Key",
+    "X-Account-Meta-Temp-Url-Key-2",
+    "X-Container-Meta-Temp-Url-Key",
+    "X-Container-Meta-Temp-Url-Key-2",
+    "X-Account-Access-Control"}
+
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 
@@ -370,27 +381,36 @@ def extract_object_metadata_from_headers(headers):
     return meta_headers
 
 
-def extract_container_metadata_from_headers(headers):
+def extract_container_metadata_from_headers(req):
     """
-    Find and return the key/value pairs containing object metadata.
+    Find and return the key/value pairs containing container metadata.
 
-    This tries to do the same thing as the Swift object server: save only
+    This tries to do the same thing as the Swift container server: save only
     relevant headers. If the user sends in "X-Fungus-Amungus: shroomy" in
     the PUT request's headers, we'll ignore it, just like plain old Swift
     would.
 
-    :param headers: request headers (a dictionary)
+    :param req: a swob Request
 
-    :returns: dictionary containing object-metadata headers
+    :returns: dictionary containing container-metadata headers
     """
     meta_headers = {}
-    for header, value in headers.items():
+    for header, value in req.headers.items():
         header = header.title()
 
-        if (header.startswith("X-Container-Meta-") or
+        if ((header.startswith("X-Container-Meta-") or
                 header.startswith("X-Container-Sysmeta-") or
-                header in SPECIAL_CONTAINER_METADATA_HEADERS):
+                header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                (req.environ.get('swift_owner', False) or
+                 header not in SWIFT_OWNER_HEADERS)):
             meta_headers[header] = value
+        if header.startswith("X-Remove-"):
+            header = header.replace("-Remove", "", 1)
+            if ((header.startswith("X-Container-Meta-") or
+                    header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                    (req.environ.get('swift_owner', False) or
+                     header not in SWIFT_OWNER_HEADERS)):
+                meta_headers[header] = ""
     return meta_headers
 
 
@@ -697,13 +717,18 @@ class PfsMiddleware(object):
                     resp = self.get_account(ctx)
                 elif method == 'HEAD':
                     resp = self.head_account(ctx)
-                # account HEAD, PUT, POST, and DELETE are just passed
+                # account PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
                     return self.app
 
                 if req.method in ('GET', 'HEAD'):
                     resp.headers["Accept-Ranges"] = "bytes"
+                if not req.environ.get('swift_owner', False):
+                    for key in SWIFT_OWNER_HEADERS:
+                        if key in resp.headers:
+                            del resp.headers[key]
+
                 return resp
 
         # Provide some top-level exception handling and logging for
@@ -907,7 +932,7 @@ class PfsMiddleware(object):
     def put_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        new_metadata = extract_container_metadata_from_headers(req)
 
         # Check name's length. The account name is checked separately (by
         # Swift, not by this middleware) and has its own limit; we are
@@ -953,7 +978,7 @@ class PfsMiddleware(object):
     def post_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        new_metadata = extract_container_metadata_from_headers(req)
 
         try:
             head_response = self.rpc_call(
