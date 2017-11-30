@@ -948,7 +948,6 @@ class PfsMiddleware(object):
         if len(container_name) > maxlen:
             return swob.HTTPBadRequest(
                 request=req,
-                content_type="text/plain",
                 body=('Container name length of %d longer than %d' %
                       (len(container_name), maxlen)))
 
