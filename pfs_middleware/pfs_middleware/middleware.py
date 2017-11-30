@@ -935,6 +935,9 @@ class PfsMiddleware(object):
     def put_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
         new_metadata = extract_container_metadata_from_headers(req)
 
         # Check name's length. The account name is checked separately (by
@@ -982,6 +985,9 @@ class PfsMiddleware(object):
     def post_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
         new_metadata = extract_container_metadata_from_headers(req)
 
         try:
@@ -999,6 +1005,16 @@ class PfsMiddleware(object):
         merged_metadata = merge_container_metadata(
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
+
+        # Check that we're still within overall limits
+        req.headers.clear()
+        req.headers.update(merged_metadata)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        # reset it...
+        req.headers.clear()
+        req.headers.update(new_metadata)
 
         clear_info_cache(None, req.environ, ctx.account_name,
                          container=ctx.container_name)
