@@ -283,14 +283,19 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 func objectGetWithRetry(accountName string, containerName string, objectName string,
 	offset uint64, length uint64) ([]byte, error) {
 
-	// request is a function that, through the miracle of closure, calls
-	// objectGet() with the paramaters passed to this function, stashes the
-	// relevant return values into the local variables of this function, and
-	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
 		buf []byte
 		err error
 	)
+	logger.Tracef("swiftclient.ObjectGet() entry: account '%s' container %s  object %s  off %d  len %d",
+		accountName, containerName, objectName, offset, length)
+	defer logger.Tracef("swiftclient.ObjectGet() return: account '%s' container %s  object %s  off %d  len %d",
+		accountName, containerName, objectName, offset, length)
+
+	// request is a function that, through the miracle of closure, calls
+	// objectGet() with the paramaters passed to this function, stashes the
+	// relevant return values into the local variables of this function, and
+	// then returns err and whether it is retriable to RequestWithRetry()
 	request := func() (bool, error) {
 		var err error
 		buf, err = objectGet(accountName, containerName, objectName, offset, length)
@@ -725,14 +730,21 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 }
 
 func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string) (*chunkedPutContextStruct, error) {
+
+	var (
+		chunkedPutContext *chunkedPutContextStruct
+		err               error
+	)
+	logger.Tracef("swiftclient.ObjectFetchChunkedPutContext() entry: account '%s' container %s  object %s",
+		accountName, containerName, objectName)
+	defer logger.Tracef("swiftclient.ObjectFetchChunkedPutContext() return: account '%s' container %s  object %s",
+		accountName, containerName, objectName)
+
 	// request is a function that, through the miracle of closure, calls
 	// objectFetchChunkedPutContext() with the paramaters passed to this
 	// function, stashes the relevant return values into the local variables of
 	// this function, and then returns err and whether it is retriable to
 	// RequestWithRetry()
-	var (
-		chunkedPutContext *chunkedPutContextStruct
-	)
 	request := func() (bool, error) {
 		var err error
 		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName)
@@ -746,7 +758,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 			retryCnt:        &stats.SwiftObjFetchPutCtxtRetryOps,
 			retrySuccessCnt: &stats.SwiftObjFetchPutCtxtRetrySuccessOps}
 	)
-	err := retryObj.RequestWithRetry(request, &opname, &statnm)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return chunkedPutContext, err
 }
 
@@ -808,6 +820,11 @@ func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, e
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
+
+	logger.Tracef("swiftclient.chunkedPutContext.Close() entry: account '%s'  container %s  object %s",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+	defer logger.Tracef("swiftclient.chunkedPutContext.Close() return: account '%s'  container %s  object %s",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 
 	err = chunkedPutContext.closeHelper()
 	if nil == err {
@@ -933,6 +950,14 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(offset uint64, length uin
 		ok                  bool
 		readLimitOffset     uint64
 	)
+	logger.Tracef("swiftclient.chunkedPutContext.Read() entry: account '%s' container %s  object %s"+
+		"  off %d  len %d",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName,
+		offset, length)
+	defer logger.Tracef("swiftclient.chunkedPutContext.Read() return: account '%s' container %s  object %s"+
+		"  off %d  len %d",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName,
+		offset, length)
 
 	readLimitOffset = offset + length
 
@@ -1163,6 +1188,15 @@ var (
 // error, SendChunk() also cleans up the TCP connection.
 //
 func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err error) {
+
+	logger.Tracef("swiftclient.chunkedPutContext.SendChunk() entry: account '%s' container %s  object %s"+
+		"  off %d  len %d",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName,
+		chunkedPutContext.bytesPut, len(buf))
+	defer logger.Tracef("swiftclient.chunkedPutContext.SendChunk() entry: account '%s' container %s  object %s"+
+		"  off %d  len %d",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName,
+		chunkedPutContext.bytesPut, len(buf))
 
 	chunkedPutContext.Lock()
 	sendChunkCnt += 1
