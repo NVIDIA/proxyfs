@@ -276,6 +276,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					} else {
 						volume.doCheckpointPerFlush = true
 					}
+					logger.Infof("Checkpoint per Flush for volume %v is %v", volume.volumeName, volume.doCheckpointPerFlush)
 
 					flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
 					if nil != err {
