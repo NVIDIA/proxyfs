@@ -609,7 +609,7 @@ func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (li
 
 		for bufCurrentPosition < contentLength {
 			if '\n' == buf[bufCurrentPosition] {
-				if 2 > (bufCurrentPosition - bufLineStartPosition) {
+				if bufCurrentPosition == bufLineStartPosition {
 					err = fmt.Errorf("readHTTPPayloadLines() unexpectedly found an empty line in Payload")
 					return
 				}
