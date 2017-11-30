@@ -1315,17 +1315,47 @@ class TestContainerHead(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
 
-    def test_meta(self):
-        self.serialized_container_metadata = json.dumps({
+    def _check_meta(self, expected_headers, swift_owner=False):
+        container_metadata = {
+            "X-Container-Read": "xcr",
+            "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Container-Meta-Temp-Url-Key": "tuk",
+            "X-Container-Meta-Temp-Url-Key-2": "tuk2",
             "X-Container-Sysmeta-Fish": "cod",
-            "X-Container-Meta-Fish": "trout"})
+            "X-Container-Meta-Fish": "trout"}
+        self.serialized_container_metadata = json.dumps(container_metadata)
 
         req = swob.Request.blank("/v1/AUTH_test/a-container",
-                                 environ={"REQUEST_METHOD": "HEAD"})
+                                 environ={"REQUEST_METHOD": "HEAD",
+                                          "swift_owner": swift_owner})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
-        self.assertEqual(headers["X-Container-Sysmeta-Fish"], "cod")
-        self.assertEqual(headers["X-Container-Meta-Fish"], "trout")
+        for k, v in expected_headers.items():
+            self.assertIn(k, headers)
+            self.assertEqual(v, headers[k], "Expected %r but got %r for %r" %
+                             (v, headers[k], v))
+        for k in container_metadata:
+            self.assertFalse(k in headers and k not in expected_headers,
+                             "Found unexpected header %r" % k)
+
+    def test_meta_swift_owner(self):
+        self._check_meta({
+            "X-Container-Read": "xcr",
+            "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Container-Meta-Temp-Url-Key": "tuk",
+            "X-Container-Meta-Temp-Url-Key-2": "tuk2",
+            "X-Container-Sysmeta-Fish": "cod",
+            "X-Container-Meta-Fish": "trout"},
+            swift_owner=True)
+
+    def test_meta_not_swift_owner(self):
+        self._check_meta({
+            "X-Container-Sysmeta-Fish": "cod",
+            "X-Container-Meta-Fish": "trout"})
 
     def test_not_found(self):
         def mock_RpcHead(head_container_req):
@@ -1458,11 +1488,20 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
-    def test_metadata(self):
-        self.serialized_container_metadata = json.dumps({
+    def _check_metadata(self, expected_headers, swift_owner=False):
+        container_metadata = {
+            "X-Container-Read": "xcr",
+            "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Container-Meta-Temp-Url-Key": "tuk",
+            "X-Container-Meta-Temp-Url-Key-2": "tuk2",
             "X-Container-Sysmeta-Fish": "tilefish",
-            "X-Container-Meta-Fish": "haddock"})
-        req = swob.Request.blank('/v1/AUTH_test/a-container')
+            "X-Container-Meta-Fish": "haddock"}
+        self.serialized_container_metadata = json.dumps(container_metadata)
+        req = swob.Request.blank('/v1/AUTH_test/a-container',
+                                 environ={"REQUEST_METHOD": "GET",
+                                          "swift_owner": swift_owner})
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
@@ -1473,8 +1512,30 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["X-Timestamp"], "1510790796.07604")
         self.assertEqual(headers["Last-Modified"],
                          "Thu, 16 Nov 2017 00:06:37 GMT")
-        self.assertEqual(headers["X-Container-Sysmeta-Fish"], "tilefish")
-        self.assertEqual(headers["X-Container-Meta-Fish"], "haddock")
+        for k, v in expected_headers.items():
+            self.assertIn(k, headers)
+            self.assertEqual(v, headers[k], "Expected %r but got %r for %r" %
+                             (v, headers[k], v))
+        for k in container_metadata:
+            self.assertFalse(k in headers and k not in expected_headers,
+                             "Found unexpected header %r" % k)
+
+    def test_metadata_swift_owner(self):
+        self._check_metadata({
+            "X-Container-Read": "xcr",
+            "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Container-Meta-Temp-Url-Key": "tuk",
+            "X-Container-Meta-Temp-Url-Key-2": "tuk2",
+            "X-Container-Sysmeta-Fish": "tilefish",
+            "X-Container-Meta-Fish": "haddock"},
+            swift_owner=True)
+
+    def test_metadata_not_swift_owner(self):
+        self._check_metadata({
+            "X-Container-Sysmeta-Fish": "tilefish",
+            "X-Container-Meta-Fish": "haddock"})
 
     def test_bogus_metadata(self):
         self.serialized_container_metadata = "{<xml?"
@@ -1850,8 +1911,10 @@ class TestContainerPost(BaseMiddlewareTest):
             "/v1/AUTH_test/new-con",
             environ={"REQUEST_METHOD": "POST"},
             headers={"X-Container-Meta-One-Fish": "two fish"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -1895,8 +1958,10 @@ class TestContainerPut(BaseMiddlewareTest):
             "/v1/AUTH_test/new-con",
             environ={"REQUEST_METHOD": "PUT"},
             headers={"X-Container-Meta-Red-Fish": "blue fish"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("201 Created", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -1967,10 +2032,15 @@ class TestContainerPut(BaseMiddlewareTest):
         status, _, _ = self.call_pfs(req)
         self.assertEqual("400 Bad Request", status)
 
-    def test_existing_container(self):
+    def _check_existing_container(self, req_headers, expected_meta,
+                                  swift_owner=False):
         old_meta = json.dumps({
             "X-Container-Read": "xcr",
             "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Container-Meta-Temp-Url-Key": "tuk",
+            "X-Container-Meta-Temp-Url-Key-2": "tuk2",
             "X-Container-Meta-Red-Fish": "dead fish"})
 
         def mock_RpcHead(_):
@@ -1989,10 +2059,12 @@ class TestContainerPut(BaseMiddlewareTest):
 
         req = swob.Request.blank(
             "/v1/AUTH_test/new-con",
-            environ={"REQUEST_METHOD": "PUT"},
-            headers={"X-Container-Meta-Red-Fish": "blue fish"})
-        status, _, _ = self.call_pfs(req)
+            environ={"REQUEST_METHOD": "PUT", 'swift_owner': swift_owner},
+            headers=req_headers)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("202 Accepted", status)
+        cic.assert_called()
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(3, len(rpc_calls))
@@ -2010,13 +2082,55 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
         self.assertEqual(base64.b64decode(args[0]["OldMetadata"]), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetadata"]))
-        self.assertEqual(new_meta["X-Container-Meta-Red-Fish"], "blue fish")
-        self.assertEqual(new_meta["X-Container-Read"], "xcr")
-        self.assertEqual(new_meta["X-Container-Write"], "xcw")
+        self.assertEqual(expected_meta, new_meta)
 
-    def test_metadata_removal(self):
+    def test_existing_container_swift_owner(self):
+        self._check_existing_container(
+            {"X-Container-Read": "xcr-new",
+             "X-Container-Write": "xcw-new",
+             "X-Container-Sync-Key": "sync-key-new",
+             "X-Container-Sync-To": "sync-to-new",
+             "X-Container-Meta-Temp-Url-Key": "tuk-new",
+             "X-Container-Meta-Temp-Url-Key-2": "tuk2-new",
+             "X-Container-Meta-Red-Fish": "blue fish"},
+            {"X-Container-Read": "xcr-new",
+             "X-Container-Write": "xcw-new",
+             "X-Container-Sync-Key": "sync-key-new",
+             "X-Container-Sync-To": "sync-to-new",
+             "X-Container-Meta-Temp-Url-Key": "tuk-new",
+             "X-Container-Meta-Temp-Url-Key-2": "tuk2-new",
+             "X-Container-Meta-Red-Fish": "blue fish"},
+            swift_owner=True
+        )
+
+    def test_existing_container_not_swift_owner(self):
+        self._check_existing_container(
+            {"X-Container-Read": "xcr-new",
+             "X-Container-Write": "xcw-new",
+             "X-Container-Sync-Key": "sync-key-new",
+             "X-Container-Sync-To": "sync-to-new",
+             "X-Container-Meta-Temp-Url-Key": "tuk-new",
+             "X-Container-Meta-Temp-Url-Key-2": "tuk2-new",
+             "X-Container-Meta-Red-Fish": "blue fish"},
+            {"X-Container-Read": "xcr",
+             "X-Container-Write": "xcw",
+             "X-Container-Sync-Key": "sync-key",
+             "X-Container-Sync-To": "sync-to",
+             "X-Container-Meta-Temp-Url-Key": "tuk",
+             "X-Container-Meta-Temp-Url-Key-2": "tuk2",
+             "X-Container-Meta-Red-Fish": "blue fish"}
+        )
+
+    def _check_metadata_removal(self, headers, expected_meta,
+                                swift_owner=False):
         old_meta = json.dumps({
-            "X-Container-Meta-Box": "cardboard"})
+            "X-Container-Read": "xcr",
+            "X-Container-Write": "xcw",
+            "X-Container-Sync-Key": "sync-key",
+            "X-Container-Sync-To": "sync-to",
+            "X-Versions-Location": "loc",
+            "X-Container-Meta-Box": "cardboard"
+        })
 
         def mock_RpcHead(_):
             return {
@@ -2034,8 +2148,8 @@ class TestContainerPut(BaseMiddlewareTest):
 
         req = swob.Request.blank(
             "/v1/AUTH_test/new-con",
-            environ={"REQUEST_METHOD": "PUT"},
-            headers={"X-Container-Meta-Box": ""})
+            environ={"REQUEST_METHOD": "PUT", "swift_owner": swift_owner},
+            headers=headers)
         status, _, _ = self.call_pfs(req)
         self.assertEqual("202 Accepted", status)
 
@@ -2045,7 +2159,53 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
         self.assertEqual(base64.b64decode(args[0]["OldMetadata"]), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetadata"]))
-        self.assertNotIn("X-Container-Meta-Box", new_meta)
+        self.assertEqual(expected_meta, new_meta)
+
+    def test_metadata_removal_swift_owner(self):
+        self._check_metadata_removal(
+            {"X-Container-Read": "",
+             "X-Container-Write": "",
+             "X-Container-Sync-Key": "",
+             "X-Container-Sync-To": "",
+             "X-Versions-Location": "",
+             "X-Container-Meta-Box": ""},
+            {}, swift_owner=True)
+
+    def test_metadata_removal_with_remove_swift_owner(self):
+        self._check_metadata_removal(
+            {"X-Remove-Container-Read": "",
+             "X-Remove-Container-Write": "",
+             "X-Remove-Container-Sync-Key": "",
+             "X-Remove-Container-Sync-To": "",
+             "X-Remove-Versions-Location": "",
+             "X-Remove-Container-Meta-Box": ""},
+            {}, swift_owner=True)
+
+    def test_metadata_removal_not_swift_owner(self):
+        self._check_metadata_removal(
+            {"X-Container-Read": "",
+             "X-Container-Write": "",
+             "X-Container-Sync-Key": "",
+             "X-Container-Sync-To": "",
+             "X-Versions-Location": "",
+             "X-Container-Meta-Box": ""},
+            {"X-Container-Read": "xcr",
+             "X-Container-Write": "xcw",
+             "X-Container-Sync-Key": "sync-key",
+             "X-Container-Sync-To": "sync-to"})
+
+    def test_metadata_removal_with_remove_not_swift_owner(self):
+        self._check_metadata_removal(
+            {"X-Remove-Container-Read": "",
+             "X-Remove-Container-Write": "",
+             "X-Remove-Container-Sync-Key": "",
+             "X-Remove-Container-Sync-To": "",
+             "X-Remove-Versions-Location": "",
+             "X-Remove-Container-Meta-Box": ""},
+            {"X-Container-Read": "xcr",
+             "X-Container-Write": "xcw",
+             "X-Container-Sync-Key": "sync-key",
+             "X-Container-Sync-To": "sync-to"})
 
 
 class TestContainerDelete(BaseMiddlewareTest):
@@ -2058,12 +2218,14 @@ class TestContainerDelete(BaseMiddlewareTest):
 
         req = swob.Request.blank("/v1/AUTH_test/empty-con",
                                  environ={"REQUEST_METHOD": "DELETE"})
-        status, _, _ = self.call_pfs(req)
+        with mock.patch("pfs_middleware.middleware.clear_info_cache") as cic:
+            status, _, _ = self.call_pfs(req)
         self.assertEqual("204 No Content", status)
         self.assertNotIn("Accept-Ranges", req.headers)
         self.assertEqual(2, len(self.fake_rpc.calls))
         self.assertEqual("/v1/AUTH_test/empty-con",
                          self.fake_rpc.calls[1][1][0]["VirtPath"])
+        cic.assert_called()
 
     def test_special_chars(self):
         def mock_RpcDelete(_):

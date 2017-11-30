@@ -97,7 +97,8 @@ from . import pfs_errno, rpc, swift_code, utils
 # Were we to make an account HEAD request instead of calling
 # get_account_info, we'd lose the benefit of Swift's caching. This would
 # slow down requests *a lot*. Same for containers.
-from swift.proxy.controllers.base import get_account_info, get_container_info
+from swift.proxy.controllers.base import (
+    get_account_info, get_container_info, clear_info_cache)
 
 # Plain WSGI is annoying to work with, and nobody wants a dependency on
 # webob.
@@ -152,6 +153,17 @@ CONTAINER_HEADERS_WE_LIE_ABOUT = {
     "X-Container-Object-Count": "0",
     "X-Container-Bytes-Used": "0",
 }
+
+SWIFT_OWNER_HEADERS = {
+    "X-Container-Read",
+    "X-Container-Write",
+    "X-Container-Sync-Key",
+    "X-Container-Sync-To",
+    "X-Account-Meta-Temp-Url-Key",
+    "X-Account-Meta-Temp-Url-Key-2",
+    "X-Container-Meta-Temp-Url-Key",
+    "X-Container-Meta-Temp-Url-Key-2",
+    "X-Account-Access-Control"}
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
@@ -369,27 +381,36 @@ def extract_object_metadata_from_headers(headers):
     return meta_headers
 
 
-def extract_container_metadata_from_headers(headers):
+def extract_container_metadata_from_headers(req):
     """
-    Find and return the key/value pairs containing object metadata.
+    Find and return the key/value pairs containing container metadata.
 
-    This tries to do the same thing as the Swift object server: save only
+    This tries to do the same thing as the Swift container server: save only
     relevant headers. If the user sends in "X-Fungus-Amungus: shroomy" in
     the PUT request's headers, we'll ignore it, just like plain old Swift
     would.
 
-    :param headers: request headers (a dictionary)
+    :param req: a swob Request
 
-    :returns: dictionary containing object-metadata headers
+    :returns: dictionary containing container-metadata headers
     """
     meta_headers = {}
-    for header, value in headers.items():
+    for header, value in req.headers.items():
         header = header.title()
 
-        if (header.startswith("X-Container-Meta-") or
+        if ((header.startswith("X-Container-Meta-") or
                 header.startswith("X-Container-Sysmeta-") or
-                header in SPECIAL_CONTAINER_METADATA_HEADERS):
+                header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                (req.environ.get('swift_owner', False) or
+                 header not in SWIFT_OWNER_HEADERS)):
             meta_headers[header] = value
+        if header.startswith("X-Remove-"):
+            header = header.replace("-Remove", "", 1)
+            if ((header.startswith("X-Container-Meta-") or
+                    header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                    (req.environ.get('swift_owner', False) or
+                     header not in SWIFT_OWNER_HEADERS)):
+                meta_headers[header] = ""
     return meta_headers
 
 
@@ -696,13 +717,17 @@ class PfsMiddleware(object):
                     resp = self.get_account(ctx)
                 elif method == 'HEAD':
                     resp = self.head_account(ctx)
-                # account HEAD, PUT, POST, and DELETE are just passed
+                # account PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
                     return self.app
 
                 if req.method in ('GET', 'HEAD'):
                     resp.headers["Accept-Ranges"] = "bytes"
+                if not req.environ.get('swift_owner', False):
+                    for key in SWIFT_OWNER_HEADERS:
+                        if key in resp.headers:
+                            del resp.headers[key]
 
                 return resp
 
@@ -907,7 +932,7 @@ class PfsMiddleware(object):
     def put_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        new_metadata = extract_container_metadata_from_headers(req)
 
         # Check name's length. The account name is checked separately (by
         # Swift, not by this middleware) and has its own limit; we are
@@ -928,6 +953,8 @@ class PfsMiddleware(object):
                 head_response)
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
+                clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                                 container=ctx.container_name)
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
                     "",
@@ -941,6 +968,8 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.put_container_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -949,7 +978,7 @@ class PfsMiddleware(object):
     def post_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        new_metadata = extract_container_metadata_from_headers(req)
 
         try:
             head_response = self.rpc_call(
@@ -967,6 +996,8 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        clear_info_cache(None, req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.post_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -975,6 +1006,8 @@ class PfsMiddleware(object):
     def delete_container(self, ctx):
         # Turns out these are the same RPC with the same error handling, so
         # why not?
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         return self.delete_object(ctx)
 
     def _get_listing_limit(self, req, default_limit):
