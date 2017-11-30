@@ -302,6 +302,31 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(headers.get("X-Account-Sysmeta-Shipping-Class"),
                          "ultraslow")
 
+    def test_account_acl(self):
+        def do_test(acl, expected_header, swift_owner):
+            head_resp_hdrs = {'X-Account-Sysmeta-ProxyFS-Bimodal': 'true'}
+            if acl is not None:
+                head_resp_hdrs['X-Account-Sysmeta-Core-Access-Control'] = acl
+            self.app.register(
+                'HEAD', '/v1/AUTH_test', 204, head_resp_hdrs, '')
+            req = swob.Request.blank("/v1/AUTH_test",
+                                     environ={"swift_owner": swift_owner})
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, "200 OK")
+            actual_header = headers.get("X-Account-Access-Control")
+            self.assertEqual(expected_header, actual_header)
+
+        # swift_owner
+        do_test(None, None, True)
+        do_test('', None, True)
+        do_test('not a dict', None, True)
+        do_test('{"admin": ["someone"]}', '{"admin":["someone"]}', True)
+        # not swift_owner
+        do_test(None, None, False)
+        do_test('', None, False)
+        do_test('not a dict', None, False)
+        do_test('{"admin": ["someone"]}', None, False)
+
     def test_marker(self):
         req = swob.Request.blank("/v1/AUTH_test?marker=mk")
         status, headers, body = self.call_pfs(req)
