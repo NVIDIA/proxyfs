@@ -16,6 +16,7 @@ import (
 
 type physicalContainerLayoutStruct struct {
 	physicalContainerLayoutName         string
+	physicalContainerStoragePolicy      string
 	physicalContainerNamePrefix         string   // == prefix for every PhysicalContainer in this PhysicalContainerLayout
 	physicalContainerNameSlice          []string // == slice of current PhysicalContainers for this PhysicalContainerLayout
 	physicalContainerCountMax           uint64   // [<LayoutSectionName>]ContainersPerPeer
@@ -253,14 +254,12 @@ func Up(confMap conf.ConfMap) (err error) {
 		if volume.active {
 			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
-				// TODO: eventually, just return
-				volume.maxEntriesPerDirNode = 32
+				return
 			}
 
 			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxExtentsPerFileNode")
 			if nil != err {
-				// TODO: eventually, just return
-				volume.maxExtentsPerFileNode = 32
+				return
 			}
 
 			// [Case 1] For now, physicalContainerLayoutNameSlice will simply contain only defaultPhysicalContainerLayoutName
@@ -288,6 +287,11 @@ func Up(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
 				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
+
+				physicalContainerLayout.physicalContainerStoragePolicy, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerStoragePolicy")
+				if nil != err {
+					return
+				}
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {
@@ -360,11 +364,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 				if nil != err {
-					// TODO: eventually, just return
-					flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-					if nil != err {
-						return
-					}
+					return
 				}
 
 				globals.flowControlMap[flowControlName] = flowControl
@@ -389,8 +389,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
-		// TODO: eventually, just return
-		readCacheQuotaPercentage = 20
+		return
 	}
 	if 100 < readCacheQuotaPercentage {
 		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
@@ -715,11 +714,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 						flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 						if nil != err {
-							// TODO: eventually, just return
-							flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-							if nil != err {
-								return
-							}
+							return
 						}
 
 					} else {
@@ -776,16 +771,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
-				// TODO: eventually, just err = nonShadowingErr & return
-				volume.maxEntriesPerDirNode = 32
-				err = nil
+				return
 			}
 
 			volume.maxExtentsPerFileNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxExtentsPerFileNode")
 			if nil != err {
-				// TODO: eventually, just err = nonShadowingErr & return
-				volume.maxExtentsPerFileNode = 32
-				err = nil
+				return
 			}
 
 			defaultPhysicalContainerLayoutName, err = confMap.FetchOptionValueString(volumeSectionName, "DefaultPhysicalContainerLayout")
@@ -807,6 +798,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
 				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
+
+				physicalContainerLayout.physicalContainerStoragePolicy, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerStoragePolicy")
+				if nil != err {
+					return
+				}
 
 				physicalContainerLayout.physicalContainerNamePrefix, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerNamePrefix")
 				if nil != err {
@@ -879,11 +875,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 				flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheWeight")
 				if nil != err {
-					// TODO: eventually, just return
-					flowControl.readCacheWeight, err = confMap.FetchOptionValueUint64(flowControlSectionName, "ReadCacheTotalSize")
-					if nil != err {
-						return
-					}
+					return
 				}
 
 				globals.flowControlMap[flowControlName] = flowControl
@@ -905,8 +897,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
 	if nil != err {
-		// TODO: eventually, just return
-		readCacheQuotaPercentage = 20
+		return
 	}
 	if 100 < readCacheQuotaPercentage {
 		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)

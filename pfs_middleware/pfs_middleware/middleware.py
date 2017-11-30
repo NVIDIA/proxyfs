@@ -97,19 +97,22 @@ from . import pfs_errno, rpc, swift_code, utils
 # Were we to make an account HEAD request instead of calling
 # get_account_info, we'd lose the benefit of Swift's caching. This would
 # slow down requests *a lot*. Same for containers.
-from swift.proxy.controllers.base import get_account_info, get_container_info
+from swift.proxy.controllers.base import (
+    get_account_info, get_container_info, clear_info_cache)
 
 # Plain WSGI is annoying to work with, and nobody wants a dependency on
 # webob.
-from swift.common import swob
+from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
 from swift.common.utils import get_logger
 
-# There's a lot of little gotchas in building a WSGI iterable.
-from swift.common.request_helpers import SegmentedIterable
 
+# POSIX file-path limits. Taken from Linux's limits.h, which is also where
+# ProxyFS gets them.
+NAME_MAX = 255
+PATH_MAX = 4096
 
 # Used for content type of directories in container listings
 DIRECTORY_CONTENT_TYPE = "application/directory"
@@ -120,12 +123,20 @@ LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 FORBIDDEN_OBJECT_HEADERS = {"X-Delete-At", "X-Delete-After", "Etag"}
 
+ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+
+# They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
     "Content-Type",
     "Content-Disposition",
     "Content-Encoding",
     "X-Object-Manifest",
     "X-Static-Large-Object"}
+
+# These are not mutated on object POST.
+STICKY_OBJECT_METADATA_HEADERS = {
+    "X-Static-Large-Object",
+    ORIGINAL_MD5_HEADER}
 
 SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Read",
@@ -134,9 +145,27 @@ SPECIAL_CONTAINER_METADATA_HEADERS = {
     "X-Container-Sync-To",
     "X-Versions-Location"}
 
-MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
+# ProxyFS directories don't know how many objects are under them, nor how
+# many bytes each one uses. (Yes, a directory knows how many files and
+# subdirectories it contains, but that doesn't include things in those
+# subdirectories.)
+CONTAINER_HEADERS_WE_LIE_ABOUT = {
+    "X-Container-Object-Count": "0",
+    "X-Container-Bytes-Used": "0",
+}
 
-ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+SWIFT_OWNER_HEADERS = {
+    "X-Container-Read",
+    "X-Container-Write",
+    "X-Container-Sync-Key",
+    "X-Container-Sync-To",
+    "X-Account-Meta-Temp-Url-Key",
+    "X-Account-Meta-Temp-Url-Key-2",
+    "X-Container-Meta-Temp-Url-Key",
+    "X-Container-Meta-Temp-Url-Key-2",
+    "X-Account-Access-Control"}
+
+MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -294,8 +323,12 @@ def deserialize_metadata(raw_metadata):
             metadata = {}
     else:
         metadata = {}
-    return {k.encode("utf-8"): v.encode("utf-8")
-            for k, v in metadata.iteritems()}
+    encoded_metadata = {}
+    for k, v in metadata.iteritems():
+        key = unicode(k).encode("utf-8") if isinstance(k, basestring) else k
+        value = unicode(v).encode("utf-8") if isinstance(v, basestring) else v
+        encoded_metadata[key] = value
+    return encoded_metadata
 
 
 serialize_metadata = json.dumps
@@ -305,14 +338,23 @@ def merge_container_metadata(old, new):
     merged = old.copy()
     for k, v in new.items():
         merged[k] = v
-    return merged
+    return {k: v for k, v in merged.items() if v}
 
 
 def merge_object_metadata(old, new):
     merged = new.copy()
-    if "Content-Type" in old and "Content-Type" not in new:
-        merged["Content-Type"] = old["Content-Type"]
-    return merged
+
+    for header, value in old.items():
+        if (header.startswith("X-Object-Sysmeta-") or
+                header in STICKY_OBJECT_METADATA_HEADERS):
+            merged[header] = value
+
+    old_ct = old.get("Content-Type")
+    new_ct = new.get("Content-Type")
+    if old_ct is not None and new_ct is None:
+        merged["Content-Type"] = old_ct
+
+    return {k: v for k, v in merged.items() if v}
 
 
 def extract_object_metadata_from_headers(headers):
@@ -339,27 +381,36 @@ def extract_object_metadata_from_headers(headers):
     return meta_headers
 
 
-def extract_container_metadata_from_headers(headers):
+def extract_container_metadata_from_headers(req):
     """
-    Find and return the key/value pairs containing object metadata.
+    Find and return the key/value pairs containing container metadata.
 
-    This tries to do the same thing as the Swift object server: save only
+    This tries to do the same thing as the Swift container server: save only
     relevant headers. If the user sends in "X-Fungus-Amungus: shroomy" in
     the PUT request's headers, we'll ignore it, just like plain old Swift
     would.
 
-    :param headers: request headers (a dictionary)
+    :param req: a swob Request
 
-    :returns: dictionary containing object-metadata headers
+    :returns: dictionary containing container-metadata headers
     """
     meta_headers = {}
-    for header, value in headers.items():
+    for header, value in req.headers.items():
         header = header.title()
 
-        if (header.startswith("X-Container-Meta-") or
+        if ((header.startswith("X-Container-Meta-") or
                 header.startswith("X-Container-Sysmeta-") or
-                header in SPECIAL_CONTAINER_METADATA_HEADERS):
+                header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                (req.environ.get('swift_owner', False) or
+                 header not in SWIFT_OWNER_HEADERS)):
             meta_headers[header] = value
+        if header.startswith("X-Remove-"):
+            header = header.replace("-Remove", "", 1)
+            if ((header.startswith("X-Container-Meta-") or
+                    header in SPECIAL_CONTAINER_METADATA_HEADERS) and
+                    (req.environ.get('swift_owner', False) or
+                     header not in SWIFT_OWNER_HEADERS)):
+                meta_headers[header] = ""
     return meta_headers
 
 
@@ -590,10 +641,13 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc:
+        if not acc or not constraints.valid_api_version(vrs):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
+        if not constraints.check_utf8(req.path_info):
+            return swob.HTTPPreconditionFailed(
+                body='Invalid UTF8 or contains NULL')
 
         try:
             # Check account to see if this is a bimodal-access account or
@@ -639,37 +693,46 @@ class PfsMiddleware(object):
                 # Authorization succeeded; dispatch to a helper method
                 method = req.method
                 if method == 'GET' and obj:
-                    return self.get_object(ctx)
+                    resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
-                    return self.head_object(ctx)
+                    resp = self.head_object(ctx)
                 elif method == 'PUT' and obj:
-                    return self.put_object(ctx)
+                    resp = self.put_object(ctx)
                 elif method == 'POST' and obj:
-                    return self.post_object(ctx)
+                    resp = self.post_object(ctx)
                 elif method == 'DELETE' and obj:
-                    return self.delete_object(ctx)
+                    resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
-                    return self.coalesce_object(ctx)
+                    resp = self.coalesce_object(ctx)
 
                 elif method == 'GET' and con:
-                    return self.get_container(ctx)
+                    resp = self.get_container(ctx)
                 elif method == 'HEAD' and con:
-                    return self.head_container(ctx)
+                    resp = self.head_container(ctx)
                 elif method == 'PUT' and con:
-                    return self.put_container(ctx)
+                    resp = self.put_container(ctx)
                 elif method == 'POST' and con:
-                    return self.post_container(ctx)
+                    resp = self.post_container(ctx)
                 elif method == 'DELETE' and con:
-                    return self.delete_container(ctx)
+                    resp = self.delete_container(ctx)
 
                 elif method == 'GET':
-                    return self.get_account(ctx)
+                    resp = self.get_account(ctx)
                 elif method == 'HEAD':
-                    return self.head_account(ctx)
-                # account HEAD, PUT, POST, and DELETE are just passed
+                    resp = self.head_account(ctx)
+                # account PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
                     return self.app
+
+                if req.method in ('GET', 'HEAD'):
+                    resp.headers["Accept-Ranges"] = "bytes"
+                if not req.environ.get('swift_owner', False):
+                    for key in SWIFT_OWNER_HEADERS:
+                        if key in resp.headers:
+                            del resp.headers[key]
+
+                return resp
 
         # Provide some top-level exception handling and logging for
         # exceptional exceptions. Non-exceptional exceptions will be handled
@@ -738,21 +801,24 @@ class PfsMiddleware(object):
         #
         # We let the top-level RpcError handler catch this.
         get_account_response = self.rpc_call(ctx, get_account_request)
-        container_names = rpc.parse_get_account_response(get_account_response)
+        account_mtime, account_entries = rpc.parse_get_account_response(
+            get_account_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
-        resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
-                           request=req)
         if resp_content_type == "text/plain":
-            resp.body = self._plaintext_account_get_response(container_names)
+            body = self._plaintext_account_get_response(account_entries)
         elif resp_content_type == "application/json":
-            resp.body = self._json_account_get_response(container_names)
+            body = self._json_account_get_response(account_entries)
         elif resp_content_type.endswith("/xml"):
-            resp.body = self._xml_account_get_response(container_names,
-                                                       ctx.account_name)
+            body = self._xml_account_get_response(account_entries,
+                                                  ctx.account_name)
         else:
             raise Exception("unexpected content type %r" %
                             (resp_content_type,))
+
+        resp_class = swob.HTTPOk if body else swob.HTTPNoContent
+        resp = resp_class(content_type=resp_content_type, charset="utf-8",
+                          request=req, body=body)
 
         # For accounts, the meta/sysmeta is stored in the account DB in
         # Swift, not in ProxyFS.
@@ -764,20 +830,38 @@ class PfsMiddleware(object):
         for key, value in account_info["sysmeta"].items():
             resp.headers["X-Account-Sysmeta-" + key] = value
 
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(account_mtime)
+
+        # Pretend the object counts are 0 and that all containers have the
+        # default storage policy. Until (a) containers have some support for
+        # the X-Storage-Policy header, and (b) we get container metadata
+        # back from Server.RpcGetAccount, this is the best we can do.
+        policy = self._default_storage_policy()
+        resp.headers["X-Account-Object-Count"] = "0"
+        resp.headers["X-Account-Bytes-Used"] = "0"
+        resp.headers["X-Account-Container-Count"] = str(len(account_entries))
+
+        resp.headers["X-Account-Storage-Policy-%s-Object-Count" % policy] = "0"
+        resp.headers["X-Account-Storage-Policy-%s-Bytes-Used" % policy] = "0"
+        k = "X-Account-Storage-Policy-%s-Container-Count" % policy
+        resp.headers[k] = str(len(account_entries))
+
         return resp
 
-    def _plaintext_account_get_response(self, container_names):
+    def _plaintext_account_get_response(self, account_entries):
         chunks = []
-        for container_name in container_names:
-            chunks.append(container_name)
+        for entry in account_entries:
+            chunks.append(entry["Basename"])
             chunks.append("\n")
         return ''.join(chunks)
 
-    def _json_account_get_response(self, container_names):
+    def _json_account_get_response(self, account_entries):
         json_entries = []
-        for name in container_names:
+        for entry in account_entries:
             json_entry = {
-                "name": name,
+                "name": entry["Basename"],
+                "last_modified": last_modified_from_epoch_ns(
+                    entry["ModificationTime"]),
                 # proxyfsd can't compute these without recursively walking
                 # the entire filesystem, so rather than have a built-in DoS
                 # attack, we just put out zeros here.
@@ -790,14 +874,14 @@ class PfsMiddleware(object):
             json_entries.append(json_entry)
         return json.dumps(json_entries)
 
-    def _xml_account_get_response(self, container_names, account_name):
+    def _xml_account_get_response(self, account_entries, account_name):
         root_node = ET.Element('account', name=account_name)
 
-        for container_name in container_names:
+        for entry in account_entries:
             container_node = ET.Element('container')
 
             name_node = ET.Element('name')
-            name_node.text = container_name
+            name_node.text = entry["Basename"]
             container_node.append(name_node)
 
             count_node = ET.Element('count')
@@ -807,6 +891,11 @@ class PfsMiddleware(object):
             bytes_node = ET.Element('bytes')
             bytes_node.text = '0'
             container_node.append(bytes_node)
+
+            lm_node = ET.Element('last_modified')
+            lm_node.text = last_modified_from_epoch_ns(
+                entry["ModificationTime"])
+            container_node.append(lm_node)
 
             root_node.append(container_node)
 
@@ -831,14 +920,36 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        raw_metadata, _, _, _, _, _ = rpc.parse_head_response(head_response)
+        raw_metadata, mtime_ns, _, _, _, _ = rpc.parse_head_response(
+            head_response)
         metadata = deserialize_metadata(raw_metadata)
-        return swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp = swob.HTTPNoContent(request=ctx.req, headers=metadata)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
+        resp.headers["Content-Type"] = swift_code.get_listing_content_type(
+            ctx.req)
+        resp.charset = "utf-8"
+        self._add_required_container_headers(resp)
+        return resp
 
     def put_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        new_metadata = extract_container_metadata_from_headers(req)
+
+        # Check name's length. The account name is checked separately (by
+        # Swift, not by this middleware) and has its own limit; we are
+        # concerned only with the container portion of the path.
+        _, _, container_name, _ = utils.parse_path(req.path)
+        maxlen = self._max_container_name_length()
+        if len(container_name) > maxlen:
+            return swob.HTTPBadRequest(
+                request=req,
+                body=('Container name length of %d longer than %d' %
+                      (len(container_name), maxlen)))
 
         try:
             head_response = self.rpc_call(
@@ -847,10 +958,13 @@ class PfsMiddleware(object):
                 head_response)
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
+                clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                                 container=ctx.container_name)
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
                     "",
-                    serialize_metadata(new_metadata)))
+                    serialize_metadata({
+                        k: v for k, v in new_metadata.items() if v})))
                 return swob.HTTPCreated(request=req)
             else:
                 raise
@@ -860,6 +974,8 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.put_container_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -868,7 +984,10 @@ class PfsMiddleware(object):
     def post_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
-        new_metadata = extract_container_metadata_from_headers(req.headers)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        new_metadata = extract_container_metadata_from_headers(req)
 
         try:
             head_response = self.rpc_call(
@@ -886,6 +1005,18 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
+        # Check that we're still within overall limits
+        req.headers.clear()
+        req.headers.update(merged_metadata)
+        err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        # reset it...
+        req.headers.clear()
+        req.headers.update(new_metadata)
+
+        clear_info_cache(None, req.environ, ctx.account_name,
+                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.post_request(
             container_path, raw_old_metadata, raw_merged_metadata))
 
@@ -894,6 +1025,8 @@ class PfsMiddleware(object):
     def delete_container(self, ctx):
         # Turns out these are the same RPC with the same error handling, so
         # why not?
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
         return self.delete_object(ctx)
 
     def _get_listing_limit(self, req, default_limit):
@@ -915,6 +1048,11 @@ class PfsMiddleware(object):
 
         return limit
 
+    def _max_container_name_length(self):
+        proxy_info = self._proxy_info()
+        swift_max = proxy_info["swift"]["max_container_name_length"]
+        return min(swift_max, NAME_MAX)
+
     def _default_account_listing_limit(self):
         proxy_info = self._proxy_info()
         return proxy_info["swift"]["account_listing_limit"]
@@ -923,6 +1061,13 @@ class PfsMiddleware(object):
         proxy_info = self._proxy_info()
         return proxy_info["swift"]["container_listing_limit"]
 
+    def _default_storage_policy(self):
+        proxy_info = self._proxy_info()
+        # Swift guarantees that exactly one default storage policy exists.
+        return [pol["name"]
+                for pol in proxy_info["swift"]["policies"]
+                if pol.get("default", False)][0]
+
     def _proxy_info(self):
         if self._cached_proxy_info is None:
             req = swob.Request.blank("/info")
@@ -930,8 +1075,20 @@ class PfsMiddleware(object):
             self._cached_proxy_info = json.loads(resp.body)
         return self._cached_proxy_info
 
+    def _add_required_container_headers(self, resp):
+        resp.headers.update(CONTAINER_HEADERS_WE_LIE_ABOUT)
+        resp.headers["X-Storage-Policy"] = self._default_storage_policy()
+
     def get_container(self, ctx):
         req = ctx.req
+        if req.environ.get('swift.source') in ('DLO', 'SW', 'VW'):
+            # Middlewares typically want json, but most *assume* it following
+            # https://github.com/openstack/swift/commit/4806434
+            # TODO: maybe replace with `if req.environ.get('swift.source'):` ??
+            params = req.params
+            params['format'] = 'json'
+            req.params = params
+
         limit = self._get_listing_limit(
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
@@ -946,8 +1103,8 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        container_ents, raw_metadata = rpc.parse_get_container_response(
-            get_container_response)
+        container_ents, raw_metadata, mtime_ns = \
+            rpc.parse_get_container_response(get_container_response)
 
         resp_content_type = swift_code.get_listing_content_type(req)
         resp = swob.HTTPOk(content_type=resp_content_type, charset="utf-8",
@@ -967,6 +1124,9 @@ class PfsMiddleware(object):
 
         metadata = deserialize_metadata(raw_metadata)
         resp.headers.update(metadata)
+        self._add_required_container_headers(resp)
+        resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(mtime_ns)
+        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime_ns)
 
         return resp
 
@@ -984,9 +1144,11 @@ class PfsMiddleware(object):
             size = ent["FileSize"]
             last_modified = iso_timestamp_from_epoch_ns(
                 ent["ModificationTime"])
-            content_type = guess_content_type(ent["Basename"],
-                                              ent["IsDir"])
             obj_metadata = deserialize_metadata(ent["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(ent["Basename"],
+                                                  ent["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 ent["InodeNumber"], ent["NumWrites"])
@@ -1006,6 +1168,10 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
+            content_type = obj_metadata.get("Content-Type")
+            if content_type is None:
+                content_type = guess_content_type(
+                    container_entry["Basename"], container_entry["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
@@ -1025,8 +1191,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = guess_content_type(container_entry["Basename"],
-                                              container_entry["IsDir"])
+            ct_node.text = content_type
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
@@ -1120,6 +1285,10 @@ class PfsMiddleware(object):
             rpc.parse_put_location_response(
                 self.rpc_call(ctx, put_location_req))
             for _ in itertools.repeat(None))
+
+        error_response = swift_code.check_object_creation(req)
+        if error_response:
+            return error_response
 
         # If these make it to Swift, they can goof up our log segment behind
         # proxyfs's back.
@@ -1249,17 +1418,14 @@ class PfsMiddleware(object):
     def get_object(self, ctx):
         req = ctx.req
         byteranges = req.range.ranges if req.range else ()
-        if len(byteranges) > 1:
-            # XXX TODO: this will just work once Swift merges change
-            # I24716e3271cf3370642e3755447e717fd7d9957c
-            req.headers.pop('Range', None)
-            byteranges = ()
 
         try:
             object_response = self.rpc_call(ctx, rpc.get_object_request(
                 urllib_parse.unquote(req.path), byteranges))
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
+                return swob.HTTPNotFound(request=req)
+            elif err.errno == pfs_errno.NotDirError:
                 return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
@@ -1272,22 +1438,30 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        if size > 0 and read_plan is None:
-            return swob.HTTPRequestedRangeNotSatisfiable(request=req)
+        headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
 
-        # NB: this is a size-0 queue, so it acts as a channel: a put()
-        # blocks until another greenthread does a get(). This lets us use it
-        # for (very limited) bidirectional communication.
-        channel = eventlet.queue.Queue(0)
-        eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
+        if "Content-Type" not in headers:
+            headers["Content-Type"] = guess_content_type(req.path,
+                                                         is_dir=False)
 
-        headers = deserialize_metadata(raw_metadata)
+        headers["Accept-Ranges"] = "bytes"
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
         headers["Etag"] = best_possible_etag(headers, ctx.account_name,
                                              ino, num_writes)
+
+        if size > 0 and read_plan is None:
+            headers["Content-Range"] = "bytes */%d" % size
+            return swob.HTTPRequestedRangeNotSatisfiable(
+                request=req, headers=headers)
+
+        # NB: this is a size-0 queue, so it acts as a channel: a put()
+        # blocks until another greenthread does a get(). This lets us use it
+        # for (very limited) bidirectional communication.
+        channel = eventlet.queue.Queue(0)
+        eventlet.spawn_n(self._keep_lease_alive, ctx, channel, lease_id)
 
         listing_iter = listing_iter_from_read_plan(read_plan)
         # Make sure that nobody (like our __call__ method) messes with this
@@ -1321,7 +1495,7 @@ class PfsMiddleware(object):
         wrapped_listing_iter = iterator_posthook(
             listing_iter, done_with_object_get)
 
-        seg_iter = SegmentedIterable(
+        seg_iter = swift_code.SegmentedIterable(
             copied_req, self.zero_filler_app, wrapped_listing_iter,
             self.max_get_time,
             self.logger, 'PFS', 'PFS',
@@ -1404,7 +1578,6 @@ class PfsMiddleware(object):
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
 
         headers["Content-Length"] = file_size
-        headers["Accept-Ranges"] = "bytes"
         headers["ETag"] = best_possible_etag(
             headers, ctx.account_name, ino, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
@@ -1412,7 +1585,8 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPOk(request=req, headers=headers)
+        return swob.HTTPOk(request=req, headers=headers,
+                           conditional_response=True)
 
     def coalesce_object(self, ctx):
         req = ctx.req

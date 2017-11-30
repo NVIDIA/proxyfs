@@ -14,6 +14,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -305,7 +306,27 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
+func (mS *mountStruct) doInlineCheckpoint() {
+	var (
+		err error
+	)
+
+	if nil == mS.headhunterVolumeHandle {
+		mS.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(mS.volStruct.volumeName)
+		if nil != err {
+			logger.Fatalf("fs.doInlineCheckpoint() call to headhunter.FetchVolumeHandle() failed: %v", err)
+		}
+	}
+
+	err = mS.headhunterVolumeHandle.DoCheckpoint()
+	if nil != err {
+		logger.Fatalf("fs.doInlineCheckpoint() call to headhunter.DoCheckpoint() failed: %v", err)
+	}
+}
+
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
+	defer mS.doInlineCheckpoint()
+
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -1280,7 +1301,13 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, err error) {
+func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, err error) {
+	statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber)
+	if err != nil {
+		return
+	}
+	mtime = statResult[StatMTime]
+
 	// List the root directory, starting at the marker, and keep only
 	// the directories. The Swift API doesn't let you have objects in
 	// an account, so files or symlinks don't belong in an account
@@ -1315,16 +1342,19 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 				continue
 			}
 
-			var isItADir bool
-			isItADir, err = mS.IsDir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber)
-			if err != nil {
-				logger.ErrorfWithError(err, "MiddlewareGetAccount: error in IsDir(%v)", dirEnt.InodeNumber)
+			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, dirEnt.InodeNumber)
+			if err1 != nil {
+				err = err1
 				return
 			}
-
-			if isItADir {
-				accountEnts = append(accountEnts, AccountEntry{Basename: dirEnt.Basename})
+			if inode.InodeType(statResult[StatFType]) != inode.DirType {
+				// Yes, there might be files or symlinks in here, but the Swift API wouldn't know what to do with them.
+				continue
 			}
+			accountEnts = append(accountEnts, AccountEntry{
+				Basename:         dirEnt.Basename,
+				ModificationTime: statResult[StatMTime],
+			})
 		}
 		if len(dirEnts) == 0 {
 			break
@@ -1976,6 +2006,10 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 		return
 	} else if err != nil {
 		// No such container, so we create it
+		err = validateBaseName(containerName)
+		if err != nil {
+			return
+		}
 
 		newDirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 		if err != nil {
@@ -2267,7 +2301,7 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 	return mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
 }
 
-func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (entries []inode.DirEntry, err error) {
+func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return entries, err
@@ -2288,7 +2322,7 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 	}
 
 	// Call readdirOne helper function to do the work
-	entries, err = mS.readdirOneHelper(inodeNumber, prevDirLocation, inodeLock.GetCallerID())
+	entries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
 	if err != nil {
 		// When the client uses location-based readdir, it knows it is done when it reads beyond
 		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
@@ -2356,7 +2390,7 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	return dirEntries, statEntries, numEntries, areMoreEntries, err
 }
 
-func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
+func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -2378,7 +2412,7 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	}
 
 	// Get dir entries; Call readdirOne helper function to do the work
-	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirLocation, inodeLock.GetCallerID())
+	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
 	inodeLock.Unlock()
 
 	if err != nil {
@@ -3289,7 +3323,7 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 }
 
 // readdirOne is a helper function to do the work of ReaddirOne once we hold the lock.
-func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLocation inode.InodeDirLocation, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
+func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMarker interface{}, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
 	lockID, err := mS.volStruct.makeLockID(inodeNumber)
 	if err != nil {
 		return
@@ -3300,7 +3334,7 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirLo
 		return
 	}
 
-	entries, _, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirLocation)
+	entries, _, err = mS.volStruct.VolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirMarker)
 	if err != nil {
 		// Note: by convention, we don't log errors in helper functions; the caller should
 		//       be the one to log or not given its use case.

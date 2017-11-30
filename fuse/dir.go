@@ -255,7 +255,12 @@ func (d Dir) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 }
 
 func (d Dir) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
-	return fuselib.ENOSYS
+	err := d.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
+		d.inodeNumber)
+	if err != nil {
+		err = newFuseError(err)
+	}
+	return err
 }
 
 func (d Dir) Mkdir(ctx context.Context, req *fuselib.MkdirRequest) (fusefslib.Node, error) {

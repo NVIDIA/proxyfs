@@ -176,10 +176,10 @@ type CreatePathRequest struct {
 // FileType here will be a uint16 containing DT_DIR|DT_REG|DT_LNK.
 //
 type DirEntry struct {
-	InodeNumber uint64
-	FileType    uint16
-	Basename    string
-	DirLocation uint32
+	InodeNumber     uint64
+	FileType        uint16
+	Basename        string
+	NextDirLocation uint32
 }
 
 // FlushRequest is the request object for RpcFlush.
@@ -326,10 +326,16 @@ type PathHandle struct {
 // ReaddirPlusRequest is the request object for RpcReaddirPlus.
 type ReaddirPlusRequest struct {
 	InodeHandle
-	PrevDirLocation int64
+	PrevDirEntName string
 }
 
-// ReaddirPlusReply is the reply object for RpcReaddirPlus.
+// ReaddirPlusByLocRequest is the request object for RpcReaddirPlusByLoc.
+type ReaddirPlusByLocRequest struct {
+	InodeHandle
+	PrevDirEntLocation int64
+}
+
+// ReaddirPlusReply is the reply object for RpcReaddirPlus and RpcReaddirPlusByLoc.
 type ReaddirPlusReply struct {
 	DirEnts  []DirEntry
 	StatEnts []StatStruct
@@ -338,10 +344,16 @@ type ReaddirPlusReply struct {
 // ReaddirRequest is the request object for RpcReaddir.
 type ReaddirRequest struct {
 	InodeHandle
-	PrevDirLocation int64
+	PrevDirEntName string
 }
 
-// ReaddirReply is the reply object for RpcReaddir.
+// ReaddirByLocRequest is the request object for RpcReaddirByLoc.
+type ReaddirByLocRequest struct {
+	InodeHandle
+	PrevDirEntLocation int64
+}
+
+// ReaddirReply is the reply object for RpcReaddir and RpcReaddirByLoc.
 type ReaddirReply struct {
 	DirEnts []DirEntry
 }
@@ -588,6 +600,7 @@ type HeadReq struct {
 // GetContainerReply is the response object for RpcGetContainer
 type GetContainerReply struct {
 	ContainerEntries []fs.ContainerEntry
+	ModificationTime uint64
 	Metadata         []byte // container metadata, serialized
 }
 
@@ -601,7 +614,8 @@ type GetContainerReq struct {
 
 // Response object for RpcGetAccount
 type GetAccountReply struct {
-	AccountEntries []fs.AccountEntry
+	AccountEntries   []fs.AccountEntry
+	ModificationTime uint64
 }
 
 // Request object for RpcGetAccount
@@ -617,7 +631,7 @@ type GetObjectReply struct {
 	ReadEntsOut      []inode.ReadPlanStep // object/length/offset triples where the data is found
 	InodeNumber      uint64
 	NumWrites        uint64
-	Metadata         []byte // serialized object metadata (previously set by middleware; empty if absent)
+	Metadata         []byte // serialized object metadata (previously set by middleware empty if absent)
 	ModificationTime uint64 // file's mtime in nanoseconds since the epoch
 	LeaseId          string
 }

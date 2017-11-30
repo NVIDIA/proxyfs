@@ -255,15 +255,23 @@ def parse_get_account_response(get_account_response):
     """
     Parse a response from RpcGetAccount.
 
-    Returns: account entries: a list of strings representing the container
-    names.
+    Returns: (account mtime, account entries).
+
+    The account mtime is in nanoseconds since the epoch.
+
+    The account entries are a list of dictionaries with keys:
+
+        Basename: the container name
+
+        ModificationTime: container mtime, in nanoseconds since the epoch
     """
+    mtime = get_account_response["ModificationTime"]
     account_entries = get_account_response["AccountEntries"]
     if account_entries is None:
         # seems to happen when it's an empty list
-        return []
+        return (mtime, [])
     else:
-        return [ae["Basename"] for ae in account_entries]
+        return (mtime, account_entries)
 
 
 def get_container_request(path, marker, limit, prefix):
@@ -292,7 +300,7 @@ def parse_get_container_response(get_container_response):
     """
     Parse a response from RpcGetContainer.
 
-    Returns: (container entries, container metadata).
+    Returns: (container entries, container metadata, container mtime).
 
     The container entries are a list of dictionaries with keys:
 
@@ -311,6 +319,9 @@ def parse_get_container_response(get_container_response):
     The container's metadata is just a string. Presumably it's some
     JSON-serialized dictionary that this middleware previously set, but it
     could really be anything.
+
+    The container's mtime is the modification time of the directory, in
+    nanoseconds since the epoch.
     """
     res = get_container_response
 
@@ -321,14 +332,15 @@ def parse_get_container_response(get_container_response):
         ents.append(ent)
 
     container_meta = _decode_binary(res["Metadata"])
-    return ents, container_meta
+    container_mtime = res["ModificationTime"]
+    return ents, container_meta, container_mtime
 
 
 def middleware_mkdir_request(path, obj_metadata):
     """
     :param path: URL path component for the dir, e.g. "/v1/acc/con/obj".
                  Must refer to an object, not a container (use
-                 get_container_request() pfor containers).
+                 get_container_request() for containers).
 
     :param metadata: serialized object metadata
     """

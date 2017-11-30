@@ -1,7 +1,12 @@
-# ProxyFS Local and Distributed Lock Manager (LDLM)
+=================================================
+ProxyFS Local and Distributed Lock Manager (LDLM)
+=================================================
 
 This document covers how ProxyFS does locking between threads on the local node as well as locking between nodes with the Local and Distributed Lock Manager (LDLM)
-# Requirements
+
+Requirements
+============
+
 The ProxyFS architecture assumes that the fs package implements locking between different threads doing operations regardless if the threads are on the same node or different nodes in the cluster.
 
 A basic example is two threads each trying to create a new file in the same directory.  Serialization is required so that in the end the directory block stored in a log segment is updated correctly.
@@ -14,7 +19,8 @@ Therfore, we have these requirements:
 4.  Performance is important - therefore the local node should lazyily release the lock.  This means that even though a node is done with a lock it should not tell the lock master it is done with the lock until the lock master requests it.  This allows the local node to use the lock in another thread without needing to request the lock from the lock master.
 5.  We want to scale out the lock master to as many of the proxy nodes as possible.
 
-#Basic Architecture
+Basic Architecture
+==================
 
 There are two components to LDLM:
 
@@ -23,7 +29,7 @@ There are two components to LDLM:
 
 We will go into more detail below.
 
-LDLM provides this API:
+LDLM provides this API::
 
     // Lock the inode based on iLockState
     ldlm.GrantLock(inode inode.InodeNumber, lockTyp lLockState)
@@ -32,12 +38,12 @@ LDLM provides this API:
     // release the lock to DLM if there is a pending callback for a release.
     ldlm.ReleaseLock(inode.InodeNumber)
 
-The possible values for *iLockState* for granting a lock are:
+The possible values for *iLockState* for granting a lock are::
 
     Shared - multiple threads could be accessing the inode
     Excl - only one thread can access the inode
 
-Example code using this API is:
+Example code using this API is::
 
     ldlm.GrantLock(1, ldlm.EXCL)
     
@@ -49,7 +55,9 @@ Internally, GrantLock() will check if the local node already has the lock and if
 
 Internally, ReleaseLock() will release the lock and grant it to another thread waiting for the lock or mark it as freed.   The local node will not release the lock to the DLM lock master unless it has been requested too.
 
-# Terms
+Terms
+-----
+
 **DLM lock master** - Component of DLM. Node which maintains the state of an individual lock (Granted shared or exclusive, etc), the list of clients wanting the lock, etc.  Internally to LDLM there is a consistent hash used to find the lock master for a given inode amoungst the Proxy nodes.
 
 **DLM** - Distributed Lock Manager - responsible for handling locks across a set of nodes and handing them out to LLM.
@@ -57,7 +65,8 @@ Internally, ReleaseLock() will release the lock and grant it to another thread w
 **LLM** - Local Lock Manager - responsible for getting lock from DLM and then sharing lock across multiple threads.
 
 
-#Implementing LDLM Locks in fs Package
+Implementing LDLM Locks in fs Package
+=====================================
 
 We believe that adding LDLM locks to the *fs* package will expose bugs other than just with locking.  Therefore, in order to reduce the implementation and stabilty time of the code base we are going to take an approach which attempts to uncover bugs with the least amount of variables as possible.  The approach is:
 
@@ -72,14 +81,18 @@ The result of this is locking in the fs package as well as a set of unit tests t
 
 
 
-# Future Work - Roadmap
+Future Work - Roadmap
+=====================
+
 1. During multinode- add membership call back when node membership changes and we have to remaster the locks.
 2. Add statistics for performance testing
 3. Add error handling to LDLM
 4. Intergrate with *etcd* for node membership (**memberd**), membership SQN in cluster messages and "catchup" for SQN gaps during membership changes.
 
 
-#Open Issues
+Open Issues
+-----------
+
 1.  We are going to uncover other issues outside of locking so we need to be prepared for that.
 2.  Rename source directory from dlm to ldlm
 3.  Add more comments, Go Doc and cleanup code

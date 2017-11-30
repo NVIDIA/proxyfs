@@ -62,4 +62,4 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 
 ## License
 
-TBD
+See the included LICENSE file

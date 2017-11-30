@@ -480,7 +480,7 @@ func (vS *volumeStruct) flushInodeNumbers(inodeNumbers []InodeNumber) (err error
 			}
 			if !ok {
 				// this should never happen (see above)
-				err = fmt.Errorf("%s: fetch of inode %d volume '%s' failed because its unallocated",
+				err = fmt.Errorf("%s: fetch of inode %d volume '%s' failed because it is unallocated",
 					utils.GetFnName(), inodeNumber, vS.volumeName)
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.NotFoundError)
@@ -585,7 +585,11 @@ func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *phys
 
 		newContainerName := fmt.Sprintf("%s%s", physicalContainerLayout.physicalContainerNamePrefix, utils.Uint64ToHexStr(physicalContainerNameSuffix))
 
-		err = swiftclient.ContainerPut(vS.accountName, newContainerName, make(map[string][]string))
+		storagePolicyHeaderValues := []string{vS.defaultPhysicalContainerLayout.physicalContainerStoragePolicy}
+		newContainerHeaders := make(map[string][]string)
+		newContainerHeaders["X-Storage-Policy"] = storagePolicyHeaderValues
+
+		err = swiftclient.ContainerPut(vS.accountName, newContainerName, newContainerHeaders)
 		if nil != err {
 			return
 		}
@@ -640,7 +644,7 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 	}
 	if !ok {
 		// disk corruption or client requested a free inode
-		logger.Infof("%s: fetch of inode %d volume '%s' failed because its unallocated",
+		logger.Infof("%s: fetch of inode %d volume '%s' failed because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 
 		// if the inode is free then we can't access it
@@ -755,7 +759,7 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: cannot destroy inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: cannot destroy inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		logger.ErrorWithError(err)
@@ -826,7 +830,7 @@ func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *Metadata
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		logger.InfoWithError(err)
@@ -869,7 +873,7 @@ func (vS *volumeStruct) GetType(inodeNumber InodeNumber) (inodeType InodeType, e
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -893,7 +897,7 @@ func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64,
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -916,7 +920,7 @@ func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) 
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -947,7 +951,7 @@ func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime ti
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -978,7 +982,7 @@ func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, Modificatio
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1010,7 +1014,7 @@ func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.T
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1083,7 +1087,7 @@ func (vS *volumeStruct) SetPermMode(inodeNumber InodeNumber, filePerm InodeMode)
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1123,7 +1127,7 @@ func (vS *volumeStruct) SetOwnerUserID(inodeNumber InodeNumber, userID InodeUser
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1157,7 +1161,7 @@ func (vS *volumeStruct) SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID In
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1192,7 +1196,7 @@ func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGr
 	}
 	if !ok {
 		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1225,7 +1229,7 @@ func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName strin
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1259,7 +1263,7 @@ func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName strin
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1296,7 +1300,7 @@ func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName st
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)
@@ -1469,7 +1473,7 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber) (err error) {
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
-		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because its unallocated",
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		logger.InfoWithError(err)
 		err = blunder.AddError(err, blunder.NotFoundError)

@@ -47,6 +47,10 @@ func (mw *multiWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+func (mw *multiWriter) Clear() {
+	mw.writers = []io.Writer{}
+}
+
 func addLogTarget(writer io.Writer) {
 	logTargets.addWriter(writer)
 }
@@ -100,6 +104,7 @@ func down() (err error) {
 	if logFile != nil {
 		logFile.Close()
 	}
+	logTargets.Clear()
 	return
 }
 
@@ -114,13 +119,9 @@ func (log LogTarget) write(p []byte) (n int, err error) {
 }
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
-	err = nil
-	return
+	return down()
 }
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
-	err = nil
-	return
+	return up(confMap)
 }

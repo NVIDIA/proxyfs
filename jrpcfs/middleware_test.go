@@ -68,38 +68,52 @@ func testSetup() []func() {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=256",
-		"Peer0.PrivateIPAddr=localhost",
-		"Peer0.ReadCacheQuotaFraction=0.20",
+		"Peer:Peer0.PrivateIPAddr=localhost",
+		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
-		"SomeVolume.FSID=1",
-		"SomeVolume.PrimaryPeer=Peer0",
-		"SomeVolume.AccountName=" + testAccountName,
-		"SomeVolume.CheckpointContainerName=.__checkpoint__",
-		"SomeVolume.CheckpointInterval=10s",
-		"SomeVolume.CheckpointIntervalsPerCompaction=100",
-		"SomeVolume.DefaultPhysicalContainerLayout=SomeContainerLayout",
-		"SomeVolume.FlowControl=JrpcfsTestFlowControl",
-		"SomeVolume.NonceValuesToReserve=100",
-		"SomeVolume2.FSID=2",
-		"SomeVolume2.PrimaryPeer=Peer0",
-		"SomeVolume2.AccountName=" + testAccountName2,
-		"SomeVolume2.CheckpointContainerName=.__checkpoint__",
-		"SomeVolume2.CheckpointInterval=10s",
-		"SomeVolume2.CheckpointIntervalsPerCompaction=100",
-		"SomeVolume2.DefaultPhysicalContainerLayout=SomeContainerLayout2",
-		"SomeVolume2.FlowControl=JrpcfsTestFlowControl",
-		"SomeVolume2.NonceValuesToReserve=100",
-		"JrpcfsTestFlowControl.MaxFlushSize=10027008",
-		"JrpcfsTestFlowControl.MaxFlushTime=2s",
-		"JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
-		"JrpcfsTestFlowControl.ReadCacheWeight=100",
-		"SomeContainerLayout.ContainerNamePrefix=kittens",
-		"SomeContainerLayout.ContainersPerPeer=1000",
-		"SomeContainerLayout.MaxObjectsPerContainer=1000000",
-		"SomeContainerLayout2.ContainerNamePrefix=puppies",
-		"SomeContainerLayout2.ContainersPerPeer=1234",
-		"SomeContainerLayout2.MaxObjectsPerContainer=1234567",
+		"Volume:SomeVolume.FSID=1",
+		"Volume:SomeVolume.PrimaryPeer=Peer0",
+		"Volume:SomeVolume.AccountName=" + testAccountName,
+		"Volume:SomeVolume.CheckpointContainerName=.__checkpoint__",
+		"Volume:SomeVolume.CheckpointContainerStoragePolicy=gold",
+		"Volume:SomeVolume.CheckpointInterval=10s",
+		"Volume:SomeVolume.CheckpointIntervalsPerCompaction=100",
+		"Volume:SomeVolume.DefaultPhysicalContainerLayout=SomeContainerLayout",
+		"Volume:SomeVolume.FlowControl=JrpcfsTestFlowControl",
+		"Volume:SomeVolume.NonceValuesToReserve=100",
+		"Volume:SomeVolume.MaxEntriesPerDirNode=32",
+		"Volume:SomeVolume.MaxExtentsPerFileNode=32",
+		"Volume:SomeVolume.MaxInodesPerMetadataNode=32",
+		"Volume:SomeVolume.MaxLogSegmentsPerMetadataNode=64",
+		"Volume:SomeVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:SomeVolume2.FSID=2",
+		"Volume:SomeVolume2.PrimaryPeer=Peer0",
+		"Volume:SomeVolume2.AccountName=" + testAccountName2,
+		"Volume:SomeVolume2.CheckpointContainerName=.__checkpoint__",
+		"Volume:SomeVolume2.CheckpointContainerStoragePolicy=gold",
+		"Volume:SomeVolume2.CheckpointInterval=10s",
+		"Volume:SomeVolume2.CheckpointIntervalsPerCompaction=100",
+		"Volume:SomeVolume2.DefaultPhysicalContainerLayout=SomeContainerLayout2",
+		"Volume:SomeVolume2.FlowControl=JrpcfsTestFlowControl",
+		"Volume:SomeVolume2.NonceValuesToReserve=100",
+		"Volume:SomeVolume2.MaxEntriesPerDirNode=32",
+		"Volume:SomeVolume2.MaxExtentsPerFileNode=32",
+		"Volume:SomeVolume2.MaxInodesPerMetadataNode=32",
+		"Volume:SomeVolume2.MaxLogSegmentsPerMetadataNode=64",
+		"Volume:SomeVolume2.MaxDirFileNodesPerMetadataNode=16",
+		"FlowControl:JrpcfsTestFlowControl.MaxFlushSize=10027008",
+		"FlowControl:JrpcfsTestFlowControl.MaxFlushTime=2s",
+		"FlowControl:JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
+		"FlowControl:JrpcfsTestFlowControl.ReadCacheWeight=100",
+		"PhysicalContainerLayout:SomeContainerLayout.ContainerStoragePolicy=silver",
+		"PhysicalContainerLayout:SomeContainerLayout.ContainerNamePrefix=kittens",
+		"PhysicalContainerLayout:SomeContainerLayout.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:SomeContainerLayout.MaxObjectsPerContainer=1000000",
+		"PhysicalContainerLayout:SomeContainerLayout2.ContainerStoragePolicy=silver",
+		"PhysicalContainerLayout:SomeContainerLayout2.ContainerNamePrefix=puppies",
+		"PhysicalContainerLayout:SomeContainerLayout2.ContainersPerPeer=1234",
+		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1234567",
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
@@ -135,6 +149,16 @@ func testSetup() []func() {
 	err = swiftclient.Up(testConfMap)
 	if err != nil {
 		panic(fmt.Sprintf("failed to bring up swiftclient: %v", err))
+	}
+
+	err = headhunter.Format(testConfMap, "SomeVolume")
+	if nil != err {
+		panic(fmt.Sprintf("failed to format SomeVolume: %v", err))
+	}
+
+	err = headhunter.Format(testConfMap, "SomeVolume2")
+	if nil != err {
+		panic(fmt.Sprintf("failed to format SomeVolume2: %v", err))
 	}
 
 	err = headhunter.Up(testConfMap)
@@ -503,6 +527,9 @@ func TestRpcGetContainerMetadata(t *testing.T) {
 	err := server.RpcGetContainer(&request, &response)
 	assert.Nil(err)
 	assert.Equal([]byte("metadata for c"), response.Metadata)
+
+	statResult := fsStatPath(testVerAccountName, "c")
+	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 }
 
 func TestRpcGetContainerNested(t *testing.T) {
@@ -809,9 +836,15 @@ func TestRpcGetAccount(t *testing.T) {
 	response := GetAccountReply{}
 	err := server.RpcGetAccount(&request, &response)
 
+	statResult := fsStatPath("/v1/"+testAccountName2, "/")
+	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
+
 	assert.Nil(err)
 	assert.Equal(len(response.AccountEntries), 5)
 	assert.Equal("alpha", response.AccountEntries[0].Basename)
+	statResult = fsStatPath("/v1/"+testAccountName2, "/alpha")
+	assert.Equal(statResult[fs.StatMTime], response.AccountEntries[0].ModificationTime)
+
 	assert.Equal("bravo", response.AccountEntries[1].Basename)
 	assert.Equal("charlie", response.AccountEntries[2].Basename)
 	assert.Equal("delta", response.AccountEntries[3].Basename)
@@ -1777,6 +1810,28 @@ func TestRpcPutContainer(t *testing.T) {
 	err = server.RpcHead(&headRequest, &headReply)
 	assert.Nil(err)
 	assert.Equal(newMetadata, headReply.Metadata)
+}
+
+func TestRpcPutContainerTooLong(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	if nil != err {
+		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
+	}
+
+	containerName := "rpc-put-container-adnascent-splint-"
+	containerName += strings.Repeat("A", 256-len(containerName))
+	containerPath := testVerAccountName + "/" + containerName
+	req := PutContainerReq{
+		VirtPath:    containerPath,
+		OldMetadata: []byte{},
+		NewMetadata: []byte{},
+	}
+	reply := PutContainerReply{}
+
+	err = server.RpcPutContainer(&req, &reply)
+	assert.NotNil(err)
 }
 
 func TestRpcMiddlewareMkdir(t *testing.T) {

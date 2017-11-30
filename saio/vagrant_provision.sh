@@ -4,7 +4,6 @@
 
 set -e
 set -x
-# Install firefox
 
 # Install tools needed above what's in a minimal base box
 
@@ -300,6 +299,14 @@ wget -q http://ftp.mozilla.org/pub/firefox/releases/55.0/linux-x86_64/en-US/fire
 tar -C /usr/local -xvjf firefox-55.0.tar.bz2
 rm firefox-55.0.tar.bz2
 ln -s /usr/local/firefox/firefox /usr/bin/firefox
+
+# Install benchmark support tools
+
+yum -y install bc gawk
+
+# Install ssh helper
+
+yum -y install sshpass
 
 # All done
 

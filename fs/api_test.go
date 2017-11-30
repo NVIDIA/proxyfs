@@ -74,26 +74,33 @@ func testSetup() (err error) {
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"SwiftClient.StarvationCallbackFrequency=100ms",
-		"TestFlowControl.MaxFlushSize=10000000",
-		"TestFlowControl.MaxFlushTime=10s",
-		"TestFlowControl.ReadCacheLineSize=1000000",
-		"TestFlowControl.ReadCacheWeight=100",
-		"PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
-		"PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
-		"Peer0.PrivateIPAddr=localhost",
-		"Peer0.ReadCacheQuotaFraction=0.20",
+		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
+		"FlowControl:TestFlowControl.MaxFlushTime=10s",
+		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",
+		"FlowControl:TestFlowControl.ReadCacheWeight=100",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
+		"Peer:Peer0.PrivateIPAddr=localhost",
+		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
-		"TestVolume.FSID=1",
-		"TestVolume.PrimaryPeer=Peer0",
-		"TestVolume.AccountName=CommonAccount",
-		"TestVolume.CheckpointContainerName=.__checkpoint__",
-		"TestVolume.CheckpointInterval=10s",
-		"TestVolume.CheckpointIntervalsPerCompaction=100",
-		"TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"TestVolume.FlowControl=TestFlowControl",
-		"TestVolume.NonceValuesToReserve=100",
+		"Volume:TestVolume.FSID=1",
+		"Volume:TestVolume.PrimaryPeer=Peer0",
+		"Volume:TestVolume.AccountName=CommonAccount",
+		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
+		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
+		"Volume:TestVolume.CheckpointInterval=10s",
+		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
+		"Volume:TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
+		"Volume:TestVolume.FlowControl=TestFlowControl",
+		"Volume:TestVolume.NonceValuesToReserve=100",
+		"Volume:TestVolume.MaxEntriesPerDirNode=32",
+		"Volume:TestVolume.MaxExtentsPerFileNode=32",
+		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
+		"Volume:TestVolume.MaxLogSegmentsPerMetadataNode=64",
+		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
 		"FSGlobals.VolumeList=TestVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
@@ -143,6 +150,15 @@ func testSetup() (err error) {
 		logger.Down()
 		stats.Down()
 		return err
+	}
+
+	err = headhunter.Format(testConfMap, "TestVolume")
+	if nil != err {
+		swiftclient.Down()
+		dlm.Down()
+		logger.Down()
+		stats.Down()
+		return
 	}
 
 	err = headhunter.Up(testConfMap)

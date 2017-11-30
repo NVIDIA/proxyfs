@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type Mode int
@@ -57,9 +58,16 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		return
 	}
 
+	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	if nil != err {
+		err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
+		return
+	}
+
 	// Fetch confMap particulars needed below
 
-	accountName, err = confMap.FetchOptionValueString(volumeNameToFormat, "AccountName")
+	accountName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "AccountName")
 	if nil != err {
 		return
 	}

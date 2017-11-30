@@ -49,6 +49,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
+	confErr = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	if nil != confErr {
+		fmt.Fprintf(os.Stderr, "utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", confErr)
+		os.Exit(1)
+	}
+
 	// Fetch WhoAmI (qualifies which VolumeList elements are applicable)
 	whoAmI, confErr := confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != confErr {

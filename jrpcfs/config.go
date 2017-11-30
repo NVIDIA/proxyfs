@@ -2,7 +2,6 @@ package jrpcfs
 
 import (
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -77,23 +76,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		logger.ErrorfWithError(err, "failed to get JSONRPCServer.TCPFastPort from config file")
 		return
 	}
-
-	// TODO: Remove below here once SSController populates smb.conf
-	swiftClientNoAuthTCPPort, _ := confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
-	if 8090 == swiftClientNoAuthTCPPort {
-		rpcConfFile, rpcConfFileErr := os.Create("/tmp/rpc_server.conf")
-		if nil == rpcConfFileErr {
-			rpcConfigString := fmt.Sprintf("%s:%s/%s", globals.ipAddr, globals.portString, globals.fastPortString)
-			fmt.Fprintf(rpcConfFile, "%s\n", rpcConfigString)
-			rpcConfFile.Close()
-			logger.Infof("/tmp/rpc_server.conf populated with rpcConfigString == %s", rpcConfigString)
-		} else {
-			logger.InfofWithError(rpcConfFileErr, "Unable to create /tmp/rpc_server.conf")
-		}
-	} else {
-		logger.Infof("SwiftClient.NoAuthTCPPort != 8090, so skipping creation of /tmp/rpc_server.conf")
-	}
-	// TODO: Remove above here once SSController populates smb.conf
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
 	// in the logger package. To enable jrpcfs trace logging, set Logging.TraceLevelLogging to jrpcfs.

@@ -1,5 +1,5 @@
-hash: 203b9e910318e7042372cb61f10b971f00e649347370fb6a70004e9775e2d18a
-updated: 2017-10-12T13:34:37.639-07:00
+hash: 0b91e7d40a412b63e764fe9f053fc036ea9addacbe0bf14c6477e989b3255587
+updated: 2017-11-21T10:21:42.076091-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -7,38 +7,38 @@ imports:
   - fs
   - fuseutil
 - name: github.com/ansel1/merry
-  version: c117be056e0013c04fd7c4141a4dd68672943526
+  version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
 - name: github.com/droundy/goopt
   version: 0b8effe182da161d81b011aba271507324ecb7ab
 - name: github.com/go-errors/errors
-  version: 8fa88b06e5974e97fbf9899a7f86a344bfd1f105
+  version: 3afebba5a48dbc89b574d890b6b34d9ee10b4785
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/Sirupsen/logrus
   version: 89742aefa4b206dcf400792f3bd35b542998eb3b
 - name: github.com/stretchr/testify
-  version: 890a5c3458b43e6104ff5da8dfa139d013d77544
+  version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f
   subpackages:
   - assert
 - name: github.com/swiftstack/cstruct
-  version: 5cd42baaed4905eb5e0e8efcaf9015f477bade63
+  version: 09d92a1bc546e2816232d48da5d1fbbcf141e4c6
 - name: github.com/swiftstack/sortedmap
-  version: a70c71dcedd209d295a08eb5f6138a046760832f
+  version: 97c6f7aa8ddfb306d6a7d765751246d51c35c897
 - name: golang.org/x/crypto
-  version: 9419663f5a44be8b34ca85f08abc5fe1be11f8a3
+  version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
-  version: a04bdaca5b32abe1c069418fb7088ae607de5bd0
+  version: 49e6db1c9ed2b2fdbc57fd579f0ca8f6082350be
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 43eea11bc92608addb41b8a406b0407495c106f6
+  version: 95c6576299259db960f6c5b9b69ea52422860fce
   subpackages:
   - unix
   - windows
 - name: golang.org/x/tools
-  version: f57adc18217d779aa42266ea71a545827755a77b
+  version: 9b61fcc4c548d69663d915801fc4b42a43b6cd9c
   subpackages:
   - cmd/stringer
 testImports:
