@@ -86,6 +86,7 @@ import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
+from swift.common.middleware.acl import parse_acl, format_acl
 from . import pfs_errno, rpc, swift_code, utils
 
 # Generally speaking, let's try to keep the use of Swift code to a
@@ -829,6 +830,11 @@ class PfsMiddleware(object):
             resp.headers["X-Account-Meta-" + key] = value
         for key, value in account_info["sysmeta"].items():
             resp.headers["X-Account-Sysmeta-" + key] = value
+        acc_acl = resp.headers.get("X-Account-Sysmeta-Core-Access-Control")
+        parsed_acc_acl = parse_acl(version=2, data=acc_acl)
+        if parsed_acc_acl:
+            acc_acl = format_acl(version=2, acl_dict=parsed_acc_acl)
+            resp.headers["X-Account-Access-Control"] = acc_acl
 
         resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(account_mtime)
 
