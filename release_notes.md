@@ -1,5 +1,31 @@
 # ProxyFS Release Notes
 
+## 1.0.0 (November 29, 2017)
+
+### Features:
+
+* Source is now available on GitHub
+* Added support for S3 Multi-part Uploads
+* Formatting of a Volume File System now made explicit with `mkproxyfs` tool
+* Volumes may be added and removed (via SIGHUP) without restarting ProxyFS
+* Configuration files now allow identical section names for different types of sections
+* Support added for a distinct Storage Policy for metadata
+* New RESTful API added for FSCK management via HTTP
+
+### Bug Fixes:
+
+* Recover trapped resources in Samba when ProxyFS halts
+* Fixed memory leaks and slow performance during RoboCopy
+* Resolved unbounded memory consumption as file systems grow
+* Fix for ctime not being updated during various operations
+* Fix for missing first file in a directory if it would sort before "."
+* Specification of a Storage Policy for file data now honored
+* Corruption following metadata checkpoint failures now halted
+
+### Known Issues:
+
+* Metadata Recovery Point Objective ("RPO") is non-zero (except for file flush operations)
+
 ## 0.55.0 (October 30, 2017)
 
 ### Features:
