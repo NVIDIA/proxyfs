@@ -645,6 +645,9 @@ class PfsMiddleware(object):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
+        if not constraints.check_utf8(req.path_info):
+            return swob.HTTPPreconditionFailed(
+                body='Invalid UTF8 or contains NULL')
 
         try:
             # Check account to see if this is a bimodal-access account or
