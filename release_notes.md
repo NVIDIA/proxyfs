@@ -1,5 +1,19 @@
 # ProxyFS Release Notes
 
+## 1.0.1 (December 1, 2017)
+
+### Features:
+
+* Added support for "async" flush in SMB (allows multiple simultaneous flushes)
+
+### Bug Fixes:
+
+* Above "async" flush resolves SMB 2 and above write issues with "strict sync = yes" setting in smb.conf
+
+### Known Issues:
+
+* Metadata Recovery Point Objective ("RPO") is non-zero (except for file flush operations)
+
 ## 1.0.0 (November 29, 2017)
 
 ### Features:
