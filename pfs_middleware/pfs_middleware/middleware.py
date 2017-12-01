@@ -73,6 +73,7 @@ import contextlib
 import datetime
 import eventlet
 import eventlet.queue
+import functools
 import hashlib
 import itertools
 import json
@@ -87,6 +88,10 @@ from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
 from swift.common.middleware.acl import parse_acl, format_acl
+from swift.proxy.controllers import AccountController
+from swift.proxy.controllers import ContainerController
+from swift.proxy.controllers.obj import BaseObjectController
+
 from . import pfs_errno, rpc, swift_code, utils
 
 # Generally speaking, let's try to keep the use of Swift code to a
@@ -99,7 +104,7 @@ from . import pfs_errno, rpc, swift_code, utils
 # get_account_info, we'd lose the benefit of Swift's caching. This would
 # slow down requests *a lot*. Same for containers.
 from swift.proxy.controllers.base import (
-    get_account_info, get_container_info, clear_info_cache)
+    get_account_info, get_container_info, clear_info_cache, cors_validation)
 
 # Plain WSGI is annoying to work with, and nobody wants a dependency on
 # webob.
@@ -107,8 +112,7 @@ from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
-from swift.common.utils import get_logger
-
+from swift.common.utils import get_logger, readconf, config_true_value
 
 # POSIX file-path limits. Taken from Linux's limits.h, which is also where
 # ProxyFS gets them.
@@ -452,6 +456,79 @@ def iterator_posthook(iterable, posthook, *posthook_args, **posthook_kwargs):
         posthook(*posthook_args, **posthook_kwargs)
 
 
+def pfs_cors_validation(func):
+    """
+    A decorator that, when applicable, adds CORS headers to a Response.
+    """
+    @functools.wraps(func)
+    def wrapped(pfs, ctx, *args, **kwargs):
+        def wrapper(controller, req):
+            # cors_validation expects to wrap a function with signature
+            # (controller, req) so this wrapper translates to a call to the
+            # decorated PfsMiddleware function.
+            return func(pfs, ctx)
+
+        # A controller instance is needed in order to re-use Swift's
+        # cors_validation function. It is only used to retrieve container_info
+        # and get conf options from its app.
+        controller = pfs.make_controller(ctx)
+        return cors_validation(wrapper)(controller, ctx.req)
+    return wrapped
+
+
+def _load_proxy_server_conf(conf):
+    if '__file__' in conf:
+        all_conf = readconf(conf['__file__'])
+        pipe = all_conf.get("pipeline:main", {}).get("pipeline")
+        if pipe:
+            proxy_name = pipe.rsplit(None, 1)[-1]
+            proxy_section = "app:" + proxy_name
+            return all_conf.get(proxy_section)
+    return {}
+
+
+class FakeProxyServerApp(object):
+    """
+    Provides a minimal subset of proxy server app behaviour i.e. some config
+    options and a __call_ method that forwards to a delegate, typically the
+    bimodal checker. The latter means that if a proxy controller is
+    instantiated with an instance of this class as its app then any calls to
+    its app can be routed back to the bimodal checker.
+    """
+    # ideally we might subclass the proxy server Application, override __call__
+    # and inherit all its config parsing and attributes, but that involves
+    # loading rings.
+    def __init__(self, conf, app):
+        self.conf = conf
+        self.app = app
+        self.parse_conf(conf)
+
+        # we need to use this with controller methods that call container_info,
+        # which in turn calls app.get_nodes, but those methods don't actually
+        # use the nodes and partition values in the container info dict.
+        class FakeRing(object):
+            def get_nodes(self, *args, **kwargs):
+                return 0, []
+        self.container_ring = FakeRing()
+
+    def __call__(self, env, start_response):
+        self.app.__call__(env, start_response)
+
+    def parse_conf(self, conf):
+        self.allow_account_management = \
+            config_true_value(conf.get('allow_account_management', 'no'))
+        self.cors_allow_origin = [
+            a.strip()
+            for a in conf.get('cors_allow_origin', '').split(',')
+            if a.strip()]
+        self.cors_expose_headers = [
+            a.strip()
+            for a in conf.get('cors_expose_headers', '').split(',')
+            if a.strip()]
+        self.strict_cors_mode = config_true_value(
+            conf.get('strict_cors_mode', 't'))
+
+
 class ZeroFiller(object):
     """
     Internal middleware to handle the zero-fill portions of sparse files for
@@ -604,6 +681,7 @@ class PfsMiddleware(object):
         self.app = app
         self.zero_filler_app = ZeroFiller(app)
         self.conf = conf
+        self.proxy_conf = _load_proxy_server_conf(conf)
 
         self.logger = logger or get_logger(conf, log_route='pfs')
 
@@ -695,7 +773,9 @@ class PfsMiddleware(object):
 
                 # Authorization succeeded; dispatch to a helper method
                 method = req.method
-                if method == 'GET' and obj:
+                if method == 'OPTIONS':
+                    resp = self.handle_options(ctx)
+                elif method == 'GET' and obj:
                     resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
                     resp = self.head_object(ctx)
@@ -789,6 +869,32 @@ class PfsMiddleware(object):
             return container_info['write_acl']
         else:
             return None
+
+    def make_controller(self, ctx):
+        """
+        Get an instance of a controller whose app is a FakeProxyServer.
+
+        :param ctx: a RequestContext
+        :return: a ContainerController
+        """
+        if ctx.object_name:
+            controller_class = BaseObjectController
+        elif ctx.container_name:
+            controller_class = ContainerController
+        elif ctx.account_name:
+            controller_class = AccountController
+        else:
+            return None
+
+        fp = FakeProxyServerApp(
+            self.proxy_conf, ctx.req.environ[utils.ENV_BIMODAL_CHECKER])
+        return controller_class(fp, account_name=ctx.account_name,
+                                container_name=ctx.container_name,
+                                object_name=ctx.object_name)
+
+    def handle_options(self, ctx):
+        controller = self.make_controller(ctx)
+        return controller.OPTIONS(ctx.req)
 
     def get_account(self, ctx):
         req = ctx.req
@@ -918,6 +1024,7 @@ class PfsMiddleware(object):
         resp.headers["ProxyFS-Enabled"] = "yes"
         return resp
 
+    @pfs_cors_validation
     def head_container(self, ctx):
         head_request = rpc.head_request(urllib_parse.unquote(ctx.req.path))
         try:
@@ -940,6 +1047,7 @@ class PfsMiddleware(object):
         self._add_required_container_headers(resp)
         return resp
 
+    @pfs_cors_validation
     def put_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
@@ -989,6 +1097,7 @@ class PfsMiddleware(object):
 
         return swob.HTTPAccepted(request=req)
 
+    @pfs_cors_validation
     def post_container(self, ctx):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
@@ -1087,6 +1196,7 @@ class PfsMiddleware(object):
         resp.headers.update(CONTAINER_HEADERS_WE_LIE_ABOUT)
         resp.headers["X-Storage-Policy"] = self._default_storage_policy()
 
+    @pfs_cors_validation
     def get_container(self, ctx):
         req = ctx.req
         if req.environ.get('swift.source') in ('DLO', 'SW', 'VW'):
@@ -1214,6 +1324,7 @@ class PfsMiddleware(object):
             buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue()
 
+    @pfs_cors_validation
     def put_object(self, ctx):
         req = ctx.req
         # Make sure the (virtual) container exists
@@ -1399,6 +1510,7 @@ class PfsMiddleware(object):
             "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
         return swob.HTTPCreated(request=req, headers=resp_headers, body="")
 
+    @pfs_cors_validation
     def post_object(self, ctx):
         req = ctx.req
         path = urllib_parse.unquote(req.path)
@@ -1427,6 +1539,7 @@ class PfsMiddleware(object):
         resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime)
         return resp
 
+    @pfs_cors_validation
     def get_object(self, ctx):
         req = ctx.req
         byteranges = req.range.ranges if req.range else ()
@@ -1558,6 +1671,7 @@ class PfsMiddleware(object):
 
         channel.put("alright, it's done")
 
+    @pfs_cors_validation
     def delete_object(self, ctx):
         try:
             self.rpc_call(ctx, rpc.delete_request(
@@ -1571,6 +1685,7 @@ class PfsMiddleware(object):
                 raise
         return swob.HTTPNoContent(request=ctx.req)
 
+    @pfs_cors_validation
     def head_object(self, ctx):
         req = ctx.req
         head_request = rpc.head_request(urllib_parse.unquote(req.path))
