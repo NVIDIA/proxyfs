@@ -5,6 +5,9 @@ Example - create a 1GB file in the local test directory:
 
 dd if=/dev/urandom of=reference_file bs=1M count=1024
 
+Build the binary to run:
+Balajis-MacBook-Pro-2:data_verifier balajirao$ go build
+
 Balajis-MacBook-Pro-2:data_verifier balajirao$ ./data_verifier --help
 Usage of ./data_verifier:
   -flushSize int
