@@ -20,6 +20,9 @@ import json
 import mock
 import unittest
 from StringIO import StringIO
+
+import time
+
 from swift.common import swob
 from xml.etree import ElementTree
 
@@ -2625,6 +2628,7 @@ class TestObjectPut(BaseMiddlewareTest):
         wsgi_input = StringIO("extranean-paleophysiology")
         cl = str(len(wsgi_input.getvalue()))
 
+        delete_at = str(int(time.time()) + 1000)
         headers_in = {
             "X-Object-Meta-Color": "puce",
             "X-Object-Sysmeta-Flavor": "bbq",
@@ -2632,6 +2636,7 @@ class TestObjectPut(BaseMiddlewareTest):
             "Content-Disposition": "recycle when no longer needed",
             "Content-Encoding": "quadruple rot13",
             "Content-Type": "application/eggplant",
+            "X-Delete-At": delete_at,
             # NB: we'll never actually see these two together, but it's fine
             # for this test since we're only looking at which headers get
             # saved and which don't.
@@ -2661,6 +2666,7 @@ class TestObjectPut(BaseMiddlewareTest):
                          "recycle when no longer needed")
         self.assertEqual(metadata.get("Content-Encoding"), "quadruple rot13")
         self.assertEqual(metadata.get("Content-Type"), "application/eggplant")
+        self.assertEqual(metadata.get("X-Delete-At"), delete_at)
 
     def test_directory_in_the_way(self):
         # If "thing.txt" is a nonempty directory, we get an error that the
@@ -2736,7 +2742,7 @@ class TestObjectPut(BaseMiddlewareTest):
         serialized_metadata = self.fake_rpc.calls[3][1][0]["Metadata"]
         metadata = json.loads(base64.b64decode(serialized_metadata))
         # it didn't get saved in metadata (not that it matters too much)
-        self.assertNotIn("X-Delete-At", metadata)
+        self.assertIn("X-Delete-At", metadata)
         self.assertNotIn("X-Delete-After", metadata)
         self.assertNotIn("ETag", metadata)
 
@@ -2831,10 +2837,12 @@ class TestObjectPost(BaseMiddlewareTest):
         self.fake_rpc.register_handler(
             "Server.RpcPost", lambda *a: {"error": None, "result": {}})
 
+        delete_at = str(int(time.time()) + 1000)
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "POST"},
-            headers={"X-Object-Meta-Red-Fish": "blue fish"})
+            headers={"X-Object-Meta-Red-Fish": "blue fish",
+                     "X-Delete-At": delete_at})
         status, headers, _ = self.call_pfs(req)
 
         # For reference, the result of a real object POST request. The
@@ -2874,6 +2882,7 @@ class TestObjectPost(BaseMiddlewareTest):
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertEqual(new_meta["X-Object-Meta-Red-Fish"], "blue fish")
         self.assertEqual(new_meta["Content-Type"], "application/fishy")
+        self.assertEqual(new_meta["X-Delete-At"], delete_at)
         self.assertNotIn("X-Object-Meta-One-Fish", new_meta)
 
     def test_preservation(self):

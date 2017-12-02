@@ -132,7 +132,8 @@ SPECIAL_OBJECT_METADATA_HEADERS = {
     "Content-Disposition",
     "Content-Encoding",
     "X-Object-Manifest",
-    "X-Static-Large-Object"}
+    "X-Static-Large-Object",
+    "X-Delete-At"}
 
 # These are not mutated on object POST.
 STICKY_OBJECT_METADATA_HEADERS = {
@@ -1214,6 +1215,7 @@ class PfsMiddleware(object):
 
     def put_object(self, ctx):
         req = ctx.req
+        constraints.check_delete_headers(req)
         # Make sure the (virtual) container exists
         #
         # We have to dig out an earlier-in-the-chain middleware here because
@@ -1296,6 +1298,7 @@ class PfsMiddleware(object):
         if error_response:
             return error_response
 
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
         # If these make it to Swift, they can goof up our log segment behind
         # proxyfs's back.
         for forbidden_header in FORBIDDEN_OBJECT_HEADERS:
@@ -1347,7 +1350,6 @@ class PfsMiddleware(object):
         # segments (this later becomes the NumWrites value) so that we can
         # provide an ETag that's an MD5 checksum unless the file has been
         # subsequently written.
-        obj_metadata = extract_object_metadata_from_headers(req.headers)
         obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
                                                        hasher.hexdigest())
 
@@ -1395,6 +1397,7 @@ class PfsMiddleware(object):
 
     def post_object(self, ctx):
         req = ctx.req
+        constraints.check_delete_headers(req)
         path = urllib_parse.unquote(req.path)
         new_metadata = extract_object_metadata_from_headers(req.headers)
 
