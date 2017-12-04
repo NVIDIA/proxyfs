@@ -1,5 +1,15 @@
 # ProxyFS Release Notes
 
+## 1.0.2 (December 4, 2017)
+
+### Bug Fixes:
+
+* Segment fault while handling SIGHUP during log rotation and volume migration
+
+### Known Issues:
+
+* Metadata Recovery Point Objective ("RPO") is non-zero (except for file flush operations)
+
 ## 1.0.1 (December 1, 2017)
 
 ### Features:
