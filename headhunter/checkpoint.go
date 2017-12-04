@@ -422,9 +422,9 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		// or a successful putCheckpoint() has removed the Replay Log. In either case, a fresh
 		// Replay Log will now be created.
 
-		volume.replayLogFile, err = platform.OpenFile(volume.replayLogFileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		volume.replayLogFile, err = platform.OpenFileSync(volume.replayLogFileName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if nil != err {
-			logger.FatalfWithError(err, "platform.OpenFile(%v,os.O_CREATE|os.O_EXCL|os.O_WRONLY,) failed", volume.replayLogFileName)
+			logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_CREATE|os.O_EXCL|os.O_WRONLY,) failed", volume.replayLogFileName)
 		}
 	} else {
 		// Replay Log is currently open
@@ -747,14 +747,14 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		return
 	}
 
-	volume.replayLogFile, err = platform.OpenFile(volume.replayLogFileName, os.O_RDWR, 0600)
+	volume.replayLogFile, err = platform.OpenFileSync(volume.replayLogFileName, os.O_RDWR, 0600)
 	if nil != err {
 		if os.IsNotExist(err) {
 			// No Replay Log found... simply return now
 			err = nil
 			return
 		} else {
-			logger.FatalfWithError(err, "platform.OpenFile(%v,os.O_RDWR,) failed", volume.replayLogFileName)
+			logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_RDWR,) failed", volume.replayLogFileName)
 		}
 	}
 

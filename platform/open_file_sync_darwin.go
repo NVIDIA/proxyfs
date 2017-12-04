@@ -6,12 +6,12 @@ import (
 	"syscall"
 )
 
-// OpenFile that ensures reads and writes are not cached and also that writes
+// OpenFileSync that ensures reads and writes are not cached and also that writes
 // are not reported as complete until the data and metadata are persisted.
 //
 // Note that the request for no caching will only be honored if the file has
 // not already entered the cache at the time of the call to OpenFile.
-func OpenFile(name string, flag int, perm os.FileMode) (file *os.File, err error) {
+func OpenFileSync(name string, flag int, perm os.FileMode) (file *os.File, err error) {
 	var (
 		errno        syscall.Errno
 		modifiedFlag int
