@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 func main() {
@@ -18,6 +19,7 @@ func main() {
 		ioSize      int
 		flushSize   int
 		syncOnWrite bool
+		verifyOnly  bool
 	)
 
 	flag.StringVar(&tgtDir, "tgtDir", "", "Target Directory for writing test files")
@@ -26,7 +28,7 @@ func main() {
 	flag.BoolVar(&syncOnWrite, "sync", false, "Sync After Every write")
 	flag.IntVar(&ioSize, "ioSize", 65536, "IO Size for reading and writing")
 	flag.IntVar(&flushSize, "flushSize", 1048576, "Outstanding data before explicit flush")
-
+	flag.BoolVar(&verifyOnly, "verifyOnly", false, "Verofy Only")
 	flag.Parse()
 
 	if tgtDir == "" {
@@ -61,7 +63,6 @@ func main() {
 			defer fmt.Printf("Exiting thread %v\n", idx)
 
 			buf := make([]byte, ioSize)
-			fmt.Printf("Thread - Starting write phase %v\n", idx)
 			inF, err := os.Open(refFile)
 			if err != nil {
 				fmt.Printf("Thread idx %v failed to open ref file %s %v exiting..\n", idx, refFile, err)
@@ -69,14 +70,23 @@ func main() {
 			}
 
 			outPath := tgtDir + "/" + strconv.Itoa(idx)
-			outF, err := os.OpenFile(outPath, openFlags, os.ModePerm)
-			if err != nil {
-				fmt.Printf("Thread idx %v failed to create out file %s %v exiting.. \n", idx, outPath, err)
-				return
+			var outF *os.File
+			if !verifyOnly {
+				outF, err = os.OpenFile(outPath, openFlags, os.ModePerm)
+				if err != nil {
+					fmt.Printf("Thread idx %v failed to create out file %s %v exiting.. \n", idx, outPath, err)
+					return
+				}
+			}
+			inFstat, err := inF.Stat()
+			var readDuration, writeDuration, syncDuration time.Duration
+			var timeStart time.Time
+
+			if !verifyOnly {
+				fmt.Printf("Thread - Starting write phase %v\n", idx)
 			}
 
-			inFstat, err := inF.Stat()
-			for i := int64(0); i < inFstat.Size(); i += int64(ioSize) {
+			for i := int64(0); !verifyOnly && i < inFstat.Size(); i += int64(ioSize) {
 				reqSize := int64(math.Min(float64(inFstat.Size()-i), float64(ioSize)))
 				_, err = inF.Read(buf[:reqSize])
 				if err != nil {
@@ -84,36 +94,46 @@ func main() {
 					return
 				}
 
+				timeStart = time.Now()
 				_, err = outF.Write(buf[:reqSize])
 				if err != nil {
 					fmt.Printf("Thread idx %v failed to write to tgt file %v at offset %v err %v\n", idx, outPath, i, err)
 					return
 				}
+				writeDuration += time.Since(timeStart)
 
 				if (int64(i)+reqSize)%int64(flushSize) == 0 {
+					timeStart = time.Now()
 					err = outF.Sync()
 					if err != nil {
 						fmt.Printf("Thread idx %v failed to sync tgt file %v offset %v err %v\n", idx, outPath, i, err)
 						return
 					}
+
+					syncDuration = time.Since(timeStart)
 				}
 
 			}
-			err = outF.Sync()
-			if err != nil {
-				fmt.Printf("Thread idx %v failed to sync tgt file %v before closing, err %v\n", idx, outPath, err)
-				return
+			if !verifyOnly {
+				timeStart = time.Now()
+				err = outF.Sync()
+				if err != nil {
+					fmt.Printf("Thread idx %v failed to sync tgt file %v before closing, err %v\n", idx, outPath, err)
+					return
+				}
+				syncDuration += time.Since(timeStart)
 			}
-
 			err = inF.Close()
 			if err != nil {
 				fmt.Printf("Thread idx %v failed to close the reference file - err %v\n", idx, err)
 				return
 			}
 
-			err = outF.Close()
-			if err != nil {
-				fmt.Printf("Thread idx %v failed to close the file - err %v\n", idx, err)
+			if !verifyOnly {
+				err = outF.Close()
+				if err != nil {
+					fmt.Printf("Thread idx %v failed to close the file - err %v\n", idx, err)
+				}
 			}
 
 			fmt.Printf("Thread %v starting verify phase\n", idx)
@@ -129,9 +149,19 @@ func main() {
 				return
 			}
 
-			refBuf := make([]byte, ioSize)
+			outStat, err := outF.Stat()
+			if err != nil {
+				fmt.Printf("Thread idx %v failed to stat out file %v err %v\n", idx, outPath, err)
+				return
+			}
 
-			for i := int64(0); i < inFstat.Size(); i += int64(ioSize) {
+			if outStat.Size() != inFstat.Size() {
+				fmt.Printf("Ref file size and Tgt file size not matching - %v - %v\n", outStat.Size(), inFstat.Size())
+			}
+
+			refBuf := make([]byte, ioSize)
+			verifySize := int64(math.Min(float64(outStat.Size()), float64(inFstat.Size())))
+			for i := int64(0); i < verifySize; i += int64(ioSize) {
 				reqSize := int64(math.Min(float64(inFstat.Size()-i), float64(ioSize)))
 				_, err = inF.Read(buf[:reqSize])
 				if err != nil {
@@ -139,17 +169,25 @@ func main() {
 					return
 				}
 
+				timeStart = time.Now()
 				_, err = outF.Read(refBuf[:reqSize])
 				if err != nil {
-					fmt.Printf("Thread idx %v failed to write to tgt file %v at offset %v err %v\n", idx, outPath, i, err)
+					fmt.Printf("Thread idx %v failed to read tgt file %v at offset %v err %v\n", idx, outPath, i, err)
 					return
 				}
+
+				readDuration += time.Since(timeStart)
 
 				if bytes.Compare(buf[:reqSize], refBuf[:reqSize]) != 0 {
 					fmt.Printf("Data mismatch between %v and %v in range %v to %v\n", refFile, outPath, i, i+reqSize)
 					return
 				}
 			}
+
+			inF.Close()
+			outF.Close()
+
+			fmt.Printf("Thread: %v Write time %v Sync time %v Read time %v File Size %v\n", idx, writeDuration, syncDuration, readDuration, inFstat.Size())
 		}(idx)
 	}
 
