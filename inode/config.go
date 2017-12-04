@@ -10,6 +10,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -108,7 +109,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		flowControl                                    *flowControlStruct
 		flowControlName                                string
 		flowControlSectionName                         string
-		flowControlWeightSum                           uint64
 		ok                                             bool
 		peerName                                       string
 		peerNames                                      []string
@@ -120,9 +120,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		physicalContainerLayoutSectionName             string
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
-		readCacheMemSize                               uint64
-		readCacheQuotaPercentage                       uint64
-		readCacheTotalSize                             uint64
 		versionV1                                      = Version(V1)
 		volume                                         *volumeStruct
 		volumeList                                     []string
@@ -383,30 +380,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		globals.accountMap[volume.accountName] = volume
 	}
 
-	for _, flowControl = range globals.flowControlMap {
-		flowControlWeightSum += flowControl.readCacheWeight
-	}
-
-	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
-	if nil != err {
-		return
-	}
-	if 100 < readCacheQuotaPercentage {
-		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
-		return
-	}
-
-	readCacheMemSize = platform.MemSize() * readCacheQuotaPercentage / 100
-
-	for _, flowControl = range globals.flowControlMap {
-		readCacheTotalSize = readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
-
-		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
-		if 0 == flowControl.readCacheLineCount {
-			err = fmt.Errorf("[\"%v\"]ReadCacheWeight must result in at least one ReadCacheLineSize (%v) of memory", flowControl.flowControlName, flowControl.readCacheLineSize)
-			return
-		}
-	}
+	adoptFlowControlReadCacheParameters(confMap, false)
 
 	globals.fileExtentStructSize, _, err = cstruct.Examine(fileExtentStruct{})
 	if nil != err {
@@ -588,7 +562,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		flowControlName                                string
 		flowControlSectionName                         string
 		flowControl                                    *flowControlStruct
-		flowControlWeightSum                           uint64
 		fsid                                           uint64
 		newlyActiveVolumeSet                           map[string]*volumeStruct
 		ok                                             bool
@@ -603,9 +576,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
 		readCacheLineSize                              uint64
-		readCacheMemSize                               uint64
-		readCacheQuotaPercentage                       uint64
-		readCacheTotalSize                             uint64
 		volume                                         *volumeStruct
 		volumeList                                     []string
 		volumeName                                     string
@@ -891,6 +861,27 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	adoptFlowControlReadCacheParameters(confMap, true)
+
+	err = nil
+	return
+}
+
+func Down() (err error) {
+	err = nil // Nothing to do
+	return
+}
+
+func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCaches bool) (err error) {
+	var (
+		flowControl              *flowControlStruct
+		flowControlWeightSum     uint64
+		readCacheMemSize         uint64
+		readCacheQuotaPercentage uint64
+		readCacheTotalSize       uint64
+		totalMemSize             uint64
+	)
+
 	for _, flowControl = range globals.flowControlMap {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
@@ -904,7 +895,15 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	readCacheMemSize = platform.MemSize() * readCacheQuotaPercentage / 100
+	totalMemSize = platform.MemSize()
+
+	readCacheMemSize = totalMemSize * readCacheQuotaPercentage / 100
+
+	logger.Infof("Adopting ReadCache Parameters...")
+	logger.Infof("...ReadCacheQuotaFraction(%v%%) of memSize(0x%016X) totals 0x%016X",
+		readCacheQuotaPercentage,
+		totalMemSize,
+		readCacheMemSize)
 
 	for _, flowControl = range globals.flowControlMap {
 		readCacheTotalSize = readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
@@ -915,14 +914,24 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		capReadCache(flowControl)
+		logger.Infof("...0x%08X cache lines (each of size 0x%08X) totalling 0x%016X for Flow Control %v",
+			flowControl.readCacheLineCount,
+			flowControl.readCacheLineSize,
+			flowControl.readCacheLineCount*flowControl.readCacheLineSize,
+			flowControl.flowControlName)
+
+		if capExistingReadCaches {
+			flowControl.Lock()
+
+			for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+				flowControl.readCacheLRU = flowControl.readCacheLRU.prev
+				flowControl.readCacheLRU.next = nil
+			}
+
+			flowControl.Unlock()
+		}
 	}
 
 	err = nil
-	return
-}
-
-func Down() (err error) {
-	err = nil // Nothing to do
 	return
 }

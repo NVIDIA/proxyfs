@@ -10,17 +10,6 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-func capReadCache(flowControl *flowControlStruct) {
-	flowControl.Lock()
-
-	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
-		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
-		flowControl.readCacheLRU.next = nil
-	}
-
-	flowControl.Unlock()
-}
-
 func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
