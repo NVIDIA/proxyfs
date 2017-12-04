@@ -10,6 +10,43 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func (flowControl *flowControlStruct) capReadCacheWhileLocked() {
+	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+		delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
+		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
+		flowControl.readCacheLRU.next = nil
+	}
+}
+
+func (flowControl *flowControlStruct) insertReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
+	flowControl.readCache[readCacheElement.readCacheKey] = readCacheElement
+	if nil == flowControl.readCacheMRU {
+		flowControl.readCacheMRU = readCacheElement
+		flowControl.readCacheLRU = readCacheElement
+	} else {
+		readCacheElement.next = flowControl.readCacheMRU
+		readCacheElement.next.prev = readCacheElement
+		flowControl.readCacheMRU = readCacheElement
+	}
+	flowControl.capReadCacheWhileLocked()
+}
+
+func (flowControl *flowControlStruct) touchReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
+	if flowControl.readCacheMRU != readCacheElement {
+		if readCacheElement == flowControl.readCacheLRU {
+			flowControl.readCacheLRU = readCacheElement.prev
+			flowControl.readCacheLRU.next = nil
+		} else {
+			readCacheElement.prev.next = readCacheElement.next
+			readCacheElement.next.prev = readCacheElement.prev
+		}
+		readCacheElement.next = flowControl.readCacheMRU
+		readCacheElement.prev = nil
+		flowControl.readCacheMRU.prev = readCacheElement
+		flowControl.readCacheMRU = readCacheElement
+	}
+}
+
 func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
@@ -84,20 +121,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 			readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
 
 			if readCacheHit {
-				if flowControl.readCacheMRU != readCacheElement {
-					// Move readCacheElement to MRU position in readCache
-					if readCacheElement == flowControl.readCacheLRU {
-						flowControl.readCacheLRU = readCacheElement.prev
-						flowControl.readCacheLRU.next = nil
-					} else {
-						readCacheElement.prev.next = readCacheElement.next
-						readCacheElement.next.prev = readCacheElement.prev
-					}
-					readCacheElement.next = flowControl.readCacheMRU
-					readCacheElement.prev = nil
-					flowControl.readCacheMRU.prev = readCacheElement
-					flowControl.readCacheMRU = readCacheElement
-				}
+				flowControl.touchReadCacheElementWhileLocked(readCacheElement)
 				cacheLine = readCacheElement.cacheLine
 				flowControl.Unlock()
 				stats.IncrementOperations(&stats.FileReadcacheHitOps)
@@ -119,28 +143,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					cacheLine:    cacheLine,
 				}
 				flowControl.Lock()
-				// If the readCache size is at or greater than the limit, delete something.
-				if uint64(len(flowControl.readCache)) >= flowControl.readCacheLineCount {
-					// Purge LRU element
-					delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
-					if 1 == flowControl.readCacheLineCount {
-						// Unreasonable... but still possible
-						flowControl.readCacheMRU = nil
-						flowControl.readCacheLRU = nil
-					} else {
-						flowControl.readCacheLRU = flowControl.readCacheLRU.prev
-						flowControl.readCacheLRU.next = nil
-					}
-				}
-				flowControl.readCache[readCacheElement.readCacheKey] = readCacheElement
-				if nil == flowControl.readCacheMRU {
-					flowControl.readCacheMRU = readCacheElement
-					flowControl.readCacheLRU = readCacheElement
-				} else {
-					readCacheElement.next = flowControl.readCacheMRU
-					readCacheElement.next.prev = readCacheElement
-					flowControl.readCacheMRU = readCacheElement
-				}
+				flowControl.insertReadCacheElementWhileLocked(readCacheElement)
 				flowControl.Unlock()
 			}
 
@@ -209,20 +212,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					flowControl.Lock()
 					readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
 					if readCacheHit {
-						if flowControl.readCacheMRU != readCacheElement {
-							// Move readCacheElement to MRU position in readCache
-							if readCacheElement == flowControl.readCacheLRU {
-								flowControl.readCacheLRU = readCacheElement.prev
-								flowControl.readCacheLRU.next = nil
-							} else {
-								readCacheElement.prev.next = readCacheElement.next
-								readCacheElement.next.prev = readCacheElement.prev
-							}
-							readCacheElement.next = flowControl.readCacheMRU
-							readCacheElement.prev = nil
-							flowControl.readCacheMRU.prev = readCacheElement
-							flowControl.readCacheMRU = readCacheElement
-						}
+						flowControl.touchReadCacheElementWhileLocked(readCacheElement)
 						cacheLine = readCacheElement.cacheLine
 						flowControl.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheHitOps)
@@ -244,28 +234,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 							cacheLine:    cacheLine,
 						}
 						flowControl.Lock()
-						// If the readCache size is at or greater than the limit, delete something.
-						if uint64(len(flowControl.readCache)) >= flowControl.readCacheLineCount {
-							// Purge LRU element
-							delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
-							if 1 == flowControl.readCacheLineCount {
-								// Unreasonable... but still possible
-								flowControl.readCacheMRU = nil
-								flowControl.readCacheLRU = nil
-							} else {
-								flowControl.readCacheLRU = flowControl.readCacheLRU.prev
-								flowControl.readCacheLRU.next = nil
-							}
-						}
-						flowControl.readCache[readCacheElement.readCacheKey] = readCacheElement
-						if nil == flowControl.readCacheMRU {
-							flowControl.readCacheMRU = readCacheElement
-							flowControl.readCacheLRU = readCacheElement
-						} else {
-							readCacheElement.next = flowControl.readCacheMRU
-							readCacheElement.next.prev = readCacheElement
-							flowControl.readCacheMRU = readCacheElement
-						}
+						flowControl.insertReadCacheElementWhileLocked(readCacheElement)
 						flowControl.Unlock()
 					}
 					if (cacheLineHitOffset + cacheLineHitLength) > uint64(len(cacheLine)) {

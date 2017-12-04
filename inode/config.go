@@ -876,6 +876,7 @@ func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCa
 	var (
 		flowControl              *flowControlStruct
 		flowControlWeightSum     uint64
+		readCacheLineCount       uint64
 		readCacheMemSize         uint64
 		readCacheQuotaPercentage uint64
 		readCacheTotalSize       uint64
@@ -908,29 +909,24 @@ func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCa
 	for _, flowControl = range globals.flowControlMap {
 		readCacheTotalSize = readCacheMemSize * flowControl.readCacheWeight / flowControlWeightSum
 
-		flowControl.readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
-		if 0 == flowControl.readCacheLineCount {
+		readCacheLineCount = readCacheTotalSize / flowControl.readCacheLineSize
+		if 0 == readCacheLineCount {
 			err = fmt.Errorf("[\"%v\"]ReadCacheWeight must result in at least one ReadCacheLineSize (%v) of memory", flowControl.flowControlName, flowControl.readCacheLineSize)
 			return
 		}
+
+		flowControl.Lock()
+		flowControl.readCacheLineCount = readCacheLineCount
+		if capExistingReadCaches {
+			flowControl.capReadCacheWhileLocked()
+		}
+		flowControl.Unlock()
 
 		logger.Infof("...0x%08X cache lines (each of size 0x%08X) totalling 0x%016X for Flow Control %v",
 			flowControl.readCacheLineCount,
 			flowControl.readCacheLineSize,
 			flowControl.readCacheLineCount*flowControl.readCacheLineSize,
 			flowControl.flowControlName)
-
-		if capExistingReadCaches {
-			flowControl.Lock()
-
-			for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
-				delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
-				flowControl.readCacheLRU = flowControl.readCacheLRU.prev
-				flowControl.readCacheLRU.next = nil
-			}
-
-			flowControl.Unlock()
-		}
 	}
 
 	err = nil
