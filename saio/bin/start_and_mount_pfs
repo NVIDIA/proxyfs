@@ -11,24 +11,26 @@ function await_proxyfsd_shutdown {
         then
             break
         fi
+        echo "Waiting for ProxyFS to be stopped..."
         sleep 1
     done
 }
 
 function await_proxyfsd_startup {
+    /usr/bin/systemctl -q is-active proxyfsd
+    if [ $? -ne 0 ]
+    then
+        echo "ProxyFS failed to start. Exiting..."
+        exit 1
+    fi
     while true
     do
-        /usr/bin/systemctl -q is-active proxyfsd
-        if [ $? -ne 0 ]
-        then
-            echo "ProxyFS failed to start. Exiting..."
-            exit 1
-        fi
         curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
         if [ $? -eq 0 ]
         then
             break
         fi
+        echo "Waiting for ProxyFS to be started..."
         sleep 1
     done
 }
@@ -58,14 +60,17 @@ function format_volume_if_necessary {
 if [ $# -gt 0 ]; then
     MOUNT_TYPE="$1"
     MOUNT_TYPE=${MOUNT_TYPE,,}
-    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "smb1" ] && [ "$MOUNT_TYPE" != "smb2" ] && [ "$MOUNT_TYPE" != "smb3" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
-        echo "Invalid argument '$1'."
-        echo
+    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "keepmounts" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "smb1" ] && [ "$MOUNT_TYPE" != "smb2" ] && [ "$MOUNT_TYPE" != "smb3" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
+        if [ "$MOUNT_TYPE" != "-h" ] && [ "$MOUNT_TYPE" != "--help" ]; then
+            echo "Invalid argument '$1'."
+            echo
+        fi
         echo "Usage: $0 [mount type]"
         echo "Mount type options:"
-        echo "    all: NFS v3 and SMB v1.0 (default option)"
+        echo "    all: NFS v3 and SMB v3.0 (default option)"
+        echo "    keepmounts: don't umount/mount any mountpoints"
         echo "    nfs: NFS v3"
-        echo "    smb: SMB v1.0"
+        echo "    smb: SMB v3.0"
         echo "    smb1: SMB v1.0"
         echo "    smb2: SMB v2.1"
         echo "    smb3: SMB v3.0"
@@ -77,14 +82,14 @@ fi
 
 if [ "$MOUNT_TYPE" == "all" ]; then
     NFS_VERS=3
-    SMB_VERS=1.0
+    SMB_VERS=3.0
 elif [ "$MOUNT_TYPE" == "nfs" ]; then
     NFS_VERS=3
-elif [ "$MOUNT_TYPE" == "smb" ] || [ "$MOUNT_TYPE" == "smb1" ]; then
+elif [ "$MOUNT_TYPE" == "smb1" ]; then
     SMB_VERS=1.0
 elif [ "$MOUNT_TYPE" == "smb2" ]; then
     SMB_VERS=2.1
-elif [ "$MOUNT_TYPE" == "smb3" ]; then
+elif [ "$MOUNT_TYPE" == "smb" ] || [ "$MOUNT_TYPE" == "smb3" ]; then
     SMB_VERS=3.0
 fi
 
@@ -99,14 +104,16 @@ GID_SMB=`id -g`
 
 sudo mount -a
 
-mountpoint -q $SHARE_NFS
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_NFS
-fi
+if [ $MOUNT_TYPE != "keepmounts" ]; then
+    mountpoint -q $SHARE_NFS
+    if [ $? -eq 0 ]; then
+        sudo umount $SHARE_NFS
+    fi
 
-mountpoint -q $SHARE_SMB
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_SMB
+    mountpoint -q $SHARE_SMB
+    if [ $? -eq 0 ]; then
+        sudo umount $SHARE_SMB
+    fi
 fi
 
 if [ -f /usr/bin/systemctl ]; then
