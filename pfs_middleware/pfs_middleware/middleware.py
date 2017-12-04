@@ -1243,6 +1243,10 @@ class PfsMiddleware(object):
         """
         req = ctx.req
 
+        request_etag = req.headers.get("ETag", "")
+        if looks_like_md5(request_etag) and request_etag != EMPTY_OBJECT_ETAG:
+            return swob.HTTPUnprocessableEntity(request=req)
+
         path = urllib_parse.unquote(req.path)
         obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
             req.headers))

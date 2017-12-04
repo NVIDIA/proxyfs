@@ -2782,6 +2782,33 @@ class TestObjectPut(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
 
+    def test_etag_checking_dir(self):
+        req = swob.Request.blank(
+            "/v1/AUTH_test/a-container/a-dir-object",
+            environ={"REQUEST_METHOD": "PUT"},
+            headers={"ETag": hashlib.md5("x").hexdigest(),
+                     "Content-Length": 0,
+                     "Content-Type": "application/directory"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '422 Unprocessable Entity')
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/a-container/a-dir-object",
+            environ={"REQUEST_METHOD": "PUT"},
+            headers={"ETag": hashlib.md5("").hexdigest(),
+                     "Content-Length": 0,
+                     "Content-Type": "application/directory"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '201 Created')
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test/a-container/a-dir-object",
+            environ={"REQUEST_METHOD": "PUT"},
+            headers={"Content-Length": 0,
+                     "Content-Type": "application/directory"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '201 Created')
+
 
 class TestObjectPost(BaseMiddlewareTest):
     def test_missing_object(self):
