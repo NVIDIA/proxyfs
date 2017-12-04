@@ -21,14 +21,27 @@ SHARE_NFS=/mnt/nfs_proxyfs_mount/
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
 SHARE_SMB=/mnt/smb_proxyfs_mount
 
-mountpoint -q $SHARE_NFS
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_NFS
+if [ $# = 0 ]; then
+    SHOULD_UNMOUNT=1
+else
+    if [ $1 = "keepmounts" ]; then
+        SHOULD_UNMOUNT=0
+    else
+        echo "Invalid argument: $1"
+        exit 1
+    fi
 fi
 
-mountpoint -q $SHARE_SMB
-if [ $? -eq 0 ]; then
-    sudo umount $SHARE_SMB
+if [ $SHOULD_UNMOUNT = 1 ]; then
+    mountpoint -q $SHARE_NFS
+    if [ $? -eq 0 ]; then
+        sudo umount $SHARE_NFS
+    fi
+
+    mountpoint -q $SHARE_SMB
+    if [ $? -eq 0 ]; then
+        sudo umount $SHARE_SMB
+    fi
 fi
 
 if [ -f /usr/bin/systemctl ]; then
