@@ -168,6 +168,8 @@ SWIFT_OWNER_HEADERS = {
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
+EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
+
 
 def listing_iter_from_read_plan(read_plan):
     """
@@ -1436,7 +1438,8 @@ class PfsMiddleware(object):
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
                     request=req, body="",
-                    headers={"Content-Type": DIRECTORY_CONTENT_TYPE})
+                    headers={"Content-Type": DIRECTORY_CONTENT_TYPE,
+                             "ETag": EMPTY_OBJECT_ETAG})
 
             else:
                 # punt to top-level exception handler
@@ -1584,8 +1587,11 @@ class PfsMiddleware(object):
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
 
         headers["Content-Length"] = file_size
-        headers["ETag"] = best_possible_etag(
-            headers, ctx.account_name, ino, num_writes)
+        if is_dir:
+            headers["ETag"] = EMPTY_OBJECT_ETAG
+        else:
+            headers["ETag"] = best_possible_etag(
+                headers, ctx.account_name, ino, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

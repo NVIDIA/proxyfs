@@ -1147,6 +1147,7 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Length"], "0")
         self.assertEqual(headers["Content-Type"], "application/directory")
+        self.assertEqual(headers["ETag"], "d41d8cd98f00b204e9800998ecf8427e")
 
     def test_GET_special_chars(self):
         self.app.register(
@@ -3285,6 +3286,9 @@ class TestObjectHeadDir(BaseMiddlewareTest):
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Length"], "0")
         self.assertEqual(headers["Content-Type"], "application/directory")
+        self.assertEqual(headers["ETag"], "d41d8cd98f00b204e9800998ecf8427e")
+        self.assertEqual(headers["Last-Modified"],
+                         "Tue, 15 Nov 2016 01:26:09 GMT")
 
 
 class TestObjectCoalesce(BaseMiddlewareTest):
