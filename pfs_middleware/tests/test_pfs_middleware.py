@@ -3639,6 +3639,20 @@ class TestAuth(BaseMiddlewareTest):
                      'swift.authorize': auth_nope,
                      'swift.authorize_override': True})
         status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '403 Forbidden')
+
+    def test_auth_bypass(self):
+        def auth_nope(request):
+            return swob.HTTPForbidden(request=request)
+
+        # pfs is re-entrant when getting ACLs from what may be other accounts.
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con",
+            environ={'REQUEST_METHOD': 'HEAD',
+                     'swift.authorize': auth_nope,
+                     'swift.authorize_override': True,
+                     'swift.source': 'PFS'})
+        status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
 
     def test_auth_allowed(self):

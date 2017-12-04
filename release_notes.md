@@ -1,5 +1,15 @@
 # ProxyFS Release Notes
 
+## 1.0.3 (December 4, 2017)
+
+### Bug Fixes:
+
+* Fix cross-container DLO authorization
+
+### Known Issues:
+
+* Metadata Recovery Point Objective ("RPO") is non-zero (except for file flush operations)
+
 ## 1.0.2 (December 4, 2017)
 
 ### Bug Fixes:

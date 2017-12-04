@@ -316,6 +316,8 @@ def pop_and_restore(hsh, key, default=None):
 
     if was_there:
         hsh[key] = value
+    else:
+        hsh.pop(key, None)
 
 
 def deserialize_metadata(raw_metadata):
@@ -683,11 +685,8 @@ class PfsMiddleware(object):
             with pop_and_restore(req.environ,
                                  'swift.authorize') as auth_cb, \
                     pop_and_restore(req.environ, 'swift.authorize_override',
-                                    False) as auth_override:
-                # If someone's set swift.authorize_override, then they've
-                # already handled auth, and all we should do is get out of the
-                # way.
-                if auth_cb and not auth_override:
+                                    False):
+                if auth_cb and req.environ.get('swift.source') != 'PFS':
                     req.acl = self._fetch_appropriate_acl(ctx)
                     denial_response = auth_cb(ctx.req)
                     if denial_response:
