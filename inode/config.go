@@ -924,6 +924,7 @@ func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCa
 			flowControl.Lock()
 
 			for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
+				delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
 				flowControl.readCacheLRU = flowControl.readCacheLRU.prev
 				flowControl.readCacheLRU.next = nil
 			}
