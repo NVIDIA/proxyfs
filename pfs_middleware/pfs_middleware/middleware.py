@@ -419,7 +419,10 @@ def extract_container_metadata_from_headers(req):
     return meta_headers
 
 
-def best_possible_etag(obj_metadata, account_name, ino, num_writes):
+def best_possible_etag(obj_metadata, account_name, ino, num_writes,
+                       is_dir=False):
+    if is_dir:
+        return EMPTY_OBJECT_ETAG
     if ORIGINAL_MD5_HEADER in obj_metadata:
         val = obj_metadata[ORIGINAL_MD5_HEADER]
         try:
@@ -1158,7 +1161,7 @@ class PfsMiddleware(object):
                                                   ent["IsDir"])
             etag = best_possible_etag(
                 obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"])
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
             json_entry = {
                 "name": name,
                 "bytes": size,
@@ -1182,7 +1185,8 @@ class PfsMiddleware(object):
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
-                container_entry["NumWrites"])
+                container_entry["NumWrites"],
+                is_dir=container_entry["IsDir"])
             container_node = ET.Element('object')
 
             name_node = ET.Element('name')
@@ -1590,11 +1594,8 @@ class PfsMiddleware(object):
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
 
         headers["Content-Length"] = file_size
-        if is_dir:
-            headers["ETag"] = EMPTY_OBJECT_ETAG
-        else:
-            headers["ETag"] = best_possible_etag(
-                headers, ctx.account_name, ino, num_writes)
+        headers["ETag"] = best_possible_etag(
+            headers, ctx.account_name, ino, num_writes, is_dir=is_dir)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

@@ -1585,8 +1585,7 @@ class TestContainerGet(BaseMiddlewareTest):
             "name": "images",
             "bytes": 0,
             "content_type": "application/directory",
-            "hash": mware.construct_etag(
-                "AUTH_test", 2489682, 0),
+            "hash": "d41d8cd98f00b204e9800998ecf8427e",
             "last_modified": "2016-08-23T01:30:16.359210"})
         self.assertEqual(resp_data[1], {
             "name": "images/avocado.png",
@@ -1692,6 +1691,11 @@ class TestContainerGet(BaseMiddlewareTest):
         name_node = obj_attr_tags[0]
         self.assertEqual(name_node.tag, 'name')
         self.assertEqual(name_node.text, 'images')
+
+        hash_node = obj_attr_tags[1]
+        self.assertEqual(hash_node.tag, 'hash')
+        self.assertEqual(hash_node.text, "d41d8cd98f00b204e9800998ecf8427e")
+        self.assertEqual(hash_node.attrib, {})
 
         content_type_node = obj_attr_tags[3]
         self.assertEqual(content_type_node.tag, 'content_type')
