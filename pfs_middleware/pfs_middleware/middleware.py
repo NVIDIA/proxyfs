@@ -356,8 +356,12 @@ def merge_object_metadata(old, new):
 
     old_ct = old.get("Content-Type")
     new_ct = new.get("Content-Type")
-    if old_ct is not None and new_ct is None:
-        merged["Content-Type"] = old_ct
+    if old_ct is not None:
+        if new_ct is None:
+            merged["Content-Type"] = old_ct
+        elif ';swift_bytes=' in old_ct:
+            merged["Content-Type"] = '%s;swift_bytes=%s' % (
+                new_ct, old_ct.rsplit(';swift_bytes=', 1)[1])
 
     return {k: v for k, v in merged.items() if v}
 
@@ -1159,12 +1163,14 @@ class PfsMiddleware(object):
             if content_type is None:
                 content_type = guess_content_type(ent["Basename"],
                                                   ent["IsDir"])
+            content_type, swift_bytes = content_type.partition(
+                ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
             json_entry = {
                 "name": name,
-                "bytes": size,
+                "bytes": int(swift_bytes or size),
                 "content_type": content_type,
                 "hash": etag,
                 "last_modified": last_modified}
@@ -1182,6 +1188,8 @@ class PfsMiddleware(object):
             if content_type is None:
                 content_type = guess_content_type(
                     container_entry["Basename"], container_entry["IsDir"])
+            content_type, swift_bytes = content_type.partition(
+                ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
@@ -1198,7 +1206,7 @@ class PfsMiddleware(object):
             container_node.append(hash_node)
 
             bytes_node = ET.Element('bytes')
-            bytes_node.text = str(container_entry["FileSize"])
+            bytes_node.text = swift_bytes or str(container_entry["FileSize"])
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
@@ -1459,6 +1467,9 @@ class PfsMiddleware(object):
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path,
                                                          is_dir=False)
+        else:
+            headers['Content-Type'] = headers['Content-Type'].split(
+                ';swift_bytes=')[0]
 
         headers["Accept-Ranges"] = "bytes"
         headers["Last-Modified"] = last_modified_from_epoch_ns(
@@ -1592,6 +1603,9 @@ class PfsMiddleware(object):
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
+        else:
+            headers['Content-Type'] = headers['Content-Type'].split(
+                ';swift_bytes=')[0]
 
         headers["Content-Length"] = file_size
         headers["ETag"] = best_possible_etag(
