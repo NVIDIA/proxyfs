@@ -874,35 +874,35 @@ func Down() (err error) {
 
 func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCaches bool) (err error) {
 	var (
-		flowControl              *flowControlStruct
-		flowControlWeightSum     uint64
-		readCacheLineCount       uint64
-		readCacheMemSize         uint64
-		readCacheQuotaPercentage uint64
-		readCacheTotalSize       uint64
-		totalMemSize             uint64
+		flowControl            *flowControlStruct
+		flowControlWeightSum   uint64
+		readCacheLineCount     uint64
+		readCacheMemSize       uint64
+		readCacheQuotaFraction float64
+		readCacheTotalSize     uint64
+		totalMemSize           uint64
 	)
 
 	for _, flowControl = range globals.flowControlMap {
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaPercentage, err = confMap.FetchOptionValueFloatScaledToUint64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction", 100)
+	readCacheQuotaFraction, err = confMap.FetchOptionValueFloat64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction")
 	if nil != err {
 		return
 	}
-	if 100 < readCacheQuotaPercentage {
-		err = fmt.Errorf("%s.ReadCacheQuotaFraction must be no greater than 1", globals.whoAmI)
+	if (0 > readCacheQuotaFraction) || (1 < readCacheQuotaFraction) {
+		err = fmt.Errorf("%s.ReadCacheQuotaFraction (%v) must be between 0 and 1", globals.whoAmI, readCacheQuotaFraction)
 		return
 	}
 
 	totalMemSize = platform.MemSize()
 
-	readCacheMemSize = totalMemSize * readCacheQuotaPercentage / 100
+	readCacheMemSize = uint64(float64(totalMemSize) * readCacheQuotaFraction / platform.GoHeapAllocationMultiplier)
 
 	logger.Infof("Adopting ReadCache Parameters...")
-	logger.Infof("...ReadCacheQuotaFraction(%v%%) of memSize(0x%016X) totals 0x%016X",
-		readCacheQuotaPercentage,
+	logger.Infof("...ReadCacheQuotaFraction(%v) of memSize(0x%016X) totals 0x%016X",
+		readCacheQuotaFraction,
 		totalMemSize,
 		readCacheMemSize)
 
