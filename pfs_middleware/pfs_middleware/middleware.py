@@ -653,13 +653,28 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc or not constraints.valid_api_version(vrs):
+        if not acc or not constraints.valid_api_version(vrs) or (
+                obj and not con):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
         if not constraints.check_utf8(req.path_info):
             return swob.HTTPPreconditionFailed(
                 body='Invalid UTF8 or contains NULL')
+
+        if con in ('.', '..'):
+            if req.method == 'PUT' and not obj:
+                return swob.HTTPBadRequest(
+                    request=req, body='Container name cannot be "." or ".."')
+            else:
+                return swob.HTTPNotFound(request=req)
+        elif obj and any(p in ('', '.', '..') for p in obj.split('/')):
+            if req.method == 'PUT':
+                return swob.HTTPBadRequest(
+                    request=req,
+                    body='No path component may be "", ".", or ".."')
+            else:
+                return swob.HTTPNotFound(request=req)
 
         try:
             # Check account to see if this is a bimodal-access account or

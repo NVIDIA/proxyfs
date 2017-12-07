@@ -102,6 +102,11 @@ class BaseMiddlewareTest(unittest.TestCase):
             200, {'Content-Type': 'application/json'},
             json.dumps(self.swift_info))
 
+        for method in ('GET', 'HEAD', 'PUT', 'POST', 'DELETE'):
+            self.app.register(
+                method, '/v1/AUTH_test//o',
+                412, {'Content-Type': 'text/html'}, 'Bad URL')
+
         self.fake_rpc = helpers.FakeJsonRpc()
         patcher = mock.patch('pfs_middleware.utils.JsonRpcClient',
                              lambda *_: self.fake_rpc)
@@ -1116,6 +1121,37 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(headers.get("X-Object-Meta-Cow"), "moo")
         self.assertEqual(body, 'abcd1234efgh5678')
 
+    def test_GET_bad_path(self):
+        bad_paths = [
+            '/v1/AUTH_test/c/..',
+            '/v1/AUTH_test/c/../o',
+            '/v1/AUTH_test/c/o/..',
+            '/v1/AUTH_test/c/.',
+            '/v1/AUTH_test/c/./o',
+            '/v1/AUTH_test/c/o/.',
+            '/v1/AUTH_test/c//o',
+            '/v1/AUTH_test/c/o//',
+            '/v1/AUTH_test/c/o/',
+        ]
+        for path in bad_paths:
+            req = swob.Request.blank(path)
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'HEAD'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+        path = '/v1/AUTH_test//o'
+        req = swob.Request.blank(path, headers={'Content-Length': '0'})
+        for method in ('GET', 'HEAD', 'PUT', 'POST', 'DELETE'):
+            req.environ['REQUEST_METHOD'] = method
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '412 Precondition Failed',
+                             'Got %s for %s %s' % (status, method, path))
+
     def test_GET_not_found(self):
         def mock_RpcGetObject(get_object_req):
             self.assertEqual(get_object_req['VirtPath'],
@@ -1913,6 +1949,22 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(rpc_method, "Server.RpcGetContainer")
         self.assertEqual(rpc_args[0]["MaxEntries"], 6543)  # default value
 
+    def test_GET_bad_path(self):
+        bad_paths = [
+            '/v1/AUTH_test/..',
+            '/v1/AUTH_test/.',
+        ]
+        for path in bad_paths:
+            req = swob.Request.blank(path)
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'HEAD'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
     def test_not_found(self):
         def mock_RpcGetContainer_error(get_container_req):
             self.assertEqual(get_container_req['VirtPath'],
@@ -2064,6 +2116,30 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(
             base64.b64decode(args[0]["NewMetadata"]),
             json.dumps({"X-Container-Meta-Red-Fish": "blue fish"}))
+
+    def test_PUT_bad_path(self):
+        bad_container_paths = [
+            '/v1/AUTH_test/..',
+            '/v1/AUTH_test/.',
+        ]
+        for path in bad_container_paths:
+            req = swob.Request.blank(path,
+                                     environ={"REQUEST_METHOD": "PUT",
+                                              "wsgi.input": StringIO(""),
+                                              "CONTENT_LENGTH": "0"})
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'POST'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'DELETE'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
 
     def test_name_too_long(self):
         def mock_RpcHead(_):
@@ -2542,6 +2618,60 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertEqual(method, "Server.RpcPutComplete")
         self.assertEqual(args[0]["VirtPath"],
                          "/v1/AUTH_test/c o n/o b j")
+
+    def test_PUT_bad_path(self):
+        bad_container_paths = [
+            '/v1/AUTH_test/../o',
+            '/v1/AUTH_test/./o',
+        ]
+        for path in bad_container_paths:
+            req = swob.Request.blank(path,
+                                     environ={"REQUEST_METHOD": "PUT",
+                                              "wsgi.input": StringIO(""),
+                                              "CONTENT_LENGTH": "0"})
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'POST'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'DELETE'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+        bad_paths = [
+            '/v1/AUTH_test/c/..',
+            '/v1/AUTH_test/c/../o',
+            '/v1/AUTH_test/c/o/..',
+            '/v1/AUTH_test/c/.',
+            '/v1/AUTH_test/c/./o',
+            '/v1/AUTH_test/c/o/.',
+            '/v1/AUTH_test/c//o',
+            '/v1/AUTH_test/c/o//',
+            '/v1/AUTH_test/c/o/',
+        ]
+        for path in bad_paths:
+            req = swob.Request.blank(path,
+                                     environ={"REQUEST_METHOD": "PUT",
+                                              "wsgi.input": StringIO(""),
+                                              "CONTENT_LENGTH": "0"})
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'POST'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
+
+            req.environ['REQUEST_METHOD'] = 'DELETE'
+            status, headers, body = self.call_pfs(req)
+            self.assertEqual(status, '404 Not Found',
+                             'Got %s for %s' % (status, path))
 
     def test_big(self):
         wsgi_input = StringIO('A' * 100 + 'B' * 100 + 'C' * 75)
