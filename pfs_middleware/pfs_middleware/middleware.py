@@ -1528,10 +1528,15 @@ class PfsMiddleware(object):
             self.logger, 'PFS', 'PFS',
             name=req.path)
 
-        return swob.HTTPOk(app_iter=seg_iter, conditional_response=True,
+        resp = swob.HTTPOk(app_iter=seg_iter, conditional_response=True,
                            request=req,
                            headers=headers,
                            content_length=size)
+
+        # Support conditional if-match/if-none-match requests for SLOs
+        resp._conditional_etag = swift_code.resolve_etag_is_at_header(
+            req, resp.headers)
+        return resp
 
     def _keep_lease_alive(self, ctx, channel, lease_id):
         keep_going = [True]
@@ -1615,8 +1620,13 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPOk(request=req, headers=headers,
+        resp = swob.HTTPOk(request=req, headers=headers,
                            conditional_response=True)
+
+        # Support conditional if-match/if-none-match requests for SLOs
+        resp._conditional_etag = swift_code.resolve_etag_is_at_header(
+            req, resp.headers)
+        return resp
 
     def coalesce_object(self, ctx):
         req = ctx.req

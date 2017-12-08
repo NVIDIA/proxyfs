@@ -983,3 +983,56 @@ class SegmentedIterable(object):
         backend server is closed.
         """
         close_if_possible(self.app_iter)
+
+
+# Taken from swift/common/utils.py, commit e001c02
+def list_from_csv(comma_separated_str):
+    """
+    Splits the str given and returns a properly stripped list of the comma
+    separated values.
+    """
+    if comma_separated_str:
+        return [v.strip() for v in comma_separated_str.split(',') if v.strip()]
+    return []
+
+
+# Taken from swift/common/request_helpers.py, commit e001c02
+def resolve_etag_is_at_header(req, metadata):
+    """
+    Helper function to resolve an alternative etag value that may be stored in
+    metadata under an alternate name.
+
+    The value of the request's X-Backend-Etag-Is-At header (if it exists) is a
+    comma separated list of alternate names in the metadata at which an
+    alternate etag value may be found. This list is processed in order until an
+    alternate etag is found.
+
+    The left most value in X-Backend-Etag-Is-At will have been set by the left
+    most middleware, or if no middleware, by ECObjectController, if an EC
+    policy is in use. The left most middleware is assumed to be the authority
+    on what the etag value of the object content is.
+
+    The resolver will work from left to right in the list until it finds a
+    value that is a name in the given metadata. So the left most wins, IF it
+    exists in the metadata.
+
+    By way of example, assume the encrypter middleware is installed. If an
+    object is *not* encrypted then the resolver will not find the encrypter
+    middleware's alternate etag sysmeta (X-Object-Sysmeta-Crypto-Etag) but will
+    then find the EC alternate etag (if EC policy). But if the object *is*
+    encrypted then X-Object-Sysmeta-Crypto-Etag is found and used, which is
+    correct because it should be preferred over X-Object-Sysmeta-Crypto-Etag.
+
+    :param req: a swob Request
+    :param metadata: a dict containing object metadata
+    :return: an alternate etag value if any is found, otherwise None
+    """
+    alternate_etag = None
+    metadata = HeaderKeyDict(metadata)
+    if "X-Backend-Etag-Is-At" in req.headers:
+        names = list_from_csv(req.headers["X-Backend-Etag-Is-At"])
+        for name in names:
+            if name in metadata:
+                alternate_etag = metadata[name]
+                break
+    return alternate_etag
