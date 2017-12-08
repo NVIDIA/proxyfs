@@ -952,6 +952,9 @@ class PfsMiddleware(object):
         err = constraints.check_metadata(req, 'container')
         if err:
             return err
+        err = swift_code.clean_acls(req)
+        if err:
+            return err
         new_metadata = extract_container_metadata_from_headers(req)
 
         # Check name's length. The account name is checked separately (by
@@ -999,6 +1002,9 @@ class PfsMiddleware(object):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
         err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        err = swift_code.clean_acls(req)
         if err:
             return err
         new_metadata = extract_container_metadata_from_headers(req)

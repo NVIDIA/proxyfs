@@ -1036,3 +1036,19 @@ def resolve_etag_is_at_header(req, metadata):
                 alternate_etag = metadata[name]
                 break
     return alternate_etag
+
+
+# Taken from swift/proxy/controllers/container.py, commit e001c02
+#
+# Modified to no longer dangle off a controller
+def clean_acls(req):
+    if 'swift.clean_acl' in req.environ:
+        for header in ('x-container-read', 'x-container-write'):
+            if header in req.headers:
+                try:
+                    req.headers[header] = \
+                        req.environ['swift.clean_acl'](header,
+                                                       req.headers[header])
+                except ValueError as err:
+                    return HTTPBadRequest(request=req, body=str(err))
+    return None
