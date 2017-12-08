@@ -524,6 +524,58 @@ class TestObjectGet(BaseMiddlewareTest):
                          mware.construct_etag("AUTH_test", 1245, 2424))
         self.assertEqual(body, 'burritos')
 
+    def test_GET_slo_manifest(self):
+        self.app.register(
+            'GET', '/v1/AUTH_test/InternalContainerName/0000000000c11fbd',
+            200, {},
+            ("blah[]\x62\x6f\x6f\x74{\"Stuff\": \"probably\"}\x00\x00\x00"))
+
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/notes/lunch")
+            self.assertEqual(get_object_req['ReadEntsIn'], [])
+
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 2,
+                    "Metadata": base64.b64encode(
+                        json.dumps({
+                            'X-Object-Sysmeta-Slo-Etag': 'some etag',
+                            'X-Object-Sysmeta-Slo-Size': '0',
+                            'Content-Type': 'text/plain;swift_bytes=0',
+                        })),
+                    "InodeNumber": 1245,
+                    "NumWrites": 2424,
+                    "ModificationTime": 1481152134331862558,
+                    "LeaseId": "prominority-sarcocyst",
+                    "ReadEntsOut": [{
+                        "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                       "Name/0000000000c11fbd"),
+                        "Offset": 4,
+                        "Length": 2}]}}
+
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch')
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers, {
+            'Content-Type': 'text/plain',  # no swift_bytes!
+            'Content-Length': '2',
+            # ^^^ needs to be actual size, but slo may/will use vvv for HEADs
+            'X-Object-Sysmeta-Slo-Size': '0',
+            'Etag': '"pfsv2/AUTH_test/000004DD/00000978-32"',
+            # slo may/will use vvv to fix up ^^^
+            'X-Object-Sysmeta-Slo-Etag': 'some etag',
+            'Accept-Ranges': 'bytes',
+            'X-Timestamp': '1481152134.33186',
+            'Last-Modified': 'Wed, 07 Dec 2016 23:08:55 GMT',
+        })
+        self.assertEqual(body, '[]')
+
     def test_GET_authed(self):
         self.app.register(
             'GET', '/v1/AUTH_test/InternalContainerName/0000000001178995',
@@ -1435,13 +1487,14 @@ class TestContainerGet(BaseMiddlewareTest):
                         "Metadata": "",
                     }, {
                         "Basename": "images/avocado.png",
-                        "FileSize": 3503770,
+                        "FileSize": 70,
                         "ModificationTime": 1471915816859209471,
                         "IsDir": False,
                         "InodeNumber": 9213768,
                         "NumWrites": 2,
                         "Metadata": base64.b64encode(json.dumps({
-                            "Content-Type": "snack/millenial"})),
+                            "Content-Type": "snack/millenial" +
+                                            ";swift_bytes=3503770"})),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
