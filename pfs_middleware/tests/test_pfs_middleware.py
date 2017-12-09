@@ -3424,11 +3424,15 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         self.assertEqual(headers["Etag"],
                          '"pfsv2/AUTH_test/00045275/00000006-32"')
 
-        # The first call is a call to RpcIsAccountBimodal, the second is a
-        # call to RpcHead, and the third and final call is the one we care
-        # about: RpcCoalesce.
-        self.assertEqual(len(self.fake_rpc.calls), 2)
-        method, args = self.fake_rpc.calls[1]
+        # The first call is a call to RpcIsAccountBimodal, the last is the one
+        # we care about: RpcCoalesce. There *could* be some intervening calls
+        # to RpcHead to authorize read/write access to the segments, but since
+        # there's no authorize callback installed, we skip it.
+        self.assertEqual([method for method, args in self.fake_rpc.calls], [
+            "Server.RpcIsAccountBimodal",
+            "Server.RpcCoalesce",
+        ])
+        method, args = self.fake_rpc.calls[-1]
         self.assertEqual(method, "Server.RpcCoalesce")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
         self.assertEqual(args[0]["ElementAccountRelativePaths"], [
@@ -3437,6 +3441,77 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             "c2/seg space 2a",
             "c2/seg space 2b",
             "c3/seg3",
+        ])
+
+    def test_not_authed(self):
+        def mock_RpcHead(get_container_req):
+            path = get_container_req['VirtPath']
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(json.dumps({
+                        "X-Container-Read": path + '\x00read-acl',
+                        "X-Container-Write": path + '\x00write-acl'})),
+                    "ModificationTime": 1479240451156825194,
+                    "FileSize": 0,
+                    "IsDir": True,
+                    "InodeNumber": 1255,
+                    "NumWrites": 897,
+                }}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        acls = []
+
+        def auth_cb(req):
+            acls.append(req.acl)
+            # write access for the target, plus 3 distince element containers
+            # each needing both read and write checks -- fail the last
+            if len(acls) >= 7:
+                return swob.HTTPForbidden(request=req)
+
+        request_body = json.dumps({
+            "elements": [
+                "c1/seg1a",
+                "c1/seg1b",
+                "c2/seg space 2a",
+                "c2/seg space 2b",
+                "c3/seg3",
+            ]})
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "COALESCE",
+                     "wsgi.input": StringIO(request_body),
+                     "swift.authorize": auth_cb})
+        status, headers, body = self.call_pfs(req)
+        # The first call is a call to RpcIsAccountBimodal, then a bunch of
+        # RpcHead calls as we authorize the four containers involved. Since
+        # we fail the authorization, we never make it to RpcCoalesce.
+        self.assertEqual([method for method, args in self.fake_rpc.calls], [
+            "Server.RpcIsAccountBimodal",
+            "Server.RpcHead",
+            "Server.RpcHead",
+            "Server.RpcHead",
+            "Server.RpcHead",
+        ])
+        container_paths = [
+            "/v1/AUTH_test/con",
+            "/v1/AUTH_test/c1",
+            "/v1/AUTH_test/c2",
+            "/v1/AUTH_test/c3",
+        ]
+        self.assertEqual(container_paths, [
+            args[0]['VirtPath'] for method, args in self.fake_rpc.calls[1:]])
+        self.assertEqual(status, '403 Forbidden')
+        self.assertEqual(acls, [
+            "/v1/AUTH_test/con\x00write-acl",
+            "/v1/AUTH_test/c1\x00read-acl",
+            "/v1/AUTH_test/c1\x00write-acl",
+            "/v1/AUTH_test/c2\x00read-acl",
+            "/v1/AUTH_test/c2\x00write-acl",
+            "/v1/AUTH_test/c3\x00read-acl",
+            "/v1/AUTH_test/c3\x00write-acl",
         ])
 
     def test_malformed_json(self):
