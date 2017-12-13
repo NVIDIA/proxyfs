@@ -1271,7 +1271,14 @@ class PfsMiddleware(object):
         if not 200 <= container_info["status"] < 300:
             return swob.HTTPNotFound(request=req)
 
-        if (req.headers.get('Content-Type') == DIRECTORY_CONTENT_TYPE and
+        if not req.headers.get('Content-Type'):
+            req.headers['Content-Type'] = guess_content_type(
+                req.path, is_dir=ctx.object_name.endswith('/'))
+        err = constraints.check_object_creation(req, ctx.object_name)
+        if err:
+            return err
+
+        if (req.headers['Content-Type'] == DIRECTORY_CONTENT_TYPE and
                 req.headers.get('Content-Length') == '0'):
             return self.put_object_as_directory(ctx)
         else:
@@ -1443,6 +1450,9 @@ class PfsMiddleware(object):
 
     def post_object(self, ctx):
         req = ctx.req
+        err = constraints.check_metadata(req, 'object')
+        if err:
+            return err
         path = urllib_parse.unquote(req.path)
         new_metadata = extract_object_metadata_from_headers(req.headers)
 
