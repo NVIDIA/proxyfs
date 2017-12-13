@@ -606,6 +606,22 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	// Send a range READ of bytes at offset 1 for length 3 for object "FooBar" expecting []byte{0xBB, 0xCC, 0xDD}
+
+	readLen, err := ObjectRead("TestAccount", "TestContainer", "FooBar", uint64(1), readBuf)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	if 3 != readLen {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) didn't return expected len")
+		t.Fatalf(tErr)
+	}
+	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) didn't return expected []byte")
+		t.Fatalf(tErr)
+	}
+
 	// Send a full GET for object "FooBar" expecting []byte{0xAA, 0xBB, 0xCC, 0xDD, OxEE}
 
 	loadBuf, err := ObjectLoad("TestAccount", "TestContainer", "FooBar")

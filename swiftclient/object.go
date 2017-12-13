@@ -570,6 +570,123 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	return
 }
 
+func objectReadWithRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (uint64, error) {
+	// request is a function that, through the miracle of closure, calls
+	// objectRead() with the paramaters passed to this function, stashes the
+	// relevant return values into the local variables of this function, and
+	// then returns err and whether it is retriable to RequestWithRetry()
+	var (
+		len uint64
+		err error
+	)
+	request := func() (bool, error) {
+		var err error
+		len, err = objectRead(accountName, containerName, objectName, offset, buf)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname   string      = fmt.Sprintf("swiftclient.objectRead(\"%v/%v/%v\", offset=0x%016X, len(buf)=0x%016X)", accountName, containerName, objectName, offset, cap(buf))
+		statnm   RetryStatNm = RetryStatNm{
+			retryCnt:        &stats.SwiftObjReadRetryOps,
+			retrySuccessCnt: &stats.SwiftObjReadRetrySuccessOps}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return len, err
+}
+
+func objectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
+	var (
+		capacity      uint64
+		chunkLen      uint64
+		chunkPos      uint64
+		connection    *connectionStruct
+		contentLength int
+		fsErr         blunder.FsError
+		headers       map[string][]string
+		httpStatus    int
+		isError       bool
+	)
+
+	capacity = uint64(cap(buf))
+
+	headers = make(map[string][]string)
+	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+capacity-1), 10)}
+
+	connection = acquireNonChunkedConnection()
+
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
+	if nil != err {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.AddError(err, blunder.BadHTTPGetError)
+		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		return
+	}
+
+	httpStatus, headers, err = readHTTPStatusAndHeaders(connection.tcpConn)
+	if nil != err {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.AddError(err, blunder.BadHTTPGetError)
+		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		return
+	}
+	isError, fsErr = httpStatusIsError(httpStatus)
+	if isError {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
+		err = blunder.AddHTTPCode(err, httpStatus)
+		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		return
+	}
+
+	if parseTransferEncoding(headers) {
+		chunkPos = 0
+		for {
+			chunkLen, err = readHTTPChunkIntoBuf(connection.tcpConn, buf[chunkPos:])
+			if nil != err {
+				releaseNonChunkedConnection(connection, false)
+				err = blunder.AddError(err, blunder.BadHTTPGetError)
+				logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
+				return
+			}
+
+			if 0 == chunkLen {
+				len = chunkPos
+				break
+			}
+		}
+	} else {
+		contentLength, err = parseContentLength(headers)
+		if nil != err {
+			releaseNonChunkedConnection(connection, false)
+			err = blunder.AddError(err, blunder.BadHTTPGetError)
+			logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+			return
+		}
+
+		if 0 == contentLength {
+			len = 0
+			err = nil
+		} else {
+			err = readBytesFromTCPConnIntoBuf(connection.tcpConn, buf)
+			if nil != err {
+				releaseNonChunkedConnection(connection, false)
+				err = blunder.AddError(err, blunder.BadHTTPGetError)
+				logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+				return
+			}
+			len = capacity
+		}
+	}
+
+	releaseNonChunkedConnection(connection, parseConnection(headers))
+
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjRead, len)
+
+	return
+}
+
 func objectTailWithRetry(accountName string, containerName string, objectName string,
 	length uint64) ([]byte, error) {
 

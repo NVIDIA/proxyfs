@@ -293,11 +293,31 @@ func readByteFromTCPConn(tcpConn *net.TCPConn) (b byte, err error) {
 
 func readBytesFromTCPConn(tcpConn *net.TCPConn, bufLen int) (buf []byte, err error) {
 	var (
-		numBytesRead int
 		bufPos       = int(0)
+		numBytesRead int
 	)
 
 	buf = make([]byte, bufLen)
+
+	for bufPos < bufLen {
+		numBytesRead, err = tcpConn.Read(buf[bufPos:])
+		if nil != err {
+			return
+		}
+
+		bufPos += numBytesRead
+	}
+
+	err = nil
+	return
+}
+
+func readBytesFromTCPConnIntoBuf(tcpConn *net.TCPConn, buf []byte) (err error) {
+	var (
+		bufLen       = cap(buf)
+		bufPos       = int(0)
+		numBytesRead int
+	)
 
 	for bufPos < bufLen {
 		numBytesRead, err = tcpConn.Read(buf[bufPos:])
@@ -634,9 +654,8 @@ func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (li
 
 func readHTTPChunk(tcpConn *net.TCPConn) (chunk []byte, err error) {
 	var (
-		chunkLenAsInt    int
-		chunkLenAsUint64 uint64
-		line             string
+		chunkLen uint64
+		line     string
 	)
 
 	line, err = readHTTPLineCRLF(tcpConn)
@@ -644,17 +663,42 @@ func readHTTPChunk(tcpConn *net.TCPConn) (chunk []byte, err error) {
 		return
 	}
 
-	chunkLenAsUint64, err = strconv.ParseUint(line, 16, 32)
+	chunkLen, err = strconv.ParseUint(line, 16, 64)
 	if nil != err {
 		return
 	}
 
-	chunkLenAsInt = int(chunkLenAsUint64)
-
-	if 0 == chunkLenAsInt {
+	if 0 == chunkLen {
 		chunk = make([]byte, 0)
 	} else {
-		chunk, err = readBytesFromTCPConn(tcpConn, chunkLenAsInt)
+		chunk, err = readBytesFromTCPConn(tcpConn, int(chunkLen))
+		if nil != err {
+			return
+		}
+	}
+
+	err = readHTTPEmptyLineCRLF(tcpConn)
+
+	return
+}
+
+func readHTTPChunkIntoBuf(tcpConn *net.TCPConn, buf []byte) (chunkLen uint64, err error) {
+	var (
+		line string
+	)
+
+	line, err = readHTTPLineCRLF(tcpConn)
+	if nil != err {
+		return
+	}
+
+	chunkLen, err = strconv.ParseUint(line, 16, 64)
+	if nil != err {
+		return
+	}
+
+	if 0 < chunkLen {
+		err = readBytesFromTCPConnIntoBuf(tcpConn, buf[:chunkLen])
 		if nil != err {
 			return
 		}
