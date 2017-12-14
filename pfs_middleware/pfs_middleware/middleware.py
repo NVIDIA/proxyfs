@@ -295,8 +295,10 @@ def guess_content_type(filename, is_dir):
     return content_type
 
 
-def looks_like_md5(a_string):
-    return re.search(MD5_ETAG_RE, a_string)
+def should_validate_etag(a_string):
+    if not a_string:
+        return False
+    return not a_string.strip('"').startswith('pfsv')
 
 
 @contextlib.contextmanager
@@ -1261,7 +1263,8 @@ class PfsMiddleware(object):
         req = ctx.req
 
         request_etag = req.headers.get("ETag", "")
-        if looks_like_md5(request_etag) and request_etag != EMPTY_OBJECT_ETAG:
+        if should_validate_etag(request_etag) and \
+                request_etag != EMPTY_OBJECT_ETAG:
             return swob.HTTPUnprocessableEntity(request=req)
 
         path = urllib_parse.unquote(req.path)
@@ -1362,7 +1365,8 @@ class PfsMiddleware(object):
             more_to_upload = not subinput.finished_the_input_stream
             i += 1
 
-        if looks_like_md5(request_etag) and hasher.hexdigest() != request_etag:
+        if should_validate_etag(request_etag) and \
+                hasher.hexdigest() != request_etag:
             return swob.HTTPUnprocessableEntity(request=req)
 
         # All the data is now in Swift; we just have to tell proxyfsd about
