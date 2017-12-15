@@ -2437,6 +2437,236 @@ class TestContainerDelete(BaseMiddlewareTest):
         self.assertEqual("500 Internal Error", status)
 
 
+class TestContainerOptions(BaseMiddlewareTest):
+    test_path = '/v1/AUTH_test/a-container'
+
+    def setUp(self):
+        super(TestContainerOptions, self).setUp()
+        self.serialized_container_metadata = ""
+
+        def mock_RpcHead(head_container_req):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(
+                        self.serialized_container_metadata),
+                    "ModificationTime": 1479240397189581131,
+                    "FileSize": 0,
+                    "IsDir": True,
+                    "InodeNumber": 2718,
+                    "NumWrites": 0,
+                }}
+
+        self.fake_rpc.register_handler("Server.RpcHead", mock_RpcHead)
+        self.container_path = '/v1/AUTH_test/a-container'
+        self.app.register('OPTIONS', self.test_path, 200, {}, "")
+
+    def check_header(self, headers, hdr, expected):
+        self.assertIn(hdr, headers)
+        self.assertEqual(expected,
+                         set([v.strip() for v in headers[hdr].split(',')]))
+
+    def _check_allow_origin_in_metadata(self, container_metadata):
+        self.serialized_container_metadata = json.dumps(container_metadata)
+        req_headers = {
+            'Origin': 'my-origin',
+            'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'X-Foo, X-Bar'}
+        req = swob.Request.blank(self.test_path, method='OPTIONS',
+                                 headers=req_headers)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        expected = {'GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'OPTIONS'}
+        self.check_header(headers, 'Allow', expected)
+        self.check_header(headers, 'Access-Control-Allow-Methods', expected)
+        self.check_header(headers, 'Access-Control-Allow-Origin',
+                          {'my-origin'})
+        self.check_header(headers, 'Vary',
+                          {'Origin', 'Access-Control-Request-Headers'})
+        self.check_header(headers, 'Access-Control-Allow-Headers',
+                          {'X-Bar', 'X-Foo'})
+        # Server.RpcIsAccountBimodal, Server.RpcHead for container info ...
+        self.assertEqual(2, len(self.fake_rpc.calls))
+        self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
+                         self.container_path)
+
+    def test_allow_origin_in_metadata(self):
+        container_metadata = {
+            'x-container-meta-access-control-allow-origin': 'my-origin other'}
+        self._check_allow_origin_in_metadata(container_metadata)
+
+    def test_allow_origin_in_proxy_config(self):
+        self.pfs.proxy_conf['cors_allow_origin'] = 'my-origin,other'
+        self._check_allow_origin_in_metadata({})
+
+    def test_no_allow_origin(self):
+        req_headers = {
+            'Origin': 'my-origin',
+            'Access-Control-Request-Method': 'GET',
+            'Access-Control-Request-Headers': 'X-Foo, X-Bar'}
+        req = swob.Request.blank(self.test_path, method='OPTIONS',
+                                 headers=req_headers)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '401 Unauthorized')
+        expected = {'GET', 'HEAD', 'PUT', 'POST', 'DELETE', 'OPTIONS'}
+        self.check_header(headers, 'Allow', expected)
+
+
+class TestObjectOptions(TestContainerOptions):
+    test_path = '/v1/AUTH_test/a-container/an-object'
+
+
+class TestCors(BaseMiddlewareTest):
+    def setUp(self):
+        super(TestCors, self).setUp()
+        self.serialized_container_metadata = ""
+        self.serialized_object_metadata = ""
+        int_obj_path = "/v1/AUTH_test/InternalContainerName/0000000000c11fbd"
+        self.object_path = '/v1/AUTH_test/a-container/an-object'
+
+        def mock_RpcHead(head_container_req):
+            return {
+                "error": None,
+                "result": {
+                    "Metadata": base64.b64encode(
+                        self.serialized_container_metadata),
+                    "ModificationTime": 1479240397189581131,
+                    "FileSize": 0,
+                    "IsDir": True,
+                    "InodeNumber": 2718,
+                    "NumWrites": 0,
+                }}
+
+        def mock_RpcGetObject(get_object_req):
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 8,
+                    "Metadata": base64.b64encode(
+                        self.serialized_object_metadata),
+                    "InodeNumber": 1245,
+                    "NumWrites": 2424,
+                    "ModificationTime": 1481152134331862558,
+                    "LeaseId": "prominority-sarcocyst",
+                    "ReadEntsOut": [{
+                        "ObjectPath": int_obj_path,
+                        "Offset": 0,
+                        "Length": 8}]}}
+
+        def dummy_rpc(request):
+            return {"error": None, "result": {}}
+
+        self.fake_rpc.register_handler("Server.RpcRenewLease", dummy_rpc)
+        self.fake_rpc.register_handler("Server.RpcReleaseLease", dummy_rpc)
+        self.fake_rpc.register_handler("Server.RpcHead", mock_RpcHead)
+        self.fake_rpc.register_handler("Server.RpcGetObject",
+                                       mock_RpcGetObject)
+        self.app.register('GET', int_obj_path, 200, {}, "obj_data")
+
+    def _get_CORS_response(self, container_cors, strict_mode):
+        self.pfs.proxy_conf['strict_cors_mode'] = strict_mode
+        container_metadata = {}
+        prefix = 'x-container-meta-access-control-'
+        for k, v in container_cors.items():
+            container_metadata[prefix + k.replace('_', '-')] = v
+        self.serialized_container_metadata = json.dumps(container_metadata)
+        object_metadata = {
+            'X-Object-Meta-Color': 'red',
+            'X-Super-Secret': 'hush',
+        }
+        self.serialized_object_metadata = json.dumps(object_metadata)
+
+        headers = {'Origin': 'http://foo.bar'}
+        req = swob.Request.blank(self.object_path, method='GET',
+                                 headers=headers)
+        status, headers, body = self.call_pfs(req)
+        return swob.Response(status=status, body=body, headers=headers)
+
+    # copied from swift test/unit/proxy/test_server.py
+    def test_CORS_valid_non_strict(self):
+        # test expose_headers to non-allowed origins
+        container_cors = {'allow_origin': 'http://not.foo.bar',
+                          'expose_headers': 'X-Object-Meta-Color '
+                                            'X-Object-Meta-Color-Ex'}
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=False)
+
+        self.assertEqual(200, resp.status_int)
+        self.assertEqual('http://foo.bar',
+                         resp.headers['access-control-allow-origin'])
+        self.assertEqual('red', resp.headers['x-object-meta-color'])
+        # X-Super-Secret is in the response, but not "exposed"
+        self.assertEqual('hush', resp.headers['x-super-secret'])
+        self.assertIn('access-control-expose-headers', resp.headers)
+        exposed = set(
+            h.strip() for h in
+            resp.headers['access-control-expose-headers'].split(','))
+        expected_exposed = set([
+            'cache-control', 'content-language', 'content-type', 'expires',
+            'last-modified', 'pragma', 'etag', 'x-timestamp', 'x-trans-id',
+            'x-openstack-request-id', 'x-object-meta-color',
+            'x-object-meta-color-ex'])
+        self.assertEqual(expected_exposed, exposed)
+
+        # test allow_origin *
+        container_cors = {'allow_origin': '*'}
+
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=False)
+        self.assertEqual(200, resp.status_int)
+        self.assertEqual('*',
+                         resp.headers['access-control-allow-origin'])
+
+        # test allow_origin empty
+        container_cors = {'allow_origin': ''}
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=False)
+        self.assertEqual(200, resp.status_int)
+        self.assertEqual('http://foo.bar',
+                         resp.headers['access-control-allow-origin'])
+
+    # copied from swift test/unit/proxy/test_server.py
+    def test_CORS_valid_strict(self):
+        # test expose_headers to non-allowed origins
+        container_cors = {'allow_origin': 'http://not.foo.bar',
+                          'expose_headers': 'X-Object-Meta-Color '
+                                            'X-Object-Meta-Color-Ex'}
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=True)
+
+        self.assertEqual(200, resp.status_int)
+        self.assertNotIn('access-control-expose-headers', resp.headers)
+        self.assertNotIn('access-control-allow-origin', resp.headers)
+
+        # test allow_origin *
+        container_cors = {'allow_origin': '*'}
+
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=True)
+        self.assertEqual(200, resp.status_int)
+        self.assertEqual('*',
+                         resp.headers['access-control-allow-origin'])
+        self.assertEqual('red', resp.headers['x-object-meta-color'])
+        # X-Super-Secret is in the response, but not "exposed"
+        self.assertEqual('hush', resp.headers['x-super-secret'])
+        self.assertIn('access-control-expose-headers', resp.headers)
+        exposed = set(
+            h.strip() for h in
+            resp.headers['access-control-expose-headers'].split(','))
+        expected_exposed = set([
+            'cache-control', 'content-language', 'content-type', 'expires',
+            'last-modified', 'pragma', 'etag', 'x-timestamp', 'x-trans-id',
+            'x-openstack-request-id', 'x-object-meta-color'])
+        self.assertEqual(expected_exposed, exposed)
+
+        # test allow_origin empty
+        container_cors = {'allow_origin': ''}
+        resp = self._get_CORS_response(
+            container_cors=container_cors, strict_mode=True)
+        self.assertNotIn('access-control-expose-headers', resp.headers)
+        self.assertNotIn('access-control-allow-origin', resp.headers)
+
+
 class TestObjectPut(BaseMiddlewareTest):
     def setUp(self):
         super(TestObjectPut, self).setUp()
