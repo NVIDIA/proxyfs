@@ -15,6 +15,7 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -136,6 +137,7 @@ type Server struct {
 	saveProfilerProfiles  opProfiles
 	dumpRunning           bool
 	dumpLock              sync.Mutex
+	refCntBufPools        refcntpool.RefCntBufPoolSet // reference counted memory buffers for requests
 }
 
 func NewOpProfiles() opProfiles {
@@ -199,6 +201,11 @@ func lookupMountHandle(mountID uint64) (mountHandle fs.MountHandle, err error) {
 
 func NewServer() *Server {
 	s := Server{}
+
+	// Typical request sizes for i/o requests (at a guess).  The largest
+	// request must be less then or equal to 128 Kibyte or bad things will happen.
+	bufferSizes := []int{1024, 8 * 1024, 64 * 1024, 128 * 1024}
+	s.refCntBufPools.Init(bufferSizes)
 
 	// Set profiling-related variables
 	if doProfiling {
