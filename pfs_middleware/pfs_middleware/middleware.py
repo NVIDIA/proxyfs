@@ -655,13 +655,28 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc or not constraints.valid_api_version(vrs):
+        if not acc or not constraints.valid_api_version(vrs) or (
+                obj and not con):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
         if not constraints.check_utf8(req.path_info):
             return swob.HTTPPreconditionFailed(
                 body='Invalid UTF8 or contains NULL')
+
+        if con in ('.', '..'):
+            if req.method == 'PUT' and not obj:
+                return swob.HTTPBadRequest(
+                    request=req, body='Container name cannot be "." or ".."')
+            else:
+                return swob.HTTPNotFound(request=req)
+        elif obj and any(p in ('', '.', '..') for p in obj.split('/')):
+            if req.method == 'PUT':
+                return swob.HTTPBadRequest(
+                    request=req,
+                    body='No path component may be "", ".", or ".."')
+            else:
+                return swob.HTTPNotFound(request=req)
 
         try:
             # Check account to see if this is a bimodal-access account or
@@ -714,7 +729,7 @@ class PfsMiddleware(object):
                 elif method == 'DELETE' and obj:
                     resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
-                    resp = self.coalesce_object(ctx)
+                    resp = self.coalesce_object(ctx, auth_cb)
 
                 elif method == 'GET' and con:
                     resp = self.get_container(ctx)
@@ -775,6 +790,11 @@ class PfsMiddleware(object):
         * for object PUT/POST/DELETE, it's the container's write ACL
           (X-Container-Write).
 
+        * for object COALESCE, it's the container's write ACL
+          (X-Container-Write). Separately, we *also* need to authorize
+          all the "segments" against both read *and* write ACLs
+          (see coalesce_object).
+
         * for all other requests, it's None
 
         Some authentication systems, of course, also have account-level
@@ -790,7 +810,8 @@ class PfsMiddleware(object):
                 ctx.req.environ, bimodal_checker,
                 swift_source="PFS")
             return container_info['read_acl']
-        elif ctx.req.method in ('PUT', 'POST', 'DELETE') and ctx.object_name:
+        elif ctx.object_name and ctx.req.method in (
+                'PUT', 'POST', 'DELETE', 'COALESCE'):
             container_info = get_container_info(
                 ctx.req.environ, bimodal_checker,
                 swift_source="PFS")
@@ -1638,7 +1659,7 @@ class PfsMiddleware(object):
             req, resp.headers)
         return resp
 
-    def coalesce_object(self, ctx):
+    def coalesce_object(self, ctx, auth_cb):
         req = ctx.req
         object_path = urllib_parse.unquote(req.path)
 
@@ -1661,9 +1682,35 @@ class PfsMiddleware(object):
             return swob.HTTPBadRequest(request=req, body="Malformed JSON")
         if len(decoded_json["elements"]) > self.max_coalesce:
             return swob.HTTPRequestEntityTooLarge(request=req)
+        authed_containers = set()
+        ctx.req.environ.setdefault('swift.infocache', {})
         for elem in decoded_json["elements"]:
             if not isinstance(elem, six.string_types):
                 return swob.HTTPBadRequest(request=req, body="Malformed JSON")
+
+            normalized_elem = elem
+            if normalized_elem.startswith('/'):
+                normalized_elem = normalized_elem[1:]
+            if any(p in ('', '.', '..') for p in normalized_elem.split('/')):
+                return swob.HTTPBadRequest(request=req,
+                                           body="Bad element path: %s" % elem)
+            elem_container = normalized_elem.split('/', 1)[0]
+            elem_container_path = '/v1/%s/%s' % (
+                ctx.account_name, elem_container)
+            if auth_cb and elem_container_path not in authed_containers:
+                # Gotta check auth for all of the segments, too
+                bimodal_checker = ctx.req.environ[utils.ENV_BIMODAL_CHECKER]
+                acl_env = ctx.req.environ.copy()
+                acl_env['PATH_INFO'] = elem_container_path
+                container_info = get_container_info(
+                    acl_env, bimodal_checker,
+                    swift_source="PFS")
+                for acl in ('read_acl', 'write_acl'):
+                    req.acl = container_info[acl]
+                    denial_response = auth_cb(ctx.req)
+                    if denial_response:
+                        return denial_response
+                authed_containers.add(elem_container_path)
 
         try:
             coalesce_response = self.rpc_call(
