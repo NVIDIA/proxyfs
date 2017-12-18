@@ -680,17 +680,21 @@ class PfsMiddleware(object):
                 # here is return an error to the client.
                 return swob.HTTPServiceUnavailable(request=req)
 
-            if con in ('.', '..'):
+            if con in ('.', '..') or con and len(con) > NAME_MAX:
                 if req.method == 'PUT' and not obj:
                     return swob.HTTPBadRequest(
-                        request=req, body='Container name cannot be "." or ".."')
+                        request=req,
+                        body='Container name cannot be "." or "..", '
+                             'or be more than 255 bytes long')
                 else:
                     return swob.HTTPNotFound(request=req)
-            elif obj and any(p in ('', '.', '..') for p in obj.split('/')):
+            elif obj and any(p in ('', '.', '..') or len(p) > NAME_MAX
+                             for p in obj.split('/')):
                 if req.method == 'PUT':
                     return swob.HTTPBadRequest(
                         request=req,
-                        body='No path component may be "", ".", or ".."')
+                        body='No path component may be "", ".", "..", or '
+                             'more than 255 bytes long')
                 else:
                     return swob.HTTPNotFound(request=req)
 
