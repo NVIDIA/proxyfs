@@ -664,20 +664,6 @@ class PfsMiddleware(object):
             return swob.HTTPPreconditionFailed(
                 body='Invalid UTF8 or contains NULL')
 
-        if con in ('.', '..'):
-            if req.method == 'PUT' and not obj:
-                return swob.HTTPBadRequest(
-                    request=req, body='Container name cannot be "." or ".."')
-            else:
-                return swob.HTTPNotFound(request=req)
-        elif obj and any(p in ('', '.', '..') for p in obj.split('/')):
-            if req.method == 'PUT':
-                return swob.HTTPBadRequest(
-                    request=req,
-                    body='No path component may be "", ".", or ".."')
-            else:
-                return swob.HTTPNotFound(request=req)
-
         try:
             # Check account to see if this is a bimodal-access account or
             # not. ProxyFS is the sole source of truth on this matter.
@@ -693,6 +679,24 @@ class PfsMiddleware(object):
                 # should be cleared up quickly. Nevertheless, all we can do
                 # here is return an error to the client.
                 return swob.HTTPServiceUnavailable(request=req)
+
+            if con in ('.', '..') or con and len(con) > NAME_MAX:
+                if req.method == 'PUT' and not obj:
+                    return swob.HTTPBadRequest(
+                        request=req,
+                        body='Container name cannot be "." or "..", '
+                             'or be more than 255 bytes long')
+                else:
+                    return swob.HTTPNotFound(request=req)
+            elif obj and any(p in ('', '.', '..') or len(p) > NAME_MAX
+                             for p in obj.split('/')):
+                if req.method == 'PUT':
+                    return swob.HTTPBadRequest(
+                        request=req,
+                        body='No path component may be "", ".", "..", or '
+                             'more than 255 bytes long')
+                else:
+                    return swob.HTTPNotFound(request=req)
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             # For requests that we make to Swift, we have to ensure that any
@@ -1271,7 +1275,14 @@ class PfsMiddleware(object):
         if not 200 <= container_info["status"] < 300:
             return swob.HTTPNotFound(request=req)
 
-        if (req.headers.get('Content-Type') == DIRECTORY_CONTENT_TYPE and
+        if not req.headers.get('Content-Type'):
+            req.headers['Content-Type'] = guess_content_type(
+                req.path, is_dir=ctx.object_name.endswith('/'))
+        err = constraints.check_object_creation(req, ctx.object_name)
+        if err:
+            return err
+
+        if (req.headers['Content-Type'] == DIRECTORY_CONTENT_TYPE and
                 req.headers.get('Content-Length') == '0'):
             return self.put_object_as_directory(ctx)
         else:
@@ -1443,6 +1454,9 @@ class PfsMiddleware(object):
 
     def post_object(self, ctx):
         req = ctx.req
+        err = constraints.check_metadata(req, 'object')
+        if err:
+            return err
         path = urllib_parse.unquote(req.path)
         new_metadata = extract_object_metadata_from_headers(req.headers)
 

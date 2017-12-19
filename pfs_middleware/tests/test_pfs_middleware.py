@@ -1132,6 +1132,7 @@ class TestObjectGet(BaseMiddlewareTest):
             '/v1/AUTH_test/c//o',
             '/v1/AUTH_test/c/o//',
             '/v1/AUTH_test/c/o/',
+            '/v1/AUTH_test/c/' + ('x' * 256),
         ]
         for path in bad_paths:
             req = swob.Request.blank(path)
@@ -1953,6 +1954,7 @@ class TestContainerGet(BaseMiddlewareTest):
         bad_paths = [
             '/v1/AUTH_test/..',
             '/v1/AUTH_test/.',
+            '/v1/AUTH_test/' + ('x' * 256),
         ]
         for path in bad_paths:
             req = swob.Request.blank(path)
@@ -2121,6 +2123,7 @@ class TestContainerPut(BaseMiddlewareTest):
         bad_container_paths = [
             '/v1/AUTH_test/..',
             '/v1/AUTH_test/.',
+            '/v1/AUTH_test/' + ('x' * 256),
         ]
         for path in bad_container_paths:
             req = swob.Request.blank(path,
@@ -2623,6 +2626,7 @@ class TestObjectPut(BaseMiddlewareTest):
         bad_container_paths = [
             '/v1/AUTH_test/../o',
             '/v1/AUTH_test/./o',
+            '/v1/AUTH_test/' + ('x' * 256) + '/o',
         ]
         for path in bad_container_paths:
             req = swob.Request.blank(path,
@@ -2653,6 +2657,7 @@ class TestObjectPut(BaseMiddlewareTest):
             '/v1/AUTH_test/c//o',
             '/v1/AUTH_test/c/o//',
             '/v1/AUTH_test/c/o/',
+            '/v1/AUTH_test/c/' + ('x' * 256),
         ]
         for path in bad_paths:
             req = swob.Request.blank(path,
