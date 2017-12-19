@@ -297,7 +297,7 @@ class TestAccountGet(BaseMiddlewareTest):
 
         lm_node = con_attr_tags[3]
         self.assertEqual(lm_node.tag, 'last_modified')
-        self.assertEqual(lm_node.text, 'Fri, 17 Nov 2017 22:40:41 GMT')
+        self.assertEqual(lm_node.text, '2017-11-17T22:40:40.808682')
         self.assertEqual(lm_node.attrib, {})
 
     def test_metadata(self):

@@ -930,7 +930,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             lm_node = ET.Element('last_modified')
-            lm_node.text = last_modified_from_epoch_ns(
+            lm_node.text = iso_timestamp_from_epoch_ns(
                 entry["ModificationTime"])
             container_node.append(lm_node)
 
