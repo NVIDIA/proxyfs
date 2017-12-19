@@ -270,7 +270,7 @@ def iso_timestamp_from_epoch_ns(epoch_ns):
 
 def last_modified_from_epoch_ns(epoch_ns):
     """
-    Convert a Unix timestamp to an ISO-8601 timestamp.
+    Convert a Unix timestamp to an IMF-Fixdate timestamp.
 
     :param epoch_ns: Unix time, expressed as an integral number of
                      nanoseconds since the epoch. Note that this is not the
@@ -897,7 +897,7 @@ class PfsMiddleware(object):
         for entry in account_entries:
             json_entry = {
                 "name": entry["Basename"],
-                "last_modified": last_modified_from_epoch_ns(
+                "last_modified": iso_timestamp_from_epoch_ns(
                     entry["ModificationTime"]),
                 # proxyfsd can't compute these without recursively walking
                 # the entire filesystem, so rather than have a built-in DoS

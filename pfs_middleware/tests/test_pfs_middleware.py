@@ -240,22 +240,22 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(json.loads(body), [{
             "bytes": 0,
             "count": 0,
-            "last_modified": "Fri, 17 Nov 2017 22:40:41 GMT",
+            "last_modified": "2017-11-17T22:40:40.808682",
             "name": "chickens",
         }, {
             "bytes": 0,
             "count": 0,
-            "last_modified": "Fri, 17 Nov 2017 22:40:51 GMT",
+            "last_modified": "2017-11-17T22:40:50.657045",
             "name": "cows",
         }, {
             "bytes": 0,
             "count": 0,
-            "last_modified": "Fri, 17 Nov 2017 22:40:53 GMT",
+            "last_modified": "2017-11-17T22:40:52.544251",
             "name": "goats",
         }, {
             "bytes": 0,
             "count": 0,
-            "last_modified": "Fri, 17 Nov 2017 22:41:00 GMT",
+            "last_modified": "2017-11-17T22:40:59.200130",
             "name": "pigs"
         }])
 
