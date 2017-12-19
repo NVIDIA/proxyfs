@@ -1474,9 +1474,6 @@ class PfsMiddleware(object):
             path, raw_old_metadata, raw_merged_metadata))
 
         resp = swob.HTTPAccepted(request=req, body="")
-        resp.headers["ETag"] = best_possible_etag(
-            old_metadata, ctx.account_name, inode_number, num_writes)
-        resp.headers["Last-Modified"] = last_modified_from_epoch_ns(mtime)
         return resp
 
     def get_object(self, ctx):
