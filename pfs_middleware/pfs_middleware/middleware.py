@@ -1413,8 +1413,6 @@ class PfsMiddleware(object):
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
         try:
-            # Ignore the return value. On success, there's nothing
-            # useful in the response.
             mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
         except utils.RpcError as err:
@@ -1465,7 +1463,7 @@ class PfsMiddleware(object):
             raw_old_metadata, mtime, _, _, inode_number, num_writes = \
                 rpc.parse_head_response(head_response)
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             else:
                 raise
@@ -1491,9 +1489,7 @@ class PfsMiddleware(object):
             object_response = self.rpc_call(ctx, rpc.get_object_request(
                 urllib_parse.unquote(req.path), byteranges))
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
-                return swob.HTTPNotFound(request=req)
-            elif err.errno == pfs_errno.NotDirError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
@@ -1627,7 +1623,7 @@ class PfsMiddleware(object):
             self.rpc_call(ctx, rpc.delete_request(
                 urllib_parse.unquote(ctx.req.path)))
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=ctx.req)
             elif err.errno == pfs_errno.NotEmptyError:
                 return swob.HTTPConflict(request=ctx.req)
@@ -1641,7 +1637,7 @@ class PfsMiddleware(object):
         try:
             head_response = self.rpc_call(ctx, head_request)
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             else:
                 raise
