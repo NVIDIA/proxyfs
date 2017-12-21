@@ -41,3 +41,107 @@ class TestAddressParsing(unittest.TestCase):
 
         _, parsed_ip = rpc.parse_is_account_bimodal_response(resp)
         self.assertEqual(parsed_ip, addr)
+
+
+class TestResponseParsing(unittest.TestCase):
+    # These maybe aren't great, but they're more than what we had
+    def test_get_object(self):
+        resp = {
+            "ReadEntsOut": 'a',
+            "Metadata": 'Yg==',  # 'b'
+            "FileSize": 'c',
+            "ModificationTime": 'd',
+            "AttrChangeTime": 'e',
+            "InodeNumber": 'f',
+            "NumWrites": 'g',
+            "LeaseId": 'h',
+        }
+        self.assertEqual(rpc.parse_get_object_response(resp), (
+            'a', 'b', 'c', 'e', 'f', 'g', 'h'))
+        # Old proxyfsd didn't send AttrChangeTime, but we've always had
+        # ModificationTime available, which is the next-best option
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_get_object_response(resp), (
+            'a', 'b', 'c', 'd', 'f', 'g', 'h'))
+
+    def test_coalesce_object(self):
+        resp = {
+            "ModificationTime": 'a',
+            "AttrChangeTime": 'b',
+            "InodeNumber": 'c',
+            "NumWrites": 'd',
+        }
+        self.assertEqual(rpc.parse_coalesce_object_response(resp), (
+            'b', 'c', 'd'))
+        # Old proxyfsd didn't send AttrChangeTime, but we've always had
+        # ModificationTime available, which is the next-best option
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_coalesce_object_response(resp), (
+            'a', 'c', 'd'))
+
+    def test_put_complete(self):
+        resp = {
+            "ModificationTime": 'a',
+            "AttrChangeTime": 'b',
+            "InodeNumber": 'c',
+            "NumWrites": 'd',
+        }
+        self.assertEqual(rpc.parse_put_complete_response(resp), (
+            'b', 'c', 'd'))
+        # Old proxyfsd didn't send AttrChangeTime, but we've always had
+        # ModificationTime available, which is the next-best option
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_put_complete_response(resp), (
+            'a', 'c', 'd'))
+
+    def test_mkdir(self):
+        resp = {
+            "ModificationTime": 'a',
+            "AttrChangeTime": 'b',
+            "InodeNumber": 'c',
+            "NumWrites": 'd',
+        }
+        self.assertEqual(rpc.parse_middleware_mkdir_response(resp), (
+            'b', 'c', 'd'))
+        # Old proxyfsd didn't send AttrChangeTime, but we've always had
+        # ModificationTime available, which is the next-best option
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_middleware_mkdir_response(resp), (
+            'a', 'c', 'd'))
+
+    def test_get_account(self):
+        resp = {
+            "ModificationTime": 'a',
+            "AttrChangeTime": 'b',
+            "AccountEntries": ['c'],
+        }
+        self.assertEqual(rpc.parse_get_account_response(resp), ('b', ['c']))
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_get_account_response(resp), ('a', ['c']))
+
+        resp = {
+            "ModificationTime": 'a',
+            "AttrChangeTime": 'b',
+            "AccountEntries": None,
+        }
+        self.assertEqual(rpc.parse_get_account_response(resp), ('b', []))
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_get_account_response(resp), ('a', []))
+
+    def test_head(self):
+        resp = {
+            "Metadata": 'YQ==',  # 'a'
+            "ModificationTime": 'b',
+            "AttrChangeTime": 'c',
+            "FileSize": 'd',
+            "IsDir": 'e',
+            "InodeNumber": 'f',
+            "NumWrites": 'g',
+        }
+        self.assertEqual(rpc.parse_head_response(resp), (
+            'a', 'c', 'd', 'e', 'f', 'g'))
+        # Old proxyfsd didn't send AttrChangeTime, but we've always had
+        # ModificationTime available, which is the next-best option
+        del resp["AttrChangeTime"]
+        self.assertEqual(rpc.parse_head_response(resp), (
+            'a', 'b', 'd', 'e', 'f', 'g'))

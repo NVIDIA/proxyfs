@@ -532,9 +532,10 @@ func testRpcHeadUpdatedObjectFile(t *testing.T, server *Server) {
 
 	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
-	// CTime, not MTime! We POSTed after writing
+	// We've got different CTime and MTime, since we POSTed after writing
 	assert.True(statResult[fs.StatCTime] > statResult[fs.StatMTime], "Expected StatCTime (%v) > StatMTime (%v)", statResult[fs.StatCTime], statResult[fs.StatMTime])
-	assert.Equal(statResult[fs.StatCTime], response.ModificationTime)
+	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
+	assert.Equal(statResult[fs.StatCTime], response.AttrChangeTime)
 }
 
 func TestRpcGetContainerMetadata(t *testing.T) {
@@ -732,9 +733,10 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 
 	// We'll spot-check two files and one directory
 	statResult := fsStatPath(testVerAccountName, "c/README")
-	// CTime, not MTime! We POSTed after writing
+	// We've got different CTime and MTime, since we POSTed after writing
 	assert.True(statResult[fs.StatCTime] > statResult[fs.StatMTime], "Expected StatCTime (%v) > StatMTime (%v)", statResult[fs.StatCTime], statResult[fs.StatMTime])
-	assert.Equal(statResult[fs.StatCTime], ents[0].ModificationTime)
+	assert.Equal(statResult[fs.StatMTime], ents[0].ModificationTime)
+	assert.Equal(statResult[fs.StatCTime], ents[0].AttrChangeTime)
 	assert.Equal(statResult[fs.StatNumWrites], ents[0].NumWrites)
 	assert.Equal(statResult[fs.StatINum], ents[0].InodeNumber)
 
@@ -875,7 +877,8 @@ func TestRpcGetAccount(t *testing.T) {
 	assert.Equal(len(response.AccountEntries), 5)
 	assert.Equal("alpha", response.AccountEntries[0].Basename)
 	statResult = fsStatPath("/v1/"+testAccountName2, "/alpha")
-	assert.Equal(statResult[fs.StatCTime], response.AccountEntries[0].ModificationTime)
+	assert.Equal(statResult[fs.StatMTime], response.AccountEntries[0].ModificationTime)
+	assert.Equal(statResult[fs.StatCTime], response.AccountEntries[0].AttrChangeTime)
 
 	assert.Equal("bravo", response.AccountEntries[1].Basename)
 	assert.Equal("charlie", response.AccountEntries[2].Basename)
@@ -1565,7 +1568,8 @@ func TestPutObjectCompound(t *testing.T) {
 
 	statResult, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode)
 	assert.Nil(err)
-	assert.Equal(statResult[fs.StatCTime], putCompleteResp.ModificationTime)
+	assert.Equal(statResult[fs.StatMTime], putCompleteResp.ModificationTime)
+	assert.Equal(statResult[fs.StatCTime], putCompleteResp.AttrChangeTime)
 }
 
 func TestIsAccountBimodal(t *testing.T) {
@@ -1630,7 +1634,8 @@ func TestRpcGetObjectMetadata(t *testing.T) {
 	statResult = fsStatPath(testVerAccountName, "/c/README")
 
 	assert.Equal(uint64(37), reply.FileSize)
-	assert.Equal(statResult[fs.StatCTime], reply.ModificationTime)
+	assert.Equal(statResult[fs.StatMTime], reply.ModificationTime)
+	assert.Equal(statResult[fs.StatCTime], reply.AttrChangeTime)
 }
 
 func TestRpcGetObjectSymlinkFollowing(t *testing.T) {

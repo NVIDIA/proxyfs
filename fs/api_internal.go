@@ -1373,7 +1373,7 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, ctime uint64, err error) {
+func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
 	mS.volStruct.validateVolumeRWMutex.RLock()
 	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
 
@@ -1381,6 +1381,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 	if err != nil {
 		return
 	}
+	mtime = statResult[StatMTime]
 	ctime = statResult[StatCTime]
 
 	// List the root directory, starting at the marker, and keep only
@@ -1428,7 +1429,8 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 			}
 			accountEnts = append(accountEnts, AccountEntry{
 				Basename:         dirEnt.Basename,
-				ModificationTime: statResult[StatCTime],
+				ModificationTime: statResult[StatMTime],
+				AttrChangeTime:   statResult[StatCTime],
 			})
 		}
 		if len(dirEnts) == 0 {
@@ -1585,7 +1587,8 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				containerEnt := ContainerEntry{
 					Basename:         fileName,
 					FileSize:         statResult[StatSize],
-					ModificationTime: statResult[StatCTime],
+					ModificationTime: statResult[StatMTime],
+					AttrChangeTime:   statResult[StatCTime],
 					NumWrites:        statResult[StatNumWrites],
 					InodeNumber:      statResult[StatINum],
 					IsDir:            false,
@@ -1616,7 +1619,8 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 					containerEnt := ContainerEntry{
 						Basename:         fileName,
 						FileSize:         0,
-						ModificationTime: statResult[StatCTime],
+						ModificationTime: statResult[StatMTime],
+						AttrChangeTime:   statResult[StatCTime],
 						NumWrites:        statResult[StatNumWrites],
 						InodeNumber:      statResult[StatINum],
 						IsDir:            true,
@@ -1638,7 +1642,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
+func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
 	mS.volStruct.validateVolumeRWMutex.RLock()
 	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
 
@@ -1664,7 +1668,8 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 		return
 	}
 	fileSize = metadata.Size
-	lastModified = uint64(metadata.AttrChangeTime.UnixNano())
+	lastModified = uint64(metadata.ModificationTime.UnixNano())
+	lastChanged = uint64(metadata.AttrChangeTime.UnixNano())
 	numWrites = metadata.NumWrites
 
 	// If no ranges are given then get range of whole file.  Otherwise, get ranges.
@@ -1731,7 +1736,8 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 	if err != nil {
 		return
 	}
-	response.ModificationTime = statResult[StatCTime]
+	response.ModificationTime = statResult[StatMTime]
+	response.AttrChangeTime = statResult[StatCTime]
 	response.FileSize = statResult[StatSize]
 	response.IsDir = (inoType == inode.DirType)
 	response.InodeNumber = ino
@@ -1787,7 +1793,7 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	return err
 }
 
-func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string, makeInodeFunc func() (inode.InodeNumber, error)) (ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
+func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string, makeInodeFunc func() (inode.InodeNumber, error)) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 
 	// Find the inode of the directory corresponding to the container
 	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, vContainerName)
@@ -2003,13 +2009,14 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 
 	stats.IncrementOperations(&stats.FsMwPutCompleteOps)
 
+	mtime = uint64(metadata.ModificationTime.UnixNano())
 	ctime = uint64(metadata.AttrChangeTime.UnixNano())
 	// fileInodeNumber set above
 	numWrites = metadata.NumWrites
 	return
 }
 
-func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
+func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	mS.volStruct.validateVolumeRWMutex.RLock()
 	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
 
@@ -2049,7 +2056,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 	return putObjectHelper(mS, vContainerName, vObjectPath, reifyTheFile)
 }
 
-func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	mS.volStruct.validateVolumeRWMutex.RLock()
 	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
 

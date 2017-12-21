@@ -887,8 +887,10 @@ class PfsMiddleware(object):
         for entry in account_entries:
             json_entry = {
                 "name": entry["Basename"],
-                "last_modified": iso_timestamp_from_epoch_ns(
-                    entry["ModificationTime"]),
+                # Older versions of proxyfsd only returned mtime, but ctime
+                # better reflects the semantics of X-Timestamp
+                "last_modified": iso_timestamp_from_epoch_ns(entry.get(
+                    "AttrChangeTime", entry["ModificationTime"])),
                 # proxyfsd can't compute these without recursively walking
                 # the entire filesystem, so rather than have a built-in DoS
                 # attack, we just put out zeros here.
@@ -920,8 +922,10 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             lm_node = ET.Element('last_modified')
-            lm_node.text = iso_timestamp_from_epoch_ns(
-                entry["ModificationTime"])
+            # Older versions of proxyfsd only returned mtime, but ctime
+            # better reflects the semantics of X-Timestamp
+            lm_node.text = iso_timestamp_from_epoch_ns(entry.get(
+                "AttrChangeTime", entry["ModificationTime"]))
             container_node.append(lm_node)
 
             root_node.append(container_node)
@@ -1175,8 +1179,10 @@ class PfsMiddleware(object):
         for ent in container_entries:
             name = ent["Basename"]
             size = ent["FileSize"]
-            last_modified = iso_timestamp_from_epoch_ns(
-                ent["ModificationTime"])
+            # Older versions of proxyfsd only returned mtime, but ctime
+            # better reflects the semantics of X-Timestamp
+            last_modified = iso_timestamp_from_epoch_ns(ent.get(
+                "AttrChangeTime", ent["ModificationTime"]))
             obj_metadata = deserialize_metadata(ent["Metadata"])
             content_type = obj_metadata.get("Content-Type")
             if content_type is None:
@@ -1233,8 +1239,10 @@ class PfsMiddleware(object):
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
-            lm_node.text = iso_timestamp_from_epoch_ns(
-                container_entry["ModificationTime"])
+            # Older versions of proxyfsd only returned mtime, but ctime
+            # better reflects the semantics of X-Timestamp
+            lm_node.text = iso_timestamp_from_epoch_ns(container_entry.get(
+                "AttrChangeTime", container_entry["ModificationTime"]))
             container_node.append(lm_node)
 
             root_node.append(container_node)

@@ -588,6 +588,7 @@ type HeadReply struct {
 	FileSize         uint64
 	IsDir            bool
 	ModificationTime uint64 // nanoseconds since epoch
+	AttrChangeTime   uint64 // nanoseconds since epoch
 	InodeNumber      uint64
 	NumWrites        uint64
 	Metadata         []byte // entity metadata, serialized
@@ -601,6 +602,7 @@ type HeadReq struct {
 type GetContainerReply struct {
 	ContainerEntries []fs.ContainerEntry
 	ModificationTime uint64
+	AttrChangeTime   uint64
 	Metadata         []byte // container metadata, serialized
 }
 
@@ -616,6 +618,7 @@ type GetContainerReq struct {
 type GetAccountReply struct {
 	AccountEntries   []fs.AccountEntry
 	ModificationTime uint64
+	AttrChangeTime   uint64
 }
 
 // Request object for RpcGetAccount
@@ -633,6 +636,7 @@ type GetObjectReply struct {
 	NumWrites        uint64
 	Metadata         []byte // serialized object metadata (previously set by middleware empty if absent)
 	ModificationTime uint64 // file's mtime in nanoseconds since the epoch
+	AttrChangeTime   uint64
 	LeaseId          string
 }
 
@@ -668,6 +672,7 @@ type MiddlewarePostReq struct {
 
 type MiddlewareMkdirReply struct {
 	ModificationTime uint64
+	AttrChangeTime   uint64
 	InodeNumber      uint64
 	NumWrites        uint64
 }
@@ -692,6 +697,7 @@ type PutCompleteReq struct {
 // PutCompleteReply is the response object for RpcPutComplete
 type PutCompleteReply struct {
 	ModificationTime uint64
+	AttrChangeTime   uint64
 	InodeNumber      uint64
 	NumWrites        uint64
 }
@@ -744,6 +750,7 @@ type CoalesceReq struct {
 
 type CoalesceReply struct {
 	ModificationTime uint64
+	AttrChangeTime   uint64
 	InodeNumber      uint64
 	NumWrites        uint64
 }
