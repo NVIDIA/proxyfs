@@ -3028,6 +3028,24 @@ class TestObjectPost(BaseMiddlewareTest):
         self.assertEqual(method, "Server.RpcHead")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
 
+    def test_file_as_dir(self):
+        # Subdirectories of files don't exist, but asking for one returns a
+        # different error code than asking for a file that could exist but
+        # doesn't.
+        def mock_RpcHead(head_object_req):
+            self.assertEqual(head_object_req['VirtPath'],
+                             "/v1/AUTH_test/c/thing.txt/kitten.png")
+
+            return {
+                "error": "errno: 20",
+                "result": None}
+
+        req = swob.Request.blank('/v1/AUTH_test/c/thing.txt/kitten.png',
+                                 method='POST')
+        self.fake_rpc.register_handler("Server.RpcHead", mock_RpcHead)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '404 Not Found')
+
     def test_existing_object(self):
         old_meta = json.dumps({
             "Content-Type": "application/fishy",
@@ -3242,6 +3260,19 @@ class TestObjectDelete(BaseMiddlewareTest):
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, "404 Not Found")
 
+    def test_no_such_dir(self):
+        def fake_RpcDelete(delete_request):
+            return {"error": "errno: 20",  # NotDirError
+                    "result": None}
+
+        self.fake_rpc.register_handler("Server.RpcDelete", fake_RpcDelete)
+
+        req = swob.Request.blank("/v1/AUTH_test/con/obj",
+                                 environ={"REQUEST_METHOD": "DELETE"})
+
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, "404 Not Found")
+
     def test_not_empty(self):
         def fake_RpcDelete(delete_request):
             return {"error": "errno: 39",  # NotEmptyError / ENOTEMPTY
@@ -3314,6 +3345,24 @@ class TestObjectHead(BaseMiddlewareTest):
         # X-Trans-Id: txeaa367b1809a4583af3c8-00582a4a6c
         # Date: Mon, 14 Nov 2016 23:36:12 GMT
         #
+
+    def test_file_as_dir(self):
+        # Subdirectories of files don't exist, but asking for one returns a
+        # different error code than asking for a file that could exist but
+        # doesn't.
+        def mock_RpcHead(head_object_req):
+            self.assertEqual(head_object_req['VirtPath'],
+                             "/v1/AUTH_test/c/thing.txt/kitten.png")
+
+            return {
+                "error": "errno: 20",
+                "result": None}
+
+        req = swob.Request.blank('/v1/AUTH_test/c/thing.txt/kitten.png',
+                                 method='HEAD')
+        self.fake_rpc.register_handler("Server.RpcHead", mock_RpcHead)
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '404 Not Found')
 
     def test_no_meta(self):
         self.serialized_object_metadata = ""
