@@ -333,6 +333,10 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	fileInode.Wait()
 
+	// REVIEW TODO: Does anybody every empty the errors map? Should they? Would this mask prior errors?
+	//              File system could go "read only" if that's sufficient...
+	//              Problem with write-back data... must discard it...n
+
 	if 0 == len(fileInode.inFlightLogSegmentErrors) {
 		err = nil
 	} else {

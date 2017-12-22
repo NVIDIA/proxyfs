@@ -31,6 +31,8 @@ func (vS *volumeStruct) CreateFile(filePerm InodeMode, userID InodeUserID, group
 	return fileInode.InodeNumber, nil
 }
 
+// REVIEW TODO: Should one of these (and its siblings, CreateDir & CreateSymlink) be doing flush here?
+
 func (vS *volumeStruct) createFileInode(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (fileInode *inMemoryInodeStruct, err error) {
 	stats.IncrementOperations(&stats.FileCreateOps)
 

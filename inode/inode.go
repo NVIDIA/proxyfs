@@ -344,6 +344,8 @@ func (vS *volumeStruct) flushInodeNumber(inodeNumber InodeNumber) (err error) {
 	return
 }
 
+// REVIEW TODO: Need to clearly explain what "flush" means (i.e. "to HH", not "to disk")
+
 func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	var (
 		checkpointDoneWaitGroup   *sync.WaitGroup
@@ -402,6 +404,9 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 					err = blunder.AddError(err, blunder.InodeFlushError)
 					return
 				}
+				// REVIEW TODO: What if cache pressure flushed before we got here?
+				//              Is it possible that Number doesn't get updated?
+
 				inode.PayloadObjectNumber = payloadObjectNumber
 				inode.PayloadObjectLength = payloadObjectLength
 			}

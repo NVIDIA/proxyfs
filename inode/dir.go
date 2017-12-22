@@ -156,19 +156,12 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 		return err
 	}
 
-	if FileType == targetInode.InodeType {
-		// Pre-flush targetInode so that no time-based (implicit) flushes will occur during this transaction
-		err = vS.flushInode(targetInode)
-		if err != nil {
-			logger.ErrorfWithError(err, "targetInode flush error")
-			return err
-		}
-	}
-
 	err = addDirEntryInMemory(dirInode, targetInode, basename)
 	if err != nil {
 		return err
 	}
+
+	// REVIEW TODO: We think we need to do something more than just return an error here :-)
 
 	err = vS.flushInodes([]*inMemoryInodeStruct{dirInode, targetInode})
 	if err != nil {
