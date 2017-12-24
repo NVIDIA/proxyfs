@@ -27,12 +27,16 @@ gosubdirs = \
 uname := $(shell uname)
 
 ifeq ($(uname),Linux)
+    distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
+
     all: fmt install stringer generate test vet c-clean c-build c-install c-test
+
+    all-deb-builder: fmt install stringer generate test vet c-clean c-build c-install-deb-builder c-test
 else
     all: fmt install stringer generate test vet
 endif
 
-.PHONY: all bench c-build c-clean c-install c-test clean cover fmt generate install stringer test vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-test clean cover fmt generate install stringer test vet
 
 bench:
 	@for gosubdir in $(gosubdirs); do \
@@ -48,11 +52,22 @@ c-clean:
 	$(MAKE) --no-print-directory -C vfs clean
 
 c-install:
-	# TODO: For both jrpcclient & vfs:
-	#         Need to handle deb-builder case that doesn't want to use "sudo -E" to invoke $(MAKE)
-	#         Need to handle non-CentOS case that wants to just do $(MAKE) install
+ifeq ($(distro),CentOS Linux)
 	sudo -E $(MAKE) --no-print-directory -C jrpcclient installcentos
 	sudo -E $(MAKE) --no-print-directory -C vfs installcentos
+else
+	sudo -E $(MAKE) --no-print-directory -C jrpcclient install
+	sudo -E $(MAKE) --no-print-directory -C vfs install
+endif
+
+c-install-deb-builder:
+ifeq ($(distro),CentOS Linux)
+	$(MAKE) --no-print-directory -C jrpcclient installcentos
+	$(MAKE) --no-print-directory -C vfs installcentos
+else
+	$(MAKE) --no-print-directory -C jrpcclient install
+	$(MAKE) --no-print-directory -C vfs install
+endif
 
 c-test:
 	cd jrpcclient ; ./regression_test.py --just-test-libs ; cd -
