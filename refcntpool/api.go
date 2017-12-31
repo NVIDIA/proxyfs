@@ -202,3 +202,119 @@ func (slabs *RefCntBufPoolSet) GetRefCntBuf(bufSz uint64) (bufp *RefCntBuf) {
 
 	// Unreachable
 }
+
+// A reference counted list (array) of reference counted memory buffers,
+//
+// The RefCntBufList itself is reference counted, with Hold() and Release()
+// methods.  Upon final release the associated RefCntBuf are Released.
+//
+// Buf is an array of slices, one per RefCntBuf.  Each slice may represent the
+// entire Buf slice of the underlying RefCntBuf or may be a subset.  Changes to
+// this Buf slice do not affect the associated RefCntBuf Buf slice and vice
+// versa.
+//
+// RefCntBuf can only be added to the list using the Append() method.  Adding
+// or deleting slices to the Buf array is not allowed.
+//
+// RefCntBufList must come from a RefCntBufListPool type object which supplies
+// an empty RefCntBufList.
+//
+// RefCntBufList is mostly useful for scatter/gather i/o.
+//
+type RefCntBufList struct {
+	RefCntItem
+	Bufs       [][]byte
+	refCntBufs []*RefCntBuf
+	_          sync.Mutex // insure a RefCntBufList is not copied
+}
+
+// Append the RefCntBuf reference counted buffer to the list and return its
+// index in the Bufs array of slices.
+//
+// This calls Hold() on refCntBuf.  Release() is called on the final release of
+// this RefCntBufList.
+//
+func (bufList *RefCntBufList) Append(refCntBuf *RefCntBuf) {
+	refCntBuf.Hold()
+	if len(bufList.refCntBufs) != len(bufList.Bufs) {
+		panic(fmt.Sprintf("(*RefCntBufList).Append(): len(list.refCntBufs) != len(list.Buf) (%d != %d) at %p",
+			len(bufList.refCntBufs), len(bufList.Bufs), bufList))
+	}
+	bufList.refCntBufs = append(bufList.refCntBufs, refCntBuf)
+	bufList.Bufs = append(bufList.Bufs, refCntBuf.Buf)
+}
+
+// Return the sum of the bytes in each buffer slice
+//
+func (bufList *RefCntBufList) Length() (length int) {
+	for i := 0; i < len(bufList.Bufs); i++ {
+		length += len(bufList.Bufs[i])
+	}
+	return
+}
+
+// Copy bytes out of the buffer list to the target slice, buf and return the
+// number of bytes copied.
+//
+// Copying starts at offset and continues up to the minimum of length and the
+// len(buf).
+//
+func (bufList *RefCntBufList) CopyOut(buf []byte, offset int) (count int) {
+	var (
+		idx         int // current buffer index
+		totalOffset int // sum of buffer lengths so far
+	)
+
+	if offset < 0 {
+		panic(fmt.Sprintf("(*RefCntBufList) CopyOut(): offset %d is less then 0", offset))
+	}
+	for idx = 0; idx < len(bufList.Bufs); idx++ {
+		if offset < totalOffset+len(bufList.Bufs[idx]) {
+			break
+		}
+		totalOffset += len(bufList.Bufs[idx])
+	}
+
+	// offset falls within this buffer or we've run out of buffers
+	for ; idx < len(bufList.Bufs); idx++ {
+		soff := offset - totalOffset
+		if soff < 0 {
+			panic(fmt.Sprintf("(*RefCntBufList) CopyOut(): logic error: soff %d", soff))
+		}
+		toCopy := len(bufList.Bufs[idx])
+		if count+toCopy > len(buf) {
+			toCopy = len(buf) - count
+		}
+		copy(buf[count:], bufList.Bufs[idx][soff:soff+toCopy])
+		count += toCopy
+	}
+	return
+}
+
+// A pool of reference counted lists of reference counted buffers.
+//
+type RefCntBufListPool struct {
+	realPool sync.Pool
+	_        sync.Mutex // insure a RefCntBufListPool is not copied
+}
+
+// Get a pointer to empty RefCntBufList from the pool and return it.
+//
+// It has a reference count of 1 and should be released with a call to Release().
+//
+func (listPool *RefCntBufListPool) GetRefCntBufList() *RefCntBufList {
+	return listPool.Get().(*RefCntBufList)
+}
+
+// Make a pool of lists of reference counted buffers.
+//
+func RefCntBufListPoolMake() (listPoolp *RefCntBufListPool) {
+	listPoolp = &RefCntBufListPool{}
+
+	listPoolp.realPool.New = func() interface{} {
+		// Make a new RefCntBufList
+		return &RefCntBufList{}
+	}
+
+	return
+}

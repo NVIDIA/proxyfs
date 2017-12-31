@@ -98,3 +98,35 @@ func (poolp *RefCntBufPool) put(item interface{}) {
 	poolp.bufPool.Put(item)
 	return
 }
+
+// Get a RefCntBufList from the pool.
+//
+// The caller must use a type assertion like (*refCntBufPool).Get().(*RefCntBufList)
+// to get a pointer to the list of RefCntBuf.
+//
+func (listPoolp *RefCntBufListPool) Get() (item interface{}) {
+
+	// get a buffer
+	item = listPoolp.realPool.Get()
+
+	// (re)initialize the list of buffers
+	bufListp := item.(*RefCntBufList)
+
+	bufListp.Init(listPoolp, bufListp)
+	bufListp.Bufs = bufListp.Bufs[0:0]
+	bufListp.refCntBufs = bufListp.refCntBufs[0:0]
+
+	return
+}
+
+func (listPoolp *RefCntBufListPool) put(item interface{}) {
+
+	bufListp := item.(*RefCntBufList)
+	if len(bufListp.refCntBufs) != len(bufListp.Bufs) {
+		panic(fmt.Sprintf(
+			"(*RefCntBufListPool).put(): len(bufListp.refCntBufs) != len(bufListp.Buf) (%d != %d) at %p",
+			len(bufListp.refCntBufs), len(bufListp.Bufs), bufListp))
+	}
+	listPoolp.realPool.Put(item)
+	return
+}

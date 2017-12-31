@@ -553,3 +553,53 @@ func TestRefCntBufPoolSet(t *testing.T) {
 		}
 	}
 }
+
+// Test reference counted list of Reference Counted Memory Buffers
+//
+func TestRefCntBufList(t *testing.T) {
+	var (
+		bufList     *RefCntBufList
+		bufListPool *RefCntBufListPool
+		bufp        *RefCntBuf
+		bufPoolSet  *RefCntBufPoolSet
+	)
+
+	// Create a pool of reference counted lists of reference counted buffers
+	bufListPool = RefCntBufListPoolMake()
+
+	// Get and put a RefCntBufList
+	bufList = bufListPool.GetRefCntBufList()
+	bufList.Release()
+
+	bufList = bufListPool.GetRefCntBufList()
+	bufList.Hold()
+	bufList.Release()
+	bufList.Release()
+
+	// Create a set of refCntBufPool holding 1, 8, 64, and 128 Kibyte buffer
+	// pools
+	poolSizes := []uint64{1024, 8 * 1024, 64 * 1024, 128 * 1024}
+	bufPoolSet = &RefCntBufPoolSet{}
+	bufPoolSet.Init(poolSizes)
+
+	bufToPoolSizes := map[uint64]uint64{
+		0:          1024,
+		1024:       1024,
+		1025:       8192,
+		128000:     128 * 1024,
+		128 * 1024: 128 * 1024,
+	}
+
+	for reqSize, bufSize := range bufToPoolSizes {
+		bufp = bufPoolSet.GetRefCntBuf(reqSize)
+		if len(bufp.Buf) != 0 {
+			t.Errorf("bufPoolSet.GetRefCntBuf(%d) returned a buffer with len() %d != 0",
+				reqSize, len(bufp.Buf))
+		}
+		if cap(bufp.Buf) != int(bufSize) {
+			t.Errorf("bufPoolSet.GetRefCntBuf(%d) returned a buffer with cap() %d != %d",
+				reqSize, cap(bufp.Buf), bufSize)
+		}
+		bufp.Release()
+	}
+}
