@@ -36,7 +36,7 @@ else
     all: fmt install stringer generate test vet
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-test clean cover fmt generate install stringer test vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install stringer test vet
 
 bench:
 	@for gosubdir in $(gosubdirs); do \

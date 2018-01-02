@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -45,20 +43,6 @@ func testSetup() (err error) {
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_inode_")
 	if nil != err {
 		return
-	}
-
-	if platform.IsLinux {
-		cmd := exec.Command("sudo", "mount", "-t", "ramfs", "-o", "size=512m", "ext4", testDir)
-		err = cmd.Run()
-		if nil != err {
-			return
-		}
-
-		cmd = exec.Command("sudo", "chmod", "777", testDir)
-		err = cmd.Run()
-		if nil != err {
-			return
-		}
 	}
 
 	err = os.Chdir(testDir)
@@ -192,17 +176,9 @@ func testTeardown() (err error) {
 		return
 	}
 
-	if platform.IsLinux {
-		cmd := exec.Command("sudo", "umount", testDir)
-		err = cmd.Run()
-		if nil != err {
-			return
-		}
-	} else {
-		err = os.RemoveAll(testDir)
-		if nil != err {
-			return
-		}
+	err = os.RemoveAll(testDir)
+	if nil != err {
+		return
 	}
 
 	return
