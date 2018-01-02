@@ -149,45 +149,33 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	inodeRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictLowLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		inodeRecCacheEvictLowLimit = 10000
-		err = nil
+		return
 	}
 	inodeRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictHighLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		inodeRecCacheEvictHighLimit = 10010
-		err = nil
+		return
 	}
 
 	globals.inodeRecCache = sortedmap.NewBPlusTreeCache(inodeRecCacheEvictLowLimit, inodeRecCacheEvictHighLimit)
 
 	logSegmentRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictLowLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		logSegmentRecCacheEvictLowLimit = 10000
-		err = nil
+		return
 	}
 	logSegmentRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictHighLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		logSegmentRecCacheEvictHighLimit = 10010
-		err = nil
+		return
 	}
 
 	globals.logSegmentRecCache = sortedmap.NewBPlusTreeCache(logSegmentRecCacheEvictLowLimit, logSegmentRecCacheEvictHighLimit)
 
 	bPlusTreeObjectCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictLowLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		bPlusTreeObjectCacheEvictLowLimit = 10000
-		err = nil
+		return
 	}
 	bPlusTreeObjectCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictHighLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		bPlusTreeObjectCacheEvictHighLimit = 10010
-		err = nil
+		return
 	}
 
 	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)

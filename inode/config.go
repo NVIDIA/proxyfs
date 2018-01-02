@@ -155,26 +155,22 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	dirEntryCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictLowLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		dirEntryCacheEvictLowLimit = 10000
+		return
 	}
 	dirEntryCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "DirEntryCacheEvictHighLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		dirEntryCacheEvictHighLimit = 10010
+		return
 	}
 
 	globals.dirEntryCache = sortedmap.NewBPlusTreeCache(dirEntryCacheEvictLowLimit, dirEntryCacheEvictHighLimit)
 
 	fileExtentMapEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictLowLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		fileExtentMapEvictLowLimit = 10000
+		return
 	}
 	fileExtentMapEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictHighLimit")
 	if nil != err {
-		// TODO: eventually, just return
-		fileExtentMapEvictHighLimit = 10010
+		return
 	}
 
 	globals.fileExtentMapCache = sortedmap.NewBPlusTreeCache(fileExtentMapEvictLowLimit, fileExtentMapEvictHighLimit)
