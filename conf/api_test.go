@@ -22,6 +22,7 @@ var tempFile6Name string
 var tempFile7Name string
 var confStringToTest1 string
 var confStringToTest2 string
+var confStringToTest3 string
 
 func TestMain(m *testing.M) {
 	tempFile1, errorTempFile1 := ioutil.TempFile(os.TempDir(), "TestConfFile1_")
@@ -61,7 +62,7 @@ func TestMain(m *testing.M) {
 	tempFile3Name = tempFile3.Name()
 
 	io.WriteString(tempFile3, "[TestNamespace:Test_-_Section]\n")
-	io.WriteString(tempFile3, "Test_-_Option = http://Test.Value.3/ TestValue4\tTestValue5\n")
+	io.WriteString(tempFile3, "Test_-_Option = http://Test.Value.3/ TestValue4$\tTestValue5$\n")
 
 	tempFile3.Close()
 
@@ -132,7 +133,8 @@ func TestMain(m *testing.M) {
 	tempFile7.Close()
 
 	confStringToTest1 = "TestNamespace:Test_-_Section.Test_-_Option = TestValue6,http://Test.Value_-_7/"
-	confStringToTest2 = "TestNamespace:Test_-_Section.Test_-_Option ="
+	confStringToTest2 = "TestNamespace:Test_-_Section.Test_-_Option = TestValue8$,http://Test.Value_-_9/$"
+	confStringToTest3 = "TestNamespace:Test_-_Section.Test_-_Option ="
 
 	mRunReturn := m.Run()
 
@@ -219,12 +221,12 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("confMapOption != \"%v\"", "http://Test.Value.3/")
 	}
 
-	if "TestValue4" != string(confMapOption[1]) {
-		t.Fatalf("confMapOption != \"%v\"", "TestValue4")
+	if "TestValue4$" != string(confMapOption[1]) {
+		t.Fatalf("confMapOption != \"%v\"", "TestValue4$")
 	}
 
-	if "TestValue5" != string(confMapOption[2]) {
-		t.Fatalf("confMapOption != \"%v\"", "TestValue5")
+	if "TestValue5$" != string(confMapOption[2]) {
+		t.Fatalf("confMapOption != \"%v\"", "TestValue5$")
 	}
 
 	err = confMap.UpdateFromString(confStringToTest1)
@@ -261,6 +263,34 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("UpdateConfMapFromString(\"%v\") returned: \"%v\"", confStringToTest2, err)
 	}
 
+	confMapSection, ok = confMap["TestNamespace:Test_-_Section"]
+	if !ok {
+		t.Fatalf("confMap[\"%v\"] missing", "Test_-_Section")
+	}
+
+	confMapOption, ok = confMapSection["Test_-_Option"]
+	if !ok {
+		t.Fatalf("confMapSection[\"%v\"] missing", "Test_-_Option")
+	}
+
+	if 2 != len(confMapOption) {
+		t.Fatalf("confMapSection[\"%v\"] constains unexpected number of values (%v)", "Test_-_Option", len(confMapOption))
+	}
+
+	if "TestValue8$" != string(confMapOption[0]) {
+		t.Fatalf("confMapOption != \"%v\"", "TestValue8$")
+	}
+
+	if "http://Test.Value_-_9/$" != string(confMapOption[1]) {
+		t.Fatalf("confMapOption != \"%v\"", "http://Test.Value_-_9/$")
+	}
+
+	err = confMap.UpdateFromString(confStringToTest3)
+
+	if nil != err {
+		t.Fatalf("UpdateConfMapFromString(\"%v\") returned: \"%v\"", confStringToTest3, err)
+	}
+
 	confMapOption, ok = confMapSection["Test_-_Option"]
 	if !ok {
 		t.Fatalf("confMapSection[\"%v\"] missing", "Test_-_Option")
@@ -273,14 +303,17 @@ func TestUpdate(t *testing.T) {
 
 func TestFromFileConstructor(t *testing.T) {
 	confMap, err := MakeConfMapFromFile(tempFile3Name)
+	if nil != err {
+		t.Fatalf("MakeConfMapFromFile(): expected err to be nil, got %#v", err)
+	}
 
 	values, err := confMap.FetchOptionValueStringSlice("TestNamespace:Test_-_Section", "Test_-_Option")
 	if err != nil {
-		t.Fatalf("expected err to be nil, got %#v", err)
+		t.Fatalf("FetchOptionValueStringSlice(): expected err to be nil, got %#v", err)
 	}
 	expected := "http://Test.Value.3/"
 	if values[0] != expected {
-		t.Fatalf("expected %#v, got %#v", expected, values[0])
+		t.Fatalf("FetchOptionValueStringSlice(): expected %#v, got %#v", expected, values[0])
 	}
 }
 

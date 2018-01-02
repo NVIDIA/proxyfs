@@ -220,6 +220,19 @@ func main() {
 					fmt.Fprintf(os.Stderr, "httpClient.Do(DELETE %v).Body.Close() returned unexpected error: %v\n", containerURL, containerDeleteResponseBodyCloseErr)
 					os.Exit(1)
 				}
+
+				replayLogFileName, confErr := confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeName), "ReplayLogFileName")
+				if nil == confErr {
+					if "" != replayLogFileName {
+						removeReplayLogFileErr := os.Remove(replayLogFileName)
+						if nil != removeReplayLogFileErr {
+							if !os.IsNotExist(removeReplayLogFileErr) {
+								fmt.Fprintf(os.Stderr, "os.Remove(replayLogFileName == \"%v\") returned unexpected error: %v\n", replayLogFileName, removeReplayLogFileErr)
+								os.Exit(1)
+							}
+						}
+					}
+				}
 			}
 		} else {
 			if verbose {

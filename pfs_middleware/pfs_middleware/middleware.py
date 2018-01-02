@@ -86,6 +86,7 @@ import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
+from swift.common.middleware.acl import parse_acl, format_acl
 from . import pfs_errno, rpc, swift_code, utils
 
 # Generally speaking, let's try to keep the use of Swift code to a
@@ -166,6 +167,8 @@ SWIFT_OWNER_HEADERS = {
     "X-Account-Access-Control"}
 
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
+
+EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -267,7 +270,7 @@ def iso_timestamp_from_epoch_ns(epoch_ns):
 
 def last_modified_from_epoch_ns(epoch_ns):
     """
-    Convert a Unix timestamp to an ISO-8601 timestamp.
+    Convert a Unix timestamp to an IMF-Fixdate timestamp.
 
     :param epoch_ns: Unix time, expressed as an integral number of
                      nanoseconds since the epoch. Note that this is not the
@@ -292,8 +295,10 @@ def guess_content_type(filename, is_dir):
     return content_type
 
 
-def looks_like_md5(a_string):
-    return re.search(MD5_ETAG_RE, a_string)
+def should_validate_etag(a_string):
+    if not a_string:
+        return False
+    return not a_string.strip('"').startswith('pfsv')
 
 
 @contextlib.contextmanager
@@ -353,8 +358,12 @@ def merge_object_metadata(old, new):
 
     old_ct = old.get("Content-Type")
     new_ct = new.get("Content-Type")
-    if old_ct is not None and new_ct is None:
-        merged["Content-Type"] = old_ct
+    if old_ct is not None:
+        if new_ct is None:
+            merged["Content-Type"] = old_ct
+        elif ';swift_bytes=' in old_ct:
+            merged["Content-Type"] = '%s;swift_bytes=%s' % (
+                new_ct, old_ct.rsplit(';swift_bytes=', 1)[1])
 
     return {k: v for k, v in merged.items() if v}
 
@@ -416,7 +425,10 @@ def extract_container_metadata_from_headers(req):
     return meta_headers
 
 
-def best_possible_etag(obj_metadata, account_name, ino, num_writes):
+def best_possible_etag(obj_metadata, account_name, ino, num_writes,
+                       is_dir=False):
+    if is_dir:
+        return EMPTY_OBJECT_ETAG
     if ORIGINAL_MD5_HEADER in obj_metadata:
         val = obj_metadata[ORIGINAL_MD5_HEADER]
         try:
@@ -643,7 +655,8 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc or not constraints.valid_api_version(vrs):
+        if not acc or not constraints.valid_api_version(vrs) or (
+                obj and not con):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app
@@ -666,6 +679,24 @@ class PfsMiddleware(object):
                 # should be cleared up quickly. Nevertheless, all we can do
                 # here is return an error to the client.
                 return swob.HTTPServiceUnavailable(request=req)
+
+            if con in ('.', '..') or con and len(con) > NAME_MAX:
+                if req.method == 'PUT' and not obj:
+                    return swob.HTTPBadRequest(
+                        request=req,
+                        body='Container name cannot be "." or "..", '
+                             'or be more than 255 bytes long')
+                else:
+                    return swob.HTTPNotFound(request=req)
+            elif obj and any(p in ('', '.', '..') or len(p) > NAME_MAX
+                             for p in obj.split('/')):
+                if req.method == 'PUT':
+                    return swob.HTTPBadRequest(
+                        request=req,
+                        body='No path component may be "", ".", "..", or '
+                             'more than 255 bytes long')
+                else:
+                    return swob.HTTPNotFound(request=req)
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             # For requests that we make to Swift, we have to ensure that any
@@ -702,7 +733,7 @@ class PfsMiddleware(object):
                 elif method == 'DELETE' and obj:
                     resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
-                    resp = self.coalesce_object(ctx)
+                    resp = self.coalesce_object(ctx, auth_cb)
 
                 elif method == 'GET' and con:
                     resp = self.get_container(ctx)
@@ -763,6 +794,11 @@ class PfsMiddleware(object):
         * for object PUT/POST/DELETE, it's the container's write ACL
           (X-Container-Write).
 
+        * for object COALESCE, it's the container's write ACL
+          (X-Container-Write). Separately, we *also* need to authorize
+          all the "segments" against both read *and* write ACLs
+          (see coalesce_object).
+
         * for all other requests, it's None
 
         Some authentication systems, of course, also have account-level
@@ -778,7 +814,8 @@ class PfsMiddleware(object):
                 ctx.req.environ, bimodal_checker,
                 swift_source="PFS")
             return container_info['read_acl']
-        elif ctx.req.method in ('PUT', 'POST', 'DELETE') and ctx.object_name:
+        elif ctx.object_name and ctx.req.method in (
+                'PUT', 'POST', 'DELETE', 'COALESCE'):
             container_info = get_container_info(
                 ctx.req.environ, bimodal_checker,
                 swift_source="PFS")
@@ -828,6 +865,11 @@ class PfsMiddleware(object):
             resp.headers["X-Account-Meta-" + key] = value
         for key, value in account_info["sysmeta"].items():
             resp.headers["X-Account-Sysmeta-" + key] = value
+        acc_acl = resp.headers.get("X-Account-Sysmeta-Core-Access-Control")
+        parsed_acc_acl = parse_acl(version=2, data=acc_acl)
+        if parsed_acc_acl:
+            acc_acl = format_acl(version=2, acl_dict=parsed_acc_acl)
+            resp.headers["X-Account-Access-Control"] = acc_acl
 
         resp.headers["X-Timestamp"] = x_timestamp_from_epoch_ns(account_mtime)
 
@@ -859,7 +901,7 @@ class PfsMiddleware(object):
         for entry in account_entries:
             json_entry = {
                 "name": entry["Basename"],
-                "last_modified": last_modified_from_epoch_ns(
+                "last_modified": iso_timestamp_from_epoch_ns(
                     entry["ModificationTime"]),
                 # proxyfsd can't compute these without recursively walking
                 # the entire filesystem, so rather than have a built-in DoS
@@ -892,7 +934,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             lm_node = ET.Element('last_modified')
-            lm_node.text = last_modified_from_epoch_ns(
+            lm_node.text = iso_timestamp_from_epoch_ns(
                 entry["ModificationTime"])
             container_node.append(lm_node)
 
@@ -935,6 +977,9 @@ class PfsMiddleware(object):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
         err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        err = swift_code.clean_acls(req)
         if err:
             return err
         new_metadata = extract_container_metadata_from_headers(req)
@@ -984,6 +1029,9 @@ class PfsMiddleware(object):
         req = ctx.req
         container_path = urllib_parse.unquote(req.path)
         err = constraints.check_metadata(req, 'container')
+        if err:
+            return err
+        err = swift_code.clean_acls(req)
         if err:
             return err
         new_metadata = extract_container_metadata_from_headers(req)
@@ -1148,12 +1196,14 @@ class PfsMiddleware(object):
             if content_type is None:
                 content_type = guess_content_type(ent["Basename"],
                                                   ent["IsDir"])
+            content_type, swift_bytes = content_type.partition(
+                ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"])
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
             json_entry = {
                 "name": name,
-                "bytes": size,
+                "bytes": int(swift_bytes or size),
                 "content_type": content_type,
                 "hash": etag,
                 "last_modified": last_modified}
@@ -1171,10 +1221,13 @@ class PfsMiddleware(object):
             if content_type is None:
                 content_type = guess_content_type(
                     container_entry["Basename"], container_entry["IsDir"])
+            content_type, swift_bytes = content_type.partition(
+                ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
-                container_entry["NumWrites"])
+                container_entry["NumWrites"],
+                is_dir=container_entry["IsDir"])
             container_node = ET.Element('object')
 
             name_node = ET.Element('name')
@@ -1186,7 +1239,7 @@ class PfsMiddleware(object):
             container_node.append(hash_node)
 
             bytes_node = ET.Element('bytes')
-            bytes_node.text = str(container_entry["FileSize"])
+            bytes_node.text = swift_bytes or str(container_entry["FileSize"])
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
@@ -1222,7 +1275,14 @@ class PfsMiddleware(object):
         if not 200 <= container_info["status"] < 300:
             return swob.HTTPNotFound(request=req)
 
-        if (req.headers.get('Content-Type') == DIRECTORY_CONTENT_TYPE and
+        if not req.headers.get('Content-Type'):
+            req.headers['Content-Type'] = guess_content_type(
+                req.path, is_dir=ctx.object_name.endswith('/'))
+        err = constraints.check_object_creation(req, ctx.object_name)
+        if err:
+            return err
+
+        if (req.headers['Content-Type'] == DIRECTORY_CONTENT_TYPE and
                 req.headers.get('Content-Length') == '0'):
             return self.put_object_as_directory(ctx)
         else:
@@ -1233,6 +1293,11 @@ class PfsMiddleware(object):
         Create an object as a directory.
         """
         req = ctx.req
+
+        request_etag = req.headers.get("ETag", "")
+        if should_validate_etag(request_etag) and \
+                request_etag != EMPTY_OBJECT_ETAG:
+            return swob.HTTPUnprocessableEntity(request=req)
 
         path = urllib_parse.unquote(req.path)
         obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
@@ -1332,7 +1397,8 @@ class PfsMiddleware(object):
             more_to_upload = not subinput.finished_the_input_stream
             i += 1
 
-        if looks_like_md5(request_etag) and hasher.hexdigest() != request_etag:
+        if should_validate_etag(request_etag) and \
+                hasher.hexdigest() != request_etag:
             return swob.HTTPUnprocessableEntity(request=req)
 
         # All the data is now in Swift; we just have to tell proxyfsd about
@@ -1347,8 +1413,6 @@ class PfsMiddleware(object):
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
         try:
-            # Ignore the return value. On success, there's nothing
-            # useful in the response.
             mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
         except utils.RpcError as err:
@@ -1388,6 +1452,9 @@ class PfsMiddleware(object):
 
     def post_object(self, ctx):
         req = ctx.req
+        err = constraints.check_metadata(req, 'object')
+        if err:
+            return err
         path = urllib_parse.unquote(req.path)
         new_metadata = extract_object_metadata_from_headers(req.headers)
 
@@ -1396,7 +1463,7 @@ class PfsMiddleware(object):
             raw_old_metadata, mtime, _, _, inode_number, num_writes = \
                 rpc.parse_head_response(head_response)
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             else:
                 raise
@@ -1422,14 +1489,13 @@ class PfsMiddleware(object):
             object_response = self.rpc_call(ctx, rpc.get_object_request(
                 urllib_parse.unquote(req.path), byteranges))
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
-                return swob.HTTPNotFound(request=req)
-            elif err.errno == pfs_errno.NotDirError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             elif err.errno == pfs_errno.IsDirError:
                 return swob.HTTPOk(
                     request=req, body="",
-                    headers={"Content-Type": DIRECTORY_CONTENT_TYPE})
+                    headers={"Content-Type": DIRECTORY_CONTENT_TYPE,
+                             "ETag": EMPTY_OBJECT_ETAG})
 
             else:
                 # punt to top-level exception handler
@@ -1442,6 +1508,9 @@ class PfsMiddleware(object):
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path,
                                                          is_dir=False)
+        else:
+            headers['Content-Type'] = headers['Content-Type'].split(
+                ';swift_bytes=')[0]
 
         headers["Accept-Ranges"] = "bytes"
         headers["Last-Modified"] = last_modified_from_epoch_ns(
@@ -1500,10 +1569,15 @@ class PfsMiddleware(object):
             self.logger, 'PFS', 'PFS',
             name=req.path)
 
-        return swob.HTTPOk(app_iter=seg_iter, conditional_response=True,
+        resp = swob.HTTPOk(app_iter=seg_iter, conditional_response=True,
                            request=req,
                            headers=headers,
                            content_length=size)
+
+        # Support conditional if-match/if-none-match requests for SLOs
+        resp._conditional_etag = swift_code.resolve_etag_is_at_header(
+            req, resp.headers)
+        return resp
 
     def _keep_lease_alive(self, ctx, channel, lease_id):
         keep_going = [True]
@@ -1549,7 +1623,7 @@ class PfsMiddleware(object):
             self.rpc_call(ctx, rpc.delete_request(
                 urllib_parse.unquote(ctx.req.path)))
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=ctx.req)
             elif err.errno == pfs_errno.NotEmptyError:
                 return swob.HTTPConflict(request=ctx.req)
@@ -1563,7 +1637,7 @@ class PfsMiddleware(object):
         try:
             head_response = self.rpc_call(ctx, head_request)
         except utils.RpcError as err:
-            if err.errno == pfs_errno.NotFoundError:
+            if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
                 return swob.HTTPNotFound(request=req)
             else:
                 raise
@@ -1575,19 +1649,27 @@ class PfsMiddleware(object):
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
+        else:
+            headers['Content-Type'] = headers['Content-Type'].split(
+                ';swift_bytes=')[0]
 
         headers["Content-Length"] = file_size
         headers["ETag"] = best_possible_etag(
-            headers, ctx.account_name, ino, num_writes)
+            headers, ctx.account_name, ino, num_writes, is_dir=is_dir)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             last_modified_ns)
 
-        return swob.HTTPOk(request=req, headers=headers,
+        resp = swob.HTTPOk(request=req, headers=headers,
                            conditional_response=True)
 
-    def coalesce_object(self, ctx):
+        # Support conditional if-match/if-none-match requests for SLOs
+        resp._conditional_etag = swift_code.resolve_etag_is_at_header(
+            req, resp.headers)
+        return resp
+
+    def coalesce_object(self, ctx, auth_cb):
         req = ctx.req
         object_path = urllib_parse.unquote(req.path)
 
@@ -1610,9 +1692,35 @@ class PfsMiddleware(object):
             return swob.HTTPBadRequest(request=req, body="Malformed JSON")
         if len(decoded_json["elements"]) > self.max_coalesce:
             return swob.HTTPRequestEntityTooLarge(request=req)
+        authed_containers = set()
+        ctx.req.environ.setdefault('swift.infocache', {})
         for elem in decoded_json["elements"]:
             if not isinstance(elem, six.string_types):
                 return swob.HTTPBadRequest(request=req, body="Malformed JSON")
+
+            normalized_elem = elem
+            if normalized_elem.startswith('/'):
+                normalized_elem = normalized_elem[1:]
+            if any(p in ('', '.', '..') for p in normalized_elem.split('/')):
+                return swob.HTTPBadRequest(request=req,
+                                           body="Bad element path: %s" % elem)
+            elem_container = normalized_elem.split('/', 1)[0]
+            elem_container_path = '/v1/%s/%s' % (
+                ctx.account_name, elem_container)
+            if auth_cb and elem_container_path not in authed_containers:
+                # Gotta check auth for all of the segments, too
+                bimodal_checker = ctx.req.environ[utils.ENV_BIMODAL_CHECKER]
+                acl_env = ctx.req.environ.copy()
+                acl_env['PATH_INFO'] = elem_container_path
+                container_info = get_container_info(
+                    acl_env, bimodal_checker,
+                    swift_source="PFS")
+                for acl in ('read_acl', 'write_acl'):
+                    req.acl = container_info[acl]
+                    denial_response = auth_cb(ctx.req)
+                    if denial_response:
+                        return denial_response
+                authed_containers.add(elem_container_path)
 
         try:
             coalesce_response = self.rpc_call(

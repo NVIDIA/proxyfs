@@ -47,24 +47,36 @@ func MakeConfMapFromStrings(confStrings []string) (confMap ConfMap, err error) {
 	return
 }
 
+// RegEx components used below:
+
+const assignment = "([ \t]*[=:][ \t]*)"
+const dot = "(\\.)"
+const leftBracket = "(\\[)"
+const rightBracket = "(\\])"
+const sectionName = "([0-9A-Za-z_\\-/:\\.]+)"
+const separator = "([ \t]+|([ \t]*,[ \t]*))"
+
+const token = "(([0-9A-Za-z_\\-/:\\.\\[\\]]+)\\$?)"
+const whiteSpace = "([ \t]+)"
+
 // A string to load looks like:
 
 //   <section_name_0>.<option_name_0> =
 //     or
-//   <section_name_1>.<option_name_1> = <value_1>
+//   <section_name_1>.<option_name_1> : <value_1>
 //     or
 //   <section_name_2>.<option_name_2> = <value_2>, <value_3>
 //     or
-//   <section_name_3>.<option_name_3> = <value_4> <value_5>,<value_6>
+//   <section_name_3>.<option_name_3> : <value_4> <value_5>,<value_6>
 
-var stringRE = regexp.MustCompile("^[0-9A-Za-z_\\-:]+\\.[0-9A-Za-z_\\-]+[ \t]*[=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
-var sectionNameOptionNameSeparatorRE = regexp.MustCompile("\\.")
+var stringRE = regexp.MustCompile("\\A" + token + dot + token + assignment + "(" + token + "(" + separator + token + ")*)?\\z")
+var sectionNameOptionNameSeparatorRE = regexp.MustCompile(dot)
 
 // A .INI/.conf file to load typically looks like:
 //
 //   [<section_name_1>]
 //   <option_name_0> :
-//   <option_name_1> : <value_1>
+//   <option_name_1> = <value_1>
 //   <option_name_2> : <value_2> <value_3>
 //   <option_name_3> = <value_4> <value_5>,<value_6>
 //
@@ -86,19 +98,20 @@ var sectionNameOptionNameSeparatorRE = regexp.MustCompile("\\.")
 
 // Section Name lines are of the form:
 
-var sectionHeaderLineRE = regexp.MustCompile("^\\[[ \t]*[0-9A-Za-z_\\-:]+[ \t]*\\]$")
-var sectionNameRE = regexp.MustCompile("[0-9A-Za-z_\\-:]+")
+var sectionHeaderLineRE = regexp.MustCompile("\\A" + leftBracket + token + rightBracket + "\\z")
+var sectionNameRE = regexp.MustCompile(sectionName)
 
 // Option Name:Value lines are of the form:
 
-var optionLineRE = regexp.MustCompile("^[0-9A-Za-z_\\-]+[ \t]*[:=][ \t]*[0-9A-Za-z_\\- \t,/:\\.\\[\\]]*$")
-var optionNameOptionValuesSeparatorRE = regexp.MustCompile("[ \t]*[:=][ \t]*")
-var optionValueSeparatorRE = regexp.MustCompile("[ \t]*[ \t,][ \t]*")
+var optionLineRE = regexp.MustCompile("\\A" + token + assignment + "(" + token + "(" + separator + token + ")*)?\\z")
+
+var optionNameOptionValuesSeparatorRE = regexp.MustCompile(assignment)
+var optionValueSeparatorRE = regexp.MustCompile(separator)
 
 // Include lines are of the form:
 
-var includeLineRE = regexp.MustCompile("^.include[ \t]+[^ \t]+$")
-var includeFilePathSeparatorRE = regexp.MustCompile("[ \t]+")
+var includeLineRE = regexp.MustCompile("\\A\\.include" + whiteSpace + token + "\\z")
+var includeFilePathSeparatorRE = regexp.MustCompile(whiteSpace)
 
 // UpdateFromString modifies a pre-existing ConfMap based on an update
 // specified in confString (e.g., from an extra command-line argument)

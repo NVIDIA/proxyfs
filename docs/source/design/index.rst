@@ -8,7 +8,6 @@ Overview
 .. toctree::
     :maxdepth: 1
 
-    ldlm_requirements
     bimodal-support
 
 uml

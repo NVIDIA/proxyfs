@@ -302,7 +302,7 @@ ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
 # Install benchmark support tools
 
-yum -y install bc gawk
+yum -y install atop bc fio gawk
 
 # Install ssh helper
 

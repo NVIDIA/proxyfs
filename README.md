@@ -25,7 +25,8 @@ development model.
 
 If you'd like to ask questions, discuss ideas, or otherwise communicate
 with other ProxyFS contributors, please register for and participate
-in the [ProxyFS dev mailing list](https://lists.proxyfs.org/mailman/listinfo).
+in the [ProxyFS dev mailing list](https://lists.proxyfs.org/mailman/listinfo)
+or the [ProxyFS Slack group](https://proxyfs.slack.com).
 
 ## Development Environment
 
@@ -54,6 +55,7 @@ one.
 
 ## Commercial Deployment
 
+ProxyFS powers File Access for the SwiftStack product.
 See: http://swiftstack.com
 
 ## License

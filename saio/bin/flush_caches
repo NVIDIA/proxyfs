@@ -1,0 +1,3 @@
+#!/bin/bash
+
+sudo su -c 'sync; echo 2 > /proc/sys/vm/drop_caches'

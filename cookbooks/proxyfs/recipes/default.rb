@@ -251,6 +251,11 @@ if node[:platform_family].include?("rhel")
     "yum-utils"
   ]
 
+  utils_packages = [
+    "atop",
+    "vim-common"
+  ]
+
 else # assume debian
 
   # packages
@@ -291,9 +296,14 @@ else # assume debian
     "gdb"
   ]
 
+  utils_packages = [
+    "atop",
+    "vim-common"
+  ]
+
 end
 
-packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages
+packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages + utils_packages
 packages += wireshark_packages if is_dev
 packages += ssh_packages if is_dev
 

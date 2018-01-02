@@ -1,5 +1,11 @@
 # ProxyFS Release Notes
 
+## 1.1.0 (January 2, 2018)
+
+### Notes:
+
+* ProxyFS now built with a standard Makefile (obsoleting regression_test.py)
+
 ## 1.0.3 (December 4, 2017)
 
 ### Bug Fixes:

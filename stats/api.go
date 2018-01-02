@@ -17,6 +17,7 @@ const (
 	JrpcfsIoRead                                // uses operations, op bucketed bytes, and bytes stats
 	SwiftObjGet                                 // uses operations, op bucketed bytes, and bytes stats
 	SwiftObjLoad                                // uses operations, op bucketed bytes, and bytes stats
+	SwiftObjRead                                // uses operations, op bucketed bytes, and bytes stats
 	SwiftObjTail                                // uses operations and bytes stats
 	SwiftObjPutCtxRead                          // uses operations, op bucketed bytes, and bytes stats
 	SwiftObjPutCtxSendChunk                     // uses operations, op bucketed bytes, and bytes stats
@@ -168,6 +169,23 @@ func (ms MultipleStat) findStatStrings(numBytes uint64) (ops *string, bytes *str
 			bbytes = &SwiftObjLoadOps64K
 		} else {
 			bbytes = &SwiftObjLoadOpsOver64K
+		}
+	case SwiftObjRead:
+		// swiftclient object-read uses operations, op bucketed bytes, and bytes stats
+		ops = &SwiftObjReadOps
+		bytes = &SwiftObjReadBytes
+		if numBytes <= 4096 {
+			bbytes = &SwiftObjReadOps4K
+		} else if numBytes <= 8192 {
+			bbytes = &SwiftObjReadOps8K
+		} else if numBytes <= 16384 {
+			bbytes = &SwiftObjReadOps16K
+		} else if numBytes <= 32768 {
+			bbytes = &SwiftObjReadOps32K
+		} else if numBytes <= 65536 {
+			bbytes = &SwiftObjReadOps64K
+		} else {
+			bbytes = &SwiftObjReadOpsOver64K
 		}
 	case SwiftObjTail:
 		// swiftclient object-tail uses operations and bytes stats

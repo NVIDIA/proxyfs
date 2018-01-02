@@ -134,6 +134,12 @@ func ObjectLoad(accountName string, containerName string, objectName string) (bu
 	return objectLoadWithRetry(accountName, containerName, objectName)
 }
 
+// ObjectRead invokes HTTP GET on the named Swift Object at the specified offset filling in the specified byte slice.
+// Note that the byte slice must already have the desired length even though those bytes will be overwritten.
+func ObjectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
+	return objectReadWithRetry(accountName, containerName, objectName, offset, buf)
+}
+
 // ObjectTail invokes HTTP GET on the named Swift Object with a byte range selecting the specified length of trailing bytes.
 func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
 	return objectTailWithRetry(accountName, containerName, objectName, length)

@@ -323,7 +323,14 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
-	// Send a GET for account "TestAccount" expecting header Cat: Dog and containerList []string{"TestContainer"}
+	// Send a PUT for container "Z"
+
+	err = ContainerPut("TestAccount", "Z", map[string][]string{})
+	if nil != err {
+		t.Fatalf("ContainerPut(\"TestAccount\", \"Z\", nil) failed: %v", err)
+	}
+
+	// Send a GET for account "TestAccount" expecting header Cat: Dog and containerList []string{"TestContainer", "Z"}
 
 	accountHeaders, containerList, err = AccountGet("TestAccount")
 	if nil != err {
@@ -337,7 +344,7 @@ func testOps(t *testing.T) {
 	if (1 != len(accountCatHeader)) || ("Dog" != accountCatHeader[0]) {
 		t.Fatalf("AccountGet(\"TestAccount\") didn't return Header \"Cat\" having value []string{\"Dog\"}")
 	}
-	if (1 != len(containerList)) || ("TestContainer" != containerList[0]) {
+	if (2 != len(containerList)) || ("TestContainer" != containerList[0]) || ("Z" != containerList[1]) {
 		t.Fatalf("AccountGet(\"TestAccount\") didn't return expected containerList")
 	}
 
@@ -599,6 +606,22 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	// Send a range READ of bytes at offset 1 for length 3 for object "FooBar" expecting []byte{0xBB, 0xCC, 0xDD}
+
+	readLen, err := ObjectRead("TestAccount", "TestContainer", "FooBar", uint64(1), readBuf)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	if 3 != readLen {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) didn't return expected len")
+		t.Fatalf(tErr)
+	}
+	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
+		tErr := fmt.Sprintf("ObjectRead(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), readBuf) didn't return expected []byte")
+		t.Fatalf(tErr)
+	}
+
 	// Send a full GET for object "FooBar" expecting []byte{0xAA, 0xBB, 0xCC, 0xDD, OxEE}
 
 	loadBuf, err := ObjectLoad("TestAccount", "TestContainer", "FooBar")
@@ -734,6 +757,13 @@ func testOps(t *testing.T) {
 	if nil != err {
 		tErr := fmt.Sprintf("ContainerDelete(\"TestAccount\", \"TestContainer\") failed: %v", err)
 		t.Fatalf(tErr)
+	}
+
+	// Send a DELETE for container "Z"
+
+	err = ContainerDelete("TestAccount", "Z")
+	if nil != err {
+		t.Fatalf("ContainerDelete(\"TestAccount\", \"Z\") failed: %v", err)
 	}
 
 	// create and delete container "TestContainer" again so we're sure the retry code is hit
