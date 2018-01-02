@@ -505,17 +505,17 @@ func testOps(t *testing.T) {
 
 	// Send a chunk for object "FooBar" of []byte{0xAA, 0xBB}
 
-	err = chunkedPutContext.SendChunk([]byte{0xAA, 0xBB})
+	err = chunkedPutContext.SendChunkAsSlice([]byte{0xAA, 0xBB})
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.SendChunk([]byte{0xAA, 0xBB}) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice([]byte{0xAA, 0xBB}) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
 	// Send a chunk for object "FooBar" of []byte{0xCC, 0xDD, 0xEE}
 
-	err = chunkedPutContext.SendChunk([]byte{0xCC, 0xDD, 0xEE})
+	err = chunkedPutContext.SendChunkAsSlice([]byte{0xCC, 0xDD, 0xEE})
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.SendChunk([]byte{0xCC, 0xDD, 0xEE}) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice([]byte{0xCC, 0xDD, 0xEE}) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -901,7 +901,7 @@ func testChunkedPut(t *testing.T) {
 }
 
 // write objSize worth of random bytes to the object using nWrite calls to
-// SendChunk() and then read it back to verify.
+// SendChunkAsSlice() and then read it back to verify.
 //
 func testObjectWriteVerify(t *testing.T, accountName string, containerName string, objName string,
 	objSize int, nwrite int) (err error) {
@@ -933,12 +933,12 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 	wsz := len(writeBuf) / nwrite
 	for off := 0; off < len(writeBuf); off += wsz {
 		if off+wsz < objSize {
-			err = chunkedPutContext.SendChunk(writeBuf[off : off+wsz])
+			err = chunkedPutContext.SendChunkAsSlice(writeBuf[off : off+wsz])
 		} else {
-			err = chunkedPutContext.SendChunk(writeBuf[off:])
+			err = chunkedPutContext.SendChunkAsSlice(writeBuf[off:])
 		}
 		if nil != err {
-			tErr := fmt.Sprintf("chunkedPutContext.SendChunk(writeBuf[%d:%d]) failed: %v",
+			tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice(writeBuf[%d:%d]) failed: %v",
 				off, off+wsz, err)
 			return errors.New(tErr)
 		}

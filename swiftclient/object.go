@@ -14,9 +14,9 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 )
 
-func objectContentLengthWithRetry(accountName string, containerName string, objectName string) (uint64, error) {
+func objectContentLength(accountName string, containerName string, objectName string) (uint64, error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectContentLength() with the paramaters passed to this function,
+	// objectContentLengthNoRetry() with the paramaters passed to this function,
 	// stashes the relevant return values into the local variables of this
 	// function, and then returns err and whether it is retriable to
 	// RequestWithRetry()
@@ -26,7 +26,7 @@ func objectContentLengthWithRetry(accountName string, containerName string, obje
 	)
 	request := func() (bool, error) {
 		var err error
-		length, err = objectContentLength(accountName, containerName, objectName)
+		length, err = objectContentLengthNoRetry(accountName, containerName, objectName)
 		return true, err
 	}
 
@@ -42,7 +42,7 @@ func objectContentLengthWithRetry(accountName string, containerName string, obje
 	return length, err
 }
 
-func objectContentLength(accountName string, containerName string, objectName string) (length uint64, err error) {
+func objectContentLengthNoRetry(accountName string, containerName string, objectName string) (length uint64, err error) {
 	var (
 		connection         *connectionStruct
 		contentLengthAsInt int
@@ -104,12 +104,12 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		srcObjectSize        uint64
 	)
 
-	srcObjectSize, err = objectContentLengthWithRetry(srcAccountName, srcContainerName, srcObjectName)
+	srcObjectSize, err = objectContentLength(srcAccountName, srcContainerName, srcObjectName)
 	if nil != err {
 		return
 	}
 
-	dstChunkedPutContext, err = objectFetchChunkedPutContextWithRetry(dstAccountName, dstContainerName, dstObjectName)
+	dstChunkedPutContext, err = objectFetchChunkedPutContext(dstAccountName, dstContainerName, dstObjectName)
 	if nil != err {
 		return
 	}
@@ -124,14 +124,14 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		if (srcObjectPosition + chunkSize) > srcObjectSize {
 			chunkSize = srcObjectSize - srcObjectPosition
 
-			chunk, err = objectTailWithRetry(srcAccountName, srcContainerName, srcObjectName, chunkSize)
+			chunk, err = objectTail(srcAccountName, srcContainerName, srcObjectName, chunkSize)
 		} else {
-			chunk, err = objectGetWithRetry(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
+			chunk, err = objectGet(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
 		}
 
 		srcObjectPosition += chunkSize
 
-		err = dstChunkedPutContext.SendChunk(chunk)
+		err = dstChunkedPutContext.SendChunkAsSlice(chunk)
 		if nil != err {
 			return
 		}
@@ -204,7 +204,7 @@ func objectDeleteAsyncDaemon() {
 				pendingDelete.wgPreCondition.Wait()
 			}
 
-			_ = objectDeleteSyncWithRetry(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName)
+			_ = objectDeleteSync(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName)
 
 			if nil != pendingDelete.wgPostSignal {
 				// TODO: what if the delete failed?
@@ -216,14 +216,14 @@ func objectDeleteAsyncDaemon() {
 	}
 }
 
-func objectDeleteSyncWithRetry(accountName string, containerName string, objectName string) (err error) {
+func objectDeleteSync(accountName string, containerName string, objectName string) (err error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectDeleteSync() with the paramaters passed to this function, stashes
+	// objectDeleteSyncNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	request := func() (bool, error) {
 		var err error
-		err = objectDeleteSync(accountName, containerName, objectName)
+		err = objectDeleteSyncNoRetry(accountName, containerName, objectName)
 		return true, err
 	}
 
@@ -238,7 +238,7 @@ func objectDeleteSyncWithRetry(accountName string, containerName string, objectN
 	return err
 }
 
-func objectDeleteSync(accountName string, containerName string, objectName string) (err error) {
+func objectDeleteSyncNoRetry(accountName string, containerName string, objectName string) (err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -280,11 +280,11 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	return
 }
 
-func objectGetWithRetry(accountName string, containerName string, objectName string,
+func objectGet(accountName string, containerName string, objectName string,
 	offset uint64, length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
-	// objectGet() with the paramaters passed to this function, stashes the
+	// objectGetNoRetry() with the paramaters passed to this function, stashes the
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -293,7 +293,7 @@ func objectGetWithRetry(accountName string, containerName string, objectName str
 	)
 	request := func() (bool, error) {
 		var err error
-		buf, err = objectGet(accountName, containerName, objectName, offset, length)
+		buf, err = objectGetNoRetry(accountName, containerName, objectName, offset, length)
 		return true, err
 	}
 
@@ -308,7 +308,7 @@ func objectGetWithRetry(accountName string, containerName string, objectName str
 	return buf, err
 }
 
-func objectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+func objectGetNoRetry(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
 	var (
 		connection    *connectionStruct
 		chunk         []byte
@@ -394,9 +394,9 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	return
 }
 
-func objectHeadWithRetry(accountName string, containerName string, objectName string) (map[string][]string, error) {
+func objectHead(accountName string, containerName string, objectName string) (map[string][]string, error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectHead() with the paramaters passed to this function, stashes
+	// objectHeadNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -405,7 +405,7 @@ func objectHeadWithRetry(accountName string, containerName string, objectName st
 	)
 	request := func() (bool, error) {
 		var err error
-		headers, err = objectHead(accountName, containerName, objectName)
+		headers, err = objectHeadNoRetry(accountName, containerName, objectName)
 		return true, err
 	}
 
@@ -420,7 +420,7 @@ func objectHeadWithRetry(accountName string, containerName string, objectName st
 	return headers, err
 }
 
-func objectHead(accountName string, containerName string, objectName string) (headers map[string][]string, err error) {
+func objectHeadNoRetry(accountName string, containerName string, objectName string) (headers map[string][]string, err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -461,9 +461,9 @@ func objectHead(accountName string, containerName string, objectName string) (he
 	return
 }
 
-func objectLoadWithRetry(accountName string, containerName string, objectName string) ([]byte, error) {
+func objectLoad(accountName string, containerName string, objectName string) ([]byte, error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectLoad() with the paramaters passed to this function, stashes the
+	// objectLoadNoRetry() with the paramaters passed to this function, stashes the
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -472,7 +472,7 @@ func objectLoadWithRetry(accountName string, containerName string, objectName st
 	)
 	request := func() (bool, error) {
 		var err error
-		buf, err = objectLoad(accountName, containerName, objectName)
+		buf, err = objectLoadNoRetry(accountName, containerName, objectName)
 		return true, err
 	}
 
@@ -487,7 +487,7 @@ func objectLoadWithRetry(accountName string, containerName string, objectName st
 	return buf, err
 }
 
-func objectLoad(accountName string, containerName string, objectName string) (buf []byte, err error) {
+func objectLoadNoRetry(accountName string, containerName string, objectName string) (buf []byte, err error) {
 	var (
 		connection    *connectionStruct
 		chunk         []byte
@@ -570,9 +570,9 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	return
 }
 
-func objectReadWithRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (uint64, error) {
+func objectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (uint64, error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectRead() with the paramaters passed to this function, stashes the
+	// objectReadNoRetry() with the paramaters passed to this function, stashes the
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -581,7 +581,7 @@ func objectReadWithRetry(accountName string, containerName string, objectName st
 	)
 	request := func() (bool, error) {
 		var err error
-		len, err = objectRead(accountName, containerName, objectName, offset, buf)
+		len, err = objectReadNoRetry(accountName, containerName, objectName, offset, buf)
 		return true, err
 	}
 
@@ -596,7 +596,7 @@ func objectReadWithRetry(accountName string, containerName string, objectName st
 	return len, err
 }
 
-func objectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
+func objectReadNoRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
 	var (
 		capacity      uint64
 		chunkLen      uint64
@@ -687,11 +687,11 @@ func objectRead(accountName string, containerName string, objectName string, off
 	return
 }
 
-func objectTailWithRetry(accountName string, containerName string, objectName string,
+func objectTail(accountName string, containerName string, objectName string,
 	length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
-	// objectTail() with the paramaters passed to this function, stashes the
+	// objectTailNoRetry() with the paramaters passed to this function, stashes the
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -700,7 +700,7 @@ func objectTailWithRetry(accountName string, containerName string, objectName st
 	)
 	request := func() (bool, error) {
 		var err error
-		buf, err = objectTail(accountName, containerName, objectName, length)
+		buf, err = objectTailNoRetry(accountName, containerName, objectName, length)
 		return true, err
 	}
 
@@ -715,7 +715,7 @@ func objectTailWithRetry(accountName string, containerName string, objectName st
 	return buf, err
 }
 
-func objectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
+func objectTailNoRetry(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
 	var (
 		chunk         []byte
 		connection    *connectionStruct
@@ -841,9 +841,9 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 	return
 }
 
-func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string) (*chunkedPutContextStruct, error) {
+func objectFetchChunkedPutContext(accountName string, containerName string, objectName string) (*chunkedPutContextStruct, error) {
 	// request is a function that, through the miracle of closure, calls
-	// objectFetchChunkedPutContext() with the paramaters passed to this
+	// objectFetchChunkedPutContextNoRetry() with the paramaters passed to this
 	// function, stashes the relevant return values into the local variables of
 	// this function, and then returns err and whether it is retriable to
 	// RequestWithRetry()
@@ -852,7 +852,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 	)
 	request := func() (bool, error) {
 		var err error
-		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName)
+		chunkedPutContext, err = objectFetchChunkedPutContextNoRetry(accountName, containerName, objectName)
 		return true, err
 	}
 
@@ -870,7 +870,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 // used during testing for error injection
 var objectFetchChunkedPutContextCnt uint64
 
-func objectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext *chunkedPutContextStruct, err error) {
+func objectFetchChunkedPutContextNoRetry(accountName string, containerName string, objectName string) (chunkedPutContext *chunkedPutContextStruct, err error) {
 	var (
 		connection *connectionStruct
 		headers    map[string][]string
@@ -1279,7 +1279,7 @@ var (
 // called (current code does not call Close() after SendChunk() returns an
 // error, SendChunk() also cleans up the TCP connection.
 //
-func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err error) {
+func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (err error) {
 
 	chunkedPutContext.Lock()
 	sendChunkCnt += 1

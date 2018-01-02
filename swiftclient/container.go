@@ -10,14 +10,14 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 )
 
-func containerDeleteWithRetry(accountName string, containerName string) (err error) {
+func containerDelete(accountName string, containerName string) (err error) {
 	// request is a function that, through the miracle of closure, calls
-	// containerDelete() with the paramaters passed to this function, stashes
+	// containerDeleteNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	request := func() (bool, error) {
 		var err error
-		err = containerDelete(accountName, containerName)
+		err = containerDeleteNoRetry(accountName, containerName)
 		return true, err
 	}
 
@@ -32,7 +32,7 @@ func containerDeleteWithRetry(accountName string, containerName string) (err err
 	return err
 }
 
-func containerDelete(accountName string, containerName string) (err error) {
+func containerDeleteNoRetry(accountName string, containerName string) (err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -74,9 +74,9 @@ func containerDelete(accountName string, containerName string) (err error) {
 	return
 }
 
-func containerGetWithRetry(accountName string, containerName string) (map[string][]string, []string, error) {
+func containerGet(accountName string, containerName string) (map[string][]string, []string, error) {
 	// request is a function that, through the miracle of closure, calls
-	// containerGet() with the paramaters passed to this function, stashes
+	// containerGetNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -86,7 +86,7 @@ func containerGetWithRetry(accountName string, containerName string) (map[string
 	)
 	request := func() (bool, error) {
 		var err error
-		headers, objectList, err = containerGet(accountName, containerName)
+		headers, objectList, err = containerGetNoRetry(accountName, containerName)
 		return true, err
 	}
 
@@ -100,7 +100,7 @@ func containerGetWithRetry(accountName string, containerName string) (map[string
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return headers, objectList, err
 }
-func containerGet(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
+func containerGetNoRetry(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -151,9 +151,9 @@ func containerGet(accountName string, containerName string) (headers map[string]
 	return
 }
 
-func containerHeadWithRetry(accountName string, containerName string) (map[string][]string, error) {
+func containerHead(accountName string, containerName string) (map[string][]string, error) {
 	// request is a function that, through the miracle of closure, calls
-	// containerHead() with the paramaters passed to this function, stashes
+	// containerHeadNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	var (
@@ -162,7 +162,7 @@ func containerHeadWithRetry(accountName string, containerName string) (map[strin
 	)
 	request := func() (bool, error) {
 		var err error
-		headers, err = containerHead(accountName, containerName)
+		headers, err = containerHeadNoRetry(accountName, containerName)
 		return true, err
 	}
 
@@ -177,7 +177,7 @@ func containerHeadWithRetry(accountName string, containerName string) (map[strin
 	return headers, err
 }
 
-func containerHead(accountName string, containerName string) (headers map[string][]string, err error) {
+func containerHeadNoRetry(accountName string, containerName string) (headers map[string][]string, err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -218,14 +218,14 @@ func containerHead(accountName string, containerName string) (headers map[string
 	return
 }
 
-func containerPostWithRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+func containerPost(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
 	// request is a function that, through the miracle of closure, calls
-	// containerPost() with the paramaters passed to this function, stashes
+	// containerPostNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	request := func() (bool, error) {
 		var err error
-		err = containerPost(accountName, containerName, requestHeaders)
+		err = containerPostNoRetry(accountName, containerName, requestHeaders)
 		return true, err
 	}
 
@@ -240,7 +240,7 @@ func containerPostWithRetry(accountName string, containerName string, requestHea
 	return err
 }
 
-func containerPost(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+func containerPostNoRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
 	var (
 		connection      *connectionStruct
 		contentLength   int
@@ -301,14 +301,14 @@ func containerPost(accountName string, containerName string, requestHeaders map[
 	return
 }
 
-func containerPutWithRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+func containerPut(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
 	// request is a function that, through the miracle of closure, calls
-	// containerPut() with the paramaters passed to this function, stashes
+	// containerPutNoRetry() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	request := func() (bool, error) {
 		var err error
-		err = containerPut(accountName, containerName, requestHeaders)
+		err = containerPutNoRetry(accountName, containerName, requestHeaders)
 		return true, err
 	}
 
@@ -323,7 +323,7 @@ func containerPutWithRetry(accountName string, containerName string, requestHead
 	return err
 }
 
-func containerPut(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
+func containerPutNoRetry(accountName string, containerName string, requestHeaders map[string][]string) (err error) {
 	var (
 		connection      *connectionStruct
 		contentLength   int

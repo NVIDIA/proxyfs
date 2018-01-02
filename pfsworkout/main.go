@@ -1278,9 +1278,9 @@ func swiftclientWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSame
 	}
 
 	for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-		err = chunkedPutContext.SendChunk(bufWritten)
+		err = chunkedPutContext.SendChunkAsSlice(bufWritten)
 		if nil != err {
-			stepErrChan <- fmt.Errorf("chunkedPutContext.SendChunk(bufWritten) failed: %v\n", err)
+			stepErrChan <- fmt.Errorf("chunkedPutContext.SendChunkAsSlice(bufWritten) failed: %v\n", err)
 			return
 		}
 	}

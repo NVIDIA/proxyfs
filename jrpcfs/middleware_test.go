@@ -1187,7 +1187,7 @@ func putFileInSwift(server *Server, virtPath string, objData []byte, objMetadata
 		return err
 	}
 
-	err = putContext.SendChunk(objData)
+	err = putContext.SendChunkAsSlice(objData)
 	if err != nil {
 		return err
 	}
@@ -1461,7 +1461,7 @@ func TestPutObjectCompound(t *testing.T) {
 		panic(err)
 	}
 
-	err = putContext.SendChunk([]byte("hello "))
+	err = putContext.SendChunkAsSlice([]byte("hello "))
 	if err != nil {
 		panic(err)
 	}
@@ -1492,7 +1492,7 @@ func TestPutObjectCompound(t *testing.T) {
 		panic(err)
 	}
 
-	err = putContext.SendChunk([]byte("world!"))
+	err = putContext.SendChunkAsSlice([]byte("world!"))
 	if err != nil {
 		panic(err)
 	}

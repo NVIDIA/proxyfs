@@ -1141,7 +1141,7 @@ func TestAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetching chunked put context failed")
 	}
-	err = putContext.SendChunk([]byte{0x11, 0x22, 0x33})
+	err = putContext.SendChunkAsSlice([]byte{0x11, 0x22, 0x33})
 	if err != nil {
 		t.Fatalf("sending chunk failed")
 	}
@@ -1295,7 +1295,7 @@ func TestAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetching chunked put context failed")
 	}
-	err = putContext.SendChunk([]byte{0xFE, 0xFF})
+	err = putContext.SendChunkAsSlice([]byte{0xFE, 0xFF})
 	if err != nil {
 		t.Fatalf("sending chunk failed")
 	}

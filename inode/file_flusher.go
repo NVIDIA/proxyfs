@@ -304,7 +304,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		return
 	}
 
-	err = fileInode.openLogSegment.ChunkedPutContext.SendChunk(buf)
+	err = fileInode.openLogSegment.ChunkedPutContext.SendChunkAsSlice(buf)
 	if nil != err {
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return
