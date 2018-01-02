@@ -416,7 +416,7 @@ func ioHandle(conn net.Conn) {
 			profiler.AddEventNow("before fs.Read()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.data.Buf, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
+				ctx.data.Buf, err = mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
 			}
 			profiler.AddEventNow("after fs.Read()")
 

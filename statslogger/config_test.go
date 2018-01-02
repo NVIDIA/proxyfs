@@ -552,13 +552,13 @@ func testOps(t *testing.T) {
 
 	// Read back chunked PUT data at offset 1 for length 3 expecting []byte{0xBB, 0xCC, 0xDD}
 
-	readBuf, err := chunkedPutContext.Read(uint64(1), uint64(3))
+	readBuf, err := chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3))
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.Read(uint64(1), uint64(3)) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3)) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
-		t.Fatalf("chunkedPutContext.Read(uint64(1), uint64(3)) didn't return expected []byte")
+		t.Fatalf("chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3)) didn't return expected []byte")
 	}
 
 	// Finish the chunked PUT for object "FooBar"
@@ -616,13 +616,13 @@ func testOps(t *testing.T) {
 
 	// Send a range GET of bytes at offset 1 for length 3 for object "FooBar" expecting []byte{0xBB, 0xCC, 0xDD}
 
-	getBuf, err := swiftclient.ObjectGet("TestAccount", "TestContainer", "FooBar", uint64(1), uint64(3))
+	getBuf, err := swiftclient.ObjectGetReturnSlice("TestAccount", "TestContainer", "FooBar", uint64(1), uint64(3))
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectGet(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) failed: %v", err)
+		tErr := fmt.Sprintf("ObjectGetReturnSlice(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, getBuf) {
-		tErr := fmt.Sprintf("ObjectGet(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) didn't return expected []byte")
+		tErr := fmt.Sprintf("ObjectGetReturnSlice(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) didn't return expected []byte")
 		t.Fatalf(tErr)
 	}
 

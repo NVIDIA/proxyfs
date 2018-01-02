@@ -126,7 +126,8 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 
 			chunk, err = objectTail(srcAccountName, srcContainerName, srcObjectName, chunkSize)
 		} else {
-			chunk, err = objectGet(srcAccountName, srcContainerName, srcObjectName, srcObjectPosition, chunkSize)
+			chunk, err = objectGetReturnSlice(srcAccountName, srcContainerName, srcObjectName,
+				srcObjectPosition, chunkSize)
 		}
 
 		srcObjectPosition += chunkSize
@@ -280,7 +281,7 @@ func objectDeleteSyncNoRetry(accountName string, containerName string, objectNam
 	return
 }
 
-func objectGet(accountName string, containerName string, objectName string,
+func objectGetReturnSlice(accountName string, containerName string, objectName string,
 	offset uint64, length uint64) ([]byte, error) {
 
 	// request is a function that, through the miracle of closure, calls
@@ -293,7 +294,7 @@ func objectGet(accountName string, containerName string, objectName string,
 	)
 	request := func() (bool, error) {
 		var err error
-		buf, err = objectGetNoRetry(accountName, containerName, objectName, offset, length)
+		buf, err = objectGetReturnSliceNoRetry(accountName, containerName, objectName, offset, length)
 		return true, err
 	}
 
@@ -308,7 +309,7 @@ func objectGet(accountName string, containerName string, objectName string,
 	return buf, err
 }
 
-func objectGetNoRetry(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+func objectGetReturnSliceNoRetry(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
 	var (
 		connection    *connectionStruct
 		chunk         []byte
@@ -1039,7 +1040,7 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	return
 }
 
-func (chunkedPutContext *chunkedPutContextStruct) Read(offset uint64, length uint64) (buf []byte, err error) {
+func (chunkedPutContext *chunkedPutContextStruct) ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error) {
 	var (
 		chunkBufAsByteSlice []byte
 		chunkBufAsValue     sortedmap.Value

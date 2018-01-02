@@ -290,7 +290,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Lookup() failed [case 1]: %v", err)
 	}
 
-	readData, err = mountHandle.Read(
+	readData, err = mountHandle.ReadReturnSlice(
 		inode.InodeRootUserID,
 		inode.InodeRootGroupID,
 		nil,
@@ -300,10 +300,10 @@ func TestDaemon(t *testing.T) {
 		nil,
 	)
 	if nil != err {
-		t.Fatalf("fs.Read() failed [case 1]: %v", err)
+		t.Fatalf("fs.ReadReturnSlice() failed [case 1]: %v", err)
 	}
 	if 0 != bytes.Compare([]byte{0x00, 0x01, 0x02, 0x03}, readData) {
-		t.Fatalf("fs.Read() returned unexpected readData [case 1]")
+		t.Fatalf("fs.ReadReturnSlice() returned unexpected readData [case 1]")
 	}
 
 	// Send ourself a SIGTERM to signal normal termination of mainWithArgs()
@@ -356,7 +356,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Lookup() failed [case 2]: %v", err)
 	}
 
-	readData, err = mountHandle.Read(
+	readData, err = mountHandle.ReadReturnSlice(
 		inode.InodeRootUserID,
 		inode.InodeRootGroupID,
 		nil,
@@ -366,10 +366,10 @@ func TestDaemon(t *testing.T) {
 		nil,
 	)
 	if nil != err {
-		t.Fatalf("fs.Read() failed [case 2]: %v", err)
+		t.Fatalf("fs.ReadReturnSlice() failed [case 2]: %v", err)
 	}
 	if 0 != bytes.Compare([]byte{0x00, 0x01, 0x02, 0x03}, readData) {
-		t.Fatalf("fs.Read() returned unexpected readData [case 2]")
+		t.Fatalf("fs.ReadReturnSlice() returned unexpected readData [case 2]")
 	}
 
 	// Verify [TestVersionSection]Version == 1

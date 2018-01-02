@@ -1166,12 +1166,12 @@ func TestAPI(t *testing.T) {
 	testMetadata.NumWrites = 2
 	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,true)")
 
-	testFileInodeData, err := testVolumeHandle.Read(fileInodeNumber, 0, 5, nil)
+	testFileInodeData, err := testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, 5, nil)
 	if nil != err {
-		t.Fatalf("Read(fileInodeNumber, 0, 5) failed: %v", err)
+		t.Fatalf("ReadReturnSlice(fileInodeNumber, 0, 5) failed: %v", err)
 	}
 	if 0 != bytes.Compare(testFileInodeData, []byte{0x00, 0x11, 0x22, 0x33, 0x04}) {
-		t.Fatalf("Read(fileInodeNumber, 0, 5) returned unexpected testFileInodeData")
+		t.Fatalf("ReadReturnSlice(fileInodeNumber, 0, 5) returned unexpected testFileInodeData")
 	}
 
 	offset := uint64(0)
@@ -1196,9 +1196,10 @@ func TestAPI(t *testing.T) {
 	bytesFromReadPlan := []byte{}
 	for _, rps := range testSuffixReadPlan {
 		pathParts := strings.SplitN(rps.ObjectPath, "/", 5)
-		b, err := swiftclient.ObjectGet(pathParts[2], pathParts[3], pathParts[4], rps.Offset, rps.Length)
+		b, err := swiftclient.ObjectGetReturnSlice(pathParts[2], pathParts[3], pathParts[4],
+			rps.Offset, rps.Length)
 		if err != nil {
-			t.Fatalf("ObjectGet() returned unexpected error %v", err)
+			t.Fatalf("ObjectGetReturnSlice() returned unexpected error %v", err)
 		}
 		bytesFromReadPlan = append(bytesFromReadPlan, b...)
 	}
@@ -1215,9 +1216,10 @@ func TestAPI(t *testing.T) {
 	bytesFromReadPlan = []byte{}
 	for _, rps := range testSuffixReadPlan {
 		pathParts := strings.SplitN(rps.ObjectPath, "/", 5)
-		b, err := swiftclient.ObjectGet(pathParts[2], pathParts[3], pathParts[4], rps.Offset, rps.Length)
+		b, err := swiftclient.ObjectGetReturnSlice(pathParts[2], pathParts[3], pathParts[4],
+			rps.Offset, rps.Length)
 		if err != nil {
-			t.Fatalf("ObjectGet() returned unexpected error %v", err)
+			t.Fatalf("ObjectGetReturnSlice() returned unexpected error %v", err)
 		}
 		bytesFromReadPlan = append(bytesFromReadPlan, b...)
 	}
@@ -1234,9 +1236,10 @@ func TestAPI(t *testing.T) {
 	bytesFromReadPlan = []byte{}
 	for _, rps := range testPrefixReadPlan {
 		pathParts := strings.SplitN(rps.ObjectPath, "/", 5)
-		b, err := swiftclient.ObjectGet(pathParts[2], pathParts[3], pathParts[4], rps.Offset, rps.Length)
+		b, err := swiftclient.ObjectGetReturnSlice(pathParts[2], pathParts[3], pathParts[4],
+			rps.Offset, rps.Length)
 		if err != nil {
-			t.Fatalf("ObjectGet() returned unexpected error %v", err)
+			t.Fatalf("ObjectGetReturnSlice() returned unexpected error %v", err)
 		}
 		bytesFromReadPlan = append(bytesFromReadPlan, b...)
 	}
@@ -1249,9 +1252,10 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("expected %q to be a legal object path", testReadPlan[0].ObjectPath)
 	}
 
-	headSlice, err := swiftclient.ObjectGet(accountName, containerName, objectName, testReadPlan[0].Offset, 1)
+	headSlice, err := swiftclient.ObjectGetReturnSlice(accountName, containerName, objectName,
+		testReadPlan[0].Offset, 1)
 	if nil != err {
-		t.Fatalf("ObjectGet() returned unexpected error: %v", err)
+		t.Fatalf("ObjectGetReturnSlice() returned unexpected error: %v", err)
 	}
 	if 0 != bytes.Compare(headSlice, []byte{0x00}) {
 		t.Fatalf("expected byte of %v to be 0x00, got %x", testReadPlan[0].ObjectPath, headSlice)
@@ -1261,9 +1265,10 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("expected %q to be a legal object path", testReadPlan[1].ObjectPath)
 	}
-	middleSlice, err := swiftclient.ObjectGet(accountName, containerName, objectName, testReadPlan[1].Offset, 3)
+	middleSlice, err := swiftclient.ObjectGetReturnSlice(accountName, containerName, objectName,
+		testReadPlan[1].Offset, 3)
 	if nil != err {
-		t.Fatalf("ObjectGet() returned unexpected error: %v", err)
+		t.Fatalf("ObjectGetReturnSlice() returned unexpected error: %v", err)
 	}
 	if 0 != bytes.Compare(middleSlice, []byte{0x11, 0x22, 0x33}) {
 		t.Fatalf("expected byte of %v to be 0x00, got %x", testReadPlan[0].ObjectPath, headSlice)
@@ -1273,9 +1278,10 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("expected %q to be a legal object path", testReadPlan[2].ObjectPath)
 	}
-	tailSlice, err := swiftclient.ObjectGet(accountName, containerName, objectName, testReadPlan[2].Offset, 1)
+	tailSlice, err := swiftclient.ObjectGetReturnSlice(accountName, containerName, objectName,
+		testReadPlan[2].Offset, 1)
 	if nil != err {
-		t.Fatalf("objectContext.Get() returned unexpected error: %v", err)
+		t.Fatalf("objectContext.ObjectGetReturnSlice() returned unexpected error: %v", err)
 	}
 	if 0 != bytes.Compare(tailSlice, []byte{0x04}) {
 		t.Fatalf("expected byte of %v to be 0x04, got %x", testReadPlan[0].ObjectPath, tailSlice)
@@ -1320,12 +1326,12 @@ func TestAPI(t *testing.T) {
 	testMetadata.NumWrites = 3
 	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,false)")
 
-	testFileInodeData, err = testVolumeHandle.Read(fileInodeNumber, 0, 4, nil)
+	testFileInodeData, err = testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, 4, nil)
 	if nil != err {
-		t.Fatalf("Read(fileInodeNumber, 0, 4) failed: %v", err)
+		t.Fatalf("ReadReturnSlice(fileInodeNumber, 0, 4) failed: %v", err)
 	}
 	if 0 != bytes.Compare(testFileInodeData, []byte{0xFE, 0xFF}) {
-		t.Fatalf("Read(fileInodeNumber, 0, 4) returned unexpected testFileInodeData")
+		t.Fatalf("ReadReturnSlice(fileInodeNumber, 0, 4) returned unexpected testFileInodeData")
 	}
 
 	preResizeMetadata, err := testVolumeHandle.GetMetadata(fileInodeNumber)

@@ -1316,7 +1316,7 @@ func (s *Server) RpcRead(in *ReadRequest, reply *ReadReply) (err error) {
 
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		reply.Buf, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Length, nil)
+		reply.Buf, err = mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Length, nil)
 	}
 
 	reply.RequestTimeSec = UnixSec(requestRecTime)

@@ -47,7 +47,7 @@ func (flowControl *flowControlStruct) touchReadCacheElementWhileLocked(readCache
 	}
 }
 
-func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
+func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
 		cacheLine            []byte
 		cacheLineHitLength   uint64
@@ -92,7 +92,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
 		if inFlightHit {
 			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
-			buf, err = inFlightLogSegment.Read(step.Offset, step.Length)
+			buf, err = inFlightLogSegment.ReadReturnSlice(step.Offset, step.Length)
 			if nil != err {
 				fileInode.Unlock()
 				logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - optimal case")
@@ -130,7 +130,9 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 				stats.IncrementOperations(&stats.FileReadcacheMissOps)
 				// Make readCacheHit true (at MRU, likely kicking out LRU)
 				cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
-				cacheLine, err = swiftclient.ObjectGet(step.AccountName, step.ContainerName, step.ObjectName, cacheLineStartOffset, readCacheLineSize)
+				cacheLine, err = swiftclient.ObjectGetReturnSlice(
+					step.AccountName, step.ContainerName, step.ObjectName,
+					cacheLineStartOffset, readCacheLineSize)
 				if nil != err {
 					logger.ErrorfWithError(err, "Reading from LogSegment object failed - optimal case")
 					err = blunder.AddError(err, blunder.SegReadError)
@@ -176,7 +178,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 			inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
 			if inFlightHit {
 				// The step is satisfied by reading from an inFlightLogSegment
-				inFlightHitBuf, err = inFlightLogSegment.Read(step.Offset, step.Length)
+				inFlightHitBuf, err = inFlightLogSegment.ReadReturnSlice(step.Offset, step.Length)
 				if nil != err {
 					fileInode.Unlock()
 					logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - general case")
@@ -221,7 +223,9 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 						stats.IncrementOperations(&stats.FileReadcacheMissOps)
 						// Make readCacheHit true (at MRU, likely kicking out LRU)
 						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
-						cacheLine, err = swiftclient.ObjectGet(step.AccountName, step.ContainerName, step.ObjectName, cacheLineStartOffset, readCacheLineSize)
+						cacheLine, err = swiftclient.ObjectGetReturnSlice(
+							step.AccountName, step.ContainerName, step.ObjectName,
+							cacheLineStartOffset, readCacheLineSize)
 						if nil != err {
 							logger.ErrorfWithError(err, "Reading from LogSegment object failed - general case")
 							err = blunder.AddError(err, blunder.SegReadError)

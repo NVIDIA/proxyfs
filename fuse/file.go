@@ -140,7 +140,7 @@ func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 }
 
 func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.ReadResponse) (err error) {
-	buf, err := f.mountHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
+	buf, err := f.mountHandle.ReadReturnSlice(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
 	if err != nil && err != io.EOF {
 		err = newFuseError(err)
 		return err

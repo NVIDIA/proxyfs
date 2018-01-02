@@ -91,8 +91,10 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 
 		// wait for up to 100 sec for the object to be (async) deleted
 		for try := 0; try < 100; try++ {
-			_, objectGetErr = swiftclient.ObjectGet(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName, 0, 16)
-			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectGetErr)
+			_, objectGetErr = swiftclient.ObjectGetReturnSlice(segmentObjectLocation.accountName,
+				segmentObjectLocation.containerName, segmentObjectLocation.objectName, 0, 16)
+			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n",
+				segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectGetErr)
 			if objectGetErr != nil {
 				break
 			}

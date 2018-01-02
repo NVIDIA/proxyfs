@@ -20,10 +20,10 @@ type ChunkedCopyContext interface {
 // returns an error, or else we will leak open connections (although SendChunk()
 // does its best).
 type ChunkedPutContext interface {
-	BytesPut() (bytesPut uint64, err error)                    // Report how many bytes have been sent via SendChunk() or SendChunkAsSlice() for this ChunkedPutContext
-	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
-	Read(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
-	SendChunkAsSlice(buf []byte) (err error)                   // Send the supplied "chunk" via this ChunkedPutContext
+	BytesPut() (bytesPut uint64, err error)                               // Report how many bytes have been sent via SendChunk() or SendChunkAsSlice() for this ChunkedPutContext
+	Close() (err error)                                                   // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
+	ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
+	SendChunkAsSlice(buf []byte) (err error)                              // Send the supplied "chunk" via this ChunkedPutContext
 }
 
 // StavationCallbackFunc specifies the signature of a callback function to be invoked when
@@ -120,8 +120,8 @@ func ObjectFetchChunkedPutContext(accountName string, containerName string, obje
 }
 
 // ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.
-func ObjectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-	return objectGet(accountName, containerName, objectName, offset, length)
+func ObjectGetReturnSlice(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+	return objectGetReturnSlice(accountName, containerName, objectName, offset, length)
 }
 
 // ObjectHead invokes HTTP HEAD on the named Swift Object.

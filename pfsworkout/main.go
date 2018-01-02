@@ -1020,25 +1020,25 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 			// Calculate random offset
 			rwOffset := uint64(rand.Int63n(int64(rwSizeTotal - rwSizeRequested)))
 
-			bufRead, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("fs.ReadReturnSlice(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != uint64(len(bufRead)) {
-				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("fs.ReadReturnSlice(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
 				return
 			}
 		}
 	} else {
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			bufRead, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("fs.ReadReturnSlice(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != uint64(len(bufRead)) {
-				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("fs.ReadReturnSlice(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
 				return
 			}
 		}
@@ -1174,25 +1174,25 @@ func inodeWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile b
 
 			// Calculate random offset
 			rwOffset := uint64(rand.Int63n(int64(rwSizeTotal - rwSizeRequested)))
-			bufRead, err := volumeHandle.Read(fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := volumeHandle.ReadReturnSlice(fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("volumeHandle.Read(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("volumeHandle.ReadReturnSlice(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != uint64(len(bufRead)) {
-				stepErrChan <- fmt.Errorf("volumeHandle.Read(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("volumeHandle.ReadReturnSlice(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
 				return
 			}
 		}
 	} else {
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			bufRead, err := volumeHandle.Read(fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := volumeHandle.ReadReturnSlice(fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("volumeHandle.Read(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("volumeHandle.ReadReturnSlice(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != uint64(len(bufRead)) {
-				stepErrChan <- fmt.Errorf("volumeHandle.Read(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("volumeHandle.ReadReturnSlice(rwSizeEach.FileInodeNumber, rwOffset, rwSizeRequested) failed to transfer all requested bytes\n")
 				return
 			}
 		}
@@ -1295,13 +1295,14 @@ func swiftclientWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSame
 	_ = <-doNextStepChan
 
 	for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-		bufRead, err := swiftclient.ObjectGet(accountName, containerName, objectName, rwOffset, rwSizeRequested)
+		bufRead, err := swiftclient.ObjectGetReturnSlice(accountName, containerName, objectName,
+			rwOffset, rwSizeRequested)
 		if nil != err {
-			stepErrChan <- fmt.Errorf("swiftclient.ObjectGet(\"%v\", \"%v\", \"%v\", rwOffset, rwSizeRequested) failed: %v\n", accountName, containerName, objectName, err)
+			stepErrChan <- fmt.Errorf("swiftclient.ObjectGetReturnSlice(\"%v\", \"%v\", \"%v\", rwOffset, rwSizeRequested) failed: %v\n", accountName, containerName, objectName, err)
 			return
 		}
 		if rwSizeRequested != uint64(len(bufRead)) {
-			stepErrChan <- fmt.Errorf("swiftclient.ObjectGet(\"%v\", \"%v\", \"%v\", rwOffset, rwSizeRequested) failed to transfer all requested bytes\n", accountName, containerName, objectName)
+			stepErrChan <- fmt.Errorf("swiftclient.ObjectGetReturnSlice(\"%v\", \"%v\", \"%v\", rwOffset, rwSizeRequested) failed to transfer all requested bytes\n", accountName, containerName, objectName)
 			return
 		}
 	}

@@ -55,7 +55,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpValue(value sortedmap.Value)
 
 func (bPlusTreeWrapper *bPlusTreeWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
 	nodeByteSlice, err =
-		swiftclient.ObjectGet(
+		swiftclient.ObjectGetReturnSlice(
 			bPlusTreeWrapper.volume.accountName,
 			bPlusTreeWrapper.volume.checkpointContainerName,
 			utils.Uint64ToHexStr(objectNumber),

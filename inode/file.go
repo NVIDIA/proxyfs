@@ -161,7 +161,7 @@ func setSizeInMemory(fileInode *inMemoryInodeStruct, size uint64) (err error) {
 	return
 }
 
-func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+func (vS *volumeStruct) ReadReturnSlice(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
 	var (
 		fileInode     *inMemoryInodeStruct
 		readPlan      []ReadPlanStep
@@ -180,7 +180,7 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 		return
 	}
 
-	buf, err = vS.doReadPlan(fileInode, readPlan, readPlanBytes)
+	buf, err = vS.doReadPlanReturnSlice(fileInode, readPlan, readPlanBytes)
 	if nil != err {
 		logger.WarnWithError(err)
 		return
