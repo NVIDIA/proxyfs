@@ -1,5 +1,5 @@
-hash: 0b91e7d40a412b63e764fe9f053fc036ea9addacbe0bf14c6477e989b3255587
-updated: 2017-11-26T10:19:22.803633-08:00
+hash: 80a7fcb71d28b832feaad8ee2c625ad08365ee09e838304b92e62654f8a3d22e
+updated: 2018-01-02T15:35:13.436086-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -21,9 +21,9 @@ imports:
   subpackages:
   - assert
 - name: github.com/swiftstack/cstruct
-  version: 09d92a1bc546e2816232d48da5d1fbbcf141e4c6
+  version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
 - name: github.com/swiftstack/sortedmap
-  version: 97c6f7aa8ddfb306d6a7d765751246d51c35c897
+  version: ad039ff8897b1f371575388658ea9dc72a36c2fb
 - name: golang.org/x/crypto
   version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
   subpackages:
