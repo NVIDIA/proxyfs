@@ -114,7 +114,7 @@ func (listPoolp *RefCntBufListPool) Get() (item interface{}) {
 
 	bufListp.Init(listPoolp, bufListp)
 	bufListp.Bufs = bufListp.Bufs[0:0]
-	bufListp.refCntBufs = bufListp.refCntBufs[0:0]
+	bufListp.RefCntBufs = bufListp.RefCntBufs[0:0]
 
 	return
 }
@@ -122,10 +122,10 @@ func (listPoolp *RefCntBufListPool) Get() (item interface{}) {
 func (listPoolp *RefCntBufListPool) put(item interface{}) {
 
 	bufListp := item.(*RefCntBufList)
-	if len(bufListp.refCntBufs) != len(bufListp.Bufs) {
+	if len(bufListp.RefCntBufs) != len(bufListp.Bufs) {
 		panic(fmt.Sprintf(
-			"(*RefCntBufListPool).put(): len(bufListp.refCntBufs) != len(bufListp.Buf) (%d != %d) at %p",
-			len(bufListp.refCntBufs), len(bufListp.Bufs), bufListp))
+			"(*RefCntBufListPool).put(): len(bufListp.RefCntBufs) != len(bufListp.Buf) (%d != %d) at %p",
+			len(bufListp.RefCntBufs), len(bufListp.Bufs), bufListp))
 	}
 	listPoolp.realPool.Put(item)
 	return

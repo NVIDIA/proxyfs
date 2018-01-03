@@ -286,21 +286,21 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	var (
 		bufPoolSet     *RefCntBufPoolSet
 		bufp           *RefCntBuf
-		reqSize        uint64
-		bufSize        uint64
-		poolSizes      []uint64
-		bufToPoolSizes map[uint64]uint64
+		reqSize        int
+		bufSize        int
+		poolSizes      []int
+		bufToPoolSizes map[int]int
 	)
 
 	// Create a set of refCntBufPool holding 1, 8, 64, and 128 Kibyte
 	// buffer pools and that buffers of sundry sizes are allocated from
 	// correct pool (basically testing the binary search algorithm)
 	//
-	poolSizes = []uint64{1024, 8 * 1024, 64 * 1024, 128 * 1024}
+	poolSizes = []int{1024, 8 * 1024, 64 * 1024, 128 * 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 
-	bufToPoolSizes = map[uint64]uint64{
+	bufToPoolSizes = map[int]int{
 		0:          1024,
 		512:        1024,
 		1024:       1024,
@@ -333,11 +333,11 @@ func TestRefCntBufPoolSet(t *testing.T) {
 
 	// Test search algorithm when there's only one buffer size
 	//
-	poolSizes = []uint64{1024}
+	poolSizes = []int{1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 
-	bufToPoolSizes = map[uint64]uint64{
+	bufToPoolSizes = map[int]int{
 		0:    1024,
 		512:  1024,
 		1024: 1024,
@@ -357,11 +357,11 @@ func TestRefCntBufPoolSet(t *testing.T) {
 
 	// Test search algorithm when there's an odd number of sizes (seven)
 	//
-	poolSizes = []uint64{1024, 2 * 1024, 3 * 1024, 4 * 1024, 5 * 1024, 6 * 1024, 7 * 1024}
+	poolSizes = []int{1024, 2 * 1024, 3 * 1024, 4 * 1024, 5 * 1024, 6 * 1024, 7 * 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 
-	bufToPoolSizes = map[uint64]uint64{
+	bufToPoolSizes = map[int]int{
 		0:    1024,
 		512:  1024,
 		1024: 1024,
@@ -407,12 +407,12 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	fmt.Printf("TestRefCntBufPoolSet(): using %d as random seed\n", syscall.Getpid())
 
 	for numPool := 1; numPool <= 23; numPool++ {
-		poolSizes = make([]uint64, numPool, numPool)
-		poolSizes[0] = (rand.Uint64() % 32) + 1
+		poolSizes = make([]int, numPool, numPool)
+		poolSizes[0] = (rand.Int() % 32) + 1
 
 		// bufPoolSize grows by 1.5 times (on average)
 		for i := 1; i < numPool; i++ {
-			incr := (rand.Uint64() % poolSizes[i-1]) + 1
+			incr := (rand.Int() % poolSizes[i-1]) + 1
 			poolSizes[i] = poolSizes[i-1] + incr
 		}
 		maxBufPoolSize := poolSizes[numPool-1]
@@ -424,7 +424,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 		bufs := make(map[*RefCntBuf]int)
 		for i := 1; i < 10000; i++ {
 
-			reqSize = rand.Uint64() % (maxBufPoolSize + 1)
+			reqSize = rand.Int() % (maxBufPoolSize + 1)
 			bufp = bufPoolSet.GetRefCntBuf(reqSize)
 
 			// did we get the same buffer twice?
@@ -478,7 +478,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	}
 
 	// don't Init() a RefCntBufPoolSet twice
-	poolSizes = []uint64{1024}
+	poolSizes = []int{1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 	testFunc = func() {
@@ -495,7 +495,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	}
 
 	// don't buffer pool sizes must be monotonically increasing
-	poolSizes = []uint64{1024, 1024}
+	poolSizes = []int{1024, 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	testFunc = func() {
 		bufPoolSet.Init(poolSizes)
@@ -511,7 +511,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	}
 
 	// don't buffer pool sizes must be monotonically increasing
-	poolSizes = []uint64{2048, 1024}
+	poolSizes = []int{2048, 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	testFunc = func() {
 		bufPoolSet.Init(poolSizes)
@@ -528,7 +528,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 
 	// ask for a buf larger then the largest size when the RefCntBufPoolSet
 	// as 1, 2, or 3 pool sizes
-	poolSizesArray := [][]uint64{
+	poolSizesArray := [][]int{
 		{1024},
 		{512, 1024},
 		{256, 512, 1024},
@@ -578,11 +578,11 @@ func TestRefCntBufList(t *testing.T) {
 
 	// Create a set of refCntBufPool holding 1, 8, 64, and 128 Kibyte buffer
 	// pools
-	poolSizes := []uint64{1024, 8 * 1024, 64 * 1024, 128 * 1024}
+	poolSizes := []int{1024, 8 * 1024, 64 * 1024, 128 * 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 
-	bufToPoolSizes := map[uint64]uint64{
+	bufToPoolSizes := map[int]int{
 		0:          1024,
 		1024:       1024,
 		1025:       8192,

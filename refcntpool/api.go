@@ -103,14 +103,14 @@ type RefCntBuf struct {
 //
 type RefCntBufPool struct {
 	bufPool sync.Pool  // buffer pool
-	bufSz   uint64     // all buffers in this pool are bufSz bytes
+	bufSz   int        // all buffers in this pool are bufSz bytes
 	_       sync.Mutex // insure a RefCntBufPool is not copied
 }
 
 // Create and return a pool of reference counted memory buffers with the
 // specified bufSz.
 //
-func RefCntBufPoolMake(bufSz uint64) (poolp *RefCntBufPool) {
+func RefCntBufPoolMake(bufSz int) (poolp *RefCntBufPool) {
 	poolp = &RefCntBufPool{}
 
 	poolp.bufPool.New = func() interface{} {
@@ -133,7 +133,7 @@ func RefCntBufPoolMake(bufSz uint64) (poolp *RefCntBufPool) {
 //
 type RefCntBufPoolSet struct {
 	memBufPools     []*RefCntBufPool
-	bufferPoolSizes []uint64
+	bufferPoolSizes []int
 }
 
 // Initialize an array of reference counted memory buffer pools.  The size of
@@ -141,7 +141,7 @@ type RefCntBufPoolSet struct {
 //
 // Init() must be called exactly once and before any allocations are requested.
 //
-func (slabs *RefCntBufPoolSet) Init(sizes []uint64) {
+func (slabs *RefCntBufPoolSet) Init(sizes []int) {
 	if len(slabs.memBufPools) != 0 {
 		panic(fmt.Sprintf("(*memBufPools).Init() called more than once for RefCntBufPoolSet at %p", slabs))
 	}
@@ -163,7 +163,7 @@ func (slabs *RefCntBufPoolSet) Init(sizes []uint64) {
 //
 // It is a fatal error to get a rqeuest for buffer larger then the largest pool.
 //
-func (slabs *RefCntBufPoolSet) GetRefCntBuf(bufSz uint64) (bufp *RefCntBuf) {
+func (slabs *RefCntBufPoolSet) GetRefCntBuf(bufSz int) (bufp *RefCntBuf) {
 
 	sizeCnt := len(slabs.bufferPoolSizes)
 
@@ -224,7 +224,7 @@ func (slabs *RefCntBufPoolSet) GetRefCntBuf(bufSz uint64) (bufp *RefCntBuf) {
 type RefCntBufList struct {
 	RefCntItem
 	Bufs       [][]byte
-	refCntBufs []*RefCntBuf
+	RefCntBufs []*RefCntBuf
 	_          sync.Mutex // insure a RefCntBufList is not copied
 }
 
@@ -236,11 +236,11 @@ type RefCntBufList struct {
 //
 func (bufList *RefCntBufList) Append(refCntBuf *RefCntBuf) {
 	refCntBuf.Hold()
-	if len(bufList.refCntBufs) != len(bufList.Bufs) {
-		panic(fmt.Sprintf("(*RefCntBufList).Append(): len(list.refCntBufs) != len(list.Buf) (%d != %d) at %p",
-			len(bufList.refCntBufs), len(bufList.Bufs), bufList))
+	if len(bufList.RefCntBufs) != len(bufList.Bufs) {
+		panic(fmt.Sprintf("(*RefCntBufList).Append(): len(list.RefCntBufs) != len(list.Buf) (%d != %d) at %p",
+			len(bufList.RefCntBufs), len(bufList.Bufs), bufList))
 	}
-	bufList.refCntBufs = append(bufList.refCntBufs, refCntBuf)
+	bufList.RefCntBufs = append(bufList.RefCntBufs, refCntBuf)
 	bufList.Bufs = append(bufList.Bufs, refCntBuf.Buf)
 }
 
