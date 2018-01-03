@@ -41,6 +41,7 @@ type RefCntItemer interface {
 	Init(RefCntItemPooler, interface{}) // invoked by RefCntItemPooler.Get() before the item is returned
 	Hold()                              // get an additional hold on the item
 	Release()                           // release a hold on the item
+	AssertIsHeld()                      // will panic if the item is not held
 }
 
 // The RefCntItemPooler interface defines Get() and put() methods for objects
@@ -192,7 +193,8 @@ func (slabs *RefCntBufPoolSet) GetRefCntBuf(bufSz int) (bufp *RefCntBuf) {
 		idx -= (idx - low + 1) / 2
 	}
 
-	// there's no joy in Mudville; panic with an explanation of the problem
+	// "but there is no joy in Mudville -- mighty Casey has struck out"
+	// (panic with an explanation of the problem)
 	if sizeCnt == 0 {
 		panic(fmt.Sprintf("GetRefCntBuf(): no pools have been allocated for RefCntBufPoolSet at %p",
 			slabs))
@@ -228,27 +230,126 @@ type RefCntBufList struct {
 	_          sync.Mutex // insure a RefCntBufList is not copied
 }
 
-// Append the RefCntBuf reference counted buffer to the list and return its
-// index in the Bufs array of slices.
+// Append a reference counted buffer to the list.
 //
-// This calls Hold() on refCntBuf.  Release() is called on the final release of
-// this RefCntBufList.
+// This calls Hold() on refCntBuf.  Release() is called on each RefCntBuf on
+// the list on the final release of this RefCntBufList.
 //
-func (bufList *RefCntBufList) Append(refCntBuf *RefCntBuf) {
+func (bufList *RefCntBufList) AppendRefCntBuf(refCntBuf *RefCntBuf) {
 	refCntBuf.Hold()
 	if len(bufList.RefCntBufs) != len(bufList.Bufs) {
-		panic(fmt.Sprintf("(*RefCntBufList).Append(): len(list.RefCntBufs) != len(list.Buf) (%d != %d) at %p",
+		panic(fmt.Sprintf(
+			"(*RefCntBufList).AppendRefCntBuf(): len(list.RefCntBufs) != len(list.Bufs) (%d != %d) at %p",
 			len(bufList.RefCntBufs), len(bufList.Bufs), bufList))
 	}
 	bufList.RefCntBufs = append(bufList.RefCntBufs, refCntBuf)
 	bufList.Bufs = append(bufList.Bufs, refCntBuf.Buf)
 }
 
-// Return the sum of the bytes in each buffer slice
+// Return the sum of the len() of each RefCntBuf
 //
 func (bufList *RefCntBufList) Length() (length int) {
+	bufList.RefCntItem.AssertIsHeld()
 	for i := 0; i < len(bufList.Bufs); i++ {
 		length += len(bufList.Bufs[i])
+	}
+	return
+}
+
+// Given a reference counted list of RefCntBuf (essentially a scatter/gather
+// buffer), a starting offset in that buffer and a length generate a slice of
+// byte slices that maps the requested region of the buffer.
+//
+// Returns:
+// bufSlices a slices of byte slices mapping the buffer
+// byteCnt   number of bytes mapped
+// firstIdx  index of the first RefCntBuf in the buffer list in bufSlices
+//
+// cnt may be less then length, or even 0, if the scatter/gather buffer contains
+// less then offset+length bytes in buffers
+//
+func (bufList *RefCntBufList) BufListToSlices(offset int, length int) (bufSlices [][]byte, byteCnt int, firstIdx int) {
+	var (
+		idx       int // current buffer index
+		curOffset int // sum of buffer lengths so far
+	)
+
+	if offset < 0 || length < 0 {
+		panic(fmt.Sprintf("(*RefCntBufList) BufListToSlices(): offset %d or length %d is less then 0",
+			offset, length))
+	}
+
+	// find the first interesting buffer
+	for idx = 0; idx < len(bufList.Bufs); idx++ {
+		if offset < curOffset+len(bufList.Bufs[idx]) {
+
+			// offset falls within this buffer; its the first
+			bufSlices = make([][]byte, 0, len(bufList.Bufs)-idx)
+			firstIdx = idx
+			break
+		}
+
+		curOffset += len(bufList.Bufs[idx])
+	}
+
+	// offset falls within bufList.Bufs[idx] or we've run out of buffers
+	// (which means this loop won't be entered)
+	byteCnt = 0
+	for ; idx < len(bufList.Bufs) && curOffset < offset+length; idx++ {
+		slice := bufList.Bufs[idx]
+
+		// if the request starts in the middle then trim the slice
+		if offset > curOffset {
+			slice = slice[offset-curOffset:]
+		}
+		// if the slice is too big, trim the tail (and this is the last buf)
+		if offset+length < curOffset+len(bufList.Bufs[idx]) {
+			slice = slice[0 : length-byteCnt]
+		}
+		bufSlices = append(bufSlices, slice)
+		byteCnt += len(slice)
+
+		curOffset += len(bufList.Bufs[idx])
+	}
+
+	return
+}
+
+// Append the reference counted buffer(s) on the passed list to this list.
+//
+// This calls Hold() on each refCntBuf referenced, but not on the list itself.
+// Release() is called for each RefCntBuf on this list on the final release of
+// this list.
+//
+func (bufList *RefCntBufList) AppendRefCntBufList(newList *RefCntBufList, offset int, length int) (byteCnt int) {
+
+	if len(newList.RefCntBufs) != len(newList.Bufs) {
+		panic(fmt.Sprintf(
+			"(*RefCntBufList).AppendRefCntBufList(): len(new.RefCntBufs) != len(new.Bufs) (%d != %d) at %p",
+			len(newList.RefCntBufs), len(newList.Bufs), newList))
+	}
+	if len(bufList.RefCntBufs) != len(bufList.Bufs) {
+		panic(fmt.Sprintf(
+			"(*RefCntBufList).AppendRefCntBufList(): len(new.RefCntBufs) != len(new.Bufs) (%d != %d) at %p",
+			len(bufList.RefCntBufs), len(bufList.Bufs), bufList))
+	}
+
+	var (
+		bufSlices [][]byte // slice of buffers
+		idx       int      // current buffer in bufSlices
+		firstIdx  int      // first RefCntBuf in newList to reference
+		tgtIdx    int      // newest RefCntBuf in bufList
+	)
+
+	// let BufListToSlices() do the hard work, then reference the relevant
+	// buffers in newList and copy the slices returned
+	bufSlices, byteCnt, firstIdx = newList.BufListToSlices(offset, length)
+
+	tgtIdx = len(bufList.Bufs)
+	for idx = 0; idx < len(bufSlices); idx += 1 {
+		bufList.AppendRefCntBuf(newList.RefCntBufs[firstIdx+idx])
+		bufList.Bufs[tgtIdx+idx] = bufSlices[idx]
+
 	}
 	return
 }
@@ -256,37 +357,25 @@ func (bufList *RefCntBufList) Length() (length int) {
 // Copy bytes out of the buffer list to the target slice, buf and return the
 // number of bytes copied.
 //
-// Copying starts at offset and continues up to the minimum of length and the
-// len(buf).
+// Copying starts at offset and continues until the RefCntBufList is exhausted
+// or buf is full.
 //
-func (bufList *RefCntBufList) CopyOut(buf []byte, offset int) (count int) {
+func (bufList *RefCntBufList) CopyOut(buf []byte, offset int) (cnt int) {
 	var (
-		idx         int // current buffer index
-		totalOffset int // sum of buffer lengths so far
+		bufSlices [][]byte // slice of buffers
+		slice     []byte   // current slice to copy
+		curOffset int      // sum of buffer lengths so far
 	)
 
-	if offset < 0 {
-		panic(fmt.Sprintf("(*RefCntBufList) CopyOut(): offset %d is less then 0", offset))
-	}
-	for idx = 0; idx < len(bufList.Bufs); idx++ {
-		if offset < totalOffset+len(bufList.Bufs[idx]) {
-			break
-		}
-		totalOffset += len(bufList.Bufs[idx])
-	}
+	// let BufListToSlices() do the hard work
+	bufSlices, cnt, _ = bufList.BufListToSlices(offset, len(buf))
 
-	// offset falls within this buffer or we've run out of buffers
-	for ; idx < len(bufList.Bufs); idx++ {
-		soff := offset - totalOffset
-		if soff < 0 {
-			panic(fmt.Sprintf("(*RefCntBufList) CopyOut(): logic error: soff %d", soff))
-		}
-		toCopy := len(bufList.Bufs[idx])
-		if count+toCopy > len(buf) {
-			toCopy = len(buf) - count
-		}
-		copy(buf[count:], bufList.Bufs[idx][soff:soff+toCopy])
-		count += toCopy
+	for _, slice = range bufSlices {
+		copy(buf[curOffset:], slice)
+		curOffset += len(slice)
+	}
+	if curOffset != cnt {
+		panic(fmt.Sprintf("CopyOut(): logic error: curOffset %d != cnt %d", curOffset, cnt))
 	}
 	return
 }

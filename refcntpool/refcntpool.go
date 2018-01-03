@@ -39,6 +39,16 @@ func (item *RefCntItem) Release() {
 	}
 }
 
+func (item *RefCntItem) AssertIsHeld() {
+	// Decrement cnt by 1.  Even if two threads do this concurrently,
+	// only one will have newcnt == 0
+	refCnt := atomic.LoadInt32(&item.refCnt)
+	if refCnt < 1 {
+		panic(fmt.Sprintf("(*RefCntItem).AssertIsHeld(): refCnt %d < 1 for RefCntItem at %p",
+			refCnt, item))
+	}
+}
+
 // This Init() routine is awkward because it cannot be sub-classed.  In other
 // words, if your object needs custom initialization it cannot supply its own
 // Init() routine and then call this one to initialize item.refCnt.
@@ -127,6 +137,17 @@ func (listPoolp *RefCntBufListPool) put(item interface{}) {
 			"(*RefCntBufListPool).put(): len(bufListp.RefCntBufs) != len(bufListp.Buf) (%d != %d) at %p",
 			len(bufListp.RefCntBufs), len(bufListp.Bufs), bufListp))
 	}
+
+	for i := 0; i < len(bufListp.RefCntBufs); i++ {
+		bufListp.RefCntBufs[i].Release()
+
+		// get rid of references to enhance garbage collection of unused
+		// buffers
+		bufListp.RefCntBufs[i] = nil
+		bufListp.Bufs[i] = bufListp.Bufs[i][0:0]
+	}
+	bufListp.RefCntBufs = bufListp.RefCntBufs[0:0]
+
 	listPoolp.realPool.Put(item)
 	return
 }

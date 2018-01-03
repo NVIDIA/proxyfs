@@ -1,7 +1,8 @@
 package refcntpool
 
 import (
-	"fmt"
+	"bytes"
+	// "fmt"
 	"math/rand"
 	"strings"
 	"sync"
@@ -404,7 +405,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	// RefCntBufPool, their sizes, and the request sizes
 	//
 	rand.Seed(int64(syscall.Getpid()))
-	fmt.Printf("TestRefCntBufPoolSet(): using %d as random seed\n", syscall.Getpid())
+	t.Logf("TestRefCntBufPoolSet(): using %d as random seed\n", syscall.Getpid())
 
 	for numPool := 1; numPool <= 23; numPool++ {
 		poolSizes = make([]int, numPool, numPool)
@@ -420,9 +421,9 @@ func TestRefCntBufPoolSet(t *testing.T) {
 		bufPoolSet = &RefCntBufPoolSet{}
 		bufPoolSet.Init(poolSizes)
 
-		// allocate 10,000 random buffers
+		// allocate 5,000 random buffers
 		bufs := make(map[*RefCntBuf]int)
-		for i := 1; i < 10000; i++ {
+		for i := 1; i < 5000; i++ {
 
 			reqSize = rand.Int() % (maxBufPoolSize + 1)
 			bufp = bufPoolSet.GetRefCntBuf(reqSize)
@@ -562,7 +563,14 @@ func TestRefCntBufList(t *testing.T) {
 		bufListPool *RefCntBufListPool
 		bufp        *RefCntBuf
 		bufPoolSet  *RefCntBufPoolSet
+		bufSlice    []*RefCntBuf
 	)
+
+	// This test uses psuedo-random numbers, so log the set of random
+	// numbers in use.
+	//
+	rand.Seed(int64(syscall.Getpid()))
+	t.Logf("TestRefCntBufList(): using %d as random seed\n", syscall.Getpid())
 
 	// Create a pool of reference counted lists of reference counted buffers
 	bufListPool = RefCntBufListPoolMake()
@@ -575,31 +583,290 @@ func TestRefCntBufList(t *testing.T) {
 	bufList.Hold()
 	bufList.Release()
 	bufList.Release()
+	if bufList.RefCntItem.refCnt != 0 {
+		t.Errorf("bufList still active: after two releases: %v", bufList)
+	}
 
 	// Create a set of refCntBufPool holding 1, 8, 64, and 128 Kibyte buffer
 	// pools
-	poolSizes := []int{1024, 8 * 1024, 64 * 1024, 128 * 1024}
+	poolSizes := []int{1024, 8 * 1024, 64 * 1024}
 	bufPoolSet = &RefCntBufPoolSet{}
 	bufPoolSet.Init(poolSizes)
 
-	bufToPoolSizes := map[int]int{
-		0:          1024,
-		1024:       1024,
-		1025:       8192,
-		128000:     128 * 1024,
-		128 * 1024: 128 * 1024,
+	// put RefCntBuf onto a RefCntBufList using AppendRefCntBuf() and/or
+	// AppendRefCntList()
+	// all RefCntBuf are 1 byte long
+	bufSlice = make([]*RefCntBuf, 0)
+	for testCnt := 0; testCnt < 1024; testCnt += 1 {
+
+		bufSlice = bufSlice[0:0]
+		bufList = bufListPool.GetRefCntBufList()
+
+		// upto 13 calls to AppendRefCntBuf() or AppendRefCntBufList()
+		bufCnt := 0
+		for i := 0; i < rand.Intn(14); i++ {
+
+			if rand.Intn(4) < 3 {
+
+				// 3/4 of the time simply append a buf
+				bufp = bufPoolSet.GetRefCntBuf(rand.Intn(64 * 1024))
+				bufp.Buf = bufp.Buf[0:1]
+				bufSlice = append(bufSlice, bufp)
+				bufList.AppendRefCntBuf(bufp)
+
+				bufp.Release()
+				bufCnt += 1
+				continue
+			}
+
+			// 1/4 of the time append a buf list
+			bufList2 := bufListPool.GetRefCntBufList()
+			bufCnt2 := rand.Intn(6)
+			bufSlice2 := populateBufList(bufList2, bufPoolSet, bufCnt2)
+
+			bufSlice = append(bufSlice, bufSlice2...)
+			bufList.AppendRefCntBufList(bufList2, 0, bufList2.Length())
+			bufCnt += bufCnt2
+
+			bufList2.Release()
+		}
+
+		// make sure we have the right number of buffers
+		if len(bufSlice) != bufCnt || len(bufList.Bufs) != bufCnt {
+			t.Errorf("bufCnt mismatch: bufCnt %d != len(bufSlice) %d || != len(bufList.Bufs) %d\n",
+				bufCnt, len(bufSlice), len(bufList.Bufs))
+		}
+
+		// verify the buffers are there, in order
+		for i := 0; i < bufCnt; i++ {
+			if bufSlice[i] != bufList.RefCntBufs[i] {
+				t.Errorf("bufp mismatch: bufSlice[%d] = %p != bufList.RefCntBufs[%d] = %p  bufCnt %d\n",
+					i, bufSlice[i], i, bufList.RefCntBufs[i], bufCnt)
+			}
+		}
+
+		// release the buffer list and all the buffers, then verify they are released
+		bufList.Release()
+		if bufList.RefCntItem.refCnt != 0 {
+			t.Errorf("bufList still active: testCnt %d reference count %d\n",
+				testCnt, bufList.RefCntItem.refCnt)
+		}
+		for i := 0; i < bufCnt; i++ {
+			if bufSlice[i].RefCntItem.refCnt != 0 {
+				t.Errorf("bufp still active: testCnt %d  bufCnt %d  bufSlice[%d]RefCntItem.refCnt %d\n",
+					testCnt, bufCnt, i, bufSlice[i].RefCntItem.refCnt)
+			}
+		}
 	}
 
-	for reqSize, bufSize := range bufToPoolSizes {
-		bufp = bufPoolSet.GetRefCntBuf(reqSize)
-		if len(bufp.Buf) != 0 {
-			t.Errorf("bufPoolSet.GetRefCntBuf(%d) returned a buffer with len() %d != 0",
-				reqSize, len(bufp.Buf))
-		}
-		if cap(bufp.Buf) != int(bufSize) {
-			t.Errorf("bufPoolSet.GetRefCntBuf(%d) returned a buffer with cap() %d != %d",
-				reqSize, cap(bufp.Buf), bufSize)
-		}
+	testCopyOut(t)
+}
+
+// Allocate cnt randomly sized RefCntBuf (upto 64 K) from the passed
+// RefCntBufPoolSet and append them the passed RefCntBufList.
+//
+// Return a slice with pointers to all of the bufs allocated.
+//
+func populateBufList(bufList *RefCntBufList, bufPoolSet *RefCntBufPoolSet, bufCnt int) (bufSlice []*RefCntBuf) {
+
+	var bufp *RefCntBuf
+
+	bufSlice = make([]*RefCntBuf, 0, bufCnt)
+	for i := 0; i < bufCnt; i++ {
+		bufp = bufPoolSet.GetRefCntBuf(rand.Intn(64 * 1024))
+		bufp.Buf = bufp.Buf[0:1]
+		bufSlice = append(bufSlice, bufp)
+		bufList.AppendRefCntBuf(bufp)
 		bufp.Release()
 	}
+	return
+}
+
+// Test (*RefCntBufList).CopyOut().
+//
+// The real goal here is to test BufListToSlices() and AppendRefCntList() by
+// running through all of their corner cases.  Not to mention CopyOut().
+//
+// Try and hit lots of interesting patterns including empty buffer lists and buffers.
+//
+func testCopyOut(t *testing.T) {
+	var (
+		bufList          *RefCntBufList
+		bufListPool      *RefCntBufListPool
+		bufp             *RefCntBuf
+		bufPoolSet       *RefCntBufPoolSet
+		refSlice         []byte
+		refSliceMaxBytes int
+		verifySlice      []byte
+		padBytes         int
+	)
+
+	// reserve padBytes before and after so we can can make RefCntBuf larger
+	// then needed and then trim them
+	padBytes = 4096
+
+	// there's a reference slice and a verify slice
+	refSliceMaxBytes = 128*1024 + 2*padBytes
+	refSlice = make([]byte, 0, refSliceMaxBytes)
+	verifySlice = make([]byte, 0, refSliceMaxBytes)
+
+	// Create a pool of reference counted lists of reference counted buffers
+	bufListPool = RefCntBufListPoolMake()
+
+	// Create a set of refCntBufPool holding 1, 8, 32, 64, and 128 Kibyte buffer
+	// pools
+	poolSizes := []int{1024, 8 * 1024, 32 * 1024, 64 * 1024, 128 * 1024, refSliceMaxBytes}
+	bufPoolSet = &RefCntBufPoolSet{}
+	bufPoolSet.Init(poolSizes)
+
+	// fill the reference slice with random bytes
+	refSlice = refSlice[0:refSliceMaxBytes]
+	for i := 0; i < refSliceMaxBytes; i += 1 {
+		refSlice[i] = byte(rand.Intn(256))
+	}
+
+	for testCnt := 0; testCnt < 1005; testCnt += 1 {
+
+		// testOff -- start at a random offset in refSlice (with at least extra padBytes before)
+		// testSize -- size of test slice: range 0 .. len(refSlice) (with padBytes reserved)
+		// testSlice is the result
+		testOff := rand.Intn(len(refSlice)/2) + padBytes
+		testSize := rand.Intn(len(refSlice) - testOff - padBytes + 1)
+
+		testSlice := refSlice[testOff-padBytes : testOff+testSize+padBytes]
+
+		// create the test list of buffers
+		bufList = bufListPool.GetRefCntBufList()
+
+		// number of buffers or buffer lists to use: 0 .. 15, heavily
+		// biased toward the middle (chance of 0 or 15 is 1 in 216)
+		bufCnt := rand.Intn(6) + rand.Intn(6) + rand.Intn(6)
+
+		copyByteCnt := 0
+		for bufIdx := 0; bufIdx < bufCnt; bufIdx += 1 {
+
+			// choose the size of the buffer or buffer list to add:
+			// range 0 .. space remaining (which may be 0);
+			// average is 1/2 space remaining
+			size := rand.Intn(testSize - copyByteCnt + 1)
+
+			// 50% of the time append buffer, 50% apend a buffer list;
+			// add some extra bytes to the buffer or buffer list so we
+			// can verify that trimming them off works
+			if rand.Intn(2) == 0 {
+				headPadBytes := rand.Intn(padBytes + 1)
+				tailPadBytes := rand.Intn(padBytes + 1)
+				paddedSize := size + headPadBytes + tailPadBytes
+
+				bufp = bufPoolSet.GetRefCntBuf(paddedSize)
+				bufp.Buf = bufp.Buf[0:paddedSize]
+				copy(bufp.Buf, testSlice[padBytes-headPadBytes+copyByteCnt:])
+				bufList.AppendRefCntBuf(bufp)
+				bufp.Release()
+
+				// trim the slice (in the list) to the size required
+				bufList.Bufs[len(bufList.Bufs)-1] = bufp.Buf[headPadBytes : headPadBytes+size]
+				copyByteCnt += size
+
+			} else {
+				bufList2 := bufListPool.GetRefCntBufList()
+
+				copySliceToBuflist(t, bufList2, bufPoolSet, 4, 2*padBytes,
+					testSlice[copyByteCnt:copyByteCnt+size+2*padBytes])
+
+				byteCnt := bufList.AppendRefCntBufList(bufList2, padBytes, size)
+				bufList2.Release()
+				copyByteCnt += byteCnt
+			}
+		}
+		if copyByteCnt > testSize {
+			t.Errorf("testCopyOut(): logic error: copyByteCnt %d > testSize %d", copyByteCnt, testSize)
+		}
+
+		// verify bufList length two ways
+		byteCnt := bufList.Length()
+		if copyByteCnt != byteCnt {
+			t.Errorf("testCopyOut(): bufList length %d != copyByteCnt %d", byteCnt, copyByteCnt)
+
+			t.Logf("testCnt %d:  BufList.Length %d  copyByteCnt %d  testSize %d: buf len[]:",
+				testCnt, bufList.Length(), copyByteCnt, testSize)
+			for i := 0; i < len(bufList.Bufs); i += 1 {
+				t.Logf("bufList.Bufs[%d] len %5d", i, len(bufList.Bufs[i]))
+			}
+		}
+
+		_, byteCnt, _ = bufList.BufListToSlices(0, copyByteCnt)
+		if copyByteCnt != byteCnt {
+			t.Errorf("testCopyOut(): bufList.BufListToSlices().cnt %d != copyByteCnt %d", byteCnt, copyByteCnt)
+		}
+
+		// compare the contents of bufList with the original refSlice
+		verifySlice = verifySlice[0:copyByteCnt]
+		cnt := bufList.CopyOut(verifySlice, 0)
+		if cnt != copyByteCnt {
+			t.Errorf("testCopyOut(): bufList.CopyOut().cnt %d != copyByteCnt %d", cnt, copyByteCnt)
+		}
+		if bytes.Compare(verifySlice, refSlice[testOff:testOff+copyByteCnt]) != 0 {
+			t.Errorf("testCopyOut(): verifySlice and refSlice do not match!")
+		}
+
+		// now compare some random sub-ranges
+		for i := 0; copyByteCnt > 0 && i < 16; i += 1 {
+			off := rand.Intn(copyByteCnt)
+			byteCnt := rand.Intn(copyByteCnt - off + 1)
+
+			verifySlice = verifySlice[0:byteCnt]
+			cnt := bufList.CopyOut(verifySlice, off)
+			if cnt != byteCnt {
+				t.Errorf("testCopyOut(): bufList.CopyOut(off %d).cnt %d != copyByteCnt %d",
+					off, cnt, copyByteCnt)
+			}
+			if bytes.Compare(verifySlice, refSlice[testOff+off:testOff+off+byteCnt]) != 0 {
+				t.Errorf("testCopyOut(): verifySlice and refSlice[%d:%d] do not match!",
+					off, byteCnt)
+			}
+		}
+
+		bufList.Release()
+	}
+}
+
+// Given a region of memory, memBuf, add bufCnt reference counted memory buffers
+// to bufList and copy its contents to them.  The size of the buffers is random
+// and they have a maximum size of bufBytesMax, so if bufCnt is small they will
+// not copy the entire region (but its random)
+//
+// Return the number of bytes memory that were copied (mapped).
+//
+func copySliceToBuflist(t *testing.T, bufList *RefCntBufList, bufPoolSet *RefCntBufPoolSet,
+	bufCnt int, bufSizeMax int, memBuf []byte) (byteCnt int) {
+
+	var (
+		bufp    *RefCntBuf
+		bufSize int
+	)
+
+	byteCnt = 0
+	for i := 0; i < bufCnt; i += 1 {
+
+		// final bufSize: 0 .. MAX(bufSizeMax, space remaining (which may be 0))
+		// average is 1/2 space remaining
+		bufSize = len(memBuf) - byteCnt
+		if bufSize > bufSizeMax {
+			bufSize = bufSizeMax
+		}
+		bufSize := rand.Intn(bufSize + 1)
+
+		bufp = bufPoolSet.GetRefCntBuf(bufSize)
+		bufp.Buf = bufp.Buf[0:bufSize]
+		copy(bufp.Buf, memBuf[byteCnt:])
+		// t.Logf("copySliceToBuflist: i %d  bufSize %4d  len(bufp.Buf) %4d  byteCnt %4d  len(memBuf) %4d",
+		// 	i, bufSize, len(bufp.Buf), byteCnt, len(memBuf))
+
+		bufList.AppendRefCntBuf(bufp)
+		byteCnt += bufSize
+		bufp.Release()
+	}
+
+	return
 }
