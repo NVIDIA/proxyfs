@@ -308,6 +308,10 @@ yum -y install atop bc fio gawk
 
 yum -y install sshpass
 
+# Install dstat
+
+yum -y install dstat
+
 # All done
 
 echo "SAIO for ProxyFS provisioned"
