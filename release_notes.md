@@ -1,5 +1,11 @@
 # ProxyFS Release Notes
 
+## 1.1.1 (January 2, 2018)
+
+### Bug Fixes:
+
+* Submodule vfs now no longer depends upon pre-installed submodule jrpcclient
+
 ## 1.1.0 (January 2, 2018)
 
 ### Notes:
