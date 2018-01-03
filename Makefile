@@ -3,6 +3,7 @@ gosubdirs = \
 	cleanproxyfs \
 	conf \
 	dlm \
+	evtlog evtlog/pfsevtlogd \
 	fs \
 	fsworkout \
 	fuse \
