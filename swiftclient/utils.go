@@ -312,9 +312,14 @@ func readBytesFromTCPConn(tcpConn *net.TCPConn, bufLen int) (buf []byte, err err
 	return
 }
 
+// Read len(buf) bytes from the HTTP connection into the buffer and return.
+//
+// This will loop forever until len(buf) bytes are read or until the connection
+// is closed (or some other error is raised).
+//
 func readBytesFromTCPConnIntoBuf(tcpConn *net.TCPConn, buf []byte) (err error) {
 	var (
-		bufLen       = cap(buf)
+		bufLen       = len(buf)
 		bufPos       = int(0)
 		numBytesRead int
 	)
@@ -682,6 +687,15 @@ func readHTTPChunk(tcpConn *net.TCPConn) (chunk []byte, err error) {
 	return
 }
 
+// Read the entire chunk into the passed buffer and return the amount read.
+//
+// This will panic if the size of the chunk is bigger than the capacity of the
+// buffer.  It is up to the caller to insure that the length of the buffer is
+// set to the returned chunkLen to make sure all of the bytes are visible and no
+// more.
+//
+// Example (except for panic): https://play.golang.org/p/1NY9dyJDari
+//
 func readHTTPChunkIntoBuf(tcpConn *net.TCPConn, buf []byte) (chunkLen uint64, err error) {
 	var (
 		line string

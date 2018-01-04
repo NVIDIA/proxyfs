@@ -10,6 +10,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 )
 
 type connectionStruct struct {
@@ -72,8 +73,10 @@ type globalsStruct struct {
 	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
 	pendingDeletes                  *pendingDeletesStruct
-	chaosSendChunkFailureRate       uint64 // set only during testing
-	chaosFetchChunkedPutFailureRate uint64 // set only during testing
+	chaosSendChunkFailureRate       uint64                        // set only during testing
+	chaosFetchChunkedPutFailureRate uint64                        // set only during testing
+	refCntBufListPool               *refcntpool.RefCntBufListPool // reusable RefCntBufList
+	refCntBufPoolSet                refcntpool.RefCntBufPoolSet   // various sized pools of RefCntBuf
 }
 
 var globals globalsStruct
@@ -87,6 +90,13 @@ func Up(confMap conf.ConfMap) (err error) {
 		nonChunkedConnectionPoolSize uint16
 		pendingDeletes               *pendingDeletesStruct
 	)
+
+	// create pools for refCntBuf with the following sizes:
+	var bufSizes = []int{1024, 4 * 1024, 8 * 1024, 32 * 1024,
+		64 * 1024, 128 * 1024, 1024 * 1024, 10 * 1024 * 1024}
+	globals.refCntBufPoolSet.Init(bufSizes)
+
+	globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
 
 	noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {

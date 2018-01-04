@@ -11,6 +11,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/stats"
 )
 
@@ -278,6 +279,39 @@ func objectDeleteSyncNoRetry(accountName string, containerName string, objectNam
 
 	stats.IncrementOperations(&stats.SwiftObjDeleteOps)
 
+	return
+}
+
+func objectGet(accountName string, containerName string, objectName string,
+	offset uint64, length uint64) (bufList *refcntpool.RefCntBufList, err error) {
+
+	// get a reference counted buffer list
+	bufList = globals.refCntBufListPool.GetRefCntBufList()
+
+	// get an empty buffer to hold the result
+	buf := globals.refCntBufPoolSet.GetRefCntBuf(int(length))
+	bufList.AppendRefCntBuf(buf)
+	buf.Buf = buf.Buf[0:length]
+
+	// let objectRead() do all the hard work
+	cnt, err := objectRead(accountName, containerName, objectName, offset, buf.Buf)
+	if err != nil {
+		bufList.Release()
+		bufList = nil
+		return
+	}
+
+	if cnt != length {
+		err = fmt.Errorf("objectGet(): objectRead() returned %d bytes instead of %d requested",
+			cnt, length)
+		err = blunder.AddError(err, blunder.BadHTTPGetError)
+		logger.ErrorfWithError(err, "objectGet('%v/%v/%v') got too too few bytes",
+			accountName, containerName, objectName)
+
+		bufList.Release()
+		bufList = nil
+		return
+	}
 	return
 }
 
@@ -597,9 +631,9 @@ func objectRead(accountName string, containerName string, objectName string, off
 	return len, err
 }
 
-func objectReadNoRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
+func objectReadNoRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (cnt uint64, err error) {
 	var (
-		capacity      uint64
+		length        uint64
 		chunkLen      uint64
 		chunkPos      uint64
 		connection    *connectionStruct
@@ -610,10 +644,10 @@ func objectReadNoRetry(accountName string, containerName string, objectName stri
 		isError       bool
 	)
 
-	capacity = uint64(cap(buf))
+	length = uint64(cap(buf))
 
 	headers = make(map[string][]string)
-	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+capacity-1), 10)}
+	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+length-1), 10)}
 
 	connection = acquireNonChunkedConnection()
 
@@ -653,9 +687,10 @@ func objectReadNoRetry(accountName string, containerName string, objectName stri
 			}
 
 			if 0 == chunkLen {
-				len = chunkPos
+				cnt = chunkPos
 				break
 			}
+			chunkPos += chunkLen
 		}
 	} else {
 		contentLength, err = parseContentLength(headers)
@@ -666,24 +701,33 @@ func objectReadNoRetry(accountName string, containerName string, objectName stri
 			return
 		}
 
-		if 0 == contentLength {
-			len = 0
+		if contentLength == 0 {
+			// this is superfluous; cnt == 0 and err == nil already
+			cnt = 0
 			err = nil
 		} else {
-			err = readBytesFromTCPConnIntoBuf(connection.tcpConn, buf)
+			if uint64(contentLength) > length {
+				err = fmt.Errorf("contentLength from server %d is greater then request %d",
+					contentLength, length)
+			} else {
+				err = readBytesFromTCPConnIntoBuf(connection.tcpConn, buf[:contentLength])
+			}
+
+			// if readBytesFromTCPConnIntoBuf() doesnt get
+			// contentLength bytes it should return an error
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
 				logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
 				return
 			}
-			len = capacity
+			cnt = uint64(contentLength)
 		}
 	}
 
 	releaseNonChunkedConnection(connection, parseConnection(headers))
 
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjRead, len)
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjRead, cnt)
 
 	return
 }
@@ -812,8 +856,7 @@ type chunkedPutContextStruct struct {
 	fatal         bool
 	connection    *connectionStruct
 	bytesPut      uint64
-	bytesPutTree  sortedmap.LLRBTree // Key   == objectOffset of start of chunk in object
-	//                                  Value == []byte       of bytes sent to SendChunk()
+	refCntBufList *refcntpool.RefCntBufList
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
@@ -906,8 +949,7 @@ func objectFetchChunkedPutContextNoRetry(accountName string, containerName strin
 		connection:    connection,
 		bytesPut:      0,
 	}
-
-	chunkedPutContext.bytesPutTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
+	chunkedPutContext.refCntBufList = globals.refCntBufListPool.GetRefCntBufList()
 
 	stats.IncrementOperations(&stats.SwiftObjPutCtxFetchOps)
 
@@ -926,6 +968,13 @@ func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, e
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
+
+	defer func() {
+		// whether the operation succeeded or not, the buffers won't be
+		// used again after Close() returns
+		chunkedPutContext.refCntBufList.Release()
+		chunkedPutContext.refCntBufList = nil
+	}()
 
 	err = chunkedPutContext.closeHelper()
 	if nil == err {
@@ -967,6 +1016,7 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 			retrySuccessCnt: &stats.SwiftObjPutCtxtCloseRetrySuccessOps}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+
 	return err
 }
 
@@ -1040,16 +1090,13 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	return
 }
 
-func (chunkedPutContext *chunkedPutContextStruct) ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error) {
+// Read the requested offset and length and return it as a list of reference
+// counted buffers.
+//
+func (chunkedPutContext *chunkedPutContextStruct) Read(offset uint64, length uint64) (bufList *refcntpool.RefCntBufList, err error) {
 	var (
-		chunkBufAsByteSlice []byte
-		chunkBufAsValue     sortedmap.Value
-		chunkOffsetAsKey    sortedmap.Key
-		chunkOffsetAsUint64 uint64
-		found               bool
-		chunkIndex          int
-		ok                  bool
-		readLimitOffset     uint64
+		readLimitOffset uint64
+		byteCnt         int
 	)
 
 	readLimitOffset = offset + length
@@ -1063,102 +1110,17 @@ func (chunkedPutContext *chunkedPutContextStruct) ReadReturnSlice(offset uint64,
 		return
 	}
 
-	chunkIndex, found, err = chunkedPutContext.bytesPutTree.BisectLeft(offset)
-	if nil != err {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.BisectLeft() failed: %v", err)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got bytesPutTree.BisectLeft() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
-	if !found && (0 > chunkIndex) {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.BisectLeft() returned unexpected index/found")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") attempt to read past end", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
+	bufList = globals.refCntBufListPool.GetRefCntBufList()
 
-	chunkOffsetAsKey, chunkBufAsValue, ok, err = chunkedPutContext.bytesPutTree.GetByIndex(chunkIndex)
-	if nil != err {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() failed: %v", err)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got initial bytesPutTree.GetByIndex() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
-	if !ok {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned ok == false")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got initial bytesPutTree.GetByIndex() !ok", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
-
-	chunkOffsetAsUint64, ok = chunkOffsetAsKey.(uint64)
-	if !ok {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned non-uint64 Key")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got initial bytesPutTree.GetByIndex() malformed Key", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
-
-	chunkBufAsByteSlice, ok = chunkBufAsValue.([]byte)
-	if !ok {
-		chunkedPutContext.Unlock()
-		err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned non-[]byte Value")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got initial bytesPutTree.GetByIndex() malformed Value", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		return
-	}
-
-	if (readLimitOffset - chunkOffsetAsUint64) <= uint64(len(chunkBufAsByteSlice)) {
-		// Trivial case: offset:readLimitOffset fits entirely within chunkBufAsByteSlice
-
-		buf = chunkBufAsByteSlice[(offset - chunkOffsetAsUint64):(readLimitOffset - chunkOffsetAsUint64)]
-	} else {
-		// Complex case: offset:readLimit extends beyond end of chunkBufAsByteSlice
-
-		buf = make([]byte, 0, length)
-		buf = append(buf, chunkBufAsByteSlice[(offset-chunkOffsetAsUint64):]...)
-
-		for uint64(len(buf)) < length {
-			chunkIndex++
-
-			chunkOffsetAsKey, chunkBufAsValue, ok, err = chunkedPutContext.bytesPutTree.GetByIndex(chunkIndex)
-			if nil != err {
-				chunkedPutContext.Unlock()
-				err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() failed: %v", err)
-				logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got next bytesPutTree.GetByIndex() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-				return
-			}
-			if !ok {
-				chunkedPutContext.Unlock()
-				err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned ok == false")
-				logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got next bytesPutTree.GetByIndex() !ok", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-				return
-			}
-
-			chunkOffsetAsUint64, ok = chunkOffsetAsKey.(uint64)
-			if !ok {
-				chunkedPutContext.Unlock()
-				err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned non-uint64 Key")
-				logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got next bytesPutTree.GetByIndex() malformed Key", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-				return
-			}
-
-			chunkBufAsByteSlice, ok = chunkBufAsValue.([]byte)
-			if !ok {
-				chunkedPutContext.Unlock()
-				err = blunder.NewError(blunder.BadHTTPGetError, "swiftclient.chunkedPutContext.Read() bytesPutTree.GetByIndex() returned non-[]byte Value")
-				logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.Read(\"%v/%v/%v\") got next bytesPutTree.GetByIndex() malformed Key", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-				return
-			}
-
-			if (readLimitOffset - chunkOffsetAsUint64) < uint64(len(chunkBufAsByteSlice)) {
-				buf = append(buf, chunkBufAsByteSlice[:(readLimitOffset-chunkOffsetAsUint64)]...)
-			} else {
-				buf = append(buf, chunkBufAsByteSlice...)
-			}
-		}
-	}
-
+	byteCnt = bufList.AppendRefCntBufList(chunkedPutContext.refCntBufList, int(offset), int(length))
 	chunkedPutContext.Unlock()
+
+	if uint64(byteCnt) != length {
+		panic(fmt.Sprintf(
+			"(*chunkedPutContextStruct).Read() AppendRefCntBufList() returned %d bytes != %d; "+
+				"readLimitOffset %d  bytesPut %d",
+			byteCnt, length, readLimitOffset, chunkedPutContext.bytesPut))
+	}
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxRead, length)
 
@@ -1166,13 +1128,36 @@ func (chunkedPutContext *chunkedPutContextStruct) ReadReturnSlice(offset uint64,
 	return
 }
 
+func (chunkedPutContext *chunkedPutContextStruct) ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error) {
+	var (
+		refCntBufList *refcntpool.RefCntBufList
+	)
+
+	refCntBufList, err = chunkedPutContext.Read(offset, length)
+	if err != nil {
+		return
+	}
+
+	// don't use a reference counted buffer because nobody will release it
+	// and at some point we're going to track reference counted items that
+	// aren't released
+	buf = make([]byte, length)
+	cnt := refCntBufList.CopyOut(buf, 0)
+
+	if uint64(cnt) != length {
+		panic(fmt.Sprintf("swiftclient.ReadReturnSlice(): returned %d bytes but %d bytes were expected",
+			cnt, length))
+	}
+
+	// need to release the hold on the list and the buffers
+	refCntBufList.Release()
+	return
+}
+
 func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	var (
-		chunkBufAsByteSlice []byte
-		chunkBufAsValue     sortedmap.Value
-		chunkIndex          int
-		headers             map[string][]string
-		ok                  bool
+		chunkIndex int
+		headers    map[string][]string
 	)
 
 	chunkedPutContext.Lock()
@@ -1204,37 +1189,15 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	}
 
 	chunkIndex = 0
-
-	for {
-		_, chunkBufAsValue, ok, err = chunkedPutContext.bytesPutTree.GetByIndex(chunkIndex)
-		if nil != err {
-			chunkedPutContext.Unlock()
-			err = blunder.NewError(blunder.BadHTTPPutError, "bytesPutTree.GetByIndex() failed: %v", err)
-			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-			return
-		}
-
-		if !ok {
-			// We've reached the end of bytesPutTree... so we (presumably) have now sent bytesPut bytes in total
-			break
-		}
-
-		// Simply (re)send the chunk (assuming it is a []byte)
-
-		chunkBufAsByteSlice, ok = chunkBufAsValue.([]byte)
-		if !ok {
-			chunkedPutContext.Unlock()
-			err = blunder.NewError(blunder.BadHTTPPutError, "bytesPutTree.GetByIndex() returned non-[]byte Value")
-			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex(() malformed Value", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-			return
-		}
+	for chunkIndex = 0; chunkIndex < len(chunkedPutContext.refCntBufList.Bufs); chunkIndex += 1 {
 
 		// check for chaos error generation (testing only)
 		if globals.chaosSendChunkFailureRate > 0 &&
 			sendChunkRetryCnt%globals.chaosSendChunkFailureRate == 0 {
 			err = fmt.Errorf("writeHTTPPutChunk() simulated error")
 		} else {
-			err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, chunkBufAsByteSlice)
+			err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn,
+				chunkedPutContext.refCntBufList.Bufs[chunkIndex])
 		}
 		if nil != err {
 			chunkedPutContext.Unlock()
@@ -1242,10 +1205,6 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 			return
 		}
-
-		// See if there is (was) another chunk
-
-		chunkIndex++
 	}
 
 	chunkedPutContext.Unlock()
@@ -1280,7 +1239,7 @@ var (
 // called (current code does not call Close() after SendChunk() returns an
 // error, SendChunk() also cleans up the TCP connection.
 //
-func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (err error) {
+func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpool.RefCntBuf) (err error) {
 
 	chunkedPutContext.Lock()
 	sendChunkCnt += 1
@@ -1298,7 +1257,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (
 		return
 	}
 
-	if 0 == len(buf) {
+	if 0 == len(refCntBuf.Buf) {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called with zero-length buf")
 		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
@@ -1310,29 +1269,12 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (
 		return
 	}
 
-	ok, err := chunkedPutContext.bytesPutTree.Put(chunkedPutContext.bytesPut, buf)
-	if nil != err {
-		err = blunder.NewError(blunder.BadHTTPPutError, "attempt to append chunk to LLRB Tree failed: %v", err)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got bytesPutTree.Put() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		chunkedPutContext.err = err
-		chunkedPutContext.fatal = true
-		releaseChunkedConnection(chunkedPutContext.connection, false)
-		chunkedPutContext.connection = nil
-		chunkedPutContext.Unlock()
-		return
-	}
-	if !ok {
-		err = blunder.NewError(blunder.BadHTTPPutError, "attempt to append chunk to LLRB Tree returned ok == false")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got bytesPutTree.Put() !ok", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		chunkedPutContext.err = err
-		chunkedPutContext.fatal = true
-		releaseChunkedConnection(chunkedPutContext.connection, false)
-		chunkedPutContext.connection = nil
-		chunkedPutContext.Unlock()
-		return
-	}
+	// Add refCntBuf to the list buffers for this chunked put connection in
+	// case we need to resend or somebody wants to read it.  Add() gets an
+	// Hold() on the buffer.
+	chunkedPutContext.refCntBufList.AppendRefCntBuf(refCntBuf)
 
-	chunkedPutContext.bytesPut += uint64(len(buf))
+	chunkedPutContext.bytesPut += uint64(len(refCntBuf.Buf))
 
 	// The prior errors are logical/programmatic errors that cannot be fixed
 	// by a retry so let them return with the error and let the caller abort
@@ -1356,7 +1298,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (
 		sendChunkCnt%globals.chaosSendChunkFailureRate == 0 {
 		err = fmt.Errorf("writeHTTPPutChunk() simulated error")
 	} else {
-		err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, buf)
+		err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, refCntBuf.Buf)
 	}
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
@@ -1369,7 +1311,28 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (
 
 	chunkedPutContext.Unlock()
 
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxSendChunk, uint64(len(buf)))
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxSendChunk, uint64(len(refCntBuf.Buf)))
 
+	return
+}
+
+// SendChunkAsSlice() turns a slice into a RefCntBuf and then calls SendChunk()
+// to send it.
+//
+func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (err error) {
+
+	// get a buffer large enough to hold the reqeust
+	refCntBuf := globals.refCntBufPoolSet.GetRefCntBuf(len(buf))
+
+	// technically, we should copy the contents of buf into the refCntBuf
+	// but we can just assign the slice.  refCntBuf.Buf will be returned to
+	// its original value when the buffer is next used and then the memory
+	// for buf will be eligible for garbage collection
+	refCntBuf.Buf = buf
+
+	err = chunkedPutContext.SendChunk(refCntBuf)
+
+	// relese the hold on the buffer; SendChunk() acquired its own hold
+	refCntBuf.Release()
 	return
 }

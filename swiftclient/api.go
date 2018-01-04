@@ -3,6 +3,8 @@ package swiftclient
 
 import (
 	"sync"
+
+	"github.com/swiftstack/ProxyFS/refcntpool"
 )
 
 // ChunkedCopyContext provides a callback context to use for Object Copies.
@@ -20,10 +22,11 @@ type ChunkedCopyContext interface {
 // returns an error, or else we will leak open connections (although SendChunk()
 // does its best).
 type ChunkedPutContext interface {
-	BytesPut() (bytesPut uint64, err error)                               // Report how many bytes have been sent via SendChunk() or SendChunkAsSlice() for this ChunkedPutContext
-	Close() (err error)                                                   // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
-	ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
-	SendChunkAsSlice(buf []byte) (err error)                              // Send the supplied "chunk" via this ChunkedPutContext
+	BytesPut() (bytesPut uint64, err error)                                             // Report how many bytes have been sent via SendChunk() or SendChunkAsSlice() for this ChunkedPutContext
+	Close() (err error)                                                                 // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
+	ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error)               // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
+	Read(offset uint64, length uint64) (refCntBuf *refcntpool.RefCntBufList, err error) // Read back bytes previously sent via SendChunk()
+	SendChunkAsSlice(buf []byte) (err error)                                            // Send the supplied "chunk" via this ChunkedPutContext
 }
 
 // StavationCallbackFunc specifies the signature of a callback function to be invoked when
@@ -119,7 +122,13 @@ func ObjectFetchChunkedPutContext(accountName string, containerName string, obje
 	return objectFetchChunkedPutContext(accountName, containerName, objectName)
 }
 
-// ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.
+// ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range and returns
+// the data in a RefCntBufList.
+func ObjectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (bufList *refcntpool.RefCntBufList, err error) {
+	return objectGet(accountName, containerName, objectName, offset, length)
+}
+
+// ObjectGetReturnSlice invokes HTTP GET on the named Swift Object for the specified byte range.
 func ObjectGetReturnSlice(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
 	return objectGetReturnSlice(accountName, containerName, objectName, offset, length)
 }
@@ -134,8 +143,12 @@ func ObjectLoad(accountName string, containerName string, objectName string) (bu
 	return objectLoad(accountName, containerName, objectName)
 }
 
-// ObjectRead invokes HTTP GET on the named Swift Object at the specified offset filling in the specified byte slice.
-// Note that the byte slice must already have the desired length even though those bytes will be overwritten.
+// ObjectRead invokes HTTP GET on the named Swift Object at the specified offset
+// filling the byte slice up to its length.
+//
+// Note that the byte slice must already have the desired length even though
+// those bytes will be overwritten.  If less bytes are read then the caller must
+// trim the length of the slice to amount of valid data.
 func ObjectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
 	return objectRead(accountName, containerName, objectName, offset, buf)
 }

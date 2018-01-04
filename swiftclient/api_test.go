@@ -538,6 +538,7 @@ func testOps(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
+		t.Logf("chunkedPutContext.ReadReturnSlice(1, 3) returned %v", readBuf)
 		t.Fatalf("chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3)) didn't return expected []byte")
 	}
 
