@@ -441,7 +441,7 @@ bash 'Build proxyfsd' do
   # Source profile because we may not have golang in our path yet
   code <<-EOH
   . #{DOT_BASH_PROFILE}
-  ./regression_test.py
+  make
   EOH
   cwd PROXYFS_SRC_DIR
 end
