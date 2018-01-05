@@ -125,12 +125,15 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		if (srcObjectPosition + chunkSize) > srcObjectSize {
 			chunkSize = srcObjectSize - srcObjectPosition
 
-			chunk, err = objectTail(srcAccountName, srcContainerName, srcObjectName, chunkSize)
-		} else {
-			chunk, err = objectGetReturnSlice(srcAccountName, srcContainerName, srcObjectName,
-				srcObjectPosition, chunkSize)
 		}
-
+		chunk, err = objectGetReturnSlice(srcAccountName, srcContainerName, srcObjectName,
+			srcObjectPosition, chunkSize)
+		if err != nil {
+			logger.ErrorfWithError(err, "swiftclient.objectCopy('%v/%v/%v', '%v/%v/%v') failed",
+				srcAccountName, srcContainerName, srcObjectName,
+				dstAccountName, dstContainerName, dstObjectName)
+			return
+		}
 		srcObjectPosition += chunkSize
 
 		err = dstChunkedPutContext.SendChunkAsSlice(chunk)
@@ -285,146 +288,35 @@ func objectDeleteSyncNoRetry(accountName string, containerName string, objectNam
 func objectGet(accountName string, containerName string, objectName string,
 	offset uint64, length uint64) (bufList *refcntpool.RefCntBufList, err error) {
 
-	// get a reference counted buffer list
-	bufList = globals.refCntBufListPool.GetRefCntBufList()
-
 	// get an empty buffer to hold the result
 	buf := globals.refCntBufPoolSet.GetRefCntBuf(int(length))
-	bufList.AppendRefCntBuf(buf)
 	buf.Buf = buf.Buf[0:length]
 
 	// let objectRead() do all the hard work
 	cnt, err := objectRead(accountName, containerName, objectName, offset, buf.Buf)
 	if err != nil {
-		bufList.Release()
-		bufList = nil
+		buf.Release()
 		return
 	}
+	buf.Buf = buf.Buf[0:cnt]
 
-	if cnt != length {
-		err = fmt.Errorf("objectGet(): objectRead() returned %d bytes instead of %d requested",
-			cnt, length)
-		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "objectGet('%v/%v/%v') got too too few bytes",
-			accountName, containerName, objectName)
-
-		bufList.Release()
-		bufList = nil
-		return
-	}
+	// get a reference counted buffer list to return
+	bufList = globals.refCntBufListPool.GetRefCntBufList()
+	bufList.AppendRefCntBuf(buf)
 	return
 }
 
 func objectGetReturnSlice(accountName string, containerName string, objectName string,
-	offset uint64, length uint64) ([]byte, error) {
+	offset uint64, length uint64) (buf []byte, err error) {
 
-	// request is a function that, through the miracle of closure, calls
-	// objectGetNoRetry() with the paramaters passed to this function, stashes the
-	// relevant return values into the local variables of this function, and
-	// then returns err and whether it is retriable to RequestWithRetry()
-	var (
-		buf []byte
-		err error
-	)
-	request := func() (bool, error) {
-		var err error
-		buf, err = objectGetReturnSliceNoRetry(accountName, containerName, objectName, offset, length)
-		return true, err
-	}
-
-	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjGetRetryOps,
-			retrySuccessCnt: &stats.SwiftObjGetRetrySuccessOps}
-	)
-	err = retryObj.RequestWithRetry(request, &opname, &statnm)
-	return buf, err
-}
-
-func objectGetReturnSliceNoRetry(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-	var (
-		connection    *connectionStruct
-		chunk         []byte
-		contentLength int
-		fsErr         blunder.FsError
-		headers       map[string][]string
-		httpStatus    int
-		isError       bool
-	)
-
-	headers = make(map[string][]string)
-	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+length-1), 10)}
-
-	connection = acquireNonChunkedConnection()
-
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
-	if nil != err {
-		releaseNonChunkedConnection(connection, false)
-		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+	// let objectRead() do all the work
+	buf = make([]byte, length)
+	cnt, err := objectRead(accountName, containerName, objectName, offset, buf)
+	if err != nil {
+		buf = nil
 		return
 	}
-
-	httpStatus, headers, err = readHTTPStatusAndHeaders(connection.tcpConn)
-	if nil != err {
-		releaseNonChunkedConnection(connection, false)
-		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
-		return
-	}
-	isError, fsErr = httpStatusIsError(httpStatus)
-	if isError {
-		releaseNonChunkedConnection(connection, false)
-		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
-		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
-		return
-	}
-
-	if parseTransferEncoding(headers) {
-		buf = make([]byte, 0)
-		for {
-			chunk, err = readHTTPChunk(connection.tcpConn)
-			if nil != err {
-				releaseNonChunkedConnection(connection, false)
-				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
-				return
-			}
-
-			if 0 == len(chunk) {
-				break
-			}
-
-			buf = append(buf, chunk...)
-		}
-	} else {
-		contentLength, err = parseContentLength(headers)
-		if nil != err {
-			releaseNonChunkedConnection(connection, false)
-			err = blunder.AddError(err, blunder.BadHTTPGetError)
-			logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
-			return
-		}
-
-		if 0 == contentLength {
-			buf = make([]byte, 0)
-		} else {
-			buf, err = readBytesFromTCPConn(connection.tcpConn, contentLength)
-			if nil != err {
-				releaseNonChunkedConnection(connection, false)
-				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
-				return
-			}
-		}
-	}
-
-	releaseNonChunkedConnection(connection, parseConnection(headers))
-
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjGet, uint64(len(buf)))
+	buf = buf[0:cnt]
 
 	return
 }
@@ -714,7 +606,7 @@ func objectReadNoRetry(accountName string, containerName string, objectName stri
 			}
 
 			// if readBytesFromTCPConnIntoBuf() doesnt get
-			// contentLength bytes it should return an error
+			// contentLength bytes it will(?) return an error
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)

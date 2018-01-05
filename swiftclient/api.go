@@ -144,7 +144,7 @@ func ObjectLoad(accountName string, containerName string, objectName string) (bu
 }
 
 // ObjectRead invokes HTTP GET on the named Swift Object at the specified offset
-// filling the byte slice up to its length.
+// attempting to fill the byte slice up to its length (not capacity).
 //
 // Note that the byte slice must already have the desired length even though
 // those bytes will be overwritten.  If less bytes are read then the caller must
