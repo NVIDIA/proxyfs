@@ -50,7 +50,8 @@ func (flowControl *flowControlStruct) touchReadCacheElementWhileLocked(readCache
 
 func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
 	var (
-		cacheLine            *refcntpool.RefCntBuf
+		bufList              *refcntpool.RefCntBufList
+		cacheLine            *refcntpool.RefCntBufList
 		cacheLineHitLength   uint64
 		cacheLineHitOffset   uint64
 		cacheLineStartOffset uint64
@@ -72,6 +73,15 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 	readCacheLineSize = flowControl.readCacheLineSize
 	readCacheKey.volumeName = vS.volumeName
 
+	// the results are returned as a bufList
+	bufList = globals.refCntBufListPool()
+	defer func() {
+		if err != nil {
+			bufList.Release()
+			bufList = nil
+		}
+	}()
+
 	if 1 == len(readPlan) {
 		// Possibly a trivial case (allowing for a potential zero-copy return)... three exist:
 		//   Case 1: The lone step calls for a zero-filled []byte
@@ -82,6 +92,7 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 
 		if 0 == step.LogSegmentNumber {
 			// Case 1: The lone step calls for a zero-filled []byte
+			// Add references to the zerof filled buffer until we get there
 			buf = make([]byte, step.Length)
 			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
 			err = nil
@@ -124,6 +135,7 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 			if readCacheHit {
 				flowControl.touchReadCacheElementWhileLocked(readCacheElement)
 				cacheLine = readCacheElement.cacheLine
+				cacheLine.Hold()
 				flowControl.Unlock()
 				stats.IncrementOperations(&stats.FileReadcacheHitOps)
 			} else {
@@ -131,7 +143,7 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 				stats.IncrementOperations(&stats.FileReadcacheMissOps)
 				// Make readCacheHit true (at MRU, likely kicking out LRU)
 				cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
-				cacheLine, err = swiftclient.ObjectGetReturnSlice(
+				cacheLine, err = swiftclient.ObjectGet(
 					step.AccountName, step.ContainerName, step.ObjectName,
 					cacheLineStartOffset, readCacheLineSize)
 				if nil != err {
@@ -145,6 +157,7 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 					prev:         nil,
 					cacheLine:    cacheLine,
 				}
+				cacheLine.Hold()
 				flowControl.Lock()
 				flowControl.insertReadCacheElementWhileLocked(readCacheElement)
 				flowControl.Unlock()
@@ -157,7 +170,9 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 				return
 			}
 
-			buf = cacheLine[cacheLineHitOffset:(cacheLineHitOffset + step.Length)]
+			bufList.AppendRefCntBufList(cacheLine, cacheLineHitOffset, cacheLineHitOffset+step.Length)
+			cacheLine.Release
+			// buf = cacheLine[cacheLineHitOffset:(cacheLineHitOffset + step.Length)]
 
 			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
 

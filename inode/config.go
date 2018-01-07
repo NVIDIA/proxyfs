@@ -38,7 +38,7 @@ type readCacheElementStruct struct {
 	readCacheKey readCacheKeyStruct
 	next         *readCacheElementStruct // nil if MRU element of flowControlStruct.readCache
 	prev         *readCacheElementStruct // nil if LRU element of flowControlStruct.readCache
-	cacheLine    *refcntpool.RefCntBuf
+	cacheLine    *refcntpool.RefCntBufList
 }
 
 type flowControlStruct struct {
@@ -160,7 +160,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	// create a reference counted buffer containing 10 Mbyte of zeros (some
 	// internet posts claim the compiler optimizes this method to zero the
 	// buffer)
-	globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(10 * 1024 * 1024)
+	globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(64 * 1024)
 	globals.refCntBufOfZeros.Buf = globals.refCntBufOfZeros.Buf[0:cap(globals.refCntBufOfZeros.Buf)]
 	for i := 0; i < len(globals.refCntBufOfZeros.Buf); i++ {
 		globals.refCntBufOfZeros.Buf[i] = 0
