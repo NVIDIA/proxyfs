@@ -1,0 +1,16 @@
+<div class="col-lg-3 col-md-4 col-sm-4 col-lg-pull-9 col-md-pull-8 col-sm-pull-8 docs-sidebar">
+  <div class="btn-group docs-sidebar-releases">
+
+  </div>
+  <div class="docs-sidebar-toc">
+    <div class="docs-sidebar-section" id="table-of-contents">
+      <a href="{{ pathto(master_doc) }}" class="docs-sidebar-section-title"><h4>{{project}} {{version}}</h4></a>
+      {%- if theme_sidebar_mode == 'toc' %}
+      {{ toc }}
+      {%- elif theme_sidebar_mode == 'toctree' %}
+      {{ toctree(maxdepth=2) }}
+      {%- endif %}
+    </div>
+{% include 'localtoc.html' %}
+  </div>
+</div>

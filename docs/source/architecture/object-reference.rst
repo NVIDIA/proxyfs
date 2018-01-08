@@ -1,8 +1,8 @@
-================================================
-ProxyFS Bimodal Support of Object Storage API v1
-================================================
+=============================================
+ProxyFS Bimodal Support of Object Storage API
+=============================================
 
-This document covers how ProxyFS supports the Swift Object Storage API listed [at](http://developer.openstack.org/api-ref-objectstorage-v1.html)
+This document covers how ProxyFS supports the AWS S3 and Swift Object Storage API listed [at](http://developer.openstack.org/api-ref-objectstorage-v1.html)
 
 What is bimodal support?
 ========================
@@ -20,9 +20,17 @@ If you store cat.jpg in the file system you would see it at this location::
 
 Where Swift Account named "vaccount" is exported via SMB as "export".
 
-If you wanted to see the same cat.jpg as an object you would find it here::
+If you wanted to see the same cat.jpg as an object with the Swift API you would find it here::
 
     http://domain.name/v1/vaccount/vdir1/vdir2/cat.jpg
+
+The S3 API would use the location (account is determined by authentication)::
+
+    http://domain.name/vdir1/vdir2/cat.jpg
+
+    or
+
+    http://vdir1.domain.name/vdir2/cat.jpg
 
 Where domain.name is the Domain Name or IP Address of a Swift Proxy node
 (possibly a "VIP" - or virtual IP serviced by a set of Swift Proxy Nodes
@@ -90,14 +98,15 @@ POST /v1/{account} Creates, updates, or deletes account         Current implemen
                                                                 - Do we want to allow metadata to be
                                                                   modified for an account?
 HEAD /v1/{account} Shows metadata for an account.               Deferred but may need
+
 ================== ============================================ =============================================
 
 Containers
 ----------
 
-================================ ============================================  ========================================
+================================ ============================================  ================================================
 Verb                             Summary                                       Status
--------------------------------- --------------------------------------------  ----------------------------------------
+-------------------------------- --------------------------------------------  ------------------------------------------------
 GET /v1/{account}/{container}    Shows details for a container and lists       Basic implmentation. Some of what is not
                                  objects, sorted by name, in the container.    implemented but needed is prefix (i.e.
                                  Must show in forward or reverse order.        \*cat.jpg).  Will defer suffix and content
@@ -167,14 +176,15 @@ POST /v1/{account}/{container}   Creates, updates, or deletes custom           I
 HEAD /v1/{account}/{container}   Shows container metadata, including the       Not implemented
                                  number of objects and the total bytes of all
                                  objects stored in the container.
-================================ ============================================  ========================================
+
+================================ ============================================  ================================================
 
 Objects
 -------
 
-=========================================  ============================================  ========================================
+=========================================  ============================================  ==========================================
 Verb                                       Summary                                       Status
------------------------------------------  --------------------------------------------  ----------------------------------------
+-----------------------------------------  --------------------------------------------  ------------------------------------------
 GET /v1/{account}/{container}/{object}     Downloads the object content and gets the     Basic implementation
                                            object metadata.                              See docs/bimodal-get.txt for details
                                                                                          but summary is::
@@ -261,7 +271,8 @@ POST /v1/{account}/{container}/{object}    Creates or updates object metadata.  
 
                                                                                          - MW keeps retrying until no changes to
                                                                                            existing metadata when doing update
-=========================================  ============================================  ========================================
+
+=========================================  ============================================  ==========================================
 
 Unit Test for Bimodal
 =====================

@@ -8,30 +8,7 @@
 Welcome to ProxyFS's documentation!
 ===================================
 
-Operator information
---------------------
-
 .. toctree::
-    :maxdepth: 1
-    :caption: Information for installing and running ProxyFS
+    :maxdepth: 2
 
-    operator/index
-
-Architecture information
-------------------------
-
-.. toctree::
-    :maxdepth: 1
-    :caption: Details about the design of ProxyFS
-
-    design/index
-
-
-Contributor information
------------------------
-
-.. toctree::
-    :maxdepth: 1
-    :caption: How to contribute and how our community works
-
-    contributing/index
+    architecture/index
