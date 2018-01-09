@@ -503,24 +503,24 @@ func objectRead(accountName string, containerName string, objectName string, off
 	// relevant return values into the local variables of this function, and
 	// then returns err and whether it is retriable to RequestWithRetry()
 	var (
-		len uint64
-		err error
+		length uint64
+		err    error
 	)
 	request := func() (bool, error) {
 		var err error
-		len, err = objectReadNoRetry(accountName, containerName, objectName, offset, buf)
+		length, err = objectReadNoRetry(accountName, containerName, objectName, offset, buf)
 		return true, err
 	}
 
 	var (
 		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectRead(\"%v/%v/%v\", offset=0x%016X, len(buf)=0x%016X)", accountName, containerName, objectName, offset, cap(buf))
+		opname   string      = fmt.Sprintf("swiftclient.objectRead(\"%v/%v/%v\", offset=0x%016X, len(buf)=0x%016X)", accountName, containerName, objectName, offset, len(buf))
 		statnm   RetryStatNm = RetryStatNm{
 			retryCnt:        &stats.SwiftObjReadRetryOps,
 			retrySuccessCnt: &stats.SwiftObjReadRetrySuccessOps}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
-	return len, err
+	return length, err
 }
 
 func objectReadNoRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (cnt uint64, err error) {
@@ -536,7 +536,7 @@ func objectReadNoRetry(accountName string, containerName string, objectName stri
 		isError       bool
 	)
 
-	length = uint64(cap(buf))
+	length = uint64(len(buf))
 
 	headers = make(map[string][]string)
 	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+length-1), 10)}
