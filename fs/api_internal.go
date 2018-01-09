@@ -2234,7 +2234,7 @@ retryLock:
 	return err
 }
 
-func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+func (mS *mountStruct) ReadReturnSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -2267,7 +2267,7 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 	}
 
 	profiler.AddEventNow("before inode.Read()")
-	buf, err = mS.volStruct.VolumeHandle.Read(inodeNumber, offset, length, profiler)
+	buf, err = mS.volStruct.VolumeHandle.ReadReturnSlice(inodeNumber, offset, length, profiler)
 	profiler.AddEventNow("after inode.Read()")
 	if uint64(len(buf)) > length {
 		err = fmt.Errorf("%s: Buf length %v is greater than supplied length %v", utils.GetFnName(), uint64(len(buf)), length)

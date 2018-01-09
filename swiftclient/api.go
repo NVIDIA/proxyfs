@@ -3,6 +3,8 @@ package swiftclient
 
 import (
 	"sync"
+
+	"github.com/swiftstack/ProxyFS/refcntpool"
 )
 
 // ChunkedCopyContext provides a callback context to use for Object Copies.
@@ -20,10 +22,11 @@ type ChunkedCopyContext interface {
 // returns an error, or else we will leak open connections (although SendChunk()
 // does its best).
 type ChunkedPutContext interface {
-	BytesPut() (bytesPut uint64, err error)                    // Report how many bytes have been sent via SendChunk() for this ChunkedPutContext
-	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
-	Read(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk()
-	SendChunk(buf []byte) (err error)                          // Send the supplied "chunk" via this ChunkedPutContext
+	BytesPut() (bytesPut uint64, err error)                                             // Report how many bytes have been sent via SendChunk() or SendChunkAsSlice() for this ChunkedPutContext
+	Close() (err error)                                                                 // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
+	ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error)               // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
+	Read(offset uint64, length uint64) (refCntBuf *refcntpool.RefCntBufList, err error) // Read back bytes previously sent via SendChunk()
+	SendChunkAsSlice(buf []byte) (err error)                                            // Send the supplied "chunk" via this ChunkedPutContext
 }
 
 // StavationCallbackFunc specifies the signature of a callback function to be invoked when
@@ -43,57 +46,57 @@ func SetStarvationCallbackFunc(starvationCallback StarvationCallbackFunc) {
 
 // AccountDelete invokes HTTP DELETE on the named Swift Account.
 func AccountDelete(accountName string) (err error) {
-	return accountDeleteWithRetry(accountName)
+	return accountDelete(accountName)
 }
 
 // AccountGet invokes HTTP GET on the named Swift Account.
 func AccountGet(accountName string) (headers map[string][]string, containerList []string, err error) {
-	return accountGetWithRetry(accountName)
+	return accountGet(accountName)
 }
 
 // AccountHead invokes HTTP HEAD on the named Swift Account.
 func AccountHead(accountName string) (headers map[string][]string, err error) {
-	return accountHeadWithRetry(accountName)
+	return accountHead(accountName)
 }
 
 // AccountPost invokes HTTP PUT on the named Swift Account.
 func AccountPost(accountName string, headers map[string][]string) (err error) {
-	return accountPostWithRetry(accountName, headers)
+	return accountPost(accountName, headers)
 }
 
 // AccountPut invokes HTTP PUT on the named Swift Account.
 func AccountPut(accountName string, headers map[string][]string) (err error) {
-	return accountPutWithRetry(accountName, headers)
+	return accountPut(accountName, headers)
 }
 
 // ContainerDelete invokes HTTP DELETE on the named Swift Container.
 func ContainerDelete(accountName string, containerName string) (err error) {
-	return containerDeleteWithRetry(accountName, containerName)
+	return containerDelete(accountName, containerName)
 }
 
 // ContainerGet invokes HTTP GET on the named Swift Container.
 func ContainerGet(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
-	return containerGetWithRetry(accountName, containerName)
+	return containerGet(accountName, containerName)
 }
 
 // ContainerHead invokes HTTP HEAD on the named Swift Container.
 func ContainerHead(accountName string, containerName string) (headers map[string][]string, err error) {
-	return containerHeadWithRetry(accountName, containerName)
+	return containerHead(accountName, containerName)
 }
 
 // ContainerPost invokes HTTP PUT on the named Swift Container.
 func ContainerPost(accountName string, containerName string, headers map[string][]string) (err error) {
-	return containerPostWithRetry(accountName, containerName, headers)
+	return containerPost(accountName, containerName, headers)
 }
 
 // ContainerPut invokes HTTP PUT on the named Swift Container.
 func ContainerPut(accountName string, containerName string, headers map[string][]string) (err error) {
-	return containerPutWithRetry(accountName, containerName, headers)
+	return containerPut(accountName, containerName, headers)
 }
 
 // ObjectContentLength invokes HTTP HEAD on the named Swift Object and returns value of Content-Length Header.
 func ObjectContentLength(accountName string, containerName string, objectName string) (length uint64, err error) {
-	return objectContentLengthWithRetry(accountName, containerName, objectName)
+	return objectContentLength(accountName, containerName, objectName)
 }
 
 // ObjectCopy asynchronously creates a copy of the named Swift Object Source called the named Swift Object Destination.
@@ -111,38 +114,48 @@ func ObjectDeleteAsync(accountName string, containerName string, objectName stri
 
 // ObjectDeleteSync synchronously invokes HTTP DELETE on the named Swift Object.
 func ObjectDeleteSync(accountName string, containerName string, objectName string) (err error) {
-	return objectDeleteSyncWithRetry(accountName, containerName, objectName)
+	return objectDeleteSync(accountName, containerName, objectName)
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.
 func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext ChunkedPutContext, err error) {
-	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName)
+	return objectFetchChunkedPutContext(accountName, containerName, objectName)
 }
 
-// ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.
-func ObjectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
-	return objectGetWithRetry(accountName, containerName, objectName, offset, length)
+// ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range and returns
+// the data in a RefCntBufList.
+func ObjectGet(accountName string, containerName string, objectName string, offset uint64, length uint64) (bufList *refcntpool.RefCntBufList, err error) {
+	return objectGet(accountName, containerName, objectName, offset, length)
+}
+
+// ObjectGetReturnSlice invokes HTTP GET on the named Swift Object for the specified byte range.
+func ObjectGetReturnSlice(accountName string, containerName string, objectName string, offset uint64, length uint64) (buf []byte, err error) {
+	return objectGetReturnSlice(accountName, containerName, objectName, offset, length)
 }
 
 // ObjectHead invokes HTTP HEAD on the named Swift Object.
 func ObjectHead(accountName string, containerName string, objectName string) (headers map[string][]string, err error) {
-	return objectHeadWithRetry(accountName, containerName, objectName)
+	return objectHead(accountName, containerName, objectName)
 }
 
 // ObjectLoad invokes HTTP GET on the named Swift Object for the entire object.
 func ObjectLoad(accountName string, containerName string, objectName string) (buf []byte, err error) {
-	return objectLoadWithRetry(accountName, containerName, objectName)
+	return objectLoad(accountName, containerName, objectName)
 }
 
-// ObjectRead invokes HTTP GET on the named Swift Object at the specified offset filling in the specified byte slice.
-// Note that the byte slice must already have the desired length even though those bytes will be overwritten.
+// ObjectRead invokes HTTP GET on the named Swift Object at the specified offset
+// attempting to fill the byte slice up to its length (not capacity).
+//
+// Note that the byte slice must already have the desired length even though
+// those bytes will be overwritten.  If less bytes are read then the caller must
+// trim the length of the slice to amount of valid data.
 func ObjectRead(accountName string, containerName string, objectName string, offset uint64, buf []byte) (len uint64, err error) {
-	return objectReadWithRetry(accountName, containerName, objectName, offset, buf)
+	return objectRead(accountName, containerName, objectName, offset, buf)
 }
 
 // ObjectTail invokes HTTP GET on the named Swift Object with a byte range selecting the specified length of trailing bytes.
 func ObjectTail(accountName string, containerName string, objectName string, length uint64) (buf []byte, err error) {
-	return objectTailWithRetry(accountName, containerName, objectName, length)
+	return objectTail(accountName, containerName, objectName, length)
 }
 
 // Number of chunked connections that are idle

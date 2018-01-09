@@ -11,6 +11,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -161,7 +162,7 @@ func setSizeInMemory(fileInode *inMemoryInodeStruct, size uint64) (err error) {
 	return
 }
 
-func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+func (vS *volumeStruct) ReadReturnSlice(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
 	var (
 		fileInode     *inMemoryInodeStruct
 		readPlan      []ReadPlanStep
@@ -180,13 +181,44 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 		return
 	}
 
-	buf, err = vS.doReadPlan(fileInode, readPlan, readPlanBytes)
+	buf, err = vS.doReadPlanReturnSlice(fileInode, readPlan, readPlanBytes)
 	if nil != err {
 		logger.WarnWithError(err)
 		return
 	}
 
 	stats.IncrementOperationsAndBucketedBytes(stats.FileRead, uint64(len(buf)))
+
+	err = nil
+	return
+}
+
+func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (bufList *refcntpool.RefCntBufList, err error) {
+	var (
+		fileInode     *inMemoryInodeStruct
+		readPlan      []ReadPlanStep
+		readPlanBytes uint64
+	)
+
+	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
+	if nil != err {
+		logger.ErrorWithError(err)
+		return
+	}
+
+	readPlan, readPlanBytes, err = vS.getReadPlanHelper(fileInode, &offset, &length)
+	if nil != err {
+		logger.WarnWithError(err)
+		return
+	}
+
+	bufList, err = vS.doReadPlan(fileInode, readPlan, readPlanBytes)
+	if nil != err {
+		logger.WarnWithError(err)
+		return
+	}
+
+	stats.IncrementOperationsAndBucketedBytes(stats.FileRead, uint64(bufList.Length()))
 
 	err = nil
 	return

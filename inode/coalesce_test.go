@@ -145,7 +145,7 @@ func TestCoalesce(t *testing.T) {
 	}
 
 	// The new file has the contents of the old files combined
-	contents, err := vh.Read(combinedInodeNumber, 0, 22, nil)
+	contents, err := vh.ReadReturnSlice(combinedInodeNumber, 0, 22, nil)
 	if !assert.Nil(err) {
 		return
 	}

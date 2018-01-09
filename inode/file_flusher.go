@@ -5,6 +5,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -47,7 +48,237 @@ func (flowControl *flowControlStruct) touchReadCacheElementWhileLocked(readCache
 	}
 }
 
-func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
+func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (buf []byte, err error) {
+	var (
+		bufList              *refcntpool.RefCntBufList
+		cacheLine            *refcntpool.RefCntBufList
+		cacheLineHitLength   uint64
+		cacheLineHitOffset   uint64
+		cacheLineStartOffset uint64
+		chunkOffset          uint64
+		flowControl          *flowControlStruct
+		inFlightHit          bool
+		inFlightHitBuf       []byte
+		inFlightLogSegment   *inFlightLogSegmentStruct
+		readCacheElement     *readCacheElementStruct
+		readCacheHit         bool
+		readCacheKey         readCacheKeyStruct
+		readCacheLineSize    uint64
+		remainingLength      uint64
+		step                 ReadPlanStep
+		stepIndex            int
+	)
+
+	flowControl = vS.flowControl
+	readCacheLineSize = flowControl.readCacheLineSize
+	readCacheKey.volumeName = vS.volumeName
+
+	// the results are returned as a bufList
+	bufList = globals.refCntBufListPool()
+	defer func() {
+		if err != nil {
+			bufList.Release()
+			bufList = nil
+		}
+	}()
+
+	if 1 == len(readPlan) {
+		// Possibly a trivial case (allowing for a potential zero-copy return)... three exist:
+		//   Case 1: The lone step calls for a zero-filled []byte
+		//   Case 2: The lone step is satisfied by reading from an inFlightLogSegment
+		//   Case 3: The lone step is satisfied by landing completely within a single Read Cache Line
+
+		step = readPlan[0]
+
+		if 0 == step.LogSegmentNumber {
+			// Case 1: The lone step calls for a zero-filled []byte
+			// Add references to the zerof filled buffer until we get there
+			buf = make([]byte, step.Length)
+			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
+			err = nil
+			return
+		}
+
+		fileInode.Lock()
+
+		inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
+		if inFlightHit {
+			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
+			buf, err = inFlightLogSegment.ReadReturnSlice(step.Offset, step.Length)
+			if nil != err {
+				fileInode.Unlock()
+				logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - optimal case")
+				err = blunder.AddError(err, blunder.SegReadError)
+				return
+			}
+			fileInode.Unlock()
+			stats.IncrementOperations(&stats.FileWritebackHitOps)
+			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
+			return
+		}
+
+		stats.IncrementOperations(&stats.FileWritebackMissOps)
+
+		fileInode.Unlock()
+
+		cacheLineHitOffset = step.Offset % readCacheLineSize
+
+		if (cacheLineHitOffset + step.Length) <= readCacheLineSize {
+			// Case 3: The lone step is satisfied by landing completely within a single Read Cache Line
+			readCacheKey.logSegmentNumber = step.LogSegmentNumber
+			readCacheKey.cacheLineTag = step.Offset / readCacheLineSize
+
+			flowControl.Lock()
+
+			readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
+
+			if readCacheHit {
+				flowControl.touchReadCacheElementWhileLocked(readCacheElement)
+				cacheLine = readCacheElement.cacheLine
+				cacheLine.Hold()
+				flowControl.Unlock()
+				stats.IncrementOperations(&stats.FileReadcacheHitOps)
+			} else {
+				flowControl.Unlock()
+				stats.IncrementOperations(&stats.FileReadcacheMissOps)
+				// Make readCacheHit true (at MRU, likely kicking out LRU)
+				cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
+				cacheLine, err = swiftclient.ObjectGet(
+					step.AccountName, step.ContainerName, step.ObjectName,
+					cacheLineStartOffset, readCacheLineSize)
+				if nil != err {
+					logger.ErrorfWithError(err, "Reading from LogSegment object failed - optimal case")
+					err = blunder.AddError(err, blunder.SegReadError)
+					return
+				}
+				readCacheElement = &readCacheElementStruct{
+					readCacheKey: readCacheKey,
+					next:         nil,
+					prev:         nil,
+					cacheLine:    cacheLine,
+				}
+				cacheLine.Hold()
+				flowControl.Lock()
+				flowControl.insertReadCacheElementWhileLocked(readCacheElement)
+				flowControl.Unlock()
+			}
+
+			if (cacheLineHitOffset + step.Length) > uint64(len(cacheLine)) {
+				err = fmt.Errorf("Invalid range for LogSegment object - optimal case")
+				logger.ErrorWithError(err)
+				err = blunder.AddError(err, blunder.SegReadError)
+				return
+			}
+
+			bufList.AppendRefCntBufList(cacheLine, cacheLineHitOffset, cacheLineHitOffset+step.Length)
+			cacheLine.Release
+			// buf = cacheLine[cacheLineHitOffset:(cacheLineHitOffset + step.Length)]
+
+			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
+
+			err = nil
+			return
+		}
+	}
+
+	// If we reach here, normal readPlan processing will be performed... no zero-copy opportunity
+
+	buf = make([]byte, 0, readPlanBytes)
+
+	for stepIndex, step = range readPlan {
+		if 0 == step.LogSegmentNumber {
+			// The step calls for a zero-filled []byte
+			buf = append(buf, make([]byte, step.Length)...)
+		} else {
+			fileInode.Lock()
+			inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
+			if inFlightHit {
+				// The step is satisfied by reading from an inFlightLogSegment
+				inFlightHitBuf, err = inFlightLogSegment.ReadReturnSlice(step.Offset, step.Length)
+				if nil != err {
+					fileInode.Unlock()
+					logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - general case")
+					err = blunder.AddError(err, blunder.SegReadError)
+					return
+				}
+				fileInode.Unlock()
+				buf = append(buf, inFlightHitBuf...)
+				stats.IncrementOperations(&stats.FileWritebackHitOps)
+			} else {
+				fileInode.Unlock()
+				if (0 == stepIndex) && (1 == len(readPlan)) {
+					// No need to increment stats.FileWritebackMissOps since it was incremented above
+				} else {
+					stats.IncrementOperations(&stats.FileWritebackMissOps)
+				}
+			}
+			if !inFlightHit {
+				// The step is satisfied by hitting or missing the Read Cache
+				readCacheKey.logSegmentNumber = step.LogSegmentNumber
+				chunkOffset = step.Offset
+				remainingLength = step.Length
+				for 0 < remainingLength {
+					readCacheKey.cacheLineTag = chunkOffset / readCacheLineSize
+					cacheLineHitOffset = chunkOffset % readCacheLineSize
+					if (cacheLineHitOffset + remainingLength) > readCacheLineSize {
+						// When we've got a cache hit, the read extends beyond the cache line
+						cacheLineHitLength = readCacheLineSize - cacheLineHitOffset
+					} else {
+						// When we've got a cache hit, all the data is inside the cache line
+						cacheLineHitLength = remainingLength
+					}
+					flowControl.Lock()
+					readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
+					if readCacheHit {
+						flowControl.touchReadCacheElementWhileLocked(readCacheElement)
+						cacheLine = readCacheElement.cacheLine
+						flowControl.Unlock()
+						stats.IncrementOperations(&stats.FileReadcacheHitOps)
+					} else {
+						flowControl.Unlock()
+						stats.IncrementOperations(&stats.FileReadcacheMissOps)
+						// Make readCacheHit true (at MRU, likely kicking out LRU)
+						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
+						cacheLine, err = swiftclient.ObjectGetReturnSlice(
+							step.AccountName, step.ContainerName, step.ObjectName,
+							cacheLineStartOffset, readCacheLineSize)
+						if nil != err {
+							logger.ErrorfWithError(err, "Reading from LogSegment object failed - general case")
+							err = blunder.AddError(err, blunder.SegReadError)
+							return
+						}
+						readCacheElement = &readCacheElementStruct{
+							readCacheKey: readCacheKey,
+							next:         nil,
+							prev:         nil,
+							cacheLine:    cacheLine,
+						}
+						flowControl.Lock()
+						flowControl.insertReadCacheElementWhileLocked(readCacheElement)
+						flowControl.Unlock()
+					}
+					if (cacheLineHitOffset + cacheLineHitLength) > uint64(len(cacheLine)) {
+						err = fmt.Errorf("Invalid range for LogSegment object - general case")
+						logger.ErrorWithError(err)
+						err = blunder.AddError(err, blunder.SegReadError)
+						return
+					}
+					buf = append(buf, cacheLine[cacheLineHitOffset:(cacheLineHitOffset+cacheLineHitLength)]...)
+					chunkOffset += cacheLineHitLength
+					remainingLength -= cacheLineHitLength
+				}
+			}
+		}
+	}
+
+	stats.IncrementOperationsAndBucketedBytes(stats.FileRead, uint64(len(buf)))
+
+	err = nil
+	return
+}
+
+func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []ReadPlanStep, readPlanBytes uint64) (bufList *refcntpool.RefCntBufList, err error) {
+
 	var (
 		cacheLine            []byte
 		cacheLineHitLength   uint64
@@ -71,6 +302,14 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 	readCacheLineSize = flowControl.readCacheLineSize
 	readCacheKey.volumeName = vS.volumeName
 
+	bufList = globals.refCntBufListPool.GetRefCntBufList()
+	defer func() {
+		if err != nil && bufList != nil {
+			bufList.Release()
+			bufList = nil
+		}
+	}()
+
 	if 1 == len(readPlan) {
 		// Possibly a trivial case (allowing for a potential zero-copy return)... three exist:
 		//   Case 1: The lone step calls for a zero-filled []byte
@@ -81,7 +320,12 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 
 		if 0 == step.LogSegmentNumber {
 			// Case 1: The lone step calls for a zero-filled []byte
-			buf = make([]byte, step.Length)
+			//
+			// Get a reference to the Buffer of Zeros and trim the
+			// slice boundary in the list to the requested size.
+			// bufList.Append() gets a Hold() on the buffer.
+			bufList.AppendRefCntBuf(globals.refCntBufOfZeros)
+			bufList.Bufs[0] = bufList.Bufs[0][0:step.Length]
 			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
 			err = nil
 			return
@@ -91,15 +335,19 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 
 		inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
 		if inFlightHit {
-			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
-			buf, err = inFlightLogSegment.Read(step.Offset, step.Length)
+			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment;
+			// discard the original bufList and overwrite it.
+			bufList.Release()
+			bufList = nil
+			bufList, err = inFlightLogSegment.Read(step.Offset, step.Length)
+			fileInode.Unlock()
+
 			if nil != err {
-				fileInode.Unlock()
 				logger.ErrorfWithError(err, "Reading back inFlightLogSegment failed - optimal case")
 				err = blunder.AddError(err, blunder.SegReadError)
 				return
 			}
-			fileInode.Unlock()
+
 			stats.IncrementOperations(&stats.FileWritebackHitOps)
 			stats.IncrementOperationsAndBucketedBytes(stats.FileRead, step.Length)
 			return
@@ -112,6 +360,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		cacheLineHitOffset = step.Offset % readCacheLineSize
 
 		if (cacheLineHitOffset + step.Length) <= readCacheLineSize {
+
 			// Case 3: The lone step is satisfied by landing completely within a single Read Cache Line
 			readCacheKey.logSegmentNumber = step.LogSegmentNumber
 			readCacheKey.cacheLineTag = step.Offset / readCacheLineSize
@@ -304,7 +553,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		return
 	}
 
-	err = fileInode.openLogSegment.ChunkedPutContext.SendChunk(buf)
+	err = fileInode.openLogSegment.ChunkedPutContext.SendChunkAsSlice(buf)
 	if nil != err {
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return

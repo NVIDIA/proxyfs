@@ -415,15 +415,15 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Read           A/C                                  : read back what was just written to normal file
-	read_buf, err := mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
+	read_buf, err := mS.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
 	if nil != err {
-		t.Fatalf("Read() returned error: %v", err)
+		t.Fatalf("ReadReturnSlice() returned error: %v", err)
 	}
 	if len(bufToWrite) != len(read_buf) {
-		t.Fatalf("Read() expected to read %v bytes but actually read %v bytes", len(bufToWrite), len(read_buf))
+		t.Fatalf("ReadReturnSlice() expected to read %v bytes but actually read %v bytes", len(bufToWrite), len(read_buf))
 	}
 	if 0 != bytes.Compare(bufToWrite, read_buf) {
-		t.Fatalf("Read() returned data different from what was written")
+		t.Fatalf("ReadReturnSlice() returned data different from what was written")
 	}
 
 	//    Getstat     #1 A/C                                  : check the current size of the normal file
@@ -1081,13 +1081,13 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Read
-	_, err = mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
 		staleFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
 	if nil == err {
-		t.Fatalf("Read() should not have returned success")
+		t.Fatalf("ReadReturnSlice() should not have returned success")
 	}
 	if blunder.IsNot(err, blunder.NotFoundError) {
-		t.Fatalf("Read() should have failed with NotFoundError, instead got: %v", err)
+		t.Fatalf("ReadReturnSlice() should have failed with NotFoundError, instead got: %v", err)
 	}
 
 	// Trunc

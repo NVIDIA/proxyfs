@@ -1232,7 +1232,7 @@ func (volume *volumeStruct) sendChunkToCheckpointChunkedPutContext(buf []byte) (
 	if nil == volume.checkpointChunkedPutContext {
 		err = fmt.Errorf("sendChunkToCheckpointChunkedPutContext() called while volume.checkpointChunkedPutContext == nil")
 	} else {
-		err = volume.checkpointChunkedPutContext.SendChunk(buf)
+		err = volume.checkpointChunkedPutContext.SendChunkAsSlice(buf)
 	}
 	return // err set as appropriate regardless of path
 }

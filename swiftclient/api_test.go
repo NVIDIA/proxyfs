@@ -505,17 +505,17 @@ func testOps(t *testing.T) {
 
 	// Send a chunk for object "FooBar" of []byte{0xAA, 0xBB}
 
-	err = chunkedPutContext.SendChunk([]byte{0xAA, 0xBB})
+	err = chunkedPutContext.SendChunkAsSlice([]byte{0xAA, 0xBB})
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.SendChunk([]byte{0xAA, 0xBB}) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice([]byte{0xAA, 0xBB}) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
 	// Send a chunk for object "FooBar" of []byte{0xCC, 0xDD, 0xEE}
 
-	err = chunkedPutContext.SendChunk([]byte{0xCC, 0xDD, 0xEE})
+	err = chunkedPutContext.SendChunkAsSlice([]byte{0xCC, 0xDD, 0xEE})
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.SendChunk([]byte{0xCC, 0xDD, 0xEE}) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice([]byte{0xCC, 0xDD, 0xEE}) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -532,13 +532,14 @@ func testOps(t *testing.T) {
 
 	// Read back chunked PUT data at offset 1 for length 3 expecting []byte{0xBB, 0xCC, 0xDD}
 
-	readBuf, err := chunkedPutContext.Read(uint64(1), uint64(3))
+	readBuf, err := chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3))
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.Read(uint64(1), uint64(3)) failed: %v", err)
+		tErr := fmt.Sprintf("chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3)) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
-		t.Fatalf("chunkedPutContext.Read(uint64(1), uint64(3)) didn't return expected []byte")
+		t.Logf("chunkedPutContext.ReadReturnSlice(1, 3) returned %v", readBuf)
+		t.Fatalf("chunkedPutContext.ReadReturnSlice(uint64(1), uint64(3)) didn't return expected []byte")
 	}
 
 	// Finish the chunked PUT for object "FooBar"
@@ -596,13 +597,13 @@ func testOps(t *testing.T) {
 
 	// Send a range GET of bytes at offset 1 for length 3 for object "FooBar" expecting []byte{0xBB, 0xCC, 0xDD}
 
-	getBuf, err := ObjectGet("TestAccount", "TestContainer", "FooBar", uint64(1), uint64(3))
+	getBuf, err := ObjectGetReturnSlice("TestAccount", "TestContainer", "FooBar", uint64(1), uint64(3))
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectGet(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) failed: %v", err)
+		tErr := fmt.Sprintf("ObjectGetReturnSlice(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, getBuf) {
-		tErr := fmt.Sprintf("ObjectGet(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) didn't return expected []byte")
+		tErr := fmt.Sprintf("ObjectGetReturnSlice(\"TestAccount\", \"TestContainer\", \"FooBar\", uint64(1), uint64(3)) didn't return expected []byte")
 		t.Fatalf(tErr)
 	}
 
@@ -901,7 +902,7 @@ func testChunkedPut(t *testing.T) {
 }
 
 // write objSize worth of random bytes to the object using nWrite calls to
-// SendChunk() and then read it back to verify.
+// SendChunkAsSlice() and then read it back to verify.
 //
 func testObjectWriteVerify(t *testing.T, accountName string, containerName string, objName string,
 	objSize int, nwrite int) (err error) {
@@ -933,12 +934,12 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 	wsz := len(writeBuf) / nwrite
 	for off := 0; off < len(writeBuf); off += wsz {
 		if off+wsz < objSize {
-			err = chunkedPutContext.SendChunk(writeBuf[off : off+wsz])
+			err = chunkedPutContext.SendChunkAsSlice(writeBuf[off : off+wsz])
 		} else {
-			err = chunkedPutContext.SendChunk(writeBuf[off:])
+			err = chunkedPutContext.SendChunkAsSlice(writeBuf[off:])
 		}
 		if nil != err {
-			tErr := fmt.Sprintf("chunkedPutContext.SendChunk(writeBuf[%d:%d]) failed: %v",
+			tErr := fmt.Sprintf("chunkedPutContext.SendChunkAsSlice(writeBuf[%d:%d]) failed: %v",
 				off, off+wsz, err)
 			return errors.New(tErr)
 		}

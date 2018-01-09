@@ -12,6 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -37,7 +38,7 @@ type readCacheElementStruct struct {
 	readCacheKey readCacheKeyStruct
 	next         *readCacheElementStruct // nil if MRU element of flowControlStruct.readCache
 	prev         *readCacheElementStruct // nil if LRU element of flowControlStruct.readCache
-	cacheLine    []byte
+	cacheLine    *refcntpool.RefCntBufList
 }
 
 type flowControlStruct struct {
@@ -87,6 +88,9 @@ type globalsStruct struct {
 	corruptionDetectedFalseBuf   []byte                        // holds serialized CorruptionDetected == false
 	versionV1Buf                 []byte                        // holds serialized Version            == V1
 	inodeRecDefaultPreambleBuf   []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	refCntBufPoolSet             *refcntpool.RefCntBufPoolSet  // reference counted buffers for Read requests
+	refCntBufListPool            *refcntpool.RefCntBufListPool // ref counted list of RefCntBuf for read & write
+	refCntBufOfZeros             *refcntpool.RefCntBuf         // a large buffer that's full of zeros
 }
 
 var globals globalsStruct
@@ -141,6 +145,25 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
+	}
+
+	// create a set reference counted memory buffer pools for read requests
+	// (the biggest pool size must be be big enough for the biggest request)
+	bufSizes := []int{1024, 2048, 4096, 8192,
+		64 * 1024, 256 * 1024, 1024 * 1024, 10 * 1240 * 1024}
+	globals.refCntBufPoolSet = &refcntpool.RefCntBufPoolSet{}
+	globals.refCntBufPoolSet.Init(bufSizes)
+
+	// pool of reference counted lists of reference counted buffers for read & write
+	globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
+
+	// create a reference counted buffer containing 10 Mbyte of zeros (some
+	// internet posts claim the compiler optimizes this method to zero the
+	// buffer)
+	globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(64 * 1024)
+	globals.refCntBufOfZeros.Buf = globals.refCntBufOfZeros.Buf[0:cap(globals.refCntBufOfZeros.Buf)]
+	for i := 0; i < len(globals.refCntBufOfZeros.Buf); i++ {
+		globals.refCntBufOfZeros.Buf[i] = 0
 	}
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")

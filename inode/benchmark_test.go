@@ -44,7 +44,7 @@ func readBenchmarkHelper(b *testing.B, byteSize uint64) {
 	testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		testVolumeHandle.Read(fileInodeNumber, 0, byteSize, nil)
+		testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, byteSize, nil)
 	}
 }
 
@@ -109,7 +109,7 @@ func readCacheBenchmarkHelper(b *testing.B, byteSize uint64) {
 	var zero uint64
 	zero = 0
 	readPlan, _ := testVolumeHandle.GetReadPlan(fileInodeNumber, &zero, &byteSize)
-	testVolumeHandle.Read(fileInodeNumber, 0, byteSize, nil)
+	testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, byteSize, nil)
 	// at this point, the read cache should be populated
 
 	// let's get the log segment number

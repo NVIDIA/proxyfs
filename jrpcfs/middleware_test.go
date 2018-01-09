@@ -1187,7 +1187,7 @@ func putFileInSwift(server *Server, virtPath string, objData []byte, objMetadata
 		return err
 	}
 
-	err = putContext.SendChunk(objData)
+	err = putContext.SendChunkAsSlice(objData)
 	if err != nil {
 		return err
 	}
@@ -1227,7 +1227,7 @@ func TestPutObjectSimple(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 
@@ -1250,7 +1250,7 @@ func TestPutObjectInAllNewSubdirs(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
@@ -1277,7 +1277,7 @@ func TestPutObjectInSomeNewSubdirs(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
@@ -1298,7 +1298,7 @@ func TestPutObjectOverwriteFile(t *testing.T) {
 
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData2, contents)
 }
@@ -1370,7 +1370,7 @@ func TestPutObjectSymlinkedDir(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+"d1/d2/d3/thing.dat")
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
@@ -1395,7 +1395,7 @@ func TestPutObjectOverwriteSymlink(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+"thing.dat")
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
@@ -1461,7 +1461,7 @@ func TestPutObjectCompound(t *testing.T) {
 		panic(err)
 	}
 
-	err = putContext.SendChunk([]byte("hello "))
+	err = putContext.SendChunkAsSlice([]byte("hello "))
 	if err != nil {
 		panic(err)
 	}
@@ -1492,7 +1492,7 @@ func TestPutObjectCompound(t *testing.T) {
 		panic(err)
 	}
 
-	err = putContext.SendChunk([]byte("world!"))
+	err = putContext.SendChunkAsSlice([]byte("world!"))
 	if err != nil {
 		panic(err)
 	}
@@ -1520,7 +1520,7 @@ func TestPutObjectCompound(t *testing.T) {
 	// The file should exist now, so we can verify its attributes
 	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
+	contents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("hello world!"), contents)
 	assert.Equal(uint64(theInode), putCompleteResp.InodeNumber)
@@ -1975,7 +1975,7 @@ func TestRpcCoalesce(t *testing.T) {
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, combinedInode, 0, 99999, nil)
+	combinedContents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, combinedInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow"), combinedContents)
 }
@@ -2015,7 +2015,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	combinedContents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 
@@ -2033,7 +2033,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	combinedContents, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	combinedContents, err = mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("green blue indigo violet "), combinedContents)
 
@@ -2076,7 +2076,7 @@ func TestRpcCoalesceOverwriteEmptyDir(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	combinedContents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
@@ -2170,7 +2170,7 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
+	combinedContents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
@@ -2222,7 +2222,7 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
+	combinedContents, err := mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
