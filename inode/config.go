@@ -157,7 +157,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	// pool of reference counted lists of reference counted buffers for read & write
 	globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
 
-	// create a reference counted buffer containing 10 Mbyte of zeros (some
+	// create a reference counted buffer containing 64 Kibyte of zeros (some
 	// internet posts claim the compiler optimizes this method to zero the
 	// buffer)
 	globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(64 * 1024)

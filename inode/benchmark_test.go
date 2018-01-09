@@ -120,13 +120,18 @@ func readCacheBenchmarkHelper(b *testing.B, byteSize uint64) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		buf := []byte{}
+		bufList := globals.refCntBufListPool.GetRefCntBufList()
+
 		readCacheKey := readCacheKeyStruct{volumeName: "TestVolume", logSegmentNumber: logSegmentNumber, cacheLineTag: 0}
 		volume.flowControl.Lock()
 		readCacheElement, _ := volume.flowControl.readCache[readCacheKey]
 		cacheLine := readCacheElement.cacheLine
-		buf = append(buf, cacheLine[:byteSize]...)
+
+		bufList.AppendRefCntBufList(cacheLine, 0, cacheLine.Length())
 		volume.flowControl.Unlock()
+
+		bufList.Release()
+		bufList = nil
 	}
 }
 

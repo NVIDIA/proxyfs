@@ -336,11 +336,19 @@ func testVerifyFileInodeContents(t *testing.T, testVolumeHandle VolumeHandle, fi
 			if byte(0x00) == inMemoryFileInodeContents[offset+length] {
 				readBuf, err := testVolumeHandle.ReadReturnSlice(fileInodeNumber, offset, length, nil)
 				if nil != err {
-					t.Fatalf("ReadReturnSlice(fileInodeNumber, offset, length) [case 1] failed: %v", err)
+					t.Fatalf("ReadReturnSlice(%d, %d, %d) [case 1] failed: %v",
+						fileInodeNumber, offset, length, err)
 				}
 
-				if bytes.Compare(readBuf, inMemoryFileInodeContents[offset:(offset+length)]) != 0 {
-					t.Fatalf("ReadReturnSlice(fileInodeNumber, offset, length) [case 1] returned unexpected []byte:\n  expected %v\n       got %v", testCondenseByteSlice(inMemoryFileInodeContents[offset:(offset+length)]), testCondenseByteSlice(readBuf))
+				if bytes.Compare(readBuf, inMemoryFileInodeContents[offset:offset+length]) != 0 {
+					t.Errorf("ReadReturnSlice(%d, %d, %d) [case 1]  mismatch len(readBuf) %d",
+						fileInodeNumber, offset, length, len(readBuf))
+					t.Logf("epxected: %s",
+						testCondenseByteSlice(
+							inMemoryFileInodeContents[offset:offset+length]))
+					t.Logf("got:      %s",
+						testCondenseByteSlice(readBuf))
+					t.Fatalf("fatal error; giving up")
 				}
 
 				offset += length

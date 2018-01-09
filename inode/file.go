@@ -162,37 +162,6 @@ func setSizeInMemory(fileInode *inMemoryInodeStruct, size uint64) (err error) {
 	return
 }
 
-func (vS *volumeStruct) ReadReturnSlice(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
-	var (
-		fileInode     *inMemoryInodeStruct
-		readPlan      []ReadPlanStep
-		readPlanBytes uint64
-	)
-
-	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
-	if nil != err {
-		logger.ErrorWithError(err)
-		return
-	}
-
-	readPlan, readPlanBytes, err = vS.getReadPlanHelper(fileInode, &offset, &length)
-	if nil != err {
-		logger.WarnWithError(err)
-		return
-	}
-
-	buf, err = vS.doReadPlanReturnSlice(fileInode, readPlan, readPlanBytes)
-	if nil != err {
-		logger.WarnWithError(err)
-		return
-	}
-
-	stats.IncrementOperationsAndBucketedBytes(stats.FileRead, uint64(len(buf)))
-
-	err = nil
-	return
-}
-
 func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (bufList *refcntpool.RefCntBufList, err error) {
 	var (
 		fileInode     *inMemoryInodeStruct
@@ -221,6 +190,25 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 	stats.IncrementOperationsAndBucketedBytes(stats.FileRead, uint64(bufList.Length()))
 
 	err = nil
+	return
+}
+
+func (vS *volumeStruct) ReadReturnSlice(fileInodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+	var (
+		bufList *refcntpool.RefCntBufList
+		byteCnt int
+	)
+
+	bufList, err = vS.Read(fileInodeNumber, offset, length, profiler)
+	if err != nil {
+		return
+	}
+
+	byteCnt = bufList.Length()
+	buf = make([]byte, byteCnt, byteCnt)
+	bufList.CopyOut(buf, 0)
+	bufList.Release()
+
 	return
 }
 
