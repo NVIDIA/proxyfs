@@ -91,12 +91,15 @@ func Up(confMap conf.ConfMap) (err error) {
 		pendingDeletes               *pendingDeletesStruct
 	)
 
-	// create pools for refCntBuf with the following sizes:
-	var bufSizes = []int{1024, 4 * 1024, 8 * 1024, 32 * 1024,
-		64 * 1024, 128 * 1024, 1024 * 1024, 10 * 1024 * 1024}
-	globals.refCntBufPoolSet.Init(bufSizes)
+	// only create these pools once
+	if globals.refCntBufListPool == nil {
+		globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
 
-	globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
+		// create pools for refCntBuf with the following sizes:
+		var bufSizes = []int{1024, 4 * 1024, 8 * 1024, 32 * 1024,
+			64 * 1024, 128 * 1024, 1024 * 1024, 10 * 1024 * 1024}
+		globals.refCntBufPoolSet.Init(bufSizes)
+	}
 
 	noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
