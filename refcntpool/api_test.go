@@ -407,7 +407,7 @@ func TestRefCntBufPoolSet(t *testing.T) {
 	rand.Seed(int64(syscall.Getpid()))
 	t.Logf("TestRefCntBufPoolSet(): using %d as random seed\n", syscall.Getpid())
 
-	for numPool := 1; numPool <= 23; numPool++ {
+	for numPool := 1; numPool <= 17; numPool++ {
 		poolSizes = make([]int, numPool, numPool)
 		poolSizes[0] = (rand.Int() % 32) + 1
 
@@ -421,9 +421,9 @@ func TestRefCntBufPoolSet(t *testing.T) {
 		bufPoolSet = &RefCntBufPoolSet{}
 		bufPoolSet.Init(poolSizes)
 
-		// allocate 5,000 random buffers
+		// allocate 100 random buffers
 		bufs := make(map[*RefCntBuf]int)
-		for i := 1; i < 5000; i++ {
+		for i := 1; i < 100; i++ {
 
 			reqSize = rand.Int() % (maxBufPoolSize + 1)
 			bufp = bufPoolSet.GetRefCntBuf(reqSize)
