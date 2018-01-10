@@ -771,7 +771,8 @@ func testCopyOut(t *testing.T) {
 			} else {
 				bufList2 := bufListPool.GetRefCntBufList()
 
-				copySliceToBuflist(t, bufList2, bufPoolSet, 4, 2*padBytes,
+				randBufCnt := rand.Intn(4) + 1
+				copySliceToBuflist(t, bufList2, bufPoolSet, randBufCnt, 2*padBytes,
 					testSlice[copyByteCnt:copyByteCnt+size+2*padBytes])
 
 				byteCnt := bufList.AppendRefCntBufList(bufList2, padBytes, size)
