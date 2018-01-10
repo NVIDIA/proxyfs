@@ -59,7 +59,6 @@ if [ -f /usr/bin/systemctl ]; then
     # NOTE: We purposely stop Swift with "swift-init all stop" and not
     # "swift-init main stop".   See start_and_stop_pfs for more details.
     sudo /usr/bin/swift-init all stop
-    # sudo /usr/bin/systemctl stop swift
     sudo /usr/bin/systemctl stop memcached
 else
     # Ubuntu (not tested!)
@@ -76,6 +75,5 @@ else
     # NOTE: We purposely stop Swift with "swift-init all stop" and not
     # "swift-init main stop".   See start_and_stop_pfs for more details.
     sudo /usr/bin/swift-init all stop
-    # sudo /usr/sbin/service swift stop
     sudo /usr/sbin/service memcached stop
 fi
