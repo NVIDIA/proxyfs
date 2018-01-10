@@ -599,7 +599,7 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 	return nil
 }
 
-func (vS *volumeStruct) WriteAsSlice(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
+func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, bufList *refcntpool.RefCntBufList, profiler *utils.Profiler) (err error) {
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -608,13 +608,13 @@ func (vS *volumeStruct) WriteAsSlice(fileInodeNumber InodeNumber, offset uint64,
 
 	fileInode.dirty = true
 
-	logSegmentNumber, logSegmentOffset, err := vS.doSendChunk(fileInode, buf)
+	logSegmentNumber, logSegmentOffset, err := vS.doSendChunk(fileInode, bufList)
 	if nil != err {
 		logger.ErrorWithError(err)
 		return
 	}
 
-	length := uint64(len(buf))
+	length := uint64(bufList.Length())
 
 	err = recordWrite(fileInode, offset, length, logSegmentNumber, logSegmentOffset)
 	if nil != err {
@@ -640,6 +640,19 @@ func (vS *volumeStruct) WriteAsSlice(fileInodeNumber InodeNumber, offset uint64,
 	fileInode.ModificationTime = updateTime
 	fileInode.NumWrites++
 
+	return
+}
+
+func (vS *volumeStruct) WriteAsSlice(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
+
+	bufList := globals.refCntBufListPool.GetRefCntBufList()
+	refCntBuf := globals.refCntBufPoolSet.GetRefCntBuf(len(buf))
+
+	refCntBuf.Buf = buf
+	bufList.AppendRefCntBuf(refCntBuf)
+	err = vS.Write(fileInodeNumber, offset, bufList, profiler)
+
+	bufList.Release()
 	return
 }
 

@@ -340,7 +340,7 @@ func (vS *volumeStruct) doReadPlanReturnSlice(fileInode *inMemoryInodeStruct, re
 	return
 }
 
-func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) (logSegmentNumber uint64, logSegmentOffset uint64, err error) {
+func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, bufList *refcntpool.RefCntBufList) (logSegmentNumber uint64, logSegmentOffset uint64, err error) {
 	var (
 		openLogSegmentContainerName string
 		openLogSegmentObjectNumber  uint64
@@ -387,13 +387,13 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		return
 	}
 
-	err = fileInode.openLogSegment.ChunkedPutContext.SendChunkAsSlice(buf)
+	err = fileInode.openLogSegment.ChunkedPutContext.SendChunk(bufList)
 	if nil != err {
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return
 	}
 
-	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
+	if (logSegmentOffset + uint64(bufList.Length())) >= fileInode.volume.flowControl.maxFlushSize {
 		fileInode.Add(1)
 		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
