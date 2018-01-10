@@ -13,27 +13,27 @@ func writeBenchmarkHelper(b *testing.B, byteSize uint64) {
 	buffer := make([]byte, 4096)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
+		testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, buffer, nil)
 	}
 }
 
-func Benchmark4KiBWrite(b *testing.B) {
+func Benchmark4KiBWriteAsSlice(b *testing.B) {
 	writeBenchmarkHelper(b, 4*1024)
 }
 
-func Benchmark8KiBWrite(b *testing.B) {
+func Benchmark8KiBWriteAsSlice(b *testing.B) {
 	writeBenchmarkHelper(b, 8*1024)
 }
 
-func Benchmark16KiBWrite(b *testing.B) {
+func Benchmark16KiBWriteAsSlice(b *testing.B) {
 	writeBenchmarkHelper(b, 16*1024)
 }
 
-func Benchmark32KiBWrite(b *testing.B) {
+func Benchmark32KiBWriteAsSlice(b *testing.B) {
 	writeBenchmarkHelper(b, 32*1024)
 }
 
-func Benchmark64KiBWrite(b *testing.B) {
+func Benchmark64KiBWriteAsSlice(b *testing.B) {
 	writeBenchmarkHelper(b, 64*1024)
 }
 
@@ -41,7 +41,7 @@ func readBenchmarkHelper(b *testing.B, byteSize uint64) {
 	testVolumeHandle, _ := FetchVolumeHandle("TestVolume")
 	fileInodeNumber, _ := testVolumeHandle.CreateFile(PosixModePerm, 0, 0)
 	buffer := make([]byte, byteSize)
-	testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
+	testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, buffer, nil)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, byteSize, nil)
@@ -72,7 +72,7 @@ func getReadPlanBenchmarkHelper(b *testing.B, byteSize uint64) {
 	testVolumeHandle, _ := FetchVolumeHandle("TestVolume")
 	fileInodeNumber, _ := testVolumeHandle.CreateFile(PosixModePerm, 0, 0)
 	buffer := make([]byte, byteSize)
-	testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
+	testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, buffer, nil)
 	var zero uint64
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -104,7 +104,7 @@ func readCacheBenchmarkHelper(b *testing.B, byteSize uint64) {
 	testVolumeHandle, _ := FetchVolumeHandle("TestVolume")
 	fileInodeNumber, _ := testVolumeHandle.CreateFile(PosixModePerm, 0, 0)
 	buffer := make([]byte, byteSize)
-	testVolumeHandle.Write(fileInodeNumber, 0, buffer, nil)
+	testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, buffer, nil)
 	testVolumeHandle.Flush(fileInodeNumber, false)
 	var zero uint64
 	zero = 0

@@ -150,7 +150,7 @@ func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.
 }
 
 func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuselib.WriteResponse) error {
-	size, err := f.mountHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), req.Data, nil)
+	size, err := f.mountHandle.WriteAsSlice(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), req.Data, nil)
 	if nil == err {
 		resp.Size = int(size)
 	} else {

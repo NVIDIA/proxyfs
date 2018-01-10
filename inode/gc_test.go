@@ -32,7 +32,7 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 
 	// repeatedly write and flush to create some log segments
 	for i := 0; i < 5; i++ {
-		err := testVolumeHandle.Write(ino, uint64(i*16), ourBytes, nil)
+		err := testVolumeHandle.WriteAsSlice(ino, uint64(i*16), ourBytes, nil)
 		if err != nil {
 			t.Fatalf("failed to write: %v", err)
 		}
@@ -60,7 +60,7 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 	}
 
 	// overwrite it
-	err = testVolumeHandle.Write(ino, 0, make([]byte, 16*5), nil)
+	err = testVolumeHandle.WriteAsSlice(ino, 0, make([]byte, 16*5), nil)
 	if err != nil {
 		t.Fatalf("expected to be able to write to inode #%v", ino)
 	}

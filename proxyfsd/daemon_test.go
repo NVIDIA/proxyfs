@@ -261,7 +261,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Create() failed: %v", err)
 	}
 
-	bytesWritten, err = mountHandle.Write(
+	bytesWritten, err = mountHandle.WriteAsSlice(
 		inode.InodeRootUserID,
 		inode.InodeRootGroupID,
 		nil,
@@ -271,10 +271,10 @@ func TestDaemon(t *testing.T) {
 		nil,
 	)
 	if nil != err {
-		t.Fatalf("fs.Write() failed: %v", err)
+		t.Fatalf("fs.WriteAsSlice() failed: %v", err)
 	}
 	if 4 != bytesWritten {
-		t.Fatalf("fs.Write() returned unexpected bytesWritten")
+		t.Fatalf("fs.WriteAsSlice() returned unexpected bytesWritten")
 	}
 
 	// Verify written data before restart

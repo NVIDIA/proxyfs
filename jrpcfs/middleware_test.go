@@ -295,7 +295,7 @@ func makeSomeFilesAndSuch() {
 	_ = fsMkDir(mountHandle, cInode, "empty-directory")
 
 	readmeInode := fsCreateFile(mountHandle, cInode, "README")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
 	err = mountHandle.MiddlewarePost("", "c/README", []byte("metadata for c/README"), []byte{})
 	if err != nil {
 		panic(err)
@@ -314,7 +314,7 @@ func makeSomeFilesAndSuch() {
 	for fileName, fileContents := range files {
 		fileInode := fsCreateFile(mountHandle, animalsInode, fileName)
 
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
@@ -322,7 +322,7 @@ func makeSomeFilesAndSuch() {
 
 	plantsInode := fsMkDir(mountHandle, cInode, "plants")
 	ino := fsCreateFile(mountHandle, cInode, "plants-README")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, []byte("nah"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, ino, 0, []byte("nah"), nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to write file plants-README: %v", err))
 	}
@@ -338,7 +338,7 @@ func makeSomeFilesAndSuch() {
 	for fileName, fileContents := range files {
 		fileInode := fsCreateFile(mountHandle, plantsInode, fileName)
 
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
@@ -971,7 +971,7 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
 
 	tlInode := fsCreateFile(mountHandle, containerInode, "top-level.txt")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, tlInode, 0, []byte("conusance-callboy"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, tlInode, 0, []byte("conusance-callboy"), nil)
 
 	d1Inode := fsMkDir(mountHandle, containerInode, "d1")
 	files := map[string]string{
@@ -981,7 +981,7 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	}
 	for fileName, fileContents := range files {
 		fileInode := fsCreateFile(mountHandle, d1Inode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
@@ -1336,7 +1336,7 @@ func TestPutObjectOverwriteNonEmptyDirectory(t *testing.T) {
 	dirInodeNumber := fsMkDir(mountHandle, containerInode, "dir-with-stuff-in-it")
 
 	fileInodeNumber := fsCreateFile(mountHandle, dirInodeNumber, "stuff.txt")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, 0, []byte("churches, lead, small rocks, apples"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, 0, []byte("churches, lead, small rocks, apples"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1416,7 +1416,7 @@ func TestPutObjectFileInDirPath(t *testing.T) {
 	d2InodeNumber := fsMkDir(mountHandle, d1InodeNumber, "d2")
 
 	fileInodeNumber := fsCreateFile(mountHandle, d2InodeNumber, "actually-a-file")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, 0, []byte("not a directory"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, 0, []byte("not a directory"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1574,7 +1574,7 @@ func TestRpcGetObjectMetadata(t *testing.T) {
 	cInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
 	readmeInode := fsCreateFile(mountHandle, cInode, "README")
 
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("unsurpassably-Rigelian"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, readmeInode, 0, []byte("unsurpassably-Rigelian"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1639,7 +1639,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	c4Inode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c4")
 
 	fileInode := fsCreateFile(mountHandle, c1Inode, "kitten.png")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("if this were a real kitten, it would be cute"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("if this were a real kitten, it would be cute"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1655,7 +1655,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	fsCreateSymlink(mountHandle, c1Inode, "symlink-9", "symlink-8")
 
 	fileInode = fsCreateFile(mountHandle, c2Inode, "10-bytes")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("abcdefghij"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("abcdefghij"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1665,7 +1665,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	fsCreateSymlink(mountHandle, c2Inode, "symlink-20-bytes-indirect", "symlink-20-bytes")
 
 	fileInode = fsCreateFile(mountHandle, c3Inode, "20-bytes")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("abcdefghijklmnopqrst"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte("abcdefghijklmnopqrst"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1933,7 +1933,7 @@ func TestRpcCoalesce(t *testing.T) {
 
 	fileA1Path := "/" + containerAName + "/dir1/dir2/a1"
 	fileA1Inode := fsCreateFile(mountHandle, containerADir1Dir2Inode, "a1")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileA1Inode, 0, []byte("red "), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileA1Inode, 0, []byte("red "), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1942,14 +1942,14 @@ func TestRpcCoalesce(t *testing.T) {
 	// means we don't have to worry about element paths pointing to different accounts.
 	fileA2Path := "/" + containerAName + "/dir1/dir2/a2"
 	fileA2Inode := fsCreateFile(mountHandle, containerADir1Dir2Inode, "a2")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileA2Inode, 0, []byte("orange "), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileA2Inode, 0, []byte("orange "), nil)
 	if err != nil {
 		panic(err)
 	}
 
 	fileBPath := "/" + containerBName + "/b"
 	fileBInode := fsCreateFile(mountHandle, containerBInode, "b")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileBInode, 0, []byte("yellow"), nil)
+	_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileBInode, 0, []byte("yellow"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1997,7 +1997,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2056,7 +2056,7 @@ func TestRpcCoalesceOverwriteEmptyDir(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2098,7 +2098,7 @@ func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2147,7 +2147,7 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2199,7 +2199,7 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2250,7 +2250,7 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2292,7 +2292,7 @@ func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	filesToWrite := []string{"red", "orange", "yellow"}
 	for _, fileName := range filesToWrite {
 		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
+		_, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}

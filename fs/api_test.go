@@ -400,12 +400,12 @@ func TestAllAPIPositiveCases(t *testing.T) {
 
 	//    Write          A/C                                  : write something to normal file
 	bufToWrite := []byte{0x41, 0x42, 0x43}
-	write_rspSize, err := mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, bufToWrite, nil)
+	write_rspSize, err := mS.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, bufToWrite, nil)
 	if nil != err {
-		t.Fatalf("Write() returned error: %v", err)
+		t.Fatalf("WriteAsSlice() returned error: %v", err)
 	}
 	if uint64(len(bufToWrite)) != write_rspSize {
-		t.Fatalf("Write() expected to write %v bytes but actually wrote %v bytes", len(bufToWrite), write_rspSize)
+		t.Fatalf("WriteAsSlice() expected to write %v bytes but actually wrote %v bytes", len(bufToWrite), write_rspSize)
 	}
 
 	// don't forget to flush
@@ -1071,13 +1071,13 @@ func TestStaleInodes(t *testing.T) {
 
 	// Write
 	bufToWrite := []byte{0x41, 0x42, 0x43}
-	_, err = mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
 		staleFileInodeNumber, 0, bufToWrite, nil)
 	if nil == err {
-		t.Fatalf("Write() should not have returned success")
+		t.Fatalf("WriteAsSlice() should not have returned success")
 	}
 	if blunder.IsNot(err, blunder.NotFoundError) {
-		t.Fatalf("Write() should have failed with NotFoundError, instead got: %v", err)
+		t.Fatalf("WriteAsSlice() should have failed with NotFoundError, instead got: %v", err)
 	}
 
 	// Read

@@ -2936,7 +2936,7 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 	return
 }
 
-func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
+func (mS *mountStruct) WriteAsSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
 
 	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
 		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
@@ -2961,7 +2961,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	}
 
 	profiler.AddEventNow("before inode.Write()")
-	err = mS.volStruct.VolumeHandle.Write(inodeNumber, offset, buf, profiler)
+	err = mS.volStruct.VolumeHandle.WriteAsSlice(inodeNumber, offset, buf, profiler)
 	profiler.AddEventNow("after inode.Write()")
 	// write to Swift presumably succeeds or fails as a whole
 	if err != nil {

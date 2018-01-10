@@ -1109,17 +1109,17 @@ func TestAPI(t *testing.T) {
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataModTimeField, "GetMetadata() after SetModificationTime()")
 
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Write()")
-	err = testVolumeHandle.Write(fileInodeNumber, 0, []byte{0x00, 0x01, 0x02, 0x03, 0x04}, nil)
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before WriteAsSlice()")
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, []byte{0x00, 0x01, 0x02, 0x03, 0x04}, nil)
 	if nil != err {
-		t.Fatalf("Write(fileInodeNumber, 0, []byte{0x00, 0x01, 0x02, 0x03, 0x04}) failed: %v", err)
+		t.Fatalf("WriteAsSlice(fileInodeNumber, 0, []byte{0x00, 0x01, 0x02, 0x03, 0x04}) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	testMetadata.NumWrites = 1
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Write()")
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after WriteAsSlice()")
 
 	err = testVolumeHandle.Flush(fileInodeNumber, false)
 	if err != nil {
@@ -2221,9 +2221,9 @@ func TestAPI(t *testing.T) {
 
 	time.Sleep(positiveDurationToDelayOrSkew)
 
-	err = testVolumeHandle.Write(fileInode, uint64(0), []byte{0x00}, nil)
+	err = testVolumeHandle.WriteAsSlice(fileInode, uint64(0), []byte{0x00}, nil)
 	if nil != err {
-		t.Fatalf("Write(fileInode, uint64(0), []byte{0x00}) failed: %v", err)
+		t.Fatalf("WriteAsSlice(fileInode, uint64(0), []byte{0x00}) failed: %v", err)
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)

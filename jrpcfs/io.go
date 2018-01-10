@@ -393,14 +393,14 @@ func ioHandle(conn net.Conn) {
 					ctx.req.mountID, ctx.req.inodeID, ctx.req.offset, len(ctx.data.Buf))
 			}
 
-			profiler.AddEventNow("before fs.Write()")
+			profiler.AddEventNow("before fs.WriteAsSlice()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.resp.ioSize, err = mountHandle.Write(
+				ctx.resp.ioSize, err = mountHandle.WriteAsSlice(
 					inode.InodeRootUserID, inode.InodeRootGroupID, nil,
 					inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data.Buf, profiler)
 			}
-			profiler.AddEventNow("after fs.Write()")
+			profiler.AddEventNow("after fs.WriteAsSlice()")
 
 			stats.IncrementOperationsAndBucketedBytes(stats.JrpcfsIoWrite, ctx.resp.ioSize)
 

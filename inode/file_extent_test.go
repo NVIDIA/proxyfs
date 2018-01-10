@@ -89,9 +89,9 @@ func testPopulateFileInode(t *testing.T, testVolumeHandle VolumeHandle, fileInod
 			curExtentOverwrites++
 		}
 
-		err := testVolumeHandle.Write(fileInodeNumber, offset, inMemoryFileInodeContents[offset:(offset+length)], nil)
+		err := testVolumeHandle.WriteAsSlice(fileInodeNumber, offset, inMemoryFileInodeContents[offset:(offset+length)], nil)
 		if nil != err {
-			t.Fatalf("Write(fileInodeNumber, offset, inMemoryFileInodeContents[offset:(offset+length)]) failed: %v", err)
+			t.Fatalf("WriteAsSlice(fileInodeNumber, offset, inMemoryFileInodeContents[offset:(offset+length)]) failed: %v", err)
 		}
 
 		if (offset + length) > curFileSize {
@@ -522,12 +522,12 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 
 	extents := fileInode.payload.(sortedmap.BPlusTree)
 
-	err = testVolumeHandle.Write(fileInodeNumber, 0, make([]byte, 20), nil)
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, make([]byte, 20), nil)
 	if nil != err {
-		t.Fatalf("Write(fileInodeNumber, 0, make([]byte, 20)) failed: %v", err)
+		t.Fatalf("WriteAsSlice(fileInodeNumber, 0, make([]byte, 20)) failed: %v", err)
 	}
 
-	err = testVolumeHandle.Write(fileInodeNumber, 5, []byte("aaaa"), nil) // 4 bytes
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 5, []byte("aaaa"), nil) // 4 bytes
 	if nil != err {
 		t.Fatalf("Write failed: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 		}
 	}
 
-	err = testVolumeHandle.Write(fileInodeNumber, 9, []byte("bbb"), nil)
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 9, []byte("bbb"), nil)
 	if nil != err {
 		t.Fatalf("Overwrite failed: %v", err)
 	}
@@ -572,24 +572,24 @@ func TestOverwriteIncludesBeginningOfLastExtent(t *testing.T) {
 		t.Fatalf("CreateFile() failed: %v", err)
 	}
 
-	err = testVolumeHandle.Write(fileInodeNumber, 0, make([]byte, 20), nil)
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, make([]byte, 20), nil)
 	if nil != err {
-		t.Fatalf("Write(fileInodeNumber, 0, make([]byte, 20)) failed: %v", err)
+		t.Fatalf("WriteAsSlice(fileInodeNumber, 0, make([]byte, 20)) failed: %v", err)
 	}
 
-	err = testVolumeHandle.Write(fileInodeNumber, 5, []byte("aaaa"), nil) // 4 bytes
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 5, []byte("aaaa"), nil) // 4 bytes
 	if nil != err {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	err = testVolumeHandle.Write(fileInodeNumber, 3, []byte("bbbbbbbbbb"), nil)
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 3, []byte("bbbbbbbbbb"), nil)
 	if nil != err {
 		t.Fatalf("Write failed: %v", err)
 	}
 
 }
 
-func TestReadYourWrite(t *testing.T) {
+func TestReadYourWriteAsSlice(t *testing.T) {
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
@@ -601,9 +601,9 @@ func TestReadYourWrite(t *testing.T) {
 	}
 
 	ourBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8}
-	err = testVolumeHandle.Write(fileInodeNumber, 0, ourBytes, nil)
+	err = testVolumeHandle.WriteAsSlice(fileInodeNumber, 0, ourBytes, nil)
 	if nil != err {
-		t.Fatalf("Write(fileInodeNumber, 0, []byte{1, 2, 3, 4, 5, 6, 7, 8}) failed: %v", err)
+		t.Fatalf("WriteAsSlice(fileInodeNumber, 0, []byte{1, 2, 3, 4, 5, 6, 7, 8}) failed: %v", err)
 	}
 	readBuf, err := testVolumeHandle.ReadReturnSlice(fileInodeNumber, 0, 8, nil)
 	if err != nil {

@@ -49,7 +49,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file1aInodeNumber, 0, []byte("abcd"), nil)
+	err = vh.WriteAsSlice(file1aInodeNumber, 0, []byte("abcd"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -62,7 +62,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file1bInodeNumber, 0, []byte("efgh"), nil)
+	err = vh.WriteAsSlice(file1bInodeNumber, 0, []byte("efgh"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -75,7 +75,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2aInodeNumber, 0, []byte("ijkl"), nil)
+	err = vh.WriteAsSlice(file2aInodeNumber, 0, []byte("ijkl"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -88,7 +88,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2bInodeNumber, 0, []byte("mnop"), nil)
+	err = vh.WriteAsSlice(file2bInodeNumber, 0, []byte("mnop"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -102,7 +102,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2cInodeNumber, 2, []byte("st"), nil)
+	err = vh.WriteAsSlice(file2cInodeNumber, 2, []byte("st"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -191,7 +191,7 @@ func TestCoalesceDir(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(fileInodeNumber, 0, []byte("wroke-Charca"), nil)
+	err = vh.WriteAsSlice(fileInodeNumber, 0, []byte("wroke-Charca"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -238,7 +238,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file1InodeNumber, 0, []byte("unsummerly-helictite"), nil)
+	err = vh.WriteAsSlice(file1InodeNumber, 0, []byte("unsummerly-helictite"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -255,7 +255,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2InodeNumber, 0, []byte("loam-grantor"), nil)
+	err = vh.WriteAsSlice(file2InodeNumber, 0, []byte("loam-grantor"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -299,7 +299,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file1InodeNumber, 0, []byte("maeandrinoid-anicular"), nil)
+	err = vh.WriteAsSlice(file1InodeNumber, 0, []byte("maeandrinoid-anicular"), nil)
 	if !assert.Nil(err) {
 		return
 	}
@@ -312,7 +312,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2InodeNumber, 0, []byte("redive-caulopteris"), nil)
+	err = vh.WriteAsSlice(file2InodeNumber, 0, []byte("redive-caulopteris"), nil)
 	if !assert.Nil(err) {
 		return
 	}

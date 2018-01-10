@@ -1942,7 +1942,7 @@ func (s *Server) RpcWrite(in *WriteRequest, reply *WriteReply) (err error) {
 
 	mountHandle, err := lookupMountHandle(in.MountID)
 	if nil == err {
-		size, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Buf, nil)
+		size, err = mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Buf, nil)
 		reply.Size = uint64(size)
 	}
 

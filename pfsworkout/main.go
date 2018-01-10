@@ -978,26 +978,26 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 				// to make sure we do not go past end of file.
 				rwOffset = rand.Int63n(int64(rwSizeTotal - rwSizeRequested))
 			}
-			rwSizeDelivered, err := mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, uint64(rwOffset), bufWritten, nil)
+			rwSizeDelivered, err := mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, uint64(rwOffset), bufWritten, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("fs.WriteAsSlice(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != rwSizeDelivered {
-				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("fs.WriteAsSlice(,,,, fileInodeNumber, rwOffset, bufWritten) failed to transfer all requested bytes\n")
 				return
 			}
 		}
 	} else {
 
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			rwSizeDelivered, err := mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, bufWritten, nil)
+			rwSizeDelivered, err := mountHandle.WriteAsSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fileInodeNumber, rwOffset, bufWritten, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("fs.WriteAsSlice(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
 			}
 			if rwSizeRequested != rwSizeDelivered {
-				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed to transfer all requested bytes\n")
+				stepErrChan <- fmt.Errorf("fs.WriteAsSlice(,,,, fileInodeNumber, rwOffset, bufWritten) failed to transfer all requested bytes\n")
 				return
 			}
 		}
@@ -1142,17 +1142,17 @@ func inodeWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile b
 				// to make sure we do not go past end of file.
 				rwOffset = rand.Int63n(int64(rwSizeTotal - rwSizeRequested))
 			}
-			err = volumeHandle.Write(fileInodeNumber, uint64(rwOffset), bufWritten, nil)
+			err = volumeHandle.WriteAsSlice(fileInodeNumber, uint64(rwOffset), bufWritten, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("volumeHandle.Write(fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("volumeHandle.WriteAsSlice(fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
 			}
 		}
 	} else {
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			err = volumeHandle.Write(fileInodeNumber, rwOffset, bufWritten, nil)
+			err = volumeHandle.WriteAsSlice(fileInodeNumber, rwOffset, bufWritten, nil)
 			if nil != err {
-				stepErrChan <- fmt.Errorf("volumeHandle.Write(fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
+				stepErrChan <- fmt.Errorf("volumeHandle.WriteAsSlice(fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
 			}
 		}

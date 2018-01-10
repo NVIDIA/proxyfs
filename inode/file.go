@@ -599,7 +599,7 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 	return nil
 }
 
-func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
+func (vS *volumeStruct) WriteAsSlice(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {
 		logger.ErrorWithError(err)
