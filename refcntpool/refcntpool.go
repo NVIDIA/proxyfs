@@ -105,6 +105,12 @@ func (poolp *RefCntBufPool) Get() (item interface{}) {
 }
 
 func (poolp *RefCntBufPool) put(item interface{}) {
+
+	// clear bufP.Buf just in case it points to a different buffer (to speed
+	// up garbage collection)
+	bufp := item.(*RefCntBuf)
+	bufp.Buf = nil
+
 	poolp.bufPool.Put(item)
 	return
 }
