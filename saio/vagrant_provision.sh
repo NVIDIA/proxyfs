@@ -11,7 +11,7 @@ yum -y install wget git nfs-utils vim
 
 # Install Golang
 
-yum -y install gcc
+yum -y --disableexcludes=all install gcc
 cd /tmp
 wget -q https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
 tar -C /usr/local -xf go1.8.3.linux-amd64.tar.gz
@@ -53,8 +53,7 @@ echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc \
-               gcc-c++ \
+yum -y install gcc-c++ \
                python-devel \
                gnutls-devel \
                libacl-devel \
