@@ -147,23 +147,26 @@ func Up(confMap conf.ConfMap) (err error) {
 		peerPrivateIPAddrMap[peerName] = peerPrivateIPAddr
 	}
 
-	// create a set reference counted memory buffer pools for read requests
-	// (the biggest pool size must be be big enough for the biggest request)
-	bufSizes := []int{1024, 2048, 4096, 8192,
-		64 * 1024, 256 * 1024, 1024 * 1024, 10 * 1240 * 1024}
-	globals.refCntBufPoolSet = &refcntpool.RefCntBufPoolSet{}
-	globals.refCntBufPoolSet.Init(bufSizes)
+	if globals.refCntBufListPool == nil {
 
-	// pool of reference counted lists of reference counted buffers for read & write
-	globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
+		// pool of reference counted lists of reference counted buffers for read & write
+		globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
 
-	// create a reference counted buffer containing 64 Kibyte of zeros (some
-	// internet posts claim the compiler optimizes this method to zero the
-	// buffer)
-	globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(64 * 1024)
-	globals.refCntBufOfZeros.Buf = globals.refCntBufOfZeros.Buf[0:cap(globals.refCntBufOfZeros.Buf)]
-	for i := 0; i < len(globals.refCntBufOfZeros.Buf); i++ {
-		globals.refCntBufOfZeros.Buf[i] = 0
+		// create a set reference counted memory buffer pools for read requests
+		// (the biggest pool size must be be big enough for the biggest request)
+		bufSizes := []int{1024, 2048, 4096, 8192,
+			64 * 1024, 256 * 1024, 1024 * 1024, 10 * 1240 * 1024}
+		globals.refCntBufPoolSet = &refcntpool.RefCntBufPoolSet{}
+		globals.refCntBufPoolSet.Init(bufSizes)
+
+		// create a reference counted buffer containing 64 Kibyte of zeros (some
+		// internet posts claim the compiler optimizes this method to zero the
+		// buffer)
+		globals.refCntBufOfZeros = globals.refCntBufPoolSet.GetRefCntBuf(64 * 1024)
+		globals.refCntBufOfZeros.Buf = globals.refCntBufOfZeros.Buf[0:cap(globals.refCntBufOfZeros.Buf)]
+		for i := 0; i < len(globals.refCntBufOfZeros.Buf); i++ {
+			globals.refCntBufOfZeros.Buf[i] = 0
+		}
 	}
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
