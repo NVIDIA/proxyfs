@@ -26,6 +26,7 @@ type ChunkedPutContext interface {
 	Close() (err error)                                                                 // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
 	ReadReturnSlice(offset uint64, length uint64) (buf []byte, err error)               // Read back bytes previously sent via SendChunk() or SendChunkAsSlice()
 	Read(offset uint64, length uint64) (refCntBuf *refcntpool.RefCntBufList, err error) // Read back bytes previously sent via SendChunk()
+	SendChunk(bufList *refcntpool.RefCntBufList) (err error)                            // Send the supplied "chunk" via this ChunkedPutContext
 	SendChunkAsSlice(buf []byte) (err error)                                            // Send the supplied "chunk" via this ChunkedPutContext
 }
 

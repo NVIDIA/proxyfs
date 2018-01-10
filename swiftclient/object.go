@@ -1131,7 +1131,7 @@ var (
 // called (current code does not call Close() after SendChunk() returns an
 // error, SendChunk() also cleans up the TCP connection.
 //
-func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpool.RefCntBuf) (err error) {
+func (chunkedPutContext *chunkedPutContextStruct) SendChunk(bufList *refcntpool.RefCntBufList) (err error) {
 
 	chunkedPutContext.Lock()
 	sendChunkCnt += 1
@@ -1149,7 +1149,9 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpoo
 		return
 	}
 
-	if 0 == len(refCntBuf.Buf) {
+	var bufListLength = bufList.Length()
+
+	if 0 == bufListLength {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called with zero-length buf")
 		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
@@ -1161,12 +1163,12 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpoo
 		return
 	}
 
-	// Add refCntBuf to the list buffers for this chunked put connection in
-	// case we need to resend or somebody wants to read it.  Add() gets an
-	// Hold() on the buffer.
-	chunkedPutContext.refCntBufList.AppendRefCntBuf(refCntBuf)
+	// Add this RefCntBufList to the list buffers for this chunked put
+	// connection in case we need to resend or somebody wants to read it.
+	// AppendRefCntBufList() gets a Hold() on each buffer.
+	chunkedPutContext.refCntBufList.AppendRefCntBufList(bufList, 0, bufListLength)
 
-	chunkedPutContext.bytesPut += uint64(len(refCntBuf.Buf))
+	chunkedPutContext.bytesPut += uint64(bufListLength)
 
 	// The prior errors are logical/programmatic errors that cannot be fixed
 	// by a retry so let them return with the error and let the caller abort
@@ -1189,8 +1191,21 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpoo
 	if globals.chaosSendChunkFailureRate > 0 &&
 		sendChunkCnt%globals.chaosSendChunkFailureRate == 0 {
 		err = fmt.Errorf("writeHTTPPutChunk() simulated error")
+
 	} else {
-		err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, refCntBuf.Buf)
+		// let BufListToSlices() do the hard work
+		var (
+			bufSlices [][]byte // slice of buffers
+			slice     []byte   // current slice to copy
+		)
+		bufSlices, _, _ = bufList.BufListToSlices(0, bufListLength)
+
+		for _, slice = range bufSlices {
+			err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, slice)
+			if err != nil {
+				break
+			}
+		}
 	}
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
@@ -1203,7 +1218,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpoo
 
 	chunkedPutContext.Unlock()
 
-	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxSendChunk, uint64(len(refCntBuf.Buf)))
+	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxSendChunk, uint64(bufListLength))
 
 	return
 }
@@ -1213,7 +1228,8 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(refCntBuf *refcntpoo
 //
 func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (err error) {
 
-	// get a buffer large enough to hold the reqeust
+	// get a buffer list and buffer large enough to hold the reqeust
+	bufList := globals.refCntBufListPool.GetRefCntBufList()
 	refCntBuf := globals.refCntBufPoolSet.GetRefCntBuf(len(buf))
 
 	// technically, we should copy the contents of buf into the refCntBuf
@@ -1221,10 +1237,11 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunkAsSlice(buf []byte) (
 	// its original value when the buffer is next used and then the memory
 	// for buf will be eligible for garbage collection
 	refCntBuf.Buf = buf
+	bufList.AppendRefCntBuf(refCntBuf)
 
-	err = chunkedPutContext.SendChunk(refCntBuf)
+	err = chunkedPutContext.SendChunk(bufList)
 
-	// relese the hold on the buffer; SendChunk() acquired its own hold
-	refCntBuf.Release()
+	// relese the hold on the buffer and list; SendChunk() acquired its own hold
+	bufList.Release()
 	return
 }
