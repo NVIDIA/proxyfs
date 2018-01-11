@@ -137,7 +137,8 @@ type Server struct {
 	saveProfilerProfiles  opProfiles
 	dumpRunning           bool
 	dumpLock              sync.Mutex
-	refCntBufPools        refcntpool.RefCntBufPoolSet // reference counted memory buffers for requests
+	refCntBufPoolSet      *refcntpool.RefCntBufPoolSet  // pool for reference counted memory buffers
+	refCntBufListPool     *refcntpool.RefCntBufListPool // pool for reference counted lists of RefCntBuf
 }
 
 func NewOpProfiles() opProfiles {
@@ -202,10 +203,14 @@ func lookupMountHandle(mountID uint64) (mountHandle fs.MountHandle, err error) {
 func NewServer() *Server {
 	s := Server{}
 
+	// pool of reference counted lists of reference counted buffers for read & write
+	s.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
+
 	// Typical request sizes for i/o requests (at a guess).  The largest
 	// request must be less then or equal to 128 Kibyte or bad things will happen.
 	bufferSizes := []int{1024, 8 * 1024, 64 * 1024, 128 * 1024}
-	s.refCntBufPools.Init(bufferSizes)
+	s.refCntBufPoolSet = &refcntpool.RefCntBufPoolSet{}
+	s.refCntBufPoolSet.Init(bufferSizes)
 
 	// Set profiling-related variables
 	if doProfiling {

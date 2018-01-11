@@ -189,23 +189,26 @@ func getRequest(conn net.Conn, ctx *ioContext) (err error) {
 		return fmt.Errorf("getRequest: unsupported op %v!", ctx.req.opType)
 	}
 
-	// get a reference counted buffer to hold the read or write data
-	ctx.data = qserver.refCntBufPools.GetRefCntBuf(int(ctx.req.length))
-
 	// For writes, get write data
 	if ctx.op == WriteOp {
 		if debugPutGet {
-			logger.Infof("Reading %v bytes of write data, ctx.data len is %v.",
-				ctx.req.length, len(ctx.data.Buf))
+			logger.Infof("Reading %v bytes of write data", ctx.req.length)
 		}
 
-		// set the size of the buffer to the data to be read
-		ctx.data.Buf = ctx.data.Buf[0:ctx.req.length]
-		_, err = io.ReadFull(conn, ctx.data.Buf)
+		// get a buffer to hold  the data to be written and set its size
+		refCntBuf := qserver.refCntBufPoolSet.GetRefCntBuf(int(ctx.req.length))
+		refCntBuf.Buf = refCntBuf.Buf[0:ctx.req.length]
+
+		// Put it on a buffer list and associate it with the request
+		ctx.bufList = qserver.refCntBufListPool.GetRefCntBufList()
+		ctx.bufList.AppendRefCntBuf(refCntBuf)
+
+		_, err = io.ReadFull(conn, refCntBuf.Buf)
 		if err != nil {
 			logger.Infof("Failed to read write buffer from the socket uint64_t.")
 			return err
 		}
+
 		// NOTE: Suppress for now, will be counted in next event
 		//profiler.AddEventNow("after get write buf")
 	}
@@ -233,6 +236,23 @@ func putResponseWrite(conn net.Conn, buf []byte) (err error) {
 	return
 }
 
+func putResponseWriteBufList(conn net.Conn, bufList *refcntpool.RefCntBufList) (err error) {
+	var (
+		slice     []byte
+		bufSlices [][]byte
+	)
+
+	// break the buffer list into slices
+	bufSlices, _, _ = bufList.BufListToSlices(0, bufList.Length())
+	for _, slice = range bufSlices {
+		err = putResponseWrite(conn, slice)
+		if nil != err {
+			return
+		}
+	}
+	return
+}
+
 func putResponse(conn net.Conn, ctx *ioContext) (err error) {
 	var (
 		respBytes []byte
@@ -243,7 +263,7 @@ func putResponse(conn net.Conn, ctx *ioContext) (err error) {
 		return fmt.Errorf("putResponse: unsupported opType %v", ctx.op)
 	}
 
-	// NOTE: the far end expects errno, ioSize, (if a read), a buffer
+	// NOTE: the far end expects errno, ioSize, and (if a read) a buffer
 
 	// "cast" response to bytes, copy it, and assing to respBytes
 	respBytes = makeBytesResp(&ctx.resp)
@@ -256,8 +276,8 @@ func putResponse(conn net.Conn, ctx *ioContext) (err error) {
 	}
 
 	// If (non-zero length) Read Payload, send it as well
-	if (ctx.op == ReadOp) && (len(ctx.data.Buf) > 0) {
-		err = putResponseWrite(conn, ctx.data.Buf)
+	if ctx.op == ReadOp && ctx.bufList != nil && ctx.bufList.Length() > 0 {
+		err = putResponseWriteBufList(conn, ctx.bufList)
 		if nil != err {
 			logger.Infof("putResponse() failed to send ctx.data: %v", err)
 			return
@@ -314,9 +334,8 @@ type ioContext struct {
 	op   OpType
 	req  ioRequest
 	resp ioResponse
-	// read/writeData buf* (in: write; out: read)
-	// Ideally this would be a pointer (?)
-	data *refcntpool.RefCntBuf
+	// read/writeData buffer (in: write; out: read)
+	bufList *refcntpool.RefCntBufList
 }
 
 const ioRequestSize int = 8 * 5
@@ -346,13 +365,11 @@ func ioHandle(conn net.Conn) {
 		mountHandle fs.MountHandle
 	)
 
-	// NOTE: Allocate 64k buffer and context on the stack; this function runs in a goroutine
+	// NOTE: Allocate context on the stack; this function runs in a goroutine
 	//       and only processes one request at a time.
 	//
-	//var dataStorage [64 * 1024]byte
 	ctxStorage := ioContext{op: InvalidOp}
 	ctx := &ctxStorage
-	// XXX TODO: no sync.Pool for now, just alloc on the stack
 
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
@@ -360,7 +377,7 @@ func ioHandle(conn net.Conn) {
 
 	for {
 		if printDebugLogs {
-			logger.Infof("Waiting for RPC request; ctx.data size is %v.", len(ctx.data.Buf))
+			logger.Infof("Waiting for RPC request; ctx.req.length size is %v.", ctx.req.length)
 		}
 
 		// XXX TODO: no sync.Pool for now, just alloc on the stack
@@ -373,6 +390,11 @@ func ioHandle(conn net.Conn) {
 		//profiler.AddEventNow("after get request")
 		if err != nil {
 			//logger.Infof("Connection terminated; returning.")
+
+			if ctx.bufList != nil {
+				ctx.bufList.Release()
+				ctx.bufList = nil
+			}
 			return
 		}
 
@@ -389,18 +411,18 @@ func ioHandle(conn net.Conn) {
 		switch ctx.op {
 		case WriteOp:
 			if globals.dataPathLogging || printDebugLogs {
-				logger.Tracef(">> ioWrite in.{InodeHandle:{MountID:%v InodeNumber:%v} Offset:%v Buf.size:%v Buf.<buffer not printed>",
-					ctx.req.mountID, ctx.req.inodeID, ctx.req.offset, len(ctx.data.Buf))
+				logger.Tracef(">> ioWrite in.{InodeHandle:{MountID:%v InodeNumber:%v} Offset:%v req.length:%v Buf.<buffer not printed>",
+					ctx.req.mountID, ctx.req.inodeID, ctx.req.offset, ctx.req.length)
 			}
 
-			profiler.AddEventNow("before fs.WriteAsSlice()")
+			profiler.AddEventNow("before fs.Write()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.resp.ioSize, err = mountHandle.WriteAsSlice(
+				ctx.resp.ioSize, err = mountHandle.Write(
 					inode.InodeRootUserID, inode.InodeRootGroupID, nil,
-					inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data.Buf, profiler)
+					inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.bufList, profiler)
 			}
-			profiler.AddEventNow("after fs.WriteAsSlice()")
+			profiler.AddEventNow("after fs.Write()")
 
 			stats.IncrementOperationsAndBucketedBytes(stats.JrpcfsIoWrite, ctx.resp.ioSize)
 
@@ -409,6 +431,7 @@ func ioHandle(conn net.Conn) {
 			}
 
 		case ReadOp:
+
 			if globals.dataPathLogging || printDebugLogs {
 				logger.Tracef(">> ioRead in.{InodeHandle:{MountID:%v InodeNumber:%v} Offset:%v Length:%v}", ctx.req.mountID, ctx.req.inodeID, ctx.req.offset, ctx.req.length)
 			}
@@ -416,18 +439,26 @@ func ioHandle(conn net.Conn) {
 			profiler.AddEventNow("before fs.Read()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.data.Buf, err = mountHandle.ReadReturnSlice(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
+				ctx.bufList, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+					inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
 			}
 			profiler.AddEventNow("after fs.Read()")
 
 			// Set io size in response
-			ctx.resp.ioSize = uint64(len(ctx.data.Buf))
+			ctx.resp.ioSize = 0
+			if ctx.bufList != nil {
+				ctx.resp.ioSize = uint64(ctx.bufList.Length())
+			}
 
 			stats.IncrementOperationsAndBucketedBytes(stats.JrpcfsIoRead, ctx.resp.ioSize)
 
 			if globals.dataPathLogging || printDebugLogs {
-				logger.Tracef("<< ioRead errno:%v out.Buf.size:%v out.Buf.<buffer not printed>",
-					ctx.resp.errno, len(ctx.data.Buf))
+				var length int
+				if ctx.bufList != nil {
+					length = ctx.bufList.Length()
+				}
+				logger.Tracef("<< ioRead errno:%v ctx.bufList.Length:%v out.Buf.<buffer not printed>",
+					ctx.resp.errno, length)
 			}
 
 		default:
@@ -458,10 +489,12 @@ func ioHandle(conn net.Conn) {
 		// Return context struct to pool
 		//		ioContextPool.Put(ctx)
 
-		// Reset data buffer size in ctx to its full size
-		// ctx.data = dataStorage[:0]
-		ctx.data.Release()
-		ctx.data = nil
+		// Release the data that was read or written.  ctx.bufList will
+		// pretty much always be != nil except in some error conditions
+		if ctx.bufList != nil {
+			ctx.bufList.Release()
+			ctx.bufList = nil
+		}
 
 		if printDebugLogs {
 			logger.Infof("Done with op, back to beginning")
