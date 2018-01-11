@@ -263,7 +263,7 @@ func (bufList *RefCntBufList) Length() (length int) {
 // Returns:
 // bufSlices a slices of byte slices mapping the buffer
 // byteCnt   number of bytes mapped
-// firstIdx  index of the first RefCntBuf in the buffer list in bufSlices
+// firstIdx  index of the first RefCntBuf in the buffer list that appears in bufSlices
 //
 // cnt may be less then length, or even 0, if the scatter/gather buffer contains
 // less then offset+length bytes in buffers
