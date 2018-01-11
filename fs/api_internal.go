@@ -17,6 +17,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -2234,7 +2235,7 @@ retryLock:
 	return err
 }
 
-func (mS *mountStruct) ReadReturnSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (bufList *refcntpool.RefCntBufList, err error) {
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
 		return
@@ -2257,26 +2258,43 @@ func (mS *mountStruct) ReadReturnSlice(userID inode.InodeUserID, groupID inode.I
 	inodeType, err := mS.volStruct.VolumeHandle.GetType(inodeNumber)
 	if err != nil {
 		logger.ErrorfWithError(err, "couldn't get type for inode %v", inodeNumber)
-		return buf, err
+		return
 	}
 	// Make sure the inode number is for a file inode
 	if inodeType != inode.FileType {
 		err = fmt.Errorf("%s: expected inode %v to be a file inode, got %v", utils.GetFnName(), inodeNumber, inodeType)
 		logger.ErrorWithError(err)
-		return buf, blunder.AddError(err, blunder.NotFileError)
+		err = blunder.AddError(err, blunder.NotFileError)
+		return
 	}
 
 	profiler.AddEventNow("before inode.Read()")
-	buf, err = mS.volStruct.VolumeHandle.ReadReturnSlice(inodeNumber, offset, length, profiler)
+	bufList, err = mS.volStruct.VolumeHandle.Read(inodeNumber, offset, length, profiler)
 	profiler.AddEventNow("after inode.Read()")
-	if uint64(len(buf)) > length {
-		err = fmt.Errorf("%s: Buf length %v is greater than supplied length %v", utils.GetFnName(), uint64(len(buf)), length)
+	if uint64(bufList.Length()) > length {
+		err = fmt.Errorf("%s: Buf length %v is greater than supplied length %v", utils.GetFnName(), bufList.Length(), length)
 		logger.ErrorWithError(err)
-		return buf, blunder.AddError(err, blunder.IOError)
+		err = blunder.AddError(err, blunder.IOError)
+		return
 	}
 
 	stats.IncrementOperations(&stats.FsReadOps)
-	return buf, err
+	return
+}
+
+func (mS *mountStruct) ReadReturnSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+	var bufList *refcntpool.RefCntBufList
+
+	bufList, err = mS.Read(userID, groupID, otherGroupIDs, inodeNumber, offset, length, profiler)
+	if err != nil {
+		return
+	}
+
+	buf = make([]byte, bufList.Length())
+	bufList.CopyOut(buf, 0)
+
+	bufList.Release()
+	return
 }
 
 func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
@@ -2936,10 +2954,10 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 	return
 }
 
-func (mS *mountStruct) WriteAsSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
+func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, bufList *refcntpool.RefCntBufList, profiler *utils.Profiler) (size uint64, err error) {
 
 	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
-		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
+		mS.volStruct.volumeName, inodeNumber, offset, bufList.Length())
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2961,7 +2979,7 @@ func (mS *mountStruct) WriteAsSlice(userID inode.InodeUserID, groupID inode.Inod
 	}
 
 	profiler.AddEventNow("before inode.Write()")
-	err = mS.volStruct.VolumeHandle.WriteAsSlice(inodeNumber, offset, buf, profiler)
+	err = mS.volStruct.VolumeHandle.Write(inodeNumber, offset, bufList, profiler)
 	profiler.AddEventNow("after inode.Write()")
 	// write to Swift presumably succeeds or fails as a whole
 	if err != nil {
@@ -2970,8 +2988,22 @@ func (mS *mountStruct) WriteAsSlice(userID inode.InodeUserID, groupID inode.Inod
 
 	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
-	size = uint64(len(buf))
+	size = uint64(bufList.Length())
 	stats.IncrementOperations(&stats.FsWriteOps)
+	return
+}
+
+func (mS *mountStruct) WriteAsSlice(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
+
+	bufList := globals.refCntBufListPool.GetRefCntBufList()
+	refCntBuf := globals.refCntBufPoolSet.GetRefCntBuf(len(buf))
+	refCntBuf.Buf = refCntBuf.Buf[0:len(buf)]
+	copy(refCntBuf.Buf, buf)
+
+	bufList.AppendRefCntBuf(refCntBuf)
+	size, err = mS.Write(userID, groupID, otherGroupIDs, inodeNumber, offset, bufList, profiler)
+
+	bufList.Release()
 	return
 }
 

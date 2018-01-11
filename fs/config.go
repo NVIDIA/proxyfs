@@ -10,6 +10,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/refcntpool"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -51,6 +52,8 @@ type globalsStruct struct {
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
+	refCntBufPoolSet          *refcntpool.RefCntBufPoolSet  // reference counted buffers for Read requests
+	refCntBufListPool         *refcntpool.RefCntBufListPool // ref counted list of RefCntBuf for read & write
 }
 
 var globals globalsStruct
@@ -66,6 +69,19 @@ func Up(confMap conf.ConfMap) (err error) {
 		volumeName             string
 		volumeSectionName      string
 	)
+
+	if globals.refCntBufListPool == nil {
+
+		// pool of reference counted lists of reference counted buffers for read & write
+		globals.refCntBufListPool = refcntpool.RefCntBufListPoolMake()
+
+		// create a set reference counted memory buffer pools for read requests
+		// (the biggest pool size must be be big enough for the biggest request)
+		bufSizes := []int{1024, 2048, 4096, 8192,
+			64 * 1024, 256 * 1024, 1024 * 1024, 10 * 1240 * 1024}
+		globals.refCntBufPoolSet = &refcntpool.RefCntBufPoolSet{}
+		globals.refCntBufPoolSet.Init(bufSizes)
+	}
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
