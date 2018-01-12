@@ -122,15 +122,6 @@ if [ $MOUNT_TYPE != "keepmounts" ]; then
     fi
 fi
 
-# NOTE: We start and stop Swift by doing "swift-init all start" or "swift-init all stop".
-#
-# This is because "swift-init main" does not start/stop the reaper.  In addition, it does
-# not always stop all Swift processes.  In fact, "swift-init all stop" does not stop all
-# processes either but it does stop most.
-#
-# During functional-tests, we have a separate script called kill_proxyfs.sh which
-# pkills with a KILL signal all swift-* processes.
-
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     MOUNT=/usr/bin/mount
@@ -143,11 +134,11 @@ if [ -f /usr/bin/systemctl ]; then
     # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
     await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init all stop
+    sudo /usr/bin/swift-init main stop
     sudo /usr/bin/systemctl stop memcached
 
     sudo /usr/bin/systemctl start memcached
-    sudo /usr/bin/swift-init all start
+    sudo /usr/bin/swift-init main start
     await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/bin/systemctl start proxyfsd
@@ -171,11 +162,11 @@ else
     # sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
     await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init all stop
+    sudo /usr/bin/swift-init main stop
     sudo /usr/sbin/service memcached stop
 
     sudo /usr/sbin/service memcached start
-    sudo /usr/bin/swift-init all start
+    sudo /usr/bin/swift-init main start
     await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/sbin/service proxyfsd start
