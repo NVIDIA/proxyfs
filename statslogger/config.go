@@ -184,6 +184,13 @@ mainloop:
 		oldMemStats.BuckHashSys = newMemStats.BuckHashSys - oldMemStats.BuckHashSys
 		oldMemStats.GCSys = newMemStats.GCSys - oldMemStats.GCSys
 		oldMemStats.OtherSys = newMemStats.OtherSys - oldMemStats.OtherSys
+
+		oldMemStats.NextGC = newMemStats.NextGC - oldMemStats.NextGC
+		oldMemStats.NumGC = newMemStats.NumGC - oldMemStats.NumGC
+		oldMemStats.NumForcedGC = newMemStats.NumForcedGC - oldMemStats.NumForcedGC
+		oldMemStats.PauseTotalNs = newMemStats.PauseTotalNs - oldMemStats.PauseTotalNs
+		oldMemStats.GCCPUFraction = newMemStats.GCCPUFraction - oldMemStats.GCCPUFraction
+
 		for key, _ := range newStatsMap {
 			oldStatsMap[key] = newStatsMap[key] - oldStatsMap[key]
 		}
@@ -228,6 +235,10 @@ func logStats(statsType string, chunkedStats *SimpleStats, nonChunkedStats *Simp
 		statsType,
 		int64(memStats.HeapInuse)/1024, int64(memStats.HeapIdle)/1024,
 		int64(memStats.HeapReleased)/1024, int64(memStats.TotalAlloc)/1024)
+	logger.Infof("GC Stats (%s): NumGC=%d  NumForcedGC=%d  NextGC=%d KiB  PauseTotalMsec=%d  GC_CPU=%4.2f%%",
+		statsType,
+		memStats.NumGC, memStats.NumForcedGC, int64(memStats.NextGC)/1024,
+		memStats.PauseTotalNs/1000000, memStats.GCCPUFraction*100)
 
 	// selected proxyfs statistics that show filesystem or swift activity; consolidate all
 	// opps that query an account as SwiftAccountQueryOps, all opps that modify an account as
