@@ -21,8 +21,8 @@ func TestAPI(t *testing.T) {
 
 	benchmarkConfMapStrings = []string{
 		"EventLog.Enabled=true",
-		"EventLog.BufferKey=1234",
-		"EventLog.BufferLength=65536", //64KiB
+		"EventLog.BufferKey=9876",     // Don't conflict with a running instance
+		"EventLog.BufferLength=65536", // 64KiB
 		"EventLog.MinBackoff=1us",
 		"EventLog.MaxBackoff=2us",
 	}
@@ -36,6 +36,8 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatal(err)
 	}
+
+	MarkForDeletion()
 
 	Record(FormatTestPatternFixed)
 	Record(FormatTestPatternS03D, "arg0", uint32(1))

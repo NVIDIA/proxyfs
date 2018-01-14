@@ -17,6 +17,7 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -110,29 +111,38 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
-	err = stats.Up(testConfMap)
+	err = evtlog.Up(testConfMap)
 	if nil != err {
 		return
 	}
 
 	err = logger.Up(testConfMap)
 	if nil != err {
-		stats.Down()
+		evtlog.Down()
+		return
+	}
+
+	err = stats.Up(testConfMap)
+	if nil != err {
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
 	err = dlm.Up(testConfMap)
 	if nil != err {
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
 	err = swiftclient.Up(testConfMap)
 	if err != nil {
 		dlm.Down()
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return err
 	}
 
@@ -140,8 +150,9 @@ func testSetup() (err error) {
 	if nil != err {
 		swiftclient.Down()
 		dlm.Down()
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
@@ -149,8 +160,9 @@ func testSetup() (err error) {
 	if nil != err {
 		swiftclient.Down()
 		dlm.Down()
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
@@ -159,8 +171,9 @@ func testSetup() (err error) {
 		headhunter.Down()
 		swiftclient.Down()
 		dlm.Down()
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
@@ -170,8 +183,9 @@ func testSetup() (err error) {
 		headhunter.Down()
 		swiftclient.Down()
 		dlm.Down()
-		logger.Down()
 		stats.Down()
+		logger.Down()
+		evtlog.Down()
 		return
 	}
 
@@ -185,8 +199,9 @@ func testTeardown() (err error) {
 	headhunter.Down()
 	swiftclient.Down()
 	dlm.Down()
-	logger.Down()
 	stats.Down()
+	logger.Down()
+	evtlog.Down()
 
 	testDir, err := os.Getwd()
 	if nil != err {

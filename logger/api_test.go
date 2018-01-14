@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -36,6 +37,12 @@ func TestAPI(t *testing.T) {
 	confMap, err := conf.MakeConfMapFromStrings(confStrings)
 	if err != nil {
 		t.Fatalf("%v", err)
+	}
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
 	}
 
 	err = Up(confMap)
@@ -70,6 +77,12 @@ func TestAPI(t *testing.T) {
 	err = Down()
 	if nil != err {
 		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = evtlog.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
 		t.Fatalf(tErr)
 	}
 }

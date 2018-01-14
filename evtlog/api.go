@@ -190,3 +190,10 @@ func Retrieve() (formattedRecord string) {
 	}
 	return
 }
+
+// Mark for deletion causes the the shared memory object to be deleted upon the last Down() call referencing it.
+func MarkForDeletion() {
+	if globals.eventLogEnabled {
+		markForDeletion()
+	}
+}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -142,6 +143,12 @@ func main() {
 	}
 
 	// Start up needed ProxyFS components
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	err = logger.Up(confMap)
 	if nil != err {
@@ -301,6 +308,12 @@ func main() {
 	err = logger.Down()
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	err = evtlog.Down()
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "evtlog.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 

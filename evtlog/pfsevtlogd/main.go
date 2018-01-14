@@ -14,27 +14,51 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 )
 
+func usage() {
+	fmt.Println("pfsevtlogd -?")
+	fmt.Println("   Prints this help text")
+	fmt.Println("pfsevtlogd [-D] ConfFile [ConfFileOverrides]*")
+	fmt.Println("   -D requests that just the Shared Memory Object be deleted")
+	fmt.Println("  ConfFile specifies the .conf file as also passed to proxyfsd et. al.")
+	fmt.Println("  ConfFileOverrides is an optional list of modifications to ConfFile to apply")
+}
+
 func main() {
 	var (
-		confMap         conf.ConfMap
-		err             error
-		formattedRecord string
-		outputFile      *os.File
-		outputPath      string
-		pollDelay       time.Duration
-		signalChan      chan os.Signal
+		args                         []string
+		confMap                      conf.ConfMap
+		err                          error
+		formattedRecord              string
+		justDeleteSharedMemoryObject bool
+		outputFile                   *os.File
+		outputPath                   string
+		pollDelay                    time.Duration
+		signalChan                   chan os.Signal
 	)
 
-	if len(os.Args) < 2 {
+	if (2 == len(os.Args)) && ("-?" == os.Args[1]) {
+		usage()
+		os.Exit(0)
+	}
+
+	if "-D" == os.Args[1] {
+		justDeleteSharedMemoryObject = true
+		args = os.Args[2:]
+	} else {
+		justDeleteSharedMemoryObject = false
+		args = os.Args[1:]
+	}
+
+	if len(args) < 1 {
 		log.Fatalf("no .conf file specified")
 	}
 
-	confMap, err = conf.MakeConfMapFromFile(os.Args[1])
+	confMap, err = conf.MakeConfMapFromFile(args[0])
 	if nil != err {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	err = confMap.UpdateFromStrings(os.Args[2:])
+	err = confMap.UpdateFromStrings(args[1:])
 	if nil != err {
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
@@ -42,6 +66,15 @@ func main() {
 	err = evtlog.Up(confMap)
 	if nil != err {
 		log.Fatalf("evtlog.Up() failed: %v", err)
+	}
+
+	if justDeleteSharedMemoryObject {
+		evtlog.MarkForDeletion()
+		err = evtlog.Down()
+		if nil != err {
+			log.Fatalf("evtlog.Down() failed: %v", err)
+		}
+		os.Exit(0)
 	}
 
 	pollDelay, err = confMap.FetchOptionValueDuration("EventLog", "DaemonPollDelay")

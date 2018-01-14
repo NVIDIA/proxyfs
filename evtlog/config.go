@@ -35,7 +35,7 @@ import "C"
 type globalsStruct struct {
 	sync.Mutex              // While there can only ever be a single Consumer, multiple Producers are possible (within the same process)
 	eventLogEnabled         bool
-	eventLogBufferKey       uint32
+	eventLogBufferKey       uint64
 	eventLogBufferLength    uint64
 	eventLogLockMinBackoff  time.Duration
 	eventLogLockMaxBackoff  time.Duration
@@ -58,7 +58,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.eventLogBufferKey, err = confMap.FetchOptionValueUint32("EventLog", "BufferKey")
+	globals.eventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
 	if nil != err {
 		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
@@ -107,7 +107,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 // ExpandAndResume applies any additions from the supplied confMap and resumes the evtlog package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var (
-		newEventLogBufferKey    uint32
+		newEventLogBufferKey    uint64
 		newEventLogBufferLength uint64
 		newEventLogEnabled      bool
 	)
@@ -122,7 +122,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		if newEventLogEnabled {
 			// Ensure EventLog name & size didn't change
 
-			newEventLogBufferKey, err = confMap.FetchOptionValueUint32("EventLog", "BufferKey")
+			newEventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
 			if nil != err {
 				err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
 				return
@@ -167,7 +167,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		}
 
 		if newEventLogEnabled {
-			globals.eventLogBufferKey, err = confMap.FetchOptionValueUint32("EventLog", "BufferKey")
+			globals.eventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
 			if nil != err {
 				err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
 				return
@@ -211,16 +211,27 @@ func Down() (err error) {
 
 func enableLogging() (err error) {
 	var (
-		ipc_rmid_result C.int
+		rmidResult                    C.int
+		errno                         error
+		sharedMemoryObjectPermissions C.int
 	)
 
+	globals.shmKey = C.key_t(globals.eventLogBufferKey)
 	globals.shmSize = C.size_t(globals.eventLogBufferLength)
 
-	globals.shmID = C.shmget(globals.shmKey, globals.shmSize, C.IPC_CREAT|syscall.S_IRUSR|syscall.S_IWUSR)
+	sharedMemoryObjectPermissions = 0 |
+		syscall.S_IRUSR |
+		syscall.S_IWUSR |
+		syscall.S_IRGRP |
+		syscall.S_IWGRP |
+		syscall.S_IROTH |
+		syscall.S_IWOTH
+
+	globals.shmID, errno = C.shmget(globals.shmKey, globals.shmSize, C.IPC_CREAT|sharedMemoryObjectPermissions)
 
 	if C.int(-1) == globals.shmID {
 		globals.eventLogEnabled = false
-		err = fmt.Errorf("C.shmget(globals.shmKey, globals.shmSize, C.IPC_CREAT) failed")
+		err = fmt.Errorf("C.shmget(globals.shmKey, globals.shmSize, C.IPC_CREAT) failed with errno: %v", errno)
 		return
 	}
 
@@ -228,20 +239,12 @@ func enableLogging() (err error) {
 
 	if ^C.uintptr_t(0) == globals.shmAddr {
 		globals.eventLogEnabled = false
-		ipc_rmid_result = C.shmctl(globals.shmID, C.IPC_RMID, nil)
-		if C.int(-1) == ipc_rmid_result {
+		rmidResult = C.shmctl(globals.shmID, C.IPC_RMID, nil)
+		if C.int(-1) == rmidResult {
 			err = fmt.Errorf("C.shmat_returning_uintptr(globals.shmID, C.uintptr_t(0), C.int(0)) then C.shmctl(globals.shmID, C.IPC_RMID, nil) failed")
 			return
 		}
 		err = fmt.Errorf("C.shmat_returning_uintptr(globals.shmID, C.uintptr_t(0), C.int(0)) failed")
-		return
-	}
-
-	ipc_rmid_result = C.shmctl(globals.shmID, C.IPC_RMID, nil)
-
-	if C.int(-1) == ipc_rmid_result {
-		globals.eventLogEnabled = false
-		err = fmt.Errorf("C.shmctl(globals.shmID, C.IPC_RMID, nil) failed")
 		return
 	}
 

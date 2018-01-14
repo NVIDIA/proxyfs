@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -177,6 +178,11 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("While doing pre-format, conf.MakeConfMapFromStrings() failed: %v", err)
 	}
 
+	err = evtlog.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, evtlog.Up() failed: %v", err)
+	}
+
 	err = logger.Up(testConfMap)
 	if nil != err {
 		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
@@ -220,6 +226,11 @@ func TestDaemon(t *testing.T) {
 	err = logger.Down()
 	if nil != err {
 		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
+	}
+
+	err = evtlog.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, evtlog.Down() failed: %v", err)
 	}
 
 	// Launch an instance of proxyfsd using that same config

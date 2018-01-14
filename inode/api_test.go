@@ -13,6 +13,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
@@ -119,6 +120,11 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
+	err = evtlog.Up(testConfMap)
+	if nil != err {
+		return
+	}
+
 	err = logger.Up(testConfMap)
 	if nil != err {
 		return
@@ -165,6 +171,7 @@ func testTeardown() (err error) {
 	dlm.Down()
 	stats.Down()
 	logger.Down()
+	evtlog.Down()
 
 	testDir, err := os.Getwd()
 	if nil != err {

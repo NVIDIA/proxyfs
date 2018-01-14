@@ -48,6 +48,8 @@ func benchmarkSetup(b *testing.B, enable bool) {
 	if nil != err {
 		b.Fatal(err)
 	}
+
+	MarkForDeletion()
 }
 
 func benchmarkTeardown(b *testing.B) {

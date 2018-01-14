@@ -12,6 +12,7 @@ import (
 
 // #include <stdint.h>
 // #include <string.h>
+// #include <sys/shm.h>
 // #include <sys/types.h>
 //
 // uint8_t read_uint8(uintptr_t shmaddr, uint64_t offset) {
@@ -617,4 +618,20 @@ func retrieve() (formattedRecord string) {
 	}
 
 	return
+}
+
+func markForDeletion() {
+	var (
+		err        error
+		errno      error
+		rmidResult C.int
+	)
+
+	rmidResult, errno = C.shmctl(globals.shmID, C.IPC_RMID, nil)
+
+	if C.int(-1) == rmidResult {
+		globals.eventLogEnabled = false
+		err = fmt.Errorf("C.shmctl(globals.shmID, C.IPC_RMID, nil) failed with errno: %v", errno)
+		panic(err)
+	}
 }

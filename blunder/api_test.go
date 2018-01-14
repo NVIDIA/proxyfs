@@ -7,6 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -24,6 +25,12 @@ func testSetup(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
+	err = evtlog.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
@@ -35,6 +42,12 @@ func testTeardown(t *testing.T) {
 	err := stats.Down()
 	if nil != err {
 		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = evtlog.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
 		t.Fatalf(tErr)
 	}
 }
