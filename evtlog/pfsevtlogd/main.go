@@ -41,7 +41,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	if "-D" == os.Args[1] {
+	if (1 < len(os.Args)) && ("-D" == os.Args[1]) {
 		justDeleteSharedMemoryObject = true
 		args = os.Args[2:]
 	} else {

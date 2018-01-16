@@ -95,14 +95,14 @@ import "C"
 // Synchronization uses Peterson's algorithm (simple one... for just two "threads")
 
 const (
-	offsetToProducerActive     C.uint64_t = 0x00
-	offsetToConsumerActive     C.uint64_t = 0x01
-	offsetToProducerNext       C.uint64_t = 0x02
-	offsetToNextProducerOffset C.uint64_t = 0x08
-	offsetToNextConsumerOffset C.uint64_t = 0x10
-	offsetToNumBufferWraps     C.uint64_t = 0x18
-	offsetToNumDroppedRecords  C.uint64_t = 0x20
-	offsetToFirstRecordEver    C.uint64_t = 0x28 // contents (possibly not on Record boundary) will wrap to here also
+	offsetToProducerActive     = C.uint64_t(0x00)
+	offsetToConsumerActive     = C.uint64_t(0x01)
+	offsetToProducerNext       = C.uint64_t(0x02)
+	offsetToNextProducerOffset = C.uint64_t(0x08)
+	offsetToNextConsumerOffset = C.uint64_t(0x10)
+	offsetToNumBufferWraps     = C.uint64_t(0x18)
+	offsetToNumDroppedRecords  = C.uint64_t(0x20)
+	offsetToFirstRecordEver    = C.uint64_t(0x28) // contents (possibly not on Record boundary) will wrap to here also
 )
 
 // Each Record has the following format:

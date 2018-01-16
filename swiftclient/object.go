@@ -10,6 +10,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -145,6 +146,8 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 }
 
 func objectDeleteAsync(accountName string, containerName string, objectName string, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
+	evtlog.Record(evtlog.FormatObjectDeleteAsync, accountName, containerName, objectName)
+
 	pendingDelete := &pendingDeleteStruct{
 		next:           nil,
 		accountName:    accountName,
@@ -264,6 +267,7 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 		logger.ErrorfWithError(err, "swiftclient.objectDeleteSync(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectDeleteSync, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -875,6 +879,9 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 		connection *connectionStruct
 		headers    map[string][]string
 	)
+
+	evtlog.Record(evtlog.FormatObjectPutChunkedStart, accountName, containerName, objectName)
+
 	objectFetchChunkedPutContextCnt += 1
 
 	connection = acquireChunkedConnection()
@@ -1018,6 +1025,7 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectPutChunkedEnd, chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName, chunkedPutContext.bytesPut, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseChunkedConnection(chunkedPutContext.connection, false)

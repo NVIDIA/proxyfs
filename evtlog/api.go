@@ -28,11 +28,13 @@ const (
 	FormatContainerHead
 	FormatContainerPost
 	FormatContainerPut
-	FormatObjectDelete
+	FormatObjectDeleteAsync
+	FormatObjectDeleteSync
 	FormatObjectGet
 	FormatObjectHead
 	FormatObjectPost
-	FormatObjectPut
+	FormatObjectPutChunkedStart
+	FormatObjectPutChunkedEnd
 	//
 	formatTypeCount // Used to quickly check upper limit of FormatType values
 )
@@ -155,9 +157,13 @@ var (
 			patternType:  patternSS03D,
 			formatString: "%s Container PUT %s/%s had status %03d",
 		},
+		eventType{ // FormatObjectDeleteAsync
+			patternType:  patternSSS,
+			formatString: "%s Object DELETE (Async) %s/%s/%s issued",
+		},
 		eventType{ // FormatObjectDelete
 			patternType:  patternSSS03D,
-			formatString: "%s Object DELETE %s/%s/%s had status %03d",
+			formatString: "%s Object DELETE (Sync) %s/%s/%s had status %03d",
 		},
 		eventType{ // FormatObjectGet
 			patternType:  patternSSS03D,
@@ -171,9 +177,13 @@ var (
 			patternType:  patternSSS03D,
 			formatString: "%s Object POST %s/%s/%s had status %03d",
 		},
-		eventType{ // FormatObjectPut
-			patternType:  patternSSS03D,
-			formatString: "%s Object PUT %s/%s/%s had status %03d",
+		eventType{ // FormatObjectPutChunkedStart
+			patternType:  patternSSS,
+			formatString: "%s Object (chunked) PUT %s/%s/%s initiated",
+		},
+		eventType{ // FormatObjecFormatObjectPutChunkedEndtPut
+			patternType:  patternSSS016X03D,
+			formatString: "%s Object (chunked) PUT %s/%s/%s (for 0x%016X bytes) had status %03d",
 		},
 	}
 )
