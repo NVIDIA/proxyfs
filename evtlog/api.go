@@ -7,8 +7,9 @@ const (
 	FormatTestPatternFixed FormatType = iota
 	FormatTestPatternS03D
 	FormatTestPatternSS03D
+	FormatTestPatternSSS
 	FormatTestPatternSSS03D
-	FormatTestPatternSS016X03D
+	FormatTestPatternSSS016X03D
 	FormatUpSequenceStart
 	FormatUpSequenceEnd
 	FormatPauseAndContractSequenceStart
@@ -39,11 +40,12 @@ const (
 type patternType uint32
 
 const (
-	patternFixed     patternType = iota // <timestamp> + "..."
-	patternS03D                         // <timestamp> + "...%s...%03d..."
-	patternSS03D                        // <timestamp> + "...%s...%s...%03d..."
-	patternSSS03D                       // <timestamp> + "...%s...%s...%s...%03d..."
-	patternSS016X03D                    // <timestamp> + "...%s...%s...%016X...%03d..."
+	patternFixed      patternType = iota // <timestamp> + "..."
+	patternS03D                          // <timestamp> + "...%s...%03d..."
+	patternSS03D                         // <timestamp> + "...%s...%s...%03d..."
+	patternSSS                           // <timestamp> + "...%s...%s...%s..."
+	patternSSS03D                        // <timestamp> + "...%s...%s...%s...%03d..."
+	patternSSS016X03D                    // <timestamp> + "...%s...%s...%s...%016X...%03d..."
 )
 
 const (
@@ -69,13 +71,17 @@ var (
 			patternType:  patternSS03D,
 			formatString: "%s Test for patternSS03D arg0:%s arg1:%s arg2:%03d",
 		},
+		eventType{ // FormatTestPatternSSS
+			patternType:  patternSSS,
+			formatString: "%s Test for patternSSS arg0:%s arg1:%s arg2:%s",
+		},
 		eventType{ // FormatTestPatternSSS03D
 			patternType:  patternSSS03D,
 			formatString: "%s Test for patternSSS03D arg0:%s arg1:%s arg2:%s arg3:%03d",
 		},
-		eventType{ // FormatTestPatternSS016X03D
-			patternType:  patternSS016X03D,
-			formatString: "%s Test for patternSS016X03D arg0:%s arg1:%s arg2:%016X arg3:%03d",
+		eventType{ // FormatTestPatternSSS016X03D
+			patternType:  patternSSS016X03D,
+			formatString: "%s Test for patternSSS016X03D arg0:%s arg1:%s arg2:%s arg3:%016X arg4:%03d",
 		},
 		eventType{ // FormatUpSequenceStart
 			patternType:  patternFixed,
