@@ -198,11 +198,12 @@ func Record(formatType FormatType, args ...interface{}) {
 // Retrieve is used to fetch an event from the shared memory object.
 // If the event log is enabled, the call will block until an event is available.
 // If the event log is not enabled, the call will return an empty string ("").
-func Retrieve() (formattedRecord string) {
+func Retrieve() (formattedRecord string, numDroppedRecords uint64) {
 	if globals.eventLogEnabled {
-		formattedRecord = retrieve()
+		formattedRecord, numDroppedRecords = retrieve()
 	} else {
 		formattedRecord = ""
+		numDroppedRecords = 0
 	}
 	return
 }

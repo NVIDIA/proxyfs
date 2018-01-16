@@ -507,7 +507,7 @@ func record(formatType FormatType, args ...interface{}) {
 	freeProducerLock()
 }
 
-func retrieve() (formattedRecord string) {
+func retrieve() (formattedRecord string, numDroppedRecords uint64) {
 	var (
 		arg0String         string
 		arg0StringLen      uint32
@@ -538,6 +538,11 @@ func retrieve() (formattedRecord string) {
 	// Fetch record (if any)
 
 	getConsumerLock()
+
+	numDroppedRecords = uint64(C.read_uint64(globals.shmAddr, offsetToNumDroppedRecords))
+	if 0 != numDroppedRecords {
+		C.write_uint64(globals.shmAddr, offsetToNumDroppedRecords, C.uint64_t(0))
+	}
 
 	nextProducerOffset = C.read_uint64(globals.shmAddr, offsetToNextProducerOffset)
 	nextConsumerOffset = C.read_uint64(globals.shmAddr, offsetToNextConsumerOffset)

@@ -30,6 +30,7 @@ func main() {
 		err                          error
 		formattedRecord              string
 		justDeleteSharedMemoryObject bool
+		numDroppedRecords            uint64
 		outputFile                   *os.File
 		outputPath                   string
 		pollDelay                    time.Duration
@@ -94,7 +95,11 @@ func main() {
 	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM)
 
 	for {
-		formattedRecord = evtlog.Retrieve()
+		formattedRecord, numDroppedRecords = evtlog.Retrieve()
+
+		if 0 != numDroppedRecords {
+			fmt.Fprintf(outputFile, "*** numDroppedRecords == 0x%016X\n", numDroppedRecords)
+		}
 
 		if "" == formattedRecord {
 			select {

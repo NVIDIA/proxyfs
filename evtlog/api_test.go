@@ -47,12 +47,12 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternSSS03D, "arg0", "arg.1", "arg..2", uint32(3))
 	Record(FormatTestPatternSSS016X03D, "arg0", "arg.1", "arg..2", uint64(3), uint32(4))
 
-	retrievedRecordForFormatTestPatternFixed = Retrieve()
-	retrievedRecordForFormatTestPatternS03D = Retrieve()
-	retrievedRecordForFormatTestPatternSS03D = Retrieve()
-	retrievedRecordForFormatTestPatternSSS = Retrieve()
-	retrievedRecordForFormatTestPatternSSS03D = Retrieve()
-	retrievedRecordForFormatTestPatternSSS016X03D = Retrieve()
+	retrievedRecordForFormatTestPatternFixed, _ = Retrieve()
+	retrievedRecordForFormatTestPatternS03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSS03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSSS, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSSS03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSSS016X03D, _ = Retrieve()
 
 	if "Test for patternFixed" != retrievedRecordForFormatTestPatternFixed[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternFixed failed")
