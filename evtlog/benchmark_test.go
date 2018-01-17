@@ -91,6 +91,18 @@ func Benchmark1KRecordTestPatternS016XWhileDisabled(b *testing.B) {
 	benchmarkTeardown(b)
 }
 
+func Benchmark1KRecordTestPatternS016X016XWhileDisabled(b *testing.B) {
+	benchmarkSetup(b, false)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 1000; j++ {
+			Record(FormatTestPatternS016X016X, "arg0", uint64(1), uint64(2))
+		}
+	}
+	b.StopTimer()
+	benchmarkTeardown(b)
+}
+
 func Benchmark1KRecordTestPatternS016XsliceWhileDisabled(b *testing.B) {
 	benchmarkSetup(b, false)
 	b.ResetTimer()
@@ -193,6 +205,18 @@ func Benchmark1KRecordTestPatternS016XWhileEnabled(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 1000; j++ {
 			Record(FormatTestPatternS016X, "arg0", uint64(1))
+		}
+	}
+	b.StopTimer()
+	benchmarkTeardown(b)
+}
+
+func Benchmark1KRecordTestPatternS016X016XWhileEnabled(b *testing.B) {
+	benchmarkSetup(b, true)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 1000; j++ {
+			Record(FormatTestPatternS016X016X, "arg0", uint64(1), uint64(2))
 		}
 	}
 	b.StopTimer()

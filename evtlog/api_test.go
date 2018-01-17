@@ -15,6 +15,7 @@ func TestAPI(t *testing.T) {
 		retrievedRecordForFormatTestPatternFixed          string
 		retrievedRecordForFormatTestPatternS03D           string
 		retrievedRecordForFormatTestPatternS016X          string
+		retrievedRecordForFormatTestPatternS016X016X      string
 		retrievedRecordForFormatTestPatternS016XsliceLen0 string
 		retrievedRecordForFormatTestPatternS016XsliceLen1 string
 		retrievedRecordForFormatTestPatternS016XsliceLen3 string
@@ -48,6 +49,7 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternFixed)
 	Record(FormatTestPatternS03D, "arg0", uint32(1))
 	Record(FormatTestPatternS016X, "arg0", uint64(1))
+	Record(FormatTestPatternS016X016X, "arg0", uint64(1), uint64(2))
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{})
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{uint64(0x101)})
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{uint64(0x101), uint64(0x102), uint64(0x103)})
@@ -60,6 +62,7 @@ func TestAPI(t *testing.T) {
 	retrievedRecordForFormatTestPatternFixed, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS03D, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016X, _ = Retrieve()
+	retrievedRecordForFormatTestPatternS016X016X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen0, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen1, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen3, _ = Retrieve()
@@ -77,6 +80,9 @@ func TestAPI(t *testing.T) {
 	}
 	if "Test for patternS016X arg0:arg0 arg1:0000000000000001" != retrievedRecordForFormatTestPatternS016X[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternS016X failed")
+	}
+	if "Test for patternS016X016X arg0:arg0 arg1:0000000000000001 arg2:0000000000000002" != retrievedRecordForFormatTestPatternS016X016X[25:] {
+		t.Fatalf("Retrieval of FormatTestPatternS016X016X failed")
 	}
 	if "Test for patternS016Xslice arg0:arg0 arg1:[]" != retrievedRecordForFormatTestPatternS016XsliceLen0[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternS016Xslice with len([]uint64) == 0 failed")

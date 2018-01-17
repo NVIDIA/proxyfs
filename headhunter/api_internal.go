@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -33,6 +34,9 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 
 	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
 		newReservedToNonce = volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve)
+
+		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
 
 		// checkpointHeaderVersion2 == volume.checkpointHeaderVersion
 

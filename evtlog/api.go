@@ -7,6 +7,7 @@ const (
 	FormatTestPatternFixed FormatType = iota
 	FormatTestPatternS03D
 	FormatTestPatternS016X
+	FormatTestPatternS016X016X
 	FormatTestPatternS016Xslice
 	FormatTestPatternS016XS
 	FormatTestPatternSS03D
@@ -38,6 +39,7 @@ const (
 	FormatObjectPost
 	FormatObjectPutChunkedStart
 	FormatObjectPutChunkedEnd
+	FormatHeadhunterRecordTransactionNonceRangeReserve
 	FormatHeadhunterRecordTransactionPutInodeRec
 	FormatHeadhunterRecordTransactionPutInodeRecs
 	FormatHeadhunterRecordTransactionDeleteInodeRec
@@ -55,6 +57,7 @@ const (
 	patternFixed      patternType = iota // <timestamp> + "..."
 	patternS03D                          // <timestamp> + "...%s...%03d..."
 	patternS016X                         // <timestamp> + "...%s...%016X..."
+	patternS016X016X                     // <timestamp> + "...%s...%016X...%016X..."
 	patternS016Xslice                    // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
 	patternS016XS                        // <timestamp> + "...%s...%016X...%s..."
 	patternSS03D                         // <timestamp> + "...%s...%s...%03d..."
@@ -85,6 +88,10 @@ var (
 		eventType{ // FormatTestPatternS016X
 			patternType:  patternS016X,
 			formatString: "%s Test for patternS016X arg0:%s arg1:%016X",
+		},
+		eventType{ // FormatTestPatternS016X016X
+			patternType:  patternS016X016X,
+			formatString: "%s Test for patternS016X016X arg0:%s arg1:%016X arg2:%016X",
 		},
 		eventType{ // FormatTestPatternS016Xslice
 			patternType:  patternS016Xslice,
@@ -209,6 +216,10 @@ var (
 		eventType{ // FormatObjecFormatObjectPutChunkedEndtPut
 			patternType:  patternSSS016X03D,
 			formatString: "%s Object (chunked) PUT %s/%s/%s (for 0x%016X bytes) had status %03d",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionNonceRangeReserve
+			patternType:  patternS016X016X,
+			formatString: "%s Headhunter recording for Volume '%s' reservation of Nonce's 0x%016X thru 0x%016X (inclusive)",
 		},
 		eventType{ // FormatHeadhunterRecordTransactionPutInodeRec
 			patternType:  patternS016X,
