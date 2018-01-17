@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -234,6 +235,7 @@ func record(formatType FormatType, args ...interface{}) {
 	var (
 		arg0Len            uint32
 		arg1Len            uint32
+		arg1Index          uint32
 		arg2Len            uint32
 		discardLength      C.uint32_t
 		err                error
@@ -300,6 +302,93 @@ func record(formatType FormatType, args ...interface{}) {
 		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
 		recordPosition += arg0Len
 		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], args[1].(uint32))
+	case patternS016X:
+		if len(args) != 2 {
+			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
+			panic(err)
+		}
+		arg0Len = uint32(len(args[0].(string)))
+		recordLength = 4 + // recordLength
+			8 + //            unixNano
+			4 + //            formatType
+			4 + arg0Len + //  args[0] %s
+			8 //              args[1] %016X
+		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
+		record = make([]byte, recordLength)
+		recordPosition = 0
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], recordLength)
+		recordPosition += 4
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+		recordPosition += 4
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg0Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
+		recordPosition += arg0Len
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], args[1].(uint64))
+	case patternS016Xslice:
+		if len(args) != 2 {
+			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
+			panic(err)
+		}
+		arg0Len = uint32(len(args[0].(string)))
+		arg1Len = uint32(len(args[1].([]uint64)))
+		recordLength = 4 + //    recordLength
+			8 + //               unixNano
+			4 + //               formatType
+			4 + arg0Len + //     args[0] %s
+			4 + (arg1Len * 8) // args[1] [%016X]
+		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
+		record = make([]byte, recordLength)
+		recordPosition = 0
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], recordLength)
+		recordPosition += 4
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+		recordPosition += 4
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg0Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
+		recordPosition += arg0Len
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg1Len)
+		recordPosition += 4
+		for arg1Index = uint32(0); arg1Index < arg1Len; arg1Index++ {
+			binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], args[1].([]uint64)[arg1Index])
+			recordPosition += 8
+		}
+	case patternS016XS:
+		if len(args) != 3 {
+			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
+			panic(err)
+		}
+		arg0Len = uint32(len(args[0].(string)))
+		arg2Len = uint32(len(args[2].(string)))
+		recordLength = 4 + // recordLength
+			8 + //            unixNano
+			4 + //            formatType
+			4 + arg0Len + //  args[0] %s
+			8 + //            args[1] %016X
+			4 + arg2Len //    args[2] %s
+		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
+		record = make([]byte, recordLength)
+		recordPosition = 0
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], recordLength)
+		recordPosition += 4
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+		recordPosition += 4
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg0Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
+		recordPosition += arg0Len
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], args[1].(uint64))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg2Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg2Len], args[2].(string))
 	case patternSS03D:
 		if len(args) != 3 {
 			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
@@ -509,30 +598,37 @@ func record(formatType FormatType, args ...interface{}) {
 
 func retrieve() (formattedRecord string, numDroppedRecords uint64) {
 	var (
-		arg0String         string
-		arg0StringLen      uint32
-		arg1String         string
-		arg1StringLen      uint32
-		arg1U32            uint32
-		arg2String         string
-		arg2StringLen      uint32
-		arg2U32            uint32
-		arg3U32            uint32
-		arg3U64            uint64
-		arg4U32            uint32
-		err                error
-		formatType         FormatType
-		nextProducerOffset C.uint64_t
-		nextConsumerOffset C.uint64_t
-		pattern            patternType
-		record             []byte
-		recordLength       C.uint32_t
-		recordPosition     uint32
-		timestamp          time.Time
-		unixNano           uint64
-		unixNanoSecPart    int64
-		unixNanoNSecPart   int64
-		wrapAmount         uint64
+		arg0String                    string
+		arg0StringLen                 uint32
+		arg1String                    string
+		arg1StringLen                 uint32
+		arg1U32                       uint32
+		arg1U64                       uint64
+		arg1U64Slice                  []uint64
+		arg1U64SliceIndex             uint32
+		arg1U64SliceLen               uint32
+		arg2String                    string
+		arg2StringLen                 uint32
+		arg2U32                       uint32
+		arg3U32                       uint32
+		arg3U64                       uint64
+		arg4U32                       uint32
+		err                           error
+		formatStringLeftBracketIndex  int
+		formatStringRightBracketIndex int
+		formatType                    FormatType
+		nextProducerOffset            C.uint64_t
+		nextConsumerOffset            C.uint64_t
+		pattern                       patternType
+		record                        []byte
+		recordLength                  C.uint32_t
+		recordPosition                uint32
+		replicatedFormatStringSubset  string
+		timestamp                     time.Time
+		unixNano                      uint64
+		unixNanoSecPart               int64
+		unixNanoNSecPart              int64
+		wrapAmount                    uint64
 	)
 
 	// Fetch record (if any)
@@ -608,6 +704,57 @@ func retrieve() (formattedRecord string, numDroppedRecords uint64) {
 		arg1U32 = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
 
 		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String, arg1U32)
+	case patternS016X:
+		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg0String = string(record[recordPosition : recordPosition+arg0StringLen])
+		recordPosition += arg0StringLen
+
+		arg1U64 = binary.LittleEndian.Uint64(record[recordPosition : recordPosition+8])
+
+		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String, arg1U64)
+	case patternS016Xslice:
+		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg0String = string(record[recordPosition : recordPosition+arg0StringLen])
+		recordPosition += arg0StringLen
+
+		arg1U64SliceLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg1U64Slice = make([]uint64, arg1U64SliceLen)
+		for arg1U64SliceIndex = uint32(0); arg1U64SliceIndex < arg1U64SliceLen; arg1U64SliceIndex++ {
+			arg1U64Slice[arg1U64SliceIndex] = binary.LittleEndian.Uint64(record[recordPosition : recordPosition+8])
+			recordPosition += 8
+		}
+
+		formatStringLeftBracketIndex = strings.Index(event[formatType].formatString, "[")
+		formatStringRightBracketIndex = strings.Index(event[formatType].formatString, "]")
+
+		formattedRecord = fmt.Sprintf(event[formatType].formatString[:formatStringLeftBracketIndex+1], timestamp.Format(patternTimestampFormat), arg0String)
+
+		if 0 < arg1U64SliceLen {
+			replicatedFormatStringSubset = event[formatType].formatString[formatStringLeftBracketIndex+1 : formatStringRightBracketIndex]
+			formattedRecord = formattedRecord + fmt.Sprintf(replicatedFormatStringSubset, arg1U64Slice[0])
+			for arg1U64SliceIndex = uint32(1); arg1U64SliceIndex < arg1U64SliceLen; arg1U64SliceIndex++ {
+				formattedRecord = formattedRecord + " " + fmt.Sprintf(replicatedFormatStringSubset, arg1U64Slice[arg1U64SliceIndex])
+			}
+		}
+
+		formattedRecord = formattedRecord + fmt.Sprintf(event[formatType].formatString[formatStringRightBracketIndex:])
+	case patternS016XS:
+		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg0String = string(record[recordPosition : recordPosition+arg0StringLen])
+		recordPosition += arg0StringLen
+
+		arg1U64 = binary.LittleEndian.Uint64(record[recordPosition : recordPosition+8])
+		recordPosition += 8
+
+		arg2StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg2String = string(record[recordPosition : recordPosition+arg2StringLen])
+
+		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String, arg1U64, arg2String)
 	case patternSS03D:
 		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
 		recordPosition += 4

@@ -6,6 +6,9 @@ type FormatType uint32 // Used as index to event slice (so keep this sequence in
 const (
 	FormatTestPatternFixed FormatType = iota
 	FormatTestPatternS03D
+	FormatTestPatternS016X
+	FormatTestPatternS016Xslice
+	FormatTestPatternS016XS
 	FormatTestPatternSS03D
 	FormatTestPatternSSS
 	FormatTestPatternSSS03D
@@ -35,6 +38,13 @@ const (
 	FormatObjectPost
 	FormatObjectPutChunkedStart
 	FormatObjectPutChunkedEnd
+	FormatHeadhunterRecordTransactionPutInodeRec
+	FormatHeadhunterRecordTransactionPutInodeRecs
+	FormatHeadhunterRecordTransactionDeleteInodeRec
+	FormatHeadhunterRecordTransactionPutLogSegmentRec
+	FormatHeadhunterRecordTransactionDeleteLogSegmentRec
+	FormatHeadhunterRecordTransactionPutBPlusTreeObject
+	FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
 	//
 	formatTypeCount // Used to quickly check upper limit of FormatType values
 )
@@ -44,6 +54,9 @@ type patternType uint32
 const (
 	patternFixed      patternType = iota // <timestamp> + "..."
 	patternS03D                          // <timestamp> + "...%s...%03d..."
+	patternS016X                         // <timestamp> + "...%s...%016X..."
+	patternS016Xslice                    // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
+	patternS016XS                        // <timestamp> + "...%s...%016X...%s..."
 	patternSS03D                         // <timestamp> + "...%s...%s...%03d..."
 	patternSSS                           // <timestamp> + "...%s...%s...%s..."
 	patternSSS03D                        // <timestamp> + "...%s...%s...%s...%03d..."
@@ -68,6 +81,18 @@ var (
 		eventType{ // FormatTestPatternS03D
 			patternType:  patternS03D,
 			formatString: "%s Test for patternS03D arg0:%s arg1:%03d",
+		},
+		eventType{ // FormatTestPatternS016X
+			patternType:  patternS016X,
+			formatString: "%s Test for patternS016X arg0:%s arg1:%016X",
+		},
+		eventType{ // FormatTestPatternS016Xslice
+			patternType:  patternS016Xslice,
+			formatString: "%s Test for patternS016Xslice arg0:%s arg1:[0x%016X]",
+		},
+		eventType{ // FormatTestPatternS016XS
+			patternType:  patternS016XS,
+			formatString: "%s Test for patternS016XS arg0:%s arg1:%016X arg2:%s",
 		},
 		eventType{ // FormatTestPatternSS03D
 			patternType:  patternSS03D,
@@ -184,6 +209,34 @@ var (
 		eventType{ // FormatObjecFormatObjectPutChunkedEndtPut
 			patternType:  patternSSS016X03D,
 			formatString: "%s Object (chunked) PUT %s/%s/%s (for 0x%016X bytes) had status %03d",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionPutInodeRec
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording PutInodeRec for Volume '%s' Inode# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionPutInodeRecs
+			patternType:  patternS016Xslice,
+			formatString: "%s Headhunter recording PutInodeRecs for Volume '%s' Inode#'s [0x%016X]",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionDeleteInodeRec
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteInodeRec for Volume '%s' Inode# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionPutLogSegmentRec
+			patternType:  patternS016XS,
+			formatString: "%s Headhunter recording PutLogSegmentRec for Volume '%s' LogSegment# 0x%016X => Container: '%s'",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionDeleteLogSegmentRec
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteLogSegmentRec for Volume '%s' LogSegment# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionPutBPlusTreeObject
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording PutBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
 		},
 	}
 )

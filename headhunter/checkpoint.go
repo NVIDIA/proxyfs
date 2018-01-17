@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -143,6 +144,27 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		singleValue                  []byte
 	)
 
+	// TODO: Eventually embed this stuff in the case statement below
+	switch transactionType {
+	case transactionPutInodeRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutInodeRec, volume.volumeName, keys.(uint64))
+	case transactionPutInodeRecs:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutInodeRecs, volume.volumeName, keys.([]uint64))
+	case transactionDeleteInodeRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteInodeRec, volume.volumeName, keys.(uint64))
+	case transactionPutLogSegmentRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutLogSegmentRec, volume.volumeName, keys.(uint64), string(values.([]byte)[:]))
+	case transactionDeleteLogSegmentRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteLogSegmentRec, volume.volumeName, keys.(uint64))
+	case transactionPutBPlusTreeObject:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutBPlusTreeObject, volume.volumeName, keys.(uint64))
+	case transactionDeleteBPlusTreeObject:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteBPlusTreeObject, volume.volumeName, keys.(uint64))
+	default:
+		logger.Fatalf("headhunter.recordTransaction(transactionType==%v,,) invalid", transactionType)
+	}
+
+	// TODO: Eventually just remove this (once replayLogFile is mandatory)
 	if "" == volume.replayLogFileName {
 		// Replay Log is disabled... simply return
 		return
