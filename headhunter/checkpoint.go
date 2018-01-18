@@ -1307,9 +1307,13 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		volume.Lock()
 
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+
 		checkpointRequest.err = volume.putCheckpoint()
 
-		if nil != checkpointRequest.err {
+		if nil == checkpointRequest.err {
+			evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+		} else {
 			// As part of conducting the checkpoint - and depending upon where the early non-nil
 			// error was reported - it is highly likely that e.g. pages of the B+Trees have been
 			// marked clean even though either their dirty data has not been successfully posted
@@ -1327,6 +1331,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 			// back and marking every node of the B+Trees as being dirty - or at least those that
 			// were marked clean), such an approach will not be pursued at this time.
 
+			evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, checkpointRequest.err.Error())
 			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 		}
 

@@ -5,11 +5,13 @@ type FormatType uint32 // Used as index to event slice (so keep this sequence in
 
 const (
 	FormatTestPatternFixed FormatType = iota
+	FormatTestPatternS
 	FormatTestPatternS03D
 	FormatTestPatternS016X
 	FormatTestPatternS016X016X
 	FormatTestPatternS016Xslice
 	FormatTestPatternS016XS
+	FormatTestPatternSS
 	FormatTestPatternSS03D
 	FormatTestPatternSSS
 	FormatTestPatternSSS03D
@@ -39,6 +41,9 @@ const (
 	FormatObjectPost
 	FormatObjectPutChunkedStart
 	FormatObjectPutChunkedEnd
+	FormatHeadhunterCheckpointStart
+	FormatHeadhunterCheckpointEndSuccess
+	FormatHeadhunterCheckpointEndFailure
 	FormatHeadhunterRecordTransactionNonceRangeReserve
 	FormatHeadhunterRecordTransactionPutInodeRec
 	FormatHeadhunterRecordTransactionPutInodeRecs
@@ -47,6 +52,10 @@ const (
 	FormatHeadhunterRecordTransactionDeleteLogSegmentRec
 	FormatHeadhunterRecordTransactionPutBPlusTreeObject
 	FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
+	FormatFlushInodesEntry
+	FormatFlushInodesErrorOnInode
+	FormatFlushInodesErrorOnHeadhunterPut
+	FormatFlushInodesExit
 	//
 	formatTypeCount // Used to quickly check upper limit of FormatType values
 )
@@ -55,11 +64,13 @@ type patternType uint32
 
 const (
 	patternFixed      patternType = iota // <timestamp> + "..."
+	patternS                             // <timestamp> + "...%s..."
 	patternS03D                          // <timestamp> + "...%s...%03d..."
 	patternS016X                         // <timestamp> + "...%s...%016X..."
 	patternS016X016X                     // <timestamp> + "...%s...%016X...%016X..."
 	patternS016Xslice                    // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
 	patternS016XS                        // <timestamp> + "...%s...%016X...%s..."
+	patternSS                            // <timestamp> + "...%s...%s..."
 	patternSS03D                         // <timestamp> + "...%s...%s...%03d..."
 	patternSSS                           // <timestamp> + "...%s...%s...%s..."
 	patternSSS03D                        // <timestamp> + "...%s...%s...%s...%03d..."
@@ -81,6 +92,10 @@ var (
 			patternType:  patternFixed,
 			formatString: "%s Test for patternFixed",
 		},
+		eventType{ // FormatTestPatternS
+			patternType:  patternS,
+			formatString: "%s Test for patternS arg0:%s",
+		},
 		eventType{ // FormatTestPatternS03D
 			patternType:  patternS03D,
 			formatString: "%s Test for patternS03D arg0:%s arg1:%03d",
@@ -100,6 +115,10 @@ var (
 		eventType{ // FormatTestPatternS016XS
 			patternType:  patternS016XS,
 			formatString: "%s Test for patternS016XS arg0:%s arg1:%016X arg2:%s",
+		},
+		eventType{ // FormatTestPatternSS
+			patternType:  patternSS,
+			formatString: "%s Test for patternSS arg0:%s arg1:%s",
 		},
 		eventType{ // FormatTestPatternSS03D
 			patternType:  patternSS03D,
@@ -217,6 +236,18 @@ var (
 			patternType:  patternSSS016X03D,
 			formatString: "%s Object (chunked) PUT %s/%s/%s (for 0x%016X bytes) had status %03d",
 		},
+		eventType{ // FormatHeadhunterCheckpointStart
+			patternType:  patternS,
+			formatString: "%s headhunter.checkpointDaemon calling putCheckpoint() for Volume '%s'",
+		},
+		eventType{ // FormatHeadhunterCheckpointEndSuccess
+			patternType:  patternS,
+			formatString: "%s headhunter.checkpointDaemon completed putCheckpoint() for Volume '%s' successfully",
+		},
+		eventType{ // FormatHeadhunterCheckpointEndFailure
+			patternType:  patternSS,
+			formatString: "%s headhunter.checkpointDaemon completed putCheckpoint() for Volume '%s' with error: %s",
+		},
 		eventType{ // FormatHeadhunterRecordTransactionNonceRangeReserve
 			patternType:  patternS016X016X,
 			formatString: "%s Headhunter recording for Volume '%s' reservation of Nonce's 0x%016X thru 0x%016X (inclusive)",
@@ -248,6 +279,22 @@ var (
 		eventType{ // FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
 			patternType:  patternS016X,
 			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
+		},
+		eventType{ // FormatFlushInodesEntry
+			patternType:  patternS016Xslice,
+			formatString: "%s inode.flushInodes() entered for Volume '%s' Inode#'s [0x%016X]",
+		},
+		eventType{ // FormatFlushInodesErrorOnInode
+			patternType:  patternS016XS,
+			formatString: "%s inode.flushInodes() exiting for Volume '%s' Inode# 0x%016X with error: %s",
+		},
+		eventType{ // FormatFlushInodesErrorOnHeadhunterPut
+			patternType:  patternSS,
+			formatString: "%s inode.flushInodes() exiting for Volume '%s' with headhunter.PutInodeRecs() error: %s",
+		},
+		eventType{ // FormatFlushInodesExit
+			patternType:  patternS016Xslice,
+			formatString: "%s inode.flushInodes() exited for Volume '%s' Inode#'s [0x%016X]",
 		},
 	}
 )

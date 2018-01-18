@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -362,7 +363,15 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		payloadObjectNumber       uint64
 		onDiskInodeV1             *onDiskInodeV1Struct
 		onDiskInodeV1Buf          []byte
+		toFlushInodeNumbers       []uint64
 	)
+
+	toFlushInodeNumbers = make([]uint64, 0, len(inodes))
+	for _, inode = range inodes {
+		toFlushInodeNumbers = append(toFlushInodeNumbers, uint64(inode.InodeNumber))
+	}
+
+	evtlog.Record(evtlog.FormatFlushInodesEntry, vS.volumeName, toFlushInodeNumbers)
 
 	// Assemble slice of "dirty" inodes while flushing them
 	dirtyInodeNumbers = make([]uint64, 0, len(inodes))
@@ -373,6 +382,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		if FileType == inode.InodeType {
 			err = vS.doFileInodeDataFlush(inode)
 			if nil != err {
+				evtlog.Record(evtlog.FormatFlushInodesErrorOnInode, vS.volumeName, uint64(inode.InodeNumber), err.Error())
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)
 				return
@@ -393,6 +403,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 			payloadAsBPlusTree = inode.payload.(sortedmap.BPlusTree)
 			payloadObjectNumber, _, payloadObjectLength, err = payloadAsBPlusTree.Flush(false)
 			if nil != err {
+				evtlog.Record(evtlog.FormatFlushInodesErrorOnInode, vS.volumeName, uint64(inode.InodeNumber), err.Error())
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)
 				return
@@ -400,6 +411,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 			if payloadObjectNumber > inode.PayloadObjectNumber {
 				if !inode.dirty {
 					err = fmt.Errorf("Logic error: inode.dirty should have been true")
+					evtlog.Record(evtlog.FormatFlushInodesErrorOnInode, vS.volumeName, uint64(inode.InodeNumber), err.Error())
 					logger.ErrorWithError(err)
 					err = blunder.AddError(err, blunder.InodeFlushError)
 					return
@@ -414,12 +426,14 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		if inode.dirty {
 			onDiskInodeV1, err = inode.convertToOnDiskInodeV1()
 			if nil != err {
+				evtlog.Record(evtlog.FormatFlushInodesErrorOnInode, vS.volumeName, uint64(inode.InodeNumber), err.Error())
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)
 				return
 			}
 			onDiskInodeV1Buf, err = json.Marshal(onDiskInodeV1)
 			if nil != err {
+				evtlog.Record(evtlog.FormatFlushInodesErrorOnInode, vS.volumeName, uint64(inode.InodeNumber), err.Error())
 				logger.ErrorWithError(err)
 				err = blunder.AddError(err, blunder.InodeFlushError)
 				return
@@ -436,6 +450,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	if 0 < len(dirtyInodeNumbers) {
 		err = vS.headhunterVolumeHandle.PutInodeRecs(dirtyInodeNumbers, dirtyInodeRecs)
 		if nil != err {
+			evtlog.Record(evtlog.FormatFlushInodesErrorOnHeadhunterPut, vS.volumeName, err.Error())
 			logger.ErrorWithError(err)
 			err = blunder.AddError(err, blunder.InodeFlushError)
 			return
@@ -457,6 +472,8 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 			}
 		}
 	}
+
+	evtlog.Record(evtlog.FormatFlushInodesExit, vS.volumeName, toFlushInodeNumbers)
 
 	err = nil
 	return

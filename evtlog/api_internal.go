@@ -277,6 +277,28 @@ func record(formatType FormatType, args ...interface{}) {
 		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
 		recordPosition += 8
 		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+	case patternS:
+		if len(args) != 1 {
+			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
+			panic(err)
+		}
+		arg0Len = uint32(len(args[0].(string)))
+		recordLength = 4 + // recordLength
+			8 + //            unixNano
+			4 + //            formatType
+			4 + arg0Len //    args[0] %s
+		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
+		record = make([]byte, recordLength)
+		recordPosition = 0
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], recordLength)
+		recordPosition += 4
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+		recordPosition += 4
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg0Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
 	case patternS03D:
 		if len(args) != 2 {
 			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
@@ -417,6 +439,34 @@ func record(formatType FormatType, args ...interface{}) {
 		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg2Len)
 		recordPosition += 4
 		copy(record[recordPosition:recordPosition+arg2Len], args[2].(string))
+	case patternSS:
+		if len(args) != 2 {
+			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
+			panic(err)
+		}
+		arg0Len = uint32(len(args[0].(string)))
+		arg1Len = uint32(len(args[1].(string)))
+		recordLength = 4 + // recordLength
+			8 + //            unixNano
+			4 + //            formatType
+			4 + arg0Len + //  args[0] %s
+			4 + arg1Len //    args[1] %s
+		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
+		record = make([]byte, recordLength)
+		recordPosition = 0
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], recordLength)
+		recordPosition += 4
+		binary.LittleEndian.PutUint64(record[recordPosition:recordPosition+8], uint64(time.Now().UnixNano()))
+		recordPosition += 8
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], uint32(formatType))
+		recordPosition += 4
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg0Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg0Len], args[0].(string))
+		recordPosition += arg0Len
+		binary.LittleEndian.PutUint32(record[recordPosition:recordPosition+4], arg1Len)
+		recordPosition += 4
+		copy(record[recordPosition:recordPosition+arg1Len], args[1].(string))
 	case patternSS03D:
 		if len(args) != 3 {
 			err = fmt.Errorf("Unexpected number of arguments (%v) for formatType %v", len(args), formatType)
@@ -724,6 +774,12 @@ func retrieve() (formattedRecord string, numDroppedRecords uint64) {
 	switch pattern {
 	case patternFixed:
 		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat))
+	case patternS:
+		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg0String = string(record[recordPosition : recordPosition+arg0StringLen])
+
+		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String)
 	case patternS03D:
 		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
 		recordPosition += 4
@@ -796,6 +852,17 @@ func retrieve() (formattedRecord string, numDroppedRecords uint64) {
 		arg2String = string(record[recordPosition : recordPosition+arg2StringLen])
 
 		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String, arg1U64, arg2String)
+	case patternSS:
+		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg0String = string(record[recordPosition : recordPosition+arg0StringLen])
+		recordPosition += arg0StringLen
+
+		arg1StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
+		recordPosition += 4
+		arg1String = string(record[recordPosition : recordPosition+arg1StringLen])
+
+		formattedRecord = fmt.Sprintf(event[formatType].formatString, timestamp.Format(patternTimestampFormat), arg0String, arg1String)
 	case patternSS03D:
 		arg0StringLen = binary.LittleEndian.Uint32(record[recordPosition : recordPosition+4])
 		recordPosition += 4
