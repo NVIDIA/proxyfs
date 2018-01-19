@@ -1138,6 +1138,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
+	volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
 	volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
 
 	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
@@ -1225,14 +1226,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {
 	if nil == volume.checkpointChunkedPutContext {
-		volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber, err = volume.fetchNonceWhileLocked()
+		volume.checkpointChunkedPutContextObjectNumber, err = volume.fetchNonceWhileLocked()
 		if nil != err {
 			return
 		}
 		volume.checkpointChunkedPutContext, err =
 			swiftclient.ObjectFetchChunkedPutContext(volume.accountName,
 				volume.checkpointContainerName,
-				utils.Uint64ToHexStr(volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber))
+				utils.Uint64ToHexStr(volume.checkpointChunkedPutContextObjectNumber))
 		if nil != err {
 			return
 		}
