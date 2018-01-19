@@ -168,7 +168,7 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 
 	_, err = volume.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 
-	volume.recordTransaction(transactionDeleteInodeRec, transactionDeleteInodeRec, nil)
+	volume.recordTransaction(transactionDeleteInodeRec, inodeNumber, nil)
 
 	volume.Unlock()
 
