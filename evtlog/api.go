@@ -250,7 +250,7 @@ var (
 		},
 		eventType{ // FormatHeadhunterRecordTransactionNonceRangeReserve
 			patternType:  patternS016X016X,
-			formatString: "%s Headhunter recording for Volume '%s' reservation of Nonce's 0x%016X thru 0x%016X (inclusive)",
+			formatString: "%s Headhunter recording reservation of Volume '%s' Nonces 0x%016X thru 0x%016X (inclusive)",
 		},
 		eventType{ // FormatHeadhunterRecordTransactionPutInodeRec
 			patternType:  patternS016X,

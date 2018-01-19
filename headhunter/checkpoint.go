@@ -524,7 +524,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = 0
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectLength = 0
 
-			checkpointHeader.ReservedToNonce = firstNonceToProvide - 1
+			checkpointHeader.ReservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
 
 			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
 				checkpointHeaderVersion2,
