@@ -7,6 +7,7 @@ gosubdirs = \
 	fs \
 	fsworkout \
 	fuse \
+	halter \
 	headhunter \
 	httpserver \
 	inode \
