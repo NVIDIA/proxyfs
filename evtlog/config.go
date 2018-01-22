@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 // #include <errno.h>
@@ -48,153 +49,131 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up initializes the package and must successfully return before any API functions are invoked
-func Up(confMap conf.ConfMap) (err error) {
-	globals.eventLogEnabled, err = confMap.FetchOptionValueBool("EventLog", "Enabled")
-	if (nil != err) || !globals.eventLogEnabled {
-		// Unless successfully read as `True`, disable event logging and return success
-		globals.eventLogEnabled = false
+type eventLogConfigSettings struct {
+	eventLogEnabled        bool
+	eventLogBufferKey      uint64
+	eventLogBufferLength   uint64
+	eventLogLockMinBackoff time.Duration
+	eventLogLockMaxBackoff time.Duration
+}
+
+// Extract the settings from the confMap and perform minimal sanity checking
+//
+func parseConfMap(confMap conf.ConfMap) (settings eventLogConfigSettings, err error) {
+
+	settings.eventLogEnabled, err = confMap.FetchOptionValueBool("EventLog", "Enabled")
+	if nil != err {
+		// ignore parsing errors and treat this as logging disabled
+		settings.eventLogEnabled = false
 		err = nil
 		return
 	}
 
-	globals.eventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
+	settings.eventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
 	if nil != err {
-		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
 		return
 	}
 
-	globals.eventLogBufferLength, err = confMap.FetchOptionValueUint64("EventLog", "BufferLength")
+	settings.eventLogBufferLength, err = confMap.FetchOptionValueUint64("EventLog", "BufferLength")
 	if nil != err {
-		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueUint64(\"EventLog\", \"BufferLength\") failed: %v", err)
 		return
 	}
 	if 0 != (globals.eventLogBufferLength % 4) {
-		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueUint64(\"EventLog\", \"BufferLength\") not divisible by 4")
 		return
 	}
 
-	globals.eventLogLockMinBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MinBackoff")
+	settings.eventLogLockMinBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MinBackoff")
 	if nil != err {
-		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MinBackoff\") failed: %v", err)
 		return
 	}
 
-	globals.eventLogLockMaxBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MaxBackoff")
+	settings.eventLogLockMaxBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MaxBackoff")
 	if nil != err {
-		globals.eventLogEnabled = false
 		err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MaxBackoff\") failed: %v", err)
 		return
 	}
 
-	err = enableLogging()
+	return
+}
 
+// Up initializes the package and must successfully return before any API functions are invoked
+func Up(confMap conf.ConfMap) (err error) {
+	var settings eventLogConfigSettings
+
+	settings, err = parseConfMap(confMap)
+	if err != nil {
+		return
+	}
+
+	logger.Infof("evtlog.Up(): event logging is %v", globals.eventLogEnabled)
+	globals.eventLogEnabled = settings.eventLogEnabled
+	if !globals.eventLogEnabled {
+		return
+	}
+
+	globals.eventLogBufferKey = settings.eventLogBufferKey
+	globals.eventLogBufferLength = settings.eventLogBufferLength
+	globals.eventLogLockMinBackoff = settings.eventLogLockMinBackoff
+	globals.eventLogLockMaxBackoff = settings.eventLogLockMaxBackoff
+
+	err = enableLogging()
 	return
 }
 
 // PauseAndContract pauses the evtlog package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
 
-	err = nil
+	// Nothing to do here
 	return
 }
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the evtlog package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	var (
-		newEventLogBufferKey    uint64
-		newEventLogBufferLength uint64
-		newEventLogEnabled      bool
-	)
+	var settings eventLogConfigSettings
 
+	settings, err = parseConfMap(confMap)
+	if err != nil {
+		return
+	}
+
+	logger.Infof("evtlog.Up(): event logging is %v was %v", settings.eventLogEnabled, globals.eventLogEnabled)
+
+	if !settings.eventLogEnabled {
+		if !globals.eventLogEnabled {
+			// was disabled and still is; no work to do
+			return
+		}
+
+		// was enabled but is now disabled
+		err = disableLogging()
+		return
+	}
+
+	// event logging will be enabled
+	//
+	// if it was enabled previously certain settings cannot be changed
 	if globals.eventLogEnabled {
-		newEventLogEnabled, err = confMap.FetchOptionValueBool("EventLog", "Enabled")
-		if (nil != err) || !globals.eventLogEnabled {
-			// Unless successfully read as `True`, disable event logging and return success
-			newEventLogEnabled = false
+		if settings.eventLogBufferKey != globals.eventLogBufferKey {
+			err = fmt.Errorf("confMap[EventLog][BufferKey] not modifable without a restart")
+			return
 		}
-
-		if newEventLogEnabled {
-			// Ensure EventLog name & size didn't change
-
-			newEventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
-				return
-			}
-			if newEventLogBufferKey != globals.eventLogBufferKey {
-				err = fmt.Errorf("confMap[EventLog][BufferKey] not modifyable without a restart")
-				return
-			}
-
-			newEventLogBufferLength, err = confMap.FetchOptionValueUint64("EventLog", "BufferLength")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueUint64(\"EventLog\", \"BufferLength\") failed: %v", err)
-				return
-			}
-			if newEventLogBufferLength != globals.eventLogBufferLength {
-				err = fmt.Errorf("confMap[EventLog][BufferLength] not modifyable without a restart")
-				return
-			}
-
-			// Fetch remaining EventLog parameters
-
-			globals.eventLogLockMinBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MinBackoff")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MinBackoff\") failed: %v", err)
-				return
-			}
-
-			globals.eventLogLockMaxBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MaxBackoff")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MaxBackoff\") failed: %v", err)
-				return
-			}
-		} else {
-			err = disableLogging()
-		}
-	} else {
-		newEventLogEnabled, err = confMap.FetchOptionValueBool("EventLog", "Enabled")
-		if (nil != err) || !globals.eventLogEnabled {
-			// Unless successfully read as `True`, disable event logging and return success
-			newEventLogEnabled = false
-			err = nil
-		}
-
-		if newEventLogEnabled {
-			globals.eventLogBufferKey, err = confMap.FetchOptionValueUint64("EventLog", "BufferKey")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueUint32(\"EventLog\", \"BufferKey\") failed: %v", err)
-				return
-			}
-
-			globals.eventLogBufferLength, err = confMap.FetchOptionValueUint64("EventLog", "BufferLength")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueUint64(\"EventLog\", \"BufferLength\") failed: %v", err)
-				return
-			}
-
-			globals.eventLogLockMinBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MinBackoff")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MinBackoff\") failed: %v", err)
-				return
-			}
-
-			globals.eventLogLockMaxBackoff, err = confMap.FetchOptionValueDuration("EventLog", "MaxBackoff")
-			if nil != err {
-				err = fmt.Errorf("confMap.FetchOptionValueDuration(\"EventLog\", \"MaxBackoff\") failed: %v", err)
-				return
-			}
-
-			err = enableLogging()
+		if settings.eventLogBufferLength != globals.eventLogBufferLength {
+			err = fmt.Errorf("confMap[EventLog][BufferLength] not modifable without a restart")
+			return
 		}
 	}
 
+	globals.eventLogEnabled = settings.eventLogEnabled
+	globals.eventLogBufferKey = settings.eventLogBufferKey
+	globals.eventLogBufferLength = settings.eventLogBufferLength
+	globals.eventLogLockMinBackoff = settings.eventLogLockMinBackoff
+	globals.eventLogLockMaxBackoff = settings.eventLogLockMaxBackoff
+
+	err = enableLogging()
 	return
 }
 
@@ -202,8 +181,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 func Down() (err error) {
 	if globals.eventLogEnabled {
 		err = disableLogging()
-	} else {
-		err = nil
 	}
 
 	return

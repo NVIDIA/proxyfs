@@ -79,7 +79,23 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
 
-	// Start up dæmon packages (evtlog starts first and finishes last)
+	// Start up dæmon packages (logging starts first (followed by event logging) and finishes last)
+
+	err = logger.Up(confMap)
+	if nil != err {
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	logger.Infof("proxyfsd is starting up (PID %d)", os.Getpid())
+	defer func() {
+		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
+		err = logger.Down()
+		if nil != err {
+			logger.Errorf("logger.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
+		}
+		wg.Done()
+	}()
 
 	err = evtlog.Up(confMap)
 	if nil != err {
@@ -97,22 +113,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}()
 
 	evtlog.Record(evtlog.FormatUpSequenceStart)
-
-	err = logger.Up(confMap)
-	if nil != err {
-		errChan <- err
-		return
-	}
-	wg.Add(1)
-	logger.Infof("proxyfsd is starting up (PID %d)", os.Getpid())
-	defer func() {
-		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
-		err = logger.Down()
-		if nil != err {
-			logger.Errorf("logger.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
-		}
-		wg.Done()
-	}()
 
 	err = stats.Up(confMap)
 	if nil != err {
@@ -386,15 +386,15 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
-			err = logger.PauseAndContract(confMap)
-			if nil != err {
-				err = fmt.Errorf("logger.PauseAndContract(): %v", err)
-				break
-			}
-
 			err = evtlog.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("evtlog.PauseAndContract(): %v", err)
+				break
+			}
+
+			err = logger.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("logger.PauseAndContract(): %v", err)
 				break
 			}
 

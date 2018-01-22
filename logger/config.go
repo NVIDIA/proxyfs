@@ -119,9 +119,12 @@ func (log LogTarget) write(p []byte) (n int, err error) {
 }
 
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	return down()
+	// defer call to down() until ExpandAndResume() so intervening log
+	// messages are captured
+	return
 }
 
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
+	down()
 	return up(confMap)
 }
