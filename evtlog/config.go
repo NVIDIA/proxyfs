@@ -60,9 +60,8 @@ type eventLogConfigSettings struct {
 // Extract the settings from the confMap and perform minimal sanity checking
 //
 func parseConfMap(confMap conf.ConfMap) (settings eventLogConfigSettings, err error) {
-
 	settings.eventLogEnabled, err = confMap.FetchOptionValueBool("EventLog", "Enabled")
-	if nil != err {
+	if (nil != err) || !settings.eventLogEnabled {
 		// ignore parsing errors and treat this as logging disabled
 		settings.eventLogEnabled = false
 		err = nil

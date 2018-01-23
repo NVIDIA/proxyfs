@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 var (
@@ -19,6 +20,10 @@ func benchmarkSetup(b *testing.B, enable bool) {
 
 	if enable {
 		benchmarkConfMapStrings = []string{
+			"Logging.LogFilePath=/dev/null",
+			"Logging.TraceLevelLogging=none",
+			"Logging.DebugLevelLogging=none",
+			"Logging.LogToConsole=false",
 			"EventLog.Enabled=true",
 			"EventLog.BufferKey=1234",
 			"EventLog.BufferLength=65536", //64KiB
@@ -27,11 +32,20 @@ func benchmarkSetup(b *testing.B, enable bool) {
 		}
 	} else {
 		benchmarkConfMapStrings = []string{
+			"Logging.LogFilePath=/dev/null",
+			"Logging.TraceLevelLogging=none",
+			"Logging.DebugLevelLogging=none",
+			"Logging.LogToConsole=false",
 			"EventLog.Enabled=false",
 		}
 	}
 
 	benchmarkConfMap, err = conf.MakeConfMapFromStrings(benchmarkConfMapStrings)
+	if nil != err {
+		b.Fatal(err)
+	}
+
+	err = logger.Up(benchmarkConfMap)
 	if nil != err {
 		b.Fatal(err)
 	}
@@ -50,6 +64,11 @@ func benchmarkTeardown(b *testing.B) {
 	)
 
 	err = Down()
+	if nil != err {
+		b.Fatal(err)
+	}
+
+	err = logger.Down()
 	if nil != err {
 		b.Fatal(err)
 	}
@@ -80,6 +99,18 @@ func Benchmark1KRecordTestPatternSWhileDisabled(b *testing.B) {
 }
 
 func Benchmark1KRecordTestPatternS03DWhileDisabled(b *testing.B) {
+	benchmarkSetup(b, false)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 1000; j++ {
+			Record(FormatTestPatternS03D, "arg0", uint32(1))
+		}
+	}
+	b.StopTimer()
+	benchmarkTeardown(b)
+}
+
+func Benchmark1KRecordTestPatternS08XWhileDisabled(b *testing.B) {
 	benchmarkSetup(b, false)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -224,6 +255,18 @@ func Benchmark1KRecordTestPatternSWhileEnabled(b *testing.B) {
 }
 
 func Benchmark1KRecordTestPatternS03DWhileEnabled(b *testing.B) {
+	benchmarkSetup(b, true)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for j := 0; j < 1000; j++ {
+			Record(FormatTestPatternS03D, "arg0", uint32(1))
+		}
+	}
+	b.StopTimer()
+	benchmarkTeardown(b)
+}
+
+func Benchmark1KRecordTestPatternS08XWhileEnabled(b *testing.B) {
 	benchmarkSetup(b, true)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

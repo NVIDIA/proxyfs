@@ -3,6 +3,8 @@ package halter
 import (
 	"fmt"
 	"testing"
+
+	"github.com/swiftstack/ProxyFS/evtlog"
 )
 
 var (
@@ -10,7 +12,14 @@ var (
 )
 
 func TestAPI(t *testing.T) {
-	Up(nil)
+	err := evtlog.Up(nil)
+	if nil != err {
+		t.Fatalf("evtlog.Up() unexpeectedly failed: %v", err)
+	}
+	err = Up(nil)
+	if nil != err {
+		t.Fatalf("halter.Up() unexpeectedly failed: %v", err)
+	}
 
 	configureTestModeHaltCB(testHalt)
 
@@ -45,6 +54,10 @@ func TestAPI(t *testing.T) {
 	if "halter.Arm(haltLabelString='halter.testHaltLabel0',) - label unknown" != testHaltErr.Error() {
 		t.Fatalf("Arm(apiTestHaltLabel0,) unexpectedly set testHaltErr to %v", testHaltErr)
 	}
+	_, err = Stat("halter.testHaltLabel0")
+	if nil == err {
+		t.Fatalf("Stat(\"halter.testHaltLabel0\") unexpectedly succeeded")
+	}
 
 	testHaltErr = nil
 	Arm("halter.testHaltLabel1", 0)
@@ -54,6 +67,13 @@ func TestAPI(t *testing.T) {
 	if "halter.Arm(haltLabel==halter.testHaltLabel1,) called with haltAfterCount==0" != testHaltErr.Error() {
 		fmt.Println(testHaltErr.Error())
 		t.Fatalf("Arm(apiTestHaltLabel0,) unexpectedly set testHaltErr to %v", testHaltErr)
+	}
+	v0, err := Stat("halter.testHaltLabel1")
+	if nil != err {
+		t.Fatalf("Stat(\"halter.testHaltLabel1\") unexpectedly failed: %v", err)
+	}
+	if 0 != v0 {
+		t.Fatalf("Stat(\"halter.testHaltLabel1\") unexpectedly returned haltAfterCount == %v (should have been 0)", v0)
 	}
 
 	Arm("halter.testHaltLabel1", 1)
@@ -67,6 +87,13 @@ func TestAPI(t *testing.T) {
 	}
 	if 1 != m2v1 {
 		t.Fatalf("Dump() unexpectedly returned %v for m2[apiTestHaltLabel1]", m2v1)
+	}
+	v1, err := Stat("halter.testHaltLabel1")
+	if nil != err {
+		t.Fatalf("Stat(\"halter.testHaltLabel1\") unexpectedly failed: %v", err)
+	}
+	if 1 != v1 {
+		t.Fatalf("Stat(\"halter.testHaltLabel1\") unexpectedly returned haltAfterCount == %v (should have been 1)", v1)
 	}
 
 	Arm("halter.testHaltLabel2", 2)

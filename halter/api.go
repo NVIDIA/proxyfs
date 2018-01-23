@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"github.com/swiftstack/ProxyFS/evtlog"
 )
 
 // Note 1: Following const block and HaltLabelStrings should be kept in sync
@@ -39,6 +41,7 @@ func Arm(haltLabelString string, haltAfterCount uint32) {
 	}
 	globals.armedTriggers[haltLabel] = haltAfterCount
 	globals.Unlock()
+	evtlog.Record(evtlog.FormatHalterArm, haltLabelString, haltAfterCount)
 }
 
 // Disarm removes a previously armed trigger via a call to Arm()
@@ -51,6 +54,7 @@ func Disarm(haltLabelString string) {
 	}
 	delete(globals.armedTriggers, haltLabel)
 	globals.Unlock()
+	evtlog.Record(evtlog.FormatHalterDisarm, haltLabelString)
 }
 
 // Trigger decrements the haltAfterCount if armed and, should it reach 0, HALTs
@@ -63,7 +67,9 @@ func Trigger(haltLabel uint32) {
 	}
 	numTriggersRemaining--
 	if 0 == numTriggersRemaining {
-		err := fmt.Errorf("halter.TriggerArm(haltLabelString==%v) triggered HALT", globals.triggerNumbersToNames[haltLabel])
+		haltLabelString := globals.triggerNumbersToNames[haltLabel]
+		evtlog.Record(evtlog.FormatHalterDisarm, haltLabelString)
+		err := fmt.Errorf("halter.TriggerArm(haltLabelString==%v) triggered HALT", haltLabelString)
 		haltWithErr(err)
 	}
 	globals.armedTriggers[haltLabel] = numTriggersRemaining
@@ -85,6 +91,23 @@ func List() (availableTriggers []string) {
 	for k := range globals.triggerNamesToNumbers {
 		availableTriggers = append(availableTriggers, k)
 	}
+	return
+}
+
+// Stat returns the remaining haltAfterCount for the specified haltLabelString
+func Stat(haltLabelString string) (haltAfterCount uint32, err error) {
+	globals.Lock()
+	haltLabel, ok := globals.triggerNamesToNumbers[haltLabelString]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("halter.Stat(haltLabelString='%v') - label unknown", haltLabelString)
+		return
+	}
+	haltAfterCount, ok = globals.armedTriggers[haltLabel]
+	if !ok {
+		haltAfterCount = 0
+	}
+	globals.Unlock()
 	return
 }
 

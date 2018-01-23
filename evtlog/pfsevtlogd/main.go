@@ -12,6 +12,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 func usage() {
@@ -64,6 +65,11 @@ func main() {
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
+	err = logger.Up(confMap)
+	if nil != err {
+		log.Fatalf("logger.Up() failed: %v", err)
+	}
+
 	err = evtlog.Up(confMap)
 	if nil != err {
 		log.Fatalf("evtlog.Up() failed: %v", err)
@@ -74,6 +80,10 @@ func main() {
 		err = evtlog.Down()
 		if nil != err {
 			log.Fatalf("evtlog.Down() failed: %v", err)
+		}
+		err = logger.Down()
+		if nil != err {
+			log.Fatalf("logger.Down() failed: %v", err)
 		}
 		os.Exit(0)
 	}
@@ -112,6 +122,11 @@ func main() {
 				err = evtlog.Down()
 				if nil != err {
 					log.Fatalf("evtlog.Down() failed: %v", err)
+				}
+
+				err = logger.Down()
+				if nil != err {
+					log.Fatalf("logger.Down() failed: %v", err)
 				}
 
 				os.Exit(0)

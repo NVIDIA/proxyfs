@@ -98,21 +98,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		wg.Done()
 	}()
 
-	err = halter.Up(confMap)
-	if nil != err {
-		logger.Errorf("halter.Up() failed: %v", err)
-		errChan <- err
-		return
-	}
-	wg.Add(1)
-	defer func() {
-		err = halter.Down()
-		if nil != err {
-			logger.Errorf("halter.Down() failed: %v", err)
-		}
-		wg.Done()
-	}()
-
 	err = evtlog.Up(confMap)
 	if nil != err {
 		logger.Errorf("evtlog.Up() failed: %v", err)
@@ -124,6 +109,21 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		err = evtlog.Down()
 		if nil != err {
 			logger.Errorf("evtlog.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	err = halter.Up(confMap)
+	if nil != err {
+		logger.Errorf("halter.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = halter.Down()
+		if nil != err {
+			logger.Errorf("halter.Down() failed: %v", err)
 		}
 		wg.Done()
 	}()

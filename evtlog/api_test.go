@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 func TestAPI(t *testing.T) {
@@ -15,6 +16,7 @@ func TestAPI(t *testing.T) {
 		retrievedRecordForFormatTestPatternFixed          string
 		retrievedRecordForFormatTestPatternS              string
 		retrievedRecordForFormatTestPatternS03D           string
+		retrievedRecordForFormatTestPatternS08X           string
 		retrievedRecordForFormatTestPatternS016X          string
 		retrievedRecordForFormatTestPatternS016X016X      string
 		retrievedRecordForFormatTestPatternS016XsliceLen0 string
@@ -29,6 +31,10 @@ func TestAPI(t *testing.T) {
 	)
 
 	testConfMapStrings = []string{
+		"Logging.LogFilePath=/dev/null",
+		"Logging.TraceLevelLogging=none",
+		"Logging.DebugLevelLogging=none",
+		"Logging.LogToConsole=false",
 		"EventLog.Enabled=true",
 		"EventLog.BufferKey=9876",     // Don't conflict with a running instance
 		"EventLog.BufferLength=65536", // 64KiB
@@ -37,6 +43,11 @@ func TestAPI(t *testing.T) {
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfMapStrings)
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	err = logger.Up(testConfMap)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -51,6 +62,7 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternFixed)
 	Record(FormatTestPatternS, "arg0")
 	Record(FormatTestPatternS03D, "arg0", uint32(1))
+	Record(FormatTestPatternS08X, "arg0", uint32(1))
 	Record(FormatTestPatternS016X, "arg0", uint64(1))
 	Record(FormatTestPatternS016X016X, "arg0", uint64(1), uint64(2))
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{})
@@ -66,6 +78,7 @@ func TestAPI(t *testing.T) {
 	retrievedRecordForFormatTestPatternFixed, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternS08X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016X016X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen0, _ = Retrieve()
@@ -86,6 +99,9 @@ func TestAPI(t *testing.T) {
 	}
 	if "Test for patternS03D arg0:arg0 arg1:001" != retrievedRecordForFormatTestPatternS03D[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternS03D failed")
+	}
+	if "Test for patternS08X arg0:arg0 arg1:00000001" != retrievedRecordForFormatTestPatternS08X[25:] {
+		t.Fatalf("Retrieval of FormatTestPatternS08X failed")
 	}
 	if "Test for patternS016X arg0:arg0 arg1:0000000000000001" != retrievedRecordForFormatTestPatternS016X[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternS016X failed")
@@ -124,6 +140,11 @@ func TestAPI(t *testing.T) {
 	// TODO: Eventually, it would be nice to test the overrun & wrap cases...
 
 	err = Down()
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	err = logger.Down()
 	if nil != err {
 		t.Fatal(err)
 	}

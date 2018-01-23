@@ -7,6 +7,7 @@ const (
 	FormatTestPatternFixed FormatType = iota
 	FormatTestPatternS
 	FormatTestPatternS03D
+	FormatTestPatternS08X
 	FormatTestPatternS016X
 	FormatTestPatternS016X016X
 	FormatTestPatternS016Xslice
@@ -16,6 +17,8 @@ const (
 	FormatTestPatternSSS
 	FormatTestPatternSSS03D
 	FormatTestPatternSSS016X03D
+	FormatHalterArm
+	FormatHalterDisarm
 	FormatUpSequenceStart
 	FormatUpSequenceEnd
 	FormatPauseAndContractSequenceStart
@@ -66,6 +69,7 @@ const (
 	patternFixed      patternType = iota // <timestamp> + "..."
 	patternS                             // <timestamp> + "...%s..."
 	patternS03D                          // <timestamp> + "...%s...%03d..."
+	patternS08X                          // <timestamp> + "...%s...%08X..."
 	patternS016X                         // <timestamp> + "...%s...%016X..."
 	patternS016X016X                     // <timestamp> + "...%s...%016X...%016X..."
 	patternS016Xslice                    // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
@@ -99,6 +103,10 @@ var (
 		eventType{ // FormatTestPatternS03D
 			patternType:  patternS03D,
 			formatString: "%s Test for patternS03D arg0:%s arg1:%03d",
+		},
+		eventType{ // FormatTestPatternS08X
+			patternType:  patternS08X,
+			formatString: "%s Test for patternS08X arg0:%s arg1:%08X",
 		},
 		eventType{ // FormatTestPatternS016X
 			patternType:  patternS016X,
@@ -135,6 +143,14 @@ var (
 		eventType{ // FormatTestPatternSSS016X03D
 			patternType:  patternSSS016X03D,
 			formatString: "%s Test for patternSSS016X03D arg0:%s arg1:%s arg2:%s arg3:%016X arg4:%03d",
+		},
+		eventType{ // FormatHalterArm
+			patternType:  patternS08X,
+			formatString: "%s halter.Arm(%s, 0x%08X) called",
+		},
+		eventType{ // FormatHalterDisarm
+			patternType:  patternS,
+			formatString: "%s halter.Disarm(%s) called",
 		},
 		eventType{ // FormatUpSequenceStart
 			patternType:  patternFixed,

@@ -14,6 +14,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -365,6 +366,9 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		onDiskInodeV1Buf          []byte
 		toFlushInodeNumbers       []uint64
 	)
+
+	halter.Trigger(halter.InodeFlushInodesEntry)
+	defer halter.Trigger(halter.InodeFlushInodesExit)
 
 	toFlushInodeNumbers = make([]uint64, 0, len(inodes))
 	for _, inode = range inodes {
