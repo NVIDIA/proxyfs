@@ -170,14 +170,14 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	// Perform test
 
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
-	}
-
 	err = logger.Up(confMap)
 	if nil != err {
 		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
+	}
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
 	}
 
 	err = stats.Up(confMap)
@@ -235,24 +235,24 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
 	}
 
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
-	}
-
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() [case 1] returned error: %v", err)
 	}
 
-	err = evtlog.Up(confMap)
+	err = logger.Down()
 	if nil != err {
-		t.Fatalf("evtlog.Up() [case 2] returned error: %v", err)
+		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
 	}
 
 	err = logger.Up(confMap)
 	if nil != err {
 		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
+	}
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		t.Fatalf("evtlog.Up() [case 2] returned error: %v", err)
 	}
 
 	err = stats.Up(confMap)
@@ -347,14 +347,14 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
 	}
 
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
-	}
-
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() [case 2] returned error: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
 
 	// Ensure Down()

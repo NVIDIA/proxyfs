@@ -111,29 +111,29 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
-	err = evtlog.Up(testConfMap)
+	err = logger.Up(testConfMap)
 	if nil != err {
 		return
 	}
 
-	err = logger.Up(testConfMap)
+	err = evtlog.Up(testConfMap)
 	if nil != err {
-		evtlog.Down()
+		logger.Down()
 		return
 	}
 
 	err = stats.Up(testConfMap)
 	if nil != err {
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
 	err = dlm.Up(testConfMap)
 	if nil != err {
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
@@ -141,8 +141,8 @@ func testSetup() (err error) {
 	if err != nil {
 		dlm.Down()
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return err
 	}
 
@@ -151,8 +151,8 @@ func testSetup() (err error) {
 		swiftclient.Down()
 		dlm.Down()
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
@@ -161,8 +161,8 @@ func testSetup() (err error) {
 		swiftclient.Down()
 		dlm.Down()
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
@@ -172,8 +172,8 @@ func testSetup() (err error) {
 		swiftclient.Down()
 		dlm.Down()
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
@@ -184,8 +184,8 @@ func testSetup() (err error) {
 		swiftclient.Down()
 		dlm.Down()
 		stats.Down()
-		logger.Down()
 		evtlog.Down()
+		logger.Down()
 		return
 	}
 
@@ -200,8 +200,8 @@ func testTeardown() (err error) {
 	swiftclient.Down()
 	dlm.Down()
 	stats.Down()
-	logger.Down()
 	evtlog.Down()
+	logger.Down()
 
 	testDir, err := os.Getwd()
 	if nil != err {

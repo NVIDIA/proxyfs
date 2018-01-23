@@ -222,15 +222,15 @@ func main() {
 	if proxyfsRequired {
 		// Start up needed ProxyFS components
 
-		err = evtlog.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
 		err = logger.Up(confMap)
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = evtlog.Up(confMap)
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -685,15 +685,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		err = logger.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
 		err = evtlog.Down()
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "evtlog.Down() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = logger.Down()
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

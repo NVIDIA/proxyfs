@@ -105,7 +105,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	var settings eventLogConfigSettings
 
 	settings, err = parseConfMap(confMap)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
@@ -136,11 +136,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	var settings eventLogConfigSettings
 
 	settings, err = parseConfMap(confMap)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
-	logger.Infof("evtlog.Up(): event logging is %v was %v", settings.eventLogEnabled, globals.eventLogEnabled)
+	logger.Infof("evtlog.ExpandAndResume(): event logging is %v was %v", settings.eventLogEnabled, globals.eventLogEnabled)
 
 	if !settings.eventLogEnabled {
 		if !globals.eventLogEnabled {

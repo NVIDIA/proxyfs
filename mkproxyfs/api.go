@@ -77,20 +77,20 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 
 	// Call Up() for required packages (deferring their Down() calls until function return)
 
-	err = evtlog.Up(confMap)
-	if nil != err {
-		return
-	}
-	defer func() {
-		_ = evtlog.Down()
-	}()
-
 	err = logger.Up(confMap)
 	if nil != err {
 		return
 	}
 	defer func() {
 		_ = logger.Down()
+	}()
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		return
+	}
+	defer func() {
+		_ = evtlog.Down()
 	}()
 
 	err = stats.Up(confMap)

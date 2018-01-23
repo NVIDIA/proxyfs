@@ -87,15 +87,15 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	err = evtlog.Up(confMap)
-	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
 	err = logger.Up(confMap)
 	if nil != err {
 		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -151,15 +151,15 @@ func TestAPI(t *testing.T) {
 
 	_ = <-doneChan
 
-	err = logger.Down()
-	if nil != err {
-		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
 	err = evtlog.Down()
 	if nil != err {
 		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
 		t.Fatalf(tErr)
 	}
 }

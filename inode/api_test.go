@@ -120,12 +120,12 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
-	err = evtlog.Up(testConfMap)
+	err = logger.Up(testConfMap)
 	if nil != err {
 		return
 	}
 
-	err = logger.Up(testConfMap)
+	err = evtlog.Up(testConfMap)
 	if nil != err {
 		return
 	}
@@ -170,8 +170,8 @@ func testTeardown() (err error) {
 	swiftclient.Down()
 	dlm.Down()
 	stats.Down()
-	logger.Down()
 	evtlog.Down()
+	logger.Down()
 
 	testDir, err := os.Getwd()
 	if nil != err {

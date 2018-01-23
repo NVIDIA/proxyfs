@@ -178,14 +178,14 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("While doing pre-format, conf.MakeConfMapFromStrings() failed: %v", err)
 	}
 
-	err = evtlog.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, evtlog.Up() failed: %v", err)
-	}
-
 	err = logger.Up(testConfMap)
 	if nil != err {
 		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
+	}
+
+	err = evtlog.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, evtlog.Up() failed: %v", err)
 	}
 
 	err = stats.Up(testConfMap)
@@ -223,14 +223,14 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("While doing pre-format, stats.Down() failed: %v", err)
 	}
 
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
-	}
-
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("While doing pre-format, evtlog.Down() failed: %v", err)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
 	}
 
 	// Launch an instance of proxyfsd using that same config
