@@ -116,10 +116,12 @@ const (
 //       //   %s:
 //       stringLength uint32             // number of UTF-8 bytes in stringBytes array
 //       stringBytes  [stringLength]byte // bytes of the UTF-8 string (not terminated)
-//       //   %016X:
-//       u64          uint64             // 64-bit unsigned value
 //       //   %03d:
 //       u32          uint32             // 32-bit unsigned value (though <= 999)
+//       //   %08X:
+//       u32          uint32             // 32-bit unsigned value
+//       //   %016X:
+//       u64          uint64             // 64-bit unsigned value
 //   }
 
 func backoff() {
