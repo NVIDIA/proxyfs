@@ -827,7 +827,7 @@ func doPostOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.
 	}
 
 	responseWriter.Header().Set("Location", "/trigger")
-	responseWriter.WriteHeader(http.StatusTemporaryRedirect)
+	responseWriter.WriteHeader(http.StatusSeeOther)
 }
 
 func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
@@ -850,13 +850,6 @@ func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) 
 	}
 
 	switch numPathParts {
-	case 1:
-		// Form: /trigger
-		//
-		// GET /arm-disarm-trigger form submission success redirected the POST
-		// to here, so just do what would have been done if request were a GET.
-
-		doGetOfTrigger(responseWriter, request)
 	case 2:
 		// Form: /trigger/<trigger-name>
 
@@ -976,7 +969,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
-				err = fmt.Errorf("httpserver.doPost() delete of oldest element of volume.fsckJobs failed")
+				err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 		}
@@ -999,7 +992,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			err = fmt.Errorf("httpserver.doPost() PUT to volume.fsckJobs failed")
+			err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
