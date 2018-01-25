@@ -2,7 +2,6 @@
 package jrpcfs
 
 import (
-	"container/list"
 	"fmt"
 	"net"
 	"net/rpc"
