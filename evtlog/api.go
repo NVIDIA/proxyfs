@@ -55,6 +55,9 @@ const (
 	FormatHeadhunterRecordTransactionDeleteLogSegmentRec
 	FormatHeadhunterRecordTransactionPutBPlusTreeObject
 	FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
+	FormatHeadhunterMissingInodeRec
+	FormatHeadhunterMissingLogSegmentRec
+	FormatHeadhunterMissingBPlusTreeObject
 	FormatFlushInodesEntry
 	FormatFlushInodesErrorOnInode
 	FormatFlushInodesErrorOnHeadhunterPut
@@ -293,6 +296,18 @@ var (
 			formatString: "%s Headhunter recording PutBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
 		},
 		eventType{ // FormatHeadhunterRecordTransactionDeleteBPlusTreeObject
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterMissingInodeRec
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Inode# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterMissingLogSegmentRec
+			patternType:  patternS016X,
+			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' LogSegment# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterMissingBPlusTreeObject
 			patternType:  patternS016X,
 			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
 		},

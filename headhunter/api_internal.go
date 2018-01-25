@@ -85,6 +85,8 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingInodeRec, volume.volumeName, inodeNumber)
+		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -185,6 +187,7 @@ func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []b
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingLogSegmentRec, volume.volumeName, logSegmentNumber)
 		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRecWrapper.bPlusTree", logSegmentNumber, volume.volumeName)
 		return
 	}
@@ -247,6 +250,7 @@ func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byt
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingBPlusTreeObject, volume.volumeName, objectNumber)
 		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObjectWrapper.bPlusTree", objectNumber, volume.volumeName)
 		return
 	}
