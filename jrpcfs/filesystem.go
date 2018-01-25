@@ -2,6 +2,7 @@
 package jrpcfs
 
 import (
+	"container/list"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -20,7 +21,6 @@ import (
 
 // RPC server handle
 var srv *rpc.Server
-
 var jrpcListener net.Listener
 
 // Local server handle, used to track jrpc-related ops
@@ -44,7 +44,12 @@ func jsonRpcServerUp(ipAddr string, portString string) {
 		return
 	}
 
+	globals.connLock.Lock()
+	globals.listners = append(globals.listners, jrpcListener)
+	globals.connLock.Unlock()
+
 	//logger.Infof("Starting to listen on %s:%s", ipAddr, portString)
+	globals.connWaitGroup.Add(1)
 	go jrpcServerLoop()
 }
 
@@ -53,17 +58,26 @@ func jrpcServerLoop() {
 		conn, err := jrpcListener.Accept()
 		if err != nil {
 			logger.ErrorfWithError(err, "net.Accept failed for JRPC listener\n")
+			globals.connWaitGroup.Done()
 			return
 		}
 
-		go srv.ServeCodec(jsonrpc.NewServerCodec(conn))
+		globals.connWaitGroup.Add(1)
+
+		globals.connLock.Lock()
+		globals.connections.PushBack(conn)
+		globals.connLock.Unlock()
+
+		go func() {
+			srv.ServeCodec(jsonrpc.NewServerCodec(conn))
+			globals.connWaitGroup.Done()
+		}()
 	}
 }
 
 func jsonRpcServerDown() {
 	DumpIfNecessary(jserver)
 	stopServerProfiling(jserver)
-	jrpcListener.Close()
 }
 
 // Enumeration of operations, used for stats-related things

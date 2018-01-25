@@ -1,7 +1,9 @@
 package jrpcfs
 
 import (
+	"container/list"
 	"fmt"
+	"net"
 	"sync"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -33,6 +35,12 @@ type globalsStruct struct {
 
 	// Map used to store volumes already mounted for bimodal support
 	bimodalMountMap map[string]fs.MountHandle
+
+	// Connection list and listner list to close during shutdown:
+	connLock      sync.Mutex
+	connections   *list.List
+	connWaitGroup sync.WaitGroup
+	listners      []net.Listener
 }
 
 var globals globalsStruct
@@ -114,6 +122,8 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 	}
+
+	globals.connections = list.New()
 
 	// Init JSON RPC server stuff
 	jsonRpcServerUp(globals.ipAddr, globals.portString)
@@ -299,5 +309,16 @@ func Down() (err error) {
 	err = nil
 	jsonRpcServerDown()
 	ioServerDown()
+
+	globals.Lock()
+	for _, listner := range globals.listners {
+		listner.Close()
+	}
+
+	for elm := globals.connections.Front(); elm != nil; elm = elm.Next() {
+		conn := elm.Value.(net.Conn)
+		conn.Close()
+	}
+	globals.Unlock()
 	return
 }
