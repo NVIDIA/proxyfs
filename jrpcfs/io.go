@@ -45,7 +45,9 @@ func ioServerLoop() {
 	for {
 		conn, err := ioListener.Accept()
 		if err != nil {
-			logger.ErrorfWithError(err, "net.Accept failed for IO listener\n")
+			if !globals.halting {
+				logger.ErrorfWithError(err, "net.Accept failed for IO listener\n")
+			}
 			globals.listenersWG.Done()
 			return
 		}

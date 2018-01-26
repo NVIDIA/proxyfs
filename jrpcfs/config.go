@@ -37,6 +37,7 @@ type globalsStruct struct {
 	bimodalMountMap map[string]fs.MountHandle
 
 	// Connection list and listener list to close during shutdown:
+	halting     bool
 	connLock    sync.Mutex
 	connections *list.List
 	connWG      sync.WaitGroup
@@ -309,6 +310,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 func Down() (err error) {
 	err = nil
+	globals.halting = true
+
 	jsonRpcServerDown()
 	ioServerDown()
 
