@@ -36,11 +36,12 @@ type globalsStruct struct {
 	// Map used to store volumes already mounted for bimodal support
 	bimodalMountMap map[string]fs.MountHandle
 
-	// Connection list and listner list to close during shutdown:
-	connLock      sync.Mutex
-	connections   *list.List
-	connWaitGroup sync.WaitGroup
-	listners      []net.Listener
+	// Connection list and listener list to close during shutdown:
+	connLock    sync.Mutex
+	connections *list.List
+	connWG      sync.WaitGroup
+	listeners   []net.Listener
+	listenersWG sync.WaitGroup
 }
 
 var globals globalsStruct
@@ -123,6 +124,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
+	globals.listeners = make([]net.Listener, 2)
 	globals.connections = list.New()
 
 	// Init JSON RPC server stuff
@@ -310,15 +312,26 @@ func Down() (err error) {
 	jsonRpcServerDown()
 	ioServerDown()
 
-	globals.Lock()
-	for _, listner := range globals.listners {
-		listner.Close()
+	// Close the listeners first, so that there are no new connections.
+	globals.connLock.Lock()
+	for _, listener := range globals.listeners {
+		if listener != nil {
+			listener.Close()
+		}
 	}
 
+	globals.connLock.Unlock()
+
+	globals.listenersWG.Wait()
+
+	globals.connLock.Lock()
 	for elm := globals.connections.Front(); elm != nil; elm = elm.Next() {
 		conn := elm.Value.(net.Conn)
 		conn.Close()
 	}
-	globals.Unlock()
+	globals.connLock.Unlock()
+
+	globals.connWG.Wait()
+
 	return
 }

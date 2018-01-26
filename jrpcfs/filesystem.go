@@ -44,11 +44,11 @@ func jsonRpcServerUp(ipAddr string, portString string) {
 	}
 
 	globals.connLock.Lock()
-	globals.listners = append(globals.listners, jrpcListener)
+	globals.listeners = append(globals.listeners, jrpcListener)
 	globals.connLock.Unlock()
 
 	//logger.Infof("Starting to listen on %s:%s", ipAddr, portString)
-	globals.connWaitGroup.Add(1)
+	globals.listenersWG.Add(1)
 	go jrpcServerLoop()
 }
 
@@ -57,19 +57,22 @@ func jrpcServerLoop() {
 		conn, err := jrpcListener.Accept()
 		if err != nil {
 			logger.ErrorfWithError(err, "net.Accept failed for JRPC listener\n")
-			globals.connWaitGroup.Done()
+			globals.listenersWG.Done()
 			return
 		}
 
-		globals.connWaitGroup.Add(1)
+		globals.connWG.Add(1)
 
 		globals.connLock.Lock()
-		globals.connections.PushBack(conn)
+		elm := globals.connections.PushBack(conn)
 		globals.connLock.Unlock()
 
 		go func() {
 			srv.ServeCodec(jsonrpc.NewServerCodec(conn))
-			globals.connWaitGroup.Done()
+			globals.connLock.Lock()
+			globals.connections.Remove(elm)
+			globals.connLock.Unlock()
+			globals.connWG.Done()
 		}()
 	}
 }
