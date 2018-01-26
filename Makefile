@@ -33,7 +33,7 @@ ifeq ($(uname),Linux)
 
     all: fmt install stringer generate test vet c-clean c-build c-install c-test
 
-    all-deb-builder: fmt install stringer generate test vet c-clean c-build c-install-deb-builder c-test
+    all-deb-builder: fmt install stringer generate vet c-clean c-build c-install-deb-builder
 else
     all: fmt install stringer generate test vet
 endif
