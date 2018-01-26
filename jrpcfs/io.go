@@ -32,7 +32,12 @@ func ioServerUp(ipAddr string, fastPortString string) {
 		return
 	}
 
+	globals.connLock.Lock()
+	globals.listeners = append(globals.listeners, ioListener)
+	globals.connLock.Unlock()
+
 	//logger.Infof("Starting to listen on %s:%s", ipAddr, fastPortString)
+	globals.listenersWG.Add(1)
 	go ioServerLoop()
 }
 
@@ -41,10 +46,23 @@ func ioServerLoop() {
 		conn, err := ioListener.Accept()
 		if err != nil {
 			logger.ErrorfWithError(err, "net.Accept failed for IO listener\n")
+			globals.listenersWG.Done()
 			return
 		}
 
-		go ioHandle(conn)
+		globals.connWG.Add(1)
+
+		globals.connLock.Lock()
+		elm := globals.connections.PushBack(conn)
+		globals.connLock.Unlock()
+
+		go func() {
+			ioHandle(conn)
+			globals.connLock.Lock()
+			globals.connections.Remove(elm)
+			globals.connLock.Unlock()
+			globals.connWG.Done()
+		}()
 	}
 }
 
@@ -52,7 +70,6 @@ func ioServerDown() {
 	DumpIfNecessary(qserver)
 	dumpRunningWorkers()
 	stopServerProfiling(qserver)
-	ioListener.Close()
 }
 
 var debugConcurrency = false
