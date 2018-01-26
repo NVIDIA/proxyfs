@@ -124,7 +124,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	globals.listeners = make([]net.Listener, 2)
+	globals.listeners = make([]net.Listener, 0, 2)
 	globals.connections = list.New()
 
 	// Init JSON RPC server stuff
