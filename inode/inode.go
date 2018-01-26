@@ -359,11 +359,11 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		inode                     *inMemoryInodeStruct
 		logSegmentNumber          uint64
 		logSegmentValidBytes      uint64
+		onDiskInodeV1             *onDiskInodeV1Struct
+		onDiskInodeV1Buf          []byte
 		payloadAsBPlusTree        sortedmap.BPlusTree
 		payloadObjectLength       uint64
 		payloadObjectNumber       uint64
-		onDiskInodeV1             *onDiskInodeV1Struct
-		onDiskInodeV1Buf          []byte
 		toFlushInodeNumbers       []uint64
 	)
 
@@ -425,6 +425,8 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 
 				inode.PayloadObjectNumber = payloadObjectNumber
 				inode.PayloadObjectLength = payloadObjectLength
+
+				evtlog.Record(evtlog.FormatFlushInodesDirOrFilePayloadObjectNumberUpdated, vS.volumeName, uint64(inode.InodeNumber), payloadObjectNumber)
 			}
 		}
 		if inode.dirty {

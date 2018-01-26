@@ -59,6 +59,7 @@ const (
 	FormatHeadhunterMissingLogSegmentRec
 	FormatHeadhunterMissingBPlusTreeObject
 	FormatFlushInodesEntry
+	FormatFlushInodesDirOrFilePayloadObjectNumberUpdated
 	FormatFlushInodesErrorOnInode
 	FormatFlushInodesErrorOnHeadhunterPut
 	FormatFlushInodesExit
@@ -314,6 +315,10 @@ var (
 		eventType{ // FormatFlushInodesEntry
 			patternType:  patternS016Xslice,
 			formatString: "%s inode.flushInodes() entered for Volume '%s' Inode#'s [0x%016X]",
+		},
+		eventType{ // FormatFlushInodesDirOrFilePayloadObjectNumberUpdated
+			patternType:  patternS016X016X,
+			formatString: "%s inode.flushInodes() updated payload for Volume '%s' Inode# 0x%016X with ObjectNumber 0x%016X",
 		},
 		eventType{ // FormatFlushInodesErrorOnInode
 			patternType:  patternS016XS,
