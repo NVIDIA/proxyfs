@@ -609,7 +609,7 @@ func record(formatType FormatType, args ...interface{}) {
 			4 + //            formatType
 			4 + arg0Len + //  args[0] %s
 			4 + arg1Len + //  args[1] %s
-			4 + arg1Len + //  args[2] %s
+			4 + arg2Len + //  args[2] %s
 			8 + //            args[3] %016X
 			4 //              args[4] %03d
 		recordLength = (recordLength + 3) & ^uint32(3) // round up so that a uint32 is never split during wrapping
