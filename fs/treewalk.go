@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 )
 
 type treeWalkStruct struct {
@@ -43,7 +45,8 @@ func validateVolume(volumeName string, stopChan chan bool) (err error) {
 				return
 			}
 			if inodeLinkCount != inodeRefCount {
-				// TODO: Need to stat & log this
+				stats.IncrementOperations(&stats.FsValidateFixedLinkCountOps)
+				logger.Errorf("fs.validateVolume(%v,): found link count discrepency on inode# 0x%016X", volumeName, inodeNumber)
 				nonShadowingErr = tWS.volumeHandle.SetLinkCount(inodeNumber, inodeRefCount)
 				if nil != nonShadowingErr {
 					err = fmt.Errorf("%v.SetLinkCount(%v,) failed: %v", tWS.volumeName, inodeNumber, nonShadowingErr)
@@ -70,8 +73,9 @@ func (tWS *treeWalkStruct) validateDirInode(dirInodeNumber inode.InodeNumber) (s
 	err = tWS.volumeHandle.Validate(dirInodeNumber)
 	if nil != err {
 		stopped = false
-		err = fmt.Errorf("%v.Validate(%v,,) failed: %v", tWS.volumeName, dirInodeNumber, err)
-		// TODO: Need to stat & log this unless inode.Validate() did so
+		stats.IncrementOperations(&stats.FsValidateDirectoryFailedOps)
+		err = fmt.Errorf("%v.Validate(%v) failed: %v", tWS.volumeName, dirInodeNumber, err)
+		logger.Errorf("fs.validateDirInode() error: %v", err)
 		return
 	}
 
@@ -100,7 +104,7 @@ func (tWS *treeWalkStruct) validateDirInode(dirInodeNumber inode.InodeNumber) (s
 				inodeType, nonShadowingErr := tWS.volumeHandle.GetType(dirEntry.InodeNumber)
 				if nil != nonShadowingErr {
 					stopped = false
-					err = fmt.Errorf("%v.ReadDir(%v,,) failed: %v", tWS.volumeName, dirEntry.InodeNumber, nonShadowingErr)
+					err = fmt.Errorf("%v.GetType(%v) failed: %v", tWS.volumeName, dirEntry.InodeNumber, nonShadowingErr)
 					return
 				}
 
@@ -128,8 +132,9 @@ func (tWS *treeWalkStruct) validateDirInode(dirInodeNumber inode.InodeNumber) (s
 func (tWS *treeWalkStruct) validateNonDirInode(nonDirInodeNumber inode.InodeNumber) (err error) {
 	err = tWS.volumeHandle.Validate(nonDirInodeNumber)
 	if nil != err {
-		err = fmt.Errorf("%v.Validate(%v,,) failed: %v", tWS.volumeName, nonDirInodeNumber, err)
-		// TODO: Need to stat & log this unless inode.Validate() did so
+		stats.IncrementOperations(&stats.FsValidateNonDirectoryFailedOps)
+		err = fmt.Errorf("%v.Validate(%v) failed: %v", tWS.volumeName, nonDirInodeNumber, err)
+		logger.Errorf("fs.validateNonDirInode() error: %v", err)
 	}
 	return
 }
