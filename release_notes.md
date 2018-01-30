@@ -8,6 +8,7 @@
 
 ### Notes:
 
+* Development environment now enhanced with pin'd versions of dependencies
 * Preliminary work for supporting an RPO of Zero in place but inactive
 
 ## 1.1.1 (January 2, 2018)
