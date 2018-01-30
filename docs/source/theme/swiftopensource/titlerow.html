@@ -1,0 +1,16 @@
+<div class="row">
+  <div class="col-lg-8">
+      <h2>{{ title }}</h2>
+  </div>
+  <div class="docs-actions">
+    {% if prev %}
+    <a href="{{ prev.link|e }}"><i class="fa fa-angle-double-left" data-toggle="tooltip" data-placement="top" title="Previous: {{ prev.title|striptags }}"></i></a>
+    {% endif %}
+    {% if next %}
+    <a href="{{ next.link|e }}"><i class="fa fa-angle-double-right" data-toggle="tooltip" data-placement="top" title="Next: {{ next.title|striptags }}"></i></a>
+    {% endif %}
+    {%- if bug_project %}
+    <a id="logABugLink1" href="" target="_blank" title="Found an error? Report a bug against this page"><i class="fa fa-bug" data-toggle="tooltip" data-placement="top" title="Report a Bug"></i></a>
+    {% endif %}
+  </div>
+</div>

@@ -8,7 +8,6 @@
 *.o
 *.a
 *.so
-*.png
 build/
 dist/
 
@@ -40,6 +39,7 @@ _testmain.go
 *.prof
 *.uds
 *.pyc
+*.png
 
 # Vagrant private directory
 .vagrant/

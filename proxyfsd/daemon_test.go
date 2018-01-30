@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -182,6 +183,11 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
 	}
 
+	err = evtlog.Up(testConfMap)
+	if nil != err {
+		t.Fatalf("While doing pre-format, evtlog.Up() failed: %v", err)
+	}
+
 	err = stats.Up(testConfMap)
 	if nil != err {
 		t.Fatalf("While doing pre-format, stats.Up() failed: %v", err)
@@ -215,6 +221,11 @@ func TestDaemon(t *testing.T) {
 	err = stats.Down()
 	if nil != err {
 		t.Fatalf("While doing pre-format, stats.Down() failed: %v", err)
+	}
+
+	err = evtlog.Down()
+	if nil != err {
+		t.Fatalf("While doing pre-format, evtlog.Down() failed: %v", err)
 	}
 
 	err = logger.Down()

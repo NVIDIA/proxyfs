@@ -78,7 +78,7 @@ type globalsStruct struct {
 	maxObjectNameLength             uint64
 }
 
-var globals = globalsStruct{swiftAccountMap: make(map[string]*swiftAccountStruct)}
+var globals globalsStruct
 
 type stringSet map[string]bool
 
@@ -1354,6 +1354,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		signalChan     chan os.Signal
 		signalReceived os.Signal
 	)
+
+	// Initialization
+
+	globals.swiftAccountMap = make(map[string]*swiftAccountStruct)
 
 	// Compute confMap
 

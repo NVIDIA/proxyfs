@@ -13,6 +13,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
@@ -124,6 +125,11 @@ func testSetup() (err error) {
 		return
 	}
 
+	err = evtlog.Up(testConfMap)
+	if nil != err {
+		return
+	}
+
 	err = stats.Up(testConfMap)
 	if nil != err {
 		return
@@ -164,6 +170,7 @@ func testTeardown() (err error) {
 	swiftclient.Down()
 	dlm.Down()
 	stats.Down()
+	evtlog.Down()
 	logger.Down()
 
 	testDir, err := os.Getwd()

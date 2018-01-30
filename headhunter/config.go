@@ -51,24 +51,25 @@ type volumeStruct struct {
 	checkpointContainerName          string
 	checkpointContainerStoragePolicy string
 	checkpointInterval               time.Duration
-	replayLogFileName                string   // if != "", use replay log to reduce RPO to zero
-	replayLogFile                    *os.File //   opened on first Put or Delete after checkpoint
-	//                                             closed/deleted on successful checkpoint
-	defaultReplayLogWriteBuffer    []byte //       used for O_DIRECT writes to replay log
-	checkpointFlushedData          bool
-	checkpointChunkedPutContext    swiftclient.ChunkedPutContext
-	checkpointDoneWaitGroup        *sync.WaitGroup
-	nextNonce                      uint64
-	checkpointRequestChan          chan *checkpointRequestStruct
-	checkpointHeaderVersion        uint64
-	checkpointHeader               *checkpointHeaderV2Struct
-	checkpointObjectTrailer        *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                *bPlusTreeWrapperStruct
-	logSegmentRecWrapper           *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
+	replayLogFileName                string   //      if != "", use replay log to reduce RPO to zero
+	replayLogFile                    *os.File //        opened on first Put or Delete after checkpoint
+	//                                                  closed/deleted on successful checkpoint
+	defaultReplayLogWriteBuffer             []byte // used for O_DIRECT writes to replay log
+	checkpointFlushedData                   bool
+	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
+	checkpointChunkedPutContextObjectNumber uint64 // ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
+	checkpointDoneWaitGroup                 *sync.WaitGroup
+	nextNonce                               uint64
+	checkpointRequestChan                   chan *checkpointRequestStruct
+	checkpointHeaderVersion                 uint64
+	checkpointHeader                        *checkpointHeaderV2Struct
+	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
+	inodeRecWrapper                         *bPlusTreeWrapperStruct
+	logSegmentRecWrapper                    *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper                  *bPlusTreeWrapperStruct
+	inodeRecBPlusTreeLayout                 sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
 }
 
 type globalsStruct struct {

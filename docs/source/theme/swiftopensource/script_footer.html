@@ -1,0 +1,82 @@
+<!-- jQuery -->
+<script type="text/javascript" src="{{pathto('_static/js/jquery-3.2.1.min.js', 1)}}"></script>
+
+<!-- Bootstrap JavaScript -->
+<script type="text/javascript" src="{{pathto('_static/js/bootstrap.min.js', 1)}}"></script>
+
+<!-- The rest of the JS -->
+<script type="text/javascript" src="{{pathto('_static/js/navigation.js', 1)}}"></script>
+
+<!-- Docs JS -->
+<script type="text/javascript" src="{{pathto('_static/js/docs.js', 1)}}"></script>
+
+<!-- Popovers -->
+<script type="text/javascript" src="{{pathto('_static/js/webui-popover.js', 1)}}"></script>
+
+<!-- standard sphinx include libraries, which allow search highlighting -->
+<script type="text/javascript" src="{{pathto('_static/underscore.js', 1)}}"></script>
+<script type="text/javascript" src="{{pathto('_static/doctools.js', 1)}}"></script>
+<script type="text/javascript" src="{{pathto('_static/searchtools.js', 1)}}"></script>
+
+<script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '{{ version }}',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        SOURCELINK_SUFFIX: '.txt',
+        HAS_SOURCE:  true
+      };
+</script>
+
+
+<!-- Javascript for page -->
+<script language="JavaScript">
+/* build a description of this page including SHA, source location on git repo,
+   build time and the project's launchpad bug tag. Set the HREF of the bug
+   buttons */
+
+    var lineFeed = "%0A";
+    var gitURL = "Source: Can't derive source file URL";
+
+    /* there have been cases where "pagename" wasn't set; better check for it */
+    {%- if giturl and pagename %}
+        /* The URL of the source file on Git is based on the giturl variable
+           in conf.py, which must be manually initialized to the source file
+           URL in Git.
+           "pagename" is a standard sphinx parameter containing the name of
+           the source file, without extension.                             */
+
+        var sourceFile = "{{ pagename }}" + ".rst";
+        gitURL = "Source: {{ giturl }}" + "/" + sourceFile;
+    {%- endif %}
+
+    /* gitsha, project and bug_tag rely on variables in conf.py */
+    var gitSha = "SHA: {{ gitsha }}";
+    {%- if bug_project %}
+        var bugProject = "{{ bug_project }}";
+    {%- endif %}
+    {%- if bug_title %}
+        var bugTitle = "{{ bug_title }}";
+    {%- else %}
+        var bugTitle = "{{ title }} in {{ project }}";
+    {%- endif %}
+    var fieldTags = "{{ bug_tag }}";
+    {%- if use_storyboard %}
+        var useStoryboard = "{{ use_storyboard }}";
+    {%- else %}
+        var useStoryboard = "";
+    {%- endif %}
+
+
+    /* "last_updated" is the build date and time. It relies on the
+       conf.py variable "html_last_updated_fmt", which should include
+       year/month/day as well as hours and minutes                   */
+    var buildstring = "Release: {{ release }} on {{ last_updated }}";
+
+    var fieldComment = encodeURI(buildstring) +
+                       lineFeed + encodeURI(gitSha) +
+                       lineFeed + encodeURI(gitURL) ;
+
+    logABug(bugTitle, bugProject, fieldComment, fieldTags);
+</script>

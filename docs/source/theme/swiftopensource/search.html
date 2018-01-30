@@ -1,0 +1,43 @@
+{#
+    basic/search.html
+    ~~~~~~~~~~~~~~~~~
+
+    Template for the search page.
+
+    :copyright: Copyright 2007-2016 by the Sphinx team, see AUTHORS.
+    :license: BSD, see LICENSE for details.
+#}
+{% extends "layout.html" %}
+{% set title = _('Search') %}
+{% block extrahead %}
+{{ super() }}
+{% endblock %}
+{% block body %}
+  <div id="fallback" class="admonition warning">
+  <script type="text/javascript">document.getElementById('fallback').style.display = 'none';</script>
+  <p>
+    {% trans %}Please activate JavaScript to enable the search
+    functionality.{% endtrans %}
+  </p>
+  </div>
+  <p>
+    {% trans %}To search the documentation for {{ project }}, type your query into the
+    box below and press Enter.{% endtrans %}
+  </p>
+    <form action="" method="get">
+    <input type="text" name="q" value="" />
+    <input type="submit" value="search" />
+    <span id="search-progress" style="padding-left: 10px"></span>
+
+    <div id="search-results">
+
+    </div>
+{% endblock %}
+
+{% block script_footer %}
+  <script type="text/javascript">
+    jQuery(function() { Search.loadIndex("searchindex.js"); });
+  </script>
+
+  <script type="text/javascript" id="searchindexloader"></script>
+{% endblock %}

@@ -59,6 +59,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	// Look thru list of volumes and generate map of volumes to be mounted on
+	// the local node.
 	for _, volumeName = range volumeList {
 		volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
@@ -92,8 +94,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	// If we reach here, we succeeded importing confMap
-
+	// If we reach here, we succeeded importing confMap.
+	// Now go and mount the volumes.
 	for _, mountPoint = range globals.mountPointMap {
 		err = performMount(mountPoint)
 		if nil != err {
@@ -310,6 +312,7 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 		logger.Infof("Unable to serve %s.FUSEMountPoint == %s (mount point dir's parent does not exist)", mountPoint.volumeName, mountPoint.mountPointName)
 		return
 	}
+
 	missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
 	if nil == err {
 		if missing {
@@ -357,6 +360,7 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 		fuselib.LocalVolume(),
 		fuselib.VolumeName(mountPoint.mountPointName),
 	)
+
 	if nil != err {
 		logger.WarnfWithError(err, "Couldn't mount %s.FUSEMountPoint == %s", mountPoint.volumeName, mountPoint.mountPointName)
 		err = nil
@@ -370,44 +374,24 @@ func performMount(mountPoint *mountPointStruct) (err error) {
 
 	fs := &ProxyFUSE{mountHandle: mountHandle}
 
+	// We synchronize the mounting of the mount point to make sure our FUSE goroutine
+	// has reached the point that it can service requests.
+	//
+	// Otherwise, if proxyfsd is killed after we block on a FUSE request but before our
+	// FUSE goroutine has had a chance to run we end up with an unkillable proxyfsd process.
+	//
+	// This would result in a "proxyfsd <defunct>" process that is only cleared by rebooting
+	// the system.
+	fs.wg.Add(1)
+
 	go func(mountPointName string, conn *fuselib.Conn) {
 		defer conn.Close()
 		fusefslib.Serve(conn, fs)
 	}(mountPoint.mountPointName, conn)
 
-	// Finally, await mount point becoming available
-
-	missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
-	if nil == err {
-		if missing {
-			err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s disappeared [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
-			return
-		}
-	} else {
-		err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s now inaccessible [case 1]", mountPoint.volumeName, mountPoint.mountPointName)
-		return
-	}
-
-	curRetryCount = 0
-
-	for mountPointDevice == mountPointContainingDirDevice {
-		time.Sleep(retryGap) // Try again in a bit
-		missing, mountPointDevice, err = fetchInodeDevice(mountPoint.mountPointName)
-		if nil == err {
-			if missing {
-				err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s disappeared [case 3]", mountPoint.volumeName, mountPoint.mountPointName)
-				return
-			}
-		} else {
-			err = fmt.Errorf("Race condition: %s.FUSEMountPoint == %s now inaccessible [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
-			return
-		}
-		curRetryCount++
-		if curRetryCount >= maxRetryCount {
-			err = fmt.Errorf("MaxRetryCount exceeded for %s.FUSEMountPoint == %s [case 2]", mountPoint.volumeName, mountPoint.mountPointName)
-			return
-		}
-	}
+	// Wait for FUSE to mount the file system.   The "fs.wg.Done()" is in the
+	// Root() routine.
+	fs.wg.Wait()
 
 	// If we made it to here, all was ok
 

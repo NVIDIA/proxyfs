@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -56,6 +57,10 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfConfig(responseWriter, request)
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
+	case "/arm-disarm-trigger" == path:
+		doGetOfArmDisarmTrigger(responseWriter, request)
+	case strings.HasPrefix(request.URL.Path, "/trigger"):
+		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
 		doGetOfVolume(responseWriter, request)
 	default:
@@ -75,6 +80,12 @@ func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Reque
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/config\">Configuration Parameters</a>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/metrics\">StatsD/Prometheus Page</a>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("    Trigger Pages:\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/arm-disarm-trigger\">Arm/Disarm</a>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger\">All</a>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=true\">Armed</a>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=false\">Disarmed</a>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/volume\">Volume Page</a>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
@@ -112,25 +123,16 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err                      error
-		format                   string
-		i                        int
-		keyAsKey                 sortedmap.Key
-		keyAsString              string
-		lenStatsLLRB             int
-		line                     string
-		longestStatKey           int
-		longestStatValueAsString int
-		memStats                 runtime.MemStats
-		ok                       bool
-		pauseNsAccumulator       uint64
-		statKey                  string
-		statsLLRB                sortedmap.LLRBTree
-		statsMap                 map[string]uint64
-		statValueAsString        string
-		statValueAsUint64        uint64
-		valueAsString            string
-		valueAsValue             sortedmap.Value
+		err                error
+		i                  int
+		memStats           runtime.MemStats
+		ok                 bool
+		pauseNsAccumulator uint64
+		statKey            string
+		statsLLRB          sortedmap.LLRBTree
+		statsMap           map[string]uint64
+		statValueAsString  string
+		statValueAsUint64  uint64
 	)
 
 	statsMap = stats.Dump()
@@ -191,16 +193,11 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	statsLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
 	for statKey, statValueAsUint64 = range statsMap {
 		statKey = strings.Replace(statKey, ".", "_", -1)
 		statKey = strings.Replace(statKey, "-", "_", -1)
-		if len(statKey) > longestStatKey {
-			longestStatKey = len(statKey)
-		}
 		statValueAsString = fmt.Sprintf("%v", statValueAsUint64)
-		if len(statValueAsString) > longestStatValueAsString {
-			longestStatValueAsString = len(statValueAsString)
-		}
 		ok, err = statsLLRB.Put(statKey, statValueAsString)
 		if nil != err {
 			err = fmt.Errorf("statsLLRB.Put(%v, %v) failed: %v", statKey, statValueAsString, err)
@@ -212,35 +209,176 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 	}
 
-	format = fmt.Sprintf("%%-%vs %%%vs\n", longestStatKey, longestStatValueAsString)
+	sortedTwoColumnResponseWriter(statsLLRB, responseWriter)
+}
 
-	lenStatsLLRB, err = statsLLRB.Len()
-	if nil != err {
-		err = fmt.Errorf("statsLLRB.Len()) failed: %v", err)
-		logger.Fatalf("HTTP Server Logic Error: %v", err)
-	}
-	if len(statsMap) != lenStatsLLRB {
-		err = fmt.Errorf("len(statsMap) != lenStatsLLRB")
-		logger.Fatalf("HTTP Server Logic Error: %v", err)
-	}
+func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		availableTriggers []string
+		err               error
+		haltTriggerString string
+		ok                bool
+		triggersLLRB      sortedmap.LLRBTree
+	)
 
-	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
 
-	for i = 0; i < lenStatsLLRB; i++ {
-		keyAsKey, valueAsValue, ok, err = statsLLRB.GetByIndex(i)
+	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Trigger Arm/Disarm Page</title>\n")))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("    <form method=\"post\" action=\"/arm-disarm-trigger\">\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <select name=\"haltLabelString\">\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("        <option value=\"\">-- select one --</option>\n"))
+
+	availableTriggers = halter.List()
+
+	triggersLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+	for _, haltTriggerString = range availableTriggers {
+		ok, err = triggersLLRB.Put(haltTriggerString, true)
 		if nil != err {
-			err = fmt.Errorf("statsLLRB.GetByIndex(%v) failed: %v", i, err)
+			err = fmt.Errorf("triggersLLRB.Put(%v, true) failed: %v", haltTriggerString, err)
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			err = fmt.Errorf("statsLLRB.GetByIndex(%v) returned ok == false", i)
+			err = fmt.Errorf("triggersLLRB.Put(%v, true) returned ok == false", haltTriggerString)
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
-		keyAsString = keyAsKey.(string)
-		valueAsString = valueAsValue.(string)
-		line = fmt.Sprintf(format, keyAsString, valueAsString)
-		_, _ = responseWriter.Write(utils.StringToByteSlice(line))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <option value=\"%v\">%v</option>\n", haltTriggerString, haltTriggerString)))
+	}
+
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      </select>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"number\" name=\"haltAfterCount\" min=\"0\" max=\"4294967295\" required>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\">\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+}
+
+func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		armedTriggers                 map[string]uint32
+		availableTriggers             []string
+		err                           error
+		haltTriggerArmedStateAsBool   bool
+		haltTriggerArmedStateAsString string
+		haltTriggerCount              uint32
+		haltTriggerString             string
+		numPathParts                  int
+		ok                            bool
+		pathSplit                     []string
+		triggersLLRB                  sortedmap.LLRBTree
+	)
+
+	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
+	//                                                  pathSplit[1] must be "trigger" based on how we got here
+	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+	numPathParts = len(pathSplit) - 1
+	if "" == pathSplit[numPathParts] {
+		numPathParts--
+	}
+
+	switch numPathParts {
+	case 1:
+		// Form: /trigger[?armed={true|false}]
+
+		haltTriggerArmedStateAsString = request.FormValue("armed")
+
+		if "" == haltTriggerArmedStateAsString {
+			armedTriggers = halter.Dump()
+			availableTriggers = halter.List()
+
+			triggersLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+			for _, haltTriggerString = range availableTriggers {
+				haltTriggerCount, ok = armedTriggers[haltTriggerString]
+				if ok {
+					ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
+					if nil != err {
+						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
+						logger.Fatalf("HTTP Server Logic Error: %v", err)
+					}
+					if !ok {
+						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
+						logger.Fatalf("HTTP Server Logic Error: %v", err)
+					}
+				} else {
+					ok, err = triggersLLRB.Put(haltTriggerString, "0")
+					if nil != err {
+						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
+						logger.Fatalf("HTTP Server Logic Error: %v", err)
+					}
+					if !ok {
+						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, 0)
+						logger.Fatalf("HTTP Server Logic Error: %v", err)
+					}
+				}
+			}
+
+			sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
+		} else {
+			haltTriggerArmedStateAsBool, err = strconv.ParseBool(haltTriggerArmedStateAsString)
+			if nil == err {
+				triggersLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+				if haltTriggerArmedStateAsBool {
+					armedTriggers = halter.Dump()
+					for haltTriggerString, haltTriggerCount = range armedTriggers {
+						ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
+						if nil != err {
+							err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
+							logger.Fatalf("HTTP Server Logic Error: %v", err)
+						}
+						if !ok {
+							err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
+							logger.Fatalf("HTTP Server Logic Error: %v", err)
+						}
+					}
+				} else {
+					armedTriggers = halter.Dump()
+					availableTriggers = halter.List()
+
+					for _, haltTriggerString = range availableTriggers {
+						_, ok = armedTriggers[haltTriggerString]
+						if !ok {
+							ok, err = triggersLLRB.Put(haltTriggerString, "0")
+							if nil != err {
+								err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
+								logger.Fatalf("HTTP Server Logic Error: %v", err)
+							}
+							if !ok {
+								err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, 0)
+								logger.Fatalf("HTTP Server Logic Error: %v", err)
+							}
+						}
+					}
+				}
+
+				sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
+			} else {
+				responseWriter.WriteHeader(http.StatusBadRequest)
+			}
+		}
+	case 2:
+		// Form: /trigger/<trigger-name>
+
+		haltTriggerString = pathSplit[2]
+
+		haltTriggerCount, err = halter.Stat(haltTriggerString)
+		if nil == err {
+			responseWriter.Header().Set("Content-Type", "text/plain")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("%v\n", haltTriggerCount)))
+		} else {
+			responseWriter.WriteHeader(http.StatusNotFound)
+		}
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
 	}
 }
 
@@ -643,6 +781,108 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 }
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
+	path := strings.TrimRight(request.URL.Path, "/")
+
+	switch {
+	case "/arm-disarm-trigger" == path:
+		doPostOfArmDisarmTrigger(responseWriter, request)
+	case strings.HasPrefix(request.URL.Path, "/trigger"):
+		doPostOfTrigger(responseWriter, request)
+	case strings.HasPrefix(request.URL.Path, "/volume"):
+		doPostOfVolume(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func doPostOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err                    error
+		haltAfterCountAsString string
+		haltAfterCountAsU32    uint32
+		haltAfterCountAsU64    uint64
+		haltLabelString        string
+	)
+
+	haltLabelString = request.PostFormValue("haltLabelString")
+	haltAfterCountAsString = request.PostFormValue("haltAfterCount")
+
+	_, err = halter.Stat(haltLabelString)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	haltAfterCountAsU64, err = strconv.ParseUint(haltAfterCountAsString, 10, 32)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	haltAfterCountAsU32 = uint32(haltAfterCountAsU64)
+
+	if 0 == haltAfterCountAsU32 {
+		halter.Disarm(haltLabelString)
+	} else {
+		halter.Arm(haltLabelString, haltAfterCountAsU32)
+	}
+
+	responseWriter.Header().Set("Location", "/trigger")
+	responseWriter.WriteHeader(http.StatusSeeOther)
+}
+
+func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err                      error
+		haltTriggerCountAsString string
+		haltTriggerCountAsU32    uint32
+		haltTriggerCountAsU64    uint64
+		haltTriggerString        string
+		numPathParts             int
+		pathSplit                []string
+	)
+
+	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
+	//                                                  pathSplit[1] must be "trigger" based on how we got here
+	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+	numPathParts = len(pathSplit) - 1
+	if "" == pathSplit[numPathParts] {
+		numPathParts--
+	}
+
+	switch numPathParts {
+	case 2:
+		// Form: /trigger/<trigger-name>
+
+		haltTriggerString = pathSplit[2]
+
+		_, err = halter.Stat(haltTriggerString)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		haltTriggerCountAsString = request.FormValue("count")
+
+		haltTriggerCountAsU64, err = strconv.ParseUint(haltTriggerCountAsString, 10, 32)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		haltTriggerCountAsU32 = uint32(haltTriggerCountAsU64)
+
+		if 0 == haltTriggerCountAsU32 {
+			halter.Disarm(haltTriggerString)
+		} else {
+			halter.Arm(haltTriggerString, haltTriggerCountAsU32)
+		}
+
+		responseWriter.WriteHeader(http.StatusNoContent)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err            error
 		fsckJob        *fsckJobStruct
@@ -729,7 +969,7 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
-				err = fmt.Errorf("httpserver.doPost() delete of oldest element of volume.fsckJobs failed")
+				err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 		}
@@ -752,7 +992,7 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			err = fmt.Errorf("httpserver.doPost() PUT to volume.fsckJobs failed")
+			err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
@@ -809,4 +1049,71 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	volume.Unlock()
 
 	responseWriter.WriteHeader(http.StatusNoContent)
+}
+
+func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.ResponseWriter) {
+	var (
+		err                  error
+		format               string
+		i                    int
+		keyAsKey             sortedmap.Key
+		keyAsString          string
+		lenLLRB              int
+		line                 string
+		longestKeyAsString   int
+		longestValueAsString int
+		ok                   bool
+		valueAsString        string
+		valueAsValue         sortedmap.Value
+	)
+
+	lenLLRB, err = llrb.Len()
+	if nil != err {
+		err = fmt.Errorf("llrb.Len()) failed: %v", err)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	longestKeyAsString = 0
+	longestValueAsString = 0
+
+	for i = 0; i < lenLLRB; i++ {
+		keyAsKey, valueAsValue, ok, err = llrb.GetByIndex(i)
+		if nil != err {
+			err = fmt.Errorf("llrb.GetByIndex(%v) failed: %v", i, err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+		if !ok {
+			err = fmt.Errorf("llrb.GetByIndex(%v) returned ok == false", i)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+		keyAsString = keyAsKey.(string)
+		valueAsString = valueAsValue.(string)
+		if len(keyAsString) > longestKeyAsString {
+			longestKeyAsString = len(keyAsString)
+		}
+		if len(valueAsString) > longestValueAsString {
+			longestValueAsString = len(valueAsString)
+		}
+	}
+
+	format = fmt.Sprintf("%%-%vs %%%vs\n", longestKeyAsString, longestValueAsString)
+
+	for i = 0; i < lenLLRB; i++ {
+		keyAsKey, valueAsValue, ok, err = llrb.GetByIndex(i)
+		if nil != err {
+			err = fmt.Errorf("llrb.GetByIndex(%v) failed: %v", i, err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+		if !ok {
+			err = fmt.Errorf("llrb.GetByIndex(%v) returned ok == false", i)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+		keyAsString = keyAsKey.(string)
+		valueAsString = valueAsValue.(string)
+		line = fmt.Sprintf(format, keyAsString, valueAsString)
+		_, _ = responseWriter.Write(utils.StringToByteSlice(line))
+	}
 }

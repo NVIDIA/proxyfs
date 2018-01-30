@@ -3,9 +3,11 @@ gosubdirs = \
 	cleanproxyfs \
 	conf \
 	dlm \
+	evtlog evtlog/pfsevtlogd \
 	fs \
 	fsworkout \
 	fuse \
+	halter \
 	headhunter \
 	httpserver \
 	inode \
@@ -31,7 +33,7 @@ ifeq ($(uname),Linux)
 
     all: fmt install stringer generate test vet c-clean c-build c-install c-test
 
-    all-deb-builder: fmt install stringer generate test vet c-clean c-build c-install-deb-builder c-test
+    all-deb-builder: fmt install stringer generate vet c-clean c-build c-install-deb-builder
 else
     all: fmt install stringer generate test vet
 endif
@@ -39,38 +41,39 @@ endif
 .PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install stringer test vet
 
 bench:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir bench; \
 	done
 
 c-build:
-	$(MAKE) --no-print-directory -C jrpcclient all
-	$(MAKE) --no-print-directory -C vfs
+	$(MAKE) -w -C jrpcclient all
+	$(MAKE) -w -C vfs
 
 c-clean:
-	$(MAKE) --no-print-directory -C jrpcclient clean
-	$(MAKE) --no-print-directory -C vfs clean
+	$(MAKE) -w -C jrpcclient clean
+	$(MAKE) -w -C vfs clean
 
 c-install:
 ifeq ($(distro),CentOS Linux)
-	sudo -E $(MAKE) --no-print-directory -C jrpcclient installcentos
-	sudo -E $(MAKE) --no-print-directory -C vfs installcentos
+	sudo -E $(MAKE) -w -C jrpcclient installcentos
+	sudo -E $(MAKE) -w -C vfs installcentos
 else
-	sudo -E $(MAKE) --no-print-directory -C jrpcclient install
-	sudo -E $(MAKE) --no-print-directory -C vfs install
+	sudo -E $(MAKE) -w -C jrpcclient install
+	sudo -E $(MAKE) -w -C vfs install
 endif
 
 c-install-deb-builder:
 ifeq ($(distro),CentOS Linux)
-	$(MAKE) --no-print-directory -C jrpcclient installcentos
-	$(MAKE) --no-print-directory -C vfs installcentos
+	$(MAKE) -w -C jrpcclient installcentos
+	$(MAKE) -w -C vfs installcentos
 else
-	$(MAKE) --no-print-directory -C jrpcclient install
-	$(MAKE) --no-print-directory -C vfs install
+	$(MAKE) -w -C jrpcclient install
+	$(MAKE) -w -C vfs install
 endif
 
 c-test:
-	cd jrpcclient ; ./regression_test.py --just-test-libs ; cd -
+	cd jrpcclient ; ./regression_test.py --just-test-libs
 
 clean:
 	rm -f $(GOPATH)/bin/stringer
@@ -79,22 +82,26 @@ clean:
 	done
 
 cover:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir cover; \
 	done
 
 fmt:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done
 
 generate:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done
 
 install:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
 
@@ -102,11 +109,13 @@ stringer:
 	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer
 
 test:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
 	done
 
 vet:
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir vet; \
 	done

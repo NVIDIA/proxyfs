@@ -13,6 +13,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -92,6 +93,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
+	err = evtlog.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	signalHandlerIsArmed := false
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
@@ -143,6 +150,18 @@ func TestAPI(t *testing.T) {
 	unix.Kill(unix.Getpid(), unix.SIGTERM)
 
 	_ = <-doneChan
+
+	err = evtlog.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = logger.Down()
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
+		t.Fatalf(tErr)
+	}
 }
 
 // Test the use of the API for normal Swift operations

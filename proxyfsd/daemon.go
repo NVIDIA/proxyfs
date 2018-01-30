@@ -12,8 +12,10 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/fuse"
+	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/httpserver"
 	"github.com/swiftstack/ProxyFS/inode"
@@ -78,7 +80,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
 
-	// Start up dæmon packages (logger starts first and finishes last)
+	// Start up dæmon packages (logging starts first (followed by event logging) and finishes last)
 
 	err = logger.Up(confMap)
 	if nil != err {
@@ -95,6 +97,38 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		}
 		wg.Done()
 	}()
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		logger.Errorf("evtlog.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = evtlog.Down()
+		if nil != err {
+			logger.Errorf("evtlog.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	err = halter.Up(confMap)
+	if nil != err {
+		logger.Errorf("halter.Up() failed: %v", err)
+		errChan <- err
+		return
+	}
+	wg.Add(1)
+	defer func() {
+		err = halter.Down()
+		if nil != err {
+			logger.Errorf("halter.Down() failed: %v", err)
+		}
+		wg.Done()
+	}()
+
+	evtlog.Record(evtlog.FormatUpSequenceStart)
 
 	err = stats.Up(confMap)
 	if nil != err {
@@ -246,6 +280,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		wg.Done()
 	}()
 
+	evtlog.Record(evtlog.FormatUpSequenceEnd)
+
 	// Arm signal handler used to indicate termination and wait on it
 	//
 	// Note: signalled chan must be buffered to avoid race with window between
@@ -273,6 +309,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			// it may be because the caller has not called wg.Wait()
 			// to wait for all of the defer'ed routines (above) to
 			// finish before it exits
+			evtlog.Record(evtlog.FormatDownSequenceEnd)
 			logger.Infof("signal catcher is shutting down proxyfsd (PID %d)", os.Getpid())
 			return
 		}
@@ -302,6 +339,9 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			}
 
 			// tell each daemon to pause and apply "contracting" confMap changes
+
+			evtlog.Record(evtlog.FormatPauseAndContractSequenceStart)
+
 			err = httpserver.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("httpserver.PauseAndContract(): %v", err)
@@ -362,6 +402,20 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				break
 			}
 
+			evtlog.Record(evtlog.FormatPauseAndContractSequenceEnd)
+
+			err = evtlog.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("evtlog.PauseAndContract(): %v", err)
+				break
+			}
+
+			err = halter.PauseAndContract(confMap)
+			if nil != err {
+				err = fmt.Errorf("halter.PauseAndContract(): %v", err)
+				break
+			}
+
 			err = logger.PauseAndContract(confMap)
 			if nil != err {
 				err = fmt.Errorf("logger.PauseAndContract(): %v", err)
@@ -369,6 +423,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			}
 
 			// tell each daemon to apply "expanding" confMap changes and result
+
 			logger.Infof("Reconfig starting; resuming daemons")
 
 			err = logger.ExpandAndResume(confMap)
@@ -376,6 +431,20 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 				err = fmt.Errorf("logger.ExpandAndResume(): %v", err)
 				break
 			}
+
+			err = halter.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("halter.ExpandAndResume(): %v", err)
+				break
+			}
+
+			err = evtlog.ExpandAndResume(confMap)
+			if nil != err {
+				err = fmt.Errorf("evtlog.ExpandAndResume(): %v", err)
+				break
+			}
+
+			evtlog.Record(evtlog.FormatExpandAndResumeSequenceStart)
 
 			err = stats.ExpandAndResume(confMap)
 			if nil != err {
@@ -438,6 +507,9 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			}
 
 			logger.Infof("Reconfig finished successfully")
+
+			evtlog.Record(evtlog.FormatExpandAndResumeSequenceEnd)
+
 			break
 		}
 

@@ -2,6 +2,7 @@ package fuse
 
 import (
 	"fmt"
+	"sync"
 
 	fuselib "bazil.org/fuse"
 	fusefslib "bazil.org/fuse/fs"
@@ -14,14 +15,20 @@ import (
 
 type ProxyFUSE struct {
 	mountHandle fs.MountHandle
+	wg          sync.WaitGroup // Used to synchronize mount
 }
 
-func (pfs ProxyFUSE) Root() (fusefslib.Node, error) {
+func (pfs *ProxyFUSE) Root() (fusefslib.Node, error) {
 	root := Dir{mountHandle: pfs.mountHandle, inodeNumber: inode.RootDirInodeNumber}
+
+	// Signal any waiters that we have completed mounting the volume.
+	// We know this because this call is only made after the user level FUSE
+	// library and the FUSE driver have agreed on the FUSE prototocol level.
+	pfs.wg.Done()
 	return root, nil
 }
 
-func (pfs ProxyFUSE) Statfs(ctx context.Context, req *fuselib.StatfsRequest, resp *fuselib.StatfsResponse) error {
+func (pfs *ProxyFUSE) Statfs(ctx context.Context, req *fuselib.StatfsRequest, resp *fuselib.StatfsResponse) error {
 	statvfs, err := pfs.mountHandle.StatVfs()
 	if err != nil {
 		return newFuseError(err)

@@ -75,7 +75,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		return
 	}
 
-	objectNumber = bPlusTreeWrapper.volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber
+	objectNumber = bPlusTreeWrapper.volume.checkpointChunkedPutContextObjectNumber
 
 	objectOffset, err = bPlusTreeWrapper.volume.bytesPutToCheckpointChunkedPutContext()
 	if nil != err {

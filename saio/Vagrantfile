@@ -14,8 +14,8 @@
 #     will collide in the contents of the $GOPATH/bin (only executables, not libraries)
 
 Vagrant.configure(2) do |config|
-  config.vm.box = "centos-74-minimal-20170913"
-  config.vm.box_url = "https://o.swiftstack.org/v1/AUTH_misc/vagrant_boxes/centos-74-minimal-20170913.box"
+  config.vm.box = "centos-74-minimal-20171228"
+  config.vm.box_url = "https://o.swiftstack.org/v1/AUTH_misc/vagrant_boxes/centos-74-minimal-20171228.box"
   config.vm.provider :virtualbox do |vb|
     vb.name = "SAIO for ProxyFS"
     vb.cpus = Integer(ENV['VAGRANT_CPUS'] || 2)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -33,6 +34,9 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 
 	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
 		newReservedToNonce = volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve)
+
+		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
 
 		// checkpointHeaderVersion2 == volume.checkpointHeaderVersion
 
@@ -81,6 +85,8 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingInodeRec, volume.volumeName, inodeNumber)
+		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
 		return
 	}
 	valueFromTree := valueAsValue.([]byte)
@@ -164,7 +170,7 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 
 	_, err = volume.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 
-	volume.recordTransaction(transactionDeleteInodeRec, transactionDeleteInodeRec, nil)
+	volume.recordTransaction(transactionDeleteInodeRec, inodeNumber, nil)
 
 	volume.Unlock()
 
@@ -181,6 +187,7 @@ func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []b
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingLogSegmentRec, volume.volumeName, logSegmentNumber)
 		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRecWrapper.bPlusTree", logSegmentNumber, volume.volumeName)
 		return
 	}
@@ -243,6 +250,7 @@ func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byt
 	}
 	if !ok {
 		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingBPlusTreeObject, volume.volumeName, objectNumber)
 		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObjectWrapper.bPlusTree", objectNumber, volume.volumeName)
 		return
 	}

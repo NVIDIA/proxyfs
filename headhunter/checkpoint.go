@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -143,6 +144,27 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		singleValue                  []byte
 	)
 
+	// TODO: Eventually embed this stuff in the case statement below
+	switch transactionType {
+	case transactionPutInodeRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutInodeRec, volume.volumeName, keys.(uint64))
+	case transactionPutInodeRecs:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutInodeRecs, volume.volumeName, keys.([]uint64))
+	case transactionDeleteInodeRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteInodeRec, volume.volumeName, keys.(uint64))
+	case transactionPutLogSegmentRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutLogSegmentRec, volume.volumeName, keys.(uint64), string(values.([]byte)[:]))
+	case transactionDeleteLogSegmentRec:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteLogSegmentRec, volume.volumeName, keys.(uint64))
+	case transactionPutBPlusTreeObject:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionPutBPlusTreeObject, volume.volumeName, keys.(uint64))
+	case transactionDeleteBPlusTreeObject:
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionDeleteBPlusTreeObject, volume.volumeName, keys.(uint64))
+	default:
+		logger.Fatalf("headhunter.recordTransaction(transactionType==%v,,) invalid", transactionType)
+	}
+
+	// TODO: Eventually just remove this (once replayLogFile is mandatory)
 	if "" == volume.replayLogFileName {
 		// Replay Log is disabled... simply return
 		return
@@ -502,7 +524,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = 0
 			checkpointHeader.CheckpointObjectTrailerV2StructObjectLength = 0
 
-			checkpointHeader.ReservedToNonce = firstNonceToProvide - 1
+			checkpointHeader.ReservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
 
 			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
 				checkpointHeaderVersion2,
@@ -1116,6 +1138,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
+	volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
 	volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
 
 	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
@@ -1203,14 +1226,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {
 	if nil == volume.checkpointChunkedPutContext {
-		volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber, err = volume.fetchNonceWhileLocked()
+		volume.checkpointChunkedPutContextObjectNumber, err = volume.fetchNonceWhileLocked()
 		if nil != err {
 			return
 		}
 		volume.checkpointChunkedPutContext, err =
 			swiftclient.ObjectFetchChunkedPutContext(volume.accountName,
 				volume.checkpointContainerName,
-				utils.Uint64ToHexStr(volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber))
+				utils.Uint64ToHexStr(volume.checkpointChunkedPutContextObjectNumber))
 		if nil != err {
 			return
 		}
@@ -1285,9 +1308,13 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		volume.Lock()
 
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+
 		checkpointRequest.err = volume.putCheckpoint()
 
-		if nil != checkpointRequest.err {
+		if nil == checkpointRequest.err {
+			evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+		} else {
 			// As part of conducting the checkpoint - and depending upon where the early non-nil
 			// error was reported - it is highly likely that e.g. pages of the B+Trees have been
 			// marked clean even though either their dirty data has not been successfully posted
@@ -1305,6 +1332,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 			// back and marking every node of the B+Trees as being dirty - or at least those that
 			// were marked clean), such an approach will not be pursued at this time.
 
+			evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, checkpointRequest.err.Error())
 			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 		}
 

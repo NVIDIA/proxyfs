@@ -11,6 +11,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/dlm"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -89,6 +90,7 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 
 func TestHeadHunterAPI(t *testing.T) {
 	confStrings := []string{
+		"Logging.LogFilePath=/dev/null",
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -174,6 +176,11 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
 	}
 
+	err = evtlog.Up(confMap)
+	if nil != err {
+		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
+	}
+
 	err = stats.Up(confMap)
 	if nil != err {
 		t.Fatalf("stats.Up() [case 1] returned error: %v", err)
@@ -229,6 +236,11 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
 	}
 
+	err = evtlog.Down()
+	if nil != err {
+		t.Fatalf("evtlog.Down() [case 1] returned error: %v", err)
+	}
+
 	err = logger.Down()
 	if nil != err {
 		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
@@ -237,6 +249,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = logger.Up(confMap)
 	if nil != err {
 		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
+	}
+
+	err = evtlog.Up(confMap)
+	if nil != err {
+		t.Fatalf("evtlog.Up() [case 2] returned error: %v", err)
 	}
 
 	err = stats.Up(confMap)
@@ -331,12 +348,15 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
 	}
 
+	err = evtlog.Down()
+	if nil != err {
+		t.Fatalf("evtlog.Down() [case 2] returned error: %v", err)
+	}
+
 	err = logger.Down()
 	if nil != err {
 		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
-
-	// Ensure Down()
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
 
