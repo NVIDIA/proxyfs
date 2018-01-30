@@ -1,5 +1,15 @@
 # ProxyFS Release Notes
 
+## 1.2.0 (January 30, 2018)
+
+### Bug Fixes:
+
+* Support for hidden SMB Shares now available
+
+### Notes:
+
+* Preliminary work for supporting an RPO of Zero in place but inactive
+
 ## 1.1.1 (January 2, 2018)
 
 ### Bug Fixes:
