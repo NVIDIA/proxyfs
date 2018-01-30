@@ -26,7 +26,8 @@ development model.
 If you'd like to ask questions, discuss ideas, or otherwise communicate
 with other ProxyFS contributors, please register for and participate
 in the [ProxyFS dev mailing list](https://lists.proxyfs.org/mailman/listinfo)
-or the [ProxyFS Slack group](https://proxyfs.slack.com).
+or the [ProxyFS Slack group](https://proxyfs.slack.com), which you can join through
+[this inivitation](https://join.slack.com/t/proxyfs/shared_invite/enQtMzA2NTQwMDU4NTkyLWM4ZjhkYmE0NWEzMTYzZGZkNThkNzcxMzg0NWIzMmQ4MTU5MGQyMDRlY2UzMDU0YjBlNGZkMzk4N2NkNTRjNjY).
 
 ## Development Environment
 
