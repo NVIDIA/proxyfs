@@ -364,7 +364,10 @@ func TestHeadHunterStress(t *testing.T) {
 
 		newInodesSinceRePutInode++
 		if newInodesSinceRePutInode == newInodesSinceRePutInodeCap {
-			putIndex = putIndexPrev
+			for putIndex > putIndexPrev {
+				putIndex--
+				inodeMap[mapKey] = testRandByteSlice(t, testMaxInodeRecSize)
+			}
 			newInodesSinceRePutInodeCap = testRandU64FLessThanN(t, testMaxNewInodesBetweenRePutInodes) + 1
 			newInodesSinceRePutInode = 0
 		}
