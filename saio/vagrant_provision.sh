@@ -53,43 +53,43 @@ echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc-c++ \
-               python-devel \
-               gnutls-devel \
-               libacl-devel \
-               openldap-devel \
-               samba \
-               samba-client \
-               cifs-utils
+yum -y install gcc-c++-4.8.5-16.el7_4.1 \
+               python-devel-2.7.5-58.el7 \
+               gnutls-devel-3.3.26-9.el7 \
+               libacl-devel-2.2.51-12.el7 \
+               openldap-devel-2.4.44-5.el7 \
+               samba-4.6.2-12.el7_4 \
+               samba-client-4.6.2-12.el7_4 \
+               cifs-utils-6.2-10.el7
 cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
-if [[ -d samba4-6-centos ]]
+if [[ -d samba4-6-12-centos ]]
 then
-    if [[ -L samba4-6-centos ]]
+    if [[ -L samba4-6-12-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos cannot pre-exist"
         exit 1
     else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos assumed to be as desired"
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos assumed to be as desired"
     fi
 else
-    if [[ -L samba4-6-centos ]]
+    if [[ -L samba4-6-12-centos ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos cannot pre-exist"
         exit 1
     else
-        git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos
+        git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-centos
     fi
 fi
 if [[ -L samba ]]
 then
     samba_symlink_target=`readlink "samba"`
-    if [[ "samba4-6-centos" == "$samba_symlink_target" ]]
+    if [[ "samba4-6-12-centos" == "$samba_symlink_target" ]]
     then
-        echo "symlink samba -> samba4-6-centos already"
+        echo "symlink samba -> samba4-6-12-centos already"
     else
-        echo "redirecting samba -> samba4-6-centos"
+        echo "redirecting samba -> samba4-6-12-centos"
         rm samba
-        ln -s samba4-6-centos samba
+        ln -s samba4-6-12-centos samba
     fi
 else
     if [[ -e samba ]]
@@ -97,8 +97,8 @@ else
         echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
         exit 1
     else
-        echo "establishing samba -> samba4-6-centos"
-        ln -s samba4-6-centos samba
+        echo "establishing samba -> samba4-6-12-centos"
+        ln -s samba4-6-12-centos samba
     fi
 fi
 cd samba
@@ -301,11 +301,11 @@ ln -s /usr/local/firefox/firefox /usr/bin/firefox
 
 # Install benchmark support tools
 
-yum -y install atop bc fio gawk
+yum -y install atop-2.3.0-8.el7 bc fio gawk
 
 # Install ssh helper
 
-yum -y install sshpass
+yum -y install sshpass-1.06-2.el7
 
 # Install dstat
 
