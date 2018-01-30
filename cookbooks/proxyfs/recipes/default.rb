@@ -215,101 +215,109 @@ end
 if node[:platform_family].include?("rhel")
 
   # packages
-  samba_package = ["samba", "samba-client"]
+  samba_packages = [["samba", "4.6.2-12.el7_4"], ["samba-client", "4.6.2-12.el7_4"]]
 
-  samba_deps = %w(
-    gcc
-    gcc-c++
-    python-devel
-    gnutls-devel
-    libacl-devel
-    openldap-devel
-    samba
-    cifs-utils
-  )
+  samba_deps = [
+    ["gcc", "4.8.5-16.el7_4.1"],
+    ["gcc-c++", "4.8.5-16.el7_4.1"],
+    ["python-devel", "2.7.5-58.el7"],
+    ["gnutls-devel", "3.3.26-9.el7"],
+    ["libacl-devel", "2.2.51-12.el7"],
+    ["openldap-devel", "2.4.44-5.el7"],
+    ["cifs-utils", "6.2-10.el7"],
+  ]
 
   proxyfs_packages = [
-    "json-c-devel",
-    "fuse",
+    ["json-c-devel", "0.11-4.el7_0"],
+    ["fuse", "2.9.2-8.el7"],
   ]
 
   wireshark_packages = [
-    "wireshark",
-    "libcap",
+    ["wireshark", "1.10.14-14.el7"],
+    ["libcap", "2.22-9.el7"],
   ]
 
   ssh_packages = [
-    "sshpass",
+    ["sshpass", "1.06-2.el7"],
   ]
 
   nfs_packages = [
-    "nfs-utils"
+    ["nfs-utils", "1.3.0-0.48.el7_4.1"],
   ]
 
   gdb_packages = [
-    "gdb",
-    "yum-utils"
+    ["gdb", "7.6.1-100.el7_4.1"],
+    ["yum-utils", "1.1.31-42.el7"],
   ]
 
   utils_packages = [
-    "atop",
-    "vim-common"
+    ["atop", "2.3.0-8.el7"],
+    ["vim-common", "7.4.160-2.el7"],
   ]
 
 else # assume debian
 
   # packages
-  samba_package = ["samba", "smbclient"]
+  # We should probably pin these packages, just like we do for RHEL
+  samba_packages = [["samba"], ["smbclient"]]
 
-  samba_deps = %w(
-    gcc
-    python-dev
-    libgnutls-dev
-    libacl1-dev
-    libldap2-dev
-    samba
-    pkg-config
-    cifs-utils
-  )
+  samba_deps = [
+    ["gcc"],
+    ["python-dev"],
+    ["libgnutls-dev"],
+    ["libacl1-dev"],
+    ["libldap2-dev"],
+    ["pkg-config"],
+    ["cifs-utils"],
+  ]
 
   proxyfs_packages = [
-    "libjson-c-dev",
-    "fuse",
+    ["libjson-c-dev"],
+    ["fuse"],
   ]
 
   wireshark_packages = [
-    "wireshark",
-    "libcap2-bin",
+    ["wireshark"],
+    ["libcap2-bin"],
   ]
 
   ssh_packages = [
-    "sshpass",
+    ["sshpass"],
   ]
 
   nfs_packages = [
-    "nfs-kernel-server",
-    "nfs-common"
+    ["nfs-kernel-server"],
+    ["nfs-common"],
   ]
 
   # Not sure if we need anything else on Debian besides gdb itself
   gdb_packages = [
-    "gdb"
+    ["gdb"],
   ]
 
   utils_packages = [
-    "atop",
-    "vim-common"
+    ["atop"],
+    ["vim-common"],
   ]
 
 end
 
-packages = samba_package + samba_deps + proxyfs_packages + nfs_packages + gdb_packages + utils_packages
+packages = samba_packages + samba_deps + proxyfs_packages + nfs_packages + gdb_packages + utils_packages
 packages += wireshark_packages if is_dev
 packages += ssh_packages if is_dev
 
 packages.each do |pkg|
-  package pkg do
-    action :install
+  if pkg.size >= 2
+    # Specify a version if it's been provided
+    package pkg[0] do
+      action :install
+      version pkg[1]
+    end
+  else
+    # Just install whatever YUM provides otherwise
+    package pkg[0] do
+      action :install
+    end
   end
 end
 
@@ -344,25 +352,25 @@ end
 #
 if node[:platform_family].include?("rhel")
   execute "Check out samba" do
-    command "git clone -b v4-6-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-centos"
+    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-centos"
     cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-centos") }
+    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-12-centos") }
   end
 
   link "#{SAMBA_SRC_DIR}" do
-    to "samba4-6-centos"
+    to "samba4-6-12-centos"
     link_type :symbolic
   end
 
 else
   execute "Check out samba" do
-    command "git clone -b v4-3-stable --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-3-ubuntu"
+    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-ubuntu"
     cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-3-ubuntu") }
+    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-12-ubuntu") }
   end
 
   link "#{SAMBA_SRC_DIR}" do
-    to "samba4-3-ubuntu"
+    to "samba4-6-12-ubuntu"
     link_type :symbolic
   end
 
