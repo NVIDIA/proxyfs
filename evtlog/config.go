@@ -108,7 +108,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	logger.Infof("evtlog.Up(): event logging is %v", globals.eventLogEnabled)
+	logger.Infof("evtlog.Up(): event logging is %v", settings.eventLogEnabled)
+
 	globals.eventLogEnabled = settings.eventLogEnabled
 	if !globals.eventLogEnabled {
 		return

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -58,6 +59,7 @@ func accountDelete(accountName string) (err error) {
 		logger.ErrorfWithError(err, "swiftclient.accountDelete(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
+	evtlog.Record(evtlog.FormatAccountDelete, accountName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -125,6 +127,7 @@ func accountGet(accountName string) (headers map[string][]string, containerList 
 		logger.ErrorfWithError(err, "swiftclient.accountGet(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
+	evtlog.Record(evtlog.FormatAccountGet, accountName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -201,6 +204,7 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 		logger.ErrorfWithError(err, "swiftclient.accountHead(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
+	evtlog.Record(evtlog.FormatAccountHead, accountName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -268,6 +272,7 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 		logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
+	evtlog.Record(evtlog.FormatAccountPost, accountName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -351,6 +356,7 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 		logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
+	evtlog.Record(evtlog.FormatAccountPut, accountName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
