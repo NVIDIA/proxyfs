@@ -90,6 +90,7 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 
 func TestHeadHunterAPI(t *testing.T) {
 	confStrings := []string{
+		"Logging.LogFilePath=/dev/null",
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -356,8 +357,6 @@ func TestHeadHunterAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
-
-	// Ensure Down()
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
 
