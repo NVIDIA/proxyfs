@@ -1,5 +1,5 @@
-ProxyFS Data Flows
-==================
+Data Flows
+==========
 
 As an example of how the system works, this will be a walk through of
 basic filesystem operators so that we can illuminate how the system

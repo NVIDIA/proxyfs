@@ -1,5 +1,5 @@
-ProxyFS Access Modules & Interfaces
-===================================
+Access Modules & Interfaces
+===========================
 
 In this section we will discuss the various access methods for ProxyFS.
 
