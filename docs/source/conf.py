@@ -59,7 +59,7 @@ author = u'SwiftStack and the ProxyFS contributors'
 # built documents.
 #
 # The full version, including alpha/beta/rc tags.
-release = re.sub('^v', '', os.popen('git describe').read().strip())
+release = re.sub('^v', '', os.popen('git describe').read().strip()).rsplit('-', 1)[0]
 # The short X.Y version.
 version = release
 
