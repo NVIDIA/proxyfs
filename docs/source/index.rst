@@ -18,7 +18,7 @@ Background
 Not a Gateway
 -------------
 
-Rather than using a gateway to provide file-based access. ProxyFS is
+Rather than using a gateway to provide file-based access, ProxyFS is
 directly integrated into the core of OpenStack Swift object storage to
 enable direct AWS S3 and Swift object API access. This makes it
 compatible with its corresponding projects for `S3
