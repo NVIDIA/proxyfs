@@ -127,7 +127,7 @@ a, a:visited {
   margin: 0 0; }
 
 a.navbar-brand {
-  background: url('https://www.openstack.org/themes/openstack/images/project-mascots/Swift/OpenStack_Project_Swift_horizontal.png') left no-repeat;
+  background: url('../images/OpenStack_Project_Swift_horizontal.png') left no-repeat;
   background-size: contain;
   height: 55px;
   width: 235px; }
@@ -138,7 +138,7 @@ a.navbar-brand {
     min-width: 75px;
     margin-top: 0; }
   a.navbar-brand {
-    background: url('https://www.openstack.org/themes/openstack/images/project-mascots/Swift/OpenStack_Project_Swift_horizontal.png') left no-repeat;
+    background: url('../images/OpenStack_Project_Swift_horizontal.png') left no-repeat;
     background-size: contain;
     margin-left: 0px !important;
     height: 54px;
@@ -1612,7 +1612,7 @@ ul.marketplace-nav a:hover {
   color: #DA422F; }
 
 ul.marketplace-nav a span {
-  background: url("http://openstack.org/marketplace/code/ui/frontend/images/marketplace-icons.png") no-repeat scroll 0 0 rgba(0, 0, 0, 0);
+  background: url("../images/marketplace-icons.png") no-repeat scroll 0 0 rgba(0, 0, 0, 0);
   display: block;
   height: 50px;
   margin: auto;
@@ -1670,7 +1670,7 @@ ul.marketplace-nav .current a {
   font-weight: 300; }
 
 .details-button {
-  background: url("http://openstack.org/marketplace/code/ui/frontend/images/register-arrow.png") no-repeat scroll 85% center #000000;
+  background: url("../images/register-arrow.png") no-repeat scroll 85% center #000000;
   color: #FFFFFF !important;
   display: inline-block;
   margin-right: -10px;
@@ -2492,7 +2492,7 @@ a.main-video:hover .video-description-wrapper .video-description p {
 
 .thumb-play {
   display: none;
-  background-image: url("//www.openstack.org/themes/openstack/images/landing-pages/auto/play-button.png");
+  background-image: url("../images/play-button.png");
   background-repeat: no-repeat;
   background-position: center center;
   background-color: rgba(0, 0, 0, 0.3);
