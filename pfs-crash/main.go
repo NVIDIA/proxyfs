@@ -46,17 +46,23 @@ const (
 
 var (
 	confFile            string
-	confStringsJoined   string
 	fuseMountPointName  string
 	haltLabelStrings    []string
 	ipAddrTCPPort       string
-	lenArgs             int
 	mathRandSource      *mathRand.Rand // A source for pseudo-random numbers (if selected)
+	proxyfsdArgs        []string
 	proxyfsdCmd         *exec.Cmd
 	proxyfsdCmdWaitChan chan error
 	timeoutChan         chan bool
+	trafficCmd          *exec.Cmd
+	trafficCmdWaitChan  chan error
+	trafficScript       string
 	volumeName          string
 )
+
+func usage() {
+	fmt.Printf("%v <trafficScript> <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
+}
 
 func main() {
 	var (
@@ -68,6 +74,8 @@ func main() {
 		haltLabelStringSplit   []string
 		httpServerTCPPort      uint16
 		httpStatusCode         int
+		lenArgs                int
+		mkproxyfsArgs          []string
 		mkproxyfsCmd           *exec.Cmd
 		peerSectionName        string
 		primaryPeer            string
@@ -84,36 +92,39 @@ func main() {
 
 	lenArgs = len(os.Args)
 	if 1 == lenArgs {
-		fmt.Printf("%v <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
+		usage()
 		os.Exit(0)
 	}
-	if 3 > lenArgs {
-		log.Fatalf("no volumeName/.conf file specified")
+	if 4 > lenArgs {
+		usage()
+		os.Exit(-1)
 	}
 
-	volumeName = os.Args[1]
-	confFile = os.Args[2]
-	confStrings = os.Args[3:]
+	trafficScript = os.Args[1]
+	volumeName = os.Args[2]
+	confFile = os.Args[3]
 
 	confMap, err = conf.MakeConfMapFromFile(confFile)
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	if 3 == lenArgs {
-		mkproxyfsCmd = exec.Command("mkproxyfs", "-F", volumeName, confFile)
-		proxyfsdCmd = exec.Command("proxyfsd", confFile)
-	} else {
+	mkproxyfsArgs = []string{"-F", volumeName, confFile}
+	proxyfsdArgs = []string{confFile}
+
+	if 4 < lenArgs {
+		confStrings = os.Args[4:]
+
 		err = confMap.UpdateFromStrings(confStrings)
 		if nil != err {
 			log.Fatalf("failed to apply config overrides: %v", err)
 		}
 
-		confStringsJoined = strings.Join(confStrings, " ")
-
-		mkproxyfsCmd = exec.Command("mkproxyfs", "-F", volumeName, confFile, confStringsJoined)
-		proxyfsdCmd = exec.Command("proxyfsd", confFile, confStringsJoined)
+		mkproxyfsArgs = append(mkproxyfsArgs, confStrings...)
+		proxyfsdArgs = append(proxyfsdArgs, confStrings...)
 	}
+
+	mkproxyfsCmd = exec.Command("mkproxyfs", mkproxyfsArgs...)
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -221,6 +232,8 @@ func main() {
 
 	timeoutChan = make(chan bool, 1)
 
+	trafficCmdWaitChan = make(chan error, 1)
+
 	// Loop through causing ProxyFS to halt via:
 	//   SIGINT
 	//   SIGTERM
@@ -232,7 +245,7 @@ func main() {
 
 	for {
 		if nil == signalToSend {
-			log.Printf("TODO 1")
+			log.Printf("TODO 1 - need to re-work the starting condition once triggers are needed")
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(-1)
 		} else {
@@ -241,17 +254,24 @@ func main() {
 			go timeoutWaiter(randomKillDelay)
 		}
 
-		// TODO: launch exerciser... and maybe have a way to kill it cleanly
+		launchTrafficScript()
 
 		select {
 		case _ = <-signalChan:
 			log.Printf("Received SIGINT or SIGTERM... cleanly shutting down ProxyFS")
+			stopTrafficScript()
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(0)
 		case _ = <-timeoutChan:
+			log.Printf("Sending %v to ProxyFS", signalToSend)
 			stopProxyFS(signalToSend)
+			stopTrafficScript()
 		case err = <-proxyfsdCmdWaitChan:
 			log.Fatalf("[TODO] proxyfsdCmd unexpectedly exited: %v", err) // TODO: unexpected if signalToSend non-nil
+		case err = <-trafficCmdWaitChan:
+			log.Printf("trafficScript unexpectedly finished/failed: %v", err)
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
 		}
 
 		launchProxyFSAndRunFSCK()
@@ -264,11 +284,12 @@ func main() {
 		case unix.SIGKILL:
 			signalToSend = unix.SIGINT // TODO: should be nil here... and initialize haltLabelStrings[] walk
 		case nil:
-			log.Printf("TODO 2")
+			log.Printf("TODO 2 - need to re-work once triggers are needed")
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(-1)
 		default:
 			log.Printf("Logic error... unexpected signalToSend: %v", signalToSend)
+			stopTrafficScript()
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(-1)
 		}
@@ -280,6 +301,37 @@ func timeoutWaiter(randomKillDelay time.Duration) {
 	timeoutChan <- true
 }
 
+func trafficCmdWaiter() {
+	trafficCmdWaitChan <- trafficCmd.Wait()
+}
+
+func stopTrafficScript() {
+	var (
+		err error
+	)
+
+	err = trafficCmd.Process.Signal(unix.SIGTERM)
+	if nil != err {
+		log.Fatalf("trafficCmd.Process.Signal(unix.SIGTERM) failed: %v", err)
+	}
+	_ = <-trafficCmdWaitChan
+}
+
+func launchTrafficScript() {
+	var (
+		err error
+	)
+
+	trafficCmd = exec.Command("bash", trafficScript, fuseMountPointName)
+
+	err = trafficCmd.Start()
+	if nil != err {
+		log.Fatalf("trafficCmd.Start() failed: %v", err)
+	}
+
+	go trafficCmdWaiter()
+}
+
 func proxyfsdCmdWaiter() {
 	proxyfsdCmdWaitChan <- proxyfsdCmd.Wait()
 }
@@ -289,13 +341,11 @@ func stopProxyFS(signalToSend os.Signal) {
 		err error
 	)
 
-	log.Printf("...stopping proxyfsd via signal %v...", signalToSend)
 	err = proxyfsdCmd.Process.Signal(signalToSend)
 	if nil != err {
 		log.Fatalf("proxyfsdCmd.Process.Signal(signalToSend) failed: %v", err)
 	}
 	_ = <-proxyfsdCmdWaitChan
-	log.Printf("...and proxyfsd is down...")
 }
 
 func launchProxyFSAndRunFSCK() {
@@ -308,11 +358,9 @@ func launchProxyFSAndRunFSCK() {
 		polling           bool
 	)
 
-	if 3 == lenArgs {
-		proxyfsdCmd = exec.Command("proxyfsd", confFile)
-	} else {
-		proxyfsdCmd = exec.Command("proxyfsd", confFile, confStringsJoined)
-	}
+	log.Printf("Launching ProxyFS and performing FSCK of %v", volumeName)
+
+	proxyfsdCmd = exec.Command("proxyfsd", proxyfsdArgs...)
 
 	err = proxyfsdCmd.Start()
 	if nil != err {
