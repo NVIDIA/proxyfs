@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	proxyfsdHalterMinHaltAfterCount = 100
-	proxyfsdHalterMaxHaltAfterCount = 200
+	proxyfsdHalterMinHaltAfterCount = 10
+	proxyfsdHalterMaxHaltAfterCount = 20
 
 	proxyfsdMinKillDelay = 2 * time.Second
 	proxyfsdMaxKillDelay = 6 * time.Second
@@ -45,49 +45,61 @@ const (
 )
 
 var (
-	confFile            string
-	fuseMountPointName  string
-	haltLabelStrings    []string
-	ipAddrTCPPort       string
-	mathRandSource      *mathRand.Rand // A source for pseudo-random numbers (if selected)
-	proxyfsdArgs        []string
-	proxyfsdCmd         *exec.Cmd
-	proxyfsdCmdWaitChan chan error
-	timeoutChan         chan bool
-	trafficCmd          *exec.Cmd
-	trafficCmdWaitChan  chan error
-	trafficScript       string
-	volumeName          string
+	confFile              string
+	fuseMountPointName    string
+	haltLabelStrings      []string
+	includeHalterTriggers bool
+	ipAddrTCPPort         string
+	mathRandSource        *mathRand.Rand // A source for pseudo-random numbers (if selected)
+	proxyfsdArgs          []string
+	proxyfsdCmd           *exec.Cmd
+	proxyfsdCmdWaitChan   chan error
+	timeoutChan           chan bool
+	trafficCmd            *exec.Cmd
+	trafficCmdWaitChan    chan error
+	trafficScript         string
+	volumeName            string
+
+	signalExpandedStringMap = map[string]string{"interrupt": "SIGINT(2)", "terminated": "SIGTERM(15)", "killed": "SIGKILL(9)"}
 )
 
 func usage() {
-	fmt.Printf("%v <trafficScript> <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
+	fmt.Printf("%v {+|-}[<trafficScript>] <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
+	fmt.Println("  where:")
+	fmt.Println("    +               indicates to     include halter trigger to halt ProxyFS")
+	fmt.Println("    -               indicates to not incluce halter trigger to halt ProxyFS")
+	fmt.Println("    <trafficScript> launch trafficScript bash script to generate workload")
+	fmt.Println()
+	fmt.Println("Note: If trafficScript is supplied, the script should infinitely loop.")
+	fmt.Println("      The $1 arg to trafficScript will specify the FUSE MountPoint.")
 }
 
 func main() {
 	var (
-		confMap                conf.ConfMap
-		confStrings            []string
-		contentsAsStrings      []string
-		err                    error
-		haltLabelString        string
-		haltLabelStringSplit   []string
-		httpServerTCPPort      uint16
-		httpStatusCode         int
-		lenArgs                int
-		mkproxyfsArgs          []string
-		mkproxyfsCmd           *exec.Cmd
-		peerSectionName        string
-		primaryPeer            string
-		privateIPAddr          string
-		randomKillDelay        time.Duration
-		signalChan             chan os.Signal
-		signalToSend           os.Signal
-		volumeList             []string
-		volumeListElement      string
-		volumeNameInVolumeList bool
-		volumeSectionName      string
-		whoAmI                 string
+		confMap                     conf.ConfMap
+		confStrings                 []string
+		contentsAsStrings           []string
+		err                         error
+		haltLabelString             string
+		haltLabelStringSplit        []string
+		httpServerTCPPort           uint16
+		httpStatusCode              int
+		lenArgs                     int
+		mkproxyfsArgs               []string
+		mkproxyfsCmd                *exec.Cmd
+		nextHalterTriggerIndex      int
+		peerSectionName             string
+		primaryPeer                 string
+		privateIPAddr               string
+		randomKillDelay             time.Duration
+		signalChan                  chan os.Signal
+		signalToSend                os.Signal
+		triggerBoolAndTrafficScript string
+		volumeList                  []string
+		volumeListElement           string
+		volumeNameInVolumeList      bool
+		volumeSectionName           string
+		whoAmI                      string
 	)
 
 	lenArgs = len(os.Args)
@@ -100,7 +112,25 @@ func main() {
 		os.Exit(-1)
 	}
 
-	trafficScript = os.Args[1]
+	triggerBoolAndTrafficScript = os.Args[1]
+
+	if 0 == len(triggerBoolAndTrafficScript) {
+		usage()
+		os.Exit(-1)
+	}
+
+	switch triggerBoolAndTrafficScript[0] {
+	case '+':
+		includeHalterTriggers = true
+	case '-':
+		includeHalterTriggers = false
+	default:
+		usage()
+		os.Exit(-1)
+	}
+
+	trafficScript = triggerBoolAndTrafficScript[1:]
+
 	volumeName = os.Args[2]
 	confFile = os.Args[3]
 
@@ -184,46 +214,51 @@ func main() {
 
 	launchProxyFSAndRunFSCK()
 
-	httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, "/trigger", "")
-	if nil != err {
-		log.Printf("queryProxyFS() failed: %v", err)
-		stopProxyFS(unix.SIGTERM)
-		os.Exit(-1)
-	}
-	if http.StatusOK != httpStatusCode {
-		log.Printf("queryProxyFS() returned unexpected httpStatusCode: %v", httpStatusCode)
-		stopProxyFS(unix.SIGTERM)
-		os.Exit(-1)
-	}
-
-	haltLabelStrings = make([]string, 0)
-
-	for _, contentString := range contentsAsStrings {
-		haltLabelStringSplit = strings.Split(contentString, " ")
-		if 0 == len(haltLabelStringSplit) {
-			log.Printf("queryProxyFS() returned unexpected contentString: %v", contentString)
+	if includeHalterTriggers {
+		httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, "/trigger", "")
+		if nil != err {
+			log.Printf("queryProxyFS() failed: %v", err)
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(-1)
 		}
-		haltLabelString = haltLabelStringSplit[0]
-		if "" == haltLabelString {
-			log.Printf("queryProxyFS() returned unexpected empty ontentString")
+		if http.StatusOK != httpStatusCode {
+			log.Printf("queryProxyFS() returned unexpected httpStatusCode: %v", httpStatusCode)
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(-1)
 		}
 
-		if !strings.HasPrefix(haltLabelString, "halter.") {
-			haltLabelStrings = append(haltLabelStrings, haltLabelString)
-		}
-	}
+		haltLabelStrings = make([]string, 0)
 
-	if 0 == len(haltLabelStrings) {
-		log.Printf("No halter.Arm() calls scheduled")
+		for _, contentString := range contentsAsStrings {
+			haltLabelStringSplit = strings.Split(contentString, " ")
+			if 0 == len(haltLabelStringSplit) {
+				log.Printf("queryProxyFS() returned unexpected contentString: %v", contentString)
+				stopProxyFS(unix.SIGTERM)
+				os.Exit(-1)
+			}
+			haltLabelString = haltLabelStringSplit[0]
+			if "" == haltLabelString {
+				log.Printf("queryProxyFS() returned unexpected empty ontentString")
+				stopProxyFS(unix.SIGTERM)
+				os.Exit(-1)
+			}
+
+			if !strings.HasPrefix(haltLabelString, "halter.") {
+				haltLabelStrings = append(haltLabelStrings, haltLabelString)
+			}
+		}
+
+		if 0 == len(haltLabelStrings) {
+			log.Printf("No halter.Arm() calls found - disabling")
+			includeHalterTriggers = false
+		} else {
+			log.Printf("haltLabelStrings to arm:")
+			for _, haltLabelString = range haltLabelStrings {
+				log.Printf("    %v", haltLabelString)
+			}
+		}
 	} else {
-		log.Printf("haltLabelStrings to arm:")
-		for _, haltLabelString = range haltLabelStrings {
-			log.Printf("    %v", haltLabelString)
-		}
+		log.Printf("No halter.Arm() calls scheduled")
 	}
 
 	signalChan = make(chan os.Signal, 1)
@@ -245,12 +280,10 @@ func main() {
 
 	for {
 		if nil == signalToSend {
-			log.Printf("TODO 1 - need to re-work the starting condition once triggers are needed")
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
+			log.Printf("TODO - arming trigger %v", haltLabelStrings[nextHalterTriggerIndex])
 		} else {
 			randomKillDelay = proxyfsdRandomKillDelay()
-			log.Printf("Will fire %v after %v", signalToSend, randomKillDelay)
+			log.Printf("Will fire %v after %v", signalExpandedStringMap[signalToSend.String()], randomKillDelay)
 			go timeoutWaiter(randomKillDelay)
 		}
 
@@ -263,11 +296,11 @@ func main() {
 			stopProxyFS(unix.SIGTERM)
 			os.Exit(0)
 		case _ = <-timeoutChan:
-			log.Printf("Sending %v to ProxyFS", signalToSend)
+			log.Printf("Sending %v to ProxyFS", signalExpandedStringMap[signalToSend.String()])
 			stopProxyFS(signalToSend)
 			stopTrafficScript()
 		case err = <-proxyfsdCmdWaitChan:
-			log.Fatalf("[TODO] proxyfsdCmd unexpectedly exited: %v", err) // TODO: unexpected if signalToSend non-nil
+			log.Printf("ProxyFS has halted due to trigger or other failure")
 		case err = <-trafficCmdWaitChan:
 			log.Printf("trafficScript unexpectedly finished/failed: %v", err)
 			stopProxyFS(unix.SIGTERM)
@@ -283,10 +316,17 @@ func main() {
 			signalToSend = unix.SIGKILL
 		case unix.SIGKILL:
 			signalToSend = unix.SIGINT // TODO: should be nil here... and initialize haltLabelStrings[] walk
+			if includeHalterTriggers {
+				signalToSend = nil
+				nextHalterTriggerIndex = 0
+			} else {
+				signalToSend = unix.SIGINT
+			}
 		case nil:
-			log.Printf("TODO 2 - need to re-work once triggers are needed")
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
+			nextHalterTriggerIndex++
+			if len(haltLabelStrings) == nextHalterTriggerIndex {
+				signalToSend = unix.SIGINT
+			}
 		default:
 			log.Printf("Logic error... unexpected signalToSend: %v", signalToSend)
 			stopTrafficScript()
@@ -310,11 +350,13 @@ func stopTrafficScript() {
 		err error
 	)
 
-	err = trafficCmd.Process.Signal(unix.SIGTERM)
-	if nil != err {
-		log.Fatalf("trafficCmd.Process.Signal(unix.SIGTERM) failed: %v", err)
+	if "" != trafficScript {
+		err = trafficCmd.Process.Signal(unix.SIGTERM)
+		if nil != err {
+			log.Fatalf("trafficCmd.Process.Signal(unix.SIGTERM) failed: %v", err)
+		}
+		_ = <-trafficCmdWaitChan
 	}
-	_ = <-trafficCmdWaitChan
 }
 
 func launchTrafficScript() {
@@ -322,14 +364,16 @@ func launchTrafficScript() {
 		err error
 	)
 
-	trafficCmd = exec.Command("bash", trafficScript, fuseMountPointName)
+	if "" != trafficScript {
+		trafficCmd = exec.Command("bash", trafficScript, fuseMountPointName)
 
-	err = trafficCmd.Start()
-	if nil != err {
-		log.Fatalf("trafficCmd.Start() failed: %v", err)
+		err = trafficCmd.Start()
+		if nil != err {
+			log.Fatalf("trafficCmd.Start() failed: %v", err)
+		}
+
+		go trafficCmdWaiter()
 	}
-
-	go trafficCmdWaiter()
 }
 
 func proxyfsdCmdWaiter() {
