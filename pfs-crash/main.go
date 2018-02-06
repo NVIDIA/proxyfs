@@ -25,11 +25,11 @@ import (
 )
 
 const (
-	proxyfsdHalterMinHaltAfterCount = 10
-	proxyfsdHalterMaxHaltAfterCount = 20
+	proxyfsdHalterMinHaltAfterCount = uint64(100)
+	proxyfsdHalterMaxHaltAfterCount = uint64(200)
 
-	proxyfsdMinKillDelay = 2 * time.Second
-	proxyfsdMaxKillDelay = 6 * time.Second
+	proxyfsdMinKillDelay = 10 * time.Second
+	proxyfsdMaxKillDelay = 20 * time.Second
 
 	proxyfsdPollDelay = 100 * time.Millisecond
 
@@ -91,6 +91,7 @@ func main() {
 		peerSectionName             string
 		primaryPeer                 string
 		privateIPAddr               string
+		randomHaltAfterCount        uint64
 		randomKillDelay             time.Duration
 		signalChan                  chan os.Signal
 		signalToSend                os.Signal
@@ -154,8 +155,6 @@ func main() {
 		proxyfsdArgs = append(proxyfsdArgs, confStrings...)
 	}
 
-	mkproxyfsCmd = exec.Command("mkproxyfs", mkproxyfsArgs...)
-
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		log.Fatal(err)
@@ -205,14 +204,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	mkproxyfsCmd = exec.Command("mkproxyfs", mkproxyfsArgs...)
+
 	err = mkproxyfsCmd.Run()
 	if nil != err {
 		log.Fatalf("mkproxyfsCmd.Run() failed: %v", err)
 	}
 
+	log.Printf("Call to mkproxyfsCmd.Run() succeeded")
+
 	proxyfsdCmdWaitChan = make(chan error, 1)
 
 	launchProxyFSAndRunFSCK()
+
+	log.Printf("Initial call to launchProxyFSAndRunFSCK() succeeded")
 
 	if includeHalterTriggers {
 		httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, "/trigger", "")
@@ -238,7 +243,7 @@ func main() {
 			}
 			haltLabelString = haltLabelStringSplit[0]
 			if "" == haltLabelString {
-				log.Printf("queryProxyFS() returned unexpected empty ontentString")
+				log.Printf("queryProxyFS() returned unexpected empty contentString")
 				stopProxyFS(unix.SIGTERM)
 				os.Exit(-1)
 			}
@@ -252,7 +257,7 @@ func main() {
 			log.Printf("No halter.Arm() calls found - disabling")
 			includeHalterTriggers = false
 		} else {
-			log.Printf("haltLabelStrings to arm:")
+			log.Printf("Will arm haltLabelStrings:")
 			for _, haltLabelString = range haltLabelStrings {
 				log.Printf("    %v", haltLabelString)
 			}
@@ -280,7 +285,19 @@ func main() {
 
 	for {
 		if nil == signalToSend {
-			log.Printf("TODO - arming trigger %v", haltLabelStrings[nextHalterTriggerIndex])
+			randomHaltAfterCount = proxyfsdRandomHaltAfterCount()
+			log.Printf("Arming trigger %v with haltAfterCount == %v", haltLabelStrings[nextHalterTriggerIndex], randomHaltAfterCount)
+			httpStatusCode, _, _, err = queryProxyFS(queryMethodPOST, "/trigger/"+haltLabelStrings[nextHalterTriggerIndex]+"?count="+strconv.FormatUint(randomHaltAfterCount, 10), "")
+			if nil != err {
+				log.Printf("queryProxyFS() failed: %v", err)
+				stopProxyFS(unix.SIGTERM)
+				os.Exit(-1)
+			}
+			if http.StatusNoContent != httpStatusCode {
+				log.Printf("queryProxyFS() returned unexpected httpStatusCode: %v", httpStatusCode)
+				stopProxyFS(unix.SIGTERM)
+				os.Exit(-1)
+			}
 		} else {
 			randomKillDelay = proxyfsdRandomKillDelay()
 			log.Printf("Will fire %v after %v", signalExpandedStringMap[signalToSend.String()], randomKillDelay)
@@ -301,6 +318,7 @@ func main() {
 			stopTrafficScript()
 		case err = <-proxyfsdCmdWaitChan:
 			log.Printf("ProxyFS has halted due to trigger or other failure")
+			stopTrafficScript()
 		case err = <-trafficCmdWaitChan:
 			log.Printf("trafficScript unexpectedly finished/failed: %v", err)
 			stopProxyFS(unix.SIGTERM)
@@ -315,7 +333,6 @@ func main() {
 		case unix.SIGTERM:
 			signalToSend = unix.SIGKILL
 		case unix.SIGKILL:
-			signalToSend = unix.SIGINT // TODO: should be nil here... and initialize haltLabelStrings[] walk
 			if includeHalterTriggers {
 				signalToSend = nil
 				nextHalterTriggerIndex = 0
@@ -524,6 +541,30 @@ func queryProxyFS(queryMethod queryMethodType, queryURL string, acceptHeader str
 	contentsAsStrings = strings.Split(string(contentsAsByteSlice), "\n")
 	if "" == contentsAsStrings[len(contentsAsStrings)-1] {
 		contentsAsStrings = contentsAsStrings[:len(contentsAsStrings)-1]
+	}
+
+	return
+}
+
+func proxyfsdRandomHaltAfterCount() (haltAfterCount uint64) {
+	var (
+		bigN *big.Int
+		bigR *big.Int
+		err  error
+	)
+
+	if pseudoRandom {
+		if nil == mathRandSource {
+			mathRandSource = mathRand.New(mathRand.NewSource(pseudoRandomSeed))
+		}
+		haltAfterCount = uint64(mathRandSource.Int63n(int64(proxyfsdHalterMaxHaltAfterCount-proxyfsdHalterMinHaltAfterCount)+1)) + proxyfsdHalterMinHaltAfterCount
+	} else {
+		bigN = big.NewInt(int64(proxyfsdHalterMaxHaltAfterCount-proxyfsdHalterMinHaltAfterCount) + 1)
+		bigR, err = cryptoRand.Int(cryptoRand.Reader, bigN)
+		if nil != err {
+			log.Fatalf("cryptoRand.Int(cryptoRand.Reader, bigN) failed: %v", err)
+		}
+		haltAfterCount = bigR.Uint64() + proxyfsdHalterMinHaltAfterCount
 	}
 
 	return
