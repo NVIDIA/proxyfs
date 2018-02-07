@@ -1002,7 +1002,7 @@ func parseRetryLogEntry(entry string) map[string]string {
 	)
 
 	var fieldRE = regexp.MustCompile(
-		`^time="([-:0-9A-Z]+)" level=([a-zA-Z]+) msg="([^"]+)" (error="([^"]+)")? ?function=(\w+) (.*)`)
+		`^time="([-:0-9.A-Z]+)" level=([a-zA-Z]+) msg="([^"]+)" (error="([^"]+)")? ?function=(\w+) (.*)`)
 
 	matches = fieldRE.FindStringSubmatch(entry)
 	if matches == nil {
