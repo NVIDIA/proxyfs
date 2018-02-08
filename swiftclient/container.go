@@ -137,8 +137,6 @@ func containerGet(accountName string, containerName string) (headers map[string]
 		return
 	}
 
-	// TODO: Possibly need to handle Transfer-Encoding: chunked for objectList
-
 	objectList, err = readHTTPPayloadLines(connection.tcpConn, headers)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
