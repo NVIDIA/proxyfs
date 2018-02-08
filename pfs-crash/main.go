@@ -374,14 +374,59 @@ func trafficCmdWaiter() {
 
 func stopTrafficScript() {
 	var (
-		err error
+		err          error
+		pid          int
+		pidSliceLast []int
+		pidSliceNow  []int
+		umountCmd    *exec.Cmd
 	)
 
 	if "" != trafficScript {
-		err = trafficCmd.Process.Signal(unix.SIGTERM)
-		if nil != err {
-			log.Fatalf("trafficCmd.Process.Signal(unix.SIGTERM) failed: %v", err)
+		pidSliceNow = pstree(trafficCmd.Process.Pid)
+
+		// Send SIGSTOP to all pids in pidSliceNow to prevent more trafficScript processes from being created
+
+		for {
+			for _, pid = range pidSliceNow {
+				err = unix.Kill(pid, unix.SIGSTOP)
+				if nil != err {
+					log.Printf("INFO: unix.Kill(%v, unix.SIGSTOP) failed: %v", pid, err)
+				}
+			}
+			pidSliceLast = pidSliceNow
+			pidSliceNow = pstree(trafficCmd.Process.Pid)
+			if pidSliceEqual(pidSliceLast, pidSliceNow) {
+				break
+			}
 		}
+
+		// Send SIGKILL to all pids in pidSliceNow to actually kill all trafficScript processes
+
+		for {
+			for _, pid = range pidSliceNow {
+				err = unix.Kill(pid, unix.SIGKILL)
+				if nil != err {
+					log.Printf("INFO: unix.Kill(%v, unix.SIGKILL) failed: %v", pid, err)
+				}
+			}
+			pidSliceLast = pidSliceNow
+			pidSliceNow = pstree(trafficCmd.Process.Pid)
+			if pidSliceEqual(pidSliceLast, pidSliceNow) {
+				break
+			}
+		}
+
+		// Force an unmount of fewMountPointName incase any processes of trafficScript are hung on if
+
+		umountCmd = exec.Command("fusermount", "-u", fuseMountPointName)
+
+		err = umountCmd.Run()
+		if nil != err {
+			log.Printf("INFO: umountCmd.Run() failed: %v", err)
+		}
+
+		// Finally, await indicated exit of trafficScript
+
 		_ = <-trafficCmdWaitChan
 	}
 }
