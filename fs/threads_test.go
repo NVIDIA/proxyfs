@@ -58,11 +58,11 @@ type testResponse struct {
 
 // Per thread structure storing channel information
 type threadInfo struct {
+	sync.Mutex
 	startedNode      chan bool
 	requestForThread chan *testRequest
 	operationStatus  chan *testResponse
-	sync.Mutex
-	endLoop bool // Flag used to signal an infinite loop test to stop
+	endLoop          bool // Flag used to signal an infinite loop test to stop
 }
 
 var globalSyncPt chan testRequest // Channel used to synchronize test threads to simulate multiple threads
@@ -137,12 +137,12 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		// The infinite loop case breaks when control thread signals this thread to stop
 		// and we have at least hit our minimumLoopCount.
 		if (loopCount == 0) && (localLoopCount >= minimumLoopCount) {
-			threadMap[threadID].Mutex.Lock()
+			threadMap[threadID].Lock()
 			if threadMap[threadID].endLoop == true {
-				threadMap[threadID].Mutex.Unlock()
+				threadMap[threadID].Unlock()
 				break
 			}
-			threadMap[threadID].Mutex.Unlock()
+			threadMap[threadID].Unlock()
 		} else {
 			if localLoopCount == loopCount {
 				break
@@ -219,17 +219,17 @@ func threadNode(threadID int) {
 
 // Set flag telling thread doing infinite loop to exit.
 func setEndLoopFlag(threadID int) {
-	threadMap[threadID].Mutex.Lock()
+	threadMap[threadID].Lock()
 	threadMap[threadID].endLoop = true
-	threadMap[threadID].Mutex.Unlock()
+	threadMap[threadID].Unlock()
 }
 
 func sendRequestToThread(threadID int, t *testing.T, operation testOpTyp, inodeNumber inode.InodeNumber, name1 string, loopCount int, minimumLoopCount int) {
 
 	// Clear endLoop flag before sending request
-	threadMap[threadID].Mutex.Lock()
+	threadMap[threadID].Lock()
 	threadMap[threadID].endLoop = false
-	threadMap[threadID].Mutex.Unlock()
+	threadMap[threadID].Unlock()
 
 	request := &testRequest{opType: operation, t: t, name1: name1, loopCount: loopCount, minimumLoopCount: minimumLoopCount, inodeNumber: inodeNumber}
 	threadMap[threadID].requestForThread <- request

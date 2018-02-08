@@ -16,6 +16,20 @@ type treeWalkStruct struct {
 }
 
 func validateVolume(volumeName string, stopChan chan bool) (err error) {
+	globals.Lock()
+
+	volStruct, ok := globals.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("fs.validateVolume(%v,) requested for unknown volume", volumeName)
+		return
+	}
+
+	globals.Unlock()
+
+	volStruct.validateVolumeRWMutex.Lock()
+	defer volStruct.validateVolumeRWMutex.Unlock()
+
 	tWS := &treeWalkStruct{
 		volumeName:       volumeName,
 		stopChan:         stopChan,

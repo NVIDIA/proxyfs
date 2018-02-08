@@ -34,13 +34,14 @@ type mountStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	dataMutex                sync.Mutex
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
+	validateVolumeRWMutex    sync.RWMutex
 	inode.VolumeHandle
 }
 
@@ -209,9 +210,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 			delete(globals.mountMap, id)
 		}
 		volume.untrackInFlightFileInodeDataAll()
-		globals.Lock()
 		delete(globals.volumeMap, volumeName)
-		globals.Unlock()
 	}
 
 	err = nil
