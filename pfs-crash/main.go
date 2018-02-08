@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
+	"container/list"
 	cryptoRand "crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -13,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,13 +29,15 @@ import (
 )
 
 const (
-	proxyfsdHalterMinHaltAfterCount = uint64(100)
-	proxyfsdHalterMaxHaltAfterCount = uint64(200)
+	proxyfsdHalterMinHaltAfterCount = uint64(400)
+	proxyfsdHalterMaxHaltAfterCount = uint64(800)
 
 	proxyfsdMinKillDelay = 10 * time.Second
 	proxyfsdMaxKillDelay = 20 * time.Second
 
 	proxyfsdPollDelay = 100 * time.Millisecond
+
+	openDirPollDelay = 100 * time.Millisecond
 
 	pseudoRandom     = false
 	pseudoRandomSeed = int64(0)
@@ -215,6 +221,8 @@ func main() {
 
 	proxyfsdCmdWaitChan = make(chan error, 1)
 
+	cleanDirectoryUnderFUSEMountPointName()
+
 	launchProxyFSAndRunFSCK()
 
 	log.Printf("Initial call to launchProxyFSAndRunFSCK() succeeded")
@@ -325,6 +333,8 @@ func main() {
 			os.Exit(-1)
 		}
 
+		cleanDirectoryUnderFUSEMountPointName()
+
 		launchProxyFSAndRunFSCK()
 
 		switch signalToSend {
@@ -382,6 +392,8 @@ func launchTrafficScript() {
 	)
 
 	if "" != trafficScript {
+		log.Printf("Launching trafficScript: bash %v %v", trafficScript, fuseMountPointName)
+
 		trafficCmd = exec.Command("bash", trafficScript, fuseMountPointName)
 
 		err = trafficCmd.Start()
@@ -592,4 +604,166 @@ func proxyfsdRandomKillDelay() (killDelay time.Duration) {
 	}
 
 	return
+}
+
+func pstree(topPid int) (pidSlice []int) {
+	var (
+		err                 error
+		ok                  bool
+		pid                 int
+		pidChildren         []int
+		pidChildrenMap      map[int][]int
+		pidList             *list.List
+		pidOnList           *list.Element
+		ppid                int
+		psOutputByteSlice   []byte
+		psOutputBufioReader *bufio.Reader
+		psOutputBytesReader *bytes.Reader
+		psOutputLine        string
+		sscanfN             int
+	)
+
+	psOutputByteSlice, err = exec.Command("ps", "-e", "-o", "pid,ppid").Output()
+	if nil != err {
+		log.Fatalf("exec.Command(\"ps\", \"-e\", \"-o\", \"pid,ppid\").Output failed: %v", err)
+	}
+
+	psOutputBytesReader = bytes.NewReader(psOutputByteSlice)
+	psOutputBufioReader = bufio.NewReader(psOutputBytesReader)
+
+	pidChildrenMap = make(map[int][]int)
+
+	for {
+		psOutputLine, err = psOutputBufioReader.ReadString(byte(0x0A))
+		if nil != err {
+			break
+		}
+		sscanfN, err = fmt.Sscanf(psOutputLine, "%d %d\n", &pid, &ppid)
+		if nil != err {
+			continue
+		}
+		if 2 != sscanfN {
+			continue
+		}
+
+		pidChildren, ok = pidChildrenMap[ppid]
+		if !ok {
+			pidChildren = make([]int, 0, 1)
+		}
+		pidChildren = append(pidChildren, pid)
+		pidChildrenMap[ppid] = pidChildren
+	}
+
+	pidList = list.New()
+
+	pstreeStep(topPid, pidChildrenMap, pidList)
+
+	pidSlice = make([]int, 0, pidList.Len())
+
+	for pidOnList = pidList.Front(); nil != pidOnList; pidOnList = pidOnList.Next() {
+		pid, ok = pidOnList.Value.(int)
+		if !ok {
+			log.Fatalf("pidOnList.Value.(int) failed")
+		}
+		pidSlice = append(pidSlice, pid)
+	}
+
+	return
+}
+
+func pstreeStep(ppid int, pidChildrenMap map[int][]int, pidList *list.List) {
+	var (
+		ok          bool
+		pid         int
+		pidChildren []int
+	)
+
+	_ = pidList.PushBack(ppid)
+
+	pidChildren, ok = pidChildrenMap[ppid]
+	if !ok {
+		return
+	}
+
+	for _, pid = range pidChildren {
+		pstreeStep(pid, pidChildrenMap, pidList)
+	}
+}
+
+func pidSliceEqual(pidSlice1 []int, pidSlice2 []int) (equal bool) {
+	var (
+		ok           bool
+		pid          int
+		pidSlice1Map map[int]struct{} // Go's version of a "set"
+	)
+
+	if len(pidSlice1) != len(pidSlice2) {
+		equal = false
+		return
+	}
+
+	pidSlice1Map = make(map[int]struct{})
+
+	for _, pid = range pidSlice1 {
+		pidSlice1Map[pid] = struct{}{}
+	}
+
+	for _, pid = range pidSlice2 {
+		_, ok = pidSlice1Map[pid]
+		if !ok {
+			equal = false
+			return
+		}
+	}
+
+	equal = true
+	return
+}
+
+func cleanDirectoryUnderFUSEMountPointName() {
+	var (
+		dir        *os.File
+		err        error
+		name       string
+		nameJoined string
+		names      []string
+		umountCmd  *exec.Cmd
+	)
+
+	for {
+		time.Sleep(openDirPollDelay)
+
+		dir, err = os.Open(fuseMountPointName)
+		if nil == err {
+			break
+		}
+
+		log.Printf("Retrying os.Open(\"%v\") after \"fusermount -u\" due to err == %v", fuseMountPointName, err)
+
+		umountCmd = exec.Command("fusermount", "-u", fuseMountPointName)
+
+		err = umountCmd.Run()
+		if nil != err {
+			log.Printf("umountCmd.Run() failed: %v", err)
+		}
+	}
+
+	names, err = dir.Readdirnames(-1)
+	if nil != err {
+		_ = dir.Close()
+		log.Fatalf("dir.Readdirnames(-1) failed: %v", err)
+	}
+
+	err = dir.Close()
+	if nil != err {
+		log.Fatalf("dir.Close() failed: %v", err)
+	}
+
+	for _, name = range names {
+		nameJoined = filepath.Join(fuseMountPointName, name)
+		err = os.RemoveAll(nameJoined)
+		if nil != err {
+			log.Fatalf("os.RemoveAll(%v) failed: %v", nameJoined, err)
+		}
+	}
 }
