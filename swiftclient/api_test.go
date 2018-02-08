@@ -1074,37 +1074,37 @@ func testRetry(t *testing.T) {
 	callCnt = 0
 	successOn = 1
 	unretriableOn = 0 // never happens
-	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.0)
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.000, 1.000)
 
-	// request succeeds after 3 retries (4th attempt) which should take 30
-	// msec with expBackoff set to 1.0
+	// request succeeds after 3 retries (4th attempt) which should take
+	// [30 msec, 60 msec) with expBackoff set to 1.0
 	//
 	opname = "swiftclient.testRetry.request(2)"
 	retryObj = NewRetryCtrl(5, 10*time.Millisecond, 1.0)
 	callCnt = 0
 	successOn = 4
 	unretriableOn = 0 // never happens
-	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.030)
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.030, 0.060)
 
 	// requests fails after 4 retries (5th attempt) with a retriable error
-	// which should take 150 msec with expBackoff set to 2.0
+	// which should take [150 msec, 300 msec) with expBackoff set to 2.0
 	//
 	opname = "swiftclient.testRetry.request(3)"
 	retryObj = NewRetryCtrl(4, 10*time.Millisecond, 2.0)
 	callCnt = 0
 	successOn = 0     // no success
 	unretriableOn = 0 // no unretriable failure
-	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 5, 0.150, "retriable")
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 5, 0.150, 0.300, "retriable")
 
 	// requests fails after 2 retries (3rd attempt) with an unretriable
-	// error, which should take 30 msec with expBackoff set to 2.0
+	// error, which should take [30 msec, 60 msec) with expBackoff set to 2.0
 	//
 	opname = "swiftclient.testRetry.request(4)"
 	retryObj = NewRetryCtrl(4, 10*time.Millisecond, 2.0)
 	callCnt = 0
 	successOn = 0 // no success
 	unretriableOn = 3
-	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 3, 0.030, "unretriable")
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 3, 0.030, 0.060, "unretriable")
 
 	// retries disabled, no errors
 	//
@@ -1113,7 +1113,7 @@ func testRetry(t *testing.T) {
 	callCnt = 0
 	successOn = 1 // success on first try
 	unretriableOn = 0
-	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.0)
+	testRetrySucceeds(t, &logcopy, opname, retryObj, statNm, request, successOn, 0.000, 0.010)
 
 	// retries disabled and request fails with retriable error
 	//
@@ -1122,7 +1122,7 @@ func testRetry(t *testing.T) {
 	callCnt = 0
 	successOn = 0 // no success
 	unretriableOn = 0
-	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.0, "retriable")
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.000, 0.010, "retriable")
 
 	// retries disabled and request fails withan unretriable error
 	//
@@ -1131,11 +1131,11 @@ func testRetry(t *testing.T) {
 	callCnt = 0
 	successOn = 0 // no success
 	unretriableOn = 1
-	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.0, "unretriable")
+	testRetryFails(t, &logcopy, opname, retryObj, statNm, request, 1, 0.000, 0.010, "unretriable")
 }
 
 // Test an operation that succeeds on attempt number successOn after at least
-// totalSec of delay.
+// minSec of delay...but less than maxSec of delay.
 //
 // successOn may be 1, in which case no log messages should be generated and the
 // retry counters are unchanged (because no retries occurred), else we expect
@@ -1143,7 +1143,7 @@ func testRetry(t *testing.T) {
 //
 func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
-	request func() (bool, error), successOn int, totalSec float32) {
+	request func() (bool, error), successOn int, minSec float32, maxSec float32) {
 
 	var (
 		totalEntriesPre     int = logcopy.LogBuf.TotalEntries
@@ -1200,9 +1200,9 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 				opname, successOn, logEntry)
 		}
 		// allow upto 20 msec slop for request to complete
-		if sec < totalSec || sec > totalSec+0.020 {
-			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be (%4.3f, %4.3f)",
-				opname, sec, totalSec, totalSec+0.020)
+		if sec < minSec || sec >= maxSec {
+			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
 		}
 	}
 
@@ -1237,11 +1237,11 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 
 // Test an operation that ultimately fails after some number of retries
 // (possibly 0).  It should fail on the attempt number failOn, after at least
-// totalSec of delay.
+// minSec of delay...but less than maxSec of delay.
 //
 func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
-	request func() (bool, error), failOn int, totalSec float32, retryStr string) {
+	request func() (bool, error), failOn int, minSec float32, maxSec float32, retryStr string) {
 
 	var (
 		totalEntriesPre     int = logcopy.LogBuf.TotalEntries
@@ -1294,9 +1294,9 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 				opname, failOn, logEntry)
 		}
 		// allow upto 20 msec slop for request to complete
-		if sec < totalSec || sec > totalSec+0.020 {
-			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be (%4.3f, %4.3f)",
-				opname, sec, totalSec, totalSec+0.020)
+		if sec < minSec || sec >= maxSec {
+			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
 		}
 	}
 
