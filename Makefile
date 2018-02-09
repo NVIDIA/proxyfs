@@ -112,7 +112,8 @@ test:
 	@set -e; \
 	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
-	done
+	done; \
+	cd pfs_middleware && tox -e py27,py27-old-swift,lint
 
 vet:
 	@set -e; \
