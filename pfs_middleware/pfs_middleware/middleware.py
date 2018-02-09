@@ -107,7 +107,7 @@ from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
-from swift.common.utils import get_logger
+from swift.common.utils import get_logger, Timestamp
 
 
 # POSIX file-path limits. Taken from Linux's limits.h, which is also where
@@ -1274,6 +1274,18 @@ class PfsMiddleware(object):
             swift_source="PFS")
         if not 200 <= container_info["status"] < 300:
             return swob.HTTPNotFound(request=req)
+
+        if 'x-timestamp' in req.headers:
+            try:
+                req_timestamp = Timestamp(req.headers['X-Timestamp'])
+            except ValueError:
+                return swob.HTTPBadRequest(
+                    request=req, content_type='text/plain',
+                    body='X-Timestamp should be a UNIX timestamp float value; '
+                         'was %r' % req.headers['x-timestamp'])
+            req.headers['X-Timestamp'] = req_timestamp.internal
+        else:
+            req.headers['X-Timestamp'] = Timestamp(time.time()).internal
 
         if not req.headers.get('Content-Type'):
             req.headers['Content-Type'] = guess_content_type(
