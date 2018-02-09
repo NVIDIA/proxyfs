@@ -31,14 +31,10 @@ class MetaMiddleware(object):
             env['HTTP_X_ACCOUNT_SYSMETA_PROXYFS_BIMODAL'] = v # only last one, if multiple, will determine value
 
         def meta_response(status, response_headers, exc_info=None):
-            hvToDel = list()
             vToAdd = list()
             for (h,v) in response_headers:
                 if h.upper() == 'X-ACCOUNT-SYSMETA-PROXYFS-BIMODAL':
-                    hvToDel.append((h,v))
                     vToAdd.append(v)
-            for hv in hvToDel:
-                response_headers.remove(hv)
             for v in vToAdd:
                 response_headers.append(('X-ProxyFS-BiModal',v)) # potentially multiple instances of same header
             return start_response(status, response_headers, exc_info)
