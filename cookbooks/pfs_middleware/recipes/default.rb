@@ -18,8 +18,8 @@ execute "Install PIP" do
   not_if { system("pip --version") }
 end
 
-execute "Check setuptools is installed" do
-  command "pip install setuptools"
+execute "Check setuptools & tox is installed" do
+  command "pip install setuptools tox"
 end
 
 # install middleware in development mode
