@@ -118,6 +118,10 @@ else
 fi
 echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba" >> ~vagrant/.bash_profile
 
+# Install Python tox
+
+pip install tox
+
 # Setup Swift
 #
 # Guided by https://docs.openstack.org/swift/latest/development_saio.html
