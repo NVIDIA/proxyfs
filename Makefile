@@ -31,14 +31,14 @@ uname := $(shell uname)
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: fmt install stringer generate test vet c-clean c-build c-install c-test
+    all: fmt install stringer generate test python-test vet c-clean c-build c-install c-test
 
     all-deb-builder: fmt install stringer generate vet c-clean c-build c-install-deb-builder
 else
     all: fmt install stringer generate test vet
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install stringer test vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install python-test stringer test vet
 
 bench:
 	@set -e; \
@@ -105,6 +105,9 @@ install:
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
 
+python-test:
+	cd pfs_middleware && tox -e py27,py27-old-swift,lint
+
 stringer:
 	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer
 
@@ -112,7 +115,7 @@ test:
 	@set -e; \
 	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
-	done
+	done;
 
 vet:
 	@set -e; \
