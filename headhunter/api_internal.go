@@ -177,6 +177,24 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 	return
 }
 
+func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error) {
+	volume.Lock()
+	key, _, ok, err := volume.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	volume.Unlock()
+
+	if !ok {
+		return
+	}
+
+	inodeNumber = key.(uint64)
+
+	return
+}
+
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
@@ -240,6 +258,24 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 	return
 }
 
+func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNumber uint64, ok bool, err error) {
+	volume.Lock()
+	key, _, ok, err := volume.logSegmentRecWrapper.bPlusTree.GetByIndex(int(index))
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	volume.Unlock()
+
+	if !ok {
+		return
+	}
+
+	logSegmentNumber = key.(uint64)
+
+	return
+}
+
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
@@ -299,6 +335,24 @@ func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err erro
 	volume.recordTransaction(transactionDeleteBPlusTreeObject, objectNumber, nil)
 
 	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error) {
+	volume.Lock()
+	key, _, ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.GetByIndex(int(index))
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	volume.Unlock()
+
+	if !ok {
+		return
+	}
+
+	objectNumber = key.(uint64)
 
 	return
 }
