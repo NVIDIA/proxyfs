@@ -658,7 +658,7 @@ func (vS *volumeStruct) provisionObject() (containerName string, objectNumber ui
 	return
 }
 
-func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode) (accessReturn bool) {
+func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode, override AccessOverride) (accessReturn bool) {
 
 	ourInode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
@@ -697,44 +697,70 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 		return
 	}
 
-	// On a local file system, the owner of a file can *not* write to the
-	// file unless the permission bits say so.  However, NFS relaxes this to
-	// allow the owner of a file to write to it because NFS does not have an
-	// open state (there's no file descriptor that tracks if the file was
-	// opened with write permission).  But I'm not sure that other operations
-	// that require write permission, like truncate(2) work the same way.
-	if (InodeRootUserID == userID) || (InodeRootGroupID == groupID) {
-		accessReturn = true
+	// The root user (if not squashed) can do anything except exec files
+	// that are not executable by any user
+	if userID == InodeRootUserID {
+		if (accessMode&X_OK != 0) && (ourInode.Mode&(X_OK<<6|X_OK<<3|X_OK) == 0) {
+			accessReturn = false
+		} else {
+			accessReturn = true
+		}
 		return
 	}
 
-	if (userID == ourInode.UserID) && (((ourInode.Mode >> 6) & accessMode) == accessMode) {
-		accessReturn = true
+	// We check against permissions for the user, group, and other.  The
+	// first match wins (not the first permission granted).  If the user is
+	// the owner of the file then those permission bits determine what
+	// happens.  In other words, if the permission bits deny read permission
+	// to the owner of a file but allow read permission for group and other,
+	// then everyone except the owner of the file can read it.
+	//
+	// On a local file system, the owner of a file is *not* allowed to write
+	// to the file unless it was opened for writing and the permission bits
+	// allowed it *or* the process created the file and opened it for
+	// writing at the same time.  However, NFS does not have an open state
+	// (there's no file descriptor that tracks permissions when the the file
+	// was opened) so we check for write permission on every write.  This
+	// breaks things like tar when it tries to unpack a file which has
+	// permission 0444 (read only).  On a local file system that works, but
+	// it doesn't work for NFS unless we bend the rules a bit for the owner
+	// of the file and allow the owner to write to the file even if
+	// appropriate permissions are lacking.  (This is only done for the user
+	// that owns the file, not the group that owns the file. Note that the
+	// owner can always change the permissions to allow writing so its not a
+	// security risk, but the owning group cannot).
+	//
+	// Note that the NFS client will typically call Access() when an app
+	// wants to open the file and fail an open request for writing that if
+	// the permission bits do not allow it.
+	//
+	// Similar rules apply to Read() and Truncate() (for ftruncate(2)), but
+	// not for execute permission.  Also, this only applies to regular files
+	// but we'll rely on the caller for that.
+	if userID == ourInode.UserID {
+		if override == OwnerOverride && (accessMode&X_OK == 0) {
+			accessReturn = true
+		} else {
+			accessReturn = (((ourInode.Mode >> 6) & accessMode) == accessMode)
+		}
 		return
 	}
 
 	groupIDCheck := (groupID == ourInode.GroupID)
-
 	if !groupIDCheck {
 		for _, otherGroupID := range otherGroupIDs {
-			if InodeRootGroupID == otherGroupID {
-				accessReturn = true
-				return
-			}
 			if otherGroupID == ourInode.GroupID {
 				groupIDCheck = true
 				break
 			}
 		}
 	}
-
-	if groupIDCheck && ((((ourInode.Mode >> 3) & 07) & accessMode) == accessMode) {
-		accessReturn = true
+	if groupIDCheck {
+		accessReturn = ((((ourInode.Mode >> 3) & 07) & accessMode) == accessMode)
 		return
 	}
 
 	accessReturn = ((((ourInode.Mode >> 0) & 07) & accessMode) == accessMode)
-
 	return
 }
 

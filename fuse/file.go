@@ -32,7 +32,7 @@ func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
-	stat, err = f.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, f.inodeNumber)
+	stat, err = f.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return

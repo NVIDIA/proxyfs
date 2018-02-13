@@ -410,7 +410,7 @@ func ioHandle(conn net.Conn) {
 			profiler.AddEventNow("before fs.Write()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.resp.ioSize, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
+				ctx.resp.ioSize, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
 			}
 			profiler.AddEventNow("after fs.Write()")
 
@@ -428,7 +428,7 @@ func ioHandle(conn net.Conn) {
 			profiler.AddEventNow("before fs.Read()")
 			mountHandle, err = lookupMountHandle(ctx.req.mountID)
 			if err == nil {
-				ctx.data, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
+				ctx.data, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
 			}
 			profiler.AddEventNow("after fs.Read()")
 

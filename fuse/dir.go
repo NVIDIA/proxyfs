@@ -33,7 +33,7 @@ func (d Dir) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
-	stat, err = d.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, d.inodeNumber)
+	stat, err = d.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -113,12 +113,12 @@ func (d Dir) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fus
 }
 
 func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
-	childInodeNumber, err := d.mountHandle.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, d.inodeNumber, name)
+	childInodeNumber, err := d.mountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, name)
 	if err != nil {
 		return nil, fuselib.ENOENT
 	}
 
-	isDir, err := d.mountHandle.IsDir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, childInodeNumber)
+	isDir, err := d.mountHandle.IsDir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isDir {
 		return Dir{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
@@ -126,7 +126,7 @@ func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
 		return nil, err
 	}
 
-	isFile, err := d.mountHandle.IsFile(inode.InodeRootUserID, inode.InodeRootGroupID, nil, childInodeNumber)
+	isFile, err := d.mountHandle.IsFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isFile {
 		return File{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
@@ -134,7 +134,7 @@ func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
 		return nil, err
 	}
 
-	isSymlink, err := d.mountHandle.IsSymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, childInodeNumber)
+	isSymlink, err := d.mountHandle.IsSymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isSymlink {
 		return Symlink{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
@@ -142,7 +142,7 @@ func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
 		return nil, err
 	}
 
-	actualType, err := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeRootGroupID, nil, childInodeNumber)
+	actualType, err := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if err != nil {
 		err = newFuseError(err)
 		return nil, err
@@ -178,7 +178,7 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 		var readCount uint64
 		var err error
 
-		readEntries, readCount, more, err = d.mountHandle.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, d.inodeNumber, lastEntryName, 1024, 4096)
+		readEntries, readCount, more, err = d.mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, lastEntryName, 1024, 4096)
 		if err != nil {
 			logger.ErrorfWithError(err, "Error in ReadDirAll")
 			return nil, fuselib.EIO
@@ -191,7 +191,7 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 	fuseEntries := make([]fuselib.Dirent, entryCount)
 
 	for i, entry := range entries {
-		inodeType, _ := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeRootGroupID, nil, entry.InodeNumber)
+		inodeType, _ := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, entry.InodeNumber)
 		fuseEntries[i] = fuselib.Dirent{
 			Inode: uint64(entry.InodeNumber),
 			Type:  inodeTypeToDirentType(inodeType),

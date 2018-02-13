@@ -113,23 +113,23 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		fName := name1 + "-" + strconv.Itoa(localLoopCount)
 		switch fileRequest.opType {
 		case createLoopTestOp:
-			_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, fName, inode.PosixModePerm)
+			_, err = mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName, inode.PosixModePerm)
 		case lookupPathLoopTestOp:
-			_, err = mS.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fName)
+			_, err = mS.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fName)
 		case readdirLoopTestOp:
 			areMoreEntries := true
 			lastBasename := ""
 			var maxEntries uint64 = 10
 			var totalEntriesRead uint64 // Useful for debugging
 			for areMoreEntries {
-				dirEnts, numEntries, more, errShadow := mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, lastBasename, maxEntries, 0)
+				dirEnts, numEntries, more, errShadow := mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, lastBasename, maxEntries, 0)
 				lastBasename = dirEnts[len(dirEnts)-1].Basename
 				areMoreEntries = more
 				err = errShadow
 				totalEntriesRead = totalEntriesRead + numEntries
 			}
 		case unlinkLoopTestOp:
-			err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, fName)
+			err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
 		}
 		localLoopCount++
 		infiniteLoopCount++
@@ -171,7 +171,7 @@ func threadNode(threadID int) {
 			return
 
 		case createTestOp:
-			_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1, inode.PosixModePerm)
+			_, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
@@ -188,7 +188,7 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case mkdirTestOp:
-			newInodeNumber, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1, inode.PosixModePerm)
+			newInodeNumber, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
 			response := &testResponse{err: err, inodeNumber: newInodeNumber}
 			threadMap[threadID].operationStatus <- response
 
@@ -199,12 +199,12 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case rmdirTestOp:
-			err := mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1)
+			err := mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
 		case unlinkTestOp:
-			err := mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1)
+			err := mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 

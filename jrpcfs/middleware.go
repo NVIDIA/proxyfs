@@ -87,7 +87,7 @@ func (s *Server) RpcCreateContainer(in *CreateContainerRequest, reply *CreateCon
 	}
 
 	// Make the directory
-	_, err = mountHandle.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.RootDirInodeNumber, containerName, inode.PosixModePerm)
+	_, err = mountHandle.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, containerName, inode.PosixModePerm)
 
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.Mkdir() of acct: %v vContainerName: %v failed!", accountName, containerName)
