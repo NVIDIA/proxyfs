@@ -122,8 +122,6 @@ ZERO_FILL_PATH = "/0"
 
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
-FORBIDDEN_OBJECT_HEADERS = {"X-Delete-At", "X-Delete-After", "Etag"}
-
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 
 # They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
@@ -534,11 +532,6 @@ class LimitedInput(object):
         self.limit = self.orig_limit = limit
         self.bytes_read = 0
         self.wsgi_input = wsgi_input
-        self.hit_eof = False
-
-    @property
-    def finished_the_input_stream(self):
-        return (self.bytes_read < self.orig_limit) and self.hit_eof
 
     def read(self, length=None, *args, **kwargs):
         if length is None:
@@ -553,8 +546,6 @@ class LimitedInput(object):
 
         self.bytes_read += len(chunk)
         self.limit -= len(chunk)
-        if len(chunk) == 0:
-            self.hit_eof = True
         return chunk
 
     def readline(self, size=None, *args, **kwargs):
@@ -570,18 +561,13 @@ class LimitedInput(object):
 
         self.bytes_read += len(line)
         self.limit -= len(line)
-        if len(line) == 0:
-            self.hit_eof = True
         return line
 
     @property
     def has_more_to_read(self):
         if not self._peeked_data:
-            self._peek()
+            self._peeked_data = self.wsgi_input.read(1)
         return len(self._peeked_data) > 0
-
-    def _peek(self):
-        self._peeked_data = self.wsgi_input.read(1)
 
 
 class RequestContext(object):
@@ -1366,35 +1352,39 @@ class PfsMiddleware(object):
         if error_response:
             return error_response
 
-        # If these make it to Swift, they can goof up our log segment behind
-        # proxyfs's back.
-        for forbidden_header in FORBIDDEN_OBJECT_HEADERS:
-            req.headers.pop(forbidden_header, None)
-
         # Since this upload can be arbitrarily large, we split it across
         # multiple log segments.
         log_segments = []
-        more_to_upload = True
         i = 0
-        while more_to_upload:
-            subreq = swob.Request(req.environ.copy())  # no cross-contamination
-
-            # This ensures that (a) every subrequest has its own unique
-            # txid, and (b) a log search for the txid in the response finds
-            # all of the subrequests.
-            if 'X-Trans-Id' in subreq.headers:
-                subreq.headers['X-Trans-Id'] += ("-%03x" % i)
-            subreq.environ['wsgi.input'] = subinput = LimitedInput(
-                wsgi_input, self.max_log_segment_size)
-            subreq.headers.pop('Content-Length', None)
-            subreq.headers["Transfer-Encoding"] = "chunked"
-
+        while True:
+            # First, make sure there's more data to read from the client. No
+            # sense allocating log segments and whatnot if we're not going
+            # to use them.
+            subinput = LimitedInput(wsgi_input, self.max_log_segment_size)
             if not subinput.has_more_to_read:
                 break
 
             # Ask ProxyFS for the next log segment we can use
             phys_path = next(physical_path_gen)
-            subreq.environ["PATH_INFO"] = phys_path
+
+            # Set up the subrequest with the bare minimum of useful headers.
+            # This lets us avoid headers that will break the PUT immediately
+            # (ETag), headers that may complicate GETs of this object
+            # (X-Static-Large-Object, X-Object-Manifest), things that will
+            # break the GET some time in the future (X-Delete-At,
+            # X-Delete-After), and things that take up xattr space for no
+            # real gain (user metadata).
+            subreq = swob.Request.blank(phys_path)
+            subreq.method = 'PUT'
+            subreq.environ['wsgi.input'] = subinput
+            subreq.headers["Transfer-Encoding"] = "chunked"
+
+            # This ensures that (a) every subrequest has its own unique
+            # txid, and (b) a log search for the txid in the response finds
+            # all of the subrequests.
+            trans_id = req.headers.get('X-Trans-Id')
+            if trans_id:
+                subreq.headers['X-Trans-Id'] = trans_id + ("-%03x" % i)
 
             # Actually put one chunk of the data into Swift
             subresp = subreq.get_response(self.app)
@@ -1403,10 +1393,6 @@ class PfsMiddleware(object):
                 return subresp
 
             log_segments.append((phys_path, subinput.bytes_read))
-
-            # If the underlying wsgi.input hit EOF, then there's no more
-            # data to upload.
-            more_to_upload = not subinput.finished_the_input_stream
             i += 1
 
         if should_validate_etag(request_etag) and \
