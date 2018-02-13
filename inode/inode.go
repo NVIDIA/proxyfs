@@ -423,6 +423,13 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 				// REVIEW TODO: What if cache pressure flushed before we got here?
 				//              Is it possible that Number doesn't get updated?
 
+				if inode.PayloadObjectNumber != 0 {
+					logger.Tracef("flushInodes(): updating Payload from ObjNum %d to %d"+
+						" bytes %d to %d for %v inode %d",
+						inode.PayloadObjectNumber, payloadObjectNumber,
+						inode.PayloadObjectLength, payloadObjectLength,
+						inode.InodeType, inode.InodeNumber)
+				}
 				inode.PayloadObjectNumber = payloadObjectNumber
 				inode.PayloadObjectLength = payloadObjectLength
 

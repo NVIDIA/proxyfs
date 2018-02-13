@@ -1187,6 +1187,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
+		if bytesUsedThisBPlusTree == 0 {
+			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
+		}
 	}
 	for objectNumber, bytesUsedThisBPlusTree = range volume.logSegmentRecBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
@@ -1194,6 +1197,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+		if bytesUsedThisBPlusTree == 0 {
+			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
 		}
 	}
 	for objectNumber, bytesUsedThisBPlusTree = range volume.bPlusTreeObjectBPlusTreeLayout {
@@ -1203,14 +1209,13 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
+		if bytesUsedThisBPlusTree == 0 {
+			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
+		}
 	}
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
-			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
-			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
-			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
-
 			swiftclient.ObjectDeleteAsync(
 				volume.accountName,
 				volume.checkpointContainerName,
@@ -1351,4 +1356,85 @@ func (volume *volumeStruct) checkpointDaemon() {
 			return
 		}
 	}
+}
+
+// Fetch the layout report for the requested Tree type, where
+// the types are:
+//
+// inodeRecBPlusTreeWrapperType uint32 = iota
+// logSegmentRecBPlusTreeWrapperType
+// bPlusTreeObjectBPlusTreeWrapperType
+//
+func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error) {
+	var (
+		treeName         string
+		treeWrapper      *bPlusTreeWrapperStruct
+		treeLayoutReport sortedmap.LayoutReport
+		objNum           uint64
+		objBytes         uint64
+		ok               bool
+	)
+
+	volume.Lock()
+	defer volume.Unlock()
+
+	switch treeType {
+
+	case InodeRecBPlusTree:
+		treeName = "InodeRec"
+		treeWrapper = volume.inodeRecWrapper
+		treeLayoutReport = volume.inodeRecBPlusTreeLayout
+
+	case LogSegmentRecBPlusTree:
+		treeName = "LogSegmentRec"
+		treeWrapper = volume.logSegmentRecWrapper
+		treeLayoutReport = volume.logSegmentRecBPlusTreeLayout
+
+	case BPlusTreeObjectBPlusTree:
+		treeName = "BPlusTreeObject"
+		treeWrapper = volume.bPlusTreeObjectWrapper
+		treeLayoutReport = volume.bPlusTreeObjectBPlusTreeLayout
+
+	default:
+		err = fmt.Errorf("FetchLayoutReport(treeType %d): bad tree type.", treeType)
+		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
+		return
+	}
+
+	layoutReport, err = treeWrapper.bPlusTree.FetchLayoutReport()
+	if err != nil {
+		logger.ErrorfWithError(err, "FetchLayoutReport() volume '%s'  tree '%s'",
+			volume.volumeName, treeName)
+		return
+	}
+
+	// compare the BPlus Tree's opinion with proxyfs' opinion
+	for objNum, objBytes = range layoutReport {
+		_, ok = treeLayoutReport[objNum]
+		if !ok {
+			logger.Errorf("FetchLayoutReport('%s', '%s'): object %016X bytes %d"+
+				" present in B+Tree but not in layout report",
+				volume.volumeName, treeName, objNum, objBytes)
+		} else {
+			if objBytes != treeLayoutReport[objNum] {
+				logger.Errorf("FetchLayoutReport('%s', '%s'): object %016X has %d bytes"+
+					" in B+Tree but %d bytes in layout report",
+					volume.volumeName, treeName, objNum, objBytes, treeLayoutReport[objNum])
+			}
+		}
+	}
+
+	for objNum, objBytes = range treeLayoutReport {
+		_, ok = layoutReport[objNum]
+		if !ok {
+			// this warning can be spurious (it shows up if Prune() has not
+			// been called since the node was deleted from the map) so ignore
+			// it if you only see it once for a particular object
+			logger.Warnf(
+				"FetchLayoutReport('%s', '%s'): object %016X bytes %d present in layout report but not in B+Tree",
+				volume.volumeName, treeName, objNum, objBytes)
+		}
+	}
+
+	return
 }

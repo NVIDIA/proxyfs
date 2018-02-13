@@ -4,6 +4,16 @@ package headhunter
 import (
 	"fmt"
 	"sync"
+
+	"github.com/swiftstack/sortedmap"
+)
+
+type BPlusTreeType uint32
+
+const (
+	InodeRecBPlusTree BPlusTreeType = iota
+	LogSegmentRecBPlusTree
+	BPlusTreeObjectBPlusTree
 )
 
 // VolumeHandle is used to operate on a given volume's database
@@ -21,6 +31,7 @@ type VolumeHandle interface {
 	PutBPlusTreeObject(objectNumber uint64, value []byte) (err error)
 	DeleteBPlusTreeObject(objectNumber uint64) (err error)
 	DoCheckpoint() (err error)
+	FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error)
 }
 
 // FetchVolumeHandle is used to fetch a VolumeHandle to use when operating on a given volume's database

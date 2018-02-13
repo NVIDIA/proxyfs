@@ -3,6 +3,7 @@ package headhunter
 import (
 	"fmt"
 
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 	"github.com/swiftstack/sortedmap"
@@ -90,6 +91,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 	bPlusTreeWrapper.volume.checkpointFlushedData = true
 
 	switch bPlusTreeWrapper.wrapperType {
+
 	case inodeRecBPlusTreeWrapperType:
 		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
@@ -97,6 +99,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		} else {
 			bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
+
 	case logSegmentRecBPlusTreeWrapperType:
 		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
 		if ok {
@@ -104,6 +107,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		} else {
 			bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
+
 	case bPlusTreeObjectBPlusTreeWrapperType:
 		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
 		if ok {
@@ -111,6 +115,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		} else {
 			bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
 		}
+
 	default:
 		err = fmt.Errorf("Logic error: bPlusTreeWrapper.PutNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
 		panic(err)
@@ -128,44 +133,61 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 	)
 
 	switch bPlusTreeWrapper.wrapperType {
+
 	case inodeRecBPlusTreeWrapperType:
+		logger.Tracef("headhunter.DiscardNode(): InodeRec Tree Object %016X  offset %d  length %d",
+			objectNumber, objectOffset, objectLength)
 		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
 				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				logger.ErrorWithError(err, "bad error")
 			} else {
 				err = nil
 				bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			logger.ErrorfWithError(err, "disk corruption or logic error")
 		}
+
 	case logSegmentRecBPlusTreeWrapperType:
+		logger.Tracef("headhunter.DiscardNode(): LogSegment Tree Object %016X  offset %d  length %d",
+			objectNumber, objectOffset, objectLength)
 		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
 				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				logger.ErrorWithError(err, "bad error")
 			} else {
 				err = nil
 				bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			logger.ErrorfWithError(err, "disk corruption or logic error")
 		}
+
 	case bPlusTreeObjectBPlusTreeWrapperType:
+		logger.Tracef("headhunter.DiscardNode(): BPlusObject Tree Object %016X  offset %d  length %d",
+			objectNumber, objectOffset, objectLength)
 		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
 		if ok {
 			if bytesUsed < objectLength {
 				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
+				logger.ErrorWithError(err, "bad error")
 			} else {
 				err = nil
 				bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
 			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
+			logger.ErrorfWithError(err, "disk corruption or logic error")
 		}
+
 	default:
 		err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
+		logger.ErrorfWithError(err, "this is BIG error ...")
 	}
 
 	return // err set as appropriate regardless of path
