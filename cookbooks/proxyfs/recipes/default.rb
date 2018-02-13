@@ -186,6 +186,14 @@ execute "Provision start_swift_only" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_swift_only /usr/bin"
 end
 
+execute "Provision start_proxyfsd_only" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/start_proxyfsd_only /usr/bin"
+end
+
+execute "Provision stop_proxyfsd_only" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/stop_proxyfsd_only /usr/bin"
+end
+
 execute "Provision unmount_and_stop_pfs" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
 end
