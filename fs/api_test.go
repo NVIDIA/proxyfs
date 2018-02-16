@@ -255,7 +255,7 @@ func createTestDirectory(t *testing.T, dirname string) (dirInode inode.InodeNumb
 	// Get root dir inode number
 	rootDirInodeNumber := inode.RootDirInodeNumber
 
-	dirInode, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, dirname, inode.PosixModePerm)
+	dirInode, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, dirname, inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Mkdir() returned error: %v", err)
 	}
@@ -297,12 +297,12 @@ func TestCreateAndLookup(t *testing.T) {
 	rootDirInodeNumber := inode.RootDirInodeNumber
 	basename := "create_lookup.test"
 
-	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Unexpectedly couldn't create file: %v", err)
 	}
 
-	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename)
 	if err != nil {
 		t.Fatalf("Unexpectedly failed to look up %v", basename)
 	}
@@ -311,7 +311,7 @@ func TestCreateAndLookup(t *testing.T) {
 		t.Fatalf("Expected created inode number %v to equal found inode number %v", createdFileInodeNumber, foundFileInodeNumber)
 	}
 
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename)
 	if nil != err {
 		t.Fatalf("Unlink() returned error: %v", err)
 	}
@@ -322,12 +322,12 @@ func TestGetstat(t *testing.T) {
 	basename := "getstat.test"
 	timeBeforeCreation := uint64(time.Now().UnixNano())
 
-	inodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	inodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("couldn't create file: %v", err)
 	}
 
-	stat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber)
+	stat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber)
 	if err != nil {
 		t.Fatalf("couldn't stat inode %v: %v", inodeNumber, err)
 	}
@@ -348,7 +348,7 @@ func TestGetstat(t *testing.T) {
 	// TODO: perform a write, check that size has changed accordingly
 	// TODO: make and delete hardlinks, check that link count has changed accordingly
 
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename)
 	if nil != err {
 		t.Fatalf("Unlink() returned error: %v", err)
 	}
@@ -391,21 +391,21 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	rootDirInodeNumber := inode.RootDirInodeNumber
 
 	//    Mkdir          A/B/                                 : create a subdirectory within Volume directory
-	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory", inode.PosixModePerm)
-	//	newDirInodeNum, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSubDirectory", inode.PosixModePerm)
+	//	newDirInodeNum, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSubDirectory")
 	if nil != err {
 		t.Fatalf("Mkdir() returned error: %v", err)
 	}
 
 	//    Create      #1 A/C                                  : create and open a normal file within Volume directory
 	basename := "TestNormalFile"
-	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Create() [#1] returned error: %v", err)
 	}
 
 	//    Lookup      #1 A/C                                  : fetch the inode name of the just created normal file
-	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	foundFileInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename)
 	if err != nil {
 		t.Fatalf("Lookup() [#1] returned error: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestAllAPIPositiveCases(t *testing.T) {
 
 	//    Write          A/C                                  : write something to normal file
 	bufToWrite := []byte{0x41, 0x42, 0x43}
-	write_rspSize, err := mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, bufToWrite, nil)
+	write_rspSize, err := mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, 0, bufToWrite, nil)
 	if nil != err {
 		t.Fatalf("Write() returned error: %v", err)
 	}
@@ -424,13 +424,13 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	// don't forget to flush
-	err = mS.Flush(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber)
+	err = mS.Flush(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber)
 	if err != nil {
 		t.Fatalf("Flush() returned error: %v", err)
 	}
 
 	//    Read           A/C                                  : read back what was just written to normal file
-	read_buf, err := mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
+	read_buf, err := mS.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
 	if nil != err {
 		t.Fatalf("Read() returned error: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Getstat     #1 A/C                                  : check the current size of the normal file
-	getstat_1_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber)
+	getstat_1_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, foundFileInodeNumber)
 	if nil != err {
 		t.Fatalf("Getstat() returned error: %v", err)
 	}
@@ -455,13 +455,13 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Resize         A/C                                  : truncate the file
-	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber, 0)
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeGroupID(0), nil, foundFileInodeNumber, 0)
 	if nil != err {
 		t.Fatalf("Resize() returned error: %v", err)
 	}
 
 	//    Getstat     #2 A/C                                  : verify the size of the normal file is now zero
-	getstat_2_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, foundFileInodeNumber)
+	getstat_2_rspStat, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, foundFileInodeNumber)
 	if nil != err {
 		t.Fatalf("Getstat() [#2] returned error: %v", err)
 	}
@@ -474,13 +474,13 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Symlink        A/D->A/C                             : create a symlink to the normal file
-	createdSymlinkInodeNumber, err := mS.Symlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink", "TestNormalFile")
+	createdSymlinkInodeNumber, err := mS.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSymlink", "TestNormalFile")
 	if nil != err {
 		t.Fatalf("Symlink() returned error: %v", err)
 	}
 
 	//    Lookup      #2 A/D                                  : fetch the inode name of the just created symlink
-	lookup_2_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink")
+	lookup_2_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSymlink")
 	if nil != err {
 		t.Fatalf("Lookup() [#2] returned error: %v", err)
 	}
@@ -489,7 +489,7 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Readsymlink    A/D                                  : read the symlink to ensure it points to the normal file
-	readsymlink_target, err := mS.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_2_inodeHandle)
+	readsymlink_target, err := mS.Readsymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lookup_2_inodeHandle)
 	if nil != err {
 		t.Fatalf("Readsymlink() returned error: %v", err)
 	}
@@ -498,69 +498,69 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 
 	//    Lookup      #3 A/B/                                 : fetch the inode name of the subdirectory
-	lookup_3_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	lookup_3_inodeHandle, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSubDirectory")
 	if nil != err {
 		t.Fatalf("Lookup() [#3] returned error: %v", err)
 	}
 
 	//    Create      #2 A/B/E                                : create a normal file within subdirectory
-	testSubDirectoryFileInode, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile", inode.PosixModePerm)
+	testSubDirectoryFileInode, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lookup_3_inodeHandle, "TestSubDirectoryFile", inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Create() [#2] returned error: %v", err)
 	}
 
 	//    Readdir and examine contents
 	entriesExpected := []string{".", "..", "TestSubDirectoryFile"}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), lookup_3_inodeHandle, entriesExpected)
 
 	//    Link A/B/E
-	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink", testSubDirectoryFileInode)
+	err = mS.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink", testSubDirectoryFileInode)
 	if nil != err {
 		t.Fatalf("Link() returned error: %v", err)
 	}
 
 	entriesExpected = []string{".", "..", "TestSubDirectoryFile", "TestSubDirectoryFileHardLink"}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), lookup_3_inodeHandle, entriesExpected)
 
 	//    Unlink      #1 A/B/E                                : delete the normal file within the subdirectory
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFile")
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lookup_3_inodeHandle, "TestSubDirectoryFile")
 	if nil != err {
 		t.Fatalf("Unlink() [#1] returned error: %v", err)
 	}
 
 	entriesExpected = []string{".", "..", "TestSubDirectoryFileHardLink"}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, lookup_3_inodeHandle, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), lookup_3_inodeHandle, entriesExpected)
 
 	//    Unlink      #1.5 A/B/E                                : delete the normal file within the subdirectory
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink")
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lookup_3_inodeHandle, "TestSubDirectoryFileHardLink")
 	if nil != err {
 		t.Fatalf("Unlink() [#1.5] returned error: %v", err)
 	}
 
 	entriesExpected = []string{".", "..", "TestSymlink", "TestNormalFile", "TestSubDirectory"}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, rootDirInodeNumber, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), rootDirInodeNumber, entriesExpected)
 
 	//    Unlink      #2 A/D                                  : delete the symlink
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSymlink")
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSymlink")
 
 	if nil != err {
 		t.Fatalf("Unlink() [#2] returned error: %v", err)
 	}
 
 	//    Unlink      #3 A/C                                  : delete the normal file
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestNormalFile")
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestNormalFile")
 	if nil != err {
 		t.Fatalf("Unlink() [#3] returned error: %v", err)
 	}
 
 	//    Rmdir       #4 A/B                                  : delete the subdirectory
-	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, "TestSubDirectory")
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, "TestSubDirectory")
 	if nil != err {
 		t.Fatalf("Unlink() [#4] returned error: %v", err)
 	}
 
 	entriesExpected = []string{".", ".."}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, rootDirInodeNumber, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), rootDirInodeNumber, entriesExpected)
 }
 
 // TODO: flesh this out with other boundary condition testing for Link
@@ -568,13 +568,13 @@ func TestBadLinks(t *testing.T) {
 	testDirInode := createTestDirectory(t, "BadLinks")
 
 	validFile := "PerfectlyValidFile"
-	validFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
+	validFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, validFile, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	nameTooLong := strings.Repeat("x", FileNameMax+1)
-	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, validFileInodeNumber)
+	err = mS.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, nameTooLong, validFileInodeNumber)
 	if nil != err {
 		if blunder.IsNot(err, blunder.NameTooLongError) {
 			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
@@ -584,7 +584,7 @@ func TestBadLinks(t *testing.T) {
 	}
 
 	entriesExpected := []string{".", "..", validFile}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
 }
 
 func TestMkdir(t *testing.T) {
@@ -592,7 +592,7 @@ func TestMkdir(t *testing.T) {
 	longButLegalFilename := strings.Repeat("x", FileNameMax)
 	nameTooLong := strings.Repeat("x", FileNameMax+1)
 
-	_, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, inode.PosixModePerm)
+	_, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, nameTooLong, inode.PosixModePerm)
 	if nil != err {
 		if blunder.IsNot(err, blunder.NameTooLongError) {
 			t.Fatalf("Mkdir() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
@@ -601,21 +601,21 @@ func TestMkdir(t *testing.T) {
 		t.Fatal("Mkdir() unexpectedly succeeded on too-long filename!")
 	}
 
-	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, longButLegalFilename, inode.PosixModePerm)
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, longButLegalFilename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Mkdir() returned error: %v", err)
 	}
 
 	entriesExpected := []string{".", "..", longButLegalFilename}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
 
 	longButLegalFullPath := "/Mkdir/" + longButLegalFilename
-	ino, err := mS.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, longButLegalFullPath)
+	ino, err := mS.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, longButLegalFullPath)
 	if err != nil {
 		t.Fatalf("LookupPath() returned error: %v", err)
 	}
 
-	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inode.InodeNumber(ino))
+	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ino))
 	if err != nil {
 		t.Fatalf("GetStat() returned error: %v", err)
 	}
@@ -627,13 +627,13 @@ func TestBadRename(t *testing.T) {
 	nameTooLong := strings.Repeat("x", FileNameMax+1)
 
 	validFile := "PerfectlyValidFile"
-	_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, inode.PosixModePerm)
+	_, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, validFile, inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
 	// Try to rename a valid file to a name that is too long
-	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, validFile, testDirInode, nameTooLong)
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, validFile, testDirInode, nameTooLong)
 	if nil != err {
 		if blunder.IsNot(err, blunder.NameTooLongError) {
 			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
@@ -643,10 +643,10 @@ func TestBadRename(t *testing.T) {
 	}
 
 	entriesExpected := []string{".", "..", validFile}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
 
 	// Try to rename a nonexistent file with a name that is too long
-	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil, testDirInode, nameTooLong, testDirInode, "AlsoAGoodFilename")
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, nameTooLong, testDirInode, "AlsoAGoodFilename")
 	if nil != err {
 		if blunder.IsNot(err, blunder.NameTooLongError) {
 			t.Fatalf("Link() returned error %v, expected %v(%d).", blunder.Errno(err), blunder.NameTooLongError, blunder.NameTooLongError.Value())
@@ -656,7 +656,7 @@ func TestBadRename(t *testing.T) {
 	}
 
 	entriesExpected = []string{".", "..", validFile}
-	expectDirectory(t, inode.InodeRootUserID, inode.InodeRootGroupID, testDirInode, entriesExpected)
+	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
 }
 
 func TestBadChownChmod(t *testing.T) {
@@ -667,7 +667,7 @@ func TestBadChownChmod(t *testing.T) {
 
 	// Create file to play with
 	basename := "TestFile"
-	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	createdFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Create() %v returned error: %v", basename, err)
 	}
@@ -679,7 +679,7 @@ func TestBadChownChmod(t *testing.T) {
 	// Validate too-big Mode
 	stat := make(Stat)
 	stat[StatMode] = tooBigForUint32
-	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, stat)
 	if blunder.IsNot(err, blunder.InvalidFileModeError) {
 		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
 	}
@@ -687,7 +687,7 @@ func TestBadChownChmod(t *testing.T) {
 
 	// Validate too-big UserID
 	stat[StatUserID] = tooBigForUint32
-	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, stat)
 	if blunder.Errno(err) != int(blunder.InvalidFileModeError) {
 		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
 	}
@@ -695,7 +695,7 @@ func TestBadChownChmod(t *testing.T) {
 
 	// Validate too-big GroupID
 	stat[StatGroupID] = tooBigForUint32
-	err = mS.Setstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, createdFileInodeNumber, stat)
+	err = mS.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, stat)
 	if blunder.Errno(err) != int(blunder.InvalidFileModeError) {
 		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
 	}
@@ -709,13 +709,13 @@ func TestFlock(t *testing.T) {
 
 	// Create file to play with
 	basename := "TestLockFile"
-	lockFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename, inode.PosixModePerm)
+	lockFileInodeNumber, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename, inode.PosixModePerm)
 	if err != nil {
 		t.Fatalf("Create() %v returned error: %v", basename, err)
 	}
 
 	// Resize the file to a 1M so that we can apply byte range locks:
-	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, 1024*1024)
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, 1024*1024)
 	if err != nil {
 		t.Fatalf("Resize() %v returned error: %v", basename, err)
 	}
@@ -727,20 +727,20 @@ func TestFlock(t *testing.T) {
 	lock.Len = 0
 	lock.Pid = 1
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Write lock on file failed: %v", err)
 	}
 
 	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Unlock on file failed: %v", blunder.Errno(err))
 	}
 
 	lock.Type = syscall.F_WRLCK
 	lock.Pid = 1
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Write lock on file failed: %v", err)
 	}
@@ -749,32 +749,32 @@ func TestFlock(t *testing.T) {
 	var lock1 FlockStruct
 	lock1 = lock
 	lock1.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock on a locked file should fail with EAGAIN instead got : %v", err)
 	}
 
 	// Lock again from pid1, it should succeed:
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Relocking from same PID on file failed: %v", err)
 	}
 
 	lock.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Unlock failed : %v", err)
 	}
 
 	// Read lock test:
 	lock.Type = syscall.F_RDLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock)
 	if err != nil {
 		t.Fatalf("Read lock pid - 1 failed: %v", err)
 	}
 
 	lock1.Type = syscall.F_RDLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock1)
 	if err != nil {
 		t.Fatalf("Read lock pid - 2 failed: %v", err)
 	}
@@ -783,32 +783,32 @@ func TestFlock(t *testing.T) {
 	lock3 := lock
 	lock3.Type = syscall.F_WRLCK
 	lock3.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if blunder.Errno(err) != int(blunder.TryAgainError) {
 		t.Fatalf("Write lock should have failed with EAGAIN instead got - %v", err)
 	}
 
 	lock11 := lock1
 	lock11.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock11)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock11)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 2 failed: %v", err)
 	}
 
 	lock01 := lock
 	lock01.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock01)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock01)
 	if err != nil {
 		t.Fatalf("Unlock of (readlock) - 1 failed: %v", err)
 	}
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
 		t.Fatalf("Write lock should have succeeded instead got - %v", err.Error())
 	}
 
 	lock3.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock3)
 	if err != nil {
 		t.Fatalf("Unlock of (write after read) failed: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestFlock(t *testing.T) {
 	lock10.Type = syscall.F_WRLCK
 	lock10.Whence = 0
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock10)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock10)
 	if err != nil {
 		t.Fatalf("Range test failed to lock range (100 - 200), err %v", err)
 	}
@@ -832,7 +832,7 @@ func TestFlock(t *testing.T) {
 	lock201.Type = syscall.F_RDLCK
 	lock201.Start = 10
 	lock201.Len = 10
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock201)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock201)
 	if err != nil {
 		t.Fatalf("Range test failed to read lock range (10 - 20) by pid2, err %v", err)
 	}
@@ -840,7 +840,7 @@ func TestFlock(t *testing.T) {
 	lock202 := lock201
 	lock202.Start = 90
 	lock202.Len = 10
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock202)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock202)
 	if err != nil {
 		t.Fatalf("Range test failed to read lock range (90 - 100) by pid2, err %v", err)
 	}
@@ -848,14 +848,14 @@ func TestFlock(t *testing.T) {
 	lock203 := lock202
 	lock203.Start = 80
 	lock203.Len = 40
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
 	if err == nil {
 		t.Fatalf("Range test read lock of range (80 - 120) should have failed for pid2  err %v", err)
 	}
 
 	lock204 := lock203
 	lock204.Start = 180
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
 	if err == nil {
 		t.Fatalf("Range test read lock of range (180 - 220) should have failed for pid2  err %v", err)
 	}
@@ -863,7 +863,7 @@ func TestFlock(t *testing.T) {
 	lock205 := lock204
 	lock205.Start = 200
 	lock205.Len = 10
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock205)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock205)
 	if err != nil {
 		t.Fatalf("Range test read lock of range (200 - 210) should have succeeded for pid2  err %v", err)
 	}
@@ -871,44 +871,44 @@ func TestFlock(t *testing.T) {
 	lock206 := lock205
 	lock206.Start = 240
 	lock206.Len = 10
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock206)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock206)
 	if err != nil {
 		t.Fatalf("Range test read lock of range (240 - 250) should have succeeded for pid2  err %v", err)
 	}
 
 	lock101 := lock10
 	lock101.Type = syscall.F_RDLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock101)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock101)
 	if err != nil {
 		t.Fatalf("Range test converting write lock to read lock of pid1 range 100 - 200 failed, err %v", err)
 	}
 
 	// Now, lock 203 and 204 should succceed.
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock203)
 	if err != nil {
 		t.Fatalf("Range test read lock of range (80 - 120) should have succeeded for pid2  err %v", err)
 	}
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock204)
 	if err != nil {
 		t.Fatalf("Range test read lock of range (180 - 220) should have succeeded for pid2  err %v", err)
 	}
 
 	lock30 := lock10
 	lock30.Pid = 3
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
 	if err == nil {
 		t.Fatalf("Range test write lock of range 100 - 200 should have failed for pid3 err %v", err)
 	}
 
 	lock102 := lock10
 	lock102.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock102)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock102)
 	if err != nil {
 		t.Fatalf("Range test unlock of range 100 - 200 for pid1 should have succeeded, err - %v", err)
 	}
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
 	if err == nil {
 		t.Fatalf("Range test write lock of range 100 - 200 should have failed for pid3 err %v", err)
 	}
@@ -916,19 +916,19 @@ func TestFlock(t *testing.T) {
 	lock207 := lock10
 	lock207.Type = syscall.F_UNLCK
 	lock207.Pid = 2
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock207)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock207)
 	if err != nil {
 		t.Fatalf("Range test unlock of range 100 - 200 for pid2 should have succeeded, err - %v", err)
 	}
 
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock30)
 	if err != nil {
 		t.Fatalf("Range test write lock of range 100 - 200 should have succeeded for pid3 err %v", err)
 	}
 
 	lock301 := lock30
 	lock301.Type = syscall.F_UNLCK
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock301)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock301)
 	if err != nil {
 		t.Fatalf("Range test unlock of range 100 - 200 should have succeeded for pid3 err %v", err)
 	}
@@ -937,7 +937,7 @@ func TestFlock(t *testing.T) {
 	lock2u1.Type = syscall.F_UNLCK
 	lock2u1.Start = 0
 	lock2u1.Len = 150
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u1)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u1)
 	if err != nil {
 		t.Fatalf("Range test unlock of range 0 - 150 should have succeeded for pid2 err %v", err)
 	}
@@ -945,7 +945,7 @@ func TestFlock(t *testing.T) {
 	lock2u2 := lock2u1
 	lock2u2.Start = 150
 	lock2u2.Len = 150
-	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u2)
+	_, err = mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_SETLK, &lock2u2)
 	if err != nil {
 		t.Fatalf("Range test unlock of range 150 - 300 should have succeeded for pid2 err %v", err)
 	}
@@ -953,7 +953,7 @@ func TestFlock(t *testing.T) {
 	lock30.Start = 0
 	lock30.Len = 250
 	lock30.Type = syscall.F_WRLCK
-	lockHeld, err := mS.Flock(inode.InodeRootUserID, inode.InodeRootGroupID, nil, lockFileInodeNumber, syscall.F_GETLK, &lock30)
+	lockHeld, err := mS.Flock(inode.InodeRootUserID, inode.InodeGroupID(0), nil, lockFileInodeNumber, syscall.F_GETLK, &lock30)
 	if err != nil {
 		t.Fatalf("Range test GET write lock of range 0 - 250 should have succeeded for pid3 err %v lockHeld %+v", err, lockHeld)
 	}
@@ -962,7 +962,7 @@ func TestFlock(t *testing.T) {
 		t.Fatalf("GetLock should have succeeded for range 0 - 250 for pid 3, err %v", err)
 	}
 
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, rootDirInodeNumber, basename)
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, rootDirInodeNumber, basename)
 	if err != nil {
 		t.Fatalf("Unlink() %v returned error: %v", basename, err)
 	}
@@ -986,31 +986,31 @@ func TestStaleInodes(t *testing.T) {
 	)
 
 	// scratchpad directory for testing
-	testDirInodeNumber, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	testDirInodeNumber, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		rootDirInodeNumber, testDirname, 0755)
 	if nil != err {
 		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
 	}
 
 	// create a valid test file
-	testFileInodeNumber, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	testFileInodeNumber, err = mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, testFileName, 0644)
 	if nil != err {
 		t.Fatalf("Create() '%s' returned error: %v", testFileName, err)
 	}
 
 	// get an inode number that used to belong to a dirctory
-	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleDirName, 0755)
 	if nil != err {
 		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
 	}
-	staleDirInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	staleDirInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleDirName)
 	if err != nil {
 		t.Fatalf("Unexpectedly failed to look up of '%s': %v", testDirname, err)
 	}
-	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleDirName)
 	if nil != err {
 		t.Fatalf("Rmdir() of '%s' returned error: %v", staleDirName, err)
@@ -1019,24 +1019,24 @@ func TestStaleInodes(t *testing.T) {
 	// get an inode number that used to belong to a file (it shouldn't
 	// really matter which type of file the inode used to be, but it doesn't
 	// hurt to have two to play with)
-	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleFileName, 0644)
 	if nil != err {
 		t.Fatalf("Mkdir() '%s' returned error: %v", testDirname, err)
 	}
-	staleFileInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	staleFileInodeNumber, err = mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleFileName)
 	if err != nil {
 		t.Fatalf("Unexpectedly failed to look up of '%s': %v", testDirname, err)
 	}
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, staleFileName)
 	if nil != err {
 		t.Fatalf("Unlink() of '%s' returned error: %v", staleFileName, err)
 	}
 
 	// Stat
-	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber)
+	_, err = mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, staleFileInodeNumber)
 	if nil == err {
 		t.Fatalf("Getstat() should not have returned success")
 	}
@@ -1045,7 +1045,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Mkdir
-	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "TestSubDirectory", 0755)
 	if nil == err {
 		t.Fatalf("Mkdir() should not have returned success")
@@ -1055,7 +1055,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Rmdir
-	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar")
 	if nil == err {
 		t.Fatalf("Rmdir() should not have returned success")
@@ -1065,7 +1065,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Create
-	_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar", 0644)
 	if nil == err {
 		t.Fatalf("Create() should not have returned success")
@@ -1075,7 +1075,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Lookup
-	_, err = mS.Lookup(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar")
 	if nil == err {
 		t.Fatalf("Lookup() should not have returned success")
@@ -1086,7 +1086,7 @@ func TestStaleInodes(t *testing.T) {
 
 	// Write
 	bufToWrite := []byte{0x41, 0x42, 0x43}
-	_, err = mS.Write(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleFileInodeNumber, 0, bufToWrite, nil)
 	if nil == err {
 		t.Fatalf("Write() should not have returned success")
@@ -1096,7 +1096,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Read
-	_, err = mS.Read(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleFileInodeNumber, 0, uint64(len(bufToWrite)), nil)
 	if nil == err {
 		t.Fatalf("Read() should not have returned success")
@@ -1106,7 +1106,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Trunc
-	err = mS.Resize(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber, 77)
+	err = mS.Resize(inode.InodeRootUserID, inode.InodeGroupID(0), nil, staleFileInodeNumber, 77)
 	if nil == err {
 		t.Fatalf("Resize() should not have returned success")
 	}
@@ -1115,7 +1115,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Symlink
-	_, err = mS.Symlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, err = mS.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "TestSymlink", "fubar")
 	if nil == err {
 		t.Fatalf("Symlink() should not have returned success")
@@ -1125,7 +1125,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Readsymlink (that we didn't create)
-	_, err = mS.Readsymlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, staleFileInodeNumber)
+	_, err = mS.Readsymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, staleFileInodeNumber)
 	if nil == err {
 		t.Fatalf("Readsymlink() should not have returned success")
 	}
@@ -1134,7 +1134,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Readdir
-	_, _, _, err = mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	_, _, _, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "", 0, 0)
 	if nil == err {
 		t.Fatalf("Readdir() should not have returned success")
@@ -1144,7 +1144,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Link -- two cases, one with stale directory and one with stale file
-	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar", testFileInodeNumber)
 	if nil == err {
 		t.Fatalf("Link(1) should not have returned success")
@@ -1153,7 +1153,7 @@ func TestStaleInodes(t *testing.T) {
 		t.Fatalf("Link(1) should have failed with NotFoundError, instead got: %v", err)
 	}
 
-	err = mS.Link(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Link(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, testFileName, staleFileInodeNumber)
 	if nil == err {
 		t.Fatalf("Link(2) should not have returned success")
@@ -1163,7 +1163,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Unlink
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar")
 	if nil == err {
 		t.Fatalf("Unlink() should not have returned success")
@@ -1173,7 +1173,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Rename -- two cases, one with stale src directory and one with stale dest
-	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, "fubar", staleDirInodeNumber, "barfu")
 	if nil == err {
 		t.Fatalf("Rename(1) should not have returned success")
@@ -1182,7 +1182,7 @@ func TestStaleInodes(t *testing.T) {
 		t.Fatalf("Rename(1) should have failed with NotFoundError, instead got: %v", err)
 	}
 
-	err = mS.Rename(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Rename(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		staleDirInodeNumber, "fubar", testDirInodeNumber, "barfu")
 	if nil == err {
 		t.Fatalf("Rename(2) should not have returned success")
@@ -1192,12 +1192,12 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// cleanup test file and directory
-	err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		testDirInodeNumber, testFileName)
 	if nil != err {
 		t.Fatalf("Unlink() of '%s' returned error: %v", testFileName, err)
 	}
-	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil,
+	err = mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		rootDirInodeNumber, testDirname)
 	if nil != err {
 		t.Fatalf("Rmdir() of '%s' returned error: %v", testDirname, err)

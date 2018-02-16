@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# A simple script to start or stop proxyfsd
+# The PATH, etc should already be setup by systemctl environment
+
+function await_proxyfsd_startup {
+    /usr/bin/systemctl -q is-active proxyfsd
+    if [ $? -ne 0 ]
+    then
+        echo "ProxyFS failed to start. Exiting..."
+        exit 1
+    fi
+    while true
+    do
+        curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]
+        then
+            break
+        fi
+        echo "Waiting for ProxyFS to be started..."
+        sleep 1
+    done
+}
+
+if [ -f /usr/bin/systemctl ]; then
+    # Centos
+    sudo /usr/bin/systemctl start proxyfsd
+    await_proxyfsd_startup
+else
+    # Ubuntu (not tested!)
+    sudo /usr/sbin/service proxyfsd start
+    await_proxyfsd_startup
+fi

@@ -586,6 +586,11 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 		return
 	}
 
+	// writes of length 0 succeed but do not change mtime
+	if len(buf) == 0 {
+		return
+	}
+
 	fileInode.dirty = true
 
 	logSegmentNumber, logSegmentOffset, err := vS.doSendChunk(fileInode, buf)

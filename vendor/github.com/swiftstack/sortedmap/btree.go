@@ -931,6 +931,9 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 	// Discard all stale OnDisk node references
 
 	keyAsKey, objectLengthAsValue, ok, err = tree.staleOnDiskReferences.GetByIndex(0)
+	if nil != err {
+		return
+	}
 
 	for ok {
 		keyAsOnDiskReferenceKeyStruct, ok = keyAsKey.(*onDiskReferenceKeyStruct)
@@ -956,6 +959,9 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 			return
 		}
 		keyAsKey, objectLengthAsValue, ok, err = tree.staleOnDiskReferences.GetByIndex(0)
+		if nil != err {
+			return
+		}
 	}
 
 	// All done

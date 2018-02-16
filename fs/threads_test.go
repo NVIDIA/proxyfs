@@ -58,11 +58,11 @@ type testResponse struct {
 
 // Per thread structure storing channel information
 type threadInfo struct {
+	sync.Mutex
 	startedNode      chan bool
 	requestForThread chan *testRequest
 	operationStatus  chan *testResponse
-	sync.Mutex
-	endLoop bool // Flag used to signal an infinite loop test to stop
+	endLoop          bool // Flag used to signal an infinite loop test to stop
 }
 
 var globalSyncPt chan testRequest // Channel used to synchronize test threads to simulate multiple threads
@@ -113,23 +113,23 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		fName := name1 + "-" + strconv.Itoa(localLoopCount)
 		switch fileRequest.opType {
 		case createLoopTestOp:
-			_, err = mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, fName, inode.PosixModePerm)
+			_, err = mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName, inode.PosixModePerm)
 		case lookupPathLoopTestOp:
-			_, err = mS.LookupPath(inode.InodeRootUserID, inode.InodeRootGroupID, nil, fName)
+			_, err = mS.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fName)
 		case readdirLoopTestOp:
 			areMoreEntries := true
 			lastBasename := ""
 			var maxEntries uint64 = 10
 			var totalEntriesRead uint64 // Useful for debugging
 			for areMoreEntries {
-				dirEnts, numEntries, more, errShadow := mS.Readdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, lastBasename, maxEntries, 0)
+				dirEnts, numEntries, more, errShadow := mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, lastBasename, maxEntries, 0)
 				lastBasename = dirEnts[len(dirEnts)-1].Basename
 				areMoreEntries = more
 				err = errShadow
 				totalEntriesRead = totalEntriesRead + numEntries
 			}
 		case unlinkLoopTestOp:
-			err = mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, fName)
+			err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
 		}
 		localLoopCount++
 		infiniteLoopCount++
@@ -137,12 +137,12 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		// The infinite loop case breaks when control thread signals this thread to stop
 		// and we have at least hit our minimumLoopCount.
 		if (loopCount == 0) && (localLoopCount >= minimumLoopCount) {
-			threadMap[threadID].Mutex.Lock()
+			threadMap[threadID].Lock()
 			if threadMap[threadID].endLoop == true {
-				threadMap[threadID].Mutex.Unlock()
+				threadMap[threadID].Unlock()
 				break
 			}
-			threadMap[threadID].Mutex.Unlock()
+			threadMap[threadID].Unlock()
 		} else {
 			if localLoopCount == loopCount {
 				break
@@ -171,7 +171,7 @@ func threadNode(threadID int) {
 			return
 
 		case createTestOp:
-			_, err := mS.Create(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1, inode.PosixModePerm)
+			_, err := mS.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
@@ -188,7 +188,7 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case mkdirTestOp:
-			newInodeNumber, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1, inode.PosixModePerm)
+			newInodeNumber, err := mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
 			response := &testResponse{err: err, inodeNumber: newInodeNumber}
 			threadMap[threadID].operationStatus <- response
 
@@ -199,12 +199,12 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case rmdirTestOp:
-			err := mS.Rmdir(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1)
+			err := mS.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
 		case unlinkTestOp:
-			err := mS.Unlink(inode.InodeRootUserID, inode.InodeRootGroupID, nil, inodeNumber, name1)
+			err := mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
@@ -219,17 +219,17 @@ func threadNode(threadID int) {
 
 // Set flag telling thread doing infinite loop to exit.
 func setEndLoopFlag(threadID int) {
-	threadMap[threadID].Mutex.Lock()
+	threadMap[threadID].Lock()
 	threadMap[threadID].endLoop = true
-	threadMap[threadID].Mutex.Unlock()
+	threadMap[threadID].Unlock()
 }
 
 func sendRequestToThread(threadID int, t *testing.T, operation testOpTyp, inodeNumber inode.InodeNumber, name1 string, loopCount int, minimumLoopCount int) {
 
 	// Clear endLoop flag before sending request
-	threadMap[threadID].Mutex.Lock()
+	threadMap[threadID].Lock()
 	threadMap[threadID].endLoop = false
-	threadMap[threadID].Mutex.Unlock()
+	threadMap[threadID].Unlock()
 
 	request := &testRequest{opType: operation, t: t, name1: name1, loopCount: loopCount, minimumLoopCount: minimumLoopCount, inodeNumber: inodeNumber}
 	threadMap[threadID].requestForThread <- request

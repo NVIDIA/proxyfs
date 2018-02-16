@@ -608,22 +608,45 @@ func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (li
 		buf                  []byte
 		bufCurrentPosition   int
 		bufLineStartPosition int
+		chunk                []byte
 		contentLength        int
 	)
 
-	contentLength, err = parseContentLength(headers)
-	if nil != err {
-		return
-	}
+	if parseTransferEncoding(headers) {
+		buf = make([]byte, 0)
+		for {
+			chunk, err = readHTTPChunk(tcpConn)
+			if nil != err {
+				return
+			}
 
-	lines = make([]string, 0)
+			if 0 == len(chunk) {
+				break
+			}
 
-	if 0 < contentLength {
-		buf, err = readBytesFromTCPConn(tcpConn, contentLength)
+			buf = append(buf, chunk...)
+		}
+
+		contentLength = len(buf)
+	} else {
+		contentLength, err = parseContentLength(headers)
 		if nil != err {
 			return
 		}
 
+		if 0 == contentLength {
+			buf = make([]byte, 0)
+		} else {
+			buf, err = readBytesFromTCPConn(tcpConn, contentLength)
+			if nil != err {
+				return
+			}
+		}
+	}
+
+	lines = make([]string, 0)
+
+	if 0 < len(buf) {
 		bufLineStartPosition = 0
 		bufCurrentPosition = 0
 

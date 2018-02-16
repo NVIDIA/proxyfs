@@ -17,6 +17,7 @@ gosubdirs = \
 	mkproxyfs mkproxyfs/mkproxyfs \
 	pfs-stress \
 	pfsconfjson pfsconfjsonpacked \
+	pfs-crash \
 	pfsworkout \
 	platform \
 	proxyfsd proxyfsd/proxyfsd \

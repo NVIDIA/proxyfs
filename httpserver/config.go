@@ -37,6 +37,14 @@ type fsckJobStruct struct {
 	err       error
 }
 
+// FSCKGenericJobStruct describes all the possible fields returned in JSON-encoded fsck GET body
+type FSCKGenericJobStruct struct {
+	StartTime string `json:"start time"`
+	HaltTime  string `json:"halt time"`
+	DoneTime  string `json:"done time"`
+	Error     string `json:"errors"`
+}
+
 type fsckRunningJobStruct struct {
 	StartTime string `json:"start time"`
 }

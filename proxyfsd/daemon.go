@@ -309,7 +309,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			// it may be because the caller has not called wg.Wait()
 			// to wait for all of the defer'ed routines (above) to
 			// finish before it exits
-			evtlog.Record(evtlog.FormatDownSequenceEnd)
+			evtlog.Record(evtlog.FormatDownSequenceStart) // Note: no opportunity to log ...End step alas
 			logger.Infof("signal catcher is shutting down proxyfsd (PID %d)", os.Getpid())
 			return
 		}

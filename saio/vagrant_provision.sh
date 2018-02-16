@@ -188,8 +188,9 @@ cd python-swiftclient
 python setup.py develop
 
 cd ~swift
-git clone -b master --single-branch --depth 1 https://github.com/openstack/swift.git
+git clone https://github.com/openstack/swift.git
 cd swift
+git checkout -b 5cf96230c82d4fcbac297775997a7e0abe3e9ff9
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 pip install -r test-requirements.txt

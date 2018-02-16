@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -58,6 +59,7 @@ func containerDelete(accountName string, containerName string) (err error) {
 		logger.ErrorfWithError(err, "swiftclient.containerDelete(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
 		return
 	}
+	evtlog.Record(evtlog.FormatContainerDelete, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -125,6 +127,7 @@ func containerGet(accountName string, containerName string) (headers map[string]
 		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
 		return
 	}
+	evtlog.Record(evtlog.FormatContainerGet, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -133,8 +136,6 @@ func containerGet(accountName string, containerName string) (headers map[string]
 		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName)
 		return
 	}
-
-	// TODO: Possibly need to handle Transfer-Encoding: chunked for objectList
 
 	objectList, err = readHTTPPayloadLines(connection.tcpConn, headers)
 	if nil != err {
@@ -202,6 +203,7 @@ func containerHead(accountName string, containerName string) (headers map[string
 		logger.ErrorfWithError(err, "swiftclient.containerHead(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
 		return
 	}
+	evtlog.Record(evtlog.FormatContainerHead, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -269,6 +271,7 @@ func containerPost(accountName string, containerName string, requestHeaders map[
 		logger.ErrorfWithError(err, "swiftclient.containerPost(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
 		return
 	}
+	evtlog.Record(evtlog.FormatContainerPost, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -352,6 +355,7 @@ func containerPut(accountName string, containerName string, requestHeaders map[s
 		logger.ErrorfWithError(err, "swiftclient.containerPut(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
 		return
 	}
+	evtlog.Record(evtlog.FormatContainerPut, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)

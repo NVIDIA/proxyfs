@@ -70,6 +70,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 		logger.ErrorfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectHead, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -343,6 +344,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -449,6 +451,7 @@ func objectHead(accountName string, containerName string, objectName string) (he
 		logger.ErrorfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectHead, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -519,6 +522,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -635,6 +639,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -750,6 +755,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
+	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)

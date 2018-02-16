@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/swiftstack/sortedmap"
-
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/halter"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/swiftstack/sortedmap"
 )
 
 type httpRequestHandler struct{}
@@ -382,42 +382,33 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
+type requestState struct {
+	pathSplit               []string
+	numPathParts            int
+	formatResponseAsJSON    bool
+	formatResponseCompactly bool
+	volume                  *volumeStruct
+}
+
 func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		acceptHeader              string
-		err                       error
-		formatResponseAsJSON      bool
-		formatResponseCompactly   bool
-		fsckCompletedJobNoError   fsckCompletedJobNoErrorStruct
-		fsckCompletedJobWithError fsckCompletedJobWithErrorStruct
-		fsckHaltedJob             fsckHaltedJobStruct
-		fsckInactive              bool
-		fsckJob                   *fsckJobStruct
-		fsckJobAsValue            sortedmap.Value
-		fsckJobID                 uint64
-		fsckJobIDAsKey            sortedmap.Key
-		fsckJobsIDListJSON        bytes.Buffer
-		fsckJobsIDListJSONPacked  []byte
-		fsckJobStatusJSON         bytes.Buffer
-		fsckJobStatusJSONPacked   []byte
-		fsckJobsCount             int
-		fsckJobsIDList            []uint64
-		fsckJobsIDListIndex       int
-		fsckJobsIndex             int
-		fsckRunningJob            fsckRunningJobStruct
-		numPathParts              int
-		ok                        bool
-		paramList                 []string
-		pathSplit                 []string
-		volume                    *volumeStruct
-		volumeAsValue             sortedmap.Value
-		volumeList                []string
-		volumeListIndex           int
-		volumeListJSON            bytes.Buffer
-		volumeListJSONPacked      []byte
-		volumeListLen             int
-		volumeName                string
-		volumeNameAsKey           sortedmap.Key
+		requestState            requestState
+		acceptHeader            string
+		err                     error
+		formatResponseAsJSON    bool
+		formatResponseCompactly bool
+		numPathParts            int
+		ok                      bool
+		paramList               []string
+		pathSplit               []string
+		volumeAsValue           sortedmap.Value
+		volumeList              []string
+		volumeListIndex         int
+		volumeListJSON          bytes.Buffer
+		volumeListJSONPacked    []byte
+		volumeListLen           int
+		volumeName              string
+		volumeNameAsKey         sortedmap.Key
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -433,6 +424,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume
 	case 3:
 		// Form: /volume/<volume-name/fsck-job
+		// Form: /volume/<volume-name/layout-report
 	case 4:
 		// Form: /volume/<volume-name/fsck-job/<job-id>
 	default:
@@ -477,8 +469,8 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 				err = fmt.Errorf("httpserver.doGetOfVolume() indexing globals.volumeLLRB failed")
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
-			volumeName = volumeNameAsKey.(string)
 
+			volumeName = volumeNameAsKey.(string)
 			volumeList = append(volumeList, volumeName)
 		}
 
@@ -508,6 +500,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>Volumes</title>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
+
 			for volumeListIndex, volumeName = range volumeList {
 				if 0 < volumeListIndex {
 					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
@@ -524,7 +517,6 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	// If we reach here, numPathParts is either 3 or 4
-
 	volumeName = pathSplit[2]
 
 	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
@@ -535,15 +527,65 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	volume = volumeAsValue.(*volumeStruct)
+	requestState.volume = volumeAsValue.(*volumeStruct)
 
-	volume.Lock()
+	requestState.pathSplit = pathSplit
+	requestState.numPathParts = numPathParts
+	requestState.formatResponseAsJSON = formatResponseAsJSON
+	requestState.formatResponseCompactly = formatResponseCompactly
 
-	if "fsck-job" != pathSplit[3] {
-		volume.Unlock()
+	switch pathSplit[3] {
+
+	case "fsck-job":
+		doFsckJob(responseWriter, request, requestState)
+
+	case "layout-report":
+		doLayoutReport(responseWriter, request, requestState)
+
+	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
+	return
+}
+
+func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+	var (
+		err                       error
+		pathSplit                 []string
+		numPathParts              int
+		formatResponseAsJSON      bool
+		formatResponseCompactly   bool
+		fsckCompletedJobNoError   fsckCompletedJobNoErrorStruct
+		fsckCompletedJobWithError fsckCompletedJobWithErrorStruct
+		fsckHaltedJob             fsckHaltedJobStruct
+		fsckInactive              bool
+		fsckJob                   *fsckJobStruct
+		fsckJobAsValue            sortedmap.Value
+		fsckJobID                 uint64
+		fsckJobIDAsKey            sortedmap.Key
+		fsckJobsIDListJSON        bytes.Buffer
+		fsckJobsIDListJSONPacked  []byte
+		fsckJobStatusJSON         bytes.Buffer
+		fsckJobStatusJSONPacked   []byte
+		fsckJobsCount             int
+		fsckJobsIDList            []uint64
+		fsckJobsIDListIndex       int
+		fsckJobsIndex             int
+		fsckRunningJob            fsckRunningJobStruct
+		ok                        bool
+		volume                    *volumeStruct
+		volumeName                string
+	)
+
+	volume = requestState.volume
+	pathSplit = requestState.pathSplit
+	numPathParts = requestState.numPathParts
+	formatResponseAsJSON = requestState.formatResponseAsJSON
+	formatResponseCompactly = requestState.formatResponseCompactly
+
+	volumeName = volume.name
+	volume.Lock()
 
 	if 3 == numPathParts {
 		fsckJobsCount, err = volume.fsckJobs.Len()
@@ -778,6 +820,73 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	volume.Unlock()
+}
+
+func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+	var (
+		err                     error
+		formatResponseAsJSON    bool
+		formatResponseCompactly bool
+		volume                  *volumeStruct
+		volumeName              string
+		layoutReport            sortedmap.LayoutReport
+	)
+
+	volume = requestState.volume
+	// pathSplit = requestState.pathSplit
+	// numPathParts = requestState.numPathParts
+	formatResponseAsJSON = requestState.formatResponseAsJSON
+	formatResponseCompactly = requestState.formatResponseCompactly
+	_ = formatResponseCompactly
+
+	volumeName = volume.name
+
+	treeTypes := map[headhunter.BPlusTreeType]string{
+		headhunter.InodeRecBPlusTree:        "Inode Record B+Tree",
+		headhunter.LogSegmentRecBPlusTree:   "Log Segment Record B+Tree",
+		headhunter.BPlusTreeObjectBPlusTree: "B+Plus Tree Objects B+Tree",
+	}
+
+	if formatResponseAsJSON {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		for treeType, treeName := range treeTypes {
+			_ = treeType
+			_ = treeName
+		}
+	} else {
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+
+		for treeType, treeName := range treeTypes {
+
+			layoutReport, err = volume.headhunterHandle.FetchLayoutReport(treeType)
+			if err != nil {
+				logger.ErrorfWithError(err, "doLayoutReport(): failed for %s tree", treeName)
+				responseWriter.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Volume %s %v Tree</title>\n",
+				volumeName, treeName)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
+
+			for objNum, objBytes := range layoutReport {
+				_, _ = responseWriter.Write(utils.StringToByteSlice(
+					fmt.Sprintf("%016X %d<br>\n", objNum, objBytes)))
+			}
+			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
+		}
+		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+	}
+
+	return
 }
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {

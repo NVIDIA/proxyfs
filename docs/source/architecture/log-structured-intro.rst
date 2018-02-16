@@ -1,5 +1,5 @@
-ProxyFS Log-Structured Filesystem
-=================================
+Log-Structured Filesystem
+=========================
 
 The ProxyFS filesystem takes advantage of the properties of its
 underlying object storage platform.

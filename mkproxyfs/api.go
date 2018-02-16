@@ -148,25 +148,48 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		case ModeReformat:
 			// If Swift Account is not empty && ModeReformat, clear out accountName
 
-			for _, containerName = range containerList {
-				_, objectList, err = swiftclient.ContainerGet(accountName, containerName)
-				if nil == err {
-					for _, objectName = range objectList {
-						err = swiftclient.ObjectDeleteSync(accountName, containerName, objectName)
+			for !isEmpty {
+				for _, containerName = range containerList {
+					_, objectList, err = swiftclient.ContainerGet(accountName, containerName)
+					if nil != err {
+						err = fmt.Errorf("failed to GET %v/%v: %v", accountName, containerName, err)
+						return
+					}
+
+					isEmpty = (0 == len(objectList))
+
+					for !isEmpty {
+						for _, objectName = range objectList {
+							err = swiftclient.ObjectDeleteSync(accountName, containerName, objectName)
+							if nil != err {
+								err = fmt.Errorf("failed to DELETE %v/%v/%v: %v", accountName, containerName, objectName, err)
+								return
+							}
+						}
+
+						_, objectList, err = swiftclient.ContainerGet(accountName, containerName)
 						if nil != err {
-							err = fmt.Errorf("failed to DELETE %v/%v/%v: %v", accountName, containerName, objectName, err)
+							err = fmt.Errorf("failed to GET %v/%v: %v", accountName, containerName, err)
 							return
 						}
+
+						isEmpty = (0 == len(objectList))
 					}
-				} else {
-					err = fmt.Errorf("failed to GET %v/%v: %v", accountName, containerName, err)
-					return
+
+					err = swiftclient.ContainerDelete(accountName, containerName)
+					if nil != err {
+						err = fmt.Errorf("failed to DELETE %v/%v: %v", accountName, containerName, err)
+						return
+					}
 				}
-				err = swiftclient.ContainerDelete(accountName, containerName)
+
+				_, containerList, err = swiftclient.AccountGet(accountName)
 				if nil != err {
-					err = fmt.Errorf("failed to DELETE %v/%v: %v", accountName, containerName, err)
+					err = fmt.Errorf("failed to GET %v: %v", accountName, err)
 					return
 				}
+
+				isEmpty = (0 == len(containerList))
 			}
 
 			replayLogFileName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "ReplayLogFileName")
