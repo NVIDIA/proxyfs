@@ -11,6 +11,7 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 )
@@ -22,26 +23,29 @@ const (
 
 	validateVolumeInodeParallelism    = uint64(100)
 	validateVolumeDirInodeParallelism = uint64(50)
+
+	lostAndFoundDirName = "Lost+Found"
 )
 
 type validateVolumeStruct struct {
 	sync.Mutex
-	globalWaitGroup        sync.WaitGroup
-	volumeName             string
-	active                 bool
-	stopFlag               bool
-	err                    []string
-	info                   []string
-	volume                 *volumeStruct
-	inodeVolumeHandle      inode.VolumeHandle
-	headhunterVolumeHandle headhunter.VolumeHandle
-	parallelismChan        chan struct{}
-	parallelismChanSize    uint64
-	childrenWaitGroup      sync.WaitGroup
-	bpTree                 sortedmap.BPlusTree
-	bpTreeCache            sortedmap.BPlusTreeCache
-	bpTreeFile             *os.File
-	bpTreeNextOffset       uint64
+	globalWaitGroup            sync.WaitGroup
+	volumeName                 string
+	active                     bool
+	stopFlag                   bool
+	err                        []string
+	info                       []string
+	volume                     *volumeStruct
+	inodeVolumeHandle          inode.VolumeHandle
+	headhunterVolumeHandle     headhunter.VolumeHandle
+	parallelismChan            chan struct{}
+	parallelismChanSize        uint64
+	childrenWaitGroup          sync.WaitGroup
+	bpTree                     sortedmap.BPlusTree
+	bpTreeCache                sortedmap.BPlusTreeCache
+	bpTreeFile                 *os.File
+	bpTreeNextOffset           uint64
+	lostAndFoundDirInodeNumber inode.InodeNumber
 }
 
 func (vVS *validateVolumeStruct) Active() (active bool) {
@@ -404,6 +408,8 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		err         error
 		inodeIndex  uint64
 		inodeNumber uint64
+		inodeType   inode.InodeType
+		moreEntries bool
 		ok          bool
 	)
 
@@ -522,7 +528,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed validation of all Inode's", time.Now().Format(time.RFC3339)))
 
-	// TreeWalk computing LinkCounts for all inodeNumber's before populating /Lost+Found/
+	// TreeWalk computing LinkCounts for all inodeNumbers
 
 	_, ok, err = vVS.bpTree.GetByKey(uint64(inode.RootDirInodeNumber))
 	if nil != err {
@@ -543,15 +549,91 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.validateVolumeEndParallelism()
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed treewalk before populating /Lost+Found/", time.Now().Format(time.RFC3339)))
+	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed treewalk before populating /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
 
-	// TODO: How to place orphaned inodes in /.Lost+Found/ ???
-	// TODO: Newly referenced inodes in /.Lost+Found/ need to be LinkCount'd to ???
-	// TODO: Remove Inodes with LinkCount == 0
-	// TODO: For surviving File Inode's, compute referenced LogSegment
-	// TODO: Validate referenced LogSegment's are of sufficient length
-	// TODO: Remove unreferenced LogSegment's
-	// TODO: Validate referenced B+Tree Objects are of sufficient length
-	// TODO: Remove unreferenced B+Tree Objects
-	// TODO: Consider what info strings would also be flagged as an error to FSCK
+	// Establish that lostAndFoundDirName exists
+
+	vVS.lostAndFoundDirInodeNumber, err = vVS.inodeVolumeHandle.Lookup(inode.RootDirInodeNumber, lostAndFoundDirName)
+	if nil == err {
+		// Found it - make sure it is a directory
+
+		inodeType, err = vVS.inodeVolumeHandle.GetType(vVS.lostAndFoundDirInodeNumber)
+		if nil != err {
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) failure: %v", time.Now().Format(time.RFC3339), vVS.lostAndFoundDirInodeNumber, err))
+			return
+		}
+		if inode.DirType != inodeType {
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) non-DirType", time.Now().Format(time.RFC3339), vVS.lostAndFoundDirInodeNumber))
+			return
+		}
+
+		vVS.info = append(vVS.info, fmt.Sprintf("%v Found pre-existing /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+	} else {
+		if blunder.Is(err, blunder.NotFoundError) {
+			// Create it
+
+			vVS.lostAndFoundDirInodeNumber, err = vVS.inodeVolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
+			if nil != err {
+				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.CreateDir() failure: %v", time.Now().Format(time.RFC3339), err))
+				return
+			}
+			err = vVS.inodeVolumeHandle.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber)
+			if nil != err {
+				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+				err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
+				if nil != err {
+					vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+				}
+				return
+			}
+
+			vVS.info = append(vVS.info, fmt.Sprintf("%v Created /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+		} else {
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Lookup(inode.RootDirInodeNumber, lostAndFoundDirName) failure: %v", time.Now().Format(time.RFC3339), err))
+			return
+		}
+	}
+
+	// TODO: Scan B+Tree placing top-most orphan DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+
+	// TODO: Re-compute LinkCounts
+
+	// TODO: Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+
+	// TODO: Update incorrect LinkCounts
+
+	// If vVS.lostAndFoundDirInodeNumber is empty, remove it
+
+	_, moreEntries, err = vVS.inodeVolumeHandle.ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0)
+	if nil != err {
+		vVS.err = append(vVS.err, fmt.Sprintf("%v Got ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0) failure: %v", time.Now().Format(time.RFC3339), err))
+		return
+	}
+
+	if moreEntries {
+		vVS.info = append(vVS.info, fmt.Sprintf("%v Preserving non-empty /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+	} else {
+		err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName)
+		if nil != err {
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName) failure: %v", time.Now().Format(time.RFC3339), err))
+			return
+		}
+
+		err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
+		if nil != err {
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+			return
+		}
+
+		vVS.info = append(vVS.info, fmt.Sprintf("%v Removed empty /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+	}
+
+	// TODO: Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
+	// TODO: Walk all FileInodes tracking referenced LogSegments
+	// TODO: Delete unreferenced LogSegments (both headhunter records & Objects)
+	// TODO: Walk all DirInodes & FileInodes tracking referenced headhunter B+Tree "Objects"
+	// TODO: Delete unreferenced headhunter B+Tree "Objects"
+	// TODO: Do a final checkpoint
+	// TODO: Compute TreeLayout for all three headhunter B+Trees
+	// TODO: Remove unreferenced Checkpoint Objects
 }
