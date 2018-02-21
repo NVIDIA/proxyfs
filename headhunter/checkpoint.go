@@ -11,14 +11,15 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/swiftstack/cstruct"
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
-	"github.com/swiftstack/cstruct"
-	"github.com/swiftstack/sortedmap"
 )
 
 var (
@@ -462,6 +463,71 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 	if nil != err {
 		logger.Fatalf("os.Write() unexpectedly returned error: %v", err)
 	}
+
+	return
+}
+
+func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedmap.LayoutReport, err error) {
+	var (
+		checkpointContainerHeaders map[string][]string
+		checkpointHeaderValue      string
+		checkpointHeaderValueSlice []string
+		checkpointHeaderValues     []string
+		checkpointVersion          uint64
+		objectLength               uint64
+		objectNumber               uint64
+		ok                         bool
+	)
+
+	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+	if nil != err {
+		return
+	}
+
+	checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
+	if !ok {
+		err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+		return
+	}
+	if 1 != len(checkpointHeaderValues) {
+		err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+		return
+	}
+
+	checkpointHeaderValue = checkpointHeaderValues[0]
+
+	checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
+
+	if 1 > len(checkpointHeaderValueSlice) {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
+		return
+	}
+
+	checkpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
+	if nil != err {
+		return
+	}
+	if checkpointHeaderVersion2 != checkpointVersion {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, checkpointVersion)
+		return
+	}
+
+	objectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
+	if nil != err {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
+		return
+	}
+
+	objectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
+	if nil != err {
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
+		return
+	}
+
+	// Return layoutReport manufactured from the checkpointHeaderValue
+
+	layoutReport = make(sortedmap.LayoutReport)
+	layoutReport[objectNumber] = objectLength
 
 	return
 }
@@ -1356,85 +1422,4 @@ func (volume *volumeStruct) checkpointDaemon() {
 			return
 		}
 	}
-}
-
-// Fetch the layout report for the requested Tree type, where
-// the types are:
-//
-// inodeRecBPlusTreeWrapperType uint32 = iota
-// logSegmentRecBPlusTreeWrapperType
-// bPlusTreeObjectBPlusTreeWrapperType
-//
-func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error) {
-	var (
-		treeName         string
-		treeWrapper      *bPlusTreeWrapperStruct
-		treeLayoutReport sortedmap.LayoutReport
-		objNum           uint64
-		objBytes         uint64
-		ok               bool
-	)
-
-	volume.Lock()
-	defer volume.Unlock()
-
-	switch treeType {
-
-	case InodeRecBPlusTree:
-		treeName = "InodeRec"
-		treeWrapper = volume.inodeRecWrapper
-		treeLayoutReport = volume.inodeRecBPlusTreeLayout
-
-	case LogSegmentRecBPlusTree:
-		treeName = "LogSegmentRec"
-		treeWrapper = volume.logSegmentRecWrapper
-		treeLayoutReport = volume.logSegmentRecBPlusTreeLayout
-
-	case BPlusTreeObjectBPlusTree:
-		treeName = "BPlusTreeObject"
-		treeWrapper = volume.bPlusTreeObjectWrapper
-		treeLayoutReport = volume.bPlusTreeObjectBPlusTreeLayout
-
-	default:
-		err = fmt.Errorf("FetchLayoutReport(treeType %d): bad tree type.", treeType)
-		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
-		return
-	}
-
-	layoutReport, err = treeWrapper.bPlusTree.FetchLayoutReport()
-	if err != nil {
-		logger.ErrorfWithError(err, "FetchLayoutReport() volume '%s'  tree '%s'",
-			volume.volumeName, treeName)
-		return
-	}
-
-	// compare the BPlus Tree's opinion with proxyfs' opinion
-	for objNum, objBytes = range layoutReport {
-		_, ok = treeLayoutReport[objNum]
-		if !ok {
-			logger.Errorf("FetchLayoutReport('%s', '%s'): object %016X bytes %d"+
-				" present in B+Tree but not in layout report",
-				volume.volumeName, treeName, objNum, objBytes)
-		} else {
-			if objBytes != treeLayoutReport[objNum] {
-				logger.Errorf("FetchLayoutReport('%s', '%s'): object %016X has %d bytes"+
-					" in B+Tree but %d bytes in layout report",
-					volume.volumeName, treeName, objNum, objBytes, treeLayoutReport[objNum])
-			}
-		}
-	}
-
-	for objNum, objBytes = range treeLayoutReport {
-		_, ok = layoutReport[objNum]
-		if !ok {
-			// this warning can be spurious (it shows up if Prune() has not
-			// been called since the node was deleted from the map) so ignore
-			// it if you only see it once for a particular object
-			logger.Warnf(
-				"FetchLayoutReport('%s', '%s'): object %016X bytes %d present in layout report but not in B+Tree",
-				volume.volumeName, treeName, objNum, objBytes)
-		}
-	}
-
-	return
 }
