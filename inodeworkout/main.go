@@ -329,7 +329,7 @@ func inodeWorkout(threadIndex uint64) {
 				stepErrChan <- err
 				runtime.Goexit()
 			}
-			err = volumeHandle.Link(inode.RootDirInodeNumber, dirInodeName, dirInodeNumber)
+			err = volumeHandle.Link(inode.RootDirInodeNumber, dirInodeName, dirInodeNumber, false)
 			if nil != err {
 				rootDirMutex.Unlock()
 				stepErrChan <- err
@@ -370,7 +370,7 @@ func inodeWorkout(threadIndex uint64) {
 			if !perThreadDir {
 				rootDirMutex.Lock()
 			}
-			err = volumeHandle.Link(dirInodeNumber, fileInodeName[i], fileInodeNumber[i])
+			err = volumeHandle.Link(dirInodeNumber, fileInodeName[i], fileInodeNumber[i], false)
 			if nil != err {
 				if !perThreadDir {
 					rootDirMutex.Unlock()
@@ -413,7 +413,7 @@ func inodeWorkout(threadIndex uint64) {
 				stepErrChan <- err
 				runtime.Goexit()
 			}
-			err = volumeHandle.Unlink(dirInodeNumber, fileInodeName[i])
+			err = volumeHandle.Unlink(dirInodeNumber, fileInodeName[i], false)
 			if nil != err {
 				if !perThreadDir {
 					rootDirMutex.Unlock()
@@ -441,7 +441,7 @@ func inodeWorkout(threadIndex uint64) {
 	// Do shutdown step
 	if perThreadDir && measureDestroy {
 		rootDirMutex.Lock()
-		err = volumeHandle.Unlink(inode.RootDirInodeNumber, dirInodeName)
+		err = volumeHandle.Unlink(inode.RootDirInodeNumber, dirInodeName, false)
 		if nil != err {
 			rootDirMutex.Unlock()
 			stepErrChan <- err

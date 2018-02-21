@@ -100,9 +100,9 @@ func testDirStressThread(threadIndex uint64) {
 			basename = fmt.Sprintf("%s%016X_%016X_%016X", testDirStressBasenamePrefix, testDirStressGlobals.nonce, threadIndex, linkIndex)
 
 			testDirStressGlobals.Lock()
-			err = volumeHandle.Link(RootDirInodeNumber, basename, fileInodeNumber)
+			err = volumeHandle.Link(RootDirInodeNumber, basename, fileInodeNumber, false)
 			if nil != err {
-				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Link(RootDirInodeNumber, \"%s\", fileInodeNumber) failed: %v", basename, err)
+				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Link(RootDirInodeNumber, \"%s\", fileInodeNumber, false) failed: %v", basename, err)
 				testDirStressGlobals.Unlock()
 				return
 			}
@@ -111,9 +111,9 @@ func testDirStressThread(threadIndex uint64) {
 			time.Sleep(testDirStressDelayBetweenLinkAndUnlink)
 
 			testDirStressGlobals.Lock()
-			err = volumeHandle.Unlink(RootDirInodeNumber, basename)
+			err = volumeHandle.Unlink(RootDirInodeNumber, basename, false)
 			if nil != err {
-				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Unlink(RootDirInodeNumber, \"%s\") failed: %v", basename, err)
+				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Unlink(RootDirInodeNumber, \"%s\", false) failed: %v", basename, err)
 				testDirStressGlobals.Unlock()
 				return
 			}

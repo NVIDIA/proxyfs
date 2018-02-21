@@ -725,9 +725,9 @@ func (vVS *validateVolumeStruct) validateVolume() {
 				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.CreateDir() failure: %v", time.Now().Format(time.RFC3339), err))
 				return
 			}
-			err = vVS.inodeVolumeHandle.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber)
+			err = vVS.inodeVolumeHandle.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber, false)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber, false) failure: %v", time.Now().Format(time.RFC3339), err))
 				err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
 				if nil != err {
 					vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
@@ -857,9 +857,9 @@ func (vVS *validateVolumeStruct) validateVolume() {
 	if moreEntries {
 		vVS.info = append(vVS.info, fmt.Sprintf("%v Preserving non-empty /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
 	} else {
-		err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName)
+		err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName) failure: %v", time.Now().Format(time.RFC3339), err))
+			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false) failure: %v", time.Now().Format(time.RFC3339), err))
 			return
 		}
 

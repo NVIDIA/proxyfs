@@ -156,8 +156,8 @@ type VolumeHandle interface {
 	// Directory Inode specific methods, implemented in dir.go
 
 	CreateDir(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (dirInodeNumber InodeNumber, err error)
-	Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber) (err error)
-	Unlink(dirInodeNumber InodeNumber, basename string) (err error)
+	Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber, insertOnly bool) (err error)
+	Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (err error)
 	Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error)
 	Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error)
 	NumDirEntries(dirInodeNumber InodeNumber) (numEntries uint64, err error)

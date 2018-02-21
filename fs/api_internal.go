@@ -307,7 +307,7 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 		return 0, err
 	}
 
-	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, fileInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, fileInodeNumber, false)
 	if err != nil {
 		destroyErr := mS.volStruct.VolumeHandle.Destroy(fileInodeNumber)
 		if destroyErr != nil {
@@ -958,7 +958,7 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 		return
 	}
 
-	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, targetInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, basename, targetInodeNumber, false)
 
 	// if the link was successful and this is a regular file then any
 	// pending data was flushed
@@ -1216,7 +1216,7 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 			return
 		}
 
-		err = mS.volStruct.VolumeHandle.Link(cursorInodeNumber, pathComponent, newDirInodeNumber)
+		err = mS.volStruct.VolumeHandle.Link(cursorInodeNumber, pathComponent, newDirInodeNumber, false)
 		if err != nil {
 			destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
 			if destroyErr != nil {
@@ -1356,7 +1356,7 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 
 	// At this point, we *are* going to Unlink... and optionally Destroy... the inode
 
-	err = mS.volStruct.VolumeHandle.Unlink(parentInodeNumber, baseName)
+	err = mS.volStruct.VolumeHandle.Unlink(parentInodeNumber, baseName, false)
 	if nil != err {
 		return
 	}
@@ -1914,7 +1914,7 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 			return
 		}
 
-		err = mS.volStruct.VolumeHandle.Link(newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
+		err = mS.volStruct.VolumeHandle.Link(newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber, false)
 		if err != nil {
 			logger.DebugfIDWithError(internalDebug, err, "mount.Link(%v, %v, %v) failed",
 				newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
@@ -1970,7 +1970,7 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 	// That's because this inode was created in this function, so
 	// nobody else knows it exists, so we don't have to worry about
 	// anyone else accessing it.
-	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber, false)
 	if err != nil {
 		logger.ErrorfWithError(err, "MiddlewarePutComplete: failed final Link(%v, %v, %v)", dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
 
@@ -1978,7 +1978,7 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 		// the old thing back. We're still holding locks, so it's safe
 		// to try.
 		if haveObstacle {
-			relinkErr := mS.volStruct.VolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber)
+			relinkErr := mS.volStruct.VolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber, false)
 			// the rest of the relevant variables were logged in the previous error-logging call
 			logger.ErrorfWithError(relinkErr, "MiddlewarePutComplete: relink failed for inode=%v name=%v", obstacleInodeNumber, vObjectBaseName)
 		}
@@ -2120,7 +2120,7 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 			return
 		}
 
-		err = mS.volStruct.VolumeHandle.Link(inode.RootDirInodeNumber, containerName, newDirInodeNumber)
+		err = mS.volStruct.VolumeHandle.Link(inode.RootDirInodeNumber, containerName, newDirInodeNumber, false)
 
 		return
 	}
@@ -2199,7 +2199,7 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return 0, err
 	}
 
-	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, newDirInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, newDirInodeNumber, false)
 	if err != nil {
 		destroyErr := mS.volStruct.VolumeHandle.Destroy(newDirInodeNumber)
 		if destroyErr != nil {
@@ -2727,7 +2727,7 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 
-	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename)
+	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename, false)
 	if nil != err {
 		return
 	}
@@ -3060,7 +3060,7 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 		return
 	}
 
-	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, symlinkInodeNumber)
+	err = mS.volStruct.VolumeHandle.Link(inodeNumber, basename, symlinkInodeNumber, false)
 	if err != nil {
 		destroyErr := mS.volStruct.VolumeHandle.Destroy(symlinkInodeNumber)
 		if destroyErr != nil {
@@ -3125,7 +3125,7 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 		return
 	}
 
-	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename)
+	err = mS.volStruct.VolumeHandle.Unlink(inodeNumber, basename, false)
 	if nil != err {
 		return
 	}
@@ -3407,7 +3407,7 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 	fileType := inode.InodeType(statResult[StatFType])
 	if fileType == inode.FileType || fileType == inode.SymlinkType {
 		// Files and symlinks can always, barring errors, be unlinked
-		err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+		err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
 		if err != nil {
 			return err
 		}
@@ -3432,7 +3432,7 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 			// We already have the locks and we've already
 			// checked that it's empty, so let's just get
 			// down to it.
-			err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+			err = mS.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
 			if err != nil {
 				return err
 			}
@@ -3459,7 +3459,7 @@ func removeObstacleToObjectPut(mount *mountStruct, callerID dlm.CallerID, dirIno
 	fileType := inode.InodeType(statResult[StatFType])
 	if fileType == inode.FileType || fileType == inode.SymlinkType {
 		// Files and symlinks can always, barring errors, be unlinked
-		err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+		err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
 		if err != nil {
 			return err
 		}
@@ -3484,7 +3484,7 @@ func removeObstacleToObjectPut(mount *mountStruct, callerID dlm.CallerID, dirIno
 			// We already have the locks and we've already
 			// checked that it's empty, so let's just get
 			// down to it.
-			err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName)
+			err = mount.volStruct.VolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
 			if err != nil {
 				return err
 			}
