@@ -843,7 +843,17 @@ func (vVS *validateVolumeStruct) validateVolume() {
 	// TODO: Delete unreferenced LogSegments (both headhunter records & Objects)
 	// TODO: Walk all DirInodes & FileInodes tracking referenced headhunter B+Tree "Objects"
 	// TODO: Delete unreferenced headhunter B+Tree "Objects"
-	// TODO: Do a final checkpoint
+
+	// Do a final checkpoint
+
+	err = vVS.headhunterVolumeHandle.DoCheckpoint()
+	if nil != err {
+		vVS.err = append(vVS.err, fmt.Sprintf("%v Got headhunter.DoCheckpoint failure: %v", time.Now().Format(time.RFC3339), err))
+		return
+	}
+
+	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed checkpoint after FSCK work", time.Now().Format(time.RFC3339)))
+
 	// TODO: Compute TreeLayout for all three headhunter B+Trees
 	// TODO: Remove unreferenced Checkpoint Objects
 }

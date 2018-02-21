@@ -11,7 +11,8 @@ import (
 type BPlusTreeType uint32
 
 const (
-	InodeRecBPlusTree BPlusTreeType = iota
+	MergedBPlusTree BPlusTreeType = iota // Used only for FetchLayoutReport when a merged result is desired
+	InodeRecBPlusTree
 	LogSegmentRecBPlusTree
 	BPlusTreeObjectBPlusTree
 )

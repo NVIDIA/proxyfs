@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
@@ -369,6 +372,149 @@ func (volume *volumeStruct) DoCheckpoint() (err error) {
 	checkpointRequest.waitGroup.Wait()
 
 	err = checkpointRequest.err
+
+	return
+}
+
+func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error) {
+	var (
+		measuredLayoutReport sortedmap.LayoutReport
+		objectBytesMeasured  uint64
+		objectBytesTracked   uint64
+		objectNumber         uint64
+		ok                   bool
+		trackingLayoutReport sortedmap.LayoutReport
+		treeName             string
+		treeWrapper          *bPlusTreeWrapperStruct
+	)
+
+	switch treeType {
+	case InodeRecBPlusTree:
+		treeName = "InodeRec"
+		treeWrapper = volume.inodeRecWrapper
+		trackingLayoutReport = volume.inodeRecBPlusTreeLayout
+	case LogSegmentRecBPlusTree:
+		treeName = "LogSegmentRec"
+		treeWrapper = volume.logSegmentRecWrapper
+		trackingLayoutReport = volume.logSegmentRecBPlusTreeLayout
+	case BPlusTreeObjectBPlusTree:
+		treeName = "BPlusTreeObject"
+		treeWrapper = volume.bPlusTreeObjectWrapper
+		trackingLayoutReport = volume.bPlusTreeObjectBPlusTreeLayout
+	default:
+		err = fmt.Errorf("fetchLayoutReport(treeType %d): bad tree type", treeType)
+		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
+		return
+	}
+
+	measuredLayoutReport, err = treeWrapper.bPlusTree.FetchLayoutReport()
+	if nil != err {
+		logger.ErrorfWithError(err, "FetchLayoutReport() volume '%s' tree '%s'", volume.volumeName, treeName)
+		return
+	}
+
+	// Compare measuredLayoutReport & trackingLayoutReport computing discrepencies
+
+	discrepencies = 0
+
+	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
+		objectBytesTracked, ok = trackingLayoutReport[objectNumber]
+		if ok {
+			if objectBytesMeasured != objectBytesTracked {
+				discrepencies++
+				logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes mismatch between measuredLayoutReport & trackingLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
+			}
+		} else {
+			discrepencies++
+			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in measuredLayoutReport but missing from trackingLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
+		}
+	}
+
+	for objectNumber, objectBytesTracked = range trackingLayoutReport {
+		objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
+		if ok {
+			// Already handled above
+		} else {
+			discrepencies++
+			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in trackingLayoutReport but missing from measuredLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
+		}
+	}
+
+	// In the case that they differ, return measuredLayoutReport rather than trackingLayoutReport
+
+	layoutReport = measuredLayoutReport
+
+	err = nil
+
+	return
+}
+
+// FetchLayoutReport returns the B+Tree sortedmap.LayoutReport for one or all
+// of the HeadHunter tables. In the case of requesting "all", the checkpoint
+// overhead will also be included.
+func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error) {
+	var (
+		checkpointLayoutReport sortedmap.LayoutReport
+		checkpointObjectBytes  uint64
+		objectBytes            uint64
+		objectNumber           uint64
+		ok                     bool
+		perTreeLayoutReport    sortedmap.LayoutReport
+		perTreeObjectBytes     uint64
+	)
+
+	volume.Lock()
+	defer volume.Unlock()
+
+	if MergedBPlusTree == treeType {
+		// First, accumulate the 3 B+Tree sortedmap.LayoutReport's
+
+		layoutReport, _, err = volume.fetchLayoutReport(InodeRecBPlusTree)
+		if nil != err {
+			return
+		}
+		perTreeLayoutReport, _, err = volume.fetchLayoutReport(LogSegmentRecBPlusTree)
+		if nil != err {
+			return
+		}
+		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
+			objectBytes, ok = layoutReport[objectNumber]
+			if ok {
+				layoutReport[objectNumber] = objectBytes + perTreeObjectBytes
+			} else {
+				layoutReport[objectNumber] = perTreeObjectBytes
+			}
+		}
+		perTreeLayoutReport, _, err = volume.fetchLayoutReport(BPlusTreeObjectBPlusTree)
+		if nil != err {
+			return
+		}
+		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
+			objectBytes, ok = layoutReport[objectNumber]
+			if ok {
+				layoutReport[objectNumber] = objectBytes + perTreeObjectBytes
+			} else {
+				layoutReport[objectNumber] = perTreeObjectBytes
+			}
+		}
+
+		// Now, add in the checkpointLayoutReport
+
+		checkpointLayoutReport, err = volume.fetchCheckpointLayoutReport()
+		if nil != err {
+			return
+		}
+		for objectNumber, checkpointObjectBytes = range checkpointLayoutReport {
+			objectBytes, ok = layoutReport[objectNumber]
+			if ok {
+				layoutReport[objectNumber] = objectBytes + checkpointObjectBytes
+			} else {
+				layoutReport[objectNumber] = perTreeObjectBytes
+			}
+		}
+	} else {
+		layoutReport, _, err = volume.fetchLayoutReport(treeType)
+	}
 
 	return
 }
