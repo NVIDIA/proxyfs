@@ -96,7 +96,7 @@ func (vS *volumeStruct) CreateDir(filePerm InodeMode, userID InodeUserID, groupI
 	return
 }
 
-func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryInodeStruct, basename string) error {
+func linkInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryInodeStruct, basename string) error {
 	dirInode.dirty = true
 	targetInode.dirty = true
 
@@ -125,45 +125,89 @@ func addDirEntryInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryIno
 
 	dirInode.AttrChangeTime = updateTime
 	dirInode.ModificationTime = updateTime
+
+	return nil
+}
+
+// Insert-only version of linkInMemory()
+func linkInMemoryInsertOnly(dirInode *inMemoryInodeStruct, basename string, targetInodeNumber InodeNumber) (err error) {
+	// TODO
+	dirInode.dirty = true
+
+	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
+
+	ok, err := dirMapping.Put(basename, targetInodeNumber)
+	if nil != err {
+		panic(err)
+	}
+	if !ok {
+		err = fmt.Errorf("%s: failed to create link '%v' to inode %v in directory inode %v: entry exists",
+			utils.GetFnName(), basename, targetInodeNumber, dirInode.InodeNumber)
+		return blunder.AddError(err, blunder.FileExistsError)
+	}
+
+	updateTime := time.Now()
+
+	dirInode.AttrChangeTime = updateTime
+	dirInode.ModificationTime = updateTime
+
 	return nil
 }
 
 // This is used by the link(2), create(2), and mkdir(2) operations
 // (mountstruct.Link(), mountstruct.Create(), and mountstruct.Mkdir())
-func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber) (err error) {
+func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber, insertOnly bool) (err error) {
+	var (
+		dirInode       *inMemoryInodeStruct
+		flushInodeList []*inMemoryInodeStruct
+		ok             bool
+		targetInode    *inMemoryInodeStruct
+	)
+
 	stats.IncrementOperations(&stats.DirLinkOps)
 
-	dirInode, err := vS.fetchInodeType(dirInodeNumber, DirType)
+	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
 	if err != nil {
 		logger.ErrorfWithError(err, "dirInode error")
 		return err
 	}
 
-	targetInode, ok, err := vS.fetchInode(targetInodeNumber)
-	if err != nil {
-		// the inode is locked so this should never happen (unless the inode
-		// was evicted from the cache and it was corrupt when re-read from disk)
-		// (err includes volume name and inode number)
-		logger.ErrorfWithError(err, "%s: targetInode fetch error", utils.GetFnName())
-		return err
-	}
-	if !ok {
-		// this should never happen (see above)
-		err = fmt.Errorf("%s: Link failing request to link to inode %d volume '%s' because it is unallocated",
-			utils.GetFnName(), targetInode.InodeNumber, vS.volumeName)
-		err = blunder.AddError(err, blunder.NotFoundError)
-		logger.ErrorWithError(err)
-		return err
-	}
+	if insertOnly {
+		err = linkInMemoryInsertOnly(dirInode, basename, targetInodeNumber)
+		if err != nil {
+			return err
+		}
 
-	err = addDirEntryInMemory(dirInode, targetInode, basename)
-	if err != nil {
-		return err
+		flushInodeList = []*inMemoryInodeStruct{dirInode}
+	} else {
+		targetInode, ok, err = vS.fetchInode(targetInodeNumber)
+		if err != nil {
+			// the inode is locked so this should never happen (unless the inode
+			// was evicted from the cache and it was corrupt when re-read from disk)
+			// (err includes volume name and inode number)
+			logger.ErrorfWithError(err, "%s: targetInode fetch error", utils.GetFnName())
+			return err
+		}
+		if !ok {
+			// this should never happen (see above)
+			err = fmt.Errorf("%s: Link failing request to link to inode %d volume '%s' because it is unallocated",
+				utils.GetFnName(), targetInode.InodeNumber, vS.volumeName)
+			err = blunder.AddError(err, blunder.NotFoundError)
+			logger.ErrorWithError(err)
+			return err
+		}
+
+		err = linkInMemory(dirInode, targetInode, basename)
+		if err != nil {
+			return err
+		}
+
+		flushInodeList = []*inMemoryInodeStruct{dirInode, targetInode}
 	}
 
 	// REVIEW TODO: We think we need to do something more than just return an error here :-)
 
-	err = vS.flushInodes([]*inMemoryInodeStruct{dirInode, targetInode})
+	err = vS.flushInodes(flushInodeList)
 	if err != nil {
 		logger.ErrorWithError(err)
 		return err
@@ -174,7 +218,7 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 }
 
 // Manipulate a directory to remove an an entry. Like Unlink(), but without any inode loading or flushing.
-func removeDirEntryInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeStruct, basename string) (err error) {
+func unlinkInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeStruct, basename string) (err error) {
 	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
 
 	dirInode.dirty = true
@@ -212,53 +256,97 @@ func removeDirEntryInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemo
 	dirInode.ModificationTime = updateTime
 
 	untargetInode.AttrChangeTime = updateTime
+
 	return
 }
 
-func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string) (err error) {
-	stats.IncrementOperations(&stats.DirUnlinkOps)
+// Remove-only version of unlinkInMemory()
+func unlinkInMemoryRemoveOnly(dirInode *inMemoryInodeStruct, basename string) (err error) {
+	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
 
-	dirInode, err := vS.fetchInodeType(dirInodeNumber, DirType)
-	if nil != err {
-		return err
-	}
+	dirInode.dirty = true
 
-	untargetInodeNumber, err := vS.Lookup(dirInodeNumber, basename)
+	ok, err := dirMapping.DeleteByKey(basename)
 	if nil != err {
-		err = blunder.AddError(err, blunder.NotFoundError)
-		return err
-	}
-
-	untargetInode, ok, err := vS.fetchInode(untargetInodeNumber)
-	if nil != err {
-		// the inode is locked so this should never happen (unless the inode
-		// was evicted from the cache and it was corrupt when re-read from disk)
-		// (err includes volume name and inode number)
-		logger.ErrorfWithError(err, "%s: fetch of target inode failed", utils.GetFnName())
-		return err
+		panic(err)
 	}
 	if !ok {
-		// this should never happen (see above)
-		err = fmt.Errorf("%s: failing request to Unlink inode %d volume '%s' because it is unallocated",
-			utils.GetFnName(), untargetInode.InodeNumber, vS.volumeName)
-		err = blunder.AddError(err, blunder.NotFoundError)
-		logger.ErrorWithError(err)
-		return err
-	}
-
-	// Pre-flush untargetInode so that no time-based (implicit) flushes will occur during this transaction
-	err = vS.flushInode(untargetInode)
-	if err != nil {
-		logger.ErrorfWithError(err, "Move(): untargetInode flush error")
+		err = fmt.Errorf("Unlink(): dirInode DeleteByKey of \"%v\" should have returned ok == true", basename)
 		panic(err)
 	}
 
-	err = removeDirEntryInMemory(dirInode, untargetInode, basename)
-	if err != nil {
+	updateTime := time.Now()
+
+	dirInode.AttrChangeTime = updateTime
+	dirInode.ModificationTime = updateTime
+
+	return
+}
+
+func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (err error) {
+	var (
+		dirInode            *inMemoryInodeStruct
+		flushInodeList      []*inMemoryInodeStruct
+		ok                  bool
+		untargetInode       *inMemoryInodeStruct
+		untargetInodeNumber InodeNumber
+	)
+
+	stats.IncrementOperations(&stats.DirUnlinkOps)
+
+	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
+	if nil != err {
 		return err
 	}
 
-	err = vS.flushInodes([]*inMemoryInodeStruct{dirInode, untargetInode})
+	untargetInodeNumber, err = vS.Lookup(dirInodeNumber, basename)
+	if nil != err {
+		err = blunder.AddError(err, blunder.NotFoundError)
+		return err
+	}
+
+	if removeOnly {
+		err = unlinkInMemoryRemoveOnly(dirInode, basename)
+		if err != nil {
+			return err
+		}
+
+		flushInodeList = []*inMemoryInodeStruct{dirInode}
+	} else {
+
+		untargetInode, ok, err = vS.fetchInode(untargetInodeNumber)
+		if nil != err {
+			// the inode is locked so this should never happen (unless the inode
+			// was evicted from the cache and it was corrupt when re-read from disk)
+			// (err includes volume name and inode number)
+			logger.ErrorfWithError(err, "%s: fetch of target inode failed", utils.GetFnName())
+			return err
+		}
+		if !ok {
+			// this should never happen (see above)
+			err = fmt.Errorf("%s: failing request to Unlink inode %d volume '%s' because it is unallocated",
+				utils.GetFnName(), untargetInode.InodeNumber, vS.volumeName)
+			err = blunder.AddError(err, blunder.NotFoundError)
+			logger.ErrorWithError(err)
+			return err
+		}
+
+		// Pre-flush untargetInode so that no time-based (implicit) flushes will occur during this transaction
+		err = vS.flushInode(untargetInode)
+		if err != nil {
+			logger.ErrorfWithError(err, "Move(): untargetInode flush error")
+			panic(err)
+		}
+
+		err = unlinkInMemory(dirInode, untargetInode, basename)
+		if err != nil {
+			return err
+		}
+
+		flushInodeList = []*inMemoryInodeStruct{dirInode, untargetInode}
+	}
+
+	err = vS.flushInodes(flushInodeList)
 	if err != nil {
 		logger.ErrorWithError(err)
 		return err
