@@ -19,6 +19,7 @@ const (
 
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
+	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
 	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)

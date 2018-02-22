@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 const (
@@ -26,7 +29,9 @@ const (
 	validateVolumeCalculateLinkCountParallelism = uint64(50)
 	validateVolumeFixLinkCountParallelism       = uint64(50)
 
-	lostAndFoundDirName = "Lost+Found"
+	validateVolumeContainerRescanDelay = time.Duration(1 * time.Second)
+
+	lostAndFoundDirName = ".Lost+Found"
 )
 
 type validateVolumeStruct struct {
@@ -48,6 +53,8 @@ type validateVolumeStruct struct {
 	bpTreeFile                 *os.File
 	bpTreeNextOffset           uint64
 	lostAndFoundDirInodeNumber inode.InodeNumber
+	accountName                string
+	checkpointContainerName    string
 }
 
 func (vVS *validateVolumeStruct) Active() (active bool) {
@@ -279,6 +286,7 @@ func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 		return
 	}
 
+	// TODO (now): Avoid full ReadPlan vs. LogSegments validation for FileInode's
 	err = vVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber))
 
 	vVS.Lock()
@@ -528,17 +536,37 @@ func (vVS *validateVolumeStruct) validateVolumeFixLinkCount(inodeNumber uint64, 
 
 func (vVS *validateVolumeStruct) validateVolume() {
 	var (
-		err               error
-		key               sortedmap.Key
-		inodeCount        int
-		inodeIndex        uint64
-		inodeNumber       uint64
-		inodeType         inode.InodeType
-		linkCountComputed uint64
-		moreEntries       bool
-		ok                bool
-		value             sortedmap.Value
+		checkpointContainerObjectList   []string
+		checkpointContainerObjectName   string
+		checkpointContainerObjectNumber uint64
+		checkpointContainerScanning     bool
+		err                             error
+		headhunterLayoutReport          sortedmap.LayoutReport
+		inodeCount                      int
+		inodeIndex                      uint64
+		inodeNumber                     uint64
+		inodeType                       inode.InodeType
+		key                             sortedmap.Key
+		linkCountComputed               uint64
+		moreEntries                     bool
+		ok                              bool
+		validObjectNameRE               = regexp.MustCompile("\\A[0-9a-fA-F]+\\z")
+		value                           sortedmap.Value
 	)
+
+	vVS.validateVolumeLogInfo("FSCK job initiated")
+
+	defer func(vVS *validateVolumeStruct) {
+		if vVS.stopFlag {
+			vVS.validateVolumeLogInfo("FSCK job stopped")
+		} else if 0 == len(vVS.err) {
+			vVS.validateVolumeLogInfo("FSCK job completed without error")
+		} else if 1 == len(vVS.err) {
+			vVS.validateVolumeLogInfo("FSCK job exited with one error")
+		} else {
+			vVS.validateVolumeLogInfo("FSCK job exited with errors")
+		}
+	}(vVS)
 
 	defer func(vVS *validateVolumeStruct) {
 		vVS.active = false
@@ -741,7 +769,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		}
 	}
 
-	// TODO: Scan B+Tree placing top-most orphan DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+	// TODO (someday): Scan B+Tree placing top-most orphan DirInodes as elements of vVS.lostAndFoundDirInodeNumber
 
 	// Re-compute LinkCounts
 
@@ -782,7 +810,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.validateVolumeLogInfo("Completed treewalk after populating /%v/", lostAndFoundDirName)
 
-	// TODO: Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+	// TODO (someday): Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
 
 	// Update incorrect LinkCounts
 
@@ -859,11 +887,12 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		vVS.validateVolumeLogInfo("Removed empty /%v/", lostAndFoundDirName)
 	}
 
-	// TODO: Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
-	// TODO: Walk all FileInodes tracking referenced LogSegments
-	// TODO: Delete unreferenced LogSegments (both headhunter records & Objects)
-	// TODO: Walk all DirInodes & FileInodes tracking referenced headhunter B+Tree "Objects"
-	// TODO: Delete unreferenced headhunter B+Tree "Objects"
+	// TODO (now): Walk all DirInodes & FileInodes tracking referenced headhunter B+Tree "Objects"
+	// TODO (now): Delete unreferenced headhunter B+Tree "Objects"
+
+	// TODO (someday): Walk all FileInodes tracking referenced LogSegments
+	// TODO (someday): Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
+	// TODO (someday): Delete unreferenced LogSegments (both headhunter records & Objects)
 
 	// Do a final checkpoint
 
@@ -875,6 +904,64 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.validateVolumeLogInfo("Completed checkpoint after FSCK work")
 
-	// TODO: Compute TreeLayout for all three headhunter B+Trees
-	// TODO: Remove unreferenced Checkpoint Objects
+	// Validate headhunter checkpoint container contents
+
+	headhunterLayoutReport, err = vVS.headhunterVolumeHandle.FetchLayoutReport(headhunter.MergedBPlusTree)
+	if nil != err {
+		vVS.validateVolumeLogErr("Got headhunter.FetchLayoutReport() failure: %v", err)
+		return
+	}
+
+	vVS.accountName, vVS.checkpointContainerName = vVS.headhunterVolumeHandle.FetchAccountAndCheckpointContainerNames()
+
+	checkpointContainerScanning = true
+
+	for checkpointContainerScanning {
+		checkpointContainerScanning = false
+
+		_, checkpointContainerObjectList, err = swiftclient.ContainerGet(vVS.accountName, vVS.checkpointContainerName)
+		if nil != err {
+			vVS.validateVolumeLogErr("Got swiftclient.ContainerGet(\"%v\",\"%v\") failure: %v", vVS.accountName, vVS.checkpointContainerName, err)
+			return
+		}
+
+		for _, checkpointContainerObjectName = range checkpointContainerObjectList {
+			checkpointContainerObjectNumber = uint64(0) // If remains 0 or results in returning to 0,
+			//                                             checkpointContainerObjectName should be deleted
+
+			if 16 == len(checkpointContainerObjectName) {
+				if validObjectNameRE.MatchString(checkpointContainerObjectName) {
+					checkpointContainerObjectNumber, err = strconv.ParseUint(checkpointContainerObjectName, 16, 64)
+					if nil != err {
+						vVS.validateVolumeLogErr("Got strconv.ParseUint(\"%v\",16,64) failure: %v", checkpointContainerObjectName)
+						return
+					}
+
+					_, ok = headhunterLayoutReport[checkpointContainerObjectNumber]
+					if !ok {
+						checkpointContainerObjectNumber = uint64(0)
+					}
+				}
+			}
+
+			if uint64(0) == checkpointContainerObjectNumber {
+				err = swiftclient.ObjectDeleteSync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName)
+				if nil != err {
+					vVS.validateVolumeLogErr("Got swiftclient.ObjectDeleteSync(\"%v\",\"%v\",\"%v\") failure: %v", vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, err)
+					return
+				}
+
+				checkpointContainerScanning = true // Continue looping until no new objects are found to delete
+				vVS.validateVolumeLogInfo("Removed unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
+			}
+		}
+
+		if vVS.stopFlag {
+			return
+		}
+
+		if checkpointContainerScanning {
+			time.Sleep(validateVolumeContainerRescanDelay)
+		}
+	}
 }
