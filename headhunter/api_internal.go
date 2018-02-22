@@ -11,6 +11,12 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
+func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
+	accountName = volume.accountName
+	checkpointContainerName = volume.checkpointContainerName
+	return
+}
+
 func (volume *volumeStruct) fetchNextCheckPointDoneWaitGroupWhileLocked() (wg *sync.WaitGroup) {
 	if nil == volume.checkpointDoneWaitGroup {
 		volume.checkpointDoneWaitGroup = &sync.WaitGroup{}
