@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 const (
@@ -82,6 +83,7 @@ func (vVS *validateVolumeStruct) Info() (info []string) {
 	var infoString string
 
 	vVS.Lock()
+
 	info = make([]string, 0, len(vVS.info))
 	for _, infoString = range vVS.info {
 		info = append(info, infoString)
@@ -226,6 +228,42 @@ func (vVS *validateVolumeStruct) validateVolumeEndParallelism() {
 	}
 }
 
+func (vVS *validateVolumeStruct) validateVolumeLogErr(formatString string, args ...interface{}) {
+	vVS.Lock()
+	vVS.validateVolumeLogErrWhileLocked(formatString, args...)
+	vVS.Unlock()
+}
+
+func (vVS *validateVolumeStruct) validateVolumeLogErrWhileLocked(formatString string, args ...interface{}) {
+	var (
+		suffix string
+	)
+
+	suffix = fmt.Sprintf(formatString, args...)
+
+	logger.Errorf("FSCK[%v] %v", vVS.volumeName, suffix)
+
+	vVS.err = append(vVS.err, fmt.Sprintf("%v %v", time.Now().Format(time.RFC3339), suffix))
+}
+
+func (vVS *validateVolumeStruct) validateVolumeLogInfo(formatString string, args ...interface{}) {
+	vVS.Lock()
+	vVS.validateVolumeLogInfoWhileLocked(formatString, args...)
+	vVS.Unlock()
+}
+
+func (vVS *validateVolumeStruct) validateVolumeLogInfoWhileLocked(formatString string, args ...interface{}) {
+	var (
+		suffix string
+	)
+
+	suffix = fmt.Sprintf(formatString, args...)
+
+	logger.Infof("FSCK[%v] %v", vVS.volumeName, suffix)
+
+	vVS.info = append(vVS.info, fmt.Sprintf("%v %v", time.Now().Format(time.RFC3339), suffix))
+}
+
 func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 	var (
 		err error
@@ -249,24 +287,24 @@ func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 	if nil == err {
 		ok, err = vVS.bpTree.Put(inodeNumber, uint64(0)) // Initial LinkCount == 0
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.Put(0x%016X, 0) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
+			vVS.validateVolumeLogErrWhileLocked("Got bpTree.Put(0x%016X, 0) failure: %v", inodeNumber, err)
 			return
 		}
 		if !ok {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.Put(0x%016X, 0) !ok", time.Now().Format(time.RFC3339), inodeNumber))
+			vVS.validateVolumeLogErrWhileLocked("Got bpTree.Put(0x%016X, 0) !ok", inodeNumber)
 			return
 		}
 	} else {
-		vVS.info = append(vVS.info, fmt.Sprintf("%v Got inode.Validate(0x%016X) failure: %v ... removing it", time.Now().Format(time.RFC3339), inodeNumber, err))
+		vVS.validateVolumeLogInfoWhileLocked("Got inode.Validate(0x%016X) failure: %v ... removing it", inodeNumber, err)
 
 		err = vVS.headhunterVolumeHandle.DeleteInodeRec(inodeNumber)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got headhunter.DeleteInodeRec(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
+			vVS.validateVolumeLogErrWhileLocked("Got headhunter.DeleteInodeRec(0x%016X) failure: %v", inodeNumber, err)
 		}
 	}
 }
 
-func (vVS *validateVolumeStruct) validateVolumeIncrementCalculatedLinkCount(inodeNumber uint64) (ok bool) {
+func (vVS *validateVolumeStruct) validateVolumeIncrementCalculatedLinkCountWhileLocked(inodeNumber uint64) (ok bool) {
 	var (
 		err       error
 		linkCount uint64
@@ -275,24 +313,24 @@ func (vVS *validateVolumeStruct) validateVolumeIncrementCalculatedLinkCount(inod
 
 	value, ok, err = vVS.bpTree.GetByKey(inodeNumber)
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.GetByKey(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.GetByKey(0x%016X) failure: %v", inodeNumber, err)
 		ok = false
 		return
 	}
 	if !ok {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.GetByKey(0x%016X) !ok", time.Now().Format(time.RFC3339), inodeNumber))
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.GetByKey(0x%016X) !ok", inodeNumber)
 		ok = false
 		return
 	}
 	linkCount = value.(uint64) + 1
 	ok, err = vVS.bpTree.PatchByKey(inodeNumber, linkCount)
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.PatchByKey(0x%016X,) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.PatchByKey(0x%016X,) failure: %v", inodeNumber, err)
 		ok = false
 		return
 	}
 	if !ok {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.PatchByKey(0x%016X,) !ok", time.Now().Format(time.RFC3339), inodeNumber))
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.PatchByKey(0x%016X,) !ok", inodeNumber)
 		ok = false
 		return
 	}
@@ -333,18 +371,14 @@ forLabel:
 
 		dirEntrySlice, moreEntries, err = vVS.inodeVolumeHandle.ReadDir(inode.InodeNumber(dirInodeNumber), 1, 0, prevReturnedAsString)
 		if nil != err {
-			vVS.Lock()
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.ReadDir(0x%016X,1,0,\"%v\") failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, prevReturnedAsString, err))
-			vVS.Unlock()
+			vVS.validateVolumeLogErr("Got inode.ReadDir(0x%016X,1,0,\"%v\") failure: %v", dirInodeNumber, prevReturnedAsString, err)
 			return
 		}
 
 		if 0 == len(dirEntrySlice) {
 			break forLabel
 		} else if 1 < len(dirEntrySlice) {
-			vVS.Lock()
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got too many DirEntry's from inode.ReadDir(0x%016X,1,0,\"%v\")", time.Now().Format(time.RFC3339), dirInodeNumber, prevReturnedAsString))
-			vVS.Unlock()
+			vVS.validateVolumeLogErr("Got too many DirEntry's from inode.ReadDir(0x%016X,1,0,\"%v\")", dirInodeNumber, prevReturnedAsString)
 			return
 		}
 
@@ -353,55 +387,50 @@ forLabel:
 		inodeNumber = uint64(dirEntrySlice[0].InodeNumber)
 		prevReturnedAsString = dirEntrySlice[0].Basename
 
-		if ("." == prevReturnedAsString) && (inodeNumber != dirInodeNumber) {
-			vVS.Lock()
+		vVS.Lock()
 
+		if ("." == prevReturnedAsString) && (inodeNumber != dirInodeNumber) {
 			err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), ".", true)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(0x%016X,\".\",true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, err))
+				vVS.validateVolumeLogErrWhileLocked("Got inode.Unlink(0x%016X,\".\",true) failure: %v", dirInodeNumber, err)
 				vVS.Unlock()
 				return
 			}
 			err = vVS.inodeVolumeHandle.Link(inode.InodeNumber(dirInodeNumber), ".", inode.InodeNumber(dirInodeNumber), true)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(0x%016X,\".\",0x%016X,true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, dirInodeNumber, err))
+				vVS.validateVolumeLogErrWhileLocked("Got inode.Link(0x%016X,\".\",0x%016X,true) failure: %v", dirInodeNumber, dirInodeNumber, err)
 				vVS.Unlock()
 				return
 			}
 
-			vVS.info = append(vVS.info, fmt.Sprintf("%v \".\" dirEntry in dirInodeNumber 0x%016X was 0x%016X...fixed to point to dirInodeNumber", time.Now().Format(time.RFC3339), dirInodeNumber, inodeNumber))
-
-			vVS.Unlock()
+			vVS.validateVolumeLogInfoWhileLocked("\".\" dirEntry in dirInodeNumber 0x%016X was 0x%016X...fixed to point to dirInodeNumber", dirInodeNumber, inodeNumber)
 
 			inodeNumber = dirInodeNumber
 		} else if (".." == prevReturnedAsString) && (inodeNumber != parentDirInodeNumber) {
-			vVS.Lock()
-
 			err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), "..", true)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(0x%016X,\"..\",true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, err))
+				vVS.validateVolumeLogErrWhileLocked("Got inode.Unlink(0x%016X,\"..\",true) failure: %v", dirInodeNumber, err)
 				vVS.Unlock()
 				return
 			}
 			err = vVS.inodeVolumeHandle.Link(inode.InodeNumber(dirInodeNumber), "..", inode.InodeNumber(parentDirInodeNumber), true)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(0x%016X,\"..\",0x%016X,true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, parentDirInodeNumber, err))
+				vVS.validateVolumeLogErrWhileLocked("Got inode.Link(0x%016X,\"..\",0x%016X,true) failure: %v", dirInodeNumber, parentDirInodeNumber, err)
 				vVS.Unlock()
 				return
 			}
 
-			vVS.info = append(vVS.info, fmt.Sprintf("%v \"..\" dirEntry in dirInodeNumber 0x%016X was 0x%016X...fixed to point to parentDirInodeNumber (0x%016X)", time.Now().Format(time.RFC3339), dirInodeNumber, inodeNumber, parentDirInodeNumber))
-
-			vVS.Unlock()
+			vVS.validateVolumeLogInfoWhileLocked("\"..\" dirEntry in dirInodeNumber 0x%016X was 0x%016X...fixed to point to parentDirInodeNumber (0x%016X)", dirInodeNumber, inodeNumber, parentDirInodeNumber)
 
 			inodeNumber = parentDirInodeNumber
 		}
 
-		vVS.Lock()
-		ok = vVS.validateVolumeIncrementCalculatedLinkCount(inodeNumber)
+		ok = vVS.validateVolumeIncrementCalculatedLinkCountWhileLocked(inodeNumber)
 		if !ok {
+			vVS.Unlock()
 			return
 		}
+
 		vVS.Unlock()
 
 		// Recurse into sub-directories
@@ -413,9 +442,7 @@ forLabel:
 		} else {
 			inodeType, err = vVS.inodeVolumeHandle.GetType(inode.InodeNumber(inodeNumber))
 			if nil != err {
-				vVS.Lock()
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetType(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
-				vVS.Unlock()
+				vVS.validateVolumeLogErr("Got inode.GetType(0x%016X) failure: %v", inodeNumber, err)
 				return
 			}
 
@@ -434,16 +461,16 @@ forLabel:
 		vVS.Lock()
 		err = vVS.inodeVolumeHandle.Link(inode.InodeNumber(dirInodeNumber), ".", inode.InodeNumber(dirInodeNumber), true)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(0x%016X,\".\",0x%016X,true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, dirInodeNumber, err))
+			vVS.validateVolumeLogErrWhileLocked("Got inode.Link(0x%016X,\".\",0x%016X,true) failure: %v", dirInodeNumber, dirInodeNumber, err)
 			vVS.Unlock()
 			return
 		}
-		ok = vVS.validateVolumeIncrementCalculatedLinkCount(dirInodeNumber)
+		ok = vVS.validateVolumeIncrementCalculatedLinkCountWhileLocked(dirInodeNumber)
 		if !ok {
 			vVS.Unlock()
 			return
 		}
-		vVS.info = append(vVS.info, fmt.Sprintf("%v \"..\" dirEntry in dirInodeNumber 0x%016X was missing...fixed to point to dirInodeNumber", time.Now().Format(time.RFC3339), dirInodeNumber))
+		vVS.validateVolumeLogInfoWhileLocked("\"..\" dirEntry in dirInodeNumber 0x%016X was missing...fixed to point to dirInodeNumber", dirInodeNumber)
 		vVS.Unlock()
 		return
 	}
@@ -452,16 +479,16 @@ forLabel:
 		vVS.Lock()
 		err = vVS.inodeVolumeHandle.Link(inode.InodeNumber(dirInodeNumber), "..", inode.InodeNumber(parentDirInodeNumber), true)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(0x%016X,\"..\",0x%016X,true) failure: %v", time.Now().Format(time.RFC3339), dirInodeNumber, parentDirInodeNumber, err))
+			vVS.validateVolumeLogErrWhileLocked("Got inode.Link(0x%016X,\"..\",0x%016X,true) failure: %v", dirInodeNumber, parentDirInodeNumber, err)
 			vVS.Unlock()
 			return
 		}
-		ok = vVS.validateVolumeIncrementCalculatedLinkCount(parentDirInodeNumber)
+		ok = vVS.validateVolumeIncrementCalculatedLinkCountWhileLocked(parentDirInodeNumber)
 		if !ok {
 			vVS.Unlock()
 			return
 		}
-		vVS.info = append(vVS.info, fmt.Sprintf("%v \"..\" dirEntry in dirInodeNumber 0x%016X was missing...fixed to point to parentDirInodeNumber (0x%016X)", time.Now().Format(time.RFC3339), dirInodeNumber, parentDirInodeNumber))
+		vVS.validateVolumeLogInfoWhileLocked("\"..\" dirEntry in dirInodeNumber 0x%016X was missing...fixed to point to parentDirInodeNumber (0x%016X)", dirInodeNumber, parentDirInodeNumber)
 		vVS.Unlock()
 		return
 	}
@@ -484,22 +511,16 @@ func (vVS *validateVolumeStruct) validateVolumeFixLinkCount(inodeNumber uint64, 
 
 	linkCountInInode, err = vVS.inodeVolumeHandle.GetLinkCount(inode.InodeNumber(inodeNumber))
 	if nil != err {
-		vVS.Lock()
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetLinkCount(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
-		vVS.Unlock()
+		vVS.validateVolumeLogErr("Got inode.GetLinkCount(0x%016X) failure: %v", inodeNumber, err)
 		return
 	}
 
 	if linkCountComputed != linkCountInInode {
 		err = vVS.inodeVolumeHandle.SetLinkCount(inode.InodeNumber(inodeNumber), linkCountComputed)
 		if nil == err {
-			vVS.Lock()
-			vVS.info = append(vVS.info, fmt.Sprintf("%v Corrected LinkCount in Inode# 0x%016X from 0x%016X to 0x%016X", time.Now().Format(time.RFC3339), inodeNumber, linkCountInInode, linkCountComputed))
-			vVS.Unlock()
+			vVS.validateVolumeLogInfo("Corrected LinkCount in Inode# 0x%016X from 0x%016X to 0x%016X", inodeNumber, linkCountInInode, linkCountComputed)
 		} else {
-			vVS.Lock()
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.SetLinkCount(0x%016X,) failure: %v", time.Now().Format(time.RFC3339), inodeNumber, err))
-			vVS.Unlock()
+			vVS.validateVolumeLogErr("Got inode.SetLinkCount(0x%016X,) failure: %v", inodeNumber, err)
 			return
 		}
 	}
@@ -532,7 +553,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 	vVS.volume, ok = globals.volumeMap[vVS.volumeName]
 	if !ok {
 		globals.Unlock()
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Couldn't find fs.volumeStruct", time.Now().Format(time.RFC3339)))
+		vVS.validateVolumeLogErr("Couldn't find fs.volumeStruct")
 		return
 	}
 
@@ -540,13 +561,13 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.inodeVolumeHandle, err = inode.FetchVolumeHandle(vVS.volumeName)
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Couldn't find inode.VolumeHandle", time.Now().Format(time.RFC3339)))
+		vVS.validateVolumeLogErr("Couldn't find inode.VolumeHandle")
 		return
 	}
 
 	vVS.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(vVS.volumeName)
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Couldn't find headhunter.VolumeHandle", time.Now().Format(time.RFC3339)))
+		vVS.validateVolumeLogErr("Couldn't find headhunter.VolumeHandle")
 		return
 	}
 
@@ -557,23 +578,23 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.volume.untrackInFlightFileInodeDataAll()
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed flush of all inflight File Inode write traffic", time.Now().Format(time.RFC3339)))
+	vVS.validateVolumeLogInfo("Completed flush of all inflight File Inode write traffic")
 
 	// Do a checkpoint before actual FSCK work
 
 	err = vVS.headhunterVolumeHandle.DoCheckpoint()
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got headhunter.DoCheckpoint failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got headhunter.DoCheckpoint failure: %v", err)
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed checkpoint prior to FSCK work", time.Now().Format(time.RFC3339)))
+	vVS.validateVolumeLogInfo("Completed checkpoint prior to FSCK work")
 
 	// Setup B+Tree to hold arbitrarily sized map[uint64]uint64 (i.e. beyond what will fit in memoory)
 
 	vVS.bpTreeFile, err = ioutil.TempFile("", "ProxyFS_VaidateVolume_")
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got ioutil.TempFile() failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got ioutil.TempFile() failure: %v", err)
 		return
 	}
 	defer func(vVS *validateVolumeStruct) {
@@ -610,7 +631,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 		inodeNumber, ok, err = vVS.headhunterVolumeHandle.IndexedInodeNumber(inodeIndex)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got headhunter.IndexedInodeNumber(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeIndex, err))
+			vVS.validateVolumeLogErrWhileLocked("Got headhunter.IndexedInodeNumber(0x%016X) failure: %v", inodeIndex, err)
 			vVS.Unlock()
 			vVS.childrenWaitGroup.Wait()
 			vVS.validateVolumeEndParallelism()
@@ -636,17 +657,17 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed validation of all Inode's", time.Now().Format(time.RFC3339)))
+	vVS.validateVolumeLogInfo("Completed validation of all Inode's")
 
 	// TreeWalk computing LinkCounts for all inodeNumbers
 
 	_, ok, err = vVS.bpTree.GetByKey(uint64(inode.RootDirInodeNumber))
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.GetByKey(RootDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got bpTree.GetByKey(RootDirInodeNumber) failure: %v", err)
 		return
 	}
 	if !ok {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.GetByKey(RootDirInodeNumber) !ok", time.Now().Format(time.RFC3339)))
+		vVS.validateVolumeLogErr("Got bpTree.GetByKey(RootDirInodeNumber) !ok")
 		return
 	}
 
@@ -663,7 +684,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed treewalk before populating /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+	vVS.validateVolumeLogInfo("Completed treewalk before populating /%v/", lostAndFoundDirName)
 
 	// Establish that lostAndFoundDirName exists
 
@@ -673,49 +694,49 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 		inodeType, err = vVS.inodeVolumeHandle.GetType(vVS.lostAndFoundDirInodeNumber)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) failure: %v", time.Now().Format(time.RFC3339), vVS.lostAndFoundDirInodeNumber, err))
+			vVS.validateVolumeLogErr("Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) failure: %v", vVS.lostAndFoundDirInodeNumber, err)
 			return
 		}
 		if inode.DirType != inodeType {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) non-DirType", time.Now().Format(time.RFC3339), vVS.lostAndFoundDirInodeNumber))
+			vVS.validateVolumeLogErr("Got inode.GetType(vVS.lostAndFoundDirNumber==0x%016X) non-DirType", vVS.lostAndFoundDirInodeNumber)
 			return
 		}
 
-		vVS.info = append(vVS.info, fmt.Sprintf("%v Found pre-existing /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+		vVS.validateVolumeLogInfo("Found pre-existing /%v/", lostAndFoundDirName)
 	} else {
 		if blunder.Is(err, blunder.NotFoundError) {
 			// Create it
 
 			vVS.lostAndFoundDirInodeNumber, err = vVS.inodeVolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.CreateDir() failure: %v", time.Now().Format(time.RFC3339), err))
+				vVS.validateVolumeLogErr("Got inode.CreateDir() failure: %v", err)
 				return
 			}
 			err = vVS.inodeVolumeHandle.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber, false)
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber, false) failure: %v", time.Now().Format(time.RFC3339), err))
+				vVS.validateVolumeLogErr("Got inode.Link(inode.RootDirInodeNumber, lostAndFoundDirName, vVS.lostAndFoundDirInodeNumber, false) failure: %v", err)
 				err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
 				if nil != err {
-					vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+					vVS.validateVolumeLogErr("Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", err)
 				}
 				return
 			}
 
 			ok, err = vVS.bpTree.Put(uint64(vVS.lostAndFoundDirInodeNumber), uint64(2)) // /<lostAndFoundDirName> as well as /<lostAndFoundDirName>/.
 			if nil != err {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) failure: %v", time.Now().Format(time.RFC3339), err))
+				vVS.validateVolumeLogErr("Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) failure: %v", err)
 				vVS.Unlock()
 				return
 			}
 			if !ok {
-				vVS.err = append(vVS.err, fmt.Sprintf("%v Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) !ok", time.Now().Format(time.RFC3339)))
+				vVS.validateVolumeLogErr("Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) !ok")
 				vVS.Unlock()
 				return
 			}
 
-			vVS.info = append(vVS.info, fmt.Sprintf("%v Created /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+			vVS.validateVolumeLogInfo("Created /%v/", lostAndFoundDirName)
 		} else {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Lookup(inode.RootDirInodeNumber, lostAndFoundDirName) failure: %v", time.Now().Format(time.RFC3339), err))
+			vVS.validateVolumeLogErr("Got inode.Lookup(inode.RootDirInodeNumber, lostAndFoundDirName) failure: %v", err)
 			return
 		}
 	}
@@ -726,7 +747,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	inodeCount, err = vVS.bpTree.Len()
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Len() failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got inode.Len() failure: %v", err)
 		return
 	}
 
@@ -737,11 +758,11 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 		ok, err = vVS.bpTree.PatchByIndex(int(inodeIndex), uint64(0))
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.PatchByIndex(0x%016X, 0) failure: %v", time.Now().Format(time.RFC3339), inodeIndex, err))
+			vVS.validateVolumeLogErr("Got vVS.bpTree.PatchByIndex(0x%016X, 0) failure: %v", inodeIndex, err)
 			return
 		}
 		if !ok {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.PatchByIndex(0x%016X, 0) !ok", time.Now().Format(time.RFC3339), inodeIndex))
+			vVS.validateVolumeLogErr("Got vVS.bpTree.PatchByIndex(0x%016X, 0) !ok", inodeIndex)
 			return
 		}
 	}
@@ -759,7 +780,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed treewalk after populating /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+	vVS.validateVolumeLogInfo("Completed treewalk after populating /%v/", lostAndFoundDirName)
 
 	// TODO: Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
 
@@ -782,14 +803,14 @@ func (vVS *validateVolumeStruct) validateVolume() {
 			vVS.Unlock()
 			vVS.childrenWaitGroup.Wait()
 			vVS.validateVolumeEndParallelism()
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.GetByIndex(0x%016X) failure: %v", time.Now().Format(time.RFC3339), inodeIndex, err))
+			vVS.validateVolumeLogErr("Got vVS.bpTree.GetByIndex(0x%016X) failure: %v", inodeIndex, err)
 			return
 		}
 		if !ok {
 			vVS.Unlock()
 			vVS.childrenWaitGroup.Wait()
 			vVS.validateVolumeEndParallelism()
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got vVS.bpTree.GetByIndex(0x%016X) !ok", time.Now().Format(time.RFC3339), inodeIndex))
+			vVS.validateVolumeLogErr("Got vVS.bpTree.GetByIndex(0x%016X) !ok", inodeIndex)
 			return
 		}
 
@@ -810,32 +831,32 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed LinkCount fix-up of all Inode's", time.Now().Format(time.RFC3339)))
+	vVS.validateVolumeLogInfo("Completed LinkCount fix-up of all Inode's")
 
 	// If vVS.lostAndFoundDirInodeNumber is empty, remove it
 
 	_, moreEntries, err = vVS.inodeVolumeHandle.ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0)
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0) failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0) failure: %v", err)
 		return
 	}
 
 	if moreEntries {
-		vVS.info = append(vVS.info, fmt.Sprintf("%v Preserving non-empty /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+		vVS.validateVolumeLogInfo("Preserving non-empty /%v/", lostAndFoundDirName)
 	} else {
 		err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false) failure: %v", time.Now().Format(time.RFC3339), err))
+			vVS.validateVolumeLogErr("Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false) failure: %v", err)
 			return
 		}
 
 		err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
 		if nil != err {
-			vVS.err = append(vVS.err, fmt.Sprintf("%v Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", time.Now().Format(time.RFC3339), err))
+			vVS.validateVolumeLogErr("Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", err)
 			return
 		}
 
-		vVS.info = append(vVS.info, fmt.Sprintf("%v Removed empty /%v/", time.Now().Format(time.RFC3339), lostAndFoundDirName))
+		vVS.validateVolumeLogInfo("Removed empty /%v/", lostAndFoundDirName)
 	}
 
 	// TODO: Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
@@ -848,11 +869,11 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	err = vVS.headhunterVolumeHandle.DoCheckpoint()
 	if nil != err {
-		vVS.err = append(vVS.err, fmt.Sprintf("%v Got headhunter.DoCheckpoint failure: %v", time.Now().Format(time.RFC3339), err))
+		vVS.validateVolumeLogErr("Got headhunter.DoCheckpoint failure: %v", err)
 		return
 	}
 
-	vVS.info = append(vVS.info, fmt.Sprintf("%v Completed checkpoint after FSCK work", time.Now().Format(time.RFC3339)))
+	vVS.validateVolumeLogInfo("Completed checkpoint after FSCK work")
 
 	// TODO: Compute TreeLayout for all three headhunter B+Trees
 	// TODO: Remove unreferenced Checkpoint Objects
