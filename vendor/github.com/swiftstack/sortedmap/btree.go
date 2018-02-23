@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/cstruct"
 )
 
@@ -803,13 +804,29 @@ func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, root
 	tree.Lock()
 	defer tree.Unlock()
 
-	// First flush (and optionally purge) B+Tree
+	var (
+		oldRootObjectNumber = tree.root.objectNumber
+		oldRootObjectOffset = tree.root.objectOffset
+		oldRootObjectLength = tree.root.objectLength
+	)
 
+	// First flush (and optionally purge) B+Tree
 	err = tree.flushNode(tree.root, andPurge) // will also mark node clean/used or evicted in LRU
 	if nil != err {
 		return
 	}
 
+	// if the root object changed log that information
+	if oldRootObjectNumber != tree.root.objectNumber ||
+		oldRootObjectOffset != tree.root.objectOffset || oldRootObjectLength != tree.root.objectLength {
+
+		logger.Tracef("Flush(): updating root object for tree %p root node %p: "+
+			"object %016X  offset %d  len %d  end %d",
+			tree, tree.root, tree.root.objectNumber, tree.root.objectOffset, tree.root.objectLength,
+			tree.root.objectOffset+tree.root.objectLength)
+	}
+
+	// return the final values
 	rootObjectNumber = tree.root.objectNumber
 	rootObjectOffset = tree.root.objectOffset
 	rootObjectLength = tree.root.objectLength
@@ -971,6 +988,11 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 }
 
 func (tree *btreeTreeStruct) Discard() (err error) {
+
+	logger.Tracef(
+		"Discard(): tree %p root node %p  root object %016X",
+		tree, tree.root, tree.root.objectNumber)
+
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -1047,6 +1069,10 @@ func (context *onDiskReferencesContext) DumpValue(value Value) (valueAsString st
 }
 
 func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
+	logger.Tracef(
+		"discardNode(): tree %p node %p: object %016X  offset %d  len %d  loaded %v",
+		tree, node, node.objectNumber, node.objectOffset, node.objectLength, node.loaded)
+
 	if !node.loaded {
 		err = nil
 		return
@@ -1232,11 +1258,45 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 	return
 }
 
+func (tree *btreeTreeStruct) AssertNodeEmpty(node *btreeNodeStruct) {
+
+	logger.Tracef(
+		"AssertNodeEmpty(): tree %p node %p: object %016X  offset %d  len %d",
+		tree, node,
+		node.objectNumber, node.objectOffset, node.objectLength)
+
+	if node.nonLeafLeftChild != nil {
+		err := fmt.Errorf("nonLeafLeftChild != nil")
+		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: nonLeafLeftChild %p",
+			tree, node, node.nonLeafLeftChild)
+	}
+	numIndices, err := node.kvLLRB.Len()
+	if err != nil {
+		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node.kvLLRB.Len() returned err",
+			tree, node)
+	}
+	if numIndices != 0 {
+		err := fmt.Errorf("node has children")
+		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node has %d entries (!= 0)",
+			tree, node, numIndices)
+	}
+	if !node.dirty {
+		err := fmt.Errorf("node is not dirty")
+		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node not marked dirty",
+			tree, node)
+	}
+}
+
 func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, parentIndexStack []int) (err error) {
 	var (
 		leftSiblingNode  *btreeNodeStruct
 		rightSiblingNode *btreeNodeStruct
 	)
+
+	logger.Tracef(
+		"rebalanceHere(): tree %p rebalanceNode %p: object %016X  offset %d  len %d",
+		tree, rebalanceNode,
+		rebalanceNode.objectNumber, rebalanceNode.objectOffset, rebalanceNode.objectLength)
 
 	if rebalanceNode.root {
 		err = nil
@@ -1486,7 +1546,9 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		}
 		if !rebalanceNode.leaf {
 			leftSiblingNode.kvLLRB.Put(oldSplitKey, rebalanceNode.nonLeafLeftChild)
+			rebalanceNode.nonLeafLeftChild = nil
 		}
+
 		numItemsToMove, nonShadowingErr := rebalanceNode.kvLLRB.Len()
 		if nil != nonShadowingErr {
 			err = nonShadowingErr
@@ -1499,6 +1561,9 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 				return
 			}
 			leftSiblingNode.kvLLRB.Put(movedKey, movedValue)
+		}
+		for i := 0; i < numItemsToMove; i++ {
+			rebalanceNode.kvLLRB.DeleteByIndex(0)
 		}
 
 		llrbLen, nonShadowingErr := parentNode.kvLLRB.Len()
@@ -1517,6 +1582,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			if !leftSiblingNode.leaf {
 				tree.arrangePrefixSumTree(leftSiblingNode)
 			}
+			parentNode.kvLLRB.DeleteByIndex(0)
+			parentNode.nonLeafLeftChild = nil
+			tree.AssertNodeEmpty(parentNode)
+
 		} else {
 			// height will remain the same, so just delete oldSplitKey from parentNode and recurse
 
@@ -1534,8 +1603,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			tree.rebalanceHere(parentNode, parentIndexStackPruned)
 		}
 
+		tree.AssertNodeEmpty(rebalanceNode)
 		tree.markNodeEvicted(rebalanceNode)
 		tree.markNodeDirty(leftSiblingNode)
+
 	} else if nil != rightSiblingNode {
 		// move keys from rightSiblingNode to rebalanceNode (along with former splitKey for non-leaf case)
 
@@ -1568,6 +1639,9 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 				return
 			}
 		}
+		for i := 0; i < numItemsToMove; i++ {
+			rightSiblingNode.kvLLRB.DeleteByIndex(0)
+		}
 
 		llrbLen, nonShadowingErr := parentNode.kvLLRB.Len()
 		if nil != nonShadowingErr {
@@ -1585,6 +1659,9 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			if !rebalanceNode.leaf {
 				tree.arrangePrefixSumTree(rebalanceNode)
 			}
+			parentNode.kvLLRB.DeleteByIndex(0)
+			parentNode.nonLeafLeftChild = nil
+			tree.AssertNodeEmpty(parentNode)
 		} else {
 			// height will remain the same, so just delete oldSplitKey from parentNode and recurse
 
@@ -1602,8 +1679,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			tree.rebalanceHere(parentNode, parentIndexStackPruned)
 		}
 
+		tree.AssertNodeEmpty(rightSiblingNode)
 		tree.markNodeEvicted(rightSiblingNode)
 		tree.markNodeDirty(rebalanceNode)
+
 	} else {
 		// non-root node must have had a sibling, so if we reach here, we have a logic problem
 
@@ -1656,6 +1735,14 @@ func (tree *btreeTreeStruct) flushNode(node *btreeNodeStruct, andPurge bool) (er
 
 	if node.dirty {
 		tree.postNode(node) // will also mark node clean/used in LRU
+
+		// if this node is dirty the parent must be as well
+		if node.parentNode != nil && !node.parentNode.dirty {
+			err := fmt.Errorf("parentNode is not marked dirty")
+			logger.PanicfWithError(err, "flushNode(): tree %p node %p: parent node %p not marked dirty",
+				tree, node, node.parentNode)
+		}
+
 	}
 
 	if andPurge {
@@ -1917,7 +2004,10 @@ func (tree *btreeTreeStruct) markNodeDirty(node *btreeNodeStruct) {
 		}
 
 		// Zero-out on-disk reference so that the above is only done once for this now dirty node
-
+		logger.Tracef(
+			"markNodeDirty(): discarding object for tree %p node %p: object %016X offset %d len %d",
+			tree, node,
+			node.objectNumber, node.objectOffset, node.objectLength)
 		node.objectNumber = 0
 		node.objectOffset = 0
 		node.objectLength = 0
@@ -2359,6 +2449,9 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 		onDiskReferenceToNode onDiskReferenceToNodeStruct
 	)
 
+	logger.Tracef("loadNode(): loading node for tree %p node %p: object %016X  offset %d  len %d",
+		tree, node, node.objectNumber, node.objectOffset, node.objectLength)
+
 	nodeByteSlice, err := tree.BPlusTreeCallbacks.GetNode(node.objectNumber, node.objectOffset, node.objectLength)
 	if nil != err {
 		return
@@ -2678,6 +2771,10 @@ func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
 		return
 	}
 
+	logger.Tracef(
+		"postNode(): updating object for tree %p node %p: object %016X  offset %d  len %d  end %d",
+		tree, node, objectNumber, objectOffset, len(onDiskNodeBuf),
+		objectOffset+uint64(len(onDiskNodeBuf)))
 	node.objectNumber = objectNumber
 	node.objectOffset = objectOffset
 	node.objectLength = uint64(len(onDiskNodeBuf))

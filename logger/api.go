@@ -137,6 +137,7 @@ var packageTraceSettings = map[string]bool{
 	"jrpcfs":      false,
 	"logger":      false,
 	"proxyfsd":    false,
+	"sortedmap":   false,
 	"swiftclient": false,
 }
 
