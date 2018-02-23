@@ -25,9 +25,10 @@ const (
 	validateVolumeBPTreeEvictLowLimit  = uint64(90)
 	validateVolumeBPTreeEvictHighLimit = uint64(100)
 
-	validateVolumeInodeParallelism              = uint64(100)
-	validateVolumeCalculateLinkCountParallelism = uint64(50)
-	validateVolumeFixLinkCountParallelism       = uint64(50)
+	validateVolumeInodeParallelism               = uint64(100)
+	validateVolumeCalculateLinkCountParallelism  = uint64(50)
+	validateVolumeFixLinkCountParallelism        = uint64(50)
+	validateVolumeIncrementByteCountsParallelism = uint64(100)
 
 	validateVolumeContainerRescanDelay = time.Duration(1 * time.Second)
 
@@ -48,10 +49,11 @@ type validateVolumeStruct struct {
 	parallelismChan            chan struct{}
 	parallelismChanSize        uint64
 	childrenWaitGroup          sync.WaitGroup
-	bpTree                     sortedmap.BPlusTree
 	bpTreeCache                sortedmap.BPlusTreeCache
 	bpTreeFile                 *os.File
-	bpTreeNextOffset           uint64
+	bpTreeFileNextOffset       uint64
+	inodeBPTree                sortedmap.BPlusTree // Maps Inode# to LinkCount
+	objectBPTree               sortedmap.BPlusTree // Maps Object# to ByteCount
 	lostAndFoundDirInodeNumber inode.InodeNumber
 	accountName                string
 	checkpointContainerName    string
@@ -132,13 +134,13 @@ func (vVS *validateVolumeStruct) PutNode(nodeByteSlice []byte) (objectNumber uin
 	if nil != err {
 		return
 	}
-	_, err = vVS.bpTreeFile.WriteAt(nodeByteSlice, int64(vVS.bpTreeNextOffset))
+	_, err = vVS.bpTreeFile.WriteAt(nodeByteSlice, int64(vVS.bpTreeFileNextOffset))
 	if nil != err {
 		return
 	}
 	objectNumber = 0
-	objectOffset = vVS.bpTreeNextOffset
-	vVS.bpTreeNextOffset += uint64(len(nodeByteSlice))
+	objectOffset = vVS.bpTreeFileNextOffset
+	vVS.bpTreeFileNextOffset += uint64(len(nodeByteSlice))
 	return
 }
 
@@ -286,20 +288,20 @@ func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 		return
 	}
 
-	// TODO (now): Avoid full ReadPlan vs. LogSegments validation for FileInode's
+	// TODO: Avoid full ReadPlan vs. LogSegments validation for FileInode's
 	err = vVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber))
 
 	vVS.Lock()
 	defer vVS.Unlock()
 
 	if nil == err {
-		ok, err = vVS.bpTree.Put(inodeNumber, uint64(0)) // Initial LinkCount == 0
+		ok, err = vVS.inodeBPTree.Put(inodeNumber, uint64(0)) // Initial LinkCount == 0
 		if nil != err {
-			vVS.validateVolumeLogErrWhileLocked("Got bpTree.Put(0x%016X, 0) failure: %v", inodeNumber, err)
+			vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, 0) failure: %v", inodeNumber, err)
 			return
 		}
 		if !ok {
-			vVS.validateVolumeLogErrWhileLocked("Got bpTree.Put(0x%016X, 0) !ok", inodeNumber)
+			vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, 0) !ok", inodeNumber)
 			return
 		}
 	} else {
@@ -319,26 +321,26 @@ func (vVS *validateVolumeStruct) validateVolumeIncrementCalculatedLinkCountWhile
 		value     sortedmap.Value
 	)
 
-	value, ok, err = vVS.bpTree.GetByKey(inodeNumber)
+	value, ok, err = vVS.inodeBPTree.GetByKey(inodeNumber)
 	if nil != err {
-		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.GetByKey(0x%016X) failure: %v", inodeNumber, err)
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.GetByKey(0x%016X) failure: %v", inodeNumber, err)
 		ok = false
 		return
 	}
 	if !ok {
-		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.GetByKey(0x%016X) !ok", inodeNumber)
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.GetByKey(0x%016X) !ok", inodeNumber)
 		ok = false
 		return
 	}
 	linkCount = value.(uint64) + 1
-	ok, err = vVS.bpTree.PatchByKey(inodeNumber, linkCount)
+	ok, err = vVS.inodeBPTree.PatchByKey(inodeNumber, linkCount)
 	if nil != err {
-		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.PatchByKey(0x%016X,) failure: %v", inodeNumber, err)
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.PatchByKey(0x%016X,) failure: %v", inodeNumber, err)
 		ok = false
 		return
 	}
 	if !ok {
-		vVS.validateVolumeLogErrWhileLocked("Got vVS.bpTree.PatchByKey(0x%016X,) !ok", inodeNumber)
+		vVS.validateVolumeLogErrWhileLocked("Got vVS.inodeBPTree.PatchByKey(0x%016X,) !ok", inodeNumber)
 		ok = false
 		return
 	}
@@ -534,6 +536,67 @@ func (vVS *validateVolumeStruct) validateVolumeFixLinkCount(inodeNumber uint64, 
 	}
 }
 
+func (vVS *validateVolumeStruct) validateVolumeIncrementByteCounts(inodeNumber uint64) {
+	var (
+		err          error
+		layoutReport sortedmap.LayoutReport
+		objectBytes  uint64
+		objectNumber uint64
+		ok           bool
+		value        sortedmap.Value
+	)
+
+	defer vVS.childrenWaitGroup.Done()
+
+	vVS.validateVolumeGrabParallelism()
+	defer vVS.validateVolumeReleaseParallelism()
+
+	if vVS.stopFlag {
+		return
+	}
+
+	layoutReport, err = vVS.inodeVolumeHandle.FetchLayoutReport(inode.InodeNumber(inodeNumber))
+	if nil != err {
+		vVS.validateVolumeLogErr("Got vVS.inodeVolumeHandle.FetchLayoutReport(0x%016X) failure: %v", inodeNumber, err)
+		return
+	}
+
+	vVS.Lock()
+	defer vVS.Unlock()
+
+	for objectNumber, objectBytes = range layoutReport {
+		value, ok, err = vVS.objectBPTree.GetByKey(objectNumber)
+		if nil != err {
+			vVS.validateVolumeLogErrWhileLocked("Got vVS.objectBPTree.GetByKey() failure: %v", err)
+			return
+		}
+
+		if ok {
+			objectBytes += value.(uint64)
+
+			ok, err = vVS.objectBPTree.PatchByKey(objectNumber, objectBytes)
+			if nil != err {
+				vVS.validateVolumeLogErrWhileLocked("Got vVS.objectBPTree.PatchByKey() failure: %v", err)
+				return
+			}
+			if !ok {
+				vVS.validateVolumeLogErrWhileLocked("Got vVS.objectBPTree.PatchByKey(0) !ok")
+				return
+			}
+		} else {
+			ok, err = vVS.objectBPTree.Put(objectNumber, objectBytes)
+			if nil != err {
+				vVS.validateVolumeLogErrWhileLocked("Got vVS.objectBPTree.Put() failure: %v", err)
+				return
+			}
+			if !ok {
+				vVS.validateVolumeLogErrWhileLocked("Got vVS.objectBPTree.Put() !ok")
+				return
+			}
+		}
+	}
+}
+
 func (vVS *validateVolumeStruct) validateVolume() {
 	var (
 		checkpointContainerObjectList   []string
@@ -549,6 +612,8 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		key                             sortedmap.Key
 		linkCountComputed               uint64
 		moreEntries                     bool
+		objectIndex                     uint64
+		objectNumber                    uint64
 		ok                              bool
 		validObjectNameRE               = regexp.MustCompile("\\A[0-9a-fA-F]+\\z")
 		value                           sortedmap.Value
@@ -635,13 +700,21 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		_ = os.Remove(bpTreeFileName)
 	}(vVS)
 
-	vVS.bpTreeNextOffset = 0
+	vVS.bpTreeFileNextOffset = 0
 
 	vVS.bpTreeCache = sortedmap.NewBPlusTreeCache(validateVolumeBPTreeEvictLowLimit, validateVolumeBPTreeEvictHighLimit)
 
-	vVS.bpTree = sortedmap.NewBPlusTree(validateVolumeBPTreeMaxKeysPerNode, sortedmap.CompareUint64, vVS, vVS.bpTreeCache)
-
 	// Validate all Inodes in InodeRec table in headhunter
+
+	vVS.inodeBPTree = sortedmap.NewBPlusTree(validateVolumeBPTreeMaxKeysPerNode, sortedmap.CompareUint64, vVS, vVS.bpTreeCache)
+	defer func(vVS *validateVolumeStruct) {
+		var err error
+
+		err = vVS.inodeBPTree.Discard()
+		if nil != err {
+			vVS.validateVolumeLogErr("Got vVS.inodeBPTree.Discard() failure: %v", err)
+		}
+	}(vVS)
 
 	vVS.Lock() // Hold off vVS.validateVolumeInode() goroutines throughout loop
 
@@ -689,13 +762,13 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	// TreeWalk computing LinkCounts for all inodeNumbers
 
-	_, ok, err = vVS.bpTree.GetByKey(uint64(inode.RootDirInodeNumber))
+	_, ok, err = vVS.inodeBPTree.GetByKey(uint64(inode.RootDirInodeNumber))
 	if nil != err {
-		vVS.validateVolumeLogErr("Got bpTree.GetByKey(RootDirInodeNumber) failure: %v", err)
+		vVS.validateVolumeLogErr("Got vVS.inodeBPTree.GetByKey(RootDirInodeNumber) failure: %v", err)
 		return
 	}
 	if !ok {
-		vVS.validateVolumeLogErr("Got bpTree.GetByKey(RootDirInodeNumber) !ok")
+		vVS.validateVolumeLogErr("Got vVS.inodeBPTree.GetByKey(RootDirInodeNumber) !ok")
 		return
 	}
 
@@ -750,14 +823,14 @@ func (vVS *validateVolumeStruct) validateVolume() {
 				return
 			}
 
-			ok, err = vVS.bpTree.Put(uint64(vVS.lostAndFoundDirInodeNumber), uint64(2)) // /<lostAndFoundDirName> as well as /<lostAndFoundDirName>/.
+			ok, err = vVS.inodeBPTree.Put(uint64(vVS.lostAndFoundDirInodeNumber), uint64(2)) // /<lostAndFoundDirName> as well as /<lostAndFoundDirName>/.
 			if nil != err {
-				vVS.validateVolumeLogErr("Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) failure: %v", err)
+				vVS.validateVolumeLogErr("Got vVS.inodeBPTree.Put(vVS.lostAndFoundDirInodeNumber, 1) failure: %v", err)
 				vVS.Unlock()
 				return
 			}
 			if !ok {
-				vVS.validateVolumeLogErr("Got bpTree.Put(vVS.lostAndFoundDirInodeNumber, 1) !ok")
+				vVS.validateVolumeLogErr("Got vVS.inodeBPTree.Put(vVS.lostAndFoundDirInodeNumber, 1) !ok")
 				vVS.Unlock()
 				return
 			}
@@ -769,11 +842,11 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		}
 	}
 
-	// TODO (someday): Scan B+Tree placing top-most orphan DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+	// TODO: Scan B+Tree placing top-most orphan DirInodes as elements of vVS.lostAndFoundDirInodeNumber
 
 	// Re-compute LinkCounts
 
-	inodeCount, err = vVS.bpTree.Len()
+	inodeCount, err = vVS.inodeBPTree.Len()
 	if nil != err {
 		vVS.validateVolumeLogErr("Got inode.Len() failure: %v", err)
 		return
@@ -784,13 +857,13 @@ func (vVS *validateVolumeStruct) validateVolume() {
 			return
 		}
 
-		ok, err = vVS.bpTree.PatchByIndex(int(inodeIndex), uint64(0))
+		ok, err = vVS.inodeBPTree.PatchByIndex(int(inodeIndex), uint64(0))
 		if nil != err {
-			vVS.validateVolumeLogErr("Got vVS.bpTree.PatchByIndex(0x%016X, 0) failure: %v", inodeIndex, err)
+			vVS.validateVolumeLogErr("Got vVS.inodeBPTree.PatchByIndex(0x%016X, 0) failure: %v", inodeIndex, err)
 			return
 		}
 		if !ok {
-			vVS.validateVolumeLogErr("Got vVS.bpTree.PatchByIndex(0x%016X, 0) !ok", inodeIndex)
+			vVS.validateVolumeLogErr("Got vVS.inodeBPTree.PatchByIndex(0x%016X, 0) !ok", inodeIndex)
 			return
 		}
 	}
@@ -810,7 +883,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.validateVolumeLogInfo("Completed treewalk after populating /%v/", lostAndFoundDirName)
 
-	// TODO (someday): Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
+	// TODO: Scan B+Tree placing orphaned non-DirInodes as elements of vVS.lostAndFoundDirInodeNumber
 
 	// Update incorrect LinkCounts
 
@@ -826,19 +899,19 @@ func (vVS *validateVolumeStruct) validateVolume() {
 			return
 		}
 
-		key, value, ok, err = vVS.bpTree.GetByIndex(int(inodeIndex))
+		key, value, ok, err = vVS.inodeBPTree.GetByIndex(int(inodeIndex))
 		if nil != err {
 			vVS.Unlock()
 			vVS.childrenWaitGroup.Wait()
 			vVS.validateVolumeEndParallelism()
-			vVS.validateVolumeLogErr("Got vVS.bpTree.GetByIndex(0x%016X) failure: %v", inodeIndex, err)
+			vVS.validateVolumeLogErr("Got vVS.inodeBPTree.GetByIndex(0x%016X) failure: %v", inodeIndex, err)
 			return
 		}
 		if !ok {
 			vVS.Unlock()
 			vVS.childrenWaitGroup.Wait()
 			vVS.validateVolumeEndParallelism()
-			vVS.validateVolumeLogErr("Got vVS.bpTree.GetByIndex(0x%016X) !ok", inodeIndex)
+			vVS.validateVolumeLogErr("Got vVS.inodeBPTree.GetByIndex(0x%016X) !ok", inodeIndex)
 			return
 		}
 
@@ -887,12 +960,101 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		vVS.validateVolumeLogInfo("Removed empty /%v/", lostAndFoundDirName)
 	}
 
-	// TODO (now): Walk all DirInodes & FileInodes tracking referenced headhunter B+Tree "Objects"
-	// TODO (now): Delete unreferenced headhunter B+Tree "Objects"
+	// Clean out unreferenced headhunter B+Tree "Objects")
 
-	// TODO (someday): Walk all FileInodes tracking referenced LogSegments
-	// TODO (someday): Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
-	// TODO (someday): Delete unreferenced LogSegments (both headhunter records & Objects)
+	vVS.objectBPTree = sortedmap.NewBPlusTree(validateVolumeBPTreeMaxKeysPerNode, sortedmap.CompareUint64, vVS, vVS.bpTreeCache)
+	defer func(vVS *validateVolumeStruct) {
+		var err error
+
+		err = vVS.objectBPTree.Discard()
+		if nil != err {
+			vVS.validateVolumeLogErr("Got vVS.objectBPTree.Discard() failure: %v", err)
+		}
+	}(vVS)
+
+	vVS.Lock() // Hold off vVS.validateVolumeIncrementByteCounts() goroutines throughout loop
+
+	vVS.validateVolumeStartParallelism(validateVolumeIncrementByteCountsParallelism)
+
+	inodeIndex = 0
+
+	for {
+		if vVS.stopFlag {
+			vVS.Unlock()
+			vVS.childrenWaitGroup.Wait()
+			vVS.validateVolumeEndParallelism()
+			return
+		}
+
+		inodeNumber, ok, err = vVS.headhunterVolumeHandle.IndexedInodeNumber(inodeIndex)
+		if nil != err {
+			vVS.validateVolumeLogErrWhileLocked("Got headhunter.IndexedInodeNumber(0x%016X) failure: %v", inodeIndex, err)
+			vVS.Unlock()
+			vVS.childrenWaitGroup.Wait()
+			vVS.validateVolumeEndParallelism()
+			return
+		}
+		if !ok {
+			break
+		}
+
+		vVS.childrenWaitGroup.Add(1)
+		go vVS.validateVolumeIncrementByteCounts(inodeNumber) // Will be blocked until subsequent vVS.Unlock()
+
+		inodeIndex++
+	}
+
+	vVS.Unlock()
+
+	vVS.childrenWaitGroup.Wait()
+
+	vVS.validateVolumeEndParallelism()
+
+	if vVS.stopFlag || (0 < len(vVS.err)) {
+		return
+	}
+
+	objectIndex = 0
+
+	for {
+		if vVS.stopFlag {
+			return
+		}
+
+		objectNumber, ok, err = vVS.headhunterVolumeHandle.IndexedBPlusTreeObjectNumber(objectIndex)
+		if nil != err {
+			vVS.validateVolumeLogErr("Got headhunter.IndexedBPlusTreeObjectNumber(0x%016X) failure: %v", objectIndex, err)
+			return
+		}
+
+		if !ok {
+			break
+		}
+
+		_, ok, err = vVS.objectBPTree.GetByKey(objectNumber)
+		if nil != err {
+			vVS.validateVolumeLogErr("Got vVS.objectBPTree.GetByKey(0x%016X) failure: %v", objectNumber, err)
+			return
+		}
+
+		if ok {
+			objectIndex++
+		} else {
+			err = vVS.headhunterVolumeHandle.DeleteBPlusTreeObject(objectNumber)
+			if nil == err {
+				vVS.validateVolumeLogInfo("Removed unreferenced headhunter B+Tree \"Object\" 0x%016X", objectNumber)
+			} else {
+				vVS.validateVolumeLogErr("Got headhunter.DeleteBPlusTreeObject(0x%016X) failure: %v", objectNumber, err)
+				return
+			}
+		}
+	}
+
+	vVS.validateVolumeLogInfo("Completed clean out unreferenced headhunter B+Tree \"Objects\"")
+
+	// TODO: Walk all FileInodes tracking referenced LogSegments
+	// TODO: Remove non-Checkpoint Objects not in headhunter's LogSegment B+Tree
+	// TODO: Delete unreferenced LogSegments (both headhunter records & Objects)
 
 	// Do a final checkpoint
 
