@@ -424,7 +424,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 				//              Is it possible that Number doesn't get updated?
 
 				if inode.PayloadObjectNumber != 0 {
-					logger.Tracef("flushInodes(): updating Payload from ObjNum %d to %d"+
+					logger.Tracef("flushInodes(): updating Payload from Object %016X to %016X"+
 						" bytes %d to %d for %v inode %d",
 						inode.PayloadObjectNumber, payloadObjectNumber,
 						inode.PayloadObjectLength, payloadObjectLength,
@@ -842,6 +842,9 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 	}
 
 	if DirType == ourInode.InodeType {
+		logger.Tracef("inode.Destroy(): volume '%s' inode %d: discarding dirmap payload Object %016X  len %d",
+			vS.volumeName, inodeNumber, ourInode.PayloadObjectNumber, ourInode.PayloadObjectLength)
+
 		dirMapping := ourInode.payload.(sortedmap.BPlusTree)
 
 		err = dirMapping.Discard()
@@ -851,7 +854,11 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 		}
 
 		stats.IncrementOperations(&stats.DirDestroyOps)
+
 	} else if FileType == ourInode.InodeType {
+		logger.Tracef("inode.Destroy(): volume '%s' inode %d: discarding extmap payload Object %016X  len %d",
+			vS.volumeName, inodeNumber, ourInode.PayloadObjectNumber, ourInode.PayloadObjectLength)
+
 		extents := ourInode.payload.(sortedmap.BPlusTree)
 
 		err = extents.Discard()

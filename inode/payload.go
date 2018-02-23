@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/swiftstack/ProxyFS/logger"
+
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 )
@@ -50,6 +52,12 @@ func (tnl *treeNodeLoadable) PutNode(nodeByteSlice []byte) (objectNumber uint64,
 }
 
 func (tnl *treeNodeLoadable) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+	logger.Tracef("inode.Discardnode(): volume '%s' inode %d: "+
+		"root Object %016X  discarding Object %016X  len %d",
+		tnl.inode.volume.volumeName, tnl.inode.onDiskInodeV1Struct.InodeNumber,
+		tnl.inode.onDiskInodeV1Struct.PayloadObjectNumber,
+		objectNumber, objectLength)
+
 	if 0 != objectOffset {
 		err = fmt.Errorf("*treeNodeLoadable.DiscardNode(): Unexpected (non-zero) objectOffset (%v)", objectOffset)
 		return
