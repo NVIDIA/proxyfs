@@ -7,6 +7,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -149,7 +151,8 @@ type VolumeHandle interface {
 	GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error)
 	PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error)
 	DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error)
-	GetFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
+	FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error)
+	FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
 	Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error)
 	Validate(inodeNumber InodeNumber) (err error)
 
