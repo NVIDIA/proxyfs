@@ -945,19 +945,17 @@ func (vVS *validateVolumeStruct) validateVolume() {
 			}
 
 			if uint64(0) == checkpointContainerObjectNumber {
-				err = swiftclient.ObjectDeleteSync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName)
-				if nil != err {
-					vVS.validateVolumeLogErr("Got swiftclient.ObjectDeleteSync(\"%v\",\"%v\",\"%v\") failure: %v", vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, err)
-					return
-				}
-
 				checkpointContainerScanning = true // Continue looping until no new objects are found to delete
-				vVS.validateVolumeLogInfo("Removed unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
-			}
-		}
 
-		if vVS.stopFlag {
-			return
+				err = swiftclient.ObjectDeleteSync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName)
+				if nil == err {
+					vVS.validateVolumeLogInfo("Removed unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
+				}
+			}
+
+			if vVS.stopFlag {
+				return
+			}
 		}
 
 		if checkpointContainerScanning {
