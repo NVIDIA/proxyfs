@@ -3080,17 +3080,15 @@ class TestObjectPost(BaseMiddlewareTest):
         # not reflected in the response.
         #
         # HTTP/1.1 202 Accepted
-        # Last-Modified: Wed, 21 Dec 2016 18:46:44 GMT
-        # Content-Length: 0
-        # Etag: 340d45cdfb0f8be0862deb2cf21cc08c
+        # Content-Length: 76
         # Content-Type: text/html; charset=UTF-8
-        # X-Trans-Id: tx4500a321080445a4841c9-00585ace13
-        # Date: Wed, 21 Dec 2016 18:46:43 GMT
+        # X-Trans-Id: tx65d5632fe4a548999ee9e-005a39781b
+        # X-Openstack-Request-Id: tx65d5632fe4a548999ee9e-005a39781b
+        # Date: Tue, 19 Dec 2017 20:35:39 GMT
         self.assertEqual("202 Accepted", status)
-        self.assertEqual("Wed, 21 Dec 2016 18:39:03 GMT",
-                         headers["Last-Modified"])
+        self.assertNotIn('Last-Modified', headers)
+        self.assertNotIn('Etag', headers)
         self.assertEqual("0", headers["Content-Length"])
-        self.assertEqual("a860580f9df567516a3f0b55c6b93b67", headers["Etag"])
         self.assertEqual("text/html; charset=UTF-8", headers["Content-Type"])
         # Date and X-Trans-Id are added in by other parts of the WSGI stack
 

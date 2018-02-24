@@ -39,6 +39,16 @@ def _decode_binary(bindata):
         return ""
 
 
+def _ctime_or_mtime(res):
+    '''
+    Get the last-modified time from a response.
+
+    Ideally, this will be the AttrChangeTime (ctime), but older versions of
+    proxyfsd only returned the user-settable ModificationTime (mtime).
+    '''
+    return res.get("AttrChangeTime", res["ModificationTime"])
+
+
 def jsonrpc_request(method, params, call_id=None):
     """
     Marshal an RPC request in JSON-RPC 2.0 format.
@@ -139,7 +149,7 @@ def parse_get_object_response(read_plan_response):
     return (read_plan_response["ReadEntsOut"],
             _decode_binary(read_plan_response["Metadata"]),
             read_plan_response["FileSize"],
-            read_plan_response["ModificationTime"],
+            _ctime_or_mtime(read_plan_response),
             read_plan_response["InodeNumber"],
             read_plan_response["NumWrites"],
             read_plan_response["LeaseId"])
@@ -166,7 +176,7 @@ def parse_coalesce_object_response(coalesce_object_response):
 
     Returns (modification time, inode no., no. writes).
     """
-    return (coalesce_object_response["ModificationTime"],
+    return (_ctime_or_mtime(coalesce_object_response),
             coalesce_object_response["InodeNumber"],
             coalesce_object_response["NumWrites"])
 
@@ -226,7 +236,7 @@ def parse_put_complete_response(put_complete_response):
     nanoseconds since the epoch; the second is the file's inode number, and
     the third is the number of writes the file has seen since its creation.
     """
-    return (put_complete_response["ModificationTime"],
+    return (_ctime_or_mtime(put_complete_response),
             put_complete_response["InodeNumber"],
             put_complete_response["NumWrites"])
 
@@ -265,7 +275,7 @@ def parse_get_account_response(get_account_response):
 
         ModificationTime: container mtime, in nanoseconds since the epoch
     """
-    mtime = get_account_response["ModificationTime"]
+    mtime = _ctime_or_mtime(get_account_response)
     account_entries = get_account_response["AccountEntries"]
     if account_entries is None:
         # seems to happen when it's an empty list
@@ -332,7 +342,7 @@ def parse_get_container_response(get_container_response):
         ents.append(ent)
 
     container_meta = _decode_binary(res["Metadata"])
-    container_mtime = res["ModificationTime"]
+    container_mtime = _ctime_or_mtime(res)
     return ents, container_meta, container_mtime
 
 
@@ -356,7 +366,7 @@ def parse_middleware_mkdir_response(mkdir_resp):
 
     Returns (mtime in nanoseconds, inode number, number of writes)
     """
-    return (mkdir_resp["ModificationTime"],
+    return (_ctime_or_mtime(mkdir_resp),
             mkdir_resp["InodeNumber"],
             mkdir_resp["NumWrites"])
 
@@ -384,7 +394,7 @@ def parse_head_response(head_response):
     modified via HTTP.
     """
     return (_decode_binary(head_response["Metadata"]),
-            head_response["ModificationTime"],
+            _ctime_or_mtime(head_response),
             head_response["FileSize"], head_response["IsDir"],
             head_response["InodeNumber"], head_response["NumWrites"])
 
