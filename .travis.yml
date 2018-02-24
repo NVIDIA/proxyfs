@@ -1,0 +1,13 @@
+services:
+    - docker
+
+git:
+    submodules: false
+
+before_install:
+    - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
+    - git submodule update --init --recursive
+    - docker build -t proxyfs test/container
+
+script:
+    - docker run -it -v `pwd`:/gopathroot/src/github.com/swiftstack/ProxyFS proxyfs bash -c "/gopathroot/src/github.com/swiftstack/ProxyFS/test/container/launch.sh"
