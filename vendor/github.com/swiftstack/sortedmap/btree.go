@@ -84,12 +84,12 @@ type onDiskNodeStruct struct {
 	//                                  counted <N-1> number of Key:onDiskReferenceToNodeStruct pairs
 }
 
-type onDiskReferenceKeyStruct struct { // Used as Key for staleOndiskReferences LLRBTree below
+type onDiskReferenceKeyStruct struct { // Used as Key for staleOnDiskReferences LLRBTree below
 	objectNumber uint64
 	objectOffset uint64
 }
 
-type onDiskReferencesContext struct { // Used as context for LLRBTreeCallbacks for staleOndiskReferences LLRBTree below
+type onDiskReferencesContext struct { // Used as context for LLRBTreeCallbacks for staleOnDiskReferences LLRBTree below
 	LLRBTreeCallbacks
 }
 
@@ -1679,6 +1679,7 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			tree.rebalanceHere(parentNode, parentIndexStackPruned)
 		}
 
+		tree.markNodeDirty(rightSiblingNode)
 		tree.AssertNodeEmpty(rightSiblingNode)
 		tree.markNodeEvicted(rightSiblingNode)
 		tree.markNodeDirty(rebalanceNode)
