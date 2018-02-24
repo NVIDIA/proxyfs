@@ -1074,8 +1074,11 @@ func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
 		tree, node, node.objectNumber, node.objectOffset, node.objectLength, node.loaded)
 
 	if !node.loaded {
-		err = nil
-		return
+		// must call tree.BPlusTreeCallbacks.DiscardNode() on all nodes
+		err = tree.loadNode(node)
+		if err != nil {
+			return
+		}
 	}
 
 	if !node.leaf {
