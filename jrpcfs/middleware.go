@@ -132,12 +132,13 @@ func (s *Server) RpcGetAccount(in *GetAccountReq, reply *GetAccountReply) (err e
 		return err
 	}
 
-	entries, mtime, err := mountHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker)
+	entries, mtime, ctime, err := mountHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker)
 	if err != nil {
 		return err
 	}
 	reply.AccountEntries = entries
 	reply.ModificationTime = mtime
+	reply.AttrChangeTime = ctime
 	return nil
 }
 
@@ -169,6 +170,7 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	reply.Metadata = resp.Metadata
 	reply.FileSize = resp.FileSize
 	reply.ModificationTime = resp.ModificationTime
+	reply.AttrChangeTime = resp.AttrChangeTime
 	reply.InodeNumber = uint64(resp.InodeNumber)
 	reply.NumWrites = resp.NumWrites
 
@@ -213,7 +215,7 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	reply.FileSize, reply.ModificationTime, reply.InodeNumber, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, reply.InodeNumber, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		return err
 	}
@@ -264,8 +266,9 @@ func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkd
 		return err
 	}
 
-	mtime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
+	mtime, ctime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
 	reply.ModificationTime = mtime
+	reply.AttrChangeTime = ctime
 	reply.InodeNumber = uint64(inodeNumber)
 	reply.NumWrites = numWrites
 	return
@@ -283,8 +286,9 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 
 	// Call fs to complete the creation of the inode for the file and
 	// the directories.
-	mtime, ino, numWrites, err := mountHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
+	mtime, ctime, ino, numWrites, err := mountHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
 	reply.ModificationTime = mtime
+	reply.AttrChangeTime = ctime
 	reply.InodeNumber = uint64(ino)
 	reply.NumWrites = numWrites
 

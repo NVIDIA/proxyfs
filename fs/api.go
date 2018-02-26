@@ -27,6 +27,7 @@ type ReadRangeIn struct {
 type AccountEntry struct {
 	Basename         string
 	ModificationTime uint64 // nanoseconds since epoch
+	AttrChangeTime   uint64 // nanoseconds since epoch
 }
 
 // Returned by MiddlewareGetContainer
@@ -35,6 +36,7 @@ type ContainerEntry struct {
 	Basename         string
 	FileSize         uint64
 	ModificationTime uint64 // nanoseconds since epoch
+	AttrChangeTime   uint64 // nanoseconds since epoch
 	IsDir            bool
 	NumWrites        uint64
 	InodeNumber      uint64
@@ -45,6 +47,7 @@ type HeadResponse struct {
 	Metadata         []byte
 	FileSize         uint64
 	ModificationTime uint64 // nanoseconds since epoch
+	AttrChangeTime   uint64 // nanoseconds since epoch
 	IsDir            bool
 	InodeNumber      inode.InodeNumber
 	NumWrites        uint64
@@ -176,13 +179,13 @@ type MountHandle interface {
 	LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error)
 	MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
-	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, err error)
+	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
 	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error)
-	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
+	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
-	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
+	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error)
-	MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error)
+	MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePutContainer(containerName string, oldMetadata []byte, newMetadata []byte) (err error)
 	Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error)
 	RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error)
