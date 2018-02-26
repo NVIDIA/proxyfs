@@ -224,7 +224,7 @@ func testSendStats() {
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 32768, 0, 500)
 	time.Sleep(sleepDuration)
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 65536, 600, 700)
-	IncrementOperationsBuckedtedBytesAndBucketedSteps(FileReadplan, 131072, 7)
+	IncrementOperationsBucketedEntriessAndBucketedBytes(FileReadplan, 7, 131072)
 }
 
 func testVerifyStats() {
@@ -265,7 +265,7 @@ func testVerifyStats() {
 		FileReadplanOps + ":1|c",
 		FileReadplanOpsOver64K + ":1|c",
 		FileReadplanBytes + ":131072|c",
-		FileReadplanOpsStepsTo16 + ":1|c",
+		FileReadplanOpsEntriesTo16 + ":1|c",
 	}
 
 	// Check that the stats sent to the TCP/UDP port are what we expect
