@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/cstruct"
 )
 
@@ -804,26 +803,10 @@ func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, root
 	tree.Lock()
 	defer tree.Unlock()
 
-	var (
-		oldRootObjectNumber = tree.root.objectNumber
-		oldRootObjectOffset = tree.root.objectOffset
-		oldRootObjectLength = tree.root.objectLength
-	)
-
 	// First flush (and optionally purge) B+Tree
 	err = tree.flushNode(tree.root, andPurge) // will also mark node clean/used or evicted in LRU
 	if nil != err {
 		return
-	}
-
-	// if the root object changed log that information
-	if oldRootObjectNumber != tree.root.objectNumber ||
-		oldRootObjectOffset != tree.root.objectOffset || oldRootObjectLength != tree.root.objectLength {
-
-		logger.Tracef("Flush(): updating root object for tree %p root node %p: "+
-			"object %016X  offset %d  len %d  end %d",
-			tree, tree.root, tree.root.objectNumber, tree.root.objectOffset, tree.root.objectLength,
-			tree.root.objectOffset+tree.root.objectLength)
 	}
 
 	// return the final values
@@ -988,11 +971,6 @@ func (tree *btreeTreeStruct) Prune() (err error) {
 }
 
 func (tree *btreeTreeStruct) Discard() (err error) {
-
-	logger.Tracef(
-		"Discard(): tree %p root node %p  root object %016X",
-		tree, tree.root, tree.root.objectNumber)
-
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -1069,9 +1047,6 @@ func (context *onDiskReferencesContext) DumpValue(value Value) (valueAsString st
 }
 
 func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
-	logger.Tracef(
-		"discardNode(): tree %p node %p: object %016X  offset %d  len %d  loaded %v",
-		tree, node, node.objectNumber, node.objectOffset, node.objectLength, node.loaded)
 
 	if !node.loaded {
 		// must call tree.BPlusTreeCallbacks.DiscardNode() on all nodes
@@ -1263,30 +1238,26 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 
 func (tree *btreeTreeStruct) AssertNodeEmpty(node *btreeNodeStruct) {
 
-	logger.Tracef(
-		"AssertNodeEmpty(): tree %p node %p: object %016X  offset %d  len %d",
-		tree, node,
-		node.objectNumber, node.objectOffset, node.objectLength)
-
 	if node.nonLeafLeftChild != nil {
-		err := fmt.Errorf("nonLeafLeftChild != nil")
-		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: nonLeafLeftChild %p",
+		err := fmt.Errorf("AssertNodeEmpty(): nonLeafLeftChild != nil: tree %p node %p: nonLeafLeftChild %p",
 			tree, node, node.nonLeafLeftChild)
+		panic(err)
 	}
 	numIndices, err := node.kvLLRB.Len()
 	if err != nil {
-		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node.kvLLRB.Len() returned err",
-			tree, node)
+		err = fmt.Errorf("AssertNodeEmpty(): tree %p node %p: node.kvLLRB.Len() returned err '%s'",
+			tree, node, err)
+		panic(err)
 	}
 	if numIndices != 0 {
-		err := fmt.Errorf("node has children")
-		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node has %d entries (!= 0)",
+		err = fmt.Errorf("AssertNodeEmpty(): tree %p node %p: node has %d entries (should be 0)",
 			tree, node, numIndices)
+		panic(err)
 	}
 	if !node.dirty {
-		err := fmt.Errorf("node is not dirty")
-		logger.PanicfWithError(err, "AssertNodeEmpty(): tree %p node %p: node not marked dirty",
+		err = fmt.Errorf("AssertNodeEmpty(): tree %p node %p: node not marked dirty",
 			tree, node)
+		panic(err)
 	}
 }
 
@@ -1295,11 +1266,6 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		leftSiblingNode  *btreeNodeStruct
 		rightSiblingNode *btreeNodeStruct
 	)
-
-	logger.Tracef(
-		"rebalanceHere(): tree %p rebalanceNode %p: object %016X  offset %d  len %d",
-		tree, rebalanceNode,
-		rebalanceNode.objectNumber, rebalanceNode.objectOffset, rebalanceNode.objectLength)
 
 	if rebalanceNode.root {
 		err = nil
@@ -1742,9 +1708,9 @@ func (tree *btreeTreeStruct) flushNode(node *btreeNodeStruct, andPurge bool) (er
 
 		// if this node is dirty the parent must be as well
 		if node.parentNode != nil && !node.parentNode.dirty {
-			err := fmt.Errorf("parentNode is not marked dirty")
-			logger.PanicfWithError(err, "flushNode(): tree %p node %p: parent node %p not marked dirty",
+			err = fmt.Errorf("flushNode(): tree %p node %p: parent node %p not marked dirty",
 				tree, node, node.parentNode)
+			panic(err)
 		}
 
 	}
@@ -2008,10 +1974,6 @@ func (tree *btreeTreeStruct) markNodeDirty(node *btreeNodeStruct) {
 		}
 
 		// Zero-out on-disk reference so that the above is only done once for this now dirty node
-		logger.Tracef(
-			"markNodeDirty(): discarding object for tree %p node %p: object %016X offset %d len %d",
-			tree, node,
-			node.objectNumber, node.objectOffset, node.objectLength)
 		node.objectNumber = 0
 		node.objectOffset = 0
 		node.objectLength = 0
@@ -2453,9 +2415,6 @@ func (tree *btreeTreeStruct) loadNode(node *btreeNodeStruct) (err error) {
 		onDiskReferenceToNode onDiskReferenceToNodeStruct
 	)
 
-	logger.Tracef("loadNode(): loading node for tree %p node %p: object %016X  offset %d  len %d",
-		tree, node, node.objectNumber, node.objectOffset, node.objectLength)
-
 	nodeByteSlice, err := tree.BPlusTreeCallbacks.GetNode(node.objectNumber, node.objectOffset, node.objectLength)
 	if nil != err {
 		return
@@ -2775,10 +2734,6 @@ func (tree *btreeTreeStruct) postNode(node *btreeNodeStruct) (err error) {
 		return
 	}
 
-	logger.Tracef(
-		"postNode(): updating object for tree %p node %p: object %016X  offset %d  len %d  end %d",
-		tree, node, objectNumber, objectOffset, len(onDiskNodeBuf),
-		objectOffset+uint64(len(onDiskNodeBuf)))
 	node.objectNumber = objectNumber
 	node.objectOffset = objectOffset
 	node.objectLength = uint64(len(onDiskNodeBuf))
