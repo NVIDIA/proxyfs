@@ -31,7 +31,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "d1", d1InodeNumber)
+	err = vh.Link(RootDirInodeNumber, "d1", d1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -40,7 +40,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "d2", d2InodeNumber)
+	err = vh.Link(RootDirInodeNumber, "d2", d2InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -53,7 +53,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d1InodeNumber, "file1a", file1aInodeNumber)
+	err = vh.Link(d1InodeNumber, "file1a", file1aInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -66,7 +66,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d1InodeNumber, "file1b", file1bInodeNumber)
+	err = vh.Link(d1InodeNumber, "file1b", file1bInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -79,7 +79,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d2InodeNumber, "file2a", file2aInodeNumber)
+	err = vh.Link(d2InodeNumber, "file2a", file2aInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -92,7 +92,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d2InodeNumber, "file2b", file2bInodeNumber)
+	err = vh.Link(d2InodeNumber, "file2b", file2bInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -106,7 +106,7 @@ func TestCoalesce(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d2InodeNumber, "file2c", file2cInodeNumber)
+	err = vh.Link(d2InodeNumber, "file2c", file2cInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -182,7 +182,7 @@ func TestCoalesceDir(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-dir-d1", d1InodeNumber)
+	err = vh.Link(RootDirInodeNumber, "coalesce-dir-d1", d1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -195,7 +195,7 @@ func TestCoalesceDir(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d1InodeNumber, "file", fileInodeNumber)
+	err = vh.Link(d1InodeNumber, "file", fileInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -229,7 +229,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-multilink-dir", dirInodeNumber)
+	err = vh.Link(RootDirInodeNumber, "coalesce-multilink-dir", dirInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -242,11 +242,11 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber)
+	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "also-file1", file1InodeNumber)
+	err = vh.Link(dirInodeNumber, "also-file1", file1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -259,7 +259,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber)
+	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -290,7 +290,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-dupetest-dir", dirInodeNumber)
+	err = vh.Link(RootDirInodeNumber, "coalesce-dupetest-dir", dirInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -303,7 +303,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber)
+	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
@@ -316,7 +316,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber)
+	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}

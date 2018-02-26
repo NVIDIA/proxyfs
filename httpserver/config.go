@@ -10,6 +10,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -27,42 +28,21 @@ const (
 )
 
 type fsckJobStruct struct {
-	id        uint64
-	volume    *volumeStruct
-	stopChan  chan bool
-	errChan   chan error
-	state     fsckJobState
-	startTime time.Time
-	endTime   time.Time
-	err       error
+	id                   uint64
+	volume               *volumeStruct
+	validateVolumeHandle fs.ValidateVolumeHandle
+	state                fsckJobState
+	startTime            time.Time
+	endTime              time.Time
 }
 
-// FSCKGenericJobStruct describes all the possible fields returned in JSON-encoded fsck GET body
-type FSCKGenericJobStruct struct {
-	StartTime string `json:"start time"`
-	HaltTime  string `json:"halt time"`
-	DoneTime  string `json:"done time"`
-	Error     string `json:"errors"`
-}
-
-type fsckRunningJobStruct struct {
-	StartTime string `json:"start time"`
-}
-
-type fsckHaltedJobStruct struct {
-	StartTime string `json:"start time"`
-	HaltTime  string `json:"halt time"`
-}
-
-type fsckCompletedJobNoErrorStruct struct {
-	StartTime string `json:"start time"`
-	DoneTime  string `json:"done time"`
-}
-
-type fsckCompletedJobWithErrorStruct struct {
-	StartTime string `json:"start time"`
-	DoneTime  string `json:"done time"`
-	Error     string `json:"errors"`
+// FSCKJobStatusJSONPackedStruct describes all the possible fields returned in JSON-encoded fsck GET body
+type FSCKJobStatusJSONPackedStruct struct {
+	StartTime string   `json:"start time"`
+	HaltTime  string   `json:"halt time"`
+	DoneTime  string   `json:"done time"`
+	ErrorList []string `json:"error list"`
+	InfoList  []string `json:"info list"`
 }
 
 type volumeStruct struct {
@@ -421,14 +401,7 @@ func stopRunningFSCKs() (err error) {
 		}
 		volume.Lock()
 		if nil != volume.fsckActiveJob {
-			volume.fsckActiveJob.stopChan <- true
-			volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan
-			select {
-			case _, _ = <-volume.fsckActiveJob.stopChan:
-				// Swallow our stopChan write from above if fs.ValidateVolume() finished before reading it
-			default:
-				// fs.ValidateVolume() must have read and honored our stopChan write
-			}
+			volume.fsckActiveJob.validateVolumeHandle.Cancel()
 			volume.fsckActiveJob.state = fsckJobHalted
 			volume.fsckActiveJob.endTime = time.Now()
 			volume.fsckActiveJob = nil
