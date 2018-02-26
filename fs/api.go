@@ -146,6 +146,14 @@ const (
 
 type StatVFS map[StatVFSKey]uint64 // key is one of StatVFSKey consts
 
+type ValidateVolumeHandle interface {
+	Active() (active bool)
+	Wait()
+	Cancel()
+	Error() (err []string)
+	Info() (info []string)
+}
+
 // Mount handle interface
 
 func Mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
@@ -199,6 +207,28 @@ type MountHandle interface {
 	Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error)
 }
 
+// ValidateVolume performs an "FSCK" on the specified volumeName.
+func ValidateVolume(volumeName string) (validateVolumeHandle ValidateVolumeHandle) {
+	var (
+		vVS *validateVolumeStruct
+	)
+
+	vVS = &validateVolumeStruct{}
+
+	vVS.volumeName = volumeName
+	vVS.active = true
+	vVS.stopFlag = false
+	vVS.err = make([]string, 0)
+	vVS.info = make([]string, 0)
+
+	vVS.globalWaitGroup.Add(1)
+	go vVS.validateVolume()
+
+	validateVolumeHandle = vVS
+
+	return
+}
+
 // Utility functions
 
 func ValidateBaseName(baseName string) (err error) {
@@ -209,11 +239,6 @@ func ValidateBaseName(baseName string) (err error) {
 func ValidateFullPath(fullPath string) (err error) {
 	err = validateFullPath(fullPath)
 	return
-}
-
-func ValidateVolume(volumeName string, stopChan chan bool, errChan chan error) {
-	stats.IncrementOperations(&stats.FsVolumeValidateOps)
-	errChan <- validateVolume(volumeName, stopChan)
 }
 
 func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {

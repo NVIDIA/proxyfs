@@ -551,31 +551,32 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err                       error
-		pathSplit                 []string
-		numPathParts              int
-		formatResponseAsJSON      bool
-		formatResponseCompactly   bool
-		fsckCompletedJobNoError   fsckCompletedJobNoErrorStruct
-		fsckCompletedJobWithError fsckCompletedJobWithErrorStruct
-		fsckHaltedJob             fsckHaltedJobStruct
-		fsckInactive              bool
-		fsckJob                   *fsckJobStruct
-		fsckJobAsValue            sortedmap.Value
-		fsckJobID                 uint64
-		fsckJobIDAsKey            sortedmap.Key
-		fsckJobsIDListJSON        bytes.Buffer
-		fsckJobsIDListJSONPacked  []byte
-		fsckJobStatusJSON         bytes.Buffer
-		fsckJobStatusJSONPacked   []byte
-		fsckJobsCount             int
-		fsckJobsIDList            []uint64
-		fsckJobsIDListIndex       int
-		fsckJobsIndex             int
-		fsckRunningJob            fsckRunningJobStruct
-		ok                        bool
-		volume                    *volumeStruct
-		volumeName                string
+		err                      error
+		pathSplit                []string
+		numPathParts             int
+		formatResponseAsJSON     bool
+		formatResponseCompactly  bool
+		fsckInactive             bool
+		fsckJob                  *fsckJobStruct
+		fsckJobAsValue           sortedmap.Value
+		fsckJobError             string
+		fsckJobErrorList         []string
+		fsckJobID                uint64
+		fsckJobIDAsKey           sortedmap.Key
+		fsckJobInfo              string
+		fsckJobInfoList          []string
+		fsckJobsIDListJSON       bytes.Buffer
+		fsckJobsIDListJSONPacked []byte
+		fsckJobStatusJSONBuffer  bytes.Buffer
+		fsckJobStatusJSONPacked  []byte
+		fsckJobStatusJSONStruct  *FSCKJobStatusJSONPackedStruct
+		fsckJobsCount            int
+		fsckJobsIDList           []uint64
+		fsckJobsIDListIndex      int
+		fsckJobsIndex            int
+		ok                       bool
+		volume                   *volumeStruct
+		volumeName               string
 	)
 
 	volume = requestState.volume
@@ -612,8 +613,12 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 			fsckInactive = true
 		} else {
 			// We know fsckJobRunning == volume.fsckActiveJob.state
-			select {
-			case volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan:
+
+			if volume.fsckActiveJob.validateVolumeHandle.Active() {
+				// FSCK must still be running
+
+				fsckInactive = false
+			} else {
 				// FSCK finished at some point... make it look like it just finished now
 
 				volume.fsckActiveJob.state = fsckJobCompleted
@@ -621,10 +626,6 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 				volume.fsckActiveJob = nil
 
 				fsckInactive = true
-			default:
-				// FSCK must still be running
-
-				fsckInactive = false
 			}
 		}
 
@@ -700,15 +701,12 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 	fsckJob = fsckJobAsValue.(*fsckJobStruct)
 
 	if fsckJobRunning == fsckJob.state {
-		select {
-		case fsckJob.err = <-fsckJob.errChan:
+		if !fsckJob.validateVolumeHandle.Active() {
 			// FSCK finished at some point... make it look like it just finished now
 
 			fsckJob.state = fsckJobCompleted
 			fsckJob.endTime = time.Now()
 			volume.fsckActiveJob = nil
-		default:
-			// FSCK must still be running
 		}
 	}
 
@@ -716,26 +714,22 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
+		fsckJobStatusJSONStruct = &FSCKJobStatusJSONPackedStruct{
+			StartTime: fsckJob.startTime.Format(time.RFC3339),
+			ErrorList: fsckJob.validateVolumeHandle.Error(),
+			InfoList:  fsckJob.validateVolumeHandle.Info(),
+		}
+
 		switch fsckJob.state {
 		case fsckJobRunning:
-			fsckRunningJob.StartTime = fsckJob.startTime.String()
-			fsckJobStatusJSONPacked, err = json.Marshal(fsckRunningJob)
+			// Nothing to add here
 		case fsckJobHalted:
-			fsckHaltedJob.StartTime = fsckJob.startTime.String()
-			fsckHaltedJob.HaltTime = fsckJob.endTime.String()
-			fsckJobStatusJSONPacked, err = json.Marshal(fsckHaltedJob)
+			fsckJobStatusJSONStruct.HaltTime = fsckJob.endTime.Format(time.RFC3339)
 		case fsckJobCompleted:
-			if nil == fsckJob.err {
-				fsckCompletedJobNoError.StartTime = fsckJob.startTime.String()
-				fsckCompletedJobNoError.DoneTime = fsckJob.endTime.String()
-				fsckJobStatusJSONPacked, err = json.Marshal(fsckCompletedJobNoError)
-			} else {
-				fsckCompletedJobWithError.StartTime = fsckJob.startTime.String()
-				fsckCompletedJobWithError.DoneTime = fsckJob.endTime.String()
-				fsckCompletedJobWithError.Error = fsckJob.err.Error()
-				fsckJobStatusJSONPacked, err = json.Marshal(fsckCompletedJobWithError)
-			}
+			fsckJobStatusJSONStruct.DoneTime = fsckJob.endTime.Format(time.RFC3339)
 		}
+
+		fsckJobStatusJSONPacked, err = json.Marshal(fsckJobStatusJSONStruct)
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
@@ -743,8 +737,8 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		if formatResponseCompactly {
 			_, _ = responseWriter.Write(fsckJobStatusJSONPacked)
 		} else {
-			json.Indent(&fsckJobStatusJSON, fsckJobStatusJSONPacked, "", "\t")
-			_, _ = responseWriter.Write(fsckJobStatusJSON.Bytes())
+			json.Indent(&fsckJobStatusJSONBuffer, fsckJobStatusJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(fsckJobStatusJSONBuffer.Bytes())
 			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 		}
 	} else {
@@ -757,63 +751,72 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Job %v</title>\n", volumeName, fsckJob.id)))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
 		switch fsckJob.state {
 		case fsckJobRunning:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Running</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+		case fsckJobHalted:
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halted</td>\n"))
+		case fsckJobCompleted:
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Completed</td>\n"))
+		}
+		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.Format(time.RFC3339))))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+		switch fsckJob.state {
+		case fsckJobRunning:
+			// Nothing to add here
+		case fsckJobHalted:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.String())))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halt Time</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
+		case fsckJobCompleted:
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Done Time</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+		}
+		fsckJobErrorList = fsckJob.validateVolumeHandle.Error()
+		if 0 == len(fsckJobErrorList) {
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>No Errors</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+		} else {
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors:</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+			for _, fsckJobError = range fsckJobErrorList {
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobError))))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+			}
+		}
+		fsckJobInfoList = fsckJob.validateVolumeHandle.Info()
+		if 0 < len(fsckJobInfoList) {
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Info:</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+			for _, fsckJobInfo = range fsckJobInfoList {
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobInfo))))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+			}
+		}
+		_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
+		if fsckJobRunning == fsckJob.state {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job/%v\">\n", volumeName, fsckJob.id)))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Stop\">\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
-		case fsckJobHalted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halted</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.String())))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halt Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.String())))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
-		case fsckJobCompleted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Completed</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.String())))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Done Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.String())))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			if nil == fsckJob.err {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>None</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			} else {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJob.err.Error()))))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
 		}
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
@@ -1047,20 +1050,20 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	if 3 == numPathParts {
 		if nil != volume.fsckActiveJob {
 			// We know fsckJobRunning == volume.fsckActiveJob.state
-			select {
-			case volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan:
-				// FSCK finished at some point... make it look like it just finished now
 
-				volume.fsckActiveJob.state = fsckJobCompleted
-				volume.fsckActiveJob.endTime = time.Now()
-				volume.fsckActiveJob = nil
-			default:
+			if volume.fsckActiveJob.validateVolumeHandle.Active() {
 				// FSCK must still be running
 
 				volume.Unlock()
 				responseWriter.WriteHeader(http.StatusPreconditionFailed)
 				return
 			}
+
+			// FSCK finished at some point... make it look like it just finished now
+
+			volume.fsckActiveJob.state = fsckJobCompleted
+			volume.fsckActiveJob.endTime = time.Now()
+			volume.fsckActiveJob = nil
 		}
 
 		for {
@@ -1085,8 +1088,6 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 		fsckJob = &fsckJobStruct{
 			volume:    volume,
-			stopChan:  make(chan bool, 1),
-			errChan:   make(chan error, 1),
 			state:     fsckJobRunning,
 			startTime: time.Now(),
 		}
@@ -1107,7 +1108,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 		volume.fsckActiveJob = fsckJob
 
-		go fs.ValidateVolume(volumeName, fsckJob.stopChan, fsckJob.errChan)
+		fsckJob.validateVolumeHandle = fs.ValidateVolume(volumeName)
 
 		volume.Unlock()
 
@@ -1143,14 +1144,8 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	volume.fsckActiveJob.stopChan <- true
-	volume.fsckActiveJob.err = <-volume.fsckActiveJob.errChan
-	select {
-	case _, _ = <-volume.fsckActiveJob.stopChan:
-		// Swallow our stopChan write from above if fs.ValidateVolume() finished before reading it
-	default:
-		// fs.ValidateVolume() must have read and honored our stopChan write
-	}
+	volume.fsckActiveJob.validateVolumeHandle.Cancel()
+
 	volume.fsckActiveJob.state = fsckJobHalted
 	volume.fsckActiveJob.endTime = time.Now()
 	volume.fsckActiveJob = nil

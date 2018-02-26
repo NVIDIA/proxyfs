@@ -3,10 +3,11 @@ package headhunter
 import (
 	"fmt"
 
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
-	"github.com/swiftstack/sortedmap"
 )
 
 func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
