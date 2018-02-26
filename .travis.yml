@@ -4,6 +4,13 @@ services:
 git:
     submodules: false
 
+notifications:
+  slack:
+    secure: k3S8rdbbuHNUhBIISyf/vl9MJJ5PfT6U+K75f08rsU0s1y7Uz4AYVyDMfRcDSyA2+5ywQhbASOxe0lrnUVcu6ZRNTb1jqKu5HYv+JbPnaAmyQ7M9TDRf6jhWbqo2KC9zw+e2kRsaAH8EGj01TlgPz4UAHo2ovJIGnfV33sPCYlKOaxryp5TO0nQwloj6qQQN9aaPa11w6zF6Y4W4NuImZoSZpjZilZXHkhffV3wqVyD2/U1i0/RiBcXoZTL5aQBzuFzGcivzhLM22F7E5ge/FbMvj0dCSO70Odjl9idyCZl59JFSjSTTwcIFOBC8y2obsivysOeoFVpdR0C73kv4DDKzPjBDs6m40T8ydb9B5h8+mD7P8uL/TzPis77DHvrb3oCWVvPH8Bn6/5ONqqz1xDthnxksXQkrreOSGMEhnVzrUpkWYOzR0lmBLIaLosGPmHO1zBvsi9YzaKerk/4LBt8JaR9KDLhTm1ph9k90SxpqXqPBQ7/x1MP6m2eTZqVLxcZ7fS9F9VmADZ0V5Jej/ujCYi5OFq/6z9WNV3ibcSyC9WLI7Z8C4GdtEKpjoTjoMF9NF6lQy+Zox/3k5d7zKGZ3UNgObaKPsJ5Ky+skQBaEe7I8Wlunj+GLNaLuv5SXYg9k50gnrAVzZ50gQYxnmyGN9LanaYmRZq/8l9l45lU=
+    on_success: change
+    on_failure: always
+    on_pull_requests: true
+
 before_install:
     - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
     - git submodule update --init --recursive
