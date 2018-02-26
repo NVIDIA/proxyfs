@@ -217,7 +217,7 @@ func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64,
 		return
 	}
 
-	stats.IncrementOperationsBuckedtedBytesAndBucketedSteps(stats.FileReadplan, readPlanBytes, uint64(len(readPlan)))
+	stats.IncrementOperationsBucketedEntriessAndBucketedBytes(stats.FileReadplan, uint64(len(readPlan)), readPlanBytes)
 	return
 }
 

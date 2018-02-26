@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-func (ms MultipleStat) findStatStrings(numBytes uint64, steps uint64) (ops *string, bytes *string, entries *string, bbytes *string, app *string, overw *string, bsteps *string) {
+func (ms MultipleStat) findStatStrings(numBytes uint64, numEntries uint64) (ops *string, bytes *string, entries *string, bbytes *string, app *string, overw *string) {
 	switch ms {
 	case DirRead:
 		// directory read uses operations, entries and bytes stats
@@ -16,8 +16,6 @@ func (ms MultipleStat) findStatStrings(numBytes uint64, steps uint64) (ops *stri
 		// file read uses operations, op bucketed bytes, and bytes stats
 		ops = &FileReadOps
 		bytes = &FileReadBytes
-		// XXX TODO: Factor out the bucket-to-stat-string determination into a
-		//           helper function to make this code a little neater
 		if numBytes <= 4096 {
 			bbytes = &FileReadOps4K
 		} else if numBytes <= 8192 {
@@ -48,16 +46,16 @@ func (ms MultipleStat) findStatStrings(numBytes uint64, steps uint64) (ops *stri
 		} else {
 			bbytes = &FileReadplanOpsOver64K
 		}
-		if steps == 1 {
-			bsteps = &FileReadplanOpsSteps1
-		} else if steps <= 4 {
-			bsteps = &FileReadplanOpsStepsTo4
-		} else if steps <= 16 {
-			bsteps = &FileReadplanOpsStepsTo16
-		} else if steps <= 64 {
-			bsteps = &FileReadplanOpsStepsTo64
+		if numEntries == 1 {
+			entries = &FileReadplanOpsEntries1
+		} else if numEntries <= 4 {
+			entries = &FileReadplanOpsEntriesTo4
+		} else if numEntries <= 16 {
+			entries = &FileReadplanOpsEntriesTo16
+		} else if numEntries <= 64 {
+			entries = &FileReadplanOpsEntriesTo64
 		} else {
-			bsteps = &FileReadplanOpsStepsOver64
+			entries = &FileReadplanOpsEntriesOver64
 		}
 	case FileWrite:
 		// file write uses operations, op bucketed bytes, bytes, appended and overwritten stats
@@ -222,25 +220,6 @@ func (ms MultipleStat) findStatStrings(numBytes uint64, steps uint64) (ops *stri
 	return
 }
 
-// computeBucketSuffix is used to compute the affected bucket stat to increment.
-func computeBucketSuffix(bytes uint64) (suffix string) {
-	if bytes <= 4096 {
-		suffix = ".size-up-to-4KB"
-	} else if bytes <= 8192 {
-		suffix = ".size-4KB-to-8KB"
-	} else if bytes <= 16384 {
-		suffix = ".size-8KB-to-16KB"
-	} else if bytes <= 32768 {
-		suffix = ".size-16KB-to-32KB"
-	} else if bytes <= 65536 {
-		suffix = ".size-32KB-to-64KB"
-	} else {
-		suffix = ".size-over-64KB"
-	}
-
-	return
-}
-
 func dump() (statMap map[string]uint64) {
 	globals.Lock()
 	numStats := len(globals.statFullMap)
@@ -282,35 +261,35 @@ func incrementSomething(statName *string, incBy uint64) {
 }
 
 func incrementOperationsAndBytes(stat MultipleStat, bytes uint64) {
-	opsStat, bytesStat, _, _, _, _, _ := stat.findStatStrings(bytes, 1)
+	opsStat, bytesStat, _, _, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
 }
 
 func incrementOperationsEntriesAndBytes(stat MultipleStat, entries uint64, bytes uint64) {
-	opsStat, bytesStat, entriesStat, _, _, _, _ := stat.findStatStrings(bytes, 1)
+	opsStat, bytesStat, bentries, _, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
-	incrementSomething(entriesStat, entries)
+	incrementSomething(bentries, entries)
 }
 
 func incrementOperationsAndBucketedBytes(stat MultipleStat, bytes uint64) {
-	opsStat, bytesStat, _, bbytesStat, _, _, _ := stat.findStatStrings(bytes, 1)
+	opsStat, bytesStat, _, bbytesStat, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
 	incrementSomething(bbytesStat, 1)
 }
 
-func incrementOperationsBuckedtedBytesAndBucketedSteps(stat MultipleStat, bytes uint64, steps uint64) {
-	opsStat, bytesStat, _, bbytesStat, _, _, bstepsStat := stat.findStatStrings(bytes, steps)
+func incrementOperationsBucketedEntriessAndBucketedBytes(stat MultipleStat, entries uint64, bytes uint64) {
+	opsStat, bytesStat, bentries, bbytesStat, _, _ := stat.findStatStrings(bytes, entries)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
 	incrementSomething(bbytesStat, 1)
-	incrementSomething(bstepsStat, 1)
+	incrementSomething(bentries, 1)
 }
 
 func incrementOperationsBucketedBytesAndAppendedOverwritten(stat MultipleStat, bytes uint64, appended uint64, overwritten uint64) {
-	opsStat, bytesStat, _, bbytesStat, appStat, overwStat, _ := stat.findStatStrings(bytes, 1)
+	opsStat, bytesStat, _, bbytesStat, appStat, overwStat := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
 	incrementSomething(bbytesStat, 1)
