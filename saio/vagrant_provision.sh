@@ -295,14 +295,13 @@ echo "X11Forwarding yes" >> /etc/sysconfig/sshd
 systemctl restart sshd
 usermod -aG wireshark vagrant
 
-# Install firefox
+# Install opera
 
-yum -y install gtk3 libXt
-cd /tmp
-wget -q http://ftp.mozilla.org/pub/firefox/releases/55.0/linux-x86_64/en-US/firefox-55.0.tar.bz2
-tar -C /usr/local -xvjf firefox-55.0.tar.bz2
-rm firefox-55.0.tar.bz2
-ln -s /usr/local/firefox/firefox /usr/bin/firefox
+yum -y install http://download3.operacdn.com/pub/opera/desktop/51.0.2830.40/linux/opera-stable_51.0.2830.40_amd64.rpm
+yum -y install gnu-free-fonts-common
+yum -y install gnu-free-mono-fonts
+yum -y install gnu-free-sans-fonts
+yum -y install gnu-free-serif-fonts
 
 # Install benchmark support tools
 
