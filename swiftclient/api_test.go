@@ -1199,9 +1199,13 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 			t.Errorf("%s: should have succeeded after %d attempts, log entry shows: %s",
 				opname, successOn, logEntry)
 		}
-		// allow upto 20 msec slop for request to complete
-		if sec < minSec || sec >= maxSec {
+
+		if sec < minSec {
 			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
+		}
+		if sec >= maxSec {
+			t.Logf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
 				opname, sec, minSec, maxSec)
 		}
 	}
@@ -1293,9 +1297,13 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 			t.Errorf("%s: should have failed after %d attempts, log entry shows: %s",
 				opname, failOn, logEntry)
 		}
-		// allow upto 20 msec slop for request to complete
-		if sec < minSec || sec >= maxSec {
+
+		if sec < minSec {
 			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
+		}
+		if sec >= maxSec {
+			t.Logf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
 				opname, sec, minSec, maxSec)
 		}
 	}
