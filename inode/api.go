@@ -7,6 +7,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -149,15 +151,16 @@ type VolumeHandle interface {
 	GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error)
 	PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error)
 	DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error)
-	GetFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
+	FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error)
+	FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
 	Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error)
 	Validate(inodeNumber InodeNumber) (err error)
 
 	// Directory Inode specific methods, implemented in dir.go
 
 	CreateDir(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (dirInodeNumber InodeNumber, err error)
-	Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber) (err error)
-	Unlink(dirInodeNumber InodeNumber, basename string) (err error)
+	Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber, insertOnly bool) (err error)
+	Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (err error)
 	Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error)
 	Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error)
 	NumDirEntries(dirInodeNumber InodeNumber) (numEntries uint64, err error)

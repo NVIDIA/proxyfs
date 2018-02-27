@@ -877,7 +877,7 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 	for i := 0; i < len(elements); i++ {
 		dirInode := elementDirInodes[i]
 		fileInode := elementInodes[i]
-		err = removeDirEntryInMemory(dirInode, fileInode, elements[i].ElementName)
+		err = unlinkInMemory(dirInode, fileInode, elements[i].ElementName)
 		if err != nil {
 			return
 		}
@@ -911,14 +911,14 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 			return
 		}
 
-		err = removeDirEntryInMemory(containingDirInode, obstacleInode, combinationName)
+		err = unlinkInMemory(containingDirInode, obstacleInode, combinationName)
 		if err != nil {
 			return
 		}
 	}
 
 	// Link the new entry in
-	err = addDirEntryInMemory(containingDirInode, combinationInode, combinationName)
+	err = linkInMemory(containingDirInode, combinationInode, combinationName)
 	if err != nil {
 		return
 	}
