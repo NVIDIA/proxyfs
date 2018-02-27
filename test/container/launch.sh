@@ -3,6 +3,8 @@
 set -e
 set -x
 
+fgjlsdjfhlsjdflhgj
+
 # Yum install. Trying to do as much as possible at once.
 # Here's an explanation of why we need to install each package:
 ## Install Golang
