@@ -4,7 +4,6 @@ set -e
 set -x
 
 fgjlsdjfhlsjdflhgj
-dfhgjkdfa
 
 # Yum install. Trying to do as much as possible at once.
 # Here's an explanation of why we need to install each package:
