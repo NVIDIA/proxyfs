@@ -207,18 +207,18 @@ const DbgTesting string = "debug_test"
 
 var packageDebugSettings = map[string][]string{
 	"ldlm": []string{
-	//DbgInternal,
-	//DbgTesting,
+		//DbgInternal,
+		//DbgTesting,
 	},
 	"fs": []string{
-	//DbgInternal,
+		//DbgInternal,
 	},
 	"jrpcfs": []string{
-	//DbgInternal,
-	//DbgTesting,
+		//DbgInternal,
+		//DbgTesting,
 	},
 	"inode": []string{
-	//DbgInodeInternal,
+		//DbgInodeInternal,
 	},
 }
 
