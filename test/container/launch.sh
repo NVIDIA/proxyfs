@@ -72,13 +72,26 @@ export PATH=$PATH:$GOPATH/bin
 echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
+
+# Ideally, these 3 vars should be populated with info from the system.
+# For now, it's just hardcoded.
+OS_DISTRO=centos
+OS_DISTRO_VERSION=7.4
+SAMBA_VERSION=4.6.12
+
+SAMBA_DIR=prebuilt-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
+
 cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
-git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-centos
-ln -s samba4-6-12-centos samba
-cd samba
-./configure
-make clean
-make GEN_NDR_TABLES
+if [[ -d "${SAMBA_DIR}" ]]; then
+    ln -s $SAMBA_DIR samba
+else
+    git clone -b samba-$SAMBA_VERSION --single-branch --depth 1 https://github.com/samba-team/samba.git $SAMBA_DIR
+    ln -s $SAMBA_DIR samba
+    cd samba
+    ./configure
+    make clean
+    make GEN_NDR_TABLES
+fi
 export SAMBA_SOURCE=$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba
 
 # Build ProxyFS and run tests
