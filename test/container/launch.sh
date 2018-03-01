@@ -79,7 +79,7 @@ OS_DISTRO=centos
 OS_DISTRO_VERSION=7.4
 SAMBA_VERSION=4.6.12
 
-SAMBA_DIR=prebuilt-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
+SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
 
 cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
 if [[ -d "${SAMBA_DIR}" ]]; then
