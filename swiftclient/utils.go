@@ -731,3 +731,57 @@ func readHTTPChunkIntoBuf(tcpConn *net.TCPConn, buf []byte) (chunkLen uint64, er
 
 	return
 }
+
+// mergeHeadersAndList performs a logical merge of headers and lists among successive Account or Container GETs.
+//
+// Content-Length header values are summed
+// Other headers that are single valued and don't change don't change the header value
+// Multi-valued headers or headers that change value are appended
+func mergeHeadersAndList(masterHeaders map[string][]string, masterList *[]string, toAddHeaders map[string][]string, toAddList *[]string) {
+	var (
+		addedContentLength             uint64
+		err                            error
+		ok                             bool
+		prevContentLength              uint64
+		prevContentLengthAsStringSlice []string
+		prevValues                     []string
+	)
+
+	for key, values := range toAddHeaders {
+		if "Content-Length" == key {
+			prevContentLengthAsStringSlice, ok = masterHeaders["Content-Length"]
+			if !ok {
+				prevContentLengthAsStringSlice = []string{"0"}
+			}
+			if 1 != len(prevContentLengthAsStringSlice) {
+				err = fmt.Errorf("mergeHeadersAndList() passed masterHeaders with unexpected Content-Length header: %v", prevContentLengthAsStringSlice)
+				panic(err)
+			}
+			prevContentLength, err = strconv.ParseUint(prevContentLengthAsStringSlice[0], 10, 64)
+			if nil != err {
+				err = fmt.Errorf("mergeHeadersAndList() passed masterHeaders with unexpected Content-Length header: %v", prevContentLengthAsStringSlice)
+				panic(err)
+			}
+			if 1 != len(values) {
+				err = fmt.Errorf("mergeHeadersAndList() passed toAddHeaders with unexpected Content-Length header: %v", values)
+			}
+			addedContentLength, err = strconv.ParseUint(values[0], 10, 64)
+			if nil != err {
+				err = fmt.Errorf("mergeHeadersAndList() passed toAddHeaders with unexpected Content-Length header: %v", values)
+				panic(err)
+			}
+			masterHeaders["Content-Length"] = []string{strconv.FormatUint(prevContentLength+addedContentLength, 10)}
+		} else {
+			prevValues, ok = masterHeaders[key]
+			if ok {
+				if (1 != len(prevValues)) || (1 != len(values)) || (prevValues[0] != values[0]) {
+					masterHeaders[key] = append(prevValues, values...)
+				}
+			} else {
+				masterHeaders[key] = values
+			}
+		}
+	}
+
+	*masterList = append(*masterList, *toAddList...)
+}

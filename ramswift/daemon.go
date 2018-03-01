@@ -76,6 +76,8 @@ type globalsStruct struct {
 	maxAccountNameLength            uint64
 	maxContainerNameLength          uint64
 	maxObjectNameLength             uint64
+	accountListingLimit             uint64
+	containerListingLimit           uint64
 }
 
 var globals globalsStruct
@@ -583,7 +585,9 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		_, _ = responseWriter.Write(utils.StringToByteSlice("\"swift\": {"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("\"max_account_name_length\": " + strconv.Itoa(int(globals.maxAccountNameLength)) + ","))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("\"max_container_name_length\": " + strconv.Itoa(int(globals.maxContainerNameLength)) + ","))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("\"max_object_name_length\": " + strconv.Itoa(int(globals.maxObjectNameLength))))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("\"max_object_name_length\": " + strconv.Itoa(int(globals.maxObjectNameLength)) + ","))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("\"account_listing_limit\": " + strconv.Itoa(int(globals.accountListingLimit)) + ","))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("\"container_listing_limit\": " + strconv.Itoa(int(globals.containerListingLimit))))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("}"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("}"))
 	} else {
@@ -615,14 +619,35 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 						if 0 == numContainers {
 							responseWriter.WriteHeader(http.StatusNoContent)
 						} else {
-							for containerIndex := 0; containerIndex < numContainers; containerIndex++ {
-								swiftContainerNameAsKey, _, _, err := swiftAccount.swiftContainerTree.GetByIndex(containerIndex)
-								if nil != err {
-									panic(err)
+							marker := ""
+							markerSlice, ok := request.URL.Query()["marker"]
+							if ok && (0 < len(markerSlice)) {
+								marker = markerSlice[0]
+							}
+							containerIndex, found, err := swiftAccount.swiftContainerTree.BisectRight(marker)
+							if nil != err {
+								panic(err)
+							}
+							if found {
+								containerIndex++
+							}
+							if containerIndex < numContainers {
+								containerIndexLimit := numContainers
+								if (containerIndexLimit - containerIndex) > int(globals.accountListingLimit) {
+									containerIndexLimit = containerIndex + int(globals.accountListingLimit)
 								}
-								swiftContainerName := swiftContainerNameAsKey.(string)
-								_, _ = responseWriter.Write(utils.StringToByteSlice(swiftContainerName))
-								_, _ = responseWriter.Write([]byte{'\n'})
+								for containerIndex < containerIndexLimit {
+									swiftContainerNameAsKey, _, _, err := swiftAccount.swiftContainerTree.GetByIndex(containerIndex)
+									if nil != err {
+										panic(err)
+									}
+									swiftContainerName := swiftContainerNameAsKey.(string)
+									_, _ = responseWriter.Write(utils.StringToByteSlice(swiftContainerName))
+									_, _ = responseWriter.Write([]byte{'\n'})
+									containerIndex++
+								}
+							} else {
+								responseWriter.WriteHeader(http.StatusNoContent)
 							}
 						}
 						swiftAccount.Unlock()
@@ -654,14 +679,35 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 								if 0 == numObjects {
 									responseWriter.WriteHeader(http.StatusNoContent)
 								} else {
-									for objectIndex := 0; objectIndex < numObjects; objectIndex++ {
-										swiftObjectNameAsKey, _, _, err := swiftContainer.swiftObjectTree.GetByIndex(objectIndex)
-										if nil != err {
-											panic(err)
+									marker := ""
+									markerSlice, ok := request.URL.Query()["marker"]
+									if ok && (0 < len(markerSlice)) {
+										marker = markerSlice[0]
+									}
+									objectIndex, found, err := swiftContainer.swiftObjectTree.BisectRight(marker)
+									if nil != err {
+										panic(err)
+									}
+									if found {
+										objectIndex++
+									}
+									if objectIndex < numObjects {
+										objectIndexLimit := numObjects
+										if (objectIndexLimit - objectIndex) > int(globals.containerListingLimit) {
+											objectIndexLimit = objectIndex + int(globals.containerListingLimit)
 										}
-										swiftObjectName := swiftObjectNameAsKey.(string)
-										_, _ = responseWriter.Write(utils.StringToByteSlice(swiftObjectName))
-										_, _ = responseWriter.Write([]byte{'\n'})
+										for objectIndex < objectIndexLimit {
+											swiftObjectNameAsKey, _, _, err := swiftContainer.swiftObjectTree.GetByIndex(objectIndex)
+											if nil != err {
+												panic(err)
+											}
+											swiftObjectName := swiftObjectNameAsKey.(string)
+											_, _ = responseWriter.Write(utils.StringToByteSlice(swiftObjectName))
+											_, _ = responseWriter.Write([]byte{'\n'})
+											objectIndex++
+										}
+									} else {
+										responseWriter.WriteHeader(http.StatusNoContent)
 									}
 								}
 								swiftContainer.Unlock()
@@ -1344,6 +1390,20 @@ func fetchSwiftInfo(confMap conf.ConfMap) {
 	}
 	if globals.maxObjectNameLength > maxIntAsUint64 {
 		log.Fatal("RamSwiftInfo.MaxObjectNameLength too large... must fit in a Go int")
+	}
+	globals.accountListingLimit, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "AccountListingLimit")
+	if nil != err {
+		log.Fatalf("failed fetch of RamSwiftInfo.AccountListingLimit: %v", err)
+	}
+	if globals.accountListingLimit > maxIntAsUint64 {
+		log.Fatal("RamSwiftInfo.AccountListingLimit too large... must fit in a Go int")
+	}
+	globals.containerListingLimit, err = confMap.FetchOptionValueUint64("RamSwiftInfo", "ContainerListingLimit")
+	if nil != err {
+		log.Fatalf("failed fetch of RamSwiftInfo.ContainerListingLimit: %v", err)
+	}
+	if globals.containerListingLimit > maxIntAsUint64 {
+		log.Fatal("RamSwiftInfo.ContainerListingLimit too large... must fit in a Go int")
 	}
 }
 
