@@ -15,8 +15,6 @@ notifications:
 before_install:
 - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules
 - git submodule update --init --recursive
-#- docker build -t proxyfs_unit_tests test/container
 
 script:
-#- docker run -it -v `pwd`:/gopathroot/src/github.com/swiftstack/ProxyFS proxyfs_unit_tests
 - docker run -it -v `pwd`:/gopathroot/src/github.com/swiftstack/ProxyFS swiftstack/proxyfs_unit_tests
