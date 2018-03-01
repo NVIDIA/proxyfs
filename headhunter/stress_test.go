@@ -189,6 +189,8 @@ func TestHeadHunterStress(t *testing.T) {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
+		"RamSwiftInfo.AccountListingLimit=10000",
+		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
 
 	// Launch a ramswift instance

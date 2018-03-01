@@ -30,8 +30,6 @@ const (
 	validateVolumeFixLinkCountParallelism        = uint64(50)
 	validateVolumeIncrementByteCountsParallelism = uint64(100)
 
-	validateVolumeContainerRescanDelay = time.Duration(1 * time.Second)
-
 	lostAndFoundDirName = ".Lost+Found"
 )
 
@@ -599,10 +597,10 @@ func (vVS *validateVolumeStruct) validateVolumeIncrementByteCounts(inodeNumber u
 
 func (vVS *validateVolumeStruct) validateVolume() {
 	var (
+		asyncDeleteWaitGroup            sync.WaitGroup
 		checkpointContainerObjectList   []string
 		checkpointContainerObjectName   string
 		checkpointContainerObjectNumber uint64
-		checkpointContainerScanning     bool
 		err                             error
 		headhunterLayoutReport          sortedmap.LayoutReport
 		inodeCount                      int
@@ -1076,52 +1074,41 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	vVS.accountName, vVS.checkpointContainerName = vVS.headhunterVolumeHandle.FetchAccountAndCheckpointContainerNames()
 
-	checkpointContainerScanning = true
+	_, checkpointContainerObjectList, err = swiftclient.ContainerGet(vVS.accountName, vVS.checkpointContainerName)
+	if nil != err {
+		vVS.validateVolumeLogErr("Got swiftclient.ContainerGet(\"%v\",\"%v\") failure: %v", vVS.accountName, vVS.checkpointContainerName, err)
+		return
+	}
 
-	for checkpointContainerScanning {
-		checkpointContainerScanning = false
+	for _, checkpointContainerObjectName = range checkpointContainerObjectList {
+		checkpointContainerObjectNumber = uint64(0) // If remains 0 or results in returning to 0,
+		//                                             checkpointContainerObjectName should be deleted
 
-		_, checkpointContainerObjectList, err = swiftclient.ContainerGet(vVS.accountName, vVS.checkpointContainerName)
-		if nil != err {
-			vVS.validateVolumeLogErr("Got swiftclient.ContainerGet(\"%v\",\"%v\") failure: %v", vVS.accountName, vVS.checkpointContainerName, err)
-			return
-		}
-
-		for _, checkpointContainerObjectName = range checkpointContainerObjectList {
-			checkpointContainerObjectNumber = uint64(0) // If remains 0 or results in returning to 0,
-			//                                             checkpointContainerObjectName should be deleted
-
-			if 16 == len(checkpointContainerObjectName) {
-				if validObjectNameRE.MatchString(checkpointContainerObjectName) {
-					checkpointContainerObjectNumber, err = strconv.ParseUint(checkpointContainerObjectName, 16, 64)
-					if nil != err {
-						vVS.validateVolumeLogErr("Got strconv.ParseUint(\"%v\",16,64) failure: %v", checkpointContainerObjectName)
-						return
-					}
-
-					_, ok = headhunterLayoutReport[checkpointContainerObjectNumber]
-					if !ok {
-						checkpointContainerObjectNumber = uint64(0)
-					}
+		if 16 == len(checkpointContainerObjectName) {
+			if validObjectNameRE.MatchString(checkpointContainerObjectName) {
+				checkpointContainerObjectNumber, err = strconv.ParseUint(checkpointContainerObjectName, 16, 64)
+				if nil != err {
+					vVS.validateVolumeLogErr("Got strconv.ParseUint(\"%v\",16,64) failure: %v", checkpointContainerObjectName)
+					return // Note: Already scheduled async Object DELETEs will continue in the background
 				}
-			}
 
-			if uint64(0) == checkpointContainerObjectNumber {
-				checkpointContainerScanning = true // Continue looping until no new objects are found to delete
-
-				err = swiftclient.ObjectDeleteSync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName)
-				if nil == err {
-					vVS.validateVolumeLogInfo("Removed unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
+				_, ok = headhunterLayoutReport[checkpointContainerObjectNumber]
+				if !ok {
+					checkpointContainerObjectNumber = uint64(0)
 				}
-			}
-
-			if vVS.stopFlag {
-				return
 			}
 		}
 
-		if checkpointContainerScanning {
-			time.Sleep(validateVolumeContainerRescanDelay)
+		if uint64(0) == checkpointContainerObjectNumber {
+			vVS.validateVolumeLogInfo("Removing unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
+			asyncDeleteWaitGroup.Add(1)
+			swiftclient.ObjectDeleteAsync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, nil, &asyncDeleteWaitGroup)
+		}
+
+		if vVS.stopFlag {
+			return // Note: Already scheduled async Object DELETEs will continue in the background
 		}
 	}
+
+	asyncDeleteWaitGroup.Wait()
 }

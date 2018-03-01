@@ -76,78 +76,101 @@ func containerDelete(accountName string, containerName string) (err error) {
 	return
 }
 
-func containerGetWithRetry(accountName string, containerName string) (map[string][]string, []string, error) {
+func containerGetWithRetry(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
 	// request is a function that, through the miracle of closure, calls
 	// containerGet() with the paramaters passed to this function, stashes
 	// the relevant return values into the local variables of this function,
 	// and then returns err and whether it is retriable to RequestWithRetry()
 	var (
-		headers    map[string][]string
-		objectList []string
-		err        error
+		connection      *connectionStruct
+		marker          string
+		opname          string
+		retryObj        *RetryCtrl
+		statnm          RetryStatNm
+		toAddHeaders    map[string][]string
+		toAddObjectList []string
 	)
+
+	retryObj = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+	statnm = RetryStatNm{
+		retryCnt:        &stats.SwiftContainerGetRetryOps,
+		retrySuccessCnt: &stats.SwiftContainerGetRetrySuccessOps}
+
 	request := func() (bool, error) {
 		var err error
-		headers, objectList, err = containerGet(accountName, containerName)
+		toAddHeaders, toAddObjectList, err = containerGet(connection, accountName, containerName, marker)
 		return true, err
 	}
 
-	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.containerGet(\"%v/%v\")", accountName, containerName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftContainerGetRetryOps,
-			retrySuccessCnt: &stats.SwiftContainerGetRetrySuccessOps}
-	)
-	err = retryObj.RequestWithRetry(request, &opname, &statnm)
-	return headers, objectList, err
+	headers = make(map[string][]string)
+	objectList = make([]string, 0)
+
+	connection = acquireNonChunkedConnection()
+
+	marker = ""
+
+	for {
+		opname = fmt.Sprintf("swiftclient.containerGet(,\"%v\",\"%v\",\"%v\")", accountName, containerName, marker)
+
+		err = retryObj.RequestWithRetry(request, &opname, &statnm)
+
+		if nil == err {
+			mergeHeadersAndList(headers, &objectList, toAddHeaders, &toAddObjectList)
+
+			if 0 == len(toAddObjectList) {
+				releaseNonChunkedConnection(connection, parseConnection(headers))
+
+				break
+			} else {
+				marker = toAddObjectList[len(toAddObjectList)-1]
+			}
+		} else {
+			releaseNonChunkedConnection(connection, false)
+
+			break
+		}
+	}
+
+	stats.IncrementOperations(&stats.SwiftContainerGetOps)
+
+	return
 }
-func containerGet(accountName string, containerName string) (headers map[string][]string, objectList []string, err error) {
+
+func containerGet(connection *connectionStruct, accountName string, containerName string, marker string) (headers map[string][]string, objectList []string, err error) {
 	var (
-		connection *connectionStruct
 		fsErr      blunder.FsError
 		httpStatus int
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
-
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"?marker="+marker, nil)
 	if nil != err {
-		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName)
+		logger.ErrorfWithError(err, "swiftclient.containerGet(,\"%v\",\"%v\",\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, marker)
 		return
 	}
 
 	httpStatus, headers, err = readHTTPStatusAndHeaders(connection.tcpConn)
 	if nil != err {
-		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName)
+		logger.ErrorfWithError(err, "swiftclient.containerGet(,\"%v\",\"%v\",\"%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, marker)
 		return
 	}
 	evtlog.Record(evtlog.FormatContainerGet, accountName, containerName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
-		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "GET %s/%s returned HTTP StatusCode %d", accountName, containerName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName)
+		logger.ErrorfWithError(err, "swiftclient.containerGet(,\"%v\",\"%v\",\"%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, marker)
 		return
 	}
 
 	objectList, err = readHTTPPayloadLines(connection.tcpConn, headers)
 	if nil != err {
-		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.containerGet(\"%v/%v\") got readHTTPPayloadLines() error", accountName, containerName)
+		logger.ErrorfWithError(err, "swiftclient.containerGet(,\"%v\",\"%v\",\"%v\") got readHTTPPayloadLines() error", accountName, containerName, marker)
 		return
 	}
-
-	releaseNonChunkedConnection(connection, parseConnection(headers))
-
-	stats.IncrementOperations(&stats.SwiftContainerGetOps)
 
 	return
 }

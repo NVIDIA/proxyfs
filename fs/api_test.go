@@ -100,6 +100,8 @@ func testSetup() (err error) {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
+		"RamSwiftInfo.AccountListingLimit=10000",
+		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
 
 	testConfMap, err := conf.MakeConfMapFromStrings(testConfMapStrings)
