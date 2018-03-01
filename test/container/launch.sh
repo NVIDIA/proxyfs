@@ -13,6 +13,16 @@ SAMBA_VERSION=4.6.12
 SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
 
 cd $GOPATH/src/github.com/swiftstack/ProxyFS/vfs
+
+if [[ -L samba ]]; then
+    rm samba
+else
+    if [[ -e samba ]]; then
+        echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
+        exit 1
+    fi
+fi
+
 if [[ -d "${SAMBA_DIR}" ]]; then
     ln -s $SAMBA_DIR samba
 else
