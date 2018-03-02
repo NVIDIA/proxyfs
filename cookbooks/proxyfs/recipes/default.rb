@@ -358,43 +358,41 @@ end
 #
 # Check out and build samba
 #
-if node[:platform_family].include?("rhel")
-  execute "Check out samba" do
-    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-centos"
-    cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-12-centos") }
-  end
+OS_DISTRO="centos"
+OS_DISTRO_VERSION="7.4"
+SAMBA_VERSION="4.6.12"
 
+SAMBA_DIR="build-samba-#{SAMBA_VERSION.gsub(".", "-")}-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
+
+if File.exist?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}")
   link "#{SAMBA_SRC_DIR}" do
-    to "samba4-6-12-centos"
+    to "#{SAMBA_DIR}"
     link_type :symbolic
   end
-
 else
   execute "Check out samba" do
-    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-ubuntu"
+    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git #{SAMBA_DIR}"
     cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/samba4-6-12-ubuntu") }
+    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}") }
   end
 
   link "#{SAMBA_SRC_DIR}" do
-    to "samba4-6-12-ubuntu"
+    to "#{SAMBA_DIR}"
     link_type :symbolic
   end
 
-end
+  execute "Configure samba src" do
+    command "./configure"
+    cwd SAMBA_SRC_DIR
+    # lockfile dropped by `waf configure`
+    not_if { ::File.exists?("#{SAMBA_SRC_DIR}/.lock-wscript") }
+  end
 
-execute "Configure samba src" do
-  command "./configure"
-  cwd SAMBA_SRC_DIR
-  # lockfile dropped by `waf configure`
-  not_if { ::File.exists?("#{SAMBA_SRC_DIR}/.lock-wscript") }
-end
-
-execute "Build samba headers" do
-  command "make GEN_NDR_TABLES"
-  cwd SAMBA_SRC_DIR
-  not_if { ::File.exists?(SAMBA_SRC_DIR + "/bin/default/librpc/gen_ndr/server_id.h") }
+  execute "Build samba headers" do
+    command "make GEN_NDR_TABLES"
+    cwd SAMBA_SRC_DIR
+    not_if { ::File.exists?(SAMBA_SRC_DIR + "/bin/default/librpc/gen_ndr/server_id.h") }
+  end
 end
 
 #
