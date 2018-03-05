@@ -5,6 +5,12 @@ import (
 	"sync"
 )
 
+type OperationOptions uint64
+
+const (
+	SkipRetry OperationOptions = 1 << iota
+)
+
 // ChunkedCopyContext provides a callback context to use for Object Copies.
 //
 // A returned chunkSize == 0 says to stop copying
@@ -105,13 +111,13 @@ func ObjectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 //
 // If wgPreCondition is not nil, the HTTP DELETE will proceed only after wgPreCondition.Done() returns.
 // If wgPostSignal is not nil, following the HTTP DELETE, wgPostSignal.Done() will be called.
-func ObjectDeleteAsync(accountName string, containerName string, objectName string, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
-	objectDeleteAsync(accountName, containerName, objectName, wgPreCondition, wgPostSignal)
+func ObjectDeleteAsync(accountName string, containerName string, objectName string, operationOptions OperationOptions, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
+	objectDeleteAsync(accountName, containerName, objectName, operationOptions, wgPreCondition, wgPostSignal)
 }
 
 // ObjectDeleteSync synchronously invokes HTTP DELETE on the named Swift Object.
-func ObjectDeleteSync(accountName string, containerName string, objectName string) (err error) {
-	return objectDeleteSyncWithRetry(accountName, containerName, objectName)
+func ObjectDeleteSync(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
+	return objectDeleteSync(accountName, containerName, objectName, operationOptions)
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.

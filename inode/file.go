@@ -1012,6 +1012,6 @@ func (vS *volumeStruct) deleteLogSegmentAsync(logSegmentNumber uint64, checkpoin
 	if nil != err {
 		return
 	}
-	swiftclient.ObjectDeleteAsync(vS.accountName, containerName, objectName, checkpointDoneWaitGroup, nil)
+	swiftclient.ObjectDeleteAsync(vS.accountName, containerName, objectName, swiftclient.SkipRetry, checkpointDoneWaitGroup, nil)
 	return
 }
