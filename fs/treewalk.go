@@ -1102,7 +1102,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		if uint64(0) == checkpointContainerObjectNumber {
 			vVS.validateVolumeLogInfo("Removing unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
 			asyncDeleteWaitGroup.Add(1)
-			swiftclient.ObjectDeleteAsync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, nil, &asyncDeleteWaitGroup)
+			swiftclient.ObjectDeleteAsync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, swiftclient.SkipRetry, nil, &asyncDeleteWaitGroup)
 		}
 
 		if vVS.stopFlag {

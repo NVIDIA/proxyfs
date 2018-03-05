@@ -717,9 +717,9 @@ func testOps(t *testing.T) {
 
 	// Send a Synchronous DELETE for object "FooBar"
 
-	err = ObjectDeleteSync("TestAccount", "TestContainer", "FooBar")
+	err = ObjectDeleteSync("TestAccount", "TestContainer", "FooBar", 0)
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\") failed: %v", err)
+		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\", 0) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -749,7 +749,7 @@ func testOps(t *testing.T) {
 	wgPreCondition.Add(1)
 	wgPostSignal.Add(1)
 
-	ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", wgPreCondition, wgPostSignal)
+	ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", 0, wgPreCondition, wgPostSignal)
 
 	wgPreCondition.Done()
 	wgPostSignal.Wait()
@@ -900,7 +900,7 @@ func testChunkedPut(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 
-		err = ObjectDeleteSync(accountName, containerName, objName)
+		err = ObjectDeleteSync(accountName, containerName, objName, 0)
 		if nil != err {
 			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
 				accountName, containerName, objName, err)

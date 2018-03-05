@@ -1286,6 +1286,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 				volume.accountName,
 				volume.checkpointContainerName,
 				utils.Uint64ToHexStr(objectNumber),
+				swiftclient.SkipRetry,
 				volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
 				nil)
 		}
