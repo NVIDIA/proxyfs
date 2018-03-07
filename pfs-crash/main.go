@@ -470,7 +470,7 @@ func launchProxyFSAndRunFSCK() {
 	var (
 		contentsAsStrings []string
 		err               error
-		fsckJob           httpserver.FSCKJobStatusJSONPackedStruct
+		fsckJob           httpserver.JobStatusJSONPackedStruct
 		fsckJobError      string
 		httpStatusCode    int
 		locationURL       string

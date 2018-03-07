@@ -154,7 +154,7 @@ type VolumeHandle interface {
 	FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error)
 	FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
 	Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error)
-	Validate(inodeNumber InodeNumber) (err error)
+	Validate(inodeNumber InodeNumber, deeply bool) (err error)
 
 	// Directory Inode specific methods, implemented in dir.go
 

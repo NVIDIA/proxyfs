@@ -146,7 +146,7 @@ const (
 
 type StatVFS map[StatVFSKey]uint64 // key is one of StatVFSKey consts
 
-type ValidateVolumeHandle interface {
+type JobHandle interface {
 	Active() (active bool)
 	Wait()
 	Cancel()
@@ -208,13 +208,14 @@ type MountHandle interface {
 }
 
 // ValidateVolume performs an "FSCK" on the specified volumeName.
-func ValidateVolume(volumeName string) (validateVolumeHandle ValidateVolumeHandle) {
+func ValidateVolume(volumeName string) (validateVolumeHandle JobHandle) {
 	var (
 		vVS *validateVolumeStruct
 	)
 
 	vVS = &validateVolumeStruct{}
 
+	vVS.jobType = "FSCK"
 	vVS.volumeName = volumeName
 	vVS.active = true
 	vVS.stopFlag = false
@@ -225,6 +226,29 @@ func ValidateVolume(volumeName string) (validateVolumeHandle ValidateVolumeHandl
 	go vVS.validateVolume()
 
 	validateVolumeHandle = vVS
+
+	return
+}
+
+// ScrubVolume performs a "SCRUB" on the specified volumeName.
+func ScrubVolume(volumeName string) (scrubVolumeHandle JobHandle) {
+	var (
+		sVS *scrubVolumeStruct
+	)
+
+	sVS = &scrubVolumeStruct{}
+
+	sVS.jobType = "SCRUB"
+	sVS.volumeName = volumeName
+	sVS.active = true
+	sVS.stopFlag = false
+	sVS.err = make([]string, 0)
+	sVS.info = make([]string, 0)
+
+	sVS.globalWaitGroup.Add(1)
+	go sVS.scrubVolume()
+
+	scrubVolumeHandle = sVS
 
 	return
 }
