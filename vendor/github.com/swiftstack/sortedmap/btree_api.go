@@ -89,15 +89,13 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 
 	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
 
-	staleOnDiskReferencesContext := &onDiskReferencesContext{}
-
 	treePtr := &btreeTreeStruct{
 		minKeysPerNode:     minKeysPerNode,
 		maxKeysPerNode:     maxKeysPerNode,
 		Compare:            compare,
 		BPlusTreeCallbacks: callbacks,
 		root:               rootNode,
-		staleOnDiskReferences: NewLLRBTree(compareOnDiskReferenceKey, staleOnDiskReferencesContext),
+		staleOnDiskReferencesList: nil,
 	}
 
 	if nil == bPlusTreeCache {
@@ -140,15 +138,13 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 
 	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
 
-	staleOnDiskReferencesContext := &onDiskReferencesContext{}
-
 	treePtr := &btreeTreeStruct{
 		minKeysPerNode:     0, //              To be filled in once root node is loaded
 		maxKeysPerNode:     0, //              To be filled in once root node is loaded
 		Compare:            compare,
 		BPlusTreeCallbacks: callbacks,
 		root:               rootNode,
-		staleOnDiskReferences: NewLLRBTree(compareOnDiskReferenceKey, staleOnDiskReferencesContext),
+		staleOnDiskReferencesList: nil,
 	}
 
 	if nil == bPlusTreeCache {

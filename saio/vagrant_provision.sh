@@ -62,34 +62,38 @@ yum -y install gcc-c++-4.8.5-16.el7_4.1 \
                samba-client-4.6.2-12.el7_4 \
                cifs-utils-6.2-10.el7
 cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
-if [[ -d samba4-6-12-centos ]]
+OS_DISTRO=centos
+OS_DISTRO_VERSION=7.4
+SAMBA_VERSION=4.6.12
+SAMBA_DIR=build-samba-`echo $SAMBA_VERSION | tr . -`-${OS_DISTRO}-`echo $OS_DISTRO_VERSION | tr . -`
+if [[ -d $SAMBA_DIR ]]
 then
-    if [[ -L samba4-6-12-centos ]]
+    if [[ -L $SAMBA_DIR ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos cannot pre-exist"
+        echo "directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR cannot pre-exist"
         exit 1
     else
-        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos assumed to be as desired"
+        echo "\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR assumed to be as desired"
     fi
 else
-    if [[ -L samba4-6-12-centos ]]
+    if [[ -L $SAMBA_DIR ]]
     then
-        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba4-6-12-centos cannot pre-exist"
+        echo "non-directory symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/$SAMBA_DIR cannot pre-exist"
         exit 1
     else
-        git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git samba4-6-12-centos
+        git clone -b samba-$SAMBA_VERSION --single-branch --depth 1 https://github.com/samba-team/samba.git $SAMBA_DIR
     fi
 fi
 if [[ -L samba ]]
 then
     samba_symlink_target=`readlink "samba"`
-    if [[ "samba4-6-12-centos" == "$samba_symlink_target" ]]
+    if [[ "$SAMBA_DIR" == "$samba_symlink_target" ]]
     then
-        echo "symlink samba -> samba4-6-12-centos already"
+        echo "symlink samba -> $SAMBA_DIR already"
     else
-        echo "redirecting samba -> samba4-6-12-centos"
+        echo "redirecting samba -> $SAMBA_DIR"
         rm samba
-        ln -s samba4-6-12-centos samba
+        ln -s $SAMBA_DIR samba
     fi
 else
     if [[ -e samba ]]
@@ -97,8 +101,8 @@ else
         echo "non-symlink \$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba cannot pre-exist"
         exit 1
     else
-        echo "establishing samba -> samba4-6-12-centos"
-        ln -s samba4-6-12-centos samba
+        echo "establishing samba -> $SAMBA_DIR"
+        ln -s $SAMBA_DIR samba
     fi
 fi
 cd samba
@@ -295,14 +299,13 @@ echo "X11Forwarding yes" >> /etc/sysconfig/sshd
 systemctl restart sshd
 usermod -aG wireshark vagrant
 
-# Install firefox
+# Install opera
 
-yum -y install gtk3 libXt
-cd /tmp
-wget -q http://ftp.mozilla.org/pub/firefox/releases/55.0/linux-x86_64/en-US/firefox-55.0.tar.bz2
-tar -C /usr/local -xvjf firefox-55.0.tar.bz2
-rm firefox-55.0.tar.bz2
-ln -s /usr/local/firefox/firefox /usr/bin/firefox
+yum -y install http://download3.operacdn.com/pub/opera/desktop/51.0.2830.40/linux/opera-stable_51.0.2830.40_amd64.rpm
+yum -y install gnu-free-fonts-common
+yum -y install gnu-free-mono-fonts
+yum -y install gnu-free-sans-fonts
+yum -y install gnu-free-serif-fonts
 
 # Install benchmark support tools
 

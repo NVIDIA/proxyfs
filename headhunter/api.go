@@ -11,25 +11,30 @@ import (
 type BPlusTreeType uint32
 
 const (
-	InodeRecBPlusTree BPlusTreeType = iota
+	MergedBPlusTree BPlusTreeType = iota // Used only for FetchLayoutReport when a merged result is desired
+	InodeRecBPlusTree
 	LogSegmentRecBPlusTree
 	BPlusTreeObjectBPlusTree
 )
 
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
+	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
 	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)
 	PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error)
 	DeleteInodeRec(inodeNumber uint64) (err error)
+	IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error)
 	GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error)
 	PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error)
 	DeleteLogSegmentRec(logSegmentNumber uint64) (err error)
+	IndexedLogSegmentNumber(index uint64) (logSegmentNumber uint64, ok bool, err error)
 	GetBPlusTreeObject(objectNumber uint64) (value []byte, err error)
 	PutBPlusTreeObject(objectNumber uint64, value []byte) (err error)
 	DeleteBPlusTreeObject(objectNumber uint64) (err error)
+	IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error)
 	DoCheckpoint() (err error)
 	FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error)
 }

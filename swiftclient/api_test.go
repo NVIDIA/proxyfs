@@ -62,6 +62,8 @@ func TestAPI(t *testing.T) {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
+		"RamSwiftInfo.AccountListingLimit=10000",
+		"RamSwiftInfo.ContainerListingLimit=10000",
 
 		"RamSwiftChaos.AccountDeleteFailureRate=2",
 		"RamSwiftChaos.AccountGetFailureRate=2",
@@ -715,9 +717,9 @@ func testOps(t *testing.T) {
 
 	// Send a Synchronous DELETE for object "FooBar"
 
-	err = ObjectDeleteSync("TestAccount", "TestContainer", "FooBar")
+	err = ObjectDeleteSync("TestAccount", "TestContainer", "FooBar", 0)
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\") failed: %v", err)
+		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\", 0) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -747,7 +749,7 @@ func testOps(t *testing.T) {
 	wgPreCondition.Add(1)
 	wgPostSignal.Add(1)
 
-	ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", wgPreCondition, wgPostSignal)
+	ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", 0, wgPreCondition, wgPostSignal)
 
 	wgPreCondition.Done()
 	wgPostSignal.Wait()
@@ -898,7 +900,7 @@ func testChunkedPut(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 
-		err = ObjectDeleteSync(accountName, containerName, objName)
+		err = ObjectDeleteSync(accountName, containerName, objName, 0)
 		if nil != err {
 			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
 				accountName, containerName, objName, err)
@@ -1199,9 +1201,13 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 			t.Errorf("%s: should have succeeded after %d attempts, log entry shows: %s",
 				opname, successOn, logEntry)
 		}
-		// allow upto 20 msec slop for request to complete
-		if sec < minSec || sec >= maxSec {
+
+		if sec < minSec {
 			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
+		}
+		if sec >= maxSec {
+			t.Logf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
 				opname, sec, minSec, maxSec)
 		}
 	}
@@ -1293,9 +1299,13 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 			t.Errorf("%s: should have failed after %d attempts, log entry shows: %s",
 				opname, failOn, logEntry)
 		}
-		// allow upto 20 msec slop for request to complete
-		if sec < minSec || sec >= maxSec {
+
+		if sec < minSec {
 			t.Errorf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
+				opname, sec, minSec, maxSec)
+		}
+		if sec >= maxSec {
+			t.Logf("%s: elapsed time %4.3f sec outside bounds, should be [%4.3f, %4.3f)",
 				opname, sec, minSec, maxSec)
 		}
 	}

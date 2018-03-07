@@ -72,6 +72,8 @@ func TestAPI(t *testing.T) {
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
+		"RamSwiftInfo.AccountListingLimit=10000",
+		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
 
 	confMap, err := conf.MakeConfMapFromStrings(confStrings)
@@ -719,9 +721,9 @@ func testOps(t *testing.T) {
 
 	// Send a Synchronous DELETE for object "FooBar"
 
-	err = swiftclient.ObjectDeleteSync("TestAccount", "TestContainer", "FooBar")
+	err = swiftclient.ObjectDeleteSync("TestAccount", "TestContainer", "FooBar", 0)
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\") failed: %v", err)
+		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\", 0) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -751,7 +753,7 @@ func testOps(t *testing.T) {
 	wgPreCondition.Add(1)
 	wgPostSignal.Add(1)
 
-	swiftclient.ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", wgPreCondition, wgPostSignal)
+	swiftclient.ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", 0, wgPreCondition, wgPostSignal)
 
 	wgPreCondition.Done()
 	wgPostSignal.Wait()
@@ -880,7 +882,7 @@ func testChunkedPut(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 
-		err = swiftclient.ObjectDeleteSync(accountName, containerName, objName)
+		err = swiftclient.ObjectDeleteSync(accountName, containerName, objName, 0)
 		if nil != err {
 			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
 				accountName, containerName, objName, err)

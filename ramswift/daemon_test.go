@@ -26,6 +26,8 @@ func TestViaNoAuthClient(t *testing.T) {
 			"RamSwiftInfo.MaxAccountNameLength=256",
 			"RamSwiftInfo.MaxContainerNameLength=256",
 			"RamSwiftInfo.MaxObjectNameLength=1024",
+			"RamSwiftInfo.AccountListingLimit=10000",
+			"RamSwiftInfo.ContainerListingLimit=10000",
 		}
 		err          error
 		httpRequest  *http.Request
@@ -64,7 +66,7 @@ func TestViaNoAuthClient(t *testing.T) {
 	if http.StatusOK != httpResponse.StatusCode {
 		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
 	}
-	expectedInfo := "{\"swift\": {\"max_account_name_length\": 256,\"max_container_name_length\": 256,\"max_object_name_length\": 1024}}"
+	expectedInfo := "{\"swift\": {\"max_account_name_length\": 256,\"max_container_name_length\": 256,\"max_object_name_length\": 1024,\"account_listing_limit\": 10000,\"container_listing_limit\": 10000}}"
 	if int64(len(expectedInfo)) != httpResponse.ContentLength {
 		t.Fatalf("GET of /info httpResponse.ContentLength unexpected")
 	}
@@ -362,6 +364,61 @@ func TestViaNoAuthClient(t *testing.T) {
 	}
 	if "TestContainer\n" != utils.ByteSliceToString(readBuf) {
 		t.Fatalf("TestAccount should contain only \"TestContainer\\n\" at this point")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for account "TestAccount" with marker "AAA" expecting "TestContainer\n" and header Cat: Dog
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount?marker=AAA", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	if int64(len("TestContainer\n")) != httpResponse.ContentLength {
+		t.Fatalf("TestAccount should contain only \"TestContainer\\n\" at this point")
+	}
+	readBuf, err = ioutil.ReadAll(httpResponse.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() returned unexpected error: %v", err)
+	}
+	if "TestContainer\n" != utils.ByteSliceToString(readBuf) {
+		t.Fatalf("TestAccount should contain only \"TestContainer\\n\" at this point")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for account "TestAccount" with marker "ZZZ" expecting Content-Length: 0 and header Cat: Dog
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount?marker=ZZZ", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	if 0 != httpResponse.ContentLength {
+		t.Fatalf("TestAccount should contain no elements at this point")
 	}
 	err = httpResponse.Body.Close()
 	if nil != err {
@@ -671,6 +728,61 @@ func TestViaNoAuthClient(t *testing.T) {
 	}
 	if "Bar\nFoo\n" != utils.ByteSliceToString(readBuf) {
 		t.Fatalf("TestContainer should contain only \"Bar\\nFoo\\n\" at this point")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for container "TestContainer" with marker "AAA" expecting "Bar\nFoo\n" and header Cat: Dog
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount/TestContainer?marker=AAA", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	if int64(len("Bar\nFoo\n")) != httpResponse.ContentLength {
+		t.Fatalf("TestContainer should contain only \"Bar\\nFoo\\n\" at this point")
+	}
+	readBuf, err = ioutil.ReadAll(httpResponse.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() returned unexpected error: %v", err)
+	}
+	if "Bar\nFoo\n" != utils.ByteSliceToString(readBuf) {
+		t.Fatalf("TestContainer should contain only \"Bar\\nFoo\\n\" at this point")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a GET for container "TestContainer" with marker "ZZZ" expecting Content-Length: 0 and header Cat: Dog
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount/TestContainer?marker=ZZZ", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestContainer should have header Cat: Dog")
+	}
+	if 0 != httpResponse.ContentLength {
+		t.Fatalf("TestContainer should contain no elements at this point")
 	}
 	err = httpResponse.Body.Close()
 	if nil != err {

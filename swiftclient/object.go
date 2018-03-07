@@ -146,16 +146,17 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 	return
 }
 
-func objectDeleteAsync(accountName string, containerName string, objectName string, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
+func objectDeleteAsync(accountName string, containerName string, objectName string, operationOptions OperationOptions, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
 	evtlog.Record(evtlog.FormatObjectDeleteAsync, accountName, containerName, objectName)
 
 	pendingDelete := &pendingDeleteStruct{
-		next:           nil,
-		accountName:    accountName,
-		containerName:  containerName,
-		objectName:     objectName,
-		wgPreCondition: wgPreCondition,
-		wgPostSignal:   wgPostSignal,
+		next:             nil,
+		accountName:      accountName,
+		containerName:    containerName,
+		objectName:       objectName,
+		operationOptions: operationOptions,
+		wgPreCondition:   wgPreCondition,
+		wgPostSignal:     wgPostSignal,
 	}
 
 	pendingDeletes := globals.pendingDeletes
@@ -208,7 +209,7 @@ func objectDeleteAsyncDaemon() {
 				pendingDelete.wgPreCondition.Wait()
 			}
 
-			_ = objectDeleteSyncWithRetry(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName)
+			_ = objectDeleteSync(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName, pendingDelete.operationOptions)
 
 			if nil != pendingDelete.wgPostSignal {
 				// TODO: what if the delete failed?
@@ -220,29 +221,34 @@ func objectDeleteAsyncDaemon() {
 	}
 }
 
-func objectDeleteSyncWithRetry(accountName string, containerName string, objectName string) (err error) {
-	// request is a function that, through the miracle of closure, calls
-	// objectDeleteSync() with the paramaters passed to this function, stashes
-	// the relevant return values into the local variables of this function,
-	// and then returns err and whether it is retriable to RequestWithRetry()
-	request := func() (bool, error) {
-		var err error
-		err = objectDeleteSync(accountName, containerName, objectName)
-		return true, err
+func objectDeleteSync(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
+	if (operationOptions & SkipRetry) == SkipRetry {
+		err = objectDeleteSyncOneTime(accountName, containerName, objectName)
+	} else {
+		// request is a function that, through the miracle of closure, calls
+		// objectDeleteSync() with the paramaters passed to this function, stashes
+		// the relevant return values into the local variables of this function,
+		// and then returns err and whether it is retriable to RequestWithRetry()
+		request := func() (bool, error) {
+			var err error
+			err = objectDeleteSyncOneTime(accountName, containerName, objectName)
+			return true, err
+		}
+
+		var (
+			retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+			opname   string      = fmt.Sprintf("swiftclient.objectDeleteSyncOneTime(\"%v/%v/%v\")", accountName, containerName, objectName)
+			statnm   RetryStatNm = RetryStatNm{
+				retryCnt:        &stats.SwiftObjDeleteRetryOps,
+				retrySuccessCnt: &stats.SwiftObjDeleteRetrySuccessOps}
+		)
+		err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	}
 
-	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectDeleteSync(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjDeleteRetryOps,
-			retrySuccessCnt: &stats.SwiftObjDeleteRetrySuccessOps}
-	)
-	err = retryObj.RequestWithRetry(request, &opname, &statnm)
-	return err
+	return
 }
 
-func objectDeleteSync(accountName string, containerName string, objectName string) (err error) {
+func objectDeleteSyncOneTime(accountName string, containerName string, objectName string) (err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError

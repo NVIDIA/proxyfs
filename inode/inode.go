@@ -424,7 +424,7 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 				//              Is it possible that Number doesn't get updated?
 
 				if inode.PayloadObjectNumber != 0 {
-					logger.Tracef("flushInodes(): updating Payload from ObjNum %d to %d"+
+					logger.Tracef("flushInodes(): updating Payload from Object %016X to %016X"+
 						" bytes %d to %d for %v inode %d",
 						inode.PayloadObjectNumber, payloadObjectNumber,
 						inode.PayloadObjectLength, payloadObjectLength,
@@ -532,7 +532,6 @@ func (vS *volumeStruct) flushInodeNumbers(inodeNumbers []InodeNumber) (err error
 }
 
 func accountNameToVolumeName(accountName string) (volumeName string, ok bool) {
-
 	globals.Lock()
 
 	volume, ok := globals.accountMap[accountName]
@@ -547,7 +546,6 @@ func accountNameToVolumeName(accountName string) (volumeName string, ok bool) {
 }
 
 func volumeNameToActivePeerPrivateIPAddr(volumeName string) (activePeerPrivateIPAddr string, ok bool) {
-
 	globals.Lock()
 
 	volume, ok := globals.volumeMap[volumeName]
@@ -666,7 +664,6 @@ func (vS *volumeStruct) provisionObject() (containerName string, objectNumber ui
 }
 
 func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode, override AccessOverride) (accessReturn bool) {
-
 	ourInode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software bug
@@ -807,7 +804,6 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 }
 
 func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
-
 	logger.Tracef("inode.Destroy(): volume '%s' inode %d", vS.volumeName, inodeNumber)
 
 	ourInode, ok, err := vS.fetchInode(inodeNumber)
@@ -842,6 +838,9 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 	}
 
 	if DirType == ourInode.InodeType {
+		logger.Tracef("inode.Destroy(): volume '%s' inode %d: discarding dirmap payload Object %016X  len %d",
+			vS.volumeName, inodeNumber, ourInode.PayloadObjectNumber, ourInode.PayloadObjectLength)
+
 		dirMapping := ourInode.payload.(sortedmap.BPlusTree)
 
 		err = dirMapping.Discard()
@@ -851,7 +850,11 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 		}
 
 		stats.IncrementOperations(&stats.DirDestroyOps)
+
 	} else if FileType == ourInode.InodeType {
+		logger.Tracef("inode.Destroy(): volume '%s' inode %d: discarding extmap payload Object %016X  len %d",
+			vS.volumeName, inodeNumber, ourInode.PayloadObjectNumber, ourInode.PayloadObjectLength)
+
 		extents := ourInode.payload.(sortedmap.BPlusTree)
 
 		err = extents.Discard()
@@ -881,7 +884,6 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 }
 
 func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *MetadataStruct, err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -924,7 +926,6 @@ func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *Metadata
 }
 
 func (vS *volumeStruct) GetType(inodeNumber InodeNumber) (inodeType InodeType, err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software error
@@ -948,7 +949,6 @@ func (vS *volumeStruct) GetType(inodeNumber InodeNumber) (inodeType InodeType, e
 }
 
 func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64, err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software error
@@ -971,7 +971,6 @@ func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64,
 
 // SetLinkCount is used to adjust the LinkCount property to match current reference count during FSCK TreeWalk.
 func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) (err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1280,7 +1279,6 @@ func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGr
 }
 
 func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1314,7 +1312,6 @@ func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1351,7 +1348,6 @@ func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error) {
-
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1383,8 +1379,35 @@ func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName st
 	return
 }
 
-func (vS *volumeStruct) GetFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error) {
-	err = fmt.Errorf("GetFragmentationReport not yet implemented")
+func (vS *volumeStruct) FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error) {
+	inode, ok, err := vS.fetchInode(inodeNumber)
+	if err != nil {
+		// this indicates disk corruption or software error
+		// (err includes volume name and inode number)
+		logger.ErrorfWithError(err, "%s: fetch of inode failed", utils.GetFnName())
+		return nil, err
+	}
+	if !ok {
+		// disk corruption or client request for unallocated inode
+		err = fmt.Errorf("%s: failing request for inode %d volume '%s' because it is unallocated",
+			utils.GetFnName(), inodeNumber, vS.volumeName)
+		logger.InfoWithError(err)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		return nil, err
+	}
+
+	if SymlinkType == inode.InodeType {
+		layoutReport = make(sortedmap.LayoutReport)
+		err = nil
+	} else {
+		layoutReport, err = inode.payload.(sortedmap.BPlusTree).FetchLayoutReport()
+	}
+
+	return
+}
+
+func (vS *volumeStruct) FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error) {
+	err = fmt.Errorf("FetchFragmentationReport not yet implemented")
 	return
 }
 

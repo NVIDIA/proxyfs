@@ -470,7 +470,8 @@ func launchProxyFSAndRunFSCK() {
 	var (
 		contentsAsStrings []string
 		err               error
-		fsckJob           httpserver.FSCKGenericJobStruct
+		fsckJob           httpserver.FSCKJobStatusJSONPackedStruct
+		fsckJobError      string
 		httpStatusCode    int
 		locationURL       string
 		polling           bool
@@ -544,8 +545,15 @@ func launchProxyFSAndRunFSCK() {
 		}
 	}
 
-	if "" != fsckJob.Error {
-		log.Printf("fsckJob contained unexpected Error: %v", fsckJob.Error)
+	if 0 < len(fsckJob.ErrorList) {
+		if 1 == len(fsckJob.ErrorList) {
+			log.Printf("fsckJob contained unexpected error: %v", fsckJob.ErrorList[0])
+		} else {
+			log.Printf("fsckJob contained unexpected errors:")
+			for _, fsckJobError = range fsckJob.ErrorList {
+				log.Printf("  %v", fsckJobError)
+			}
+		}
 		stopProxyFS(unix.SIGTERM)
 		os.Exit(-1)
 	}

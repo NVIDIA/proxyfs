@@ -35,12 +35,13 @@ type connectionPoolStruct struct {
 }
 
 type pendingDeleteStruct struct {
-	next           *pendingDeleteStruct
-	accountName    string
-	containerName  string
-	objectName     string
-	wgPreCondition *sync.WaitGroup
-	wgPostSignal   *sync.WaitGroup
+	next             *pendingDeleteStruct
+	accountName      string
+	containerName    string
+	objectName       string
+	operationOptions OperationOptions
+	wgPreCondition   *sync.WaitGroup
+	wgPostSignal     *sync.WaitGroup
 }
 
 type pendingDeletesStruct struct {

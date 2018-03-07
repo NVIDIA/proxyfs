@@ -1,5 +1,7 @@
 # ProxyFS Release Notes
 
+## 1.4.1 (March 6, 2018)
+
 ## 1.3.0 (February 16, 2018)
 
 ## 1.2.0 (January 30, 2018)
