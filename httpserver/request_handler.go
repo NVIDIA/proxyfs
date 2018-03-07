@@ -425,8 +425,10 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case 3:
 		// Form: /volume/<volume-name/fsck-job
 		// Form: /volume/<volume-name/layout-report
+		// Form: /volume/<volume-name/scrub-job
 	case 4:
 		// Form: /volume/<volume-name/fsck-job/<job-id>
+		// Form: /volume/<volume-name/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -434,17 +436,15 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	acceptHeader = request.Header.Get("Accept")
 
-	switch acceptHeader {
-	case "":
-		// Default assumes Accept: text/html
-		formatResponseAsJSON = false
-	case "application/json":
+	if strings.Contains(acceptHeader, "application/json") {
 		formatResponseAsJSON = true
-	case "text/html":
+	} else if strings.Contains(acceptHeader, "text/html") {
 		formatResponseAsJSON = false
-	default:
-		// TODO: Decide if returning text/html is not allowed here, but for now assume it is
-		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
 	}
 
 	if formatResponseAsJSON {
@@ -500,15 +500,15 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>Volumes</title>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-
+			_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
 			for volumeListIndex, volumeName = range volumeList {
-				if 0 < volumeListIndex {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job\">\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </a>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", volumeName)))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td><a href=\"/volume/%v/fsck-job\">FSCK</a></td>\n", volumeName)))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td><a href=\"/volume/%v/scrub-job\">SCRUB</a></td>\n", volumeName)))
+				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 			}
+			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
 		}
@@ -535,12 +535,14 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	requestState.formatResponseCompactly = formatResponseCompactly
 
 	switch pathSplit[3] {
-
 	case "fsck-job":
-		doFsckJob(responseWriter, request, requestState)
+		doJob(fsckJobType, responseWriter, request, requestState)
 
 	case "layout-report":
 		doLayoutReport(responseWriter, request, requestState)
+
+	case "scrub-job":
+		doJob(scrubJobType, responseWriter, request, requestState)
 
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -549,35 +551,40 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
-func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err                      error
-		pathSplit                []string
-		numPathParts             int
-		formatResponseAsJSON     bool
-		formatResponseCompactly  bool
-		fsckInactive             bool
-		fsckJob                  *fsckJobStruct
-		fsckJobAsValue           sortedmap.Value
-		fsckJobError             string
-		fsckJobErrorList         []string
-		fsckJobID                uint64
-		fsckJobIDAsKey           sortedmap.Key
-		fsckJobInfo              string
-		fsckJobInfoList          []string
-		fsckJobsIDListJSON       bytes.Buffer
-		fsckJobsIDListJSONPacked []byte
-		fsckJobStatusJSONBuffer  bytes.Buffer
-		fsckJobStatusJSONPacked  []byte
-		fsckJobStatusJSONStruct  *FSCKJobStatusJSONPackedStruct
-		fsckJobsCount            int
-		fsckJobsIDList           []uint64
-		fsckJobsIDListIndex      int
-		fsckJobsIndex            int
-		ok                       bool
-		volume                   *volumeStruct
-		volumeName               string
+		err                     error
+		formatResponseAsJSON    bool
+		formatResponseCompactly bool
+		inactive                bool
+		job                     *jobStruct
+		jobAsValue              sortedmap.Value
+		jobError                string
+		jobErrorList            []string
+		jobID                   uint64
+		jobIDAsKey              sortedmap.Key
+		jobInfo                 string
+		jobInfoList             []string
+		jobsIDListJSON          bytes.Buffer
+		jobsIDListJSONPacked    []byte
+		jobStatusJSONBuffer     bytes.Buffer
+		jobStatusJSONPacked     []byte
+		jobStatusJSONStruct     *JobStatusJSONPackedStruct
+		jobsCount               int
+		jobsIDList              []uint64
+		jobsIDListIndex         int
+		jobsIndex               int
+		ok                      bool
+		numPathParts            int
+		pathSplit               []string
+		volume                  *volumeStruct
+		volumeName              string
 	)
+
+	if limitJobType <= jobType {
+		err = fmt.Errorf("httpserver.doJob(jobtype==%v,,,) called for invalid jobType", jobType)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
 
 	volume = requestState.volume
 	pathSplit = requestState.pathSplit
@@ -589,43 +596,71 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 	volume.Lock()
 
 	if 3 == numPathParts {
-		fsckJobsCount, err = volume.fsckJobs.Len()
+		switch jobType {
+		case fsckJobType:
+			jobsCount, err = volume.fsckJobs.Len()
+		case scrubJobType:
+			jobsCount, err = volume.scrubJobs.Len()
+		}
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		fsckJobsIDList = make([]uint64, 0, fsckJobsCount)
-		for fsckJobsIndex = fsckJobsCount - 1; fsckJobsIndex >= 0; fsckJobsIndex-- {
-			fsckJobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(fsckJobsIndex)
+		jobsIDList = make([]uint64, 0, jobsCount)
+		for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
+			switch jobType {
+			case fsckJobType:
+				jobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
+			case scrubJobType:
+				jobIDAsKey, _, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
+			}
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
-				err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+				switch jobType {
+				case fsckJobType:
+					err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+				case scrubJobType:
+					err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
+				}
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
-			fsckJobID = fsckJobIDAsKey.(uint64)
+			jobID = jobIDAsKey.(uint64)
 
-			fsckJobsIDList = append(fsckJobsIDList, fsckJobID)
+			jobsIDList = append(jobsIDList, jobID)
 		}
 
-		if nil == volume.fsckActiveJob {
-			fsckInactive = true
+		switch jobType {
+		case fsckJobType:
+			job = volume.fsckActiveJob
+		case scrubJobType:
+			job = volume.scrubActiveJob
+		}
+
+		if nil == job {
+			inactive = true
 		} else {
-			// We know fsckJobRunning == volume.fsckActiveJob.state
+			// We know jobRunning == job.state
 
-			if volume.fsckActiveJob.validateVolumeHandle.Active() {
-				// FSCK must still be running
+			if job.jobHandle.Active() {
+				// FSCK/SCRUB must still be running
 
-				fsckInactive = false
+				inactive = false
 			} else {
-				// FSCK finished at some point... make it look like it just finished now
+				// FSCK/SCRUB finished at some point... make it look like it just finished now
 
-				volume.fsckActiveJob.state = fsckJobCompleted
-				volume.fsckActiveJob.endTime = time.Now()
-				volume.fsckActiveJob = nil
+				job.state = jobCompleted
+				job.endTime = time.Now()
 
-				fsckInactive = true
+				switch jobType {
+				case fsckJobType:
+					volume.fsckActiveJob = nil
+				case scrubJobType:
+					volume.scrubActiveJob = nil
+				}
+
+				inactive = true
 			}
 		}
 
@@ -635,16 +670,16 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			fsckJobsIDListJSONPacked, err = json.Marshal(fsckJobsIDList)
+			jobsIDListJSONPacked, err = json.Marshal(jobsIDList)
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
 			if formatResponseCompactly {
-				_, _ = responseWriter.Write(fsckJobsIDListJSONPacked)
+				_, _ = responseWriter.Write(jobsIDListJSONPacked)
 			} else {
-				json.Indent(&fsckJobsIDListJSON, fsckJobsIDListJSONPacked, "", "\t")
-				_, _ = responseWriter.Write(fsckJobsIDListJSON.Bytes())
+				json.Indent(&jobsIDListJSON, jobsIDListJSONPacked, "", "\t")
+				_, _ = responseWriter.Write(jobsIDListJSON.Bytes())
 				_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 			}
 		} else {
@@ -654,22 +689,37 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Jobs</title>\n", volumeName)))
+			switch jobType {
+			case fsckJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Jobs</title>\n", volumeName)))
+			case scrubJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v SCRUB Jobs</title>\n", volumeName)))
+			}
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-			for fsckJobsIDListIndex, fsckJobID = range fsckJobsIDList {
-				if 0 < fsckJobsIDListIndex {
+			for jobsIDListIndex, jobID = range jobsIDList {
+				if 0 < jobsIDListIndex {
 					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
 				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job/%v\">\n", volumeName, fsckJobID)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", fsckJobID)))
+				switch jobType {
+				case fsckJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job/%v\">\n", volumeName, jobID)))
+				case scrubJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/scrub-job/%v\">\n", volumeName, jobID)))
+				}
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", jobID)))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("    </a>\n"))
 			}
-			if fsckInactive {
-				if 0 < fsckJobsCount {
+			if inactive {
+				if 0 < jobsCount {
 					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
 				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job\">\n", volumeName)))
+				switch jobType {
+				case fsckJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job\">\n", volumeName)))
+				case scrubJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/scrub-job\">\n", volumeName)))
+				}
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Start\">\n"))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
 			}
@@ -682,14 +732,19 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 
 	// If we reach here, numPathParts is 4
 
-	fsckJobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
+	jobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
 	if nil != err {
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
+	switch jobType {
+	case fsckJobType:
+		jobAsValue, ok, err = volume.fsckJobs.GetByKey(jobID)
+	case scrubJobType:
+		jobAsValue, ok, err = volume.scrubJobs.GetByKey(jobID)
+	}
 	if nil != err {
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
@@ -698,15 +753,21 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fsckJob = fsckJobAsValue.(*fsckJobStruct)
+	job = jobAsValue.(*jobStruct)
 
-	if fsckJobRunning == fsckJob.state {
-		if !fsckJob.validateVolumeHandle.Active() {
-			// FSCK finished at some point... make it look like it just finished now
+	if jobRunning == job.state {
+		if !job.jobHandle.Active() {
+			// FSCK/SCRUB finished at some point... make it look like it just finished now
 
-			fsckJob.state = fsckJobCompleted
-			fsckJob.endTime = time.Now()
-			volume.fsckActiveJob = nil
+			job.state = jobCompleted
+			job.endTime = time.Now()
+
+			switch jobType {
+			case fsckJobType:
+				volume.fsckActiveJob = nil
+			case scrubJobType:
+				volume.scrubActiveJob = nil
+			}
 		}
 	}
 
@@ -714,31 +775,31 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		fsckJobStatusJSONStruct = &FSCKJobStatusJSONPackedStruct{
-			StartTime: fsckJob.startTime.Format(time.RFC3339),
-			ErrorList: fsckJob.validateVolumeHandle.Error(),
-			InfoList:  fsckJob.validateVolumeHandle.Info(),
+		jobStatusJSONStruct = &JobStatusJSONPackedStruct{
+			StartTime: job.startTime.Format(time.RFC3339),
+			ErrorList: job.jobHandle.Error(),
+			InfoList:  job.jobHandle.Info(),
 		}
 
-		switch fsckJob.state {
-		case fsckJobRunning:
+		switch job.state {
+		case jobRunning:
 			// Nothing to add here
-		case fsckJobHalted:
-			fsckJobStatusJSONStruct.HaltTime = fsckJob.endTime.Format(time.RFC3339)
-		case fsckJobCompleted:
-			fsckJobStatusJSONStruct.DoneTime = fsckJob.endTime.Format(time.RFC3339)
+		case jobHalted:
+			jobStatusJSONStruct.HaltTime = job.endTime.Format(time.RFC3339)
+		case jobCompleted:
+			jobStatusJSONStruct.DoneTime = job.endTime.Format(time.RFC3339)
 		}
 
-		fsckJobStatusJSONPacked, err = json.Marshal(fsckJobStatusJSONStruct)
+		jobStatusJSONPacked, err = json.Marshal(jobStatusJSONStruct)
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
 		if formatResponseCompactly {
-			_, _ = responseWriter.Write(fsckJobStatusJSONPacked)
+			_, _ = responseWriter.Write(jobStatusJSONPacked)
 		} else {
-			json.Indent(&fsckJobStatusJSONBuffer, fsckJobStatusJSONPacked, "", "\t")
-			_, _ = responseWriter.Write(fsckJobStatusJSONBuffer.Bytes())
+			json.Indent(&jobStatusJSONBuffer, jobStatusJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(jobStatusJSONBuffer.Bytes())
 			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 		}
 	} else {
@@ -748,41 +809,46 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Job %v</title>\n", volumeName, fsckJob.id)))
+		switch jobType {
+		case fsckJobType:
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Job %v</title>\n", volumeName, job.id)))
+		case scrubJobType:
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v SCRUB Job %v</title>\n", volumeName, job.id)))
+		}
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
-		switch fsckJob.state {
-		case fsckJobRunning:
+		switch job.state {
+		case jobRunning:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Running</td>\n"))
-		case fsckJobHalted:
+		case jobHalted:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halted</td>\n"))
-		case fsckJobCompleted:
+		case jobCompleted:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Completed</td>\n"))
 		}
 		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.Format(time.RFC3339))))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.startTime.Format(time.RFC3339))))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		switch fsckJob.state {
-		case fsckJobRunning:
+		switch job.state {
+		case jobRunning:
 			// Nothing to add here
-		case fsckJobHalted:
+		case jobHalted:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halt Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.endTime.Format(time.RFC3339))))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		case fsckJobCompleted:
+		case jobCompleted:
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Done Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.endTime.Format(time.RFC3339))))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 		}
-		fsckJobErrorList = fsckJob.validateVolumeHandle.Error()
-		if 0 == len(fsckJobErrorList) {
+		jobErrorList = job.jobHandle.Error()
+		if 0 == len(jobErrorList) {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>No Errors</td>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
@@ -791,30 +857,35 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors:</td>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, fsckJobError = range fsckJobErrorList {
+			for _, jobError = range jobErrorList {
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobError))))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(jobError))))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 			}
 		}
-		fsckJobInfoList = fsckJob.validateVolumeHandle.Info()
-		if 0 < len(fsckJobInfoList) {
+		jobInfoList = job.jobHandle.Info()
+		if 0 < len(jobInfoList) {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Info:</td>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, fsckJobInfo = range fsckJobInfoList {
+			for _, jobInfo = range jobInfoList {
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobInfo))))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(jobInfo))))
 				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
 			}
 		}
 		_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
-		if fsckJobRunning == fsckJob.state {
+		if jobRunning == job.state {
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job/%v\">\n", volumeName, fsckJob.id)))
+			switch jobType {
+			case fsckJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job/%v\">\n", volumeName, job.id)))
+			case scrubJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/scrub-job/%v\">\n", volumeName, job.id)))
+			}
 			_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Stop\">\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
 		}
@@ -996,17 +1067,18 @@ func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) 
 
 func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err            error
-		fsckJob        *fsckJobStruct
-		fsckJobAsValue sortedmap.Value
-		fsckJobID      uint64
-		fsckJobsCount  int
-		numPathParts   int
-		ok             bool
-		pathSplit      []string
-		volume         *volumeStruct
-		volumeAsValue  sortedmap.Value
-		volumeName     string
+		err           error
+		job           *jobStruct
+		jobAsValue    sortedmap.Value
+		jobID         uint64
+		jobType       jobTypeType
+		jobsCount     int
+		numPathParts  int
+		ok            bool
+		pathSplit     []string
+		volume        *volumeStruct
+		volumeAsValue sortedmap.Value
+		volumeName    string
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -1020,8 +1092,10 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	switch numPathParts {
 	case 3:
 		// Form: /volume/<volume-name/fsck-job
+		// Form: /volume/<volume-name/scrub-job
 	case 4:
 		// Form: /volume/<volume-name/fsck-job/<job-id>
+		// Form: /volume/<volume-name/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -1041,78 +1115,133 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	volume.Lock()
 
-	if "fsck-job" != pathSplit[3] {
+	switch pathSplit[3] {
+	case "fsck-job":
+		jobType = fsckJobType
+	case "scrub-job":
+		jobType = scrubJobType
+	default:
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	if 3 == numPathParts {
-		if nil != volume.fsckActiveJob {
-			// We know fsckJobRunning == volume.fsckActiveJob.state
+		switch jobType {
+		case fsckJobType:
+			job = volume.fsckActiveJob
+		case scrubJobType:
+			job = volume.scrubActiveJob
+		}
 
-			if volume.fsckActiveJob.validateVolumeHandle.Active() {
-				// FSCK must still be running
+		if nil != job {
+			// We know jobRunning == job.state
+
+			if job.jobHandle.Active() {
+				// FSCK/SCRUB must still be running
 
 				volume.Unlock()
 				responseWriter.WriteHeader(http.StatusPreconditionFailed)
 				return
 			}
 
-			// FSCK finished at some point... make it look like it just finished now
+			// FSCK/SCRUB finished at some point... make it look like it just finished now
 
-			volume.fsckActiveJob.state = fsckJobCompleted
-			volume.fsckActiveJob.endTime = time.Now()
-			volume.fsckActiveJob = nil
+			job.state = jobCompleted
+			job.endTime = time.Now()
+
+			switch jobType {
+			case fsckJobType:
+				volume.fsckActiveJob = nil
+			case scrubJobType:
+				volume.scrubActiveJob = nil
+			}
 		}
 
 		for {
-			fsckJobsCount, err = volume.fsckJobs.Len()
+			switch jobType {
+			case fsckJobType:
+				jobsCount, err = volume.fsckJobs.Len()
+			case scrubJobType:
+				jobsCount, err = volume.scrubJobs.Len()
+			}
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
-			if fsckJobsCount < fsckJobsHistoryMaxSize {
+			if jobsCount < jobsHistoryMaxSize {
 				break
 			}
 
-			ok, err = volume.fsckJobs.DeleteByIndex(0)
+			switch jobType {
+			case fsckJobType:
+				ok, err = volume.fsckJobs.DeleteByIndex(0)
+			case scrubJobType:
+				ok, err = volume.scrubJobs.DeleteByIndex(0)
+			}
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
-				err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
+				switch jobType {
+				case fsckJobType:
+					err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
+				case scrubJobType:
+					err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.scrubJobs failed")
+				}
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 		}
 
-		fsckJob = &fsckJobStruct{
+		job = &jobStruct{
 			volume:    volume,
-			state:     fsckJobRunning,
+			state:     jobRunning,
 			startTime: time.Now(),
 		}
 
-		fsckJob.id, err = volume.headhunterHandle.FetchNonce()
+		job.id, err = volume.headhunterHandle.FetchNonce()
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		ok, err = volume.fsckJobs.Put(fsckJob.id, fsckJob)
+		switch jobType {
+		case fsckJobType:
+			ok, err = volume.fsckJobs.Put(job.id, job)
+		case scrubJobType:
+			ok, err = volume.scrubJobs.Put(job.id, job)
+		}
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
+			switch jobType {
+			case fsckJobType:
+				err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
+			case scrubJobType:
+				err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.scrubJobs failed")
+			}
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		volume.fsckActiveJob = fsckJob
+		switch jobType {
+		case fsckJobType:
+			volume.fsckActiveJob = job
 
-		fsckJob.validateVolumeHandle = fs.ValidateVolume(volumeName)
+			job.jobHandle = fs.ValidateVolume(volumeName)
+		case scrubJobType:
+			volume.scrubActiveJob = job
+
+			job.jobHandle = fs.ScrubVolume(volumeName)
+		}
 
 		volume.Unlock()
 
-		responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/fsck-job/%v", volumeName, fsckJob.id))
+		switch jobType {
+		case fsckJobType:
+			responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/fsck-job/%v", volumeName, job.id))
+		case scrubJobType:
+			responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/scrub-job/%v", volumeName, job.id))
+		}
 		responseWriter.WriteHeader(http.StatusCreated)
 
 		return
@@ -1120,14 +1249,19 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	// If we reach here, numPathParts is 4
 
-	fsckJobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
+	jobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
 	if nil != err {
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
+	switch jobType {
+	case fsckJobType:
+		jobAsValue, ok, err = volume.fsckJobs.GetByKey(jobID)
+	case scrubJobType:
+		jobAsValue, ok, err = volume.scrubJobs.GetByKey(jobID)
+	}
 	if nil != err {
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
@@ -1136,19 +1270,34 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fsckJob = fsckJobAsValue.(*fsckJobStruct)
+	job = jobAsValue.(*jobStruct)
 
-	if volume.fsckActiveJob != fsckJob {
-		volume.Unlock()
-		responseWriter.WriteHeader(http.StatusPreconditionFailed)
-		return
+	switch jobType {
+	case fsckJobType:
+		if volume.fsckActiveJob != job {
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+	case scrubJobType:
+		if volume.scrubActiveJob != job {
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
 	}
 
-	volume.fsckActiveJob.validateVolumeHandle.Cancel()
+	job.jobHandle.Cancel()
 
-	volume.fsckActiveJob.state = fsckJobHalted
-	volume.fsckActiveJob.endTime = time.Now()
-	volume.fsckActiveJob = nil
+	job.state = jobHalted
+	job.endTime = time.Now()
+
+	switch jobType {
+	case fsckJobType:
+		volume.fsckActiveJob = nil
+	case scrubJobType:
+		volume.scrubActiveJob = nil
+	}
 
 	volume.Unlock()
 

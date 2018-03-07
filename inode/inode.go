@@ -1527,7 +1527,7 @@ func (vS *volumeStruct) markCorrupted(inodeNumber InodeNumber) (err error) {
 	return
 }
 
-func (vS *volumeStruct) Validate(inodeNumber InodeNumber) (err error) {
+func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err error) {
 	// we don't want to use the in-memory cache for this; we'll need to fetch
 	// the current real-world bits from disk.
 
@@ -1580,11 +1580,13 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber) (err error) {
 			return
 		}
 		if FileType == ourInode.InodeType {
-			err = validateFileExtents(ourInode)
-			if nil != err {
-				err = blunder.AddError(err, blunder.CorruptInodeError)
-				_ = vS.markCorrupted(inodeNumber)
-				return
+			if deeply {
+				err = validateFileExtents(ourInode)
+				if nil != err {
+					err = blunder.AddError(err, blunder.CorruptInodeError)
+					_ = vS.markCorrupted(inodeNumber)
+					return
+				}
 			}
 		}
 	case SymlinkType:
