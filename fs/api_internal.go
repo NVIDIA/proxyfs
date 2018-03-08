@@ -255,8 +255,8 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 
 func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool) {
 
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	accessReturn = mS.volStruct.VolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, accessMode,
 		inode.NoOverride)
@@ -264,8 +264,8 @@ func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	pPath, err = mS.volStruct.VolumeHandle.ProvisionObject()
 	stats.IncrementOperations(&stats.FsProvisionObjOps)
@@ -273,8 +273,8 @@ func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
 }
 
 func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	err = validateBaseName(basename)
 	if err != nil {
@@ -343,8 +343,8 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	defer mS.doInlineCheckpointIfEnabled()
 
@@ -608,8 +608,8 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 // Implements file locking conforming to fcntl(2) locking description. F_SETLKW is not implemented. Supports F_SETLW and F_GETLW.
 // whence: FS supports only SEEK_SET - starting from 0, since it does not manage file handles, caller is expected to supply the start and length relative to offset ZERO.
 func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlock *FlockStruct) (outFlock *FlockStruct, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	outFlock = inFlock
 
@@ -710,8 +710,8 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -749,8 +749,8 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeType inode.InodeType, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -767,8 +767,8 @@ func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (value []byte, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -803,8 +803,8 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsDir bool, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -835,8 +835,8 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsFile bool, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -857,8 +857,8 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsSymlink bool, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -879,8 +879,8 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	var (
 		inodeType inode.InodeType
@@ -971,8 +971,8 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 }
 
 func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -1010,8 +1010,8 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	dirInodeLock, err := mS.volStruct.initInodeLock(dirInodeNumber, nil)
 	if err != nil {
@@ -1037,8 +1037,8 @@ func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	stats.IncrementOperations(&stats.FsPathLookupOps)
 
@@ -1084,8 +1084,8 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 }
 
 func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	// it'll hold a dir lock and a file lock for each element path, plus a lock on the destination dir and the root dir
 	heldLocks := make([]*dlm.RWLockStruct, 0, 2*len(elementPaths)+2)
@@ -1297,8 +1297,8 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 }
 
 func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	// Get the inode, type, and lock for the parent directory
 	parentInodeNumber, parentInodeType, parentDirLock, err := mS.resolvePathForWrite(parentDir, nil)
@@ -1374,8 +1374,8 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 }
 
 func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber)
 	if err != nil {
@@ -1444,8 +1444,8 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 }
 
 func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	ino, _, inoLock, err := mS.resolvePathForRead(vContainerName, nil)
 	if err != nil {
@@ -1643,8 +1643,8 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 }
 
 func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeNumber, inodeType, inodeLock, err := mS.resolvePathForRead(containerObjectPath, nil)
 	ino = uint64(inodeNumber)
@@ -1723,8 +1723,8 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 }
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	ino, inoType, inoLock, err := mS.resolvePathForRead(entityPath, nil)
 	if err != nil {
@@ -1760,8 +1760,8 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 }
 
 func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	// Find inode for container or object
 	fullPathName := parentDir + "/" + baseName
@@ -2017,8 +2017,8 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 }
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	reifyTheFile := func() (fileInodeNumber inode.InodeNumber, err error) {
 		// Reify the Swift object into a ProxyFS file by making a new,
@@ -2057,8 +2057,8 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 }
 
 func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	createTheDirectory := func() (dirInodeNumber inode.InodeNumber, err error) {
 		dirInodeNumber, err = mS.volStruct.VolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
@@ -2090,8 +2090,8 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 		newDirInodeNumber    inode.InodeNumber
 	)
 
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	// Yes, it's a heavy lock to hold on the root inode. However, we
 	// might need to add a new directory entry there, so there's not
@@ -2160,8 +2160,8 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 }
 
 func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	// Make sure the file basename is not too long
 	err = validateBaseName(basename)
@@ -2219,8 +2219,8 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2255,8 +2255,8 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	err = validateBaseName(srcBasename)
 	if err != nil {
@@ -2355,8 +2355,8 @@ retryLock:
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2405,8 +2405,8 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 }
 
 func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2436,8 +2436,8 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2476,8 +2476,8 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 }
 
 func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2537,8 +2537,8 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2605,8 +2605,8 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2637,8 +2637,8 @@ func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, newSize uint64) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2670,8 +2670,8 @@ func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	callerID := dlm.GenerateCallerID()
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, callerID)
@@ -2749,8 +2749,8 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2942,8 +2942,8 @@ const (
 )
 
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -2995,8 +2995,8 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	statVFS = make(map[StatVFSKey]uint64)
 
@@ -3017,8 +3017,8 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 }
 
 func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	err = validateBaseName(basename)
 	if err != nil {
@@ -3081,8 +3081,8 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	callerID := dlm.GenerateCallerID()
 	inodeLock, err := mS.volStruct.initInodeLock(inodeNumber, callerID)
@@ -3160,8 +3160,8 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
-	mS.volStruct.validateVolumeRWMutex.RLock()
-	defer mS.volStruct.validateVolumeRWMutex.RUnlock()
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
 		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
