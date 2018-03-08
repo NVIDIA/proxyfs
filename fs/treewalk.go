@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -52,12 +53,12 @@ type jobStruct struct {
 	parallelismChanSize    uint64
 	inodeVolumeHandle      inode.VolumeHandle
 	headhunterVolumeHandle headhunter.VolumeHandle
+	inodeBPTree            sortedmap.BPlusTree // Maps Inode# to LinkCount
+	childrenWaitGroup      sync.WaitGroup
 }
 
 type validateVolumeStruct struct {
 	jobStruct
-	childrenWaitGroup          sync.WaitGroup
-	inodeBPTree                sortedmap.BPlusTree // Maps Inode# to LinkCount
 	objectBPTree               sortedmap.BPlusTree // Maps Object# to ByteCount
 	lostAndFoundDirInodeNumber inode.InodeNumber
 	accountName                string
@@ -672,8 +673,8 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		return
 	}
 
-	vVS.volume.validateVolumeRWMutex.Lock()
-	defer vVS.volume.validateVolumeRWMutex.Unlock()
+	vVS.volume.jobRWMutex.Lock()
+	defer vVS.volume.jobRWMutex.Unlock()
 
 	// Flush all File Inodes currently in flight
 
@@ -856,7 +857,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	inodeCount, err = vVS.inodeBPTree.Len()
 	if nil != err {
-		vVS.jobLogErr("Got inode.Len() failure: %v", err)
+		vVS.jobLogErr("Got vVS.inodeBPTree.Len() failure: %v", err)
 		return
 	}
 
@@ -1167,52 +1168,47 @@ func (sVS *scrubVolumeStruct) Info() (info []string) {
 	return
 }
 
-/*
 func (sVS *scrubVolumeStruct) scrubVolumeInode(inodeNumber uint64) {
 	var (
-		err error
-		ok  bool
+		err       error
+		inodeLock *dlm.RWLockStruct
 	)
 
-	defer vVS.childrenWaitGroup.Done()
+	defer sVS.childrenWaitGroup.Done()
 
-	vVS.jobGrabParallelism()
-	defer vVS.jobReleaseParallelism()
+	defer sVS.jobReleaseParallelism()
 
-	if vVS.stopFlag {
+	inodeLock, err = sVS.volume.initInodeLock(inode.InodeNumber(inodeNumber), nil)
+	if nil != err {
+		sVS.jobLogErr("Got initInodeLock(0x%016X) failure: %v", inodeNumber, err)
 		return
 	}
+	err = inodeLock.WriteLock()
+	if nil != err {
+		sVS.jobLogErr("Got inodeLock.WriteLock() for Inode# 0x%016X failure: %v", inodeNumber, err)
+		return
+	}
+	defer inodeLock.Unlock()
 
-	err = vVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber), true)
+	err = sVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber), true)
+	if nil != err {
+		sVS.jobLogInfo("Got inode.Validate(0x%016X) failure: %v ... removing it", inodeNumber, err)
 
-	vVS.Lock()
-	defer vVS.Unlock()
-
-	if nil == err {
-		ok, err = vVS.inodeBPTree.Put(inodeNumber, uint64(0)) // Initial LinkCount == 0
+		err = sVS.headhunterVolumeHandle.DeleteInodeRec(inodeNumber)
 		if nil != err {
-			vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, 0) failure: %v", inodeNumber, err)
-			return
-		}
-		if !ok {
-			vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, 0) !ok", inodeNumber)
-			return
-		}
-	} else {
-		vVS.jobLogInfoWhileLocked("Got inode.Validate(0x%016X) failure: %v ... removing it", inodeNumber, err)
-
-		err = vVS.headhunterVolumeHandle.DeleteInodeRec(inodeNumber)
-		if nil != err {
-			vVS.jobLogErrWhileLocked("Got headhunter.DeleteInodeRec(0x%016X) failure: %v", inodeNumber, err)
+			sVS.jobLogErr("Got headhunter.DeleteInodeRec(0x%016X) failure: %v", inodeNumber, err)
 		}
 	}
 }
-*/
 
 func (sVS *scrubVolumeStruct) scrubVolume() {
 	var (
-		err error
-		ok  bool
+		err         error
+		inodeCount  int
+		inodeIndex  uint64
+		inodeNumber uint64
+		key         sortedmap.Key
+		ok          bool
 	)
 
 	sVS.jobLogInfo("SCRUB job initiated")
@@ -1281,66 +1277,94 @@ func (sVS *scrubVolumeStruct) scrubVolume() {
 
 	sVS.bpTreeCache = sortedmap.NewBPlusTreeCache(jobBPTreeEvictLowLimit, jobBPTreeEvictHighLimit)
 
-	sVS.jobLogInfo("TODO: Finish scrubVolume() - need to fetch inode list while ex-Lock'd")
+	sVS.inodeBPTree = sortedmap.NewBPlusTree(jobBPTreeMaxKeysPerNode, sortedmap.CompareUint64, sVS, sVS.bpTreeCache)
+	defer func(sVS *scrubVolumeStruct) {
+		var err error
 
-	sVS.volume.validateVolumeRWMutex.RLock()
-	defer sVS.volume.validateVolumeRWMutex.RLock()
-
-	/*
-		// Validate all Inodes in InodeRec table in headhunter
-
-		vVS.inodeBPTree = sortedmap.NewBPlusTree(jobBPTreeMaxKeysPerNode, sortedmap.CompareUint64, vVS, vVS.bpTreeCache)
-		defer func(vVS *validateVolumeStruct) {
-			var err error
-
-			err = vVS.inodeBPTree.Discard()
-			if nil != err {
-				vVS.jobLogErr("Got vVS.inodeBPTree.Discard() failure: %v", err)
-			}
-		}(vVS)
-
-		vVS.Lock() // Hold off vVS.validateVolumeInode() goroutines throughout loop
-
-		vVS.jobStartParallelism(validateVolumeInodeParallelism)
-
-		inodeIndex = 0
-
-		for {
-			if vVS.stopFlag {
-				vVS.Unlock()
-				vVS.childrenWaitGroup.Wait()
-				vVS.jobEndParallelism()
-				return
-			}
-
-			inodeNumber, ok, err = vVS.headhunterVolumeHandle.IndexedInodeNumber(inodeIndex)
-			if nil != err {
-				vVS.jobLogErrWhileLocked("Got headhunter.IndexedInodeNumber(0x%016X) failure: %v", inodeIndex, err)
-				vVS.Unlock()
-				vVS.childrenWaitGroup.Wait()
-				vVS.jobEndParallelism()
-				return
-			}
-			if !ok {
-				break
-			}
-
-			vVS.childrenWaitGroup.Add(1)
-			go vVS.validateVolumeInode(inodeNumber) // Will be blocked until subsequent vVS.Unlock()
-
-			inodeIndex++
+		err = sVS.inodeBPTree.Discard()
+		if nil != err {
+			sVS.jobLogErr("Got sVS.inodeBPTree.Discard() failure: %v", err)
 		}
+	}(sVS)
 
-		vVS.Unlock()
+	sVS.jobLogInfo("Beginning enumeration of inodes to be deeply validated")
 
-		vVS.childrenWaitGroup.Wait()
+	sVS.volume.jobRWMutex.Lock()
 
-		vVS.jobEndParallelism()
+	inodeIndex = 0
 
-		if vVS.stopFlag || (0 < len(vVS.err)) {
+	for {
+		if sVS.stopFlag {
+			sVS.volume.jobRWMutex.Unlock()
 			return
 		}
 
-		vVS.jobLogInfo("Completed validation of all Inode's")
-	*/
+		inodeNumber, ok, err = sVS.headhunterVolumeHandle.IndexedInodeNumber(inodeIndex)
+		if nil != err {
+			sVS.volume.jobRWMutex.Unlock()
+			sVS.jobLogErrWhileLocked("Got headhunter.IndexedInodeNumber(0x%016X) failure: %v", inodeIndex, err)
+			return
+		}
+		if !ok {
+			break
+		}
+
+		ok, err = sVS.inodeBPTree.Put(inodeNumber, uint64(0)) // Unused LinkCount - just set it to 0
+		if nil != err {
+			sVS.volume.jobRWMutex.Unlock()
+			sVS.jobLogErrWhileLocked("Got sVS.inodeBPTree.Put(0x%016X, 0) failure: %v", inodeNumber, err)
+			return
+		}
+		if !ok {
+			sVS.volume.jobRWMutex.Unlock()
+			sVS.jobLogErrWhileLocked("Got sVS.inodeBPTree.Put(0x%016X, 0) !ok", inodeNumber)
+			return
+		}
+
+		inodeIndex++
+	}
+
+	sVS.volume.jobRWMutex.Unlock()
+
+	sVS.jobLogInfo("Completed enumeration of inodes to be deeply validated")
+
+	sVS.jobLogInfo("Beginning deep validation of inodes")
+
+	inodeCount, err = sVS.inodeBPTree.Len()
+	if nil != err {
+		sVS.jobLogErr("Got sVS.inodeBPTree.Len() failure: %v", err)
+		return
+	}
+
+	sVS.jobStartParallelism(scrubVolumeInodeParallelism)
+
+	for inodeIndex = uint64(0); inodeIndex < uint64(inodeCount); inodeIndex++ {
+		if sVS.stopFlag {
+			sVS.childrenWaitGroup.Wait()
+			sVS.jobEndParallelism()
+			return
+		}
+
+		key, _, ok, err = sVS.inodeBPTree.GetByIndex(int(inodeIndex))
+		if nil != err {
+			sVS.jobLogErr("Got sVS.inodeBPTree.GetByIndex(0x%016X) failure: %v", inodeIndex, err)
+			return
+		}
+		if !ok {
+			sVS.jobLogErr("Got sVS.inodeBPTree.GetByIndex(0x%016X) !ok", inodeIndex)
+			return
+		}
+
+		inodeNumber = key.(uint64)
+
+		sVS.jobGrabParallelism()
+		sVS.childrenWaitGroup.Add(1)
+		go sVS.scrubVolumeInode(inodeNumber)
+	}
+
+	sVS.childrenWaitGroup.Wait()
+
+	sVS.jobEndParallelism()
+
+	sVS.jobLogInfo("Completed deep validation of inodes")
 }

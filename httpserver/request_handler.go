@@ -51,6 +51,8 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
+	case "/styles.css" == path:
+		doGetOfStylesDotCSS(responseWriter, request)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
@@ -68,11 +70,21 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
+func doGetOfStylesDotCSS(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/css")
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write(utils.StringToByteSlice(".table td.fit,\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(".table th.fit {\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  white-space: nowrap;\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("  width: 1%;\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("}\n"))
+}
+
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
 	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>ProxyFS</title>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
@@ -225,7 +237,7 @@ func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.R
 	responseWriter.WriteHeader(http.StatusOK)
 
 	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Trigger Arm/Disarm Page</title>\n")))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
@@ -495,7 +507,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.WriteHeader(http.StatusOK)
 
 			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>Volumes</title>\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
@@ -595,6 +607,8 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 	volumeName = volume.name
 	volume.Lock()
 
+	markJobsCompletedIfNoLongerActiveWhileLocked(volume)
+
 	if 3 == numPathParts {
 		switch jobType {
 		case fsckJobType:
@@ -631,38 +645,7 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 			jobsIDList = append(jobsIDList, jobID)
 		}
 
-		switch jobType {
-		case fsckJobType:
-			job = volume.fsckActiveJob
-		case scrubJobType:
-			job = volume.scrubActiveJob
-		}
-
-		if nil == job {
-			inactive = true
-		} else {
-			// We know jobRunning == job.state
-
-			if job.jobHandle.Active() {
-				// FSCK/SCRUB must still be running
-
-				inactive = false
-			} else {
-				// FSCK/SCRUB finished at some point... make it look like it just finished now
-
-				job.state = jobCompleted
-				job.endTime = time.Now()
-
-				switch jobType {
-				case fsckJobType:
-					volume.fsckActiveJob = nil
-				case scrubJobType:
-					volume.scrubActiveJob = nil
-				}
-
-				inactive = true
-			}
-		}
+		inactive = (nil == volume.fsckActiveJob) && (nil == volume.scrubActiveJob)
 
 		volume.Unlock()
 
@@ -687,7 +670,7 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 			responseWriter.WriteHeader(http.StatusOK)
 
 			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 			switch jobType {
 			case fsckJobType:
@@ -755,22 +738,6 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 	}
 	job = jobAsValue.(*jobStruct)
 
-	if jobRunning == job.state {
-		if !job.jobHandle.Active() {
-			// FSCK/SCRUB finished at some point... make it look like it just finished now
-
-			job.state = jobCompleted
-			job.endTime = time.Now()
-
-			switch jobType {
-			case fsckJobType:
-				volume.fsckActiveJob = nil
-			case scrubJobType:
-				volume.scrubActiveJob = nil
-			}
-		}
-	}
-
 	if formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
@@ -807,7 +774,7 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		responseWriter.WriteHeader(http.StatusOK)
 
 		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 		_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 		switch jobType {
 		case fsckJobType:
@@ -934,7 +901,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		responseWriter.WriteHeader(http.StatusOK)
 
 		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 
 		for treeType, treeName := range treeTypes {
 
@@ -1127,35 +1094,14 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	if 3 == numPathParts {
-		switch jobType {
-		case fsckJobType:
-			job = volume.fsckActiveJob
-		case scrubJobType:
-			job = volume.scrubActiveJob
-		}
+		markJobsCompletedIfNoLongerActiveWhileLocked(volume)
 
-		if nil != job {
-			// We know jobRunning == job.state
+		if (nil != volume.fsckActiveJob) || (nil != volume.scrubActiveJob) {
+			// Cannot start an FSCK or SCRUB job while either is active
 
-			if job.jobHandle.Active() {
-				// FSCK/SCRUB must still be running
-
-				volume.Unlock()
-				responseWriter.WriteHeader(http.StatusPreconditionFailed)
-				return
-			}
-
-			// FSCK/SCRUB finished at some point... make it look like it just finished now
-
-			job.state = jobCompleted
-			job.endTime = time.Now()
-
-			switch jobType {
-			case fsckJobType:
-				volume.fsckActiveJob = nil
-			case scrubJobType:
-				volume.scrubActiveJob = nil
-			}
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
 		}
 
 		for {
@@ -1169,7 +1115,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
-			if jobsCount < jobsHistoryMaxSize {
+			if jobsCount < int(globals.jobHistoryMaxSize) {
 				break
 			}
 
@@ -1368,5 +1314,25 @@ func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.
 		valueAsString = valueAsValue.(string)
 		line = fmt.Sprintf(format, keyAsString, valueAsString)
 		_, _ = responseWriter.Write(utils.StringToByteSlice(line))
+	}
+}
+
+func markJobsCompletedIfNoLongerActiveWhileLocked(volume *volumeStruct) {
+	// First, mark as finished now any FSCK/SCRUB job
+
+	if (nil != volume.fsckActiveJob) && !volume.fsckActiveJob.jobHandle.Active() {
+		// FSCK job finished at some point... make it look like it just finished now
+
+		volume.fsckActiveJob.state = jobCompleted
+		volume.fsckActiveJob.endTime = time.Now()
+		volume.fsckActiveJob = nil
+	}
+
+	if (nil != volume.scrubActiveJob) && !volume.scrubActiveJob.jobHandle.Active() {
+		// SCRUB job finished at some point... make it look like it just finished now
+
+		volume.scrubActiveJob.state = jobCompleted
+		volume.scrubActiveJob.endTime = time.Now()
+		volume.scrubActiveJob = nil
 	}
 }

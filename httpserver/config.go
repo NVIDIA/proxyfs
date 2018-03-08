@@ -15,10 +15,6 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-const (
-	jobsHistoryMaxSize = 5 // TODO: May want to parameterize this ultimately
-)
-
 type jobState uint8
 
 const (
@@ -65,15 +61,16 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	active        bool
-	whoAmI        string
-	ipAddr        string
-	tcpPort       uint16
-	ipAddrTCPPort string
-	netListener   net.Listener
-	wg            sync.WaitGroup
-	confMap       conf.ConfMap
-	volumeLLRB    sortedmap.LLRBTree // Key == volumeStruct.name, Value == *volumeStruct
+	active            bool
+	jobHistoryMaxSize uint32
+	whoAmI            string
+	ipAddr            string
+	tcpPort           uint16
+	ipAddrTCPPort     string
+	netListener       net.Listener
+	wg                sync.WaitGroup
+	confMap           conf.ConfMap
+	volumeLLRB        sortedmap.LLRBTree // Key == volumeStruct.name, Value == *volumeStruct
 }
 
 var globals globalsStruct
@@ -88,6 +85,16 @@ func Up(confMap conf.ConfMap) (err error) {
 	)
 
 	globals.confMap = confMap
+
+	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
+	if nil != err {
+		/*
+			TODO: Eventually change this to:
+				err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"JobHistoryMaxSize\") failed: %v", err)
+				return
+		*/
+		globals.jobHistoryMaxSize = 5
+	}
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -150,7 +157,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.tcpPort, err = confMap.FetchOptionValueUint16("HTTPServer", "TCPPort")
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"TCPPort\") failed: %v", err)
+		err = fmt.Errorf("confMap.FetchOptionValueUint16(\"HTTPServer\", \"TCPPort\") failed: %v", err)
 		return
 	}
 
@@ -311,6 +318,16 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	globals.Lock()
 	defer globals.Unlock()
+
+	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
+	if nil != err {
+		/*
+			TODO: Eventually change this to:
+				err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"JobHistoryMaxSize\") failed: %v", err)
+				return
+		*/
+		globals.jobHistoryMaxSize = 5
+	}
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
