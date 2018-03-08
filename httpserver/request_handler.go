@@ -1034,6 +1034,7 @@ func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) 
 
 func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
+		acceptHeader  string
 		err           error
 		job           *jobStruct
 		jobAsValue    sortedmap.Value
@@ -1188,7 +1189,14 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		case scrubJobType:
 			responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/scrub-job/%v", volumeName, job.id))
 		}
-		responseWriter.WriteHeader(http.StatusCreated)
+
+		acceptHeader = request.Header.Get("Accept")
+
+		if strings.Contains(acceptHeader, "text/html") {
+			responseWriter.WriteHeader(http.StatusSeeOther)
+		} else {
+			responseWriter.WriteHeader(http.StatusCreated)
+		}
 
 		return
 	}
