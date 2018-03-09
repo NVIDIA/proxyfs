@@ -22,9 +22,341 @@ import (
 
 type httpRequestHandler struct{}
 
+type staticContentType struct {
+	contentType string
+	content     []byte
+}
+
+var stylesDotCSS = &staticContentType{
+	contentType: "text/css",
+	content: []byte(`.table td.fit,
+.table th.fit {
+  white-space: nowrap;
+  width: 1%;
+}
+
+body { padding-top: 70px; }
+`),
+}
+
+// To use: fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)
+const indexDotHTMLTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="./styles.css">
+    <title>ProxyFS Management - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item active">
+            <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              Triggers
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
+              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
+              <a class="dropdown-item" href="/trigger">All</a>
+              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
+              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
+            </div>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/volume">Volumes</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item active" aria-current="page">Home</li>
+        </ol>
+      </nav>
+
+      <h1 class="display-4">
+        ProxyFS Management
+      </h1>
+
+      <div class="card-deck">
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">Configuration parameters</h5>
+            <p class="card-text">Diplays a JSON representation of the active configuration.</p>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="/config" class="card-link">Configuration Parameters</a>
+          </ul>
+        </div>
+
+        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">StatsD/Prometheus</h5>
+            <p class="card-text">Displays current statistics.</p>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="/metrics" class="card-link">StatsD/Prometheus Page</a>
+          </ul>
+        </div>
+
+        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
+        <div class="w-100 d-none d-md-block d-lg-none"><!-- wrap every 2 on md--></div>
+        <div class="w-100 d-none d-lg-block d-xl-none"><!-- wrap every 2 on lg--></div>
+        <div class="w-100 d-none d-xl-block"><!-- wrap every 3 on xl--></div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">Triggers</h5>
+            <p class="card-text">Manage triggers for simulating failures.</p>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a class="card-link" href="/arm-disarm-trigger">Arm/Disarm</a>
+              <a class="card-link" href="/trigger">All</a>
+              <a class="card-link" href="/trigger?armed=true">Armed</a>
+              <a class="card-link" href="/trigger?armed=false">Disarmed</a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
+
+        <div class="card mb-4">
+          <div class="card-body">
+            <h5 class="card-title">Volumes</h5>
+            <p class="card-text">Examine volumes currently active on this ProxyFS node.</p>
+          </div>
+          <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+              <a href="/volume" class="card-link">Volume Page</a>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)
+const volumeListTopTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="./styles.css">
+    <title>Volumes - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              Triggers
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
+              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
+              <a class="dropdown-item" href="/trigger">All</a>
+              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
+              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
+            </div>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
+        </ol>
+      </nav>
+
+      <h1 class="display-4">Volumes</h1>
+      <table class="table table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">Volume Name</th>
+            <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+`
+
+// To use: fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)
+const volumeListPerVolumeTemplate string = `          <tr>
+            <td>%[1]v</td>
+            <td class="fit"><a href="/volume/%[1]v/fsck-job" class="btn btn-primary">FSCK jobs</a></td>
+            <td class="fit"><a href="/volume/%[1]v/scrub-job" class="btn btn-primary">SCRUB jobs</a></td>
+          </tr>
+`
+
+const volumeListBottom string = `        </tbody>
+      </table>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
+const jobTopTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="./styles.css">
+    <title>%[3]v Jobs %[2]v - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              Triggers
+            </a>
+            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
+              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
+              <a class="dropdown-item" href="/trigger">All</a>
+              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
+              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
+            </div>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item active" aria-current="page">%[3]v Jobs %[2]v</li>
+        </ol>
+      </nav>
+
+      <h1 class="display-4">
+        %[3]v Jobs
+        <small class="text-muted">%[2]v</small>
+      </h1>
+
+      <table class="table table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">Job ID</th>
+            <th>Start date</th>
+            <th>Status</th>
+            <th class="fit">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+`
+
+// To use: fmt.Sprintf(jobPer{Running|Successful|Failed}JobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+const jobPerRunningJobTemplate string = `          <tr>
+            <td>%[1]v</td>
+            <td>%[2]v</td>
+            <td>Running</td>
+            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
+          </tr>
+`
+const jobPerSuccessfulJobTemplate string = `          <tr class="table-success">
+            <td>%[1]v</td>
+            <td>%[2]v</td>
+            <td>Successful</td>
+            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
+          </tr>
+`
+const jobPerFailedJobTemplate string = `          <tr class="table-danger">
+            <td>%[1]v</td>
+            <td>%[2]v</td>
+            <td>Failed</td>
+            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
+          </tr>
+`
+
+const jobListBottom string = `        </tbody>
+      </table>
+    <br />
+`
+
+// To use: fmt.Sprintf(fsckJobStartJobButtonTemplate, volumeName, {"fsck"|"scrub"})
+const jobStartJobButtonTemplate string = `    <form method="post" action="/volume/%[1]v/%[2]v-job">
+      <input type="submit" value="Start new job" class="btn btn-primary">
+    </form>
+`
+
+const jobBottom string = `    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  </body>
+</html>
+`
+
 func serveHTTP() {
 	_ = http.Serve(globals.netListener, httpRequestHandler{})
-
 	globals.wg.Done()
 }
 
@@ -52,7 +384,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/styles.css" == path:
-		doGetOfStylesDotCSS(responseWriter, request)
+		doGetOfStaticContent(responseWriter, request, stylesDotCSS)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
@@ -70,38 +402,16 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
-func doGetOfStylesDotCSS(responseWriter http.ResponseWriter, request *http.Request) {
-	responseWriter.Header().Set("Content-Type", "text/css")
+func doGetOfStaticContent(responseWriter http.ResponseWriter, request *http.Request, staticContent *staticContentType) {
+	responseWriter.Header().Set("Content-Type", staticContent.contentType)
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(utils.StringToByteSlice(".table td.fit,\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice(".table th.fit {\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  white-space: nowrap;\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  width: 1%;\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("}\n"))
+	_, _ = responseWriter.Write(staticContent.content)
 }
 
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>ProxyFS</title>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/config\">Configuration Parameters</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/metrics\">StatsD/Prometheus Page</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    Trigger Pages:\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/arm-disarm-trigger\">Arm/Disarm</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger\">All</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=true\">Armed</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=false\">Disarmed</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/volume\">Volume Page</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)))
 }
 
 func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -506,23 +816,13 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>Volumes</title>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)))
+
 			for volumeListIndex, volumeName = range volumeList {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td><a href=\"/volume/%v/fsck-job\">FSCK</a></td>\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td><a href=\"/volume/%v/scrub-job\">SCRUB</a></td>\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)))
 			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(volumeListBottom))
 		}
 
 		return
@@ -584,7 +884,6 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		jobStatusJSONStruct     *JobStatusJSONPackedStruct
 		jobsCount               int
 		jobsIDList              []uint64
-		jobsIDListIndex         int
 		jobsIndex               int
 		ok                      bool
 		numPathParts            int
@@ -669,45 +968,34 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 			switch jobType {
 			case fsckJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Jobs</title>\n", volumeName)))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, "FSCK")))
 			case scrubJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v SCRUB Jobs</title>\n", volumeName)))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-			for jobsIDListIndex, jobID = range jobsIDList {
-				if 0 < jobsIDListIndex {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-				}
+
+			for _, jobID = range jobsIDList {
 				switch jobType {
 				case fsckJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job/%v\">\n", volumeName, jobID)))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, time.Now().Format(time.RFC3339), volumeName, "fsck")))
 				case scrubJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/scrub-job/%v\">\n", volumeName, jobID)))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, time.Now().Format(time.RFC3339), volumeName, "scrub")))
 				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", jobID)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </a>\n"))
 			}
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobListBottom))
+
 			if inactive {
-				if 0 < jobsCount {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-				}
 				switch jobType {
 				case fsckJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job\">\n", volumeName)))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobStartJobButtonTemplate, volumeName, "fsck")))
 				case scrubJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/scrub-job\">\n", volumeName)))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobStartJobButtonTemplate, volumeName, "scrub")))
 				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Start\">\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
 			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobBottom))
 		}
 
 		return
