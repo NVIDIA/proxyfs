@@ -17,7 +17,7 @@ FROM centos:7.4.1708
 # -  http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.1.1-1.fc25.x86_64.rpm
 ## Setup Samba
 # -  git \
-# -  gcc-c++-4.8.5-16.el7_4.1 \
+# -  gcc-c++-4.8.5-16.el7_4.2 \
 # -  python-devel-2.7.5-58.el7 \
 # -  gnutls-devel-3.3.26-9.el7 \
 # -  libacl-devel-2.2.51-12.el7 \
@@ -35,7 +35,7 @@ RUN yum -y install \
     http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-1.1.1-1.fc25.x86_64.rpm \
     http://www.rpmfind.net/linux/fedora/linux/releases/25/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.1.1-1.fc25.x86_64.rpm \
     git \
-    gcc-c++-4.8.5-16.el7_4.1 \
+    gcc-c++-4.8.5-16.el7_4.2 \
     python-devel-2.7.5-58.el7 \
     gnutls-devel-3.3.26-9.el7 \
     libacl-devel-2.2.51-12.el7 \
