@@ -1,6 +1,6 @@
 # GoMakefile is a template to be included by Go package Makefile's in this repo
 
-all: fmt install generate test vet
+all: fmt generate install test vet
 
 .PHONY: all bench clean cover fmt generate install test vet
 
