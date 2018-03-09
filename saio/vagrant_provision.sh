@@ -53,7 +53,7 @@ echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc-c++-4.8.5-16.el7_4.1 \
+yum -y install gcc-c++-4.8.5-16.el7_4.2 \
                python-devel-2.7.5-58.el7 \
                gnutls-devel-3.3.26-9.el7 \
                libacl-devel-2.2.51-12.el7 \

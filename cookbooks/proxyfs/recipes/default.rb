@@ -226,8 +226,8 @@ if node[:platform_family].include?("rhel")
   samba_packages = [["samba", "4.6.2-12.el7_4"], ["samba-client", "4.6.2-12.el7_4"]]
 
   samba_deps = [
-    ["gcc", "4.8.5-16.el7_4.1"],
-    ["gcc-c++", "4.8.5-16.el7_4.1"],
+    ["gcc", "4.8.5-16.el7_4.2"],
+    ["gcc-c++", "4.8.5-16.el7_4.2"],
     ["python-devel", "2.7.5-58.el7"],
     ["gnutls-devel", "3.3.26-9.el7"],
     ["libacl-devel", "2.2.51-12.el7"],
