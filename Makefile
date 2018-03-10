@@ -32,14 +32,14 @@ uname := $(shell uname)
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: fmt stringer generate install test python-test vet c-clean c-build c-install c-test
+    all: fmt stringer get generate install test python-test vet c-clean c-build c-install c-test
 
-    all-deb-builder: fmt stringer generate install vet c-clean c-build c-install-deb-builder
+    all-deb-builder: fmt stringer get generate install vet c-clean c-build c-install-deb-builder
 else
-    all: fmt stringer generate install test vet
+    all: fmt stringer get generate install test vet
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install python-test stringer test vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install python-test stringer test vet
 
 bench:
 	@set -e; \
@@ -98,6 +98,12 @@ generate:
 	@set -e; \
 	for gosubdir in $(gosubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
+	done
+
+get:
+	@set -e; \
+	for gosubdir in $(gosubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir get; \
 	done
 
 install:
