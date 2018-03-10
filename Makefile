@@ -32,11 +32,11 @@ uname := $(shell uname)
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: version fmt stringer get generate install test python-test vet c-clean c-build c-install c-test
+    all: version fmt stringer generate install test python-test vet c-clean c-build c-install c-test
 
-    all-deb-builder: version fmt stringer get generate install vet c-clean c-build c-install-deb-builder
+    all-deb-builder: version fmt stringer generate install vet c-clean c-build c-install-deb-builder
 else
-    all: version fmt stringer get generate install test vet
+    all: version fmt stringer generate install test vet
 endif
 
 .PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install python-test stringer test version vet
@@ -125,7 +125,7 @@ test:
 	done;
 
 version:
-	go version
+	@go version
 
 vet:
 	@set -e; \

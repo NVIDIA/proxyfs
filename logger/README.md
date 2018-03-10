@@ -4,7 +4,7 @@ Logging package for ProxyFS
 
 ## About
 
-This package is implemented on top of the [logrus](https://github.com/Sirupsen/logrus) package to provide structured logging functionality for ProxyFS. It uses logrus's log fields functionality to generate logs that are easily parsed by log tools.
+This package is implemented on top of the [logrus](https://github.com/sirupsen/logrus) package to provide structured logging functionality for ProxyFS. It uses logrus's log fields functionality to generate logs that are easily parsed by log tools.
 
 The purpose of this package is to provide a front-end to the Logrus package to provide standard field-based logging for ProxyFS.
 	
@@ -128,7 +128,7 @@ The following plain Debug* APIs are not supported, since all Debug logging must 
 ## [Log Fields](log-fields)
 
 As described in 
-[logrus fields documentation](https://github.com/Sirupsen/logrus/blob/master/README.md#fields), the use of log fields allows careful, structured logging instead of long, hard-to-parse error messages. 
+[logrus fields documentation](https://github.com/sirupsen/logrus/blob/master/README.md#fields), the use of log fields allows careful, structured logging instead of long, hard-to-parse error messages. 
 
 For example, instead of:
 
