@@ -306,7 +306,7 @@ const jobTopTemplate string = `<!doctype html>
         <thead>
           <tr>
             <th scope="col">Job ID</th>
-            <th>Start date</th>
+            <th>Start Time</th>
             <th>Status</th>
             <th class="fit">&nbsp;</th>
           </tr>
@@ -314,11 +314,18 @@ const jobTopTemplate string = `<!doctype html>
         <tbody>
 `
 
-// To use: fmt.Sprintf(jobPer{Running|Successful|Failed}JobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+// To use: fmt.Sprintf(jobPer{Running|Halted|Successful|Failed}JobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
 const jobPerRunningJobTemplate string = `          <tr>
             <td>%[1]v</td>
             <td>%[2]v</td>
             <td>Running</td>
+            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
+          </tr>
+`
+const jobPerHaltedJobTemplate string = `          <tr class="table-info">
+            <td>%[1]v</td>
+            <td>%[2]v</td>
+            <td>Halted</td>
             <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
           </tr>
 `
@@ -877,6 +884,7 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		jobIDAsKey              sortedmap.Key
 		jobInfo                 string
 		jobInfoList             []string
+		jobPerJobTemplate       string
 		jobsIDListJSON          bytes.Buffer
 		jobsIDListJSONPacked    []byte
 		jobStatusJSONBuffer     bytes.Buffer
@@ -919,36 +927,37 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		jobsIDList = make([]uint64, 0, jobsCount)
-		for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
-			switch jobType {
-			case fsckJobType:
-				jobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
-			case scrubJobType:
-				jobIDAsKey, _, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
-			}
-			if nil != err {
-				logger.Fatalf("HTTP Server Logic Error: %v", err)
-			}
-			if !ok {
-				switch jobType {
-				case fsckJobType:
-					err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
-				case scrubJobType:
-					err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
-				}
-				logger.Fatalf("HTTP Server Logic Error: %v", err)
-			}
-			jobID = jobIDAsKey.(uint64)
-
-			jobsIDList = append(jobsIDList, jobID)
-		}
-
 		inactive = (nil == volume.fsckActiveJob) && (nil == volume.scrubActiveJob)
 
 		volume.Unlock()
 
 		if formatResponseAsJSON {
+			jobsIDList = make([]uint64, 0, jobsCount)
+
+			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
+				switch jobType {
+				case fsckJobType:
+					jobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
+				case scrubJobType:
+					jobIDAsKey, _, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
+				}
+				if nil != err {
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					switch jobType {
+					case fsckJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+					case scrubJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
+					}
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				jobID = jobIDAsKey.(uint64)
+
+				jobsIDList = append(jobsIDList, jobID)
+			}
+
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
 
@@ -975,12 +984,48 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
 
-			for _, jobID = range jobsIDList {
+			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
 				switch jobType {
 				case fsckJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, time.Now().Format(time.RFC3339), volumeName, "fsck")))
+					jobIDAsKey, jobAsValue, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
 				case scrubJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, time.Now().Format(time.RFC3339), volumeName, "scrub")))
+					jobIDAsKey, jobAsValue, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
+				}
+				if nil != err {
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					switch jobType {
+					case fsckJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+					case scrubJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
+					}
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+
+				jobID = jobIDAsKey.(uint64)
+				job = jobAsValue.(*jobStruct)
+
+				switch job.state {
+				case jobRunning:
+					jobPerJobTemplate = jobPerRunningJobTemplate
+				case jobHalted:
+					jobPerJobTemplate = jobPerHaltedJobTemplate
+				case jobCompleted:
+					jobErrorList = job.jobHandle.Error()
+					if 0 == len(jobErrorList) {
+						jobPerJobTemplate = jobPerSuccessfulJobTemplate
+					} else {
+						jobPerJobTemplate = jobPerFailedJobTemplate
+					}
+				}
+
+				switch jobType {
+				case fsckJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
+				case scrubJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
 				}
 			}
 
