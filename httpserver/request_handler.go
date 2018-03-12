@@ -22,346 +22,6 @@ import (
 
 type httpRequestHandler struct{}
 
-type staticContentType struct {
-	contentType string
-	content     []byte
-}
-
-var stylesDotCSS = &staticContentType{
-	contentType: "text/css",
-	content: []byte(`.table td.fit,
-.table th.fit {
-  white-space: nowrap;
-  width: 1%;
-}
-
-body { padding-top: 70px; }
-`),
-}
-
-// To use: fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)
-const indexDotHTMLTemplate string = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-    <link rel="stylesheet" href="./styles.css">
-    <title>ProxyFS Management - %[1]v</title>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNavDropdown">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item active">
-            <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
-          </li>
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-              Triggers
-            </a>
-            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
-              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
-              <a class="dropdown-item" href="/trigger">All</a>
-              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
-              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
-            </div>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/volume">Volumes</a>
-          </li>
-        </ul>
-      </div>
-    </nav>
-    <div class="container">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item active" aria-current="page">Home</li>
-        </ol>
-      </nav>
-
-      <h1 class="display-4">
-        ProxyFS Management
-      </h1>
-
-      <div class="card-deck">
-
-        <div class="card mb-4">
-          <div class="card-body">
-            <h5 class="card-title">Configuration parameters</h5>
-            <p class="card-text">Diplays a JSON representation of the active configuration.</p>
-          </div>
-          <ul class="list-group list-group-flush">
-            <li class="list-group-item">
-              <a href="/config" class="card-link">Configuration Parameters</a>
-          </ul>
-        </div>
-
-        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
-
-        <div class="card mb-4">
-          <div class="card-body">
-            <h5 class="card-title">StatsD/Prometheus</h5>
-            <p class="card-text">Displays current statistics.</p>
-          </div>
-          <ul class="list-group list-group-flush">
-            <li class="list-group-item">
-              <a href="/metrics" class="card-link">StatsD/Prometheus Page</a>
-          </ul>
-        </div>
-
-        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
-        <div class="w-100 d-none d-md-block d-lg-none"><!-- wrap every 2 on md--></div>
-        <div class="w-100 d-none d-lg-block d-xl-none"><!-- wrap every 2 on lg--></div>
-        <div class="w-100 d-none d-xl-block"><!-- wrap every 3 on xl--></div>
-
-        <div class="card mb-4">
-          <div class="card-body">
-            <h5 class="card-title">Triggers</h5>
-            <p class="card-text">Manage triggers for simulating failures.</p>
-          </div>
-          <ul class="list-group list-group-flush">
-            <li class="list-group-item">
-              <a class="card-link" href="/arm-disarm-trigger">Arm/Disarm</a>
-              <a class="card-link" href="/trigger">All</a>
-              <a class="card-link" href="/trigger?armed=true">Armed</a>
-              <a class="card-link" href="/trigger?armed=false">Disarmed</a>
-            </li>
-          </ul>
-        </div>
-
-        <div class="w-100 d-none d-sm-block d-md-none"><!-- wrap every 1 on sm--></div>
-
-        <div class="card mb-4">
-          <div class="card-body">
-            <h5 class="card-title">Volumes</h5>
-            <p class="card-text">Examine volumes currently active on this ProxyFS node.</p>
-          </div>
-          <ul class="list-group list-group-flush">
-            <li class="list-group-item">
-              <a href="/volume" class="card-link">Volume Page</a>
-          </ul>
-        </div>
-
-      </div>
-    </div>
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-  </body>
-</html>
-`
-
-// To use: fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)
-const volumeListTopTemplate string = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-    <link rel="stylesheet" href="./styles.css">
-    <title>Volumes - %[1]v</title>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNavDropdown">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="/">Home</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
-          </li>
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-              Triggers
-            </a>
-            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
-              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
-              <a class="dropdown-item" href="/trigger">All</a>
-              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
-              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
-            </div>
-          </li>
-          <li class="nav-item active">
-            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
-          </li>
-        </ul>
-      </div>
-    </nav>
-    <div class="container">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Volumes</li>
-        </ol>
-      </nav>
-
-      <h1 class="display-4">Volumes</h1>
-      <table class="table table-striped table-hover">
-        <thead>
-          <tr>
-            <th scope="col">Volume Name</th>
-            <th class="fit">&nbsp;</th>
-            <th class="fit">&nbsp;</th>
-          </tr>
-        </thead>
-        <tbody>
-`
-
-// To use: fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)
-const volumeListPerVolumeTemplate string = `          <tr>
-            <td>%[1]v</td>
-            <td class="fit"><a href="/volume/%[1]v/fsck-job" class="btn btn-primary">FSCK jobs</a></td>
-            <td class="fit"><a href="/volume/%[1]v/scrub-job" class="btn btn-primary">SCRUB jobs</a></td>
-          </tr>
-`
-
-const volumeListBottom string = `        </tbody>
-      </table>
-    </div>
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-  </body>
-</html>
-`
-
-// To use: fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
-const jobTopTemplate string = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-    <link rel="stylesheet" href="./styles.css">
-    <title>%[3]v Jobs %[2]v - %[1]v</title>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNavDropdown">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="/">Home</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
-          </li>
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-              Triggers
-            </a>
-            <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
-              <a class="dropdown-item" href="/arm-disarm-trigger">Arm/Disarm</a>
-              <a class="dropdown-item" href="/trigger">All</a>
-              <a class="dropdown-item" href="/trigger?armed=true">Armed</a>
-              <a class="dropdown-item" href="/trigger?armed=false">Disarmed</a>
-            </div>
-          </li>
-          <li class="nav-item active">
-            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
-          </li>
-        </ul>
-      </div>
-    </nav>
-    <div class="container">
-      <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-          <li class="breadcrumb-item"><a href="/">Home</a></li>
-          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">%[3]v Jobs %[2]v</li>
-        </ol>
-      </nav>
-
-      <h1 class="display-4">
-        %[3]v Jobs
-        <small class="text-muted">%[2]v</small>
-      </h1>
-
-      <table class="table table-striped table-hover">
-        <thead>
-          <tr>
-            <th scope="col">Job ID</th>
-            <th>Start Time</th>
-            <th>Status</th>
-            <th class="fit">&nbsp;</th>
-          </tr>
-        </thead>
-        <tbody>
-`
-
-// To use: fmt.Sprintf(jobPer{Running|Halted|Successful|Failed}JobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
-const jobPerRunningJobTemplate string = `          <tr>
-            <td>%[1]v</td>
-            <td>%[2]v</td>
-            <td>Running</td>
-            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
-          </tr>
-`
-const jobPerHaltedJobTemplate string = `          <tr class="table-info">
-            <td>%[1]v</td>
-            <td>%[2]v</td>
-            <td>Halted</td>
-            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
-          </tr>
-`
-const jobPerSuccessfulJobTemplate string = `          <tr class="table-success">
-            <td>%[1]v</td>
-            <td>%[2]v</td>
-            <td>Successful</td>
-            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
-          </tr>
-`
-const jobPerFailedJobTemplate string = `          <tr class="table-danger">
-            <td>%[1]v</td>
-            <td>%[2]v</td>
-            <td>Failed</td>
-            <td class="fit"><a href="/volume/%[3]v/%[4]v-job/%[1]v" class="btn btn-primary">View</a></td>
-          </tr>
-`
-
-const jobListBottom string = `        </tbody>
-      </table>
-    <br />
-`
-
-// To use: fmt.Sprintf(fsckJobStartJobButtonTemplate, volumeName, {"fsck"|"scrub"})
-const jobStartJobButtonTemplate string = `    <form method="post" action="/volume/%[1]v/%[2]v-job">
-      <input type="submit" value="Start new job" class="btn btn-primary">
-    </form>
-`
-
-const jobBottom string = `    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
-  </body>
-</html>
-`
-
 func serveHTTP() {
 	_ = http.Serve(globals.netListener, httpRequestHandler{})
 	globals.wg.Done()
@@ -398,8 +58,6 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfConfig(responseWriter, request)
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
-	case "/arm-disarm-trigger" == path:
-		doGetOfArmDisarmTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -590,17 +248,22 @@ func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.R
 
 func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		armedTriggers                 map[string]uint32
-		availableTriggers             []string
-		err                           error
-		haltTriggerArmedStateAsBool   bool
-		haltTriggerArmedStateAsString string
-		haltTriggerCount              uint32
-		haltTriggerString             string
-		numPathParts                  int
-		ok                            bool
-		pathSplit                     []string
-		triggersLLRB                  sortedmap.LLRBTree
+		triggerAllArmedOrDisarmedActiveString string
+		armedTriggers                         map[string]uint32
+		availableTriggers                     []string
+		err                                   error
+		haltTriggerArmedStateAsBool           bool
+		haltTriggerArmedStateAsString         string
+		haltTriggerCount                      uint32
+		haltTriggerString                     string
+		i                                     int
+		lenTriggersLLRB                       int
+		numPathParts                          int
+		key                                   sortedmap.Key
+		ok                                    bool
+		pathSplit                             []string
+		triggersLLRB                          sortedmap.LLRBTree
+		value                                 sortedmap.Value
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -618,6 +281,7 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 		haltTriggerArmedStateAsString = request.FormValue("armed")
 
 		if "" == haltTriggerArmedStateAsString {
+			triggerAllArmedOrDisarmedActiveString = triggerAllActive
 			armedTriggers = halter.Dump()
 			availableTriggers = halter.List()
 
@@ -625,39 +289,29 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 
 			for _, haltTriggerString = range availableTriggers {
 				haltTriggerCount, ok = armedTriggers[haltTriggerString]
-				if ok {
-					ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
-					if nil != err {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-					if !ok {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-				} else {
-					ok, err = triggersLLRB.Put(haltTriggerString, "0")
-					if nil != err {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-					if !ok {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, 0)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
+				if !ok {
+					haltTriggerCount = 0
+				}
+				ok, err = triggersLLRB.Put(haltTriggerString, haltTriggerCount)
+				if nil != err {
+					err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
 				}
 			}
-
-			sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
 		} else {
 			haltTriggerArmedStateAsBool, err = strconv.ParseBool(haltTriggerArmedStateAsString)
 			if nil == err {
 				triggersLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 				if haltTriggerArmedStateAsBool {
+					triggerAllArmedOrDisarmedActiveString = triggerArmedActive
 					armedTriggers = halter.Dump()
 					for haltTriggerString, haltTriggerCount = range armedTriggers {
-						ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
+						ok, err = triggersLLRB.Put(haltTriggerString, haltTriggerCount)
 						if nil != err {
 							err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
 							logger.Fatalf("HTTP Server Logic Error: %v", err)
@@ -668,13 +322,14 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 						}
 					}
 				} else {
+					triggerAllArmedOrDisarmedActiveString = triggerDisarmedActive
 					armedTriggers = halter.Dump()
 					availableTriggers = halter.List()
 
 					for _, haltTriggerString = range availableTriggers {
 						_, ok = armedTriggers[haltTriggerString]
 						if !ok {
-							ok, err = triggersLLRB.Put(haltTriggerString, "0")
+							ok, err = triggersLLRB.Put(haltTriggerString, uint32(0))
 							if nil != err {
 								err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
 								logger.Fatalf("HTTP Server Logic Error: %v", err)
@@ -686,12 +341,42 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 						}
 					}
 				}
-
-				sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
 			} else {
 				responseWriter.WriteHeader(http.StatusBadRequest)
 			}
 		}
+
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, globals.ipAddrTCPPort)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerAllArmedOrDisarmedActiveString))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerTableTop))
+
+		lenTriggersLLRB, err = triggersLLRB.Len()
+		if nil != err {
+			err = fmt.Errorf("triggersLLRB.Len()) failed: %v", err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+
+		for i = 0; i < lenTriggersLLRB; i++ {
+			key, value, ok, err = triggersLLRB.GetByIndex(i)
+			if nil != err {
+				err = fmt.Errorf("triggersLLRB.GetByIndex(%v) failed: %v", i, err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+			if !ok {
+				err = fmt.Errorf("triggersLLRB.GetByIndex(%v) returned ok == false", i)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+
+			haltTriggerString = key.(string)
+			haltTriggerCount = value.(uint32)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTableRowTemplate, haltTriggerString, haltTriggerCount)))
+		}
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerBottom))
 	case 2:
 		// Form: /trigger/<trigger-name>
 
@@ -1007,25 +692,32 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 				jobID = jobIDAsKey.(uint64)
 				job = jobAsValue.(*jobStruct)
 
-				switch job.state {
-				case jobRunning:
-					jobPerJobTemplate = jobPerRunningJobTemplate
-				case jobHalted:
-					jobPerJobTemplate = jobPerHaltedJobTemplate
-				case jobCompleted:
-					jobErrorList = job.jobHandle.Error()
-					if 0 == len(jobErrorList) {
-						jobPerJobTemplate = jobPerSuccessfulJobTemplate
-					} else {
-						jobPerJobTemplate = jobPerFailedJobTemplate
+				if jobRunning == job.state {
+					switch jobType {
+					case fsckJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
+					case scrubJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
 					}
-				}
+				} else {
+					switch job.state {
+					case jobHalted:
+						jobPerJobTemplate = jobPerHaltedJobTemplate
+					case jobCompleted:
+						jobErrorList = job.jobHandle.Error()
+						if 0 == len(jobErrorList) {
+							jobPerJobTemplate = jobPerSuccessfulJobTemplate
+						} else {
+							jobPerJobTemplate = jobPerFailedJobTemplate
+						}
+					}
 
-				switch jobType {
-				case fsckJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
-				case scrubJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
+					switch jobType {
+					case fsckJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, "fsck")))
+					case scrubJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, "scrub")))
+					}
 				}
 			}
 
@@ -1196,79 +888,99 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 	volume.Unlock()
 }
 
+type layoutReportElementLayoutReportElementStruct struct {
+	ObjectNumber uint64
+	ObjectBytes  uint64
+}
+
+type layoutReportSetElementStruct struct {
+	TreeName     string
+	LayoutReport []layoutReportElementLayoutReportElementStruct
+}
+
 func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err                     error
-		formatResponseAsJSON    bool
-		formatResponseCompactly bool
-		volume                  *volumeStruct
-		volumeName              string
-		layoutReport            sortedmap.LayoutReport
+		err                       error
+		layoutReportIndex         int
+		layoutReportMap           sortedmap.LayoutReport
+		layoutReportSet           [4]*layoutReportSetElementStruct
+		layoutReportSetElement    *layoutReportSetElementStruct
+		layoutReportSetJSON       bytes.Buffer
+		layoutReportSetJSONPacked []byte
+		objectBytes               uint64
+		objectNumber              uint64
+		treeTypeIndex             int
 	)
 
-	volume = requestState.volume
-	// pathSplit = requestState.pathSplit
-	// numPathParts = requestState.numPathParts
-	formatResponseAsJSON = requestState.formatResponseAsJSON
-	formatResponseCompactly = requestState.formatResponseCompactly
-	_ = formatResponseCompactly
-
-	volumeName = volume.name
-
-	treeTypes := map[headhunter.BPlusTreeType]string{
-		headhunter.InodeRecBPlusTree:        "Inode Record B+Tree",
-		headhunter.LogSegmentRecBPlusTree:   "Log Segment Record B+Tree",
-		headhunter.BPlusTreeObjectBPlusTree: "B+Plus Tree Objects B+Tree",
+	layoutReportSet[headhunter.MergedBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Checkpoint (Trailer + B+Trees)",
+	}
+	layoutReportSet[headhunter.InodeRecBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Inode Record B+Tree",
+	}
+	layoutReportSet[headhunter.LogSegmentRecBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Log Segment Record B+Tree",
+	}
+	layoutReportSet[headhunter.BPlusTreeObjectBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "B+Plus Tree Objects B+Tree",
 	}
 
-	if formatResponseAsJSON {
+	for treeTypeIndex, layoutReportSetElement = range layoutReportSet {
+		layoutReportMap, err = requestState.volume.headhunterHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex))
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		layoutReportSetElement.LayoutReport = make([]layoutReportElementLayoutReportElementStruct, len(layoutReportMap))
+
+		layoutReportIndex = 0
+
+		for objectNumber, objectBytes = range layoutReportMap {
+			layoutReportSetElement.LayoutReport[layoutReportIndex] = layoutReportElementLayoutReportElementStruct{objectNumber, objectBytes}
+			layoutReportIndex++
+		}
+	}
+
+	if requestState.formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		for treeType, treeName := range treeTypes {
-			_ = treeType
-			_ = treeName
+		layoutReportSetJSONPacked, err = json.Marshal(layoutReportSet)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if requestState.formatResponseCompactly {
+			_, _ = responseWriter.Write(layoutReportSetJSONPacked)
+		} else {
+			json.Indent(&layoutReportSetJSON, layoutReportSetJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(layoutReportSetJSON.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 		}
 	} else {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
 
-		for treeType, treeName := range treeTypes {
+		for _, layoutReportSetElement = range layoutReportSet {
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName)))
 
-			layoutReport, err = volume.headhunterHandle.FetchLayoutReport(treeType)
-			if err != nil {
-				logger.ErrorfWithError(err, "doLayoutReport(): failed for %s tree", treeName)
-				responseWriter.WriteHeader(http.StatusInternalServerError)
-				return
+			for layoutReportIndex = 0; layoutReportIndex < len(layoutReportSetElement.LayoutReport); layoutReportIndex++ {
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableRowTemplate, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectNumber, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectBytes)))
 			}
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Volume %s %v Tree</title>\n",
-				volumeName, treeName)))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-
-			for objNum, objBytes := range layoutReport {
-				_, _ = responseWriter.Write(utils.StringToByteSlice(
-					fmt.Sprintf("%016X %d<br>\n", objNum, objBytes)))
-			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(layoutReportTableBottom))
 		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
-	}
 
-	return
+		_, _ = responseWriter.Write(utils.StringToByteSlice(layoutReportBottom))
+	}
 }
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
-	path := strings.TrimRight(request.URL.Path, "/")
-
 	switch {
-	case "/arm-disarm-trigger" == path:
-		doPostOfArmDisarmTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doPostOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -1276,41 +988,6 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-}
-
-func doPostOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		err                    error
-		haltAfterCountAsString string
-		haltAfterCountAsU32    uint32
-		haltAfterCountAsU64    uint64
-		haltLabelString        string
-	)
-
-	haltLabelString = request.PostFormValue("haltLabelString")
-	haltAfterCountAsString = request.PostFormValue("haltAfterCount")
-
-	_, err = halter.Stat(haltLabelString)
-	if nil != err {
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	haltAfterCountAsU64, err = strconv.ParseUint(haltAfterCountAsString, 10, 32)
-	if nil != err {
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	haltAfterCountAsU32 = uint32(haltAfterCountAsU64)
-
-	if 0 == haltAfterCountAsU32 {
-		halter.Disarm(haltLabelString)
-	} else {
-		halter.Arm(haltLabelString, haltAfterCountAsU32)
-	}
-
-	responseWriter.Header().Set("Location", "/trigger")
-	responseWriter.WriteHeader(http.StatusSeeOther)
 }
 
 func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
