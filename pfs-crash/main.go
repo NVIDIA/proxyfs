@@ -223,9 +223,9 @@ func main() {
 
 	cleanDirectoryUnderFUSEMountPointName()
 
-	launchProxyFSRunFSCKAndSCRUB()
+	launchProxyFSRunSCRUBAndFSCK()
 
-	log.Printf("Initial call to launchProxyFSRunFSCKAndSCRUB() succeeded")
+	log.Printf("Initial call to launchProxyFSRunSCRUBAndFSCK() succeeded")
 
 	if includeHalterTriggers {
 		httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, "/trigger", "")
@@ -335,7 +335,7 @@ func main() {
 
 		cleanDirectoryUnderFUSEMountPointName()
 
-		launchProxyFSRunFSCKAndSCRUB()
+		launchProxyFSRunSCRUBAndFSCK()
 
 		switch signalToSend {
 		case unix.SIGINT:
@@ -466,7 +466,7 @@ func stopProxyFS(signalToSend os.Signal) {
 	_ = <-proxyfsdCmdWaitChan
 }
 
-func launchProxyFSRunFSCKAndSCRUB() {
+func launchProxyFSRunSCRUBAndFSCK() {
 	var (
 		contentsAsStrings []string
 		err               error
@@ -479,7 +479,7 @@ func launchProxyFSRunFSCKAndSCRUB() {
 		scrubJobError     string
 	)
 
-	log.Printf("Launching ProxyFS and performing FSCK & SCRUB of %v", volumeName)
+	log.Printf("Launching ProxyFS and performing SCRUB & FSCK of %v", volumeName)
 
 	proxyfsdCmd = exec.Command("proxyfsd", proxyfsdArgs...)
 
@@ -494,12 +494,78 @@ func launchProxyFSRunFSCKAndSCRUB() {
 	for polling {
 		time.Sleep(proxyfsdPollDelay)
 
-		httpStatusCode, locationURL, _, err = queryProxyFS(queryMethodPOST, "/volume/"+volumeName+"/fsck-job", "")
+		httpStatusCode, locationURL, _, err = queryProxyFS(queryMethodPOST, "/volume/"+volumeName+"/scrub-job", "")
 		if nil == err {
 			polling = false
 		}
 	}
 
+	if http.StatusCreated != httpStatusCode {
+		log.Printf("queryProxyFS(queryMethodPOST,\"/volume/%v/scrub-job\",) returned unexpected httpStatusCode: %v", volumeName, httpStatusCode)
+		stopProxyFS(unix.SIGTERM)
+		os.Exit(-1)
+	}
+
+	polling = true
+	for polling {
+		time.Sleep(proxyfsdPollDelay)
+
+		httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, locationURL+"?compact=true", "application/json")
+		if nil != err {
+			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) failed: %v", locationURL, err)
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
+		}
+		if http.StatusOK != httpStatusCode {
+			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned unexpected httpStatusCode: %v", locationURL, httpStatusCode)
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
+		}
+		if 1 != len(contentsAsStrings) {
+			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned unexpected len(contentsAsStrings): %v", locationURL, len(contentsAsStrings))
+		}
+
+		err = json.Unmarshal([]byte(contentsAsStrings[0]), &scrubJob)
+		if nil != err {
+			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned undecodable content: %v (err == %v)", locationURL, contentsAsStrings[0], err)
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
+		}
+		if "" == scrubJob.StartTime {
+			log.Printf("scrubJob unexpectantly missing StartTime value")
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
+		}
+		if "" != scrubJob.HaltTime {
+			log.Printf("scrubJob contained unexpected HaltTime value: %v", scrubJob.HaltTime)
+			stopProxyFS(unix.SIGTERM)
+			os.Exit(-1)
+		}
+
+		if "" != scrubJob.DoneTime {
+			polling = false
+		}
+	}
+
+	if 0 < len(scrubJob.ErrorList) {
+		if 1 == len(scrubJob.ErrorList) {
+			log.Printf("scrubJob contained unexpected error: %v", scrubJob.ErrorList[0])
+		} else {
+			log.Printf("scrubJob contained unexpected errors:")
+			for _, scrubJobError = range scrubJob.ErrorList {
+				log.Printf("  %v", scrubJobError)
+			}
+		}
+		stopProxyFS(unix.SIGTERM)
+		os.Exit(-1)
+	}
+
+	httpStatusCode, locationURL, _, err = queryProxyFS(queryMethodPOST, "/volume/"+volumeName+"/fsck-job", "")
+	if nil != err {
+		log.Printf("queryProxyFS(queryMethodPOST,\"/volume/%v/fsck-job\",) failed: %v", volumeName, err)
+		stopProxyFS(unix.SIGTERM)
+		os.Exit(-1)
+	}
 	if http.StatusCreated != httpStatusCode {
 		log.Printf("queryProxyFS(queryMethodPOST,\"/volume/%v/fsck-job\",) returned unexpected httpStatusCode: %v", volumeName, httpStatusCode)
 		stopProxyFS(unix.SIGTERM)
@@ -560,73 +626,7 @@ func launchProxyFSRunFSCKAndSCRUB() {
 		os.Exit(-1)
 	}
 
-	httpStatusCode, locationURL, _, err = queryProxyFS(queryMethodPOST, "/volume/"+volumeName+"/scrub-job", "")
-	if nil != err {
-		log.Printf("queryProxyFS(queryMethodPOST,\"/volume/%v/scrub-job\",) failed: %v", volumeName, err)
-		stopProxyFS(unix.SIGTERM)
-		os.Exit(-1)
-	}
-	if http.StatusCreated != httpStatusCode {
-		log.Printf("queryProxyFS(queryMethodPOST,\"/volume/%v/scrub-job\",) returned unexpected httpStatusCode: %v", volumeName, httpStatusCode)
-		stopProxyFS(unix.SIGTERM)
-		os.Exit(-1)
-	}
-
-	polling = true
-	for polling {
-		time.Sleep(proxyfsdPollDelay)
-
-		httpStatusCode, _, contentsAsStrings, err = queryProxyFS(queryMethodGET, locationURL+"?compact=true", "application/json")
-		if nil != err {
-			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) failed: %v", locationURL, err)
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
-		}
-		if http.StatusOK != httpStatusCode {
-			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned unexpected httpStatusCode: %v", locationURL, httpStatusCode)
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
-		}
-		if 1 != len(contentsAsStrings) {
-			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned unexpected len(contentsAsStrings): %v", locationURL, len(contentsAsStrings))
-		}
-
-		err = json.Unmarshal([]byte(contentsAsStrings[0]), &scrubJob)
-		if nil != err {
-			log.Printf("queryProxyFS(queryMethodGET,\"%v?compact=true\",) returned undecodable content: %v (err == %v)", locationURL, contentsAsStrings[0], err)
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
-		}
-		if "" == scrubJob.StartTime {
-			log.Printf("fsckJob unexpectantly missing StartTime value")
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
-		}
-		if "" != scrubJob.HaltTime {
-			log.Printf("fsckJob contained unexpected HaltTime value: %v", fsckJob.HaltTime)
-			stopProxyFS(unix.SIGTERM)
-			os.Exit(-1)
-		}
-
-		if "" != fsckJob.DoneTime {
-			polling = false
-		}
-	}
-
-	if 0 < len(scrubJob.ErrorList) {
-		if 1 == len(scrubJob.ErrorList) {
-			log.Printf("scrubJob contained unexpected error: %v", scrubJob.ErrorList[0])
-		} else {
-			log.Printf("scrubJob contained unexpected errors:")
-			for _, scrubJobError = range scrubJob.ErrorList {
-				log.Printf("  %v", scrubJobError)
-			}
-		}
-		stopProxyFS(unix.SIGTERM)
-		os.Exit(-1)
-	}
-
-	log.Printf("ProxyFS launched; FSCK & SCRUB of %v reported no errors", volumeName)
+	log.Printf("ProxyFS launched; SCRUB & FSCK of %v reported no errors", volumeName)
 }
 
 func queryProxyFS(queryMethod queryMethodType, queryURL string, acceptHeader string) (httpStatusCode int, locationURL string, contentsAsStrings []string, err error) {
