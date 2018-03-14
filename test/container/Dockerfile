@@ -56,9 +56,9 @@ RUN pip install requests tox
 
 # Install Golang
 RUN cd /tmp
-RUN wget -q https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
-RUN tar -C /usr/local -xf go1.8.3.linux-amd64.tar.gz
-RUN rm -rf go1.8.3.linux-amd64.tar.gz
+RUN wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz
+RUN tar -C /usr/local -xf go1.10.linux-amd64.tar.gz
+RUN rm -rf go1.10.linux-amd64.tar.gz
 ENV PATH=$PATH:/usr/local/go/bin
 
 # Setup ProxyFS build environment

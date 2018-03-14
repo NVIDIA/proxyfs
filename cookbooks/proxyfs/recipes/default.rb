@@ -1,7 +1,7 @@
-tarfile_name = 'go1.8.3.linux-amd64.tar.gz'
+tarfile_name = 'go1.10.linux-amd64.tar.gz'
 
 tarfile_path = "/tmp/#{tarfile_name}"
-tarfile_url  = "https://storage.googleapis.com/golang/#{tarfile_name}"
+tarfile_url  = "https://dl.google.com/go/#{tarfile_name}"
 
 source_root = node['source_root']
 proxyfs_user = node['proxyfs_user']
