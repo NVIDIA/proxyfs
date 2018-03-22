@@ -52,6 +52,8 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/styles.css" == path:
 		doGetOfStaticContent(responseWriter, request, stylesDotCSS)
+	case "/jsontree.js" == path:
+		doGetOfStaticContent(responseWriter, request, jsontreeDotJS)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
@@ -81,30 +83,70 @@ func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Reque
 
 func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		confMapJSON       bytes.Buffer
-		confMapJSONPacked []byte
+		acceptHeader         string
+		confMapJSON          bytes.Buffer
+		confMapJSONPacked    []byte
+		formatResponseAsJSON bool
+		ok                   bool
+		paramList            []string
+		sendPackedConfig     bool
 	)
 
-	// NOTE:  Some day, perhaps, we'll use utility functions for semantic extraction
-	// of query strings, and we can get rid of this.  Or we'll use an off-the-shelf router.
-	sendPackedConfig := false
-	if paramList, ok := request.URL.Query()["compact"]; ok {
-		if len(paramList) > 0 {
-			param := paramList[0]
-			sendPackedConfig = (param == "true" || param == "1")
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedConfig = false
+		} else {
+			sendPackedConfig = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
 		}
+	} else {
+		sendPackedConfig = false
 	}
 
-	responseWriter.Header().Set("Content-Type", "application/json")
-	responseWriter.WriteHeader(http.StatusOK)
+	acceptHeader = request.Header.Get("Accept")
+
+	if strings.Contains(acceptHeader, "application/json") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/html") {
+		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
+	}
+
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedConfig = false
+		} else {
+			sendPackedConfig = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		sendPackedConfig = false
+	}
+
 	confMapJSONPacked, _ = json.Marshal(globals.confMap)
 
-	if sendPackedConfig {
-		_, _ = responseWriter.Write(confMapJSONPacked)
+	if formatResponseAsJSON {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		if sendPackedConfig {
+			_, _ = responseWriter.Write(confMapJSONPacked)
+		} else {
+			json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(confMapJSON.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		}
 	} else {
-		json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
-		_, _ = responseWriter.Write(confMapJSON.Bytes())
-		_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
 	}
 }
 
@@ -455,6 +497,8 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	} else if strings.Contains(acceptHeader, "text/html") {
 		formatResponseAsJSON = false
 	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
 		formatResponseAsJSON = true
 	} else {
 		responseWriter.WriteHeader(http.StatusNotAcceptable)
