@@ -158,7 +158,7 @@ def parse_stats(text):
 def get_stats_from_proxyfsd(hostname, port):
     r = requests.get("http://%s:%d/metrics" % (hostname, port))
     r.raise_for_status()
-    stats = parse_stats(r.text)
+    stats = r.json()
     stats['timestamp'] = int(time.time())
     return stats
 

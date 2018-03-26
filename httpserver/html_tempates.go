@@ -414,9 +414,121 @@ const configTemplate string = `<!doctype html>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
     <script src="/jsontree.js"></script>
     <script type="text/javascript">
-      var json = %[2]v;
-      document.getElementById("json_data").innerHTML = JSONTree.create(json, null, 1);
+      var json_data = %[2]v;
+      document.getElementById("json_data").innerHTML = JSONTree.create(json_data, null, 1);
       JSONTree.collapse();
+    </script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(metricsTemplate, globals.ipAddrTCPPort, metricsJSONString)
+const metricsTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Metrics - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus <span class="sr-only">(current)</span></a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/trigger">Triggers</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/volume">Volumes</a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item active" aria-current="page">StatsD/Prometheus</li>
+        </ol>
+      </nav>
+      <h1 class="display-4">StatsD/Prometheus</h1>
+      <div class="text-center">
+        <div class="btn-group btn-group-toggle" data-toggle="buttons" id="tab-bar"></div>
+      </div>
+      <br>
+      <table class="table table-sm table-striped table-hover">
+        <tbody id="metrics-data"></tbody>
+      </table>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+    <script type="text/javascript">
+      var json_data = %[2]v;
+      var getPrefixes = function(data, levels) {
+        var prefixes = new Set();
+        for (var key in data) {
+          prefixes.add(key.split("_", levels).join("_"));
+        }
+        return Array.from(prefixes);
+      };
+      var getTabBarButtonMarkup = function(prefix, text, active) {
+        var button_markup = "";
+        button_markup += "          <label class=\"btn btn-sm btn-primary" + (active ? " active" : "") + "\" onclick=\"updateDataWithPrefix('" + prefix + "');\">\n";
+        button_markup += "            <input type=\"radio\" name=\"options\" id=\"option1\" autocomplete=\"off\" checked> " + text + "\n";
+        button_markup += "          </label>\n";
+        return button_markup;
+      };
+      var buildTabBarWithPrefixes = function(tab_bar_id, prefixes) {
+        var tab_bar_markup = "";
+        tab_bar_markup += getTabBarButtonMarkup("", "All", true);
+        var prefixes_length = prefixes.length;
+        for (var i = 0; i < prefixes_length; i++) {
+          var prefix = prefixes[i];
+          tab_bar_markup += getTabBarButtonMarkup(prefix + "_", prefix, false);
+        }
+        document.getElementById(tab_bar_id).innerHTML = tab_bar_markup;
+      };
+      var filterDataByPrefix = function(data, prefix) {
+        var filtered = {};
+        for (var key in data) {
+          if (key.startsWith(prefix)) {
+            filtered[key] = data[key];
+          }
+        }
+        return filtered;
+      };
+      var getTableMarkupWithData = function(data) {
+        var table_markup = "";
+        for (var key in data) {
+          table_markup += "          <tr>\n";
+          table_markup += "            <th scope=\"row\">" + key + "</th>\n";
+          table_markup += "            <td class=\"text-right\"><pre class=\"no-margin\">" + data[key] + "</pre></td>\n";
+          table_markup += "          </tr>\n";
+        }
+        return table_markup;
+      };
+      var updateDataWithPrefix = function(prefix) {
+        var filteredData = filterDataByPrefix(json_data, prefix);
+        document.getElementById("metrics-data").innerHTML = getTableMarkupWithData(filteredData);
+      };
+      var prefixes = getPrefixes(json_data, 2);
+      buildTabBarWithPrefixes("tab-bar", prefixes);
+      updateDataWithPrefix("");
     </script>
   </body>
 </html>
@@ -498,8 +610,8 @@ const volumeListBottom string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
-const jobTopTemplate string = `<!doctype html>
+// To use: fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
+const jobsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -559,8 +671,8 @@ const jobTopTemplate string = `<!doctype html>
         <tbody>
 `
 
-// To use: fmt.Sprintf(jobPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
-const jobPerRunningJobTemplate string = `          <tr>
+// To use: fmt.Sprintf(jobsPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+const jobsPerRunningJobTemplate string = `          <tr>
             <td>%[1]v</td>
             <td>%[2]v</td>
             <td></td>
@@ -569,8 +681,8 @@ const jobPerRunningJobTemplate string = `          <tr>
           </tr>
 `
 
-// To use: fmt.Sprintf(jobPerHaltedJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
-const jobPerHaltedJobTemplate string = `          <tr class="table-info">
+// To use: fmt.Sprintf(jobsPerHaltedJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+const jobsPerHaltedJobTemplate string = `          <tr class="table-info">
             <td>%[1]v</td>
             <td>%[2]v</td>
             <td>%[3]v</td>
@@ -579,8 +691,8 @@ const jobPerHaltedJobTemplate string = `          <tr class="table-info">
           </tr>
 `
 
-// To use: fmt.Sprintf(jobPerSuccessfulJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
-const jobPerSuccessfulJobTemplate string = `          <tr class="table-success">
+// To use: fmt.Sprintf(jobsPerSuccessfulJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+const jobsPerSuccessfulJobTemplate string = `          <tr class="table-success">
             <td>%[1]v</td>
             <td>%[2]v</td>
             <td>%[3]v</td>
@@ -589,8 +701,8 @@ const jobPerSuccessfulJobTemplate string = `          <tr class="table-success">
           </tr>
 `
 
-// To use: fmt.Sprintf(jobPerFailedJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
-const jobPerFailedJobTemplate string = `          <tr class="table-danger">
+// To use: fmt.Sprintf(jobsPerFailedJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, {"fsck"|"scrub"})
+const jobsPerFailedJobTemplate string = `          <tr class="table-danger">
             <td>%[1]v</td>
             <td>%[2]v</td>
             <td>%[3]v</td>
@@ -599,20 +711,139 @@ const jobPerFailedJobTemplate string = `          <tr class="table-danger">
           </tr>
 `
 
-const jobListBottom string = `        </tbody>
+const jobsListBottom string = `        </tbody>
       </table>
     <br />
 `
 
-// To use: fmt.Sprintf(fsckJobStartJobButtonTemplate, volumeName, {"fsck"|"scrub"})
-const jobStartJobButtonTemplate string = `    <form method="post" action="/volume/%[1]v/%[2]v-job">
+// To use: fmt.Sprintf(jobsStartJobButtonTemplate, volumeName, {"fsck"|"scrub"})
+const jobsStartJobButtonTemplate string = `    <form method="post" action="/volume/%[1]v/%[2]v-job">
       <input type="submit" value="Start new job" class="btn btn-sm btn-primary">
     </form>
 `
 
-const jobBottom string = `    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+const jobsBottom string = `    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
+const jobTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="/styles.css">
+    <title>%[5]v %[3]v Job - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/trigger">Triggers</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item"><a href="/volume/%[2]v/%[4]v-job">%[3]v Jobs %[2]v</a></li>
+          <li class="breadcrumb-item active" aria-current="page">%[5]v</li>
+        </ol>
+      </nav>
+      <h1 class="display-4">
+        %[3]v Job
+        <small class="text-muted">%[5]v</small>
+      </h1>
+      <br>
+      <dl class="row" id="job-info"></dl>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+    <script type="text/javascript">
+      var json_data = %[6]v;
+      var getDescriptionListEntryMarkup = function(dt, dd) {
+        var markup = "";
+        markup += "         <dt class=\"col-sm-2\">\n";
+        markup += "           " + dt + "\n";
+        markup += "         </dt>\n";
+        markup += "         <dd class=\"col-sm-10\">\n";
+        markup += "           " + dd + "\n";
+        markup += "         </dd>\n";
+        return markup;
+      };
+      var getLogEntryContentsMarkup = function(log_entries, entries_type) {
+        var log_entries_length = log_entries.length;
+        if (log_entries_length == 0) {
+          return "No " + entries_type;
+        }
+        var markup = "";
+        var timestamp = "";
+        var description = "";
+        var timestamp_end_pos = 0;
+        var entry = "";
+        markup += "           <table class=\"table table-sm table-striped table-hover\">\n";
+        for (var i = 0; i < log_entries_length; i++) {
+          entry = log_entries[i];
+          timestamp_end_pos = entry.indexOf(" ");
+          timestamp = entry.slice(0, timestamp_end_pos);
+          description = entry.slice(timestamp_end_pos);
+          markup += "             <tr>\n";
+          markup += "               <td class=\"fit align-text-top\">\n";
+          markup += "                 <nobr>" + timestamp + "&nbsp;</nobr>\n";
+          markup += "               </td>\n";
+          markup += "               <td class=\"align-text-top\">\n";
+          markup += "                 " + description + "\n";
+          markup += "               </td>\n";
+          markup += "             </tr>\n";
+        }
+        markup += "           </table>\n";
+        return markup;
+      };
+      var job_info = "";
+      if (json_data["halt time"] !== "") {
+        var state = "Halted";
+      } else if (json_data["done time"] !== "") {
+        var state = "Completed";
+      } else {
+        var state = "Running";
+      }
+      job_info += getDescriptionListEntryMarkup("State", state);
+      job_info += getDescriptionListEntryMarkup("Start time", json_data["start time"]);
+      if (json_data["halt time"] !== "") {
+        job_info += getDescriptionListEntryMarkup("Halt time", json_data["halt time"]);
+      }
+      if (json_data["done time"] !== "") {
+        job_info += getDescriptionListEntryMarkup("Done time", json_data["done time"]);
+      }
+      job_info += getDescriptionListEntryMarkup("Errors", getLogEntryContentsMarkup(json_data["error list"], "errors"));
+      job_info += getDescriptionListEntryMarkup("Info", getLogEntryContentsMarkup(json_data["info list"], "info"));
+      document.getElementById("job-info").innerHTML = job_info;
+    </script>
   </body>
 </html>
 `
@@ -658,7 +889,7 @@ const layoutReportTopTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Layout Report CommonVolume</li>
+          <li class="breadcrumb-item active" aria-current="page">Layout Report %[2]v</li>
         </ol>
       </nav>
       <h1 class="display-4">
@@ -683,7 +914,7 @@ const layoutReportTableTopTemplate string = `      <br>
 // To use: fmt.Sprintf(layoutReportTableRowTemplate, ObjectName, ObjectBytes)
 const layoutReportTableRowTemplate string = `          <tr>
             <td><pre class="no-margin">%016[1]X</pre></td>
-			<td><pre class="no-margin">%[2]v</pre></td>
+			      <td><pre class="no-margin">%[2]v</pre></td>
           </tr>
 `
 
