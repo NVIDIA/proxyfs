@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -152,93 +151,163 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err                error
-		i                  int
-		memStats           runtime.MemStats
-		ok                 bool
-		pauseNsAccumulator uint64
-		statKey            string
-		statsLLRB          sortedmap.LLRBTree
-		statsMap           map[string]uint64
-		statValueAsString  string
-		statValueAsUint64  uint64
+		acceptHeader         string
+		err                  error
+		formatResponseAsHTML bool
+		formatResponseAsJSON bool
+		i                    int
+		memStats             runtime.MemStats
+		metricKey            string
+		metricValueAsString  string
+		metricValueAsUint64  uint64
+		metricsJSON          bytes.Buffer
+		metricsJSONPacked    []byte
+		metricsLLRB          sortedmap.LLRBTree
+		metricsMap           map[string]uint64
+		ok                   bool
+		paramList            []string
+		pauseNsAccumulator   uint64
+		sendPackedMetrics    bool
+		statKey              string
+		statValue            uint64
+		statsMap             map[string]uint64
 	)
-
-	statsMap = stats.Dump()
 
 	runtime.ReadMemStats(&memStats)
 
+	metricsMap = make(map[string]uint64)
+
 	// General statistics.
-	statsMap["go_runtime_MemStats_Alloc"] = memStats.Alloc
-	statsMap["go_runtime_MemStats_TotalAlloc"] = memStats.TotalAlloc
-	statsMap["go_runtime_MemStats_Sys"] = memStats.Sys
-	statsMap["go_runtime_MemStats_Lookups"] = memStats.Lookups
-	statsMap["go_runtime_MemStats_Mallocs"] = memStats.Mallocs
-	statsMap["go_runtime_MemStats_Frees"] = memStats.Frees
+	metricsMap["go_runtime_MemStats_Alloc"] = memStats.Alloc
+	metricsMap["go_runtime_MemStats_TotalAlloc"] = memStats.TotalAlloc
+	metricsMap["go_runtime_MemStats_Sys"] = memStats.Sys
+	metricsMap["go_runtime_MemStats_Lookups"] = memStats.Lookups
+	metricsMap["go_runtime_MemStats_Mallocs"] = memStats.Mallocs
+	metricsMap["go_runtime_MemStats_Frees"] = memStats.Frees
 
 	// Main allocation heap statistics.
-	statsMap["go_runtime_MemStats_HeapAlloc"] = memStats.HeapAlloc
-	statsMap["go_runtime_MemStats_HeapSys"] = memStats.HeapSys
-	statsMap["go_runtime_MemStats_HeapIdle"] = memStats.HeapIdle
-	statsMap["go_runtime_MemStats_HeapInuse"] = memStats.HeapInuse
-	statsMap["go_runtime_MemStats_HeapReleased"] = memStats.HeapReleased
-	statsMap["go_runtime_MemStats_HeapObjects"] = memStats.HeapObjects
+	metricsMap["go_runtime_MemStats_HeapAlloc"] = memStats.HeapAlloc
+	metricsMap["go_runtime_MemStats_HeapSys"] = memStats.HeapSys
+	metricsMap["go_runtime_MemStats_HeapIdle"] = memStats.HeapIdle
+	metricsMap["go_runtime_MemStats_HeapInuse"] = memStats.HeapInuse
+	metricsMap["go_runtime_MemStats_HeapReleased"] = memStats.HeapReleased
+	metricsMap["go_runtime_MemStats_HeapObjects"] = memStats.HeapObjects
 
 	// Low-level fixed-size structure allocator statistics.
 	//	Inuse is bytes used now.
 	//	Sys is bytes obtained from system.
-	statsMap["go_runtime_MemStats_StackInuse"] = memStats.StackInuse
-	statsMap["go_runtime_MemStats_StackSys"] = memStats.StackSys
-	statsMap["go_runtime_MemStats_MSpanInuse"] = memStats.MSpanInuse
-	statsMap["go_runtime_MemStats_MSpanSys"] = memStats.MSpanSys
-	statsMap["go_runtime_MemStats_MCacheInuse"] = memStats.MCacheInuse
-	statsMap["go_runtime_MemStats_MCacheSys"] = memStats.MCacheSys
-	statsMap["go_runtime_MemStats_BuckHashSys"] = memStats.BuckHashSys
-	statsMap["go_runtime_MemStats_GCSys"] = memStats.GCSys
-	statsMap["go_runtime_MemStats_OtherSys"] = memStats.OtherSys
+	metricsMap["go_runtime_MemStats_StackInuse"] = memStats.StackInuse
+	metricsMap["go_runtime_MemStats_StackSys"] = memStats.StackSys
+	metricsMap["go_runtime_MemStats_MSpanInuse"] = memStats.MSpanInuse
+	metricsMap["go_runtime_MemStats_MSpanSys"] = memStats.MSpanSys
+	metricsMap["go_runtime_MemStats_MCacheInuse"] = memStats.MCacheInuse
+	metricsMap["go_runtime_MemStats_MCacheSys"] = memStats.MCacheSys
+	metricsMap["go_runtime_MemStats_BuckHashSys"] = memStats.BuckHashSys
+	metricsMap["go_runtime_MemStats_GCSys"] = memStats.GCSys
+	metricsMap["go_runtime_MemStats_OtherSys"] = memStats.OtherSys
 
 	// Garbage collector statistics (fixed portion).
-	statsMap["go_runtime_MemStats_LastGC"] = memStats.LastGC
-	statsMap["go_runtime_MemStats_PauseTotalNs"] = memStats.PauseTotalNs
-	statsMap["go_runtime_MemStats_NumGC"] = uint64(memStats.NumGC)
-	statsMap["go_runtime_MemStats_GCCPUPercentage"] = uint64(100.0 * memStats.GCCPUFraction)
+	metricsMap["go_runtime_MemStats_LastGC"] = memStats.LastGC
+	metricsMap["go_runtime_MemStats_PauseTotalNs"] = memStats.PauseTotalNs
+	metricsMap["go_runtime_MemStats_NumGC"] = uint64(memStats.NumGC)
+	metricsMap["go_runtime_MemStats_GCCPUPercentage"] = uint64(100.0 * memStats.GCCPUFraction)
 
 	// Garbage collector statistics (go_runtime_MemStats_PauseAverageNs).
 	if 0 == memStats.NumGC {
-		statsMap["go_runtime_MemStats_PauseAverageNs"] = 0
+		metricsMap["go_runtime_MemStats_PauseAverageNs"] = 0
 	} else {
 		pauseNsAccumulator = 0
 		if memStats.NumGC < 255 {
 			for i = 0; i < int(memStats.NumGC); i++ {
 				pauseNsAccumulator += memStats.PauseNs[i]
 			}
-			statsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / uint64(memStats.NumGC)
+			metricsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / uint64(memStats.NumGC)
 		} else {
 			for i = 0; i < 256; i++ {
 				pauseNsAccumulator += memStats.PauseNs[i]
 			}
-			statsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / 256
+			metricsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / 256
 		}
 	}
 
-	statsLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+	statsMap = stats.Dump()
 
-	for statKey, statValueAsUint64 = range statsMap {
-		statKey = strings.Replace(statKey, ".", "_", -1)
-		statKey = strings.Replace(statKey, "-", "_", -1)
-		statValueAsString = fmt.Sprintf("%v", statValueAsUint64)
-		ok, err = statsLLRB.Put(statKey, statValueAsString)
-		if nil != err {
-			err = fmt.Errorf("statsLLRB.Put(%v, %v) failed: %v", statKey, statValueAsString, err)
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
-		if !ok {
-			err = fmt.Errorf("statsLLRB.Put(%v, %v) returned ok == false", statKey, statValueAsString)
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
+	for statKey, statValue = range statsMap {
+		metricKey = strings.Replace(statKey, ".", "_", -1)
+		metricKey = strings.Replace(metricKey, "-", "_", -1)
+		metricsMap[metricKey] = statValue
 	}
 
-	sortedTwoColumnResponseWriter(statsLLRB, responseWriter)
+	acceptHeader = request.Header.Get("Accept")
+
+	if strings.Contains(acceptHeader, "application/json") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/html") {
+		formatResponseAsHTML = true
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/plain") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
+	}
+
+	if formatResponseAsJSON {
+		metricsJSONPacked, _ = json.Marshal(metricsMap)
+		if formatResponseAsHTML {
+			responseWriter.Header().Set("Content-Type", "text/html")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
+		} else {
+			responseWriter.Header().Set("Content-Type", "application/json")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			paramList, ok = request.URL.Query()["compact"]
+			if ok {
+				if 0 == len(paramList) {
+					sendPackedMetrics = false
+				} else {
+					sendPackedMetrics = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+				}
+			} else {
+				sendPackedMetrics = false
+			}
+
+			if sendPackedMetrics {
+				_, _ = responseWriter.Write(metricsJSONPacked)
+			} else {
+				json.Indent(&metricsJSON, metricsJSONPacked, "", "\t")
+				_, _ = responseWriter.Write(metricsJSON.Bytes())
+				_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+			}
+		}
+	} else {
+		metricsLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+		for metricKey, metricValueAsUint64 = range metricsMap {
+			metricValueAsString = fmt.Sprintf("%v", metricValueAsUint64)
+			ok, err = metricsLLRB.Put(metricKey, metricValueAsString)
+			if nil != err {
+				err = fmt.Errorf("metricsLLRB.Put(%v, %v) failed: %v", metricKey, metricValueAsString, err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+			if !ok {
+				err = fmt.Errorf("metricsLLRB.Put(%v, %v) returned ok == false", metricKey, metricValueAsString)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+		}
+
+		sortedTwoColumnResponseWriter(metricsLLRB, responseWriter)
+	}
 }
 
 func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
@@ -607,12 +676,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		inactive                bool
 		job                     *jobStruct
 		jobAsValue              sortedmap.Value
-		jobError                string
 		jobErrorList            []string
 		jobID                   uint64
 		jobIDAsKey              sortedmap.Key
-		jobInfo                 string
-		jobInfoList             []string
 		jobPerJobTemplate       string
 		jobsIDListJSON          bytes.Buffer
 		jobsIDListJSONPacked    []byte
@@ -708,9 +774,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 
 			switch jobType {
 			case fsckJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, "FSCK")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "FSCK")))
 			case scrubJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
 
 			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
@@ -739,20 +805,20 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 				if jobRunning == job.state {
 					switch jobType {
 					case fsckJobType:
-						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
 					case scrubJobType:
-						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
 					}
 				} else {
 					switch job.state {
 					case jobHalted:
-						jobPerJobTemplate = jobPerHaltedJobTemplate
+						jobPerJobTemplate = jobsPerHaltedJobTemplate
 					case jobCompleted:
 						jobErrorList = job.jobHandle.Error()
 						if 0 == len(jobErrorList) {
-							jobPerJobTemplate = jobPerSuccessfulJobTemplate
+							jobPerJobTemplate = jobsPerSuccessfulJobTemplate
 						} else {
-							jobPerJobTemplate = jobPerFailedJobTemplate
+							jobPerJobTemplate = jobsPerFailedJobTemplate
 						}
 					}
 
@@ -765,18 +831,18 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 				}
 			}
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(jobListBottom))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobsListBottom))
 
 			if inactive {
 				switch jobType {
 				case fsckJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobStartJobButtonTemplate, volumeName, "fsck")))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsStartJobButtonTemplate, volumeName, "fsck")))
 				case scrubJobType:
-					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobStartJobButtonTemplate, volumeName, "scrub")))
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsStartJobButtonTemplate, volumeName, "scrub")))
 				}
 			}
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(jobBottom))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobsBottom))
 		}
 
 		return
@@ -807,29 +873,29 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 	}
 	job = jobAsValue.(*jobStruct)
 
+	jobStatusJSONStruct = &JobStatusJSONPackedStruct{
+		StartTime: job.startTime.Format(time.RFC3339),
+		ErrorList: job.jobHandle.Error(),
+		InfoList:  job.jobHandle.Info(),
+	}
+
+	switch job.state {
+	case jobRunning:
+		// Nothing to add here
+	case jobHalted:
+		jobStatusJSONStruct.HaltTime = job.endTime.Format(time.RFC3339)
+	case jobCompleted:
+		jobStatusJSONStruct.DoneTime = job.endTime.Format(time.RFC3339)
+	}
+
+	jobStatusJSONPacked, err = json.Marshal(jobStatusJSONStruct)
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
 	if formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
-
-		jobStatusJSONStruct = &JobStatusJSONPackedStruct{
-			StartTime: job.startTime.Format(time.RFC3339),
-			ErrorList: job.jobHandle.Error(),
-			InfoList:  job.jobHandle.Info(),
-		}
-
-		switch job.state {
-		case jobRunning:
-			// Nothing to add here
-		case jobHalted:
-			jobStatusJSONStruct.HaltTime = job.endTime.Format(time.RFC3339)
-		case jobCompleted:
-			jobStatusJSONStruct.DoneTime = job.endTime.Format(time.RFC3339)
-		}
-
-		jobStatusJSONPacked, err = json.Marshal(jobStatusJSONStruct)
-		if nil != err {
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
 
 		if formatResponseCompactly {
 			_, _ = responseWriter.Write(jobStatusJSONPacked)
@@ -842,91 +908,12 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 		switch jobType {
 		case fsckJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Job %v</title>\n", volumeName, job.id)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		case scrubJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v SCRUB Job %v</title>\n", volumeName, job.id)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
-		switch job.state {
-		case jobRunning:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Running</td>\n"))
-		case jobHalted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halted</td>\n"))
-		case jobCompleted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Completed</td>\n"))
-		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.startTime.Format(time.RFC3339))))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		switch job.state {
-		case jobRunning:
-			// Nothing to add here
-		case jobHalted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halt Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.endTime.Format(time.RFC3339))))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		case jobCompleted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Done Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", job.endTime.Format(time.RFC3339))))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		}
-		jobErrorList = job.jobHandle.Error()
-		if 0 == len(jobErrorList) {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>No Errors</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		} else {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors:</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, jobError = range jobErrorList {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(jobError))))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			}
-		}
-		jobInfoList = job.jobHandle.Info()
-		if 0 < len(jobInfoList) {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Info:</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, jobInfo = range jobInfoList {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(jobInfo))))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			}
-		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
-		if jobRunning == job.state {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-			switch jobType {
-			case fsckJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job/%v\">\n", volumeName, job.id)))
-			case scrubJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/scrub-job/%v\">\n", volumeName, job.id)))
-			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Stop\">\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
-		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
 	}
 
 	volume.Unlock()
