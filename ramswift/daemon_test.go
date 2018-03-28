@@ -867,6 +867,10 @@ func TestViaNoAuthClient(t *testing.T) {
 		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
 	}
 
+	// TODO: Send a range GET of bytes at offset 0 for length 2
+	//                                and offset 3 for length of 1 for object "Bar"
+	//       expecting two MIME parts: []byte{0xAA, 0xBB} and  []byte{0xDD}
+
 	// Send a tail GET of the last 2 bytes for object "Bar" expecting []byte{0xDD, 0xEE}
 
 	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount/TestContainer/Bar", nil)
