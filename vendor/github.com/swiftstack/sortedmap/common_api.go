@@ -30,6 +30,31 @@ func CompareInt(key1 Key, key2 Key) (result int, err error) {
 	return
 }
 
+func CompareUint16(key1 Key, key2 Key) (result int, err error) {
+	key1Uint16, ok := key1.(uint16)
+	if !ok {
+		err = fmt.Errorf("CompareUint16(non-uint16,) not supported")
+		return
+	}
+	key2Uint16, ok := key2.(uint16)
+	if !ok {
+		err = fmt.Errorf("CompareUint16(uint16, non-uint16) not supported")
+		return
+	}
+
+	if key1Uint16 < key2Uint16 {
+		result = -1
+	} else if key1Uint16 == key2Uint16 {
+		result = 0
+	} else { // key1Uint16 > key2Uint16
+		result = 1
+	}
+
+	err = nil
+
+	return
+}
+
 func CompareUint32(key1 Key, key2 Key) (result int, err error) {
 	key1Uint32, ok := key1.(uint32)
 	if !ok {

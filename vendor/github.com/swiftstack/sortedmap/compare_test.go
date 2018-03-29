@@ -38,6 +38,36 @@ func TestCompareFunctions(t *testing.T) {
 		t.Fatalf("CompareInt(uint32(2),int(2)) should have failed")
 	}
 
+	result, err = CompareUint16(uint16(1), uint16(2))
+	if nil != err {
+		t.Fatalf("CompareUint16(uint16(1),uint16(2)) should not have failed")
+	}
+	if result >= 0 {
+		t.Fatalf("CompareUint16(uint32(1),uint32(2)) should have been < 0")
+	}
+	result, err = CompareUint16(uint16(2), uint16(2))
+	if nil != err {
+		t.Fatalf("CompareUint16(uint16(2),uint16(2)) should not have failed")
+	}
+	if result != 0 {
+		t.Fatalf("CompareUint16(uint16(2),uint16(2)) should have been == 0")
+	}
+	result, err = CompareUint16(uint16(3), uint16(2))
+	if nil != err {
+		t.Fatalf("CompareUint16(uint16(3),uint16(2)) should not have failed")
+	}
+	if result <= 0 {
+		t.Fatalf("CompareUint16(uint16(3),uint16(2)) should have been > 0")
+	}
+	_, err = CompareUint16(uint32(2), uint64(2))
+	if nil == err {
+		t.Fatalf("CompareUint16(uint16(2), uint32(2)) should have failed")
+	}
+	_, err = CompareUint16(uint64(2), uint32(2))
+	if nil == err {
+		t.Fatalf("CompareUint16(uint32(2), uint16(2)) should have failed")
+	}
+
 	result, err = CompareUint32(uint32(1), uint32(2))
 	if nil != err {
 		t.Fatalf("CompareUint32(uint32(1),uint32(2)) should not have failed")

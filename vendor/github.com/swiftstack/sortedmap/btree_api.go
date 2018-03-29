@@ -57,13 +57,19 @@ func NewBPlusTreeCache(evictLowLimit uint64, evictHighLimit uint64) (bPlusTreeCa
 
 // NewBPlusTree is used to construct an in-memory B+Tree supporting the Tree interface
 //
+// The supplied value of maxKeysPerNode, being precisely twice the computed value of
+// (uint64) minKeysPerNode, must be even. In addition, minKeysPerNode must be computed
+// to be greater than one to ensure that during node merge operations, there is always
+// at least one sibling node with which to merge. Hence, maxKeysPerNode must also be
+// at least four.
+//
 // Note that if the B+Tree will reside only in memory, callback argument may be nil.
 // That said, there is no advantage to using a B+Tree for an in-memory collection over
 // the llrb-provided collection implementing the same APIs.
 func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCallbacks, bPlusTreeCache BPlusTreeCache) (tree BPlusTree) {
 	minKeysPerNode := maxKeysPerNode >> 1
-	if (0 == maxKeysPerNode) != ((2 * minKeysPerNode) != maxKeysPerNode) {
-		err := fmt.Errorf("maxKeysPerNode (%v) invalid - must be a positive number that is a multiple of 2", maxKeysPerNode)
+	if (4 > maxKeysPerNode) || ((2 * minKeysPerNode) != maxKeysPerNode) {
+		err := fmt.Errorf("maxKeysPerNode (%v) invalid - must be an even positive number greater than 3", maxKeysPerNode)
 		panic(err)
 	}
 
