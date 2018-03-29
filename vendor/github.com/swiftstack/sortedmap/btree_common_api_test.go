@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	commonBPlusTreeTestNumKeysMaxSmall   = uint64(2)
+	commonBPlusTreeTestNumKeysMaxSmall   = uint64(4)
 	commonBPlusTreeTestNumKeysMaxModest  = uint64(10)
 	commonBPlusTreeTestNumKeysMaxTypical = uint64(100)
 	commonBPlusTreeTestNumKeysMaxLarge   = uint64(1000)

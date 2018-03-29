@@ -36,6 +36,8 @@ func (tree *btreeTreeStruct) Dump() (err error) {
 	}
 
 	fmt.Printf("B+Tree @ %p has Root Node @ %p\n", tree, tree.root)
+	fmt.Printf("  .minKeysPerNode      = %v\n", tree.minKeysPerNode)
+	fmt.Printf("  .maxKeysPerNode      = %v\n", tree.maxKeysPerNode)
 
 	err = tree.dumpNode(tree.root, "")
 
