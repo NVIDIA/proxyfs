@@ -51,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = mkproxyfs.Format(mode, os.Args[2], os.Args[3], os.Args[4:])
+	err = mkproxyfs.Format(mode, os.Args[2], os.Args[3], os.Args[4:], os.Args)
 	if nil == err {
 		os.Exit(0)
 	} else {

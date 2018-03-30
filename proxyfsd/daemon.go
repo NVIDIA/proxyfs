@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 
 	"golang.org/x/sys/unix"
@@ -27,7 +28,9 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup, signals ...os.Signal) {
+// if signals is empty it means "catch all signals" its possible to catch
+//
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup, execArgs []string, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -88,7 +91,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		return
 	}
 	wg.Add(1)
-	logger.Infof("proxyfsd is starting up (PID %d)", os.Getpid())
+	logger.Infof("proxyfsd is starting up (PID %d); invoked as '%s'",
+		os.Getpid(), strings.Join(execArgs, "' '"))
 	defer func() {
 		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
 		err = logger.Down()
@@ -287,8 +291,9 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	// Note: signalled chan must be buffered to avoid race with window between
 	// arming handler and blocking on the chan read
 
-	signalChan := make(chan os.Signal, 1)
+	signalChan := make(chan os.Signal, 8)
 
+	// if signals is empty it means "catch all signals" its possible to catch
 	signal.Notify(signalChan, signals...)
 
 	if nil != signalHandlerIsArmed {
@@ -296,14 +301,25 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}
 
 	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
-
 	for {
 		signalReceived = <-signalChan
 		logger.Infof("Received signal: '%v'", signalReceived)
 
-		if unix.SIGHUP != signalReceived { // signalReceived either SIGINT or SIGTERM... so just exit
+		// these signals are normally ignored, but if "signals..." above is empty
+		// they are delivered via the channel.  we should simply ignore them.
+		if signalReceived == unix.SIGCHLD || signalReceived == unix.SIGURG ||
+			signalReceived == unix.SIGWINCH {
 
-			errChan <- nil
+		}
+
+		// SIGHUP means reconfig but any other signal means time to exit
+		if unix.SIGHUP != signalReceived {
+
+			err = nil
+			if signalReceived != unix.SIGTERM && signalReceived != unix.SIGINT {
+				logger.Errorf("proxyfsd received unexpected signal: %v", signalReceived)
+				err = fmt.Errorf("proxyfsd received unexpected signal: %v", signalReceived)
+			}
 
 			// if the following message doesn't appear in the log,
 			// it may be because the caller has not called wg.Wait()
@@ -311,6 +327,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			// finish before it exits
 			evtlog.Record(evtlog.FormatDownSequenceStart) // Note: no opportunity to log ...End step alas
 			logger.Infof("signal catcher is shutting down proxyfsd (PID %d)", os.Getpid())
+
+			errChan <- err
 			return
 		}
 

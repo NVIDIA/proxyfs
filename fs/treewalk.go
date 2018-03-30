@@ -288,7 +288,6 @@ func (jS *jobStruct) jobLogInfoWhileLocked(formatString string, args ...interfac
 func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 	var (
 		err error
-		ok  bool
 	)
 
 	defer vVS.childrenWaitGroup.Done()
@@ -297,18 +296,24 @@ func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 
 	err = vVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber), false)
 	if nil != err {
-		vVS.Lock()
-		defer vVS.Unlock()
 		vVS.jobLogInfoWhileLocked("Got inode.Validate(0x%016X) failure: %v", inodeNumber, err)
-		ok, err = vVS.inodeBPTree.Put(inodeNumber, invalidLinkCount)
-		if nil != err {
-			vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, invalidLinkCount) failure: %v", inodeNumber, err)
-			return
-		}
-		if !ok {
-			vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, invalidLinkCount) !ok", inodeNumber)
-			return
-		}
+
+		// Ultimately we will to delete or fix corrupt inode, but only after
+		// fixing validation errors.
+		//
+		// vVS.Lock()
+		// defer vVS.Unlock()
+		//
+		// vVS.jobLogInfoWhileLocked("Got inode.Validate(0x%016X) failure: %v", inodeNumber, err)
+		// ok, err = vVS.inodeBPTree.Put(inodeNumber, invalidLinkCount)
+		// if nil != err {
+		// 	vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, invalidLinkCount) failure: %v", inodeNumber, err)
+		// 	return
+		// }
+		// if !ok {
+		// 	vVS.jobLogErrWhileLocked("Got vVS.inodeBPTree.Put(0x%016X, invalidLinkCount) !ok", inodeNumber)
+		// 	return
+		// }
 	}
 }
 
