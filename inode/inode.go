@@ -424,11 +424,11 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 				//              Is it possible that Number doesn't get updated?
 
 				if inode.PayloadObjectNumber != 0 {
-					logger.Tracef("flushInodes(): updating Payload from Object %016X to %016X"+
-						" bytes %d to %d for %v inode %d",
+					logger.Tracef("flushInodes(): volume '%s' %v inode %d: updating Payload"+
+						" from Object %016X to %016X bytes %d to %d",
+						vS.volumeName, inode.InodeType, inode.InodeNumber,
 						inode.PayloadObjectNumber, payloadObjectNumber,
-						inode.PayloadObjectLength, payloadObjectLength,
-						inode.InodeType, inode.InodeNumber)
+						inode.PayloadObjectLength, payloadObjectLength)
 				}
 				inode.PayloadObjectNumber = payloadObjectNumber
 				inode.PayloadObjectLength = payloadObjectLength
@@ -1434,20 +1434,27 @@ func validateFileExtents(ourInode *inMemoryInodeStruct) (err error) {
 	// Let's check that the read plan is consistent with what the inode's
 	// internal log-segment map says about which segments should have how much data.
 	//
-	// We'll make a map of how many bytes we expect to see in each segment (just
-	// like the LogSegmentMap, but with the values just being the file-data count,
-	// not the entire LogSegmentRecordStruct, which also tallies payload data).
+	// Make a copy of the inode's LogSegmentMap map so we can decrement the
+	// byte count for each segment as we walk the readPlan entries.
 	remainingExpectedBytes := make(map[uint64]uint64)
 	for segmentNumber, segmentBytesUsed := range ourInode.LogSegmentMap {
 		remainingExpectedBytes[segmentNumber] += segmentBytesUsed
 	}
 	// Then we can compare with the actual read plan we got ...
 	for _, readPlanStep := range readPlan {
+
+		// holes in a sparse file aren't counted
+		if readPlanStep.LogSegmentNumber == 0 {
+			continue
+		}
 		pathSegments := strings.Split(readPlanStep.ObjectPath, "/")
 		logSegmentRepresentation := pathSegments[len(pathSegments)-1]
 		logSegmentNumber, hexConvErr := utils.HexStrToUint64(logSegmentRepresentation)
 		if hexConvErr != nil {
-			return blunder.NewError(blunder.CorruptInodeError, "conversion of read plan object name to log segment number failed?!")
+			return blunder.NewError(blunder.CorruptInodeError,
+				"conversion of read plan object name to log segment number failed; "+
+					"readPlanStep: %v  logSegmentString: '%v'  err: %v",
+				readPlanStep, logSegmentRepresentation, hexConvErr)
 		}
 		remainingExpectedBytes[logSegmentNumber] -= readPlanStep.Length
 	}
@@ -1472,6 +1479,11 @@ func validateFileExtents(ourInode *inMemoryInodeStruct) (err error) {
 	objectPathToEndOffset := make(map[string]uint64)
 
 	for _, planStep := range readPlan {
+
+		// holes in a sparse file don't have objects
+		if planStep.LogSegmentNumber == 0 {
+			continue
+		}
 		stepEndOffset := planStep.Offset + planStep.Length
 		endOffset, ok := objectPathToEndOffset[planStep.ObjectPath]
 		if !ok || stepEndOffset > endOffset {

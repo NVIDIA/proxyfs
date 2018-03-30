@@ -240,7 +240,10 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM, unix.SIGHUP)
+	var execArgs []string
+	execArgs = append([]string{"daemon_test", "/dev/null"}, confMapStrings...)
+	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+		execArgs, unix.SIGTERM, unix.SIGHUP)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
@@ -336,7 +339,9 @@ func TestDaemon(t *testing.T) {
 	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	go Daemon(testVersionConfFileName, confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg, unix.SIGTERM, unix.SIGHUP)
+	execArgs = append([]string{"daemon_test", testVersionConfFileName}, confMapStrings...)
+	go Daemon(testVersionConfFileName, confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+		execArgs, unix.SIGTERM, unix.SIGHUP)
 
 	for !proxyfsdSignalHandlerIsArmed {
 		select {
