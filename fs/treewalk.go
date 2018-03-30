@@ -296,7 +296,7 @@ func (vVS *validateVolumeStruct) validateVolumeInode(inodeNumber uint64) {
 
 	err = vVS.inodeVolumeHandle.Validate(inode.InodeNumber(inodeNumber), false)
 	if nil != err {
-		vVS.jobLogInfoWhileLocked("Got inode.Validate(0x%016X) failure: %v", inodeNumber, err)
+		vVS.jobLogInfo("Got inode.Validate(0x%016X) failure: %v", inodeNumber, err)
 
 		// Ultimately we will to delete or fix corrupt inode, but only after
 		// fixing validation errors.
