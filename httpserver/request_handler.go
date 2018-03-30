@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -24,7 +23,6 @@ type httpRequestHandler struct{}
 
 func serveHTTP() {
 	_ = http.Serve(globals.netListener, httpRequestHandler{})
-
 	globals.wg.Done()
 }
 
@@ -51,14 +49,16 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
+	case "/styles.css" == path:
+		doGetOfStaticContent(responseWriter, request, stylesDotCSS)
+	case "/jsontree.js" == path:
+		doGetOfStaticContent(responseWriter, request, jsontreeDotJS)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
 		doGetOfConfig(responseWriter, request)
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
-	case "/arm-disarm-trigger" == path:
-		doGetOfArmDisarmTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -68,148 +68,246 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
+func doGetOfStaticContent(responseWriter http.ResponseWriter, request *http.Request, staticContent *staticContentType) {
+	responseWriter.Header().Set("Content-Type", staticContent.contentType)
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write(staticContent.content)
+}
+
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>ProxyFS</title>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/config\">Configuration Parameters</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/metrics\">StatsD/Prometheus Page</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    Trigger Pages:\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/arm-disarm-trigger\">Arm/Disarm</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger\">All</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=true\">Armed</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("      <a href=\"/trigger?armed=false\">Disarmed</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("    <a href=\"/volume\">Volume Page</a>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)))
 }
 
 func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		confMapJSON       bytes.Buffer
-		confMapJSONPacked []byte
+		acceptHeader         string
+		confMapJSON          bytes.Buffer
+		confMapJSONPacked    []byte
+		formatResponseAsJSON bool
+		ok                   bool
+		paramList            []string
+		sendPackedConfig     bool
 	)
 
-	// NOTE:  Some day, perhaps, we'll use utility functions for semantic extraction
-	// of query strings, and we can get rid of this.  Or we'll use an off-the-shelf router.
-	sendPackedConfig := false
-	if paramList, ok := request.URL.Query()["compact"]; ok {
-		if len(paramList) > 0 {
-			param := paramList[0]
-			sendPackedConfig = (param == "true" || param == "1")
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedConfig = false
+		} else {
+			sendPackedConfig = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
 		}
+	} else {
+		sendPackedConfig = false
 	}
 
-	responseWriter.Header().Set("Content-Type", "application/json")
-	responseWriter.WriteHeader(http.StatusOK)
+	acceptHeader = request.Header.Get("Accept")
+
+	if strings.Contains(acceptHeader, "application/json") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/html") {
+		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
+	}
+
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedConfig = false
+		} else {
+			sendPackedConfig = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		sendPackedConfig = false
+	}
+
 	confMapJSONPacked, _ = json.Marshal(globals.confMap)
 
-	if sendPackedConfig {
-		_, _ = responseWriter.Write(confMapJSONPacked)
+	if formatResponseAsJSON {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		if sendPackedConfig {
+			_, _ = responseWriter.Write(confMapJSONPacked)
+		} else {
+			json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(confMapJSON.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		}
 	} else {
-		json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
-		_, _ = responseWriter.Write(confMapJSON.Bytes())
-		_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
 	}
 }
 
 func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err                error
-		i                  int
-		memStats           runtime.MemStats
-		ok                 bool
-		pauseNsAccumulator uint64
-		statKey            string
-		statsLLRB          sortedmap.LLRBTree
-		statsMap           map[string]uint64
-		statValueAsString  string
-		statValueAsUint64  uint64
+		acceptHeader         string
+		err                  error
+		formatResponseAsHTML bool
+		formatResponseAsJSON bool
+		i                    int
+		memStats             runtime.MemStats
+		metricKey            string
+		metricValueAsString  string
+		metricValueAsUint64  uint64
+		metricsJSON          bytes.Buffer
+		metricsJSONPacked    []byte
+		metricsLLRB          sortedmap.LLRBTree
+		metricsMap           map[string]uint64
+		ok                   bool
+		paramList            []string
+		pauseNsAccumulator   uint64
+		sendPackedMetrics    bool
+		statKey              string
+		statValue            uint64
+		statsMap             map[string]uint64
 	)
-
-	statsMap = stats.Dump()
 
 	runtime.ReadMemStats(&memStats)
 
+	metricsMap = make(map[string]uint64)
+
 	// General statistics.
-	statsMap["go_runtime_MemStats_Alloc"] = memStats.Alloc
-	statsMap["go_runtime_MemStats_TotalAlloc"] = memStats.TotalAlloc
-	statsMap["go_runtime_MemStats_Sys"] = memStats.Sys
-	statsMap["go_runtime_MemStats_Lookups"] = memStats.Lookups
-	statsMap["go_runtime_MemStats_Mallocs"] = memStats.Mallocs
-	statsMap["go_runtime_MemStats_Frees"] = memStats.Frees
+	metricsMap["go_runtime_MemStats_Alloc"] = memStats.Alloc
+	metricsMap["go_runtime_MemStats_TotalAlloc"] = memStats.TotalAlloc
+	metricsMap["go_runtime_MemStats_Sys"] = memStats.Sys
+	metricsMap["go_runtime_MemStats_Lookups"] = memStats.Lookups
+	metricsMap["go_runtime_MemStats_Mallocs"] = memStats.Mallocs
+	metricsMap["go_runtime_MemStats_Frees"] = memStats.Frees
 
 	// Main allocation heap statistics.
-	statsMap["go_runtime_MemStats_HeapAlloc"] = memStats.HeapAlloc
-	statsMap["go_runtime_MemStats_HeapSys"] = memStats.HeapSys
-	statsMap["go_runtime_MemStats_HeapIdle"] = memStats.HeapIdle
-	statsMap["go_runtime_MemStats_HeapInuse"] = memStats.HeapInuse
-	statsMap["go_runtime_MemStats_HeapReleased"] = memStats.HeapReleased
-	statsMap["go_runtime_MemStats_HeapObjects"] = memStats.HeapObjects
+	metricsMap["go_runtime_MemStats_HeapAlloc"] = memStats.HeapAlloc
+	metricsMap["go_runtime_MemStats_HeapSys"] = memStats.HeapSys
+	metricsMap["go_runtime_MemStats_HeapIdle"] = memStats.HeapIdle
+	metricsMap["go_runtime_MemStats_HeapInuse"] = memStats.HeapInuse
+	metricsMap["go_runtime_MemStats_HeapReleased"] = memStats.HeapReleased
+	metricsMap["go_runtime_MemStats_HeapObjects"] = memStats.HeapObjects
 
 	// Low-level fixed-size structure allocator statistics.
 	//	Inuse is bytes used now.
 	//	Sys is bytes obtained from system.
-	statsMap["go_runtime_MemStats_StackInuse"] = memStats.StackInuse
-	statsMap["go_runtime_MemStats_StackSys"] = memStats.StackSys
-	statsMap["go_runtime_MemStats_MSpanInuse"] = memStats.MSpanInuse
-	statsMap["go_runtime_MemStats_MSpanSys"] = memStats.MSpanSys
-	statsMap["go_runtime_MemStats_MCacheInuse"] = memStats.MCacheInuse
-	statsMap["go_runtime_MemStats_MCacheSys"] = memStats.MCacheSys
-	statsMap["go_runtime_MemStats_BuckHashSys"] = memStats.BuckHashSys
-	statsMap["go_runtime_MemStats_GCSys"] = memStats.GCSys
-	statsMap["go_runtime_MemStats_OtherSys"] = memStats.OtherSys
+	metricsMap["go_runtime_MemStats_StackInuse"] = memStats.StackInuse
+	metricsMap["go_runtime_MemStats_StackSys"] = memStats.StackSys
+	metricsMap["go_runtime_MemStats_MSpanInuse"] = memStats.MSpanInuse
+	metricsMap["go_runtime_MemStats_MSpanSys"] = memStats.MSpanSys
+	metricsMap["go_runtime_MemStats_MCacheInuse"] = memStats.MCacheInuse
+	metricsMap["go_runtime_MemStats_MCacheSys"] = memStats.MCacheSys
+	metricsMap["go_runtime_MemStats_BuckHashSys"] = memStats.BuckHashSys
+	metricsMap["go_runtime_MemStats_GCSys"] = memStats.GCSys
+	metricsMap["go_runtime_MemStats_OtherSys"] = memStats.OtherSys
 
 	// Garbage collector statistics (fixed portion).
-	statsMap["go_runtime_MemStats_LastGC"] = memStats.LastGC
-	statsMap["go_runtime_MemStats_PauseTotalNs"] = memStats.PauseTotalNs
-	statsMap["go_runtime_MemStats_NumGC"] = uint64(memStats.NumGC)
-	statsMap["go_runtime_MemStats_GCCPUPercentage"] = uint64(100.0 * memStats.GCCPUFraction)
+	metricsMap["go_runtime_MemStats_LastGC"] = memStats.LastGC
+	metricsMap["go_runtime_MemStats_PauseTotalNs"] = memStats.PauseTotalNs
+	metricsMap["go_runtime_MemStats_NumGC"] = uint64(memStats.NumGC)
+	metricsMap["go_runtime_MemStats_GCCPUPercentage"] = uint64(100.0 * memStats.GCCPUFraction)
 
 	// Garbage collector statistics (go_runtime_MemStats_PauseAverageNs).
 	if 0 == memStats.NumGC {
-		statsMap["go_runtime_MemStats_PauseAverageNs"] = 0
+		metricsMap["go_runtime_MemStats_PauseAverageNs"] = 0
 	} else {
 		pauseNsAccumulator = 0
 		if memStats.NumGC < 255 {
 			for i = 0; i < int(memStats.NumGC); i++ {
 				pauseNsAccumulator += memStats.PauseNs[i]
 			}
-			statsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / uint64(memStats.NumGC)
+			metricsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / uint64(memStats.NumGC)
 		} else {
 			for i = 0; i < 256; i++ {
 				pauseNsAccumulator += memStats.PauseNs[i]
 			}
-			statsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / 256
+			metricsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / 256
 		}
 	}
 
-	statsLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+	statsMap = stats.Dump()
 
-	for statKey, statValueAsUint64 = range statsMap {
-		statKey = strings.Replace(statKey, ".", "_", -1)
-		statKey = strings.Replace(statKey, "-", "_", -1)
-		statValueAsString = fmt.Sprintf("%v", statValueAsUint64)
-		ok, err = statsLLRB.Put(statKey, statValueAsString)
-		if nil != err {
-			err = fmt.Errorf("statsLLRB.Put(%v, %v) failed: %v", statKey, statValueAsString, err)
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
-		if !ok {
-			err = fmt.Errorf("statsLLRB.Put(%v, %v) returned ok == false", statKey, statValueAsString)
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
+	for statKey, statValue = range statsMap {
+		metricKey = strings.Replace(statKey, ".", "_", -1)
+		metricKey = strings.Replace(metricKey, "-", "_", -1)
+		metricsMap[metricKey] = statValue
 	}
 
-	sortedTwoColumnResponseWriter(statsLLRB, responseWriter)
+	acceptHeader = request.Header.Get("Accept")
+
+	if strings.Contains(acceptHeader, "application/json") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/html") {
+		formatResponseAsHTML = true
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "text/plain") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
+		formatResponseAsHTML = false
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
+	}
+
+	if formatResponseAsJSON {
+		metricsJSONPacked, _ = json.Marshal(metricsMap)
+		if formatResponseAsHTML {
+			responseWriter.Header().Set("Content-Type", "text/html")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
+		} else {
+			responseWriter.Header().Set("Content-Type", "application/json")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			paramList, ok = request.URL.Query()["compact"]
+			if ok {
+				if 0 == len(paramList) {
+					sendPackedMetrics = false
+				} else {
+					sendPackedMetrics = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+				}
+			} else {
+				sendPackedMetrics = false
+			}
+
+			if sendPackedMetrics {
+				_, _ = responseWriter.Write(metricsJSONPacked)
+			} else {
+				json.Indent(&metricsJSON, metricsJSONPacked, "", "\t")
+				_, _ = responseWriter.Write(metricsJSON.Bytes())
+				_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+			}
+		}
+	} else {
+		metricsLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+		for metricKey, metricValueAsUint64 = range metricsMap {
+			metricValueAsString = fmt.Sprintf("%v", metricValueAsUint64)
+			ok, err = metricsLLRB.Put(metricKey, metricValueAsString)
+			if nil != err {
+				err = fmt.Errorf("metricsLLRB.Put(%v, %v) failed: %v", metricKey, metricValueAsString, err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+			if !ok {
+				err = fmt.Errorf("metricsLLRB.Put(%v, %v) returned ok == false", metricKey, metricValueAsString)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+		}
+
+		sortedTwoColumnResponseWriter(metricsLLRB, responseWriter)
+	}
 }
 
 func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
@@ -225,7 +323,7 @@ func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.R
 	responseWriter.WriteHeader(http.StatusOK)
 
 	_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-	_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+	_, _ = responseWriter.Write(utils.StringToByteSlice("<html lang=\"en\">\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
 	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Trigger Arm/Disarm Page</title>\n")))
 	_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
@@ -261,17 +359,22 @@ func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.R
 
 func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		armedTriggers                 map[string]uint32
-		availableTriggers             []string
-		err                           error
-		haltTriggerArmedStateAsBool   bool
-		haltTriggerArmedStateAsString string
-		haltTriggerCount              uint32
-		haltTriggerString             string
-		numPathParts                  int
-		ok                            bool
-		pathSplit                     []string
-		triggersLLRB                  sortedmap.LLRBTree
+		triggerAllArmedOrDisarmedActiveString string
+		armedTriggers                         map[string]uint32
+		availableTriggers                     []string
+		err                                   error
+		haltTriggerArmedStateAsBool           bool
+		haltTriggerArmedStateAsString         string
+		haltTriggerCount                      uint32
+		haltTriggerString                     string
+		i                                     int
+		lenTriggersLLRB                       int
+		numPathParts                          int
+		key                                   sortedmap.Key
+		ok                                    bool
+		pathSplit                             []string
+		triggersLLRB                          sortedmap.LLRBTree
+		value                                 sortedmap.Value
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -289,6 +392,7 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 		haltTriggerArmedStateAsString = request.FormValue("armed")
 
 		if "" == haltTriggerArmedStateAsString {
+			triggerAllArmedOrDisarmedActiveString = triggerAllActive
 			armedTriggers = halter.Dump()
 			availableTriggers = halter.List()
 
@@ -296,39 +400,29 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 
 			for _, haltTriggerString = range availableTriggers {
 				haltTriggerCount, ok = armedTriggers[haltTriggerString]
-				if ok {
-					ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
-					if nil != err {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-					if !ok {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-				} else {
-					ok, err = triggersLLRB.Put(haltTriggerString, "0")
-					if nil != err {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
-					if !ok {
-						err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, 0)
-						logger.Fatalf("HTTP Server Logic Error: %v", err)
-					}
+				if !ok {
+					haltTriggerCount = 0
+				}
+				ok, err = triggersLLRB.Put(haltTriggerString, haltTriggerCount)
+				if nil != err {
+					err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					err = fmt.Errorf("triggersLLRB.Put(%v, %v) returned ok == false", haltTriggerString, haltTriggerCount)
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
 				}
 			}
-
-			sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
 		} else {
 			haltTriggerArmedStateAsBool, err = strconv.ParseBool(haltTriggerArmedStateAsString)
 			if nil == err {
 				triggersLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 				if haltTriggerArmedStateAsBool {
+					triggerAllArmedOrDisarmedActiveString = triggerArmedActive
 					armedTriggers = halter.Dump()
 					for haltTriggerString, haltTriggerCount = range armedTriggers {
-						ok, err = triggersLLRB.Put(haltTriggerString, strconv.FormatUint(uint64(haltTriggerCount), 10))
+						ok, err = triggersLLRB.Put(haltTriggerString, haltTriggerCount)
 						if nil != err {
 							err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, haltTriggerCount, err)
 							logger.Fatalf("HTTP Server Logic Error: %v", err)
@@ -339,13 +433,14 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 						}
 					}
 				} else {
+					triggerAllArmedOrDisarmedActiveString = triggerDisarmedActive
 					armedTriggers = halter.Dump()
 					availableTriggers = halter.List()
 
 					for _, haltTriggerString = range availableTriggers {
 						_, ok = armedTriggers[haltTriggerString]
 						if !ok {
-							ok, err = triggersLLRB.Put(haltTriggerString, "0")
+							ok, err = triggersLLRB.Put(haltTriggerString, uint32(0))
 							if nil != err {
 								err = fmt.Errorf("triggersLLRB.Put(%v, %v) failed: %v", haltTriggerString, 0, err)
 								logger.Fatalf("HTTP Server Logic Error: %v", err)
@@ -357,12 +452,42 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 						}
 					}
 				}
-
-				sortedTwoColumnResponseWriter(triggersLLRB, responseWriter)
 			} else {
 				responseWriter.WriteHeader(http.StatusBadRequest)
 			}
 		}
+
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, globals.ipAddrTCPPort)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerAllArmedOrDisarmedActiveString))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerTableTop))
+
+		lenTriggersLLRB, err = triggersLLRB.Len()
+		if nil != err {
+			err = fmt.Errorf("triggersLLRB.Len()) failed: %v", err)
+			logger.Fatalf("HTTP Server Logic Error: %v", err)
+		}
+
+		for i = 0; i < lenTriggersLLRB; i++ {
+			key, value, ok, err = triggersLLRB.GetByIndex(i)
+			if nil != err {
+				err = fmt.Errorf("triggersLLRB.GetByIndex(%v) failed: %v", i, err)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+			if !ok {
+				err = fmt.Errorf("triggersLLRB.GetByIndex(%v) returned ok == false", i)
+				logger.Fatalf("HTTP Server Logic Error: %v", err)
+			}
+
+			haltTriggerString = key.(string)
+			haltTriggerCount = value.(uint32)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTableRowTemplate, haltTriggerString, haltTriggerCount)))
+		}
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerBottom))
 	case 2:
 		// Form: /trigger/<trigger-name>
 
@@ -425,8 +550,10 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case 3:
 		// Form: /volume/<volume-name/fsck-job
 		// Form: /volume/<volume-name/layout-report
+		// Form: /volume/<volume-name/scrub-job
 	case 4:
 		// Form: /volume/<volume-name/fsck-job/<job-id>
+		// Form: /volume/<volume-name/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -434,17 +561,17 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	acceptHeader = request.Header.Get("Accept")
 
-	switch acceptHeader {
-	case "":
-		// Default assumes Accept: text/html
-		formatResponseAsJSON = false
-	case "application/json":
+	if strings.Contains(acceptHeader, "application/json") {
 		formatResponseAsJSON = true
-	case "text/html":
+	} else if strings.Contains(acceptHeader, "text/html") {
 		formatResponseAsJSON = false
-	default:
-		// TODO: Decide if returning text/html is not allowed here, but for now assume it is
-		formatResponseAsJSON = false
+	} else if strings.Contains(acceptHeader, "*/*") {
+		formatResponseAsJSON = true
+	} else if strings.Contains(acceptHeader, "") {
+		formatResponseAsJSON = true
+	} else {
+		responseWriter.WriteHeader(http.StatusNotAcceptable)
+		return
 	}
 
 	if formatResponseAsJSON {
@@ -494,23 +621,13 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <title>Volumes</title>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)))
 
 			for volumeListIndex, volumeName = range volumeList {
-				if 0 < volumeListIndex {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job\">\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </a>\n"))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)))
 			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(volumeListBottom))
 		}
 
 		return
@@ -535,12 +652,14 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	requestState.formatResponseCompactly = formatResponseCompactly
 
 	switch pathSplit[3] {
-
 	case "fsck-job":
-		doFsckJob(responseWriter, request, requestState)
+		doJob(fsckJobType, responseWriter, request, requestState)
 
 	case "layout-report":
 		doLayoutReport(responseWriter, request, requestState)
+
+	case "scrub-job":
+		doJob(scrubJobType, responseWriter, request, requestState)
 
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -549,35 +668,37 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
-func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err                      error
-		pathSplit                []string
-		numPathParts             int
-		formatResponseAsJSON     bool
-		formatResponseCompactly  bool
-		fsckInactive             bool
-		fsckJob                  *fsckJobStruct
-		fsckJobAsValue           sortedmap.Value
-		fsckJobError             string
-		fsckJobErrorList         []string
-		fsckJobID                uint64
-		fsckJobIDAsKey           sortedmap.Key
-		fsckJobInfo              string
-		fsckJobInfoList          []string
-		fsckJobsIDListJSON       bytes.Buffer
-		fsckJobsIDListJSONPacked []byte
-		fsckJobStatusJSONBuffer  bytes.Buffer
-		fsckJobStatusJSONPacked  []byte
-		fsckJobStatusJSONStruct  *FSCKJobStatusJSONPackedStruct
-		fsckJobsCount            int
-		fsckJobsIDList           []uint64
-		fsckJobsIDListIndex      int
-		fsckJobsIndex            int
-		ok                       bool
-		volume                   *volumeStruct
-		volumeName               string
+		err                     error
+		formatResponseAsJSON    bool
+		formatResponseCompactly bool
+		inactive                bool
+		job                     *jobStruct
+		jobAsValue              sortedmap.Value
+		jobErrorList            []string
+		jobID                   uint64
+		jobIDAsKey              sortedmap.Key
+		jobPerJobTemplate       string
+		jobsIDListJSON          bytes.Buffer
+		jobsIDListJSONPacked    []byte
+		jobStatusJSONBuffer     bytes.Buffer
+		jobStatusJSONPacked     []byte
+		jobStatusJSONStruct     *JobStatusJSONPackedStruct
+		jobsCount               int
+		jobsIDList              []uint64
+		jobsIndex               int
+		ok                      bool
+		numPathParts            int
+		pathSplit               []string
+		volume                  *volumeStruct
+		volumeName              string
 	)
+
+	if limitJobType <= jobType {
+		err = fmt.Errorf("httpserver.doJob(jobtype==%v,,,) called for invalid jobType", jobType)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
 
 	volume = requestState.volume
 	pathSplit = requestState.pathSplit
@@ -588,93 +709,140 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 	volumeName = volume.name
 	volume.Lock()
 
+	markJobsCompletedIfNoLongerActiveWhileLocked(volume)
+
 	if 3 == numPathParts {
-		fsckJobsCount, err = volume.fsckJobs.Len()
+		switch jobType {
+		case fsckJobType:
+			jobsCount, err = volume.fsckJobs.Len()
+		case scrubJobType:
+			jobsCount, err = volume.scrubJobs.Len()
+		}
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		fsckJobsIDList = make([]uint64, 0, fsckJobsCount)
-		for fsckJobsIndex = fsckJobsCount - 1; fsckJobsIndex >= 0; fsckJobsIndex-- {
-			fsckJobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(fsckJobsIndex)
-			if nil != err {
-				logger.Fatalf("HTTP Server Logic Error: %v", err)
-			}
-			if !ok {
-				err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
-				logger.Fatalf("HTTP Server Logic Error: %v", err)
-			}
-			fsckJobID = fsckJobIDAsKey.(uint64)
-
-			fsckJobsIDList = append(fsckJobsIDList, fsckJobID)
-		}
-
-		if nil == volume.fsckActiveJob {
-			fsckInactive = true
-		} else {
-			// We know fsckJobRunning == volume.fsckActiveJob.state
-
-			if volume.fsckActiveJob.validateVolumeHandle.Active() {
-				// FSCK must still be running
-
-				fsckInactive = false
-			} else {
-				// FSCK finished at some point... make it look like it just finished now
-
-				volume.fsckActiveJob.state = fsckJobCompleted
-				volume.fsckActiveJob.endTime = time.Now()
-				volume.fsckActiveJob = nil
-
-				fsckInactive = true
-			}
-		}
+		inactive = (nil == volume.fsckActiveJob) && (nil == volume.scrubActiveJob)
 
 		volume.Unlock()
 
 		if formatResponseAsJSON {
+			jobsIDList = make([]uint64, 0, jobsCount)
+
+			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
+				switch jobType {
+				case fsckJobType:
+					jobIDAsKey, _, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
+				case scrubJobType:
+					jobIDAsKey, _, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
+				}
+				if nil != err {
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					switch jobType {
+					case fsckJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+					case scrubJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
+					}
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				jobID = jobIDAsKey.(uint64)
+
+				jobsIDList = append(jobsIDList, jobID)
+			}
+
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			fsckJobsIDListJSONPacked, err = json.Marshal(fsckJobsIDList)
+			jobsIDListJSONPacked, err = json.Marshal(jobsIDList)
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
 			if formatResponseCompactly {
-				_, _ = responseWriter.Write(fsckJobsIDListJSONPacked)
+				_, _ = responseWriter.Write(jobsIDListJSONPacked)
 			} else {
-				json.Indent(&fsckJobsIDListJSON, fsckJobsIDListJSONPacked, "", "\t")
-				_, _ = responseWriter.Write(fsckJobsIDListJSON.Bytes())
+				json.Indent(&jobsIDListJSON, jobsIDListJSONPacked, "", "\t")
+				_, _ = responseWriter.Write(jobsIDListJSON.Bytes())
 				_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 			}
 		} else {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Jobs</title>\n", volumeName)))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-			for fsckJobsIDListIndex, fsckJobID = range fsckJobsIDList {
-				if 0 < fsckJobsIDListIndex {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <a href=\"/volume/%v/fsck-job/%v\">\n", volumeName, fsckJobID)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("      %v\n", fsckJobID)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </a>\n"))
+			switch jobType {
+			case fsckJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "FSCK")))
+			case scrubJobType:
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
-			if fsckInactive {
-				if 0 < fsckJobsCount {
-					_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
+
+			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
+				switch jobType {
+				case fsckJobType:
+					jobIDAsKey, jobAsValue, ok, err = volume.fsckJobs.GetByIndex(jobsIndex)
+				case scrubJobType:
+					jobIDAsKey, jobAsValue, ok, err = volume.scrubJobs.GetByIndex(jobsIndex)
 				}
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job\">\n", volumeName)))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Start\">\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
+				if nil != err {
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+				if !ok {
+					switch jobType {
+					case fsckJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.fsckJobs failed")
+					case scrubJobType:
+						err = fmt.Errorf("httpserver.doGetOfVolume() indexing volume.scrubJobs failed")
+					}
+					logger.Fatalf("HTTP Server Logic Error: %v", err)
+				}
+
+				jobID = jobIDAsKey.(uint64)
+				job = jobAsValue.(*jobStruct)
+
+				if jobRunning == job.state {
+					switch jobType {
+					case fsckJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "fsck")))
+					case scrubJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsPerRunningJobTemplate, jobID, job.startTime.Format(time.RFC3339), volumeName, "scrub")))
+					}
+				} else {
+					switch job.state {
+					case jobHalted:
+						jobPerJobTemplate = jobsPerHaltedJobTemplate
+					case jobCompleted:
+						jobErrorList = job.jobHandle.Error()
+						if 0 == len(jobErrorList) {
+							jobPerJobTemplate = jobsPerSuccessfulJobTemplate
+						} else {
+							jobPerJobTemplate = jobsPerFailedJobTemplate
+						}
+					}
+
+					switch jobType {
+					case fsckJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, "fsck")))
+					case scrubJobType:
+						_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobPerJobTemplate, jobID, job.startTime.Format(time.RFC3339), job.endTime.Format(time.RFC3339), volumeName, "scrub")))
+					}
+				}
 			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobsListBottom))
+
+			if inactive {
+				switch jobType {
+				case fsckJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsStartJobButtonTemplate, volumeName, "fsck")))
+				case scrubJobType:
+					_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsStartJobButtonTemplate, volumeName, "scrub")))
+				}
+			}
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(jobsBottom))
 		}
 
 		return
@@ -682,14 +850,19 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 
 	// If we reach here, numPathParts is 4
 
-	fsckJobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
+	jobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
 	if nil != err {
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
+	switch jobType {
+	case fsckJobType:
+		jobAsValue, ok, err = volume.fsckJobs.GetByKey(jobID)
+	case scrubJobType:
+		jobAsValue, ok, err = volume.scrubJobs.GetByKey(jobID)
+	}
 	if nil != err {
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
@@ -698,206 +871,147 @@ func doFsckJob(responseWriter http.ResponseWriter, request *http.Request, reques
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fsckJob = fsckJobAsValue.(*fsckJobStruct)
+	job = jobAsValue.(*jobStruct)
 
-	if fsckJobRunning == fsckJob.state {
-		if !fsckJob.validateVolumeHandle.Active() {
-			// FSCK finished at some point... make it look like it just finished now
+	jobStatusJSONStruct = &JobStatusJSONPackedStruct{
+		StartTime: job.startTime.Format(time.RFC3339),
+		ErrorList: job.jobHandle.Error(),
+		InfoList:  job.jobHandle.Info(),
+	}
 
-			fsckJob.state = fsckJobCompleted
-			fsckJob.endTime = time.Now()
-			volume.fsckActiveJob = nil
-		}
+	switch job.state {
+	case jobRunning:
+		// Nothing to add here
+	case jobHalted:
+		jobStatusJSONStruct.HaltTime = job.endTime.Format(time.RFC3339)
+	case jobCompleted:
+		jobStatusJSONStruct.DoneTime = job.endTime.Format(time.RFC3339)
+	}
+
+	jobStatusJSONPacked, err = json.Marshal(jobStatusJSONStruct)
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 
 	if formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		fsckJobStatusJSONStruct = &FSCKJobStatusJSONPackedStruct{
-			StartTime: fsckJob.startTime.Format(time.RFC3339),
-			ErrorList: fsckJob.validateVolumeHandle.Error(),
-			InfoList:  fsckJob.validateVolumeHandle.Info(),
-		}
-
-		switch fsckJob.state {
-		case fsckJobRunning:
-			// Nothing to add here
-		case fsckJobHalted:
-			fsckJobStatusJSONStruct.HaltTime = fsckJob.endTime.Format(time.RFC3339)
-		case fsckJobCompleted:
-			fsckJobStatusJSONStruct.DoneTime = fsckJob.endTime.Format(time.RFC3339)
-		}
-
-		fsckJobStatusJSONPacked, err = json.Marshal(fsckJobStatusJSONStruct)
-		if nil != err {
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
-
 		if formatResponseCompactly {
-			_, _ = responseWriter.Write(fsckJobStatusJSONPacked)
+			_, _ = responseWriter.Write(jobStatusJSONPacked)
 		} else {
-			json.Indent(&fsckJobStatusJSONBuffer, fsckJobStatusJSONPacked, "", "\t")
-			_, _ = responseWriter.Write(fsckJobStatusJSONBuffer.Bytes())
+			json.Indent(&jobStatusJSONBuffer, jobStatusJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(jobStatusJSONBuffer.Bytes())
 			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 		}
 	} else {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>%v FSCK Job %v</title>\n", volumeName, fsckJob.id)))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("    <table>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>State</td>\n"))
-		switch fsckJob.state {
-		case fsckJobRunning:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Running</td>\n"))
-		case fsckJobHalted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halted</td>\n"))
-		case fsckJobCompleted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Completed</td>\n"))
+		switch jobType {
+		case fsckJobType:
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
+		case scrubJobType:
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Start Time</td>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.startTime.Format(time.RFC3339))))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		switch fsckJob.state {
-		case fsckJobRunning:
-			// Nothing to add here
-		case fsckJobHalted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Halt Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		case fsckJobCompleted:
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Done Time</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%s</td>\n", fsckJob.endTime.Format(time.RFC3339))))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		}
-		fsckJobErrorList = fsckJob.validateVolumeHandle.Error()
-		if 0 == len(fsckJobErrorList) {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>No Errors</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-		} else {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Errors:</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, fsckJobError = range fsckJobErrorList {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobError))))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			}
-		}
-		fsckJobInfoList = fsckJob.validateVolumeHandle.Info()
-		if 0 < len(fsckJobInfoList) {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>Info:</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			for _, fsckJobInfo = range fsckJobInfoList {
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      <tr>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("        <td>&nbsp;</td>\n"))
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("        <td>%v</td>\n", html.EscapeString(fsckJobInfo))))
-				_, _ = responseWriter.Write(utils.StringToByteSlice("      </tr>\n"))
-			}
-		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("    </table>\n"))
-		if fsckJobRunning == fsckJob.state {
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    <br />\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <form method=\"post\" action=\"/volume/%v/fsck-job/%v\">\n", volumeName, fsckJob.id)))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("      <input type=\"submit\" value=\"Stop\">\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("    </form>\n"))
-		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
 	}
 
 	volume.Unlock()
 }
 
+type layoutReportElementLayoutReportElementStruct struct {
+	ObjectNumber uint64
+	ObjectBytes  uint64
+}
+
+type layoutReportSetElementStruct struct {
+	TreeName     string
+	LayoutReport []layoutReportElementLayoutReportElementStruct
+}
+
 func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err                     error
-		formatResponseAsJSON    bool
-		formatResponseCompactly bool
-		volume                  *volumeStruct
-		volumeName              string
-		layoutReport            sortedmap.LayoutReport
+		err                       error
+		layoutReportIndex         int
+		layoutReportMap           sortedmap.LayoutReport
+		layoutReportSet           [4]*layoutReportSetElementStruct
+		layoutReportSetElement    *layoutReportSetElementStruct
+		layoutReportSetJSON       bytes.Buffer
+		layoutReportSetJSONPacked []byte
+		objectBytes               uint64
+		objectNumber              uint64
+		treeTypeIndex             int
 	)
 
-	volume = requestState.volume
-	// pathSplit = requestState.pathSplit
-	// numPathParts = requestState.numPathParts
-	formatResponseAsJSON = requestState.formatResponseAsJSON
-	formatResponseCompactly = requestState.formatResponseCompactly
-	_ = formatResponseCompactly
-
-	volumeName = volume.name
-
-	treeTypes := map[headhunter.BPlusTreeType]string{
-		headhunter.InodeRecBPlusTree:        "Inode Record B+Tree",
-		headhunter.LogSegmentRecBPlusTree:   "Log Segment Record B+Tree",
-		headhunter.BPlusTreeObjectBPlusTree: "B+Plus Tree Objects B+Tree",
+	layoutReportSet[headhunter.MergedBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Checkpoint (Trailer + B+Trees)",
+	}
+	layoutReportSet[headhunter.InodeRecBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Inode Record B+Tree",
+	}
+	layoutReportSet[headhunter.LogSegmentRecBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Log Segment Record B+Tree",
+	}
+	layoutReportSet[headhunter.BPlusTreeObjectBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "B+Plus Tree Objects B+Tree",
 	}
 
-	if formatResponseAsJSON {
+	for treeTypeIndex, layoutReportSetElement = range layoutReportSet {
+		layoutReportMap, err = requestState.volume.headhunterHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex))
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		layoutReportSetElement.LayoutReport = make([]layoutReportElementLayoutReportElementStruct, len(layoutReportMap))
+
+		layoutReportIndex = 0
+
+		for objectNumber, objectBytes = range layoutReportMap {
+			layoutReportSetElement.LayoutReport[layoutReportIndex] = layoutReportElementLayoutReportElementStruct{objectNumber, objectBytes}
+			layoutReportIndex++
+		}
+	}
+
+	if requestState.formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		for treeType, treeName := range treeTypes {
-			_ = treeType
-			_ = treeName
+		layoutReportSetJSONPacked, err = json.Marshal(layoutReportSet)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if requestState.formatResponseCompactly {
+			_, _ = responseWriter.Write(layoutReportSetJSONPacked)
+		} else {
+			json.Indent(&layoutReportSetJSON, layoutReportSetJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(layoutReportSetJSON.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 		}
 	} else {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<!DOCTYPE html>\n"))
-		_, _ = responseWriter.Write(utils.StringToByteSlice("<html>\n"))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
 
-		for treeType, treeName := range treeTypes {
+		for _, layoutReportSetElement = range layoutReportSet {
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName)))
 
-			layoutReport, err = volume.headhunterHandle.FetchLayoutReport(treeType)
-			if err != nil {
-				logger.ErrorfWithError(err, "doLayoutReport(): failed for %s tree", treeName)
-				responseWriter.WriteHeader(http.StatusInternalServerError)
-				return
+			for layoutReportIndex = 0; layoutReportIndex < len(layoutReportSetElement.LayoutReport); layoutReportIndex++ {
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableRowTemplate, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectNumber, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectBytes)))
 			}
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf("    <title>Volume %s %v Tree</title>\n",
-				volumeName, treeName)))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </head>\n"))
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  <body>\n"))
-
-			for objNum, objBytes := range layoutReport {
-				_, _ = responseWriter.Write(utils.StringToByteSlice(
-					fmt.Sprintf("%016X %d<br>\n", objNum, objBytes)))
-			}
-			_, _ = responseWriter.Write(utils.StringToByteSlice("  </body>\n"))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(layoutReportTableBottom))
 		}
-		_, _ = responseWriter.Write(utils.StringToByteSlice("</html>\n"))
-	}
 
-	return
+		_, _ = responseWriter.Write(utils.StringToByteSlice(layoutReportBottom))
+	}
 }
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
-	path := strings.TrimRight(request.URL.Path, "/")
-
 	switch {
-	case "/arm-disarm-trigger" == path:
-		doPostOfArmDisarmTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doPostOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -905,41 +1019,6 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-}
-
-func doPostOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		err                    error
-		haltAfterCountAsString string
-		haltAfterCountAsU32    uint32
-		haltAfterCountAsU64    uint64
-		haltLabelString        string
-	)
-
-	haltLabelString = request.PostFormValue("haltLabelString")
-	haltAfterCountAsString = request.PostFormValue("haltAfterCount")
-
-	_, err = halter.Stat(haltLabelString)
-	if nil != err {
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	haltAfterCountAsU64, err = strconv.ParseUint(haltAfterCountAsString, 10, 32)
-	if nil != err {
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	haltAfterCountAsU32 = uint32(haltAfterCountAsU64)
-
-	if 0 == haltAfterCountAsU32 {
-		halter.Disarm(haltLabelString)
-	} else {
-		halter.Arm(haltLabelString, haltAfterCountAsU32)
-	}
-
-	responseWriter.Header().Set("Location", "/trigger")
-	responseWriter.WriteHeader(http.StatusSeeOther)
 }
 
 func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
@@ -996,17 +1075,19 @@ func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) 
 
 func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err            error
-		fsckJob        *fsckJobStruct
-		fsckJobAsValue sortedmap.Value
-		fsckJobID      uint64
-		fsckJobsCount  int
-		numPathParts   int
-		ok             bool
-		pathSplit      []string
-		volume         *volumeStruct
-		volumeAsValue  sortedmap.Value
-		volumeName     string
+		acceptHeader  string
+		err           error
+		job           *jobStruct
+		jobAsValue    sortedmap.Value
+		jobID         uint64
+		jobType       jobTypeType
+		jobsCount     int
+		numPathParts  int
+		ok            bool
+		pathSplit     []string
+		volume        *volumeStruct
+		volumeAsValue sortedmap.Value
+		volumeName    string
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -1020,8 +1101,10 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	switch numPathParts {
 	case 3:
 		// Form: /volume/<volume-name/fsck-job
+		// Form: /volume/<volume-name/scrub-job
 	case 4:
 		// Form: /volume/<volume-name/fsck-job/<job-id>
+		// Form: /volume/<volume-name/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -1041,93 +1124,139 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	volume.Lock()
 
-	if "fsck-job" != pathSplit[3] {
+	switch pathSplit[3] {
+	case "fsck-job":
+		jobType = fsckJobType
+	case "scrub-job":
+		jobType = scrubJobType
+	default:
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	if 3 == numPathParts {
-		if nil != volume.fsckActiveJob {
-			// We know fsckJobRunning == volume.fsckActiveJob.state
+		markJobsCompletedIfNoLongerActiveWhileLocked(volume)
 
-			if volume.fsckActiveJob.validateVolumeHandle.Active() {
-				// FSCK must still be running
+		if (nil != volume.fsckActiveJob) || (nil != volume.scrubActiveJob) {
+			// Cannot start an FSCK or SCRUB job while either is active
 
-				volume.Unlock()
-				responseWriter.WriteHeader(http.StatusPreconditionFailed)
-				return
-			}
-
-			// FSCK finished at some point... make it look like it just finished now
-
-			volume.fsckActiveJob.state = fsckJobCompleted
-			volume.fsckActiveJob.endTime = time.Now()
-			volume.fsckActiveJob = nil
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
 		}
 
 		for {
-			fsckJobsCount, err = volume.fsckJobs.Len()
+			switch jobType {
+			case fsckJobType:
+				jobsCount, err = volume.fsckJobs.Len()
+			case scrubJobType:
+				jobsCount, err = volume.scrubJobs.Len()
+			}
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 
-			if fsckJobsCount < fsckJobsHistoryMaxSize {
+			if jobsCount < int(globals.jobHistoryMaxSize) {
 				break
 			}
 
-			ok, err = volume.fsckJobs.DeleteByIndex(0)
+			switch jobType {
+			case fsckJobType:
+				ok, err = volume.fsckJobs.DeleteByIndex(0)
+			case scrubJobType:
+				ok, err = volume.scrubJobs.DeleteByIndex(0)
+			}
 			if nil != err {
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 			if !ok {
-				err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
+				switch jobType {
+				case fsckJobType:
+					err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.fsckJobs failed")
+				case scrubJobType:
+					err = fmt.Errorf("httpserver.doPostOfVolume() delete of oldest element of volume.scrubJobs failed")
+				}
 				logger.Fatalf("HTTP Server Logic Error: %v", err)
 			}
 		}
 
-		fsckJob = &fsckJobStruct{
+		job = &jobStruct{
 			volume:    volume,
-			state:     fsckJobRunning,
+			state:     jobRunning,
 			startTime: time.Now(),
 		}
 
-		fsckJob.id, err = volume.headhunterHandle.FetchNonce()
+		job.id, err = volume.headhunterHandle.FetchNonce()
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		ok, err = volume.fsckJobs.Put(fsckJob.id, fsckJob)
+		switch jobType {
+		case fsckJobType:
+			ok, err = volume.fsckJobs.Put(job.id, job)
+		case scrubJobType:
+			ok, err = volume.scrubJobs.Put(job.id, job)
+		}
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 		if !ok {
-			err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
+			switch jobType {
+			case fsckJobType:
+				err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.fsckJobs failed")
+			case scrubJobType:
+				err = fmt.Errorf("httpserver.doPostOfVolume() PUT to volume.scrubJobs failed")
+			}
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
 
-		volume.fsckActiveJob = fsckJob
+		switch jobType {
+		case fsckJobType:
+			volume.fsckActiveJob = job
 
-		fsckJob.validateVolumeHandle = fs.ValidateVolume(volumeName)
+			job.jobHandle = fs.ValidateVolume(volumeName)
+		case scrubJobType:
+			volume.scrubActiveJob = job
+
+			job.jobHandle = fs.ScrubVolume(volumeName)
+		}
 
 		volume.Unlock()
 
-		responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/fsck-job/%v", volumeName, fsckJob.id))
-		responseWriter.WriteHeader(http.StatusCreated)
+		switch jobType {
+		case fsckJobType:
+			responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/fsck-job/%v", volumeName, job.id))
+		case scrubJobType:
+			responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/scrub-job/%v", volumeName, job.id))
+		}
+
+		acceptHeader = request.Header.Get("Accept")
+
+		if strings.Contains(acceptHeader, "text/html") {
+			responseWriter.WriteHeader(http.StatusSeeOther)
+		} else {
+			responseWriter.WriteHeader(http.StatusCreated)
+		}
 
 		return
 	}
 
 	// If we reach here, numPathParts is 4
 
-	fsckJobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
+	jobID, err = strconv.ParseUint(pathSplit[4], 10, 64)
 	if nil != err {
 		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	fsckJobAsValue, ok, err = volume.fsckJobs.GetByKey(fsckJobID)
+	switch jobType {
+	case fsckJobType:
+		jobAsValue, ok, err = volume.fsckJobs.GetByKey(jobID)
+	case scrubJobType:
+		jobAsValue, ok, err = volume.scrubJobs.GetByKey(jobID)
+	}
 	if nil != err {
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
@@ -1136,19 +1265,34 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fsckJob = fsckJobAsValue.(*fsckJobStruct)
+	job = jobAsValue.(*jobStruct)
 
-	if volume.fsckActiveJob != fsckJob {
-		volume.Unlock()
-		responseWriter.WriteHeader(http.StatusPreconditionFailed)
-		return
+	switch jobType {
+	case fsckJobType:
+		if volume.fsckActiveJob != job {
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+	case scrubJobType:
+		if volume.scrubActiveJob != job {
+			volume.Unlock()
+			responseWriter.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
 	}
 
-	volume.fsckActiveJob.validateVolumeHandle.Cancel()
+	job.jobHandle.Cancel()
 
-	volume.fsckActiveJob.state = fsckJobHalted
-	volume.fsckActiveJob.endTime = time.Now()
-	volume.fsckActiveJob = nil
+	job.state = jobHalted
+	job.endTime = time.Now()
+
+	switch jobType {
+	case fsckJobType:
+		volume.fsckActiveJob = nil
+	case scrubJobType:
+		volume.scrubActiveJob = nil
+	}
 
 	volume.Unlock()
 
@@ -1219,5 +1363,25 @@ func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.
 		valueAsString = valueAsValue.(string)
 		line = fmt.Sprintf(format, keyAsString, valueAsString)
 		_, _ = responseWriter.Write(utils.StringToByteSlice(line))
+	}
+}
+
+func markJobsCompletedIfNoLongerActiveWhileLocked(volume *volumeStruct) {
+	// First, mark as finished now any FSCK/SCRUB job
+
+	if (nil != volume.fsckActiveJob) && !volume.fsckActiveJob.jobHandle.Active() {
+		// FSCK job finished at some point... make it look like it just finished now
+
+		volume.fsckActiveJob.state = jobCompleted
+		volume.fsckActiveJob.endTime = time.Now()
+		volume.fsckActiveJob = nil
+	}
+
+	if (nil != volume.scrubActiveJob) && !volume.scrubActiveJob.jobHandle.Active() {
+		// SCRUB job finished at some point... make it look like it just finished now
+
+		volume.scrubActiveJob.state = jobCompleted
+		volume.scrubActiveJob.endTime = time.Now()
+		volume.scrubActiveJob = nil
 	}
 }

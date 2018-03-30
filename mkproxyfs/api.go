@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
@@ -24,7 +25,7 @@ const (
 	ModeReformat
 )
 
-func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings []string) (err error) {
+func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings []string, execArgs []string) (err error) {
 	var (
 		accountName       string
 		confMap           conf.ConfMap
@@ -84,6 +85,8 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	defer func() {
 		_ = logger.Down()
 	}()
+	logger.Infof("mkproxyfs is starting up (PID %d); invoked as '%s'",
+		os.Getpid(), strings.Join(execArgs, "' '"))
 
 	err = evtlog.Up(confMap)
 	if nil != err {

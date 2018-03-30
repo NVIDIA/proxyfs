@@ -15,29 +15,33 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-const (
-	fsckJobsHistoryMaxSize = 5 // TODO: May want to parameterize this ultimately
-)
-
-type fsckJobState uint8
+type jobState uint8
 
 const (
-	fsckJobRunning fsckJobState = iota
-	fsckJobHalted
-	fsckJobCompleted
+	jobRunning jobState = iota
+	jobHalted
+	jobCompleted
 )
 
-type fsckJobStruct struct {
-	id                   uint64
-	volume               *volumeStruct
-	validateVolumeHandle fs.ValidateVolumeHandle
-	state                fsckJobState
-	startTime            time.Time
-	endTime              time.Time
+type jobTypeType uint8
+
+const (
+	fsckJobType jobTypeType = iota
+	scrubJobType
+	limitJobType
+)
+
+type jobStruct struct {
+	id        uint64
+	volume    *volumeStruct
+	jobHandle fs.JobHandle
+	state     jobState
+	startTime time.Time
+	endTime   time.Time
 }
 
-// FSCKJobStatusJSONPackedStruct describes all the possible fields returned in JSON-encoded fsck GET body
-type FSCKJobStatusJSONPackedStruct struct {
+// JobStatusJSONPackedStruct describes all the possible fields returned in JSON-encoded job GET body
+type JobStatusJSONPackedStruct struct {
 	StartTime string   `json:"start time"`
 	HaltTime  string   `json:"halt time"`
 	DoneTime  string   `json:"done time"`
@@ -49,21 +53,24 @@ type volumeStruct struct {
 	sync.Mutex
 	name             string
 	headhunterHandle headhunter.VolumeHandle
-	fsckActiveJob    *fsckJobStruct
-	fsckJobs         sortedmap.LLRBTree // Key == fsckJobStruct.id, Value == *fsckJobStruct
+	fsckActiveJob    *jobStruct
+	fsckJobs         sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	scrubActiveJob   *jobStruct
+	scrubJobs        sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
 }
 
 type globalsStruct struct {
 	sync.Mutex
-	active        bool
-	whoAmI        string
-	ipAddr        string
-	tcpPort       uint16
-	ipAddrTCPPort string
-	netListener   net.Listener
-	wg            sync.WaitGroup
-	confMap       conf.ConfMap
-	volumeLLRB    sortedmap.LLRBTree // Key == volumeStruct.name, Value == *volumeStruct
+	active            bool
+	jobHistoryMaxSize uint32
+	whoAmI            string
+	ipAddr            string
+	tcpPort           uint16
+	ipAddrTCPPort     string
+	netListener       net.Listener
+	wg                sync.WaitGroup
+	confMap           conf.ConfMap
+	volumeLLRB        sortedmap.LLRBTree // Key == volumeStruct.name, Value == *volumeStruct
 }
 
 var globals globalsStruct
@@ -78,6 +85,16 @@ func Up(confMap conf.ConfMap) (err error) {
 	)
 
 	globals.confMap = confMap
+
+	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
+	if nil != err {
+		/*
+			TODO: Eventually change this to:
+				err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"JobHistoryMaxSize\") failed: %v", err)
+				return
+		*/
+		globals.jobHistoryMaxSize = 5
+	}
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -105,9 +122,11 @@ func Up(confMap conf.ConfMap) (err error) {
 		} else if 1 == len(primaryPeerList) {
 			if globals.whoAmI == primaryPeerList[0] {
 				volume = &volumeStruct{
-					name:          volumeName,
-					fsckActiveJob: nil,
-					fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+					name:           volumeName,
+					fsckActiveJob:  nil,
+					fsckJobs:       sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+					scrubActiveJob: nil,
+					scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 				}
 
 				volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
@@ -138,7 +157,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.tcpPort, err = confMap.FetchOptionValueUint16("HTTPServer", "TCPPort")
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"TCPPort\") failed: %v", err)
+		err = fmt.Errorf("confMap.FetchOptionValueUint16(\"HTTPServer\", \"TCPPort\") failed: %v", err)
 		return
 	}
 
@@ -208,7 +227,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	globals.active = false
 
-	err = stopRunningFSCKs()
+	err = stopRunningJobs()
 	if nil != err {
 		globals.active = true
 		return
@@ -300,6 +319,16 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	globals.Lock()
 	defer globals.Unlock()
 
+	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
+	if nil != err {
+		/*
+			TODO: Eventually change this to:
+				err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"JobHistoryMaxSize\") failed: %v", err)
+				return
+		*/
+		globals.jobHistoryMaxSize = 5
+	}
+
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
@@ -360,7 +389,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 func Down() (err error) {
 	globals.Lock()
-	_ = stopRunningFSCKs()
+	_ = stopRunningJobs()
 	_ = globals.netListener.Close()
 	globals.Unlock()
 
@@ -370,7 +399,7 @@ func Down() (err error) {
 	return
 }
 
-func stopRunningFSCKs() (err error) {
+func stopRunningJobs() (err error) {
 	var (
 		numVolumes    int
 		ok            bool
@@ -401,10 +430,16 @@ func stopRunningFSCKs() (err error) {
 		}
 		volume.Lock()
 		if nil != volume.fsckActiveJob {
-			volume.fsckActiveJob.validateVolumeHandle.Cancel()
-			volume.fsckActiveJob.state = fsckJobHalted
+			volume.fsckActiveJob.jobHandle.Cancel()
+			volume.fsckActiveJob.state = jobHalted
 			volume.fsckActiveJob.endTime = time.Now()
 			volume.fsckActiveJob = nil
+		}
+		if nil != volume.scrubActiveJob {
+			volume.scrubActiveJob.jobHandle.Cancel()
+			volume.scrubActiveJob.state = jobHalted
+			volume.scrubActiveJob.endTime = time.Now()
+			volume.scrubActiveJob = nil
 		}
 		volume.Unlock()
 	}

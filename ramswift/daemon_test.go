@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,14 +30,27 @@ func TestViaNoAuthClient(t *testing.T) {
 			"RamSwiftInfo.AccountListingLimit=10000",
 			"RamSwiftInfo.ContainerListingLimit=10000",
 		}
-		err          error
-		httpRequest  *http.Request
-		httpResponse *http.Response
-		readBuf      []byte
+		contentType                  string
+		contentTypeMultiPartBoundary string
+		doneChan                     chan bool
+		err                          error
+		errChan                      chan error
+		expectedBuf                  []byte
+		expectedInfo                 string
+		httpClient                   *http.Client
+		httpRequest                  *http.Request
+		httpResponse                 *http.Response
+		mouseHeaderPresent           bool
+		pipeReader                   *io.PipeReader
+		pipeWriter                   *io.PipeWriter
+		readBuf                      []byte
+		signalHandlerIsArmed         bool
+		urlForInfo                   string
+		urlPrefix                    string
 	)
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool, 1) // Must be buffered to avoid race
+	signalHandlerIsArmed = false
+	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
 	go Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
@@ -46,12 +60,12 @@ func TestViaNoAuthClient(t *testing.T) {
 
 	// Setup urlPrefix to be "http://127.0.0.1:<SwiftClient.NoAuthTCPPort>/v1/"
 
-	urlForInfo := "http://127.0.0.1:" + noAuthTCPPort + "/info"
-	urlPrefix := "http://127.0.0.1:" + noAuthTCPPort + "/v1/"
+	urlForInfo = "http://127.0.0.1:" + noAuthTCPPort + "/info"
+	urlPrefix = "http://127.0.0.1:" + noAuthTCPPort + "/v1/"
 
 	// Setup http.Client that we will use for all HTTP requests
 
-	httpClient := &http.Client{}
+	httpClient = &http.Client{}
 
 	// Send a GET for "/info" expecting [RamSwiftInfo] data in compact JSON form
 
@@ -66,7 +80,7 @@ func TestViaNoAuthClient(t *testing.T) {
 	if http.StatusOK != httpResponse.StatusCode {
 		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
 	}
-	expectedInfo := "{\"swift\": {\"max_account_name_length\": 256,\"max_container_name_length\": 256,\"max_object_name_length\": 1024,\"account_listing_limit\": 10000,\"container_listing_limit\": 10000}}"
+	expectedInfo = "{\"swift\": {\"max_account_name_length\": 256,\"max_container_name_length\": 256,\"max_object_name_length\": 1024,\"account_listing_limit\": 10000,\"container_listing_limit\": 10000}}"
 	if int64(len(expectedInfo)) != httpResponse.ContentLength {
 		t.Fatalf("GET of /info httpResponse.ContentLength unexpected")
 	}
@@ -224,7 +238,7 @@ func TestViaNoAuthClient(t *testing.T) {
 	if httpResponse.Header.Get("Cat") != "Dog" {
 		t.Fatalf("TestAccount should have header Cat: Dog")
 	}
-	_, mouseHeaderPresent := httpResponse.Header["Mouse"]
+	_, mouseHeaderPresent = httpResponse.Header["Mouse"]
 	if mouseHeaderPresent {
 		t.Fatalf("TestAccount should not have header Mouse")
 	}
@@ -664,16 +678,20 @@ func TestViaNoAuthClient(t *testing.T) {
 
 	// Send a chunked PUT for object "Bar"" with 1st chunk being []byte{0xAA, 0xBB} & 2nd chunk being []byte{0xCC, 0xDD, 0xEE}
 
-	pipeReader, pipeWriter := io.Pipe()
+	pipeReader, pipeWriter = io.Pipe()
 	httpRequest, err = http.NewRequest("PUT", urlPrefix+"TestAccount/TestContainer/Bar", pipeReader)
 	if nil != err {
 		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
 	}
 	httpRequest.ContentLength = -1
 	httpRequest.Header.Del("Content-Length")
-	errChan := make(chan error, 1)
+	errChan = make(chan error, 1)
 	go func() {
-		nonShadowingHTTPResponse, nonShadowingErr := httpClient.Do(httpRequest)
+		var (
+			nonShadowingErr          error
+			nonShadowingHTTPResponse *http.Response
+		)
+		nonShadowingHTTPResponse, nonShadowingErr = httpClient.Do(httpRequest)
 		if nil == nonShadowingErr {
 			httpResponse = nonShadowingHTTPResponse
 		}
@@ -861,6 +879,56 @@ func TestViaNoAuthClient(t *testing.T) {
 	}
 	if 0 != bytes.Compare([]byte{0xBB, 0xCC, 0xDD}, readBuf) {
 		t.Fatalf("Bar's bytes 1-3 should contain precisely []byte{0xBB, 0xCC, 0xDD}")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a range GET of bytes at offset 0 for length 2
+	//                          and offset 3 for length of 1 for object "Bar"
+	// expecting two MIME parts: []byte{0xAA, 0xBB} and  []byte{0xDD}
+
+	httpRequest, err = http.NewRequest("GET", urlPrefix+"TestAccount/TestContainer/Bar", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("Range", "bytes=0-1,3-3")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusPartialContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	contentType = httpResponse.Header.Get("Content-Type")
+	contentTypeMultiPartBoundary = strings.TrimPrefix(contentType, "multipart/byteranges; boundary=")
+	if (len(contentType) == len(contentTypeMultiPartBoundary)) || (0 == len(contentTypeMultiPartBoundary)) {
+		t.Fatalf("httpReponse.Header[\"Content-Type\"] contained unexpected value: \"%v\"", contentType)
+	}
+	expectedBuf = make([]byte, 0, httpResponse.ContentLength)
+	expectedBuf = append(expectedBuf, []byte("--"+contentTypeMultiPartBoundary+"\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("Content-Type: application/octet-stream\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("Content-Range: bytes 0-1/5\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("\r\n")...)
+	expectedBuf = append(expectedBuf, []byte{0xAA, 0xBB}...)
+	expectedBuf = append(expectedBuf, []byte("\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("--"+contentTypeMultiPartBoundary+"\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("Content-Type: application/octet-stream\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("Content-Range: bytes 3-3/5\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("\r\n")...)
+	expectedBuf = append(expectedBuf, []byte{0xDD}...)
+	expectedBuf = append(expectedBuf, []byte("\r\n")...)
+	expectedBuf = append(expectedBuf, []byte("--"+contentTypeMultiPartBoundary+"--")...)
+	if int64(len(expectedBuf)) != httpResponse.ContentLength {
+		t.Fatalf("Unexpected multi-part GET response Content-Length")
+	}
+	readBuf, err = ioutil.ReadAll(httpResponse.Body)
+	if nil != err {
+		t.Fatalf("ioutil.ReadAll() returned unexpected error: %v", err)
+	}
+	if 0 != bytes.Compare(expectedBuf, readBuf) {
+		t.Fatalf("Unexpected payload of multi-part GET response")
 	}
 	err = httpResponse.Body.Close()
 	if nil != err {

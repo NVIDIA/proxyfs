@@ -1,49 +1,63 @@
-gosubdirs = \
+gopkgsubdirs = \
 	blunder \
-	cleanproxyfs \
 	conf \
 	dlm \
-	evtlog evtlog/pfsevtlogd \
+	evtlog \
 	fs \
-	fsworkout \
 	fuse \
 	halter \
 	headhunter \
 	httpserver \
 	inode \
-	inodeworkout \
 	jrpcfs \
 	logger \
-	mkproxyfs mkproxyfs/mkproxyfs \
-	pfs-stress \
-	pfsconfjson pfsconfjsonpacked \
-	pfs-crash \
-	pfsworkout \
+	mkproxyfs \
 	platform \
-	proxyfsd proxyfsd/proxyfsd \
-	ramswift ramswift/ramswift \
+	proxyfsd \
+	ramswift \
 	stats \
 	statslogger \
 	swiftclient \
 	utils
+
+gobinsubdirs = \
+	cleanproxyfs \
+	fsworkout \
+	inodeworkout \
+	pfs-crash \
+	pfs-stress \
+	pfsconfjson \
+	pfsconfjsonpacked \
+	pfsworkout \
+	evtlog/pfsevtlogd \
+	mkproxyfs/mkproxyfs \
+	proxyfsd/proxyfsd \
+	ramswift/ramswift
+
+gostringerdirs = \
+	blunder \
+	inode
 
 uname := $(shell uname)
 
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: fmt install stringer generate test python-test vet c-clean c-build c-install c-test
+    all: version fmt stringer pre-generate generate install test python-test vet c-clean c-build c-install c-test
 
-    all-deb-builder: fmt install stringer generate vet c-clean c-build c-install-deb-builder
+    all-deb-builder: version fmt pre-generate stringer generate install vet c-clean c-build c-install-deb-builder
 else
-    all: fmt install stringer generate test vet
+    all: version fmt stringer pre-generate generate install test vet
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install python-test stringer test vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install pre-generate python-test stringer test version vet
 
 bench:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir bench; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir bench; \
 	done
 
@@ -77,33 +91,64 @@ c-test:
 	cd jrpcclient ; ./regression_test.py --just-test-libs
 
 clean:
-	rm -f $(GOPATH)/bin/stringer
-	@for gosubdir in $(gosubdirs); do \
+	@set -e; \
+	rm -f $(GOPATH)/bin/stringer; \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir clean; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done
 
 cover:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir cover; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir cover; \
 	done
 
 fmt:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done
 
 generate:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir generate; \
+	done
+
+get:
+	@set -e; \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir get; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir get; \
 	done
 
 install:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir install; \
+	done
+
+pre-generate:
+	@set -e; \
+	for gosubdir in $(gostringerdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir pre-generate; \
 	done
 
 python-test:
@@ -114,12 +159,21 @@ stringer:
 
 test:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
-	done;
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir test; \
+	done
+
+version:
+	@go version
 
 vet:
 	@set -e; \
-	for gosubdir in $(gosubdirs); do \
+	for gosubdir in $(gopkgsubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir vet; \
+	done; \
+	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir vet; \
 	done

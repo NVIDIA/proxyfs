@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/swiftstack/ProxyFS/conf"
 )
@@ -107,12 +107,18 @@ func up(confMap conf.ConfMap) (err error) {
 func down() (err error) {
 	// We open and close our own logfile
 	if logFile != nil {
+		// Sync() flushes data cached in the kernel to disk, which is
+		// really only useful if the OS were to crash soon
+		logFile.Sync()
 		logFile.Close()
 	}
 	logTargets.Clear()
 	return
 }
 
+// This is used by LogTarget, which is a logging target that is useful for
+// capturing the output logged by other packages for testing in test cases.
+//
 func (log LogTarget) write(p []byte) (n int, err error) {
 	for i := len(log.LogBuf.LogEntries) - 1; i > 0; i-- {
 		log.LogBuf.LogEntries[i] = log.LogBuf.LogEntries[i-1]

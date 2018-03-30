@@ -3,8 +3,8 @@
 // These wrappers allow us to standardize logging while still using a third-party
 // logging package.
 //
-// This package is currently implemented on top of the Sirupsen/logrus package:
-//   https://github.com/Sirupsen/logrus
+// This package is currently implemented on top of the sirupsen/logrus package:
+//   https://github.com/sirupsen/logrus
 //
 // The APIs here add package and calling function to all logs.
 //
@@ -17,8 +17,9 @@ package logger
 import (
 	"fmt"
 	"io"
+	"os"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -208,18 +209,18 @@ const DbgTesting string = "debug_test"
 
 var packageDebugSettings = map[string][]string{
 	"ldlm": []string{
-	//DbgInternal,
-	//DbgTesting,
+		//DbgInternal,
+		//DbgTesting,
 	},
 	"fs": []string{
-	//DbgInternal,
+		//DbgInternal,
 	},
 	"jrpcfs": []string{
-	//DbgInternal,
-	//DbgTesting,
+		//DbgInternal,
+		//DbgTesting,
 	},
 	"inode": []string{
-	//DbgInodeInternal,
+		//DbgInodeInternal,
 	},
 }
 
@@ -281,6 +282,7 @@ const packageKey string = "package"
 const functionKey string = "function"
 const errorKey string = "error"
 const gidKey string = "goroutine"
+const pidKey string = "pid"
 
 var ssTransIDKey string = "ss_transid" // transaction ID for sock_swift stuff
 
@@ -331,11 +333,16 @@ func newFuncCtx(level int) (ctx *FuncCtx) {
 	// Extract package and function from the call stack
 	fn, pkg, gid := utils.GetFuncPackage(level + 1)
 
+	// Get PID as a string (since our PID only changes in fork(2) and
+	// clone(2) this could be optimized)
+	pid := fmt.Sprint(os.Getpid())
+
 	// Save fields
 	fields := make(log.Fields)
 	fields[functionKey] = fn
 	fields[packageKey] = pkg
 	fields[gidKey] = gid
+	fields[pidKey] = pid
 
 	ctx = &FuncCtx{funcContext: log.WithFields(fields)}
 	return ctx

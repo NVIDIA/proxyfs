@@ -371,7 +371,10 @@ func (tree *btreeTreeStruct) DeleteByIndex(index int) (ok bool, err error) {
 			}
 			tree.markNodeDirty(node)
 			tree.updatePrefixSumTreeLeafToRoot(node)
-			tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
+			err = tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
+			if nil != err {
+				return
+			}
 			ok = true
 			err = nil
 			return
@@ -429,7 +432,10 @@ func (tree *btreeTreeStruct) DeleteByKey(key Key) (ok bool, err error) {
 			if ok {
 				tree.markNodeDirty(node)
 				tree.updatePrefixSumTreeLeafToRoot(node)
-				tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
+				err = tree.rebalanceHere(node, parentIndexStack) // will also mark affected nodes dirty/used in LRU
+				if nil != err {
+					return
+				}
 			}
 			err = nil
 			return
@@ -1022,8 +1028,12 @@ func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
 
 func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, value Value) (err error) {
 	var (
-		splitKey   Key
-		splitValue Value
+		llrbLen             int
+		newRightSiblingNode *btreeNodeStruct
+		ok                  bool
+		splitKey            Key
+		splitValue          Value
+		splitValueAsNode    *btreeNodeStruct
 	)
 
 	insertNode.kvLLRB.Put(key, value)
@@ -1032,13 +1042,13 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 		tree.updatePrefixSumTreeLeafToRoot(insertNode) // will also mark affected nodes dirty/used in LRU
 	}
 
-	llrbLen, err := insertNode.kvLLRB.Len()
+	llrbLen, err = insertNode.kvLLRB.Len()
 	if nil != err {
 		return
 	}
 
 	if tree.maxKeysPerNode < uint64(llrbLen) {
-		newRightSiblingNode := &btreeNodeStruct{
+		newRightSiblingNode = &btreeNodeStruct{
 			objectNumber:        0, //                                               To be filled in once node is posted
 			objectOffset:        0, //                                               To be filled in once node is posted
 			objectLength:        0, //                                               To be filled in once node is posted
@@ -1059,51 +1069,84 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 		}
 
 		for {
-			llrbLen, nonShadowingErr := insertNode.kvLLRB.Len()
-			if nil != nonShadowingErr {
-				err = nonShadowingErr
+			llrbLen, err = insertNode.kvLLRB.Len()
+			if nil != err {
 				return
 			}
 			if tree.minKeysPerNode >= uint64(llrbLen) {
 				break
 			}
-			splitKey, splitValue, _, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
+			splitKey, splitValue, ok, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
 			if nil != err {
 				return
 			}
-			_, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
+			if !ok {
+				err = fmt.Errorf("Logic error: insertHere() failed to fetch insertNode's splitKey:splitValue")
+				return
+			}
+			ok, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
 			if nil != err {
 				return
 			}
-			_, err = newRightSiblingNode.kvLLRB.Put(splitKey, splitValue)
+			if !ok {
+				err = fmt.Errorf("Logic error: insertHere() failed to delete insertNode's splitKey")
+				return
+			}
+			ok, err = newRightSiblingNode.kvLLRB.Put(splitKey, splitValue)
 			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: insertHere() failed to put newRightSiblingNode's splitKey:splitValue")
 				return
 			}
 
 			if insertNode.leaf {
 				insertNode.items--
 				newRightSiblingNode.items++
+			} else {
+				splitValueAsNode = splitValue.(*btreeNodeStruct)
+				insertNode.items -= splitValueAsNode.items
+				newRightSiblingNode.items += splitValueAsNode.items
+				splitValueAsNode.parentNode = newRightSiblingNode
 			}
 		}
 
 		if !insertNode.leaf {
-			llrbLen, nonShadowingErr := insertNode.kvLLRB.Len()
-			if nil != nonShadowingErr {
-				err = nonShadowingErr
-				return
-			}
-			splitKey, splitValue, _, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
+			llrbLen, err = insertNode.kvLLRB.Len()
 			if nil != err {
 				return
 			}
-			_, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
+			splitKey, splitValue, ok, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
 			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: insertHere() failed to fetch insertNode's splitKey:splitValue")
+				return
+			}
+			ok, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
+			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: insertHere() failed to delete insertNode's splitKey")
 				return
 			}
 			newRightSiblingNode.nonLeafLeftChild = splitValue.(*btreeNodeStruct)
 
-			tree.arrangePrefixSumTree(insertNode)
-			tree.arrangePrefixSumTree(newRightSiblingNode)
+			insertNode.items -= newRightSiblingNode.nonLeafLeftChild.items
+			newRightSiblingNode.items += newRightSiblingNode.nonLeafLeftChild.items
+			newRightSiblingNode.nonLeafLeftChild.parentNode = newRightSiblingNode
+
+			err = tree.arrangePrefixSumTree(insertNode)
+			if nil != err {
+				return
+			}
+			err = tree.arrangePrefixSumTree(newRightSiblingNode)
+			if nil != err {
+				return
+			}
 		}
 
 		if insertNode.root {
@@ -1140,7 +1183,7 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 			tree.initNodeAsEvicted(tree.root)
 			tree.markNodeDirty(tree.root)
 		} else {
-			_, err = insertNode.parentNode.kvLLRB.Put(splitKey, newRightSiblingNode)
+			err = tree.insertHere(insertNode.parentNode, splitKey, newRightSiblingNode)
 			if nil != err {
 				return
 			}
@@ -1149,7 +1192,10 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 			tree.markNodeDirty(newRightSiblingNode)
 		}
 
-		tree.rearrangePrefixSumTreeToRoot(insertNode.parentNode)
+		err = tree.rearrangePrefixSumTreeToRoot(insertNode.parentNode)
+		if nil != err {
+			return
+		}
 	}
 
 	err = nil
@@ -1158,8 +1204,26 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 
 func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, parentIndexStack []int) (err error) {
 	var (
-		leftSiblingNode  *btreeNodeStruct
-		rightSiblingNode *btreeNodeStruct
+		i                                          int
+		leftSiblingNode                            *btreeNodeStruct
+		leftSiblingNodeAsValue                     Value
+		leftSiblingNodeKVIndex                     int
+		llrbLen                                    int
+		movedKeyFromParent                         Key
+		movedKeyFromSibling                        Key
+		movedNodeFromSibling                       *btreeNodeStruct
+		movedValueFromSibling                      Value
+		newRightSiblingNodeNonLeafLeftChildAsValue Value
+		newSplitKey                                Key
+		numItemsToMove                             int
+		ok                                         bool
+		oldSplitKey                                Key
+		parentIndexStackPruned                     []int
+		parentIndexStackTailIndex                  int
+		parentNode                                 *btreeNodeStruct
+		parentNodeIndex                            int
+		rightSiblingNode                           *btreeNodeStruct
+		rightSiblingNodeAsValue                    Value
 	)
 
 	if rebalanceNode.root {
@@ -1167,7 +1231,7 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		return
 	}
 
-	llrbLen, err := rebalanceNode.kvLLRB.Len()
+	llrbLen, err = rebalanceNode.kvLLRB.Len()
 	if nil != err {
 		return
 	}
@@ -1177,11 +1241,11 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		return
 	}
 
-	parentNode := rebalanceNode.parentNode
+	parentNode = rebalanceNode.parentNode
 
-	parentIndexStackTailIndex := len(parentIndexStack) - 1
-	parentNodeIndex := parentIndexStack[parentIndexStackTailIndex]
-	parentIndexStackPruned := parentIndexStack[:parentIndexStackTailIndex]
+	parentIndexStackTailIndex = len(parentIndexStack) - 1
+	parentNodeIndex = parentIndexStack[parentIndexStackTailIndex]
+	parentIndexStackPruned = parentIndexStack[:parentIndexStackTailIndex]
 
 	if -1 == parentNodeIndex {
 		leftSiblingNode = nil
@@ -1189,9 +1253,12 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		if 0 == parentNodeIndex {
 			leftSiblingNode = parentNode.nonLeafLeftChild
 		} else {
-			_, leftSiblingNodeAsValue, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex - 1)
-			if nil != nonShadowingErr {
-				err = nonShadowingErr
+			_, leftSiblingNodeAsValue, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex - 1)
+			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch leftSiblingNode")
 				return
 			}
 			leftSiblingNode = leftSiblingNodeAsValue.(*btreeNodeStruct)
@@ -1206,9 +1273,8 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			}
 		}
 
-		llrbLen, nonShadowingErr := leftSiblingNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		llrbLen, err = leftSiblingNode.kvLLRB.Len()
+		if nil != err {
 			return
 		}
 
@@ -1219,60 +1285,102 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			rebalanceNode.items++
 
 			if rebalanceNode.leaf {
-				// move one key from leftSiblingNode to rebalanceNode
+				// move one key from leftSiblingNode to rebalanceNode and update splitKey in parentNode
 
-				leftSiblingNodeKVIndex := llrbLen - 1
-				movedKey, movedValue, _, nonShadowingErr := leftSiblingNode.kvLLRB.GetByIndex(leftSiblingNodeKVIndex)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
-					return
-				}
-				_, err = leftSiblingNode.kvLLRB.DeleteByIndex(leftSiblingNodeKVIndex)
+				leftSiblingNodeKVIndex = llrbLen - 1
+				movedKeyFromSibling, movedValueFromSibling, ok, err = leftSiblingNode.kvLLRB.GetByIndex(leftSiblingNodeKVIndex)
 				if nil != err {
 					return
 				}
-				_, err = rebalanceNode.kvLLRB.Put(movedKey, movedValue)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch leftSiblingNode's movedKeyFromSibling:movedValueFromSibling")
+					return
+				}
+				ok, err = leftSiblingNode.kvLLRB.DeleteByIndex(leftSiblingNodeKVIndex)
 				if nil != err {
 					return
 				}
-				_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete leftSiblingNode's movedKeyFromSibling")
+					return
+				}
+				ok, err = rebalanceNode.kvLLRB.Put(movedKeyFromSibling, movedValueFromSibling)
 				if nil != err {
 					return
 				}
-				_, err = parentNode.kvLLRB.Put(movedKey, rebalanceNode)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put leftSiblingNode's movedKeyFromSibling:movedValueFromSibling")
+					return
+				}
+				ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
 				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's oldSplitKey")
+					return
+				}
+				ok, err = parentNode.kvLLRB.Put(movedKeyFromSibling, rebalanceNode)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's movedKeyFromSibling:rebalanceNode")
 					return
 				}
 			} else {
 				// rotate one key from leftSiblingNode to parentNode & one key from parentNode to rebalanceNode
 
-				leftSiblingNodeKVIndex := llrbLen - 1
-				newParentKey, movedValue, _, nonShadowingErr := leftSiblingNode.kvLLRB.GetByIndex(leftSiblingNodeKVIndex)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
-					return
-				}
-				_, err = leftSiblingNode.kvLLRB.DeleteByIndex(leftSiblingNodeKVIndex)
+				leftSiblingNodeKVIndex = llrbLen - 1
+				movedKeyFromSibling, movedValueFromSibling, ok, err = leftSiblingNode.kvLLRB.GetByIndex(leftSiblingNodeKVIndex)
 				if nil != err {
 					return
 				}
-				oldParentKey, _, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch leftSiblingNode's movedKeyFromSibling:movedValueFromSibling")
 					return
 				}
-				_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
+				movedNodeFromSibling = movedValueFromSibling.(*btreeNodeStruct)
+				ok, err = leftSiblingNode.kvLLRB.DeleteByIndex(leftSiblingNodeKVIndex)
 				if nil != err {
 					return
 				}
-				oldRebalanceNodeNonLeafLeftChild := rebalanceNode.nonLeafLeftChild
-				rebalanceNode.nonLeafLeftChild = movedValue.(*btreeNodeStruct)
-				_, err = rebalanceNode.kvLLRB.Put(oldParentKey, oldRebalanceNodeNonLeafLeftChild)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete leftSiblingNode's movedKeyFromSibling")
+					return
+				}
+				movedKeyFromParent, _, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex)
 				if nil != err {
 					return
 				}
-				_, err = parentNode.kvLLRB.Put(newParentKey, rebalanceNode)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch parentNode's movedKeyFromParent")
+					return
+				}
+				ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
 				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's movedKeyFromParent")
+					return
+				}
+				ok, err = rebalanceNode.kvLLRB.Put(movedKeyFromParent, rebalanceNode.nonLeafLeftChild)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put rebalanceNode's movedKeyFromParent:rebalanceNode.nonLeafLeftChild")
+					return
+				}
+				movedNodeFromSibling.parentNode = rebalanceNode
+				rebalanceNode.nonLeafLeftChild = movedNodeFromSibling
+				ok, err = parentNode.kvLLRB.Put(movedKeyFromSibling, rebalanceNode)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put parentNode's movedKeyFromSibling:rebalanceNode")
 					return
 				}
 
@@ -1297,9 +1405,12 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 	if (llrbLen - 1) == parentNodeIndex {
 		rightSiblingNode = nil
 	} else {
-		_, rightSiblingNodeAsValue, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		_, rightSiblingNodeAsValue, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch rightSiblingNode")
 			return
 		}
 		rightSiblingNode = rightSiblingNodeAsValue.(*btreeNodeStruct)
@@ -1313,9 +1424,8 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			}
 		}
 
-		llrbLen, nonShadowingErr := rightSiblingNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		llrbLen, err = rightSiblingNode.kvLLRB.Len()
+		if nil != err {
 			return
 		}
 
@@ -1326,60 +1436,108 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 			rightSiblingNode.items--
 
 			if rebalanceNode.leaf {
-				// move one key from rightSiblingNode to rebalanceNode
+				// move one key from rightSiblingNode to rebalanceNode and update splitKey in parentNode
 
-				movedKey, movedValue, _, nonShadowingErr := rightSiblingNode.kvLLRB.GetByIndex(0)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
-					return
-				}
-				_, err = rightSiblingNode.kvLLRB.DeleteByIndex(0)
+				movedKeyFromSibling, movedValueFromSibling, ok, err = rightSiblingNode.kvLLRB.GetByIndex(0)
 				if nil != err {
 					return
 				}
-				_, err = rebalanceNode.kvLLRB.Put(movedKey, movedValue)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch rightSiblingNode's movedKeyFromSibling:movedValueFromSibling")
+					return
+				}
+				ok, err = rightSiblingNode.kvLLRB.DeleteByIndex(0)
 				if nil != err {
 					return
 				}
-				newParentKey, _, _, nonShadowingErr := rightSiblingNode.kvLLRB.GetByIndex(0)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete rightSiblingNode's movedKeyFromSibling")
 					return
 				}
-				_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
+				ok, err = rebalanceNode.kvLLRB.Put(movedKeyFromSibling, movedValueFromSibling)
 				if nil != err {
 					return
 				}
-				_, err = parentNode.kvLLRB.Put(newParentKey, rightSiblingNode)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put rebalanceNode's movedKeyFromSibling:movedValueFromSibling")
+					return
+				}
+				newSplitKey, _, ok, err = rightSiblingNode.kvLLRB.GetByIndex(0)
 				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch newSplitKey from rightSiblingNode")
+					return
+				}
+				ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's oldSplitKey")
+					return
+				}
+				ok, err = parentNode.kvLLRB.Put(newSplitKey, rightSiblingNode)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's newSplitKey:rightSiblingNode")
 					return
 				}
 			} else {
 				// rotate one key from rightSiblingNode to parentNode & one key from parentNode to rebalanceNode
 
-				movedValue := rightSiblingNode.nonLeafLeftChild
-				newParentKey, newRightSiblingNodeNonLeafLeftChild, _, nonShadowingErr := rightSiblingNode.kvLLRB.GetByIndex(0)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
-					return
-				}
-				_, err = rightSiblingNode.kvLLRB.DeleteByIndex(0)
+				newSplitKey, newRightSiblingNodeNonLeafLeftChildAsValue, ok, err = rightSiblingNode.kvLLRB.GetByIndex(0)
 				if nil != err {
 					return
 				}
-				oldParentKey, _, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
-				if nil != nonShadowingErr {
-					err = nonShadowingErr
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch rightSiblingNode's newSplitKey:newRightSiblingNodeNonLeafLeftChildAsValue")
 					return
 				}
-				_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
+				ok, err = rightSiblingNode.kvLLRB.DeleteByIndex(0)
 				if nil != err {
 					return
 				}
-				rebalanceNode.kvLLRB.Put(oldParentKey, movedValue)
-				rightSiblingNode.nonLeafLeftChild = newRightSiblingNodeNonLeafLeftChild.(*btreeNodeStruct)
-				_, err = parentNode.kvLLRB.Put(newParentKey, rightSiblingNode)
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete rightSiblingNode's kvLLRB[0]")
+					return
+				}
+				movedKeyFromParent, _, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
 				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch movedKeyFromParent from parentNode")
+					return
+				}
+				ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's movedKeyFromParent")
+					return
+				}
+				movedNodeFromSibling = rightSiblingNode.nonLeafLeftChild
+				rightSiblingNode.nonLeafLeftChild = newRightSiblingNodeNonLeafLeftChildAsValue.(*btreeNodeStruct)
+				movedNodeFromSibling.parentNode = rebalanceNode
+				ok, err = rebalanceNode.kvLLRB.Put(movedKeyFromParent, movedNodeFromSibling)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put rebalanceNode's movedKeyFromParent:movedNodeFromSibling")
+					return
+				}
+				ok, err = parentNode.kvLLRB.Put(newSplitKey, rightSiblingNode)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: rebalanceHere() failed to put parentNode's newSplitKey:rightSiblingNode")
 					return
 				}
 
@@ -1403,31 +1561,54 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 
 		leftSiblingNode.items += rebalanceNode.items
 
-		oldSplitKey, _, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex)
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		oldSplitKey, _, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch oldSplitKey from parentNode")
 			return
 		}
 		if !rebalanceNode.leaf {
+			rebalanceNode.nonLeafLeftChild.parentNode = leftSiblingNode
 			leftSiblingNode.kvLLRB.Put(oldSplitKey, rebalanceNode.nonLeafLeftChild)
-		}
-		numItemsToMove, nonShadowingErr := rebalanceNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
-			return
-		}
-		for i := 0; i < numItemsToMove; i++ {
-			movedKey, movedValue, _, nonShadowingErr := rebalanceNode.kvLLRB.GetByIndex(i)
-			if nil != nonShadowingErr {
-				err = nonShadowingErr
+			if nil != err {
 				return
 			}
-			leftSiblingNode.kvLLRB.Put(movedKey, movedValue)
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to put leftSiblingNode's oldSplitKey:rebalanceNode.nonLeafLeftChild")
+				return
+			}
+		}
+		numItemsToMove, err = rebalanceNode.kvLLRB.Len()
+		if nil != err {
+			return
+		}
+		for i = 0; i < numItemsToMove; i++ {
+			movedKeyFromSibling, movedValueFromSibling, ok, err = rebalanceNode.kvLLRB.GetByIndex(i)
+			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch rebalanceNode's movedKeyFromSibling:movedValueFromSibling")
+				return
+			}
+			movedNodeFromSibling, ok = movedValueFromSibling.(*btreeNodeStruct)
+			if ok {
+				movedNodeFromSibling.parentNode = leftSiblingNode
+			}
+			ok, err = leftSiblingNode.kvLLRB.Put(movedKeyFromSibling, movedValueFromSibling)
+			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to put leftSiblingNode's movedKeyFromSibling:movedValueFromSibling")
+				return
+			}
 		}
 
-		llrbLen, nonShadowingErr := parentNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		llrbLen, err = parentNode.kvLLRB.Len()
+		if nil != err {
 			return
 		}
 
@@ -1444,10 +1625,15 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 				tree.arrangePrefixSumTree(leftSiblingNode)
 			}
 		} else {
-			// height will remain the same, so just delete oldSplitKey from parentNode and recurse
+			// height will remain the same (at this recursion level),
+			// so just delete oldSplitKey from parentNode and recurse
 
-			_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
+			ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex)
 			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's oldSplitKey")
 				return
 			}
 
@@ -1457,7 +1643,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 
 			tree.arrangePrefixSumTree(parentNode)
 
-			tree.rebalanceHere(parentNode, parentIndexStackPruned)
+			err = tree.rebalanceHere(parentNode, parentIndexStackPruned)
+			if nil != err {
+				return
+			}
 		}
 
 		tree.markNodeToBeDiscarded(rebalanceNode)
@@ -1467,37 +1656,54 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 
 		rebalanceNode.items += rightSiblingNode.items
 
-		oldSplitKey, _, _, nonShadowingErr := parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		oldSplitKey, _, ok, err = parentNode.kvLLRB.GetByIndex(parentNodeIndex + 1)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch oldSplitKey from parentNode")
 			return
 		}
 		if !rebalanceNode.leaf {
-			_, err = rebalanceNode.kvLLRB.Put(oldSplitKey, rightSiblingNode.nonLeafLeftChild)
+			rightSiblingNode.nonLeafLeftChild.parentNode = rebalanceNode
+			ok, err = rebalanceNode.kvLLRB.Put(oldSplitKey, rightSiblingNode.nonLeafLeftChild)
 			if nil != err {
 				return
 			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to put rebalanceNode's oldSplitKey:rightSiblingNode.nonLeafLeftChild")
+				return
+			}
 		}
-		numItemsToMove, nonShadowingErr := rightSiblingNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		numItemsToMove, err = rightSiblingNode.kvLLRB.Len()
+		if nil != err {
 			return
 		}
-		for i := 0; i < numItemsToMove; i++ {
-			movedKey, movedValue, _, nonShadowingErr := rightSiblingNode.kvLLRB.GetByIndex(i)
-			if nil != nonShadowingErr {
-				err = nonShadowingErr
+		for i = 0; i < numItemsToMove; i++ {
+			movedKeyFromSibling, movedValueFromSibling, ok, err = rightSiblingNode.kvLLRB.GetByIndex(i)
+			if nil != err {
 				return
 			}
-			_, err = rebalanceNode.kvLLRB.Put(movedKey, movedValue)
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to fetch movedKeyFromSibling:movedValueFromSibling from rightSiblingNode")
+				return
+			}
+			movedNodeFromSibling, ok = movedValueFromSibling.(*btreeNodeStruct)
+			if ok {
+				movedNodeFromSibling.parentNode = rebalanceNode
+			}
+			ok, err = rebalanceNode.kvLLRB.Put(movedKeyFromSibling, movedValueFromSibling)
 			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to put rebalanceNode's movedKeyFromSibling:movedValueFromSibling")
 				return
 			}
 		}
 
-		llrbLen, nonShadowingErr := parentNode.kvLLRB.Len()
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+		llrbLen, err = parentNode.kvLLRB.Len()
+		if nil != err {
 			return
 		}
 
@@ -1514,10 +1720,15 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 				tree.arrangePrefixSumTree(rebalanceNode)
 			}
 		} else {
-			// height will remain the same, so just delete oldSplitKey from parentNode and recurse
+			// height will remain the same (at this recursion level),
+			// so just delete oldSplitKey from parentNode and recurse
 
-			_, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
+			ok, err = parentNode.kvLLRB.DeleteByIndex(parentNodeIndex + 1)
 			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("Logic error: rebalanceHere() failed to delete parentNode's oldSplitKey")
 				return
 			}
 
@@ -1527,13 +1738,17 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 
 			tree.arrangePrefixSumTree(parentNode)
 
-			tree.rebalanceHere(parentNode, parentIndexStackPruned)
+			err = tree.rebalanceHere(parentNode, parentIndexStackPruned)
+			if nil != err {
+				return
+			}
 		}
 
 		tree.markNodeToBeDiscarded(rightSiblingNode)
 		tree.markNodeDirty(rebalanceNode)
 	} else {
-		// non-root node must have had a sibling, so if we reach here, we have a logic problem
+		// since non-root minKeysPerNode >= 2, this node was required to have had a sibling,
+		// so if we reach here, we have a logic problem
 
 		err = fmt.Errorf("Logic error: rebalanceHere() found non-leaf node with no sibling in parentNode.kvLLRB")
 		return
@@ -2149,6 +2364,13 @@ func (bPlusTreeCache *btreeNodeCacheStruct) btreeNodeCacheDrainer() {
 		}
 
 		nodeToEvict = bPlusTreeCache.cleanLRUHead
+		if nil == nodeToEvict {
+			// No nodes to evict... try again next time
+			bPlusTreeCache.drainerActive = false
+			bPlusTreeCache.Unlock()
+			runtime.Goexit()
+		}
+
 		treeBeingEvictedFrom = nodeToEvict.tree
 		bPlusTreeCache.Unlock()
 		treeBeingEvictedFrom.Lock()
@@ -2301,14 +2523,19 @@ func (tree *btreeTreeStruct) arrangePrefixSumTree(node *btreeNodeStruct) (err er
 	return
 }
 
-func (tree *btreeTreeStruct) rearrangePrefixSumTreeToRoot(node *btreeNodeStruct) {
-	tree.arrangePrefixSumTree(node)
+func (tree *btreeTreeStruct) rearrangePrefixSumTreeToRoot(node *btreeNodeStruct) (err error) {
+	err = tree.arrangePrefixSumTree(node)
+	if nil != err {
+		return
+	}
 
 	tree.markNodeDirty(node)
 
 	if !node.root {
-		tree.rearrangePrefixSumTreeToRoot(node.parentNode)
+		err = tree.rearrangePrefixSumTreeToRoot(node.parentNode)
 	}
+
+	return
 }
 
 func (tree *btreeTreeStruct) updatePrefixSumTreeLeafToRootRecursively(updatedChildNode *btreeNodeStruct, delta int) {

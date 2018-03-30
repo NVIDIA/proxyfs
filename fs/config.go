@@ -41,7 +41,7 @@ type volumeStruct struct {
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
-	validateVolumeRWMutex    sync.RWMutex
+	jobRWMutex               sync.RWMutex
 	inode.VolumeHandle
 }
 

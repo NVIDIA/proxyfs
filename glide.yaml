@@ -3,7 +3,7 @@ import:
 - package: github.com/swiftstack/cstruct
   version: 1.1.0
 - package: github.com/swiftstack/sortedmap
-  version: 1.3.0
+  version: 1.4.0
 - package: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
@@ -17,7 +17,7 @@ import:
   version: 3afebba5a48dbc89b574d890b6b34d9ee10b4785
 - package: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
-- package: github.com/Sirupsen/logrus
+- package: github.com/sirupsen/logrus
   version: 89742aefa4b206dcf400792f3bd35b542998eb3b
 - package: github.com/stretchr/testify
   version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f

@@ -13,9 +13,9 @@ yum -y install wget git nfs-utils vim
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-wget -q https://storage.googleapis.com/golang/go1.8.3.linux-amd64.tar.gz
-tar -C /usr/local -xf go1.8.3.linux-amd64.tar.gz
-rm go1.8.3.linux-amd64.tar.gz
+wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz
+tar -C /usr/local -xf go1.10.linux-amd64.tar.gz
+rm go1.10.linux-amd64.tar.gz
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Patch Golang's GDB runtime plug-in
@@ -53,7 +53,7 @@ echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
 
-yum -y install gcc-c++-4.8.5-16.el7_4.1 \
+yum -y install gcc-c++-4.8.5-16.el7_4.2 \
                python-devel-2.7.5-58.el7 \
                gnutls-devel-3.3.26-9.el7 \
                libacl-devel-2.2.51-12.el7 \

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -81,6 +82,13 @@ type globalsStruct struct {
 }
 
 var globals globalsStruct
+
+type httpRequestHandler struct{}
+
+type rangeStruct struct {
+	startOffset uint64
+	stopOffset  uint64
+}
 
 type stringSet map[string]bool
 
@@ -158,53 +166,89 @@ func parsePath(request *http.Request) (infoOnly bool, swiftAccountName string, s
 	return
 }
 
-// Take an HTTP Range header (e.g. bytes=100-200) and return its start and end indices (e.g. 100 and 200).
-//
-// Does not handle multiple ranges (e.g. bytes=1000-2000,8000-8999). Returns an error on malformed header despite RFC
-// 7233 saying to ignore them; this is because ramswift is only ever used with ProxyFS generating requests, and ProxyFS
-// should never generate a malformed Range header.
-func parseRangeHeader(request *http.Request) (rangeHeaderPresent bool, startOffset int64, stopOffset int64, err error) {
-	var off int
+// parseRangeHeader takes an HTTP Range header (e.g. bytes=100-200, bytes=10-20,30-40) and returns a slice of start and stop indices if any.
+func parseRangeHeader(request *http.Request, objectLen int) (ranges []rangeStruct, err error) {
+	var (
+		off                    int
+		rangeHeaderValueSuffix string
+		rangeString            string
+		rangesStrings          []string
+		rangesStringsIndex     int
+		startOffset            int64
+		stopOffset             int64
+	)
+
 	rangeHeaderValue := request.Header.Get("Range")
 	if "" == rangeHeaderValue {
-		rangeHeaderPresent = false
+		ranges = make([]rangeStruct, 0)
 		err = nil
-	} else {
-		rangeHeaderPresent = true
-		if strings.HasPrefix(rangeHeaderValue, "bytes=") {
-			rangeHeaderValueSuffix := rangeHeaderValue[len("bytes="):]
-			rangeSlice := strings.SplitN(rangeHeaderValueSuffix, "-", 2)
-			if 2 == len(rangeSlice) {
-				if "" == rangeSlice[0] {
-					startOffset = int64(-1)
-				} else {
-					off, err = strconv.Atoi(rangeSlice[0])
-					if err != nil {
-						return
-					}
-					startOffset = int64(off)
-				}
-
-				if "" == rangeSlice[1] {
-					stopOffset = int64(-1)
-				} else {
-					off, err = strconv.Atoi(rangeSlice[1])
-					if err != nil {
-						return
-					}
-					stopOffset = int64(off)
-				}
-
-				if startOffset < 0 && stopOffset < 0 {
-					err = fmt.Errorf("rangeHeaderValue (%v) malformed", rangeHeaderValue)
-				}
-			} else {
-				err = fmt.Errorf("rangeHeaderValue (%v) malformed", rangeHeaderValue)
-			}
-		} else {
-			err = fmt.Errorf("rangeHeaderValue (%v) does not start with expected \"bytes=\"", rangeHeaderValue)
-		}
+		return
 	}
+
+	if !strings.HasPrefix(rangeHeaderValue, "bytes=") {
+		err = fmt.Errorf("rangeHeaderValue (%v) does not start with expected \"bytes=\"", rangeHeaderValue)
+		return
+	}
+
+	rangeHeaderValueSuffix = rangeHeaderValue[len("bytes="):]
+
+	rangesStrings = strings.SplitN(rangeHeaderValueSuffix, ",", 2)
+
+	ranges = make([]rangeStruct, len(rangesStrings))
+
+	for rangesStringsIndex, rangeString = range rangesStrings {
+		rangeStringSlice := strings.SplitN(rangeString, "-", 2)
+		if 2 != len(rangeStringSlice) {
+			err = fmt.Errorf("rangeHeaderValue (%v) malformed", rangeHeaderValue)
+			return
+		}
+		if "" == rangeStringSlice[0] {
+			startOffset = int64(-1)
+		} else {
+			off, err = strconv.Atoi(rangeStringSlice[0])
+			if nil != err {
+				err = fmt.Errorf("rangeHeaderValue (%v) malformed (strconv.Atoi() failure: %v)", rangeHeaderValue, err)
+				return
+			}
+			startOffset = int64(off)
+		}
+
+		if "" == rangeStringSlice[1] {
+			stopOffset = int64(-1)
+		} else {
+			off, err = strconv.Atoi(rangeStringSlice[1])
+			if nil != err {
+				err = fmt.Errorf("rangeHeaderValue (%v) malformed (strconv.Atoi() failure: %v)", rangeHeaderValue, err)
+				return
+			}
+			stopOffset = int64(off)
+		}
+
+		if ((0 > startOffset) && (0 > stopOffset)) || (startOffset > stopOffset) {
+			err = fmt.Errorf("rangeHeaderValue (%v) malformed", rangeHeaderValue)
+			return
+		}
+
+		if startOffset < 0 {
+			startOffset = int64(objectLen) - stopOffset
+			if startOffset < 0 {
+				err = fmt.Errorf("rangeHeaderValue (%v) malformed...computed startOffset negative", rangeHeaderValue)
+				return
+			}
+			stopOffset = int64(objectLen - 1)
+		} else if stopOffset < 0 {
+			stopOffset = int64(objectLen - 1)
+		} else {
+			if stopOffset > int64(objectLen-1) {
+				stopOffset = int64(objectLen - 1)
+			}
+		}
+
+		ranges[rangesStringsIndex].startOffset = uint64(startOffset)
+		ranges[rangesStringsIndex].stopOffset = uint64(stopOffset)
+	}
+
+	err = nil
 	return
 }
 
@@ -725,37 +769,31 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 								switch errno {
 								case 0:
 									swiftObject.Lock()
-									rangeHeaderPresent, startOffset, stopOffset, err := parseRangeHeader(request)
+									ranges, err := parseRangeHeader(request, len(swiftObject.contents))
 									if nil == err {
-										if rangeHeaderPresent {
-											// A negative offset indicates it was absent from the HTTP Range header in the
-											// request. At least one offset is present.
-											if startOffset < 0 {
-												// e.g. bytes=-100
-												startOffset = int64(len(swiftObject.contents)) - stopOffset
-												if startOffset < 0 {
-													// happens if you ask for the last N+K bytes of an N-byte file
-													startOffset = 0
-												}
-												stopOffset = int64(len(swiftObject.contents) - 1)
-											} else if stopOffset < 0 {
-												// e.g. bytes=100-
-												stopOffset = int64(len(swiftObject.contents) - 1)
-											} else {
-												// TODO: we'll probably want to handle ranges that are off the end of the
-												// object with a 416 response, like if someone asks for "bytes=100-200" of a
-												// 50-byte object. We haven't needed it yet, though.
-												if stopOffset > int64(len(swiftObject.contents)-1) {
-													stopOffset = int64(len(swiftObject.contents) - 1)
-												}
-											}
-
-											responseWriter.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startOffset, stopOffset, len(swiftObject.contents)))
-											responseWriter.WriteHeader(http.StatusPartialContent)
-											_, _ = responseWriter.Write(swiftObject.contents[startOffset:(stopOffset + 1)])
-
-										} else {
+										switch len(ranges) {
+										case 0:
+											responseWriter.Header().Add("Content-Type", "application/octet-stream")
+											responseWriter.WriteHeader(http.StatusOK)
 											_, _ = responseWriter.Write(swiftObject.contents)
+										case 1:
+											responseWriter.Header().Add("Content-Type", "application/octet-stream")
+											responseWriter.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", ranges[0].startOffset, ranges[0].stopOffset, len(swiftObject.contents)))
+											responseWriter.WriteHeader(http.StatusPartialContent)
+											_, _ = responseWriter.Write(swiftObject.contents[ranges[0].startOffset:(ranges[0].stopOffset + 1)])
+										default:
+											boundaryString := fmt.Sprintf("%016x%016x", rand.Uint64(), rand.Uint64())
+											responseWriter.Header().Add("Content-Type", fmt.Sprintf("multipart/byteranges; boundary=%v", boundaryString))
+											responseWriter.WriteHeader(http.StatusPartialContent)
+											for _, rS := range ranges {
+												_, _ = responseWriter.Write([]byte("--" + boundaryString + "\r\n"))
+												_, _ = responseWriter.Write([]byte("Content-Type: application/octet-stream\r\n"))
+												_, _ = responseWriter.Write([]byte(fmt.Sprintf("Content-Range: bytes %d-%d/%d\r\n", rS.startOffset, rS.stopOffset, len(swiftObject.contents))))
+												_, _ = responseWriter.Write([]byte("\r\n"))
+												_, _ = responseWriter.Write(swiftObject.contents[rS.startOffset:(rS.stopOffset + 1)])
+												_, _ = responseWriter.Write([]byte("\r\n"))
+											}
+											_, _ = responseWriter.Write([]byte("--" + boundaryString + "--"))
 										}
 									} else {
 										responseWriter.WriteHeader(http.StatusBadRequest)
@@ -1098,8 +1136,6 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 	}
 }
-
-type httpRequestHandler struct{}
 
 func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	switch request.Method {

@@ -1,14 +1,18 @@
 # GoMakefile is a template to be included by Go package Makefile's in this repo
 
-all: fmt install generate test vet
+all: version fmt pre-generate generate install test vet
 
-.PHONY: all bench clean cover fmt generate install test vet
+.PHONY: all bench clean cover fmt generate get install pre-generate test vet
 
 bench:
 	go test -bench $(gosubdir)
 
 clean:
-	go clean -i $(gosubdir)
+	@set -e; \
+	go clean -i $(gosubdir); \
+	for gostringerfile in $(gostringerfiles); do \
+		rm -f $$gostringerfile; \
+	done
 
 cover:
 	go test -cover $(gosubdir)
@@ -19,11 +23,20 @@ fmt:
 generate:
 	go generate $(gosubdir)
 
+get:
+	go get $(gosubdir)
+
 install:
+	go install -gcflags "-N -l" $(gosubdir)
+
+pre-generate:
 	go install -gcflags "-N -l" $(gosubdir)
 
 test:
 	go test $(gosubdir)
+
+version:
+	@go version
 
 vet:
 	go vet $(gosubdir)

@@ -38,7 +38,7 @@ func TestValidate(t *testing.T) {
 	testVolumeHandle, fileInodeNumber := volumeAndFileInoForTest(t)
 
 	// Validation succeeds if nothing has gone wrong
-	err := testVolumeHandle.Validate(fileInodeNumber)
+	err := testVolumeHandle.Validate(fileInodeNumber, false)
 	if err != nil {
 		t.Fatalf("Validate() failed on presumably-good inode")
 	}
@@ -71,7 +71,7 @@ func TestValidate(t *testing.T) {
 	testVolume.Unlock()
 
 	// Try to Validate, observe that it fails
-	validationErr := testVolumeHandle.Validate(fileInodeNumber)
+	validationErr := testVolumeHandle.Validate(fileInodeNumber, false)
 	if validationErr == nil {
 		t.Fatalf("expected validation to fail")
 	}
@@ -100,7 +100,7 @@ func TestValidateFileExtents(t *testing.T) {
 	testVolumeHandle.Write(fileInodeNumber, 48, []byte{0x0B, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B}, nil)
 	testVolumeHandle.Flush(fileInodeNumber, false)
 
-	err := testVolumeHandle.Validate(fileInodeNumber)
+	err := testVolumeHandle.Validate(fileInodeNumber, true)
 	if err != nil {
 		t.Fatalf("Validate() failed on presumably-good inode")
 	}
@@ -125,7 +125,7 @@ func TestValidateFileExtents(t *testing.T) {
 		t.Fatalf("HTTP DELETE %v should have worked... failed: %v", readPlanStep.ObjectPath, deleteErr)
 	}
 
-	err = testVolumeHandle.Validate(fileInodeNumber)
+	err = testVolumeHandle.Validate(fileInodeNumber, true)
 	if err == nil {
 		t.Fatalf("expected validation to fail!")
 	}
