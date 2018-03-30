@@ -1,5 +1,9 @@
 # ProxyFS Release Notes
 
+## 1.5.1 (March 30, 2018)
+
+Partially botched 1.5.0 release packaging.
+
 ## 1.5.0 (March 30, 2018)
 
 Move to go version 1.10.
