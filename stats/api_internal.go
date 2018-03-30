@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-func (ms MultipleStat) findStatStrings(numBytes uint64, numEntries uint64) (ops *string, bytes *string, entries *string, bbytes *string, app *string, overw *string) {
+func (ms MultipleStat) findStatStrings(numBytes uint64, numEntries uint64) (ops *string, bytes *string, entries *string, bbytes *string, appended *string, overwritten *string) {
 	switch ms {
 	case DirRead:
 		// directory read uses operations, entries and bytes stats
@@ -74,8 +74,8 @@ func (ms MultipleStat) findStatStrings(numBytes uint64, numEntries uint64) (ops 
 		} else {
 			bbytes = &FileWriteOpsOver64K
 		}
-		app = &FileWriteAppended
-		overw = &FileWriteOverwritten
+		appended = &FileWriteAppended
+		overwritten = &FileWriteOverwritten
 	case FileWrote:
 		// file wrote uses operations, op bucketed bytes, and bytes stats
 		ops = &FileWroteOps
@@ -237,10 +237,6 @@ var statStructPool sync.Pool = sync.Pool{
 	},
 }
 
-func incrementOperations(statName *string) {
-	incrementSomething(statName, 1)
-}
-
 func incrementSomething(statName *string, incBy uint64) {
 	if incBy == 0 {
 		// No point in incrementing by zero
@@ -260,6 +256,10 @@ func incrementSomething(statName *string, incBy uint64) {
 	statChan <- stat
 }
 
+func incrementOperations(statName *string) {
+	incrementSomething(statName, 1)
+}
+
 func incrementOperationsAndBytes(stat MultipleStat, bytes uint64) {
 	opsStat, bytesStat, _, _, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
@@ -269,8 +269,8 @@ func incrementOperationsAndBytes(stat MultipleStat, bytes uint64) {
 func incrementOperationsEntriesAndBytes(stat MultipleStat, entries uint64, bytes uint64) {
 	opsStat, bytesStat, bentries, _, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
-	incrementSomething(bytesStat, bytes)
 	incrementSomething(bentries, entries)
+	incrementSomething(bytesStat, bytes)
 }
 
 func incrementOperationsAndBucketedBytes(stat MultipleStat, bytes uint64) {
@@ -280,19 +280,19 @@ func incrementOperationsAndBucketedBytes(stat MultipleStat, bytes uint64) {
 	incrementSomething(bbytesStat, 1)
 }
 
-func incrementOperationsBucketedEntriessAndBucketedBytes(stat MultipleStat, entries uint64, bytes uint64) {
+func incrementOperationsBucketedEntriesAndBucketedBytes(stat MultipleStat, entries uint64, bytes uint64) {
 	opsStat, bytesStat, bentries, bbytesStat, _, _ := stat.findStatStrings(bytes, entries)
 	incrementSomething(opsStat, 1)
+	incrementSomething(bentries, 1)
 	incrementSomething(bytesStat, bytes)
 	incrementSomething(bbytesStat, 1)
-	incrementSomething(bentries, 1)
 }
 
 func incrementOperationsBucketedBytesAndAppendedOverwritten(stat MultipleStat, bytes uint64, appended uint64, overwritten uint64) {
-	opsStat, bytesStat, _, bbytesStat, appStat, overwStat := stat.findStatStrings(bytes, 1)
+	opsStat, bytesStat, _, bbytesStat, appendedStat, overwrittenStat := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
 	incrementSomething(bytesStat, bytes)
 	incrementSomething(bbytesStat, 1)
-	incrementSomething(appStat, appended)
-	incrementSomething(overwStat, overwritten)
+	incrementSomething(appendedStat, appended)
+	incrementSomething(overwrittenStat, overwritten)
 }

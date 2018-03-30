@@ -15,9 +15,9 @@ type testGlobalsStruct struct {
 	t           *testing.T
 	udpConn     *net.UDPConn
 	tcpListener *net.TCPListener
-	statChan    chan string //   sufficient to buffer the expected 28 stats
-	donePending bool        //   true if parent has called Close() to terminate testStatsd
-	doneChan    chan bool   //   sufficient to buffer the lone true
+	statsLog    []string
+	donePending bool      //   true if parent has called Close() to terminate testStatsd
+	doneChan    chan bool //   sufficient to buffer the lone true
 	doneErr     error
 	stopPending bool
 }
@@ -49,7 +49,8 @@ func TestStatsAPIviaUDP(t *testing.T) {
 		t.Fatalf("net.ListenUDP(\"udp\", globals.udpRAddr) returned error: %v", err)
 	}
 
-	testGlobals.statChan = make(chan string, 100)
+	testGlobals.statsLog = make([]string, 0, 100)
+
 	testGlobals.doneChan = make(chan bool, 1)
 
 	testGlobals.doneErr = nil
@@ -73,6 +74,10 @@ func TestStatsAPIviaUDP(t *testing.T) {
 	}
 
 	_ = <-testGlobals.doneChan
+
+	if nil != testGlobals.doneErr {
+		t.Fatalf("testStatsd() returned error: %v", testGlobals.doneErr)
+	}
 }
 
 func TestStatsAPIviaTCP(t *testing.T) {
@@ -80,7 +85,7 @@ func TestStatsAPIviaTCP(t *testing.T) {
 
 	confStrings := []string{
 		"Stats.IPAddr=localhost",
-		"Stats.TCPPort=52184",
+		"Stats.TCPPort=41582",
 		"Stats.BufferLength=1000",
 		"Stats.MaxLatency=100ms",
 	}
@@ -100,7 +105,8 @@ func TestStatsAPIviaTCP(t *testing.T) {
 		t.Fatalf("net.ListenTCP(\"tcp\", globals.tcpRAddr) returned error: %v", err)
 	}
 
-	testGlobals.statChan = make(chan string, 28)
+	testGlobals.statsLog = make([]string, 0, 100)
+
 	testGlobals.doneChan = make(chan bool, 1)
 
 	testGlobals.doneErr = nil
@@ -139,7 +145,6 @@ func testStatsd() {
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
@@ -149,19 +154,17 @@ func testStatsd() {
 				if !testGlobals.stopPending {
 					err = fmt.Errorf("0 == bufConsumed")
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
 			}
 
-			testGlobals.statChan <- string(buf[:bufConsumed])
+			testGlobals.statsLog = append(testGlobals.statsLog, string(buf[:bufConsumed]))
 		} else { // globals.useTCP
 			testTCPConn, err := testGlobals.tcpListener.AcceptTCP()
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
@@ -170,7 +173,6 @@ func testStatsd() {
 				if !testGlobals.stopPending {
 					err = fmt.Errorf("nil == testTCPConn")
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
@@ -180,7 +182,6 @@ func testStatsd() {
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
@@ -189,19 +190,17 @@ func testStatsd() {
 				if !testGlobals.stopPending {
 					err = fmt.Errorf("0 == bufConsumed")
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
 			}
 
-			testGlobals.statChan <- string(buf[:bufConsumed])
+			testGlobals.statsLog = append(testGlobals.statsLog, string(buf[:bufConsumed]))
 
 			err = testTCPConn.Close()
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
-					fmt.Println(err)
 				}
 				testGlobals.doneChan <- true
 				return
@@ -211,57 +210,76 @@ func testStatsd() {
 }
 
 func testSendStats() {
-	sleepDuration := 100 * time.Millisecond
+	sleepDuration := 4 * globals.maxLatency
 
 	IncrementOperations(&LogSegCreateOps)
 	IncrementOperationsAndBytes(SwiftObjTail, 1024)
 	IncrementOperationsEntriesAndBytes(DirRead, 48, 2048)
 	IncrementOperationsAndBucketedBytes(FileRead, 4096)
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 8192, 0, 0)
-	time.Sleep(sleepDuration)
+	time.Sleep(sleepDuration) // ensures above doesn't get merged with below
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 16384, 400, 0)
-	time.Sleep(sleepDuration)
+	time.Sleep(sleepDuration) // ensures above doesn't get merged with below
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 32768, 0, 500)
-	time.Sleep(sleepDuration)
+	time.Sleep(sleepDuration) // ensures above doesn't get merged with below
 	IncrementOperationsBucketedBytesAndAppendedOverwritten(FileWrite, 65536, 600, 700)
-	IncrementOperationsBucketedEntriessAndBucketedBytes(FileReadplan, 7, 131072)
+	IncrementOperationsBucketedEntriesAndBucketedBytes(FileReadplan, 7, 131072)
+	time.Sleep(sleepDuration) // ensures we get all of the stats entries
 }
 
 func testVerifyStats() {
 	var (
-		ok        bool
-		stat      string
-		statMap   map[string]uint64
-		statValue uint64
+		expectedStatValue        uint64
+		expectedStats            []string
+		expectedStatsValueMap    map[string]uint64
+		ok                       bool
+		statCount                uint16
+		statName                 string
+		statLine                 string
+		statLineSplitOnColon     []string
+		statLineSuffixSplitOnBar []string
+		statValue                uint64
+		statValueIncrement       uint64
+		statsCountMap            map[string]uint16
+		statsDumpMap             map[string]uint64
 	)
 
 	// Build a slice of the stats we expect
-	expectedStats := []string{
+
+	expectedStats = []string{
 		LogSegCreateOps + ":1|c",
+
 		SwiftObjTailOps + ":1|c",
 		SwiftObjTailBytes + ":1024|c",
+
 		DirReadOps + ":1|c",
 		DirReadEntries + ":48|c",
 		DirReadBytes + ":2048|c",
+
 		FileReadOps + ":1|c",
 		FileReadOps4K + ":1|c",
 		FileReadBytes + ":4096|c",
+
 		FileWriteOps + ":1|c",
 		FileWriteOps8K + ":1|c",
 		FileWriteBytes + ":8192|c",
+
 		FileWriteOps + ":1|c",
 		FileWriteOps16K + ":1|c",
 		FileWriteBytes + ":16384|c",
 		FileWriteAppended + ":400|c",
+
 		FileWriteOps + ":1|c",
 		FileWriteOps32K + ":1|c",
 		FileWriteBytes + ":32768|c",
 		FileWriteOverwritten + ":500|c",
+
 		FileWriteOps + ":1|c",
 		FileWriteOps64K + ":1|c",
 		FileWriteBytes + ":65536|c",
 		FileWriteAppended + ":600|c",
 		FileWriteOverwritten + ":700|c",
+
 		FileReadplanOps + ":1|c",
 		FileReadplanOpsOver64K + ":1|c",
 		FileReadplanBytes + ":131072|c",
@@ -271,57 +289,82 @@ func testVerifyStats() {
 	// Check that the stats sent to the TCP/UDP port are what we expect
 	//
 	// Note that this test has been written so that it does not depend on stats
-	// appearing in the same order they are sent in the function above.
-	// Since the APIs send to the channel in a goroutine, there is no guarantee
-	// that ordering will be preserved.
+	// appearing in the same order they are sent in testSendStats().
 
-	// Pull the stats off the channel. There should be as many as items in expectedStats.
-	statsFromChannel := make(map[string]int, len(expectedStats))
-	for _ = range expectedStats {
-		stat = <-testGlobals.statChan
-		statsFromChannel[stat]++
+	if len(testGlobals.statsLog) != len(expectedStats) {
+		testGlobals.t.Fatalf("verifyStats() failed... wrong number of statsLog elements")
 	}
 
-	// Check that the map contains all the stats we expected
-	for _, expectedStat := range expectedStats {
-		stat, ok := statsFromChannel[expectedStat]
-		if !ok || stat <= 0 {
-			testGlobals.t.Fatalf("verifyStats() failed, could not find %v (ok=%v count=%v); stats are %v", expectedStat, ok, stat, statsFromChannel)
+	statsCountMap = make(map[string]uint16)
+
+	for _, statLine = range testGlobals.statsLog {
+		statCount, ok = statsCountMap[statLine]
+		if ok {
+			statCount++
+		} else {
+			statCount = 1
 		}
-		statsFromChannel[expectedStat]--
+		statsCountMap[statLine] = statCount
+	}
+
+	for _, statLine = range expectedStats {
+		statCount, ok = statsCountMap[statLine]
+		if ok {
+			statCount--
+			if 0 == statCount {
+				delete(statsCountMap, statLine)
+			} else {
+				statsCountMap[statLine] = statCount
+			}
+		} else {
+			testGlobals.t.Fatalf("verifyStats() failed... missing stat: %v", statLine)
+		}
+	}
+
+	if 0 < len(statsCountMap) {
+		for statLine = range statsCountMap {
+			testGlobals.t.Logf("verifyStats() failed... extra stat: %v", statLine)
+		}
+		testGlobals.t.FailNow()
+	}
+
+	// Compress expectedStats to be comparable to Dump() return
+
+	expectedStatsValueMap = make(map[string]uint64)
+
+	for _, statLine = range expectedStats {
+		statLineSplitOnColon = strings.Split(statLine, ":")
+
+		statName = statLineSplitOnColon[0]
+
+		statLineSuffixSplitOnBar = strings.Split(statLineSplitOnColon[1], "|")
+
+		statValueIncrement, _ = strconv.ParseUint(statLineSuffixSplitOnBar[0], 10, 64)
+
+		statValue, ok = expectedStatsValueMap[statName]
+		if ok {
+			statValue += statValueIncrement
+		} else {
+			statValue = statValueIncrement
+		}
+		expectedStatsValueMap[statName] = statValue
 	}
 
 	// Check that the stats held in memory are what we expect
-	statMap = Dump()
 
-	// Build a slice of the stats we expect to find in memory, by adding up any repeated stats
-	// in the original raw expectedStats map
-	expectedInmemoryStats := make(map[string]uint64, len(statMap))
+	statsDumpMap = Dump()
 
-	for _, statStr := range expectedStats {
-		// Split expected stat at : into stat name and count info
-		colonSplit := strings.Split(statStr, ":")
-		statName := colonSplit[0]
-
-		// Split count info at | to get the count
-		sepSplit := strings.Split(colonSplit[1], "|")
-		statCount, _ := strconv.ParseUint(sepSplit[0], 10, 64)
-
-		// Add the stat to the map
-		expectedInmemoryStats[statName] += statCount
+	if len(statsDumpMap) != len(expectedStatsValueMap) {
+		testGlobals.t.Fatalf("verifyStats() failed... wrong number of statsDumpMap elements")
 	}
 
-	// Make sure the in-memory stats we got is the same size as what we expect
-	if len(statMap) != len(expectedInmemoryStats) {
-		testGlobals.t.Fatalf("verifyStats() failed; expected %v stats, got %v", len(expectedInmemoryStats), len(statMap))
-	}
-
-	// Now check our stats
-	for statName, expectedCount := range expectedInmemoryStats {
-		fmt.Printf("checking stat %v == %v\n", statName, expectedCount)
-
-		if statValue, ok = statMap[statName]; !ok || (statValue != expectedCount) {
-			testGlobals.t.Fatalf("verifyStats() failed; stat %v found=%v, got count %v expected %v", statName, ok, statValue, expectedCount)
+	for statName, statValue = range statsDumpMap {
+		expectedStatValue, ok = expectedStatsValueMap[statName]
+		if !ok {
+			testGlobals.t.Fatalf("verifyStats() failed... received unpected statName: %v", statName)
+		}
+		if statValue != expectedStatValue {
+			testGlobals.t.Fatalf("verifyStats() failed... received unexpected statValue (%v) for statName %v (should have been %v)", statValue, statName, expectedStatValue)
 		}
 	}
 }
