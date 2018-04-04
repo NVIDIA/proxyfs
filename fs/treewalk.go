@@ -262,7 +262,7 @@ func (jS *jobStruct) jobLogErrWhileLocked(formatString string, args ...interface
 
 	suffix = fmt.Sprintf(formatString, args...)
 
-	logger.Errorf("SCRUB[%v] %v", jS.volumeName, suffix)
+	logger.Errorf("%v[%v] %v", jS.jobType, jS.volumeName, suffix)
 
 	jS.err = append(jS.err, fmt.Sprintf("%v %v", time.Now().Format(time.RFC3339), suffix))
 }
@@ -280,7 +280,7 @@ func (jS *jobStruct) jobLogInfoWhileLocked(formatString string, args ...interfac
 
 	suffix = fmt.Sprintf(formatString, args...)
 
-	logger.Infof("SCRUB[%v] %v", jS.volumeName, suffix)
+	logger.Infof("%v[%v] %v", jS.jobType, jS.volumeName, suffix)
 
 	jS.info = append(jS.info, fmt.Sprintf("%v %v", time.Now().Format(time.RFC3339), suffix))
 }

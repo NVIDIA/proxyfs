@@ -308,8 +308,16 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 		// these signals are normally ignored, but if "signals..." above is empty
 		// they are delivered via the channel.  we should simply ignore them.
 		if signalReceived == unix.SIGCHLD || signalReceived == unix.SIGURG ||
-			signalReceived == unix.SIGWINCH {
+			signalReceived == unix.SIGWINCH || signalReceived == unix.SIGCONT {
+			logger.Infof("Ignored signal: '%v'", signalReceived)
+			continue
+		}
 
+		// we can get SIGPIPE whenever an HTTP or other client closes a
+		// socket on us, so ignore it
+		if signalReceived == unix.SIGPIPE {
+			logger.Infof("Ignored signal: '%v'", signalReceived)
+			continue
 		}
 
 		// SIGHUP means reconfig but any other signal means time to exit

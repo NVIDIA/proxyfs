@@ -53,9 +53,9 @@ func IncrementOperationsAndBucketedBytes(stat MultipleStat, bytes uint64) {
 }
 
 // IncrementOperationsBuckedtedBytesAndBucketedSteps sends an increment of .operations, .bytes, and the appropriate .operations.size-* to statsd.
-func IncrementOperationsBucketedEntriessAndBucketedBytes(stat MultipleStat, entries uint64, bytes uint64) {
+func IncrementOperationsBucketedEntriesAndBucketedBytes(stat MultipleStat, entries uint64, bytes uint64) {
 	// Do this in a goroutine since channel operations are suprisingly expensive due to locking underneath
-	go incrementOperationsBucketedEntriessAndBucketedBytes(stat, entries, bytes)
+	go incrementOperationsBucketedEntriesAndBucketedBytes(stat, entries, bytes)
 }
 
 // IncrementOperationsBucketedBytesAndAppendedOverwritten sends an increment of .operations, .bytes, .appended, .overwritten, and the appropriate .operations.size-* to statsd.
