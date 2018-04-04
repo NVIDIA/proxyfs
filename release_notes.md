@@ -1,5 +1,14 @@
 # ProxyFS Release Notes
 
+## 1.5.3 (April 3, 2018)
+
+Ignore SIGPIPE, SIGCHLD, and some other signals that were causing
+proxyfsd to exit when it shouldn't.
+
+## 1.5.2 
+
+there is no release 1.5.2.
+
 ## 1.5.1 (March 30, 2018)
 
 Partially botched 1.5.0 release packaging.
