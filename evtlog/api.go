@@ -37,8 +37,7 @@ const (
 	FormatContainerHead
 	FormatContainerPost
 	FormatContainerPut
-	FormatObjectDeleteAsync
-	FormatObjectDeleteSync
+	FormatObjectDelete
 	FormatObjectGet
 	FormatObjectHead
 	FormatObjectPost
@@ -228,13 +227,9 @@ var (
 			patternType:  patternSS03D,
 			formatString: "%s Container PUT %s/%s had status %03d",
 		},
-		eventType{ // FormatObjectDeleteAsync
-			patternType:  patternSSS,
-			formatString: "%s Object DELETE (Async) %s/%s/%s issued",
-		},
 		eventType{ // FormatObjectDelete
 			patternType:  patternSSS03D,
-			formatString: "%s Object DELETE (Sync) %s/%s/%s had status %03d",
+			formatString: "%s Object DELETE %s/%s/%s had status %03d",
 		},
 		eventType{ // FormatObjectGet
 			patternType:  patternSSS03D,

@@ -3,7 +3,7 @@ package headhunter
 
 import (
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/swiftstack/sortedmap"
 )
@@ -17,10 +17,15 @@ const (
 	BPlusTreeObjectBPlusTree
 )
 
+type SnapShotStruct struct {
+	ID        uint64
+	TimeStamp time.Time
+	Name      string
+}
+
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
 	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
-	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)
@@ -37,6 +42,9 @@ type VolumeHandle interface {
 	IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error)
 	DoCheckpoint() (err error)
 	FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error)
+	CreateSnapShot(name string) (id uint64, err error)
+	DeleteSnapShot(id uint64) (err error)
+	FetchSnapShotList() (list []SnapShotStruct)
 }
 
 // FetchVolumeHandle is used to fetch a VolumeHandle to use when operating on a given volume's database

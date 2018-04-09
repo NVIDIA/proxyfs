@@ -1,10 +1,6 @@
 // Package swiftclient provides API access to the local Swift NoAuth Pipeline.
 package swiftclient
 
-import (
-	"sync"
-)
-
 type OperationOptions uint64
 
 const (
@@ -107,17 +103,9 @@ func ObjectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 	return objectCopy(srcAccountName, srcContainerName, srcObjectName, dstAccountName, dstContainerName, dstObjectName, chunkedCopyContext)
 }
 
-// ObjectDeleteAsync asynchronously invokes HTTP DELETE on the named Swift Object.
-//
-// If wgPreCondition is not nil, the HTTP DELETE will proceed only after wgPreCondition.Done() returns.
-// If wgPostSignal is not nil, following the HTTP DELETE, wgPostSignal.Done() will be called.
-func ObjectDeleteAsync(accountName string, containerName string, objectName string, operationOptions OperationOptions, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
-	objectDeleteAsync(accountName, containerName, objectName, operationOptions, wgPreCondition, wgPostSignal)
-}
-
-// ObjectDeleteSync synchronously invokes HTTP DELETE on the named Swift Object.
-func ObjectDeleteSync(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
-	return objectDeleteSync(accountName, containerName, objectName, operationOptions)
+// ObjectDelete invokes HTTP DELETE on the named Swift Object.
+func ObjectDelete(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
+	return objectDelete(accountName, containerName, objectName, operationOptions)
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.

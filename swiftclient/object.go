@@ -146,98 +146,23 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 	return
 }
 
-func objectDeleteAsync(accountName string, containerName string, objectName string, operationOptions OperationOptions, wgPreCondition *sync.WaitGroup, wgPostSignal *sync.WaitGroup) {
-	evtlog.Record(evtlog.FormatObjectDeleteAsync, accountName, containerName, objectName)
-
-	pendingDelete := &pendingDeleteStruct{
-		next:             nil,
-		accountName:      accountName,
-		containerName:    containerName,
-		objectName:       objectName,
-		operationOptions: operationOptions,
-		wgPreCondition:   wgPreCondition,
-		wgPostSignal:     wgPostSignal,
-	}
-
-	pendingDeletes := globals.pendingDeletes
-
-	pendingDeletes.Lock()
-
-	if nil == pendingDeletes.tail {
-		pendingDeletes.head = pendingDelete
-		pendingDeletes.tail = pendingDelete
-		pendingDeletes.cond.Signal()
-	} else {
-		pendingDeletes.tail.next = pendingDelete
-		pendingDeletes.tail = pendingDelete
-	}
-
-	pendingDeletes.Unlock()
-}
-
-func objectDeleteAsyncDaemon() {
-	pendingDeletes := globals.pendingDeletes
-
-	pendingDeletes.Lock()
-
-	pendingDeletes.armed = true
-
-	for {
-		pendingDeletes.cond.Wait()
-
-		for {
-			if pendingDeletes.shutdownInProgress {
-				pendingDeletes.Unlock()
-				pendingDeletes.shutdownWaitGroup.Done()
-				return
-			}
-
-			pendingDelete := pendingDeletes.head
-
-			if nil == pendingDelete {
-				break // effectively a continue of the outer for loop
-			}
-
-			pendingDeletes.head = pendingDelete.next
-			if nil == pendingDeletes.head {
-				pendingDeletes.tail = nil
-			}
-
-			pendingDeletes.Unlock()
-
-			if nil != pendingDelete.wgPreCondition {
-				pendingDelete.wgPreCondition.Wait()
-			}
-
-			_ = objectDeleteSync(pendingDelete.accountName, pendingDelete.containerName, pendingDelete.objectName, pendingDelete.operationOptions)
-
-			if nil != pendingDelete.wgPostSignal {
-				// TODO: what if the delete failed?
-				pendingDelete.wgPostSignal.Done()
-			}
-
-			pendingDeletes.Lock()
-		}
-	}
-}
-
-func objectDeleteSync(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
+func objectDelete(accountName string, containerName string, objectName string, operationOptions OperationOptions) (err error) {
 	if (operationOptions & SkipRetry) == SkipRetry {
-		err = objectDeleteSyncOneTime(accountName, containerName, objectName)
+		err = objectDeleteOneTime(accountName, containerName, objectName)
 	} else {
 		// request is a function that, through the miracle of closure, calls
-		// objectDeleteSync() with the paramaters passed to this function, stashes
+		// objectDelete() with the paramaters passed to this function, stashes
 		// the relevant return values into the local variables of this function,
 		// and then returns err and whether it is retriable to RequestWithRetry()
 		request := func() (bool, error) {
 			var err error
-			err = objectDeleteSyncOneTime(accountName, containerName, objectName)
+			err = objectDeleteOneTime(accountName, containerName, objectName)
 			return true, err
 		}
 
 		var (
 			retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-			opname   string      = fmt.Sprintf("swiftclient.objectDeleteSyncOneTime(\"%v/%v/%v\")", accountName, containerName, objectName)
+			opname   string      = fmt.Sprintf("swiftclient.objectDeleteOneTime(\"%v/%v/%v\")", accountName, containerName, objectName)
 			statnm   RetryStatNm = RetryStatNm{
 				retryCnt:        &stats.SwiftObjDeleteRetryOps,
 				retrySuccessCnt: &stats.SwiftObjDeleteRetrySuccessOps}
@@ -248,7 +173,7 @@ func objectDeleteSync(accountName string, containerName string, objectName strin
 	return
 }
 
-func objectDeleteSyncOneTime(accountName string, containerName string, objectName string) (err error) {
+func objectDeleteOneTime(accountName string, containerName string, objectName string) (err error) {
 	var (
 		connection *connectionStruct
 		fsErr      blunder.FsError
@@ -263,7 +188,7 @@ func objectDeleteSyncOneTime(accountName string, containerName string, objectNam
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.objectDeleteSync(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -271,16 +196,16 @@ func objectDeleteSyncOneTime(accountName string, containerName string, objectNam
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.objectDeleteSync(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectDeleteSync, accountName, containerName, objectName, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectDelete, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "DELETE %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectDeleteSync(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
