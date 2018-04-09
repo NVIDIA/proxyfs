@@ -120,7 +120,7 @@ func TestValidateFileExtents(t *testing.T) {
 
 	readPlanStep := readPlan[0]
 
-	deleteErr := swiftclient.ObjectDeleteSync(readPlanStep.AccountName, readPlanStep.ContainerName, readPlanStep.ObjectName, 0)
+	deleteErr := swiftclient.ObjectDelete(readPlanStep.AccountName, readPlanStep.ContainerName, readPlanStep.ObjectName, 0)
 	if nil != deleteErr {
 		t.Fatalf("HTTP DELETE %v should have worked... failed: %v", readPlanStep.ObjectPath, deleteErr)
 	}

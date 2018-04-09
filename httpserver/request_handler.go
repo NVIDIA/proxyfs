@@ -30,6 +30,8 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 	globals.Lock()
 	if globals.active {
 		switch request.Method {
+		case http.MethodDelete:
+			doDelete(responseWriter, request)
 		case http.MethodGet:
 			doGet(responseWriter, request)
 		case http.MethodPost:
@@ -41,6 +43,72 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 		responseWriter.WriteHeader(http.StatusServiceUnavailable)
 	}
 	globals.Unlock()
+}
+
+func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
+	switch {
+	case strings.HasPrefix(request.URL.Path, "/volume"):
+		doDeleteOfVolume(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+}
+
+func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err           error
+		numPathParts  int
+		ok            bool
+		pathSplit     []string
+		snapShotID    uint64
+		volume        *volumeStruct
+		volumeAsValue sortedmap.Value
+		volumeName    string // SnapShot
+	)
+
+	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
+	//                                                  pathSplit[1] must be "volume" based on how we got here
+	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+	numPathParts = len(pathSplit) - 1
+	if "" == pathSplit[numPathParts] {
+		numPathParts--
+	}
+
+	if 4 != numPathParts {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	volumeName = pathSplit[2]
+
+	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+	if !ok {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	volume = volumeAsValue.(*volumeStruct)
+
+	if "snapshot" != pathSplit[3] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// Form: /volume/<volume-name>/snapshot/<snapshot-id>
+
+	snapShotID, err = strconv.ParseUint(pathSplit[4], 10, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if (0 == snapShotID) && (nil == volume) {
+		// TODO
+	}
+	responseWriter.WriteHeader(http.StatusNotImplemented)
 }
 
 func doGet(responseWriter http.ResponseWriter, request *http.Request) {
@@ -548,12 +616,13 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case 1:
 		// Form: /volume
 	case 3:
-		// Form: /volume/<volume-name/fsck-job
-		// Form: /volume/<volume-name/layout-report
-		// Form: /volume/<volume-name/scrub-job
+		// Form: /volume/<volume-name>/fsck-job
+		// Form: /volume/<volume-name>/layout-report
+		// Form: /volume/<volume-name>/scrub-job
+		// Form: /volume/<volume-name>/snapshot
 	case 4:
-		// Form: /volume/<volume-name/fsck-job/<job-id>
-		// Form: /volume/<volume-name/scrub-job/<job-id>
+		// Form: /volume/<volume-name>/fsck-job/<job-id>
+		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -660,6 +729,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	case "scrub-job":
 		doJob(scrubJobType, responseWriter, request, requestState)
+
+	case "snapshot":
+		doGetOfSnapShot(responseWriter, request, requestState)
 
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -1010,6 +1082,10 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 	}
 }
 
+func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+}
+
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
@@ -1100,11 +1176,12 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	switch numPathParts {
 	case 3:
-		// Form: /volume/<volume-name/fsck-job
-		// Form: /volume/<volume-name/scrub-job
+		// Form: /volume/<volume-name>/fsck-job
+		// Form: /volume/<volume-name>/scrub-job
+		// Form: /volume/<volume-name>/snapshot
 	case 4:
-		// Form: /volume/<volume-name/fsck-job/<job-id>
-		// Form: /volume/<volume-name/scrub-job/<job-id>
+		// Form: /volume/<volume-name>/fsck-job/<job-id>
+		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -1122,18 +1199,24 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 	volume = volumeAsValue.(*volumeStruct)
 
-	volume.Lock()
-
 	switch pathSplit[3] {
 	case "fsck-job":
 		jobType = fsckJobType
 	case "scrub-job":
 		jobType = scrubJobType
+	case "snapshot":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfSnapShot(responseWriter, request, volume)
+		return
 	default:
-		volume.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
+
+	volume.Lock()
 
 	if 3 == numPathParts {
 		markJobsCompletedIfNoLongerActiveWhileLocked(volume)
@@ -1297,6 +1380,10 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	volume.Unlock()
 
 	responseWriter.WriteHeader(http.StatusNoContent)
+}
+
+func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }
 
 func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.ResponseWriter) {

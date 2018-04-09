@@ -34,26 +34,6 @@ type connectionPoolStruct struct {
 	//                                                 poolInUse is decremented and connection is discarded
 }
 
-type pendingDeleteStruct struct {
-	next             *pendingDeleteStruct
-	accountName      string
-	containerName    string
-	objectName       string
-	operationOptions OperationOptions
-	wgPreCondition   *sync.WaitGroup
-	wgPostSignal     *sync.WaitGroup
-}
-
-type pendingDeletesStruct struct {
-	sync.Mutex
-	armed              bool
-	cond               *sync.Cond // Signal if adding 1st pendingDeleteStruct or shutting down
-	head               *pendingDeleteStruct
-	tail               *pendingDeleteStruct
-	shutdownWaitGroup  sync.WaitGroup
-	shutdownInProgress bool
-}
-
 type globalsStruct struct {
 	noAuthStringAddr                string
 	noAuthTCPAddr                   *net.TCPAddr
@@ -72,7 +52,6 @@ type globalsStruct struct {
 	stavationResolvedChan           chan bool // Signal this chan to halt calls to starvationCallback
 	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
-	pendingDeletes                  *pendingDeletesStruct
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 }
@@ -86,7 +65,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		freeConnectionIndex          uint16
 		noAuthTCPPort                uint16
 		nonChunkedConnectionPoolSize uint16
-		pendingDeletes               *pendingDeletesStruct
 	)
 
 	noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
@@ -198,30 +176,6 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
 
-	pendingDeletes = &pendingDeletesStruct{
-		armed:              false,
-		head:               nil,
-		tail:               nil,
-		shutdownInProgress: false,
-	}
-
-	pendingDeletes.cond = sync.NewCond(pendingDeletes)
-	pendingDeletes.shutdownWaitGroup.Add(1)
-
-	globals.pendingDeletes = pendingDeletes
-
-	go objectDeleteAsyncDaemon()
-
-	pendingDeletes.Lock()
-
-	for !pendingDeletes.armed {
-		pendingDeletes.Unlock()
-		time.Sleep(100 * time.Millisecond)
-		pendingDeletes.Lock()
-	}
-
-	pendingDeletes.Unlock()
-
 	return
 }
 
@@ -243,16 +197,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 // Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
-	globals.pendingDeletes.Lock()
-
-	globals.pendingDeletes.shutdownInProgress = true
-
-	globals.pendingDeletes.cond.Signal()
-
-	globals.pendingDeletes.Unlock()
-
-	globals.pendingDeletes.shutdownWaitGroup.Wait()
-
 	err = nil
 
 	return

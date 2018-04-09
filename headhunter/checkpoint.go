@@ -827,6 +827,10 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 	volume.nextNonce = volume.checkpointHeader.ReservedToNonce
 
+	// Load existing SnapShots
+
+	volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
+
 	// Check for the need to process a Replay Log
 
 	if "" == volume.replayLogFileName {
@@ -1282,13 +1286,16 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
-			swiftclient.ObjectDeleteAsync(
-				volume.accountName,
-				volume.checkpointContainerName,
-				utils.Uint64ToHexStr(objectNumber),
-				swiftclient.SkipRetry,
-				volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-				nil)
+			/*
+				// SSTODO: need to schedule delete as this snapshot is deleted... or something similar...
+				swiftclient.ObjectDeleteAsync(
+					volume.accountName,
+					volume.checkpointContainerName,
+					utils.Uint64ToHexStr(objectNumber),
+					swiftclient.SkipRetry,
+					volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
+					nil)
+			*/
 		}
 	}
 
