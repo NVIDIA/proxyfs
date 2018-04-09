@@ -17,8 +17,9 @@ typedef struct proxyfs_fsal_module {
 
 #endif // __PROXYFS_CONFIG_H__
 
+/*
 
-
+TODO: (Remove) Temp NOTEs:
 static struct config_item proxyfs_params[] = {
 	CONF_ITEM_BOOL("link_support", true,
 		       pxy_fsal_module, fsinfo.link_support),
@@ -46,3 +47,4 @@ static struct config_item proxyfs_params[] = {
 
 	CONFIG_EOL
 };
+*/
