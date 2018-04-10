@@ -1,3 +1,13 @@
 gosubdir := github.com/swiftstack/ProxyFS/httpserver
 
+generatedfiles := \
+	jsontree_dot_js.go \
+	open_iconic_bootstrap_dot_css.go \
+	open_iconic_dot_eot.go \
+	open_iconic_dot_otf.go \
+	open_iconic_dot_svg.go \
+	open_iconic_dot_ttf.go \
+	open_iconic_dot_woff.go \
+	styles_dot_css.go
+
 include ../GoMakefile
