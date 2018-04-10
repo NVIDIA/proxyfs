@@ -52,7 +52,6 @@ func doDelete(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
 }
 
 func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
@@ -64,7 +63,7 @@ func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request)
 		snapShotID    uint64
 		volume        *volumeStruct
 		volumeAsValue sortedmap.Value
-		volumeName    string // SnapShot
+		volumeName    string
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
@@ -105,10 +104,12 @@ func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	if (0 == snapShotID) && (nil == volume) {
-		// TODO
+	err = volume.headhunterHandle.DeleteSnapShot(snapShotID)
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusNoContent)
+	} else {
+		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-	responseWriter.WriteHeader(http.StatusNotImplemented)
 }
 
 func doGet(responseWriter http.ResponseWriter, request *http.Request) {
@@ -1083,7 +1084,45 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 }
 
 func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	var (
+		err            error
+		list           []headhunter.SnapShotStruct
+		listIndex      int
+		listJSON       bytes.Buffer
+		listJSONPacked []byte
+	)
+
+	list = requestState.volume.headhunterHandle.FetchSnapShotList()
+
+	if requestState.formatResponseAsJSON {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		listJSONPacked, err = json.Marshal(list)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if requestState.formatResponseCompactly {
+			_, _ = responseWriter.Write(listJSONPacked)
+		} else {
+			json.Indent(&listJSON, listJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(listJSON.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		}
+	} else {
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
+
+		for listIndex = len(list) - 1; listIndex >= 0; listIndex-- {
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, list[listIndex].ID, list[listIndex].TimeStamp, list[listIndex].Name)))
+		}
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(snapShotsBottom))
+	}
 }
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
@@ -1383,7 +1422,19 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 }
 
 func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
-	responseWriter.WriteHeader(http.StatusNotImplemented) // TODO
+	var (
+		err        error
+		snapShotID uint64
+	)
+
+	snapShotID, err = volume.headhunterHandle.CreateSnapShot(request.FormValue("name"))
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/snapshot/%v", volume.name, snapShotID))
+
+	responseWriter.WriteHeader(http.StatusCreated)
 }
 
 func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.ResponseWriter) {

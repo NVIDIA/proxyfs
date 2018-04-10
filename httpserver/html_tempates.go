@@ -586,6 +586,7 @@ const volumeListTopTemplate string = `<!doctype html>
             <th class="fit">&nbsp;</th>
             <th class="fit">&nbsp;</th>
             <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
           </tr>
         </thead>
         <tbody>
@@ -594,6 +595,7 @@ const volumeListTopTemplate string = `<!doctype html>
 // To use: fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)
 const volumeListPerVolumeTemplate string = `          <tr>
             <td>%[1]v</td>
+            <td class="fit"><a href="/volume/%[1]v/snapshot" class="btn btn-sm btn-primary">SnapShots</a></td>
             <td class="fit"><a href="/volume/%[1]v/fsck-job" class="btn btn-sm btn-primary">FSCK jobs</a></td>
             <td class="fit"><a href="/volume/%[1]v/scrub-job" class="btn btn-sm btn-primary">SCRUB jobs</a></td>
             <td class="fit"><a href="/volume/%[1]v/layout-report" class="btn btn-sm btn-primary">Layout Report</a></td>
@@ -609,6 +611,14 @@ const volumeListBottom string = `        </tbody>
   </body>
 </html>
 `
+
+// To use: fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, volumeName)
+const snapShotsTopTemplate string = ``
+
+// To use: fmt.Sprintf(snapShotsPerSnapShotTemplate, id, timeStamp, name)
+const snapShotsPerSnapShotTemplate string = ``
+
+const snapShotsBottom string = ``
 
 // To use: fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
 const jobsTopTemplate string = `<!doctype html>
