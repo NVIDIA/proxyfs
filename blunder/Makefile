@@ -1,6 +1,6 @@
 gosubdir := github.com/swiftstack/ProxyFS/blunder
 
-gostringerfiles := \
+generatedfiles := \
 	fserror_string.go
 
 include ../GoMakefile

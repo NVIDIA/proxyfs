@@ -52,10 +52,6 @@ count.out
 # log files
 *.log
 
-# generated code
-blunder/fserror_string.go
-inode/inodetype_string.go
-
 # tags
 tags
 

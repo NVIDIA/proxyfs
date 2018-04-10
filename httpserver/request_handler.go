@@ -118,16 +118,44 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
-	case "/styles.css" == path:
-		doGetOfStaticContent(responseWriter, request, stylesDotCSS)
-	case "/jsontree.js" == path:
-		doGetOfStaticContent(responseWriter, request, jsontreeDotJS)
-	case "/index.html" == path:
-		doGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
 		doGetOfConfig(responseWriter, request)
+	case "/index.html" == path:
+		doGetOfIndexDotHTML(responseWriter, request)
+	case "/jsontree.js" == path:
+		responseWriter.Header().Set("Content-Type", jsontreeDotJSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(jsontreeDotJSContent))
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
+	case "/open-iconic/font/css/open-iconic-bootstrap.min.css" == path:
+		responseWriter.Header().Set("Content-Type", openIconicBootstrapDotCSSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(openIconicBootstrapDotCSSContent))
+	case "/open-iconic/font/fonts/open-iconic.eot" == path:
+		responseWriter.Header().Set("Content-Type", openIconicDotEOTContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write(openIconicDotEOTContent)
+	case "/open-iconic/font/fonts/open-iconic.otf" == path:
+		responseWriter.Header().Set("Content-Type", openIconicDotOTFContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write(openIconicDotOTFContent)
+	case "/open-iconic/font/fonts/open-iconic.svg" == path:
+		responseWriter.Header().Set("Content-Type", openIconicDotSVGContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(openIconicDotSVGContent))
+	case "/open-iconic/font/fonts/open-iconic.ttf" == path:
+		responseWriter.Header().Set("Content-Type", openIconicDotTTFContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write(openIconicDotTTFContent)
+	case "/open-iconic/font/fonts/open-iconic.woff" == path:
+		responseWriter.Header().Set("Content-Type", openIconicDotWOFFContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write(openIconicDotWOFFContent)
+	case "/styles.css" == path:
+		responseWriter.Header().Set("Content-Type", stylesDotCSSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(stylesDotCSSContent))
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -135,12 +163,6 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
-}
-
-func doGetOfStaticContent(responseWriter http.ResponseWriter, request *http.Request, staticContent *staticContentType) {
-	responseWriter.Header().Set("Content-Type", staticContent.contentType)
-	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(staticContent.content)
 }
 
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
