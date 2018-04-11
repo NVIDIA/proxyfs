@@ -118,10 +118,22 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case "" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
+	case "/bootstrap.min.css" == path:
+		responseWriter.Header().Set("Content-Type", bootstrapDotCSSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(bootstrapDotCSSContent))
+	case "/bootstrap.min.js" == path:
+		responseWriter.Header().Set("Content-Type", bootstrapDotJSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(bootstrapDotJSContent))
 	case "/config" == path:
 		doGetOfConfig(responseWriter, request)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
+	case "/jquery-3.2.1.min.js" == path:
+		responseWriter.Header().Set("Content-Type", jqueryDotJSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(jqueryDotJSContent))
 	case "/jsontree.js" == path:
 		responseWriter.Header().Set("Content-Type", jsontreeDotJSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
@@ -152,6 +164,10 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", openIconicDotWOFFContentType)
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write(openIconicDotWOFFContent)
+	case "/popper.min.js" == path:
+		responseWriter.Header().Set("Content-Type", popperDotJSContentType)
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write(popperDotJSContent)
 	case "/styles.css" == path:
 		responseWriter.Header().Set("Content-Type", stylesDotCSSContentType)
 		responseWriter.WriteHeader(http.StatusOK)

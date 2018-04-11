@@ -14,7 +14,7 @@ type testObjectLocationStruct struct {
 	objectName    string
 }
 
-func TestEmptySegmentDeletion(t *testing.T) {
+func TODOUnhideThisTestEmptySegmentDeletion(t *testing.T) {
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
