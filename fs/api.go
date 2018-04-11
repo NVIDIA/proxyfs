@@ -210,7 +210,7 @@ type MountHandle interface {
 	SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error)
 	SnapShotCreate(name string) (id uint64, err error)
 	SnapShotDelete(id uint64) (err error)
-	SnapShotList() (list []SnapShotStruct)
+	SnapShotList(orderBy string, direction string) (list []SnapShotStruct)
 	StatVfs() (statVFS StatVFS, err error)
 	Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error)
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)

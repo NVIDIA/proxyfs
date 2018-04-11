@@ -411,9 +411,9 @@ const snapShotsTopTemplate string = `<!doctype html>
       <table class="table table-sm table-striped table-hover">
         <thead>
           <tr>
-            <th scope="col">ID</th>
-            <th scope="col" class="w-25">TimeStamp</th>
-            <th scope="col">Name</th>
+            <th scope="col" id="header-id" class="fit clickable">ID</th>
+            <th scope="col" id="header-timestamp" class="w-25 clickable">TimeStamp</th>
+            <th scope="col" id="header-name" class="clickable">Name</th>
             <th class="fit">&nbsp;</th>
           </tr>
         </thead>
@@ -496,6 +496,73 @@ const snapShotsBottomTemplate string = `        </tbody>
         });
         return false;
       };
+      getQueryVariable = function(variable) {
+        var query = window.location.search.substring(1);
+        var vars = query.split('&');
+        for (var i = 0; i < vars.length; i++) {
+          var pair = vars[i].split('=');
+          if (decodeURIComponent(pair[0]) == variable) {
+            return decodeURIComponent(pair[1]);
+          }
+        }
+        return null;
+      }
+      getQueryVariableOrDefault = function(variable, default_value, to_lower, allowed_values) {
+        var value = getQueryVariable(variable);
+        if (value === null) {
+          value = default_value;
+        } else if (to_lower) {
+          value = value.toLowerCase();
+        }
+        // allowed_values is optional
+        if (typeof allowed_values !== 'undefined' && allowed_values.indexOf(value) == -1) {
+          value = default_value;
+        }
+        return value;
+      };
+      getHeaderIdForField = function(field) {
+        return 'header-' + field;
+      };
+      addCaretToElement = function(element, direction) {
+        if (direction == 'desc') {
+          element.insertAdjacentHTML('beforeend', ' <span class="oi oi-chevron-bottom"></span>');
+        } else if (direction == 'asc') {
+          element.insertAdjacentHTML('beforeend', ' <span class="oi oi-chevron-top"></span>');
+        }
+      };
+      var orderby_default = 'timestamp';
+      var orderby_allowed_values = ['id', 'timestamp', 'name'];
+      var direction_default = 'asc';
+      var direction_allowed_values = ['asc', 'desc'];
+      displaySortingCaret = function() {
+        var orderby = getQueryVariableOrDefault('orderby', orderby_default, true, orderby_allowed_values);
+        var direction = getQueryVariableOrDefault('direction', direction_default, true, direction_allowed_values);
+        var header = document.getElementById(getHeaderIdForField(orderby));
+        if (header === null) {
+          console.error("Could not get element by id: " + getHeaderIdForField(orderby));
+          return {'orderby': null, 'direction': null};
+        }
+        addCaretToElement(header, direction);
+        return {'orderby': orderby, 'direction': direction};
+      };
+      var current_sorting = displaySortingCaret();
+      for (let i = orderby_allowed_values.length - 1; i >= 0; i--) {
+        var id = getHeaderIdForField(orderby_allowed_values[i]);
+        $("#" + id).on("click", function(){
+          var new_order_by = orderby_allowed_values[i];
+          var current_order_by = current_sorting['orderby'];
+          if (new_order_by == current_order_by) {
+            if (current_sorting['direction'] == 'asc') {
+              var new_direction = 'desc';
+            } else {
+              var new_direction = 'asc';
+            }
+          } else {
+            var new_direction = direction_default;
+          }
+          window.location = window.location.origin + window.location.pathname + "?orderby=" + new_order_by + "&direction=" + new_direction;
+        });
+      }
     </script>
   </body>
 </html>
