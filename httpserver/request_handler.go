@@ -1109,9 +1109,9 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 	var (
 		err            error
 		list           []headhunter.SnapShotStruct
-		listIndex      int
 		listJSON       bytes.Buffer
 		listJSONPacked []byte
+		snapShot       headhunter.SnapShotStruct
 	)
 
 	list = requestState.volume.headhunterHandle.FetchSnapShotList()
@@ -1139,11 +1139,11 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 
 		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
 
-		for listIndex = len(list) - 1; listIndex >= 0; listIndex-- {
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, list[listIndex].ID, list[listIndex].TimeStamp, list[listIndex].Name)))
+		for _, snapShot = range list {
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, snapShot.ID, snapShot.TimeStamp.Format(time.RFC3339), snapShot.Name)))
 		}
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(snapShotsBottom))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsBottomTemplate, requestState.volume.name)))
 	}
 }
 

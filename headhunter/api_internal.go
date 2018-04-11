@@ -2,6 +2,7 @@ package headhunter
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -568,24 +569,22 @@ func (volume *volumeStruct) DeleteSnapShot(id uint64) (err error) {
 	return
 }
 
+// FetchSnapShotList returns list (most recent first) of available SnapShot's.
 func (volume *volumeStruct) FetchSnapShotList() (list []SnapShotStruct) {
 	var (
-		i        int
 		snapShot *snapShotStruct
 	)
 
 	volume.Lock()
 	defer volume.Unlock()
 
-	list = make([]SnapShotStruct, len(volume.snapShotMap))
-
-	i = 0
+	list = make([]SnapShotStruct, 0, len(volume.snapShotMap))
 
 	for _, snapShot = range volume.snapShotMap {
-		list[i].ID = snapShot.id
-		list[i].TimeStamp = snapShot.timeStamp
-		list[i].Name = snapShot.name
+		list = append(list, SnapShotStruct{ID: snapShot.id, TimeStamp: snapShot.timeStamp, Name: snapShot.name})
 	}
+
+	sort.Slice(list, func(i int, j int) bool { return list[i].ID > list[j].ID })
 
 	return
 }

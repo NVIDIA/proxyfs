@@ -365,12 +365,152 @@ const volumeListBottom string = `        </tbody>
 `
 
 // To use: fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, volumeName)
-const snapShotsTopTemplate string = ``
+const snapShotsTopTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="/styles.css">
+    <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
+    <title>%[2]v SnapShots - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/trigger">Triggers</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item active" aria-current="page">SnapShots %[2]v</li>
+        </ol>
+      </nav>
+      <div id="alert-area"></div>
+      <h1 class="display-4">
+        SnapShots
+        <small class="text-muted">%[2]v</small>
+      </h1>
+      <form class="form-inline float-right" onsubmit="return createSnapShot();">
+        <label class="sr-only" for="new-snapshot-name">Name</label>
+        <input type="text" name="name" class="form-control form-control-sm mb-2 mr-sm-2" id="new-snapshot-name" placeholder="New snapshot name" autofocus="autofocus">
+        <button type="submit" class="btn btn-sm btn-primary mb-2">Create snapshot</span></button>
+      </form>
+      <table class="table table-sm table-striped table-hover">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col" class="w-25">TimeStamp</th>
+            <th scope="col">Name</th>
+            <th class="fit">&nbsp;</th>
+          </tr>
+        </thead>
+        <tbody>
+`
 
-// To use: fmt.Sprintf(snapShotsPerSnapShotTemplate, id, timeStamp, name)
-const snapShotsPerSnapShotTemplate string = ``
+// To use: fmt.Sprintf(snapShotsPerSnapShotTemplate, id, timeStamp.Format(time.RFC3339), name)
+const snapShotsPerSnapShotTemplate string = `          <tr>
+            <td>%[1]v</td>
+            <td>%[2]v</td>
+            <td>%[3]v</td>
+            <td class="fit"><a href="#" class="btn btn-sm btn-danger" onclick="deleteSnapShot(%[1]v);"><span class="oi oi-trash" title="Delete" aria-hidden="true"></a></td>
+          </tr>
+`
 
-const snapShotsBottom string = ``
+// To use: fmt.Sprintf(snapShotsBottomTemplate, volumeName)
+const snapShotsBottomTemplate string = `        </tbody>
+      </table>
+      <br />
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha384-xBuQ/xzmlsLoJpyjoggmTEz8OWUFM0/RC5BsqQBDX2v5cMvDHcMakNTNrHIW2I5f" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+    <script type="text/javascript">
+      volumeName = "%[1]v";
+      hideAlert = function() {
+        document.getElementById('alert-area').innerHTML = '';
+      };
+      showAlertWithMsg = function(msg) {
+        var html = '<div class="alert alert-danger alert-dismissible fade show" role="alert">\n';
+        html += '  ' + msg + '\n';
+        html += '  <button type="button" class="close" data-dismiss="alert" aria-label="Close">';
+        html += '    <span aria-hidden="true">&times;</span>\n';
+        html += '  </button>\n';
+        html += '</div>\n';
+        document.getElementById('alert-area').innerHTML = html;
+      };
+      showDeleteError = function(id, jqXHR, textStatus, errorThrown) {
+        var msg = 'Error deleting snapshot with ID <em>' + id + '</em>: ' + jqXHR.status + ' ' + jqXHR.statusText;
+        showAlertWithMsg(msg);
+      };
+      showCreateError = function(name, jqXHR, textStatus, errorThrown) {
+        var msg = 'Error creating snapshot with name <em>' + name + '</em>: ' + jqXHR.status + ' ' + jqXHR.statusText;
+        showAlertWithMsg(msg);
+      };
+      deleteSnapShot = function(id) {
+        hideAlert();
+        var url = '/volume/' + volumeName + '/snapshot/' + id;
+        $.ajax({
+          url: url,
+          method: 'DELETE',
+          dataType: 'json',
+          success: function(data, textStatus, jqXHR) {
+            location.reload();
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            showDeleteError(id, jqXHR, textStatus, errorThrown);
+          }
+        });
+      };
+      createSnapShot = function() {
+        hideAlert();
+        document.getElementById('new-snapshot-name').select();
+        var new_snapshot_name = $.trim($('#new-snapshot-name').val());
+        if (new_snapshot_name == "") {
+          showAlertWithMsg("SnapShot name can't be blank.");
+          return false;
+        }
+        var url = '/volume/' + volumeName + '/snapshot/';
+        $.ajax({
+          url: url,
+          method: 'POST',
+          data: {'name': new_snapshot_name},
+          success: function(data, textStatus, jqXHR) {
+            location.reload();
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            showCreateError(new_snapshot_name, jqXHR, textStatus, errorThrown);
+          }
+        });
+        return false;
+      };
+    </script>
+  </body>
+</html>
+`
 
 // To use: fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
 const jobsTopTemplate string = `<!doctype html>
@@ -699,7 +839,7 @@ const triggerTopTemplate string = `<!doctype html>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="/styles.css">
     <title>Triggers - %[1]v</title>
   </head>
   <body>
