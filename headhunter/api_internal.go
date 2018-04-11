@@ -2,9 +2,7 @@ package headhunter
 
 import (
 	"fmt"
-	"sort"
 	"sync"
-	"time"
 
 	"github.com/swiftstack/sortedmap"
 
@@ -518,73 +516,6 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	} else {
 		layoutReport, _, err = volume.fetchLayoutReport(treeType)
 	}
-
-	return
-}
-
-func (volume *volumeStruct) CreateSnapShot(name string) (id uint64, err error) {
-	var (
-		snapShot *snapShotStruct
-	)
-
-	volume.Lock()
-	defer volume.Unlock()
-
-	id, err = volume.fetchNonceWhileLocked()
-	if nil != err {
-		return
-	}
-
-	snapShot = &snapShotStruct{
-		id:        id,
-		timeStamp: time.Now(),
-		name:      name,
-	}
-
-	volume.snapShotMap[id] = snapShot // TODO: Need to actually create it
-
-	err = nil
-
-	return
-}
-
-func (volume *volumeStruct) DeleteSnapShot(id uint64) (err error) {
-	var (
-		ok bool
-	)
-
-	volume.Lock()
-	defer volume.Unlock()
-
-	_, ok = volume.snapShotMap[id]
-	if !ok {
-		err = fmt.Errorf("SnapShot ID == 0x%016X not found", id)
-		return
-	}
-
-	delete(volume.snapShotMap, id) // TODO: Need to actually delete it
-
-	err = nil
-
-	return
-}
-
-// FetchSnapShotList returns list (most recent first) of available SnapShot's.
-func (volume *volumeStruct) FetchSnapShotList() (list []SnapShotStruct) {
-	var (
-		snapShot *snapShotStruct
-	)
-
-	volume.Lock()
-	defer volume.Unlock()
-
-	list = make([]SnapShotStruct, 0, len(volume.snapShotMap))
-
-	for _, snapShot = range volume.snapShotMap {
-		list = append(list, SnapShotStruct{ID: snapShot.id, TimeStamp: snapShot.timeStamp, Name: snapShot.name})
-	}
-
-	sort.Slice(list, func(i int, j int) bool { return list[i].ID > list[j].ID })
 
 	return
 }

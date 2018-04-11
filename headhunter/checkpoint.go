@@ -827,10 +827,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 	volume.nextNonce = volume.checkpointHeader.ReservedToNonce
 
-	// Load existing SnapShots
-
-	volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
-
 	// Check for the need to process a Replay Log
 
 	if "" == volume.replayLogFileName {

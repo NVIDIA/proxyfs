@@ -104,7 +104,7 @@ func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	err = volume.headhunterHandle.DeleteSnapShot(snapShotID)
+	err = volume.fsMountHandle.SnapShotDelete(snapShotID)
 	if nil == err {
 		responseWriter.WriteHeader(http.StatusNoContent)
 	} else {
@@ -1068,7 +1068,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 	}
 
 	for treeTypeIndex, layoutReportSetElement = range layoutReportSet {
-		layoutReportMap, err = requestState.volume.headhunterHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex))
+		layoutReportMap, err = requestState.volume.headhunterVolumeHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex))
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusInternalServerError)
 			return
@@ -1124,13 +1124,13 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
 		err            error
-		list           []headhunter.SnapShotStruct
+		list           []fs.SnapShotStruct
 		listJSON       bytes.Buffer
 		listJSONPacked []byte
-		snapShot       headhunter.SnapShotStruct
+		snapShot       fs.SnapShotStruct
 	)
 
-	list = requestState.volume.headhunterHandle.FetchSnapShotList()
+	list = requestState.volume.fsMountHandle.SnapShotList()
 
 	if requestState.formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
@@ -1347,7 +1347,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			startTime: time.Now(),
 		}
 
-		job.id, err = volume.headhunterHandle.FetchNonce()
+		job.id, err = volume.headhunterVolumeHandle.FetchNonce()
 		if nil != err {
 			logger.Fatalf("HTTP Server Logic Error: %v", err)
 		}
@@ -1465,7 +1465,7 @@ func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request,
 		snapShotID uint64
 	)
 
-	snapShotID, err = volume.headhunterHandle.CreateSnapShot(request.FormValue("name"))
+	snapShotID, err = volume.fsMountHandle.SnapShotCreate(request.FormValue("name"))
 	if nil != err {
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
