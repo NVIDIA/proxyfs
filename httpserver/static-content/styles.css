@@ -14,6 +14,10 @@ pre.code {
   padding: 20px;
 }
 
+.clickable {
+  cursor: pointer;
+}
+
 span.jstExpand, span.jstFold {
   cursor: pointer;
 }

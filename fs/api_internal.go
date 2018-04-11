@@ -3040,7 +3040,11 @@ func (mS *mountStruct) SnapShotDelete(id uint64) (err error) {
 	return
 }
 
-func (mS *mountStruct) SnapShotList() (list []SnapShotStruct) {
+// SnapShotList produces an ordered list of available SnapShots.
+// orderBy & direction should be case insensitive
+// orderBy   is one of "" (assume "timestamp"), "id", "timestamp", or "name"
+// direction is one of "" (assume "asc"), "asc", or "desc"
+func (mS *mountStruct) SnapShotList(orderBy string, direction string) (list []SnapShotStruct) {
 	var (
 		snapShot *snapShotStruct
 		vS       *volumeStruct
@@ -3057,7 +3061,26 @@ func (mS *mountStruct) SnapShotList() (list []SnapShotStruct) {
 		list = append(list, SnapShotStruct{ID: snapShot.id, TimeStamp: snapShot.timeStamp, Name: snapShot.name})
 	}
 
-	sort.Slice(list, func(i int, j int) bool { return list[i].ID > list[j].ID })
+	switch strings.ToLower(orderBy) {
+	case "id":
+		if "desc" == strings.ToLower(direction) {
+			sort.Slice(list, func(i int, j int) bool { return list[i].ID > list[j].ID })
+		} else {
+			sort.Slice(list, func(i int, j int) bool { return list[i].ID < list[j].ID })
+		}
+	case "name":
+		if "desc" == strings.ToLower(direction) {
+			sort.Slice(list, func(i int, j int) bool { return list[i].Name > list[j].Name })
+		} else {
+			sort.Slice(list, func(i int, j int) bool { return list[i].Name < list[j].Name })
+		}
+	default:
+		if "desc" == strings.ToLower(direction) {
+			sort.Slice(list, func(i int, j int) bool { return list[j].TimeStamp.Before(list[i].TimeStamp) })
+		} else {
+			sort.Slice(list, func(i int, j int) bool { return list[i].TimeStamp.Before(list[j].TimeStamp) })
+		}
+	}
 
 	return
 }

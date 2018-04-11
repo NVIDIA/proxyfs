@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1123,14 +1124,33 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 
 func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		err            error
-		list           []fs.SnapShotStruct
-		listJSON       bytes.Buffer
-		listJSONPacked []byte
-		snapShot       fs.SnapShotStruct
+		directionString      string
+		directionStringSlice []string
+		err                  error
+		list                 []fs.SnapShotStruct
+		listJSON             bytes.Buffer
+		listJSONPacked       []byte
+		orderByString        string
+		orderByStringSlice   []string
+		queryValues          url.Values
+		snapShot             fs.SnapShotStruct
 	)
 
-	list = requestState.volume.fsMountHandle.SnapShotList()
+	queryValues = request.URL.Query()
+	orderByStringSlice = queryValues["orderby"]
+	if 0 == len(orderByStringSlice) {
+		orderByString = ""
+	} else {
+		orderByString = orderByStringSlice[0]
+	}
+	directionStringSlice = queryValues["direction"]
+	if 0 == len(directionStringSlice) {
+		directionString = ""
+	} else {
+		directionString = directionStringSlice[0]
+	}
+
+	list = requestState.volume.fsMountHandle.SnapShotList(orderByString, directionString)
 
 	if requestState.formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
