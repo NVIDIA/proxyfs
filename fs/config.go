@@ -27,10 +27,15 @@ type inFlightFileInodeDataStruct struct {
 const inFlightFileInodeDataControlBuffering = 100
 
 type mountStruct struct {
-	id                     MountID
-	options                MountOptions
-	volStruct              *volumeStruct
-	headhunterVolumeHandle headhunter.VolumeHandle
+	id        MountID
+	options   MountOptions
+	volStruct *volumeStruct
+}
+
+type snapShotStruct struct {
+	id        uint64
+	timeStamp time.Time
+	name      string
 }
 
 type volumeStruct struct {
@@ -42,7 +47,10 @@ type volumeStruct struct {
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
 	jobRWMutex               sync.RWMutex
-	inode.VolumeHandle
+	snapShotMutex            sync.Mutex
+	snapShotMap              map[uint64]*snapShotStruct
+	inodeVolumeHandle        inode.VolumeHandle
+	headhunterVolumeHandle   headhunter.VolumeHandle
 }
 
 type globalsStruct struct {
@@ -121,10 +129,18 @@ func Up(confMap conf.ConfMap) (err error) {
 					return
 				}
 
-				volume.VolumeHandle, err = inode.FetchVolumeHandle(volumeName)
+				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
 				if nil != err {
 					return
 				}
+				volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
+				if nil != err {
+					return
+				}
+
+				// Load existing SnapShots
+
+				volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 				globals.volumeMap[volumeName] = volume
 			}
@@ -288,10 +304,18 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						return
 					}
 
-					volume.VolumeHandle, err = inode.FetchVolumeHandle(volumeName)
+					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
 					if nil != err {
 						return
 					}
+					volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
+					if nil != err {
+						return
+					}
+
+					// Load existing SnapShots
+
+					volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 					globals.volumeMap[volumeName] = volume
 				}

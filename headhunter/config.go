@@ -39,12 +39,6 @@ type bPlusTreeWrapperStruct struct {
 	bPlusTree   sortedmap.BPlusTree
 }
 
-type snapShotStruct struct {
-	id        uint64
-	timeStamp time.Time
-	name      string
-}
-
 type volumeStruct struct {
 	sync.Mutex
 	volumeName                       string
@@ -76,7 +70,6 @@ type volumeStruct struct {
 	inodeRecBPlusTreeLayout                 sortedmap.LayoutReport
 	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
 	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
-	snapShotMap                             map[uint64]*snapShotStruct
 }
 
 type globalsStruct struct {
