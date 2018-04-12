@@ -1958,8 +1958,8 @@ static fsal_status_t handle_to_wire(const struct fsal_obj_handle *handle_pub,
 				 sizeof(proxyfs_file_handle_t), fh_desc->len);
 			return fsalstat(ERR_FSAL_TOOSMALL, 0);
 		} else {
-			memcpy(fh_desc->addr, &handle->handle, sizeof(proxyfs_file_handle_t));
-			fh_desc->len = sizeof(handle->handle);
+			memcpy(fh_desc->addr, &handle->fid, sizeof(proxyfs_file_handle_t));
+			fh_desc->len = sizeof(proxyfs_file_handle_t);
 		}
 		break;
 

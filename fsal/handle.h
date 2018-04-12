@@ -68,6 +68,7 @@ typedef struct proxyfs_handle {
 	struct fsal_obj_handle handle;	/* public FSAL handle */
 	struct fsal_share      share;   /* share_reservations */
 	struct proxyfs_export  *export;
+	proxyfs_file_handle_t  fid;     /* File handle object identifier. */
 	proxyfs_fd_t           fd;
 	uint64_t               inum;    /* inum for the file/directory */
 

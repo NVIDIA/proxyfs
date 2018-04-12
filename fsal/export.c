@@ -70,13 +70,25 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
     export->savedgid = getegid();
 
     // Mount the volume:
-    // TBD: Get the mount_option
+    // TBD: Get the mount_option from op_ctx. For now just using RW.
     err = proxyfs_mount(export->volname, 0, export->saveduid, export->savedgid, &export->mount_handle);
     if (err != 0) {
         gsh_free(export);
         status.major = ERR_FSAL_SERVERFAULT;
         return status;
     }
+
+    struct statvfs* stat_vfs = NULL;
+	err = proxyfs_statvfs(export->mount_handle, &stat_vfs);
+    if (err != 0) {
+        gsh_free(export);
+        status.major = ERR_FSAL_SERVERFAULT;
+        return status;
+    }
+
+    export->fsid.major = 0;
+    export->fsid.minor = stat_vfs->f_fsid;
+    free(stat_vfs);
 
     // Do stats on proxyfs root directory
     proxyfs_stat_t *pst;
@@ -491,7 +503,7 @@ uint32_t pfs_xattr_access_rights(struct fsal_export *exp_hdl) {
 }
 
 /**
- * @brief free a proxyfs_state_fd structure
+ * @brief free a proxyfs_state_fd_t
  *
  * @param[in] exp_hdl  Export state_t will be associated with
  * @param[in] state    Related state if appropriate

@@ -14,6 +14,9 @@ proxyfs_handle_t *pfs_construct_handle(proxyfs_export_t *export, uint64_t inum, 
 	fsal_obj_handle_init(&handle->handle, &export->export, posix2fsal_type(mode));
 	handle_ops_init(&handle->handle.obj_ops);
 	handle->handle.fsid = export->fsid;
+	handle->fid.vol_id_hi =export->fsid.major;
+	handle->fid.vol_id_lo = export->fsid.minor;
+	handle->fid.inode_num = inum;
 
 	// We don't have a fsid, how will that work?
 	handle->export = export;
