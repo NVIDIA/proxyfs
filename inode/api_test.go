@@ -122,6 +122,10 @@ func testSetup() (err error) {
 	doneChan := make(chan bool, 1)
 	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
 
+	for !signalHandlerIsArmed {
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	err = logger.Up(testConfMap)
 	if nil != err {
 		return
