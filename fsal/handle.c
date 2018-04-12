@@ -21,10 +21,7 @@
  */
 
 /**
- * @file   FSAL_CEPH/handle.c
- * @author Adam C. Emerson <aemerson@linuxbox.com>
- * @date   Mon Jul  9 15:18:47 2012
- *
+ * @file handle.c
  * @brief Interface to handle functionality
  *
  * This function implements the interfaces on the struct
@@ -115,8 +112,7 @@ static fsal_status_t pfs_lookup(struct fsal_obj_handle *dir_pub,
  * @brief Read a directory
  *
  * This function reads the contents of a directory (excluding . and
- * .., which is ironic since the Ceph readdir call synthesizes them
- * out of nothing) and passes dirent information to the supplied
+ * ..) and passes dirent information to the supplied
  * callback.
  *
  * @param[in]  dir_pub     The directory to read
@@ -658,7 +654,7 @@ struct state_t *pfs_alloc_state(struct fsal_export *exp_hdl,
 }
 
 /**
- * @brief free a ceph_state_fd structure
+ * @brief free a proxyfs_state_fd_t 
  *
  * @param[in] exp_hdl  Export state_t will be associated with
  * @param[in] state    Related state if appropriate

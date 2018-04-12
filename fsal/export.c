@@ -491,7 +491,7 @@ uint32_t pfs_xattr_access_rights(struct fsal_export *exp_hdl) {
 }
 
 /**
- * @brief free a ceph_state_fd structure
+ * @brief free a proxyfs_state_fd structure
  *
  * @param[in] exp_hdl  Export state_t will be associated with
  * @param[in] state    Related state if appropriate
