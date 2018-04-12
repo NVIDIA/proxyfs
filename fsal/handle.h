@@ -121,5 +121,6 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
 
 void handle_ops_init(struct fsal_obj_ops *ops);
 void copy_ts(struct timespec *ts_dst, proxyfs_timespec_t *pts_src);
+void copy_ts_to_pts(proxyfs_timespec_t *pts_dst, struct timespec *ts_src);
 
 #endif // __FSAL_PROXYFS_HANDLE_H__

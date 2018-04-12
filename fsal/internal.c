@@ -34,6 +34,11 @@ void copy_ts(struct timespec *ts_dst, proxyfs_timespec_t *pts_src) {
     ts_dst->tv_nsec = pts_src->nsec;
 }
 
+void copy_ts_to_pts(proxyfs_timespec_t *pts_dst, struct timespec *ts_src) {
+    pts_dst->sec = ts_src->tv_sec;
+    pts_dst->nsec = ts_src->tv_nsec;
+}
+
 void proxyfs2fsal_attributes(proxyfs_stat_t *pst, struct attrlist *fsalattr) {
     proxyfs_export_t *export = container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 

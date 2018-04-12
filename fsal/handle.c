@@ -1753,7 +1753,6 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 {
 	fsal_status_t status = {0, 0};
 
-#if 0
 	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 	int rc = 0;
 
@@ -1805,7 +1804,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 		mask |= PROXYFS_SETATTR_SIZE;
 		stx.size = attrib_set->filesize;
 		LogDebug(COMPONENT_FSAL,
-			     "setting size to %lu", stx.stx_size);
+			     "setting size to %lu", stx.size);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_MODE)) {
@@ -1825,7 +1824,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_ATIME)) {
 		mask |= PROXYFS_SETATTR_ATIME;
-		stx.atim = attrib_set->atime;
+		copy_ts_to_pts(&stx.atim, &attrib_set->atime);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_ATIME_SERVER)) {
@@ -1840,12 +1839,12 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 			status = posix2fsal_status(errno);
 			goto out;
 		}
-		stx.atim = timestamp;
+		copy_ts_to_pts(&stx.atim, &timestamp);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_MTIME)) {
 		mask |= PROXYFS_SETATTR_MTIME;
-		stx.mtim = attrib_set->mtime;
+		copy_ts_to_pts(&stx.mtim, &attrib_set->mtime);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_MTIME_SERVER)) {
@@ -1860,17 +1859,17 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 			status = posix2fsal_status(errno);
 			goto out;
 		}
-		stx.mtim = timestamp;
+		copy_ts_to_pts(&stx.mtim, &timestamp);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_CTIME)) {
 		mask |= PROXYFS_SETATTR_CTIME;
-		stx.ctim = attrib_set->ctime;
+		copy_ts_to_pts(&stx.ctim, &attrib_set->ctime);
 	}
 
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_CREATION)) {
 		mask |= PROXYFS_SETATTR_CRTIME;
-		stx.crtim = attrib_set->creation;
+		copy_ts_to_pts(&stx.crtim, &attrib_set->creation);
 	}
 
 	rc = proxyfs_setattr(export->mount_handle, myself->inum, &stx, mask);
@@ -1887,7 +1886,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 	if (has_lock) {
 		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	}
-#endif
+
 	return status;
 }
 
