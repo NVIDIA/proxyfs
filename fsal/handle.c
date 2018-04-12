@@ -41,7 +41,9 @@
 #include "../../include/fsal_api.h"
 #include "../../include/nfs_exports.h"
 #include "../../include/sal_data.h"
+#include "FSAL/fsal_commonlib.h"
 #include "handle.h"
+
 
 /**
  * @brief Release an object
@@ -80,25 +82,23 @@ static fsal_status_t pfs_lookup(struct fsal_obj_handle *dir_pub,
 {
 	/* Generic status return */
 	int err = 0;
-	fsal_status_t status = { ERR_FSAL_NO_ERROR, 0 };
 
 	proxyfs_export_t *export = container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
-	struct handle *dir = container_of(dir_pub, struct handle, handle);
-	struct handle *obj = NULL;
+	proxyfs_handle_t *dir = container_of(dir_pub, proxyfs_handle_t, handle);
 
 	LogFullDebug(COMPONENT_FSAL, "Lookup %s", path);
 
-	int ino;
-	err = proxyfs_lookup(export->mount_handle, dir->inum, path, &ino);
+	uint64_t ino;
+	err = proxyfs_lookup(export->mount_handle, dir->inum, (char *)path, &ino);
 	if (err != 0) {
-		return proxyfs2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	proxyfs_stat_t *pst;
 	err = proxyfs_get_stat(export->mount_handle, ino, &pst);
 
-	obj = pfs_construct_handle(export, ino, pst->mode);
+	proxyfs_handle_t *obj = pfs_construct_handle(export, ino, pst->mode);
 
 	if (attrs_out != NULL) {
 		proxyfs2fsal_attributes(pst, attrs_out);
@@ -106,9 +106,9 @@ static fsal_status_t pfs_lookup(struct fsal_obj_handle *dir_pub,
 
 	free(pst);
 
-	*obj_pub = &obj->handle;
+	*handle = &obj->handle;
 
-	return fsalstat(0, 0);
+	return posix2fsal_status(0);
 }
 
 /**
@@ -155,7 +155,7 @@ static fsal_status_t pfs_readdir(struct fsal_obj_handle *dir_pub,
 
 		err = proxyfs_readdir_plus_by_loc(export->mount_handle, dir->inum, start, &dir_ent, &sts);
 		if (err != 0) {
-			return posix2fsal_error(err);
+			return posix2fsal_status(err);
 		}
 
 		if (dir_ent == NULL) {
@@ -232,9 +232,10 @@ static fsal_status_t pfs_mkdir(struct fsal_obj_handle *dir_hdl,
 
 	unix_mode = fsal2unix_mode(attrib->mode) & ~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
 
-	err = proxyfs_mkdir(export->mount_handle, dir->inum, name, op_ctx->creds->caller_uid, op_ctx->creds->caller_gid, unix_mode, &inum);
+	uint64_t inum;
+	err = proxyfs_mkdir(export->mount_handle, dir->inum, (char *)name, op_ctx->creds->caller_uid, op_ctx->creds->caller_gid, unix_mode, &inum);
 	if (err < 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	obj = pfs_construct_handle(export, inum, unix_mode);
@@ -264,8 +265,8 @@ static fsal_status_t pfs_mkdir(struct fsal_obj_handle *dir_hdl,
 			proxyfs_stat_t *pst;
 			err = proxyfs_get_stat(export->mount_handle, inum, &pst);
 			if (err != 0) {
-				proxyfs_rmdir(export->mount_handle, dir->inum, name);
-				return posix2fsal_error(err);
+				proxyfs_rmdir(export->mount_handle, dir->inum, (char *)name);
+				return posix2fsal_status(err);
 			}
 
 			proxyfs2fsal_attributes(pst, attrs_out);
@@ -310,9 +311,7 @@ static fsal_status_t pfs_symlink(struct fsal_obj_handle *dir_hdl,
 
 	proxyfs_handle_t *dir = container_of(dir_hdl, proxyfs_handle_t, handle);
 
-	proxyfs_stat_t *pfs_stats;
-
-	unix_mode = fsal2unix_mode(attrib->mode) & ~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
+	mode_t unix_mode = fsal2unix_mode(attrib->mode) & ~op_ctx->fsal_export->exp_ops.fs_umask(op_ctx->fsal_export);
 
 	/* Newly created object */
 	proxyfs_handle_t *obj = NULL;
@@ -323,9 +322,18 @@ static fsal_status_t pfs_symlink(struct fsal_obj_handle *dir_hdl,
 		     attrib->mode, (int) op_ctx->creds->caller_uid,
 		     (int) op_ctx->creds->caller_gid);
 
-	err = proxyfs_symlink(export->mount_handle, dir->inum, name, link_path, op_ctx->creds->caller_uid, op_ctx->creds->caller_gid);
+	err = proxyfs_symlink(export->mount_handle, dir->inum, (char *)name, (char *)link_path, op_ctx->creds->caller_uid, op_ctx->creds->caller_gid);
 	if (err < 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
+	}
+
+	// TBD: Following code is probably wrong!
+	// Should the inode handle be for the target link_path? right now we are returning the
+	// inode of the symlink holder of target link under directory dir->inum.
+	uint64_t inum;
+	err = proxyfs_lookup(export->mount_handle, dir->inum, (char *)name, &inum);
+	if (err < 0) {
+		return posix2fsal_status(err);
 	}
 
 	obj = pfs_construct_handle(export, inum, unix_mode);
@@ -360,14 +368,14 @@ static fsal_status_t pfs_readlink(struct fsal_obj_handle *link_pub,
 
 	proxyfs_handle_t *link = container_of(link_pub, proxyfs_handle_t, handle);
 
-	char *target;
+	const char *target;
 	err = proxyfs_read_symlink(export->mount_handle, link->inum, &target);
 	if (err != 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	content_buf->addr = gsh_strldup(target, MIN(strlen(target), (PATH_MAX-1)), &content_buf->len);
-	free(target);
+	free((char *)target);
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
@@ -394,9 +402,9 @@ static fsal_status_t pfs_getattrs(struct fsal_obj_handle *handle_pub,
 	proxyfs_handle_t *handle = container_of(handle_pub, proxyfs_handle_t, handle);
 
 	proxyfs_stat_t *pst;
-	err = proxyfs_get_stat(export->mount_handle, handle->fd.inum, &pst);
+	err = proxyfs_get_stat(export->mount_handle, handle->inum, &pst);
 	if (err != 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	proxyfs2fsal_attributes(pst, attrs);
@@ -429,9 +437,9 @@ static fsal_status_t pfs_link(struct fsal_obj_handle *handle_pub,
 	proxyfs_handle_t *handle = container_of(handle_pub, proxyfs_handle_t, handle);
 	proxyfs_handle_t *destdir = container_of(destdir_pub, proxyfs_handle_t, handle);
 
-	err = proxyfs_link(export->mount_handle, destdir->inum, name, handle->inum);
+	err = proxyfs_link(export->mount_handle, destdir->inum, (char *)name, handle->inum);
 	if (err != 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -462,12 +470,12 @@ static fsal_status_t pfs_rename(struct fsal_obj_handle *obj_hdl,
 	proxyfs_export_t *export =
 	    container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
-	proxyfs_handle_t *olddir = container_of(olddir_pub, proxyfs_handle_t, olddir);
-	proxyfs_handle_t *newdir = container_of(newdir_pub, proxyfs_handle_t, newdir);
+	proxyfs_handle_t *olddir = container_of(olddir_pub, proxyfs_handle_t, handle);
+	proxyfs_handle_t *newdir = container_of(newdir_pub, proxyfs_handle_t, handle);
 
-	err = proxyfs_rename(export->mount_handle, olddir->inum, old_name, newddir->inum, new_name);
+	err = proxyfs_rename(export->mount_handle, olddir->inum, (char *)old_name, newdir->inum, (char *)new_name);
 	if (err != 0) {
-		return posix2fsal_error(err)
+		return posix2fsal_status(err);
 	}
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -494,22 +502,21 @@ static fsal_status_t pfs_unlink(struct fsal_obj_handle *dir_pub,
 
 	proxyfs_export_t *export = container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
-	proxyfs_handle_t *dir = container_of(dir_pub, proxyfs_handle_t, dir);
-	proxyfs_handle_t *obj = container_of(obj_pub, proxyfs_handle_t, obj);
+	proxyfs_handle_t *dir = container_of(dir_pub, proxyfs_handle_t, handle);
 
 	LogFullDebug(COMPONENT_FSAL,
 		     "Unlink %s, I think it's a %s",
 		     name, object_file_type_to_str(obj_pub->type));
 
 	if (obj_pub->type != DIRECTORY) {
-		err = proxyfs_unlink(export->mount_handle, dir->inum, name);
+		err = proxyfs_unlink(export->mount_handle, dir->inum, (char *)name);
 	} else {
-		err = proxyfs_rmdir(export->mount_handle, dir->inum, name);
+		err = proxyfs_rmdir(export->mount_handle, dir->inum, (char *)name);
 	}
 
 	if (err != 0) {
-		LogDebug(COMPONENT_FSAL, "Unlink %s returned %s (%d)", name, strerror(-rc), -rc);
-		return posix2fsal_error(err);
+		LogDebug(COMPONENT_FSAL, "Unlink %s returned %s (%d)", name, strerror(-err), -err);
+		return posix2fsal_status(err);
 	}
 
 	return fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -524,9 +531,9 @@ fsal_status_t pfs_open_my_fd(proxyfs_handle_t *handle, fsal_openflags_t openflag
 
 	assert(handle->inum != 0 && my_fd->openflags == FSAL_O_CLOSED && openflags != 0);
 
-	LogFullDebug(COMPONENT_FSAL,
-		     "handle->inum = %x openflags = %x, posix_flags = %x",
-		     handle->inum, openflags, posix_flags);
+	//LogFullDebug(COMPONENT_FSAL,
+	//	     "handle->inum = %x openflags = %x, posix_flags = %x",
+	//	     handle->inum, openflags, posix_flags);
 
 	// TBD: We should call open to proxyfs with credential check. We are not doing cred check!
 
@@ -535,9 +542,8 @@ fsal_status_t pfs_open_my_fd(proxyfs_handle_t *handle, fsal_openflags_t openflag
 	return status;
 }
 
-fsal_status_t pfs_close_my_fd(proxyf_handle_t *handle, proxyfs_fd_t *fd)
+fsal_status_t pfs_close_my_fd(proxyfs_fd_t *fd)
 {
-	int err = 0;
 	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
 
 	// TBD: with introduction of open, we need to close it here:
@@ -564,9 +570,9 @@ static fsal_status_t pfs_open_func(struct fsal_obj_handle *obj_hdl,
 				    fsal_openflags_t openflags,
 				    struct fsal_fd *fd)
 {
-	proxyfs_handle_t *handle = container_of(obj_hdl, struct handle, handle);
+	proxyfs_handle_t *handle = container_of(obj_hdl, proxyfs_handle_t, handle);
 
-	return pfs_open_my_fd(handle, openflags, fd);
+	return pfs_open_my_fd(handle, openflags, &handle->fd);
 }
 
 /**
@@ -581,9 +587,9 @@ static fsal_status_t pfs_open_func(struct fsal_obj_handle *obj_hdl,
 static fsal_status_t pfs_close_func(struct fsal_obj_handle *obj_hdl,
 				     struct fsal_fd *fd)
 {
-	proxyfs_handle_t *handle = container_of(obj_hdl, struct handle, handle);
+	proxyfs_handle_t *handle = container_of(obj_hdl, proxyfs_handle_t, handle);
 
-	return pfs_close_my_fd(handle, fd);
+	return pfs_close_my_fd(&handle->fd);
 }
 
 /**
@@ -602,7 +608,7 @@ static fsal_status_t pfs_close(struct fsal_obj_handle *obj_hdl)
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 
 	/* The private 'full' object handle */
-	struct handle *handle = container_of(obj_hdl, struct handle, handle);
+	proxyfs_handle_t *handle = container_of(obj_hdl, proxyfs_handle_t, handle);
 
 	if (handle->fd.openflags == FSAL_O_CLOSED) {
 		return fsalstat(ERR_FSAL_NOT_OPENED, 0);
@@ -613,7 +619,7 @@ static fsal_status_t pfs_close(struct fsal_obj_handle *obj_hdl)
 	 */
 	PTHREAD_RWLOCK_wrlock(&obj_hdl->obj_lock);
 
-	status = pfs_close_my_fd(handle, &handle->fd);
+	status = pfs_close_my_fd(&handle->fd);
 
 	PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 
@@ -637,13 +643,13 @@ struct state_t *pfs_alloc_state(struct fsal_export *exp_hdl,
 				 enum state_type state_type,
 				 struct state_t *related_state)
 {
-	proxyfs_state_fd_t *state;
+	struct state_t *state;
 	proxyfs_fd_t *my_fd;
 
 	state = init_state(gsh_calloc(1, sizeof(proxyfs_state_fd_t)),
 			   exp_hdl, state_type, related_state);
 
-	my_fd = &container_of(state, proxyfs_state_fd_t, state)->fd;
+	my_fd = &(container_of(state, proxyfs_state_fd_t, state))->fd;
 
 	my_fd->openflags = FSAL_O_CLOSED;
 	PTHREAD_RWLOCK_init(&my_fd->fdlock, NULL);
@@ -660,7 +666,7 @@ struct state_t *pfs_alloc_state(struct fsal_export *exp_hdl,
  */
 void pfs_free_state(struct fsal_export *exp_hdl, struct state_t *state)
 {
-	proxyfs_state_fd_t *state_fd = container_of(state, proxyfs_fd_t, state);
+	proxyfs_state_fd_t *state_fd = container_of(state, proxyfs_state_fd_t, state);
 	proxyfs_fd_t *my_fd = &state_fd->fd;
 
 	PTHREAD_RWLOCK_destroy(&my_fd->fdlock);
@@ -697,8 +703,8 @@ fsal_status_t pfs_merge(struct fsal_obj_handle *orig_hdl,
 		 */
 		proxyfs_handle_t *orig, *dupe;
 
-		orig = container_of(orig_hdl, struct handle, handle);
-		dupe = container_of(dupe_hdl, struct handle, handle);
+		orig = container_of(orig_hdl, proxyfs_handle_t, handle);
+		dupe = container_of(dupe_hdl, proxyfs_handle_t, handle);
 
 		/* This can block over an I/O operation. */
 		PTHREAD_RWLOCK_wrlock(&orig_hdl->obj_lock);
@@ -773,7 +779,7 @@ pfs_check_verifier_stat(struct attrlist *st, fsal_verifier_t verifier)
  *
  * @return FSAL status.
  */
-fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
+fsal_status_t pfs_open2(struct fsal_obj_handle *obj_hdl,
 			 struct state_t *state,
 			 fsal_openflags_t openflags,
 			 enum fsal_create_mode createmode,
@@ -847,7 +853,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 		}
 
 		if (my_fd->openflags != FSAL_O_CLOSED) {
-			pfs_close_my_fd(myself, my_fd);
+			pfs_close_my_fd(my_fd);
 		}
 		status = pfs_open_my_fd(myself, openflags, my_fd);
 
@@ -866,16 +872,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 
 		if (createmode >= FSAL_EXCLUSIVE || truncated) {
 			/* Refresh the attributes */
-			retval = pfs_getattrs(obj_hdl, attrs_out);
-
-			if (retval == 0) {
-				LogFullDebug(COMPONENT_FSAL, "New size = %"PRIx64, stx.stx_size);
-			} else {
-				/* Because we have an inode ref, we never
-				 * get EBADF like other FSALs might see.
-				 */
-				status = posix2fsal_error(retval);
-			}
+			status = pfs_getattrs(obj_hdl, attrs_out);
 
 			/* Now check verifier for exclusive, but not for
 			 * FSAL_EXCLUSIVE_9P.
@@ -885,8 +882,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 			    createmode != FSAL_EXCLUSIVE_9P &&
 			    !pfs_check_verifier_stat(attrs_out, verifier)) {
 				/* Verifier didn't match, return EEXIST */
-				status =
-				    fsalstat(posix2fsal_error(EEXIST), EEXIST);
+				status = posix2fsal_status(EEXIST);
 			}
 
 		} else if (attrs_out && attrs_out->request_mask &
@@ -912,7 +908,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 			return status;
 		}
 
-		(void) proxyfs_close_my_fd(myself, my_fd);
+		(void) pfs_close_my_fd(my_fd);
 
  undo_share:
 
@@ -998,9 +994,9 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 
 	// TBD: How to handle open flags? we are right now ignoring it.
 	uint64_t ino;
-	retval = proxyfs_create(export->mount_handle, obj_hdl->inum, name, export->saveduid, export->savedgid, unix_mode, &ino);
+	retval = proxyfs_create(export->mount_handle, myself->inum, (char *)name, export->saveduid, export->savedgid, unix_mode, &ino);
 	if (retval < 0) {
-		LogFullDebug(COMPONENT_FSAL, "Create %s failed with %s", name, strerror(-retval));
+		LogFullDebug(COMPONENT_FSAL, "Create %s failed with %s", (char *)name, strerror(-retval));
 	}
 
 	created = true;
@@ -1026,12 +1022,12 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 #endif
 
 	if (retval < 0) {
-		return posix2fsal_error(retval);
+		return posix2fsal_status(retval);
 	}
 
 	retval = proxyfs_get_stat(export->mount_handle, ino, &sts);
 	if (retval < 0) {
-		return posix2fsal_error(retval);
+		return posix2fsal_status(retval);
 	}
 
 	created = true;
@@ -1051,12 +1047,12 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 	 * without a double locking deadlock.
 	 */
 	if (my_fd == NULL) {
-		my_fd = &hdl->fd;
+		my_fd = &myself->fd;
 	}
 
 	my_fd->openflags = openflags;
 
-	*new_obj = &hdl->handle;
+	*new_obj = &myself->handle;
 
 	if (created && attrib_set->valid_mask != 0) {
 		/* Set attributes using our newly opened file descriptor as the
@@ -1090,7 +1086,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 		 * on create (if we even created), just use the stat results
 		 * we used to create the fsal_obj_handle.
 		 */
-		pfs2fsal_attributes(sts, attrs_out);
+		proxyfs2fsal_attributes(sts, attrs_out);
 	}
 
 	if (state != NULL) {
@@ -1113,7 +1109,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
  fileerr:
 
 	/* Close the file we just opened. */
-	(void) pfs_close_my_fd(container_of(*new_obj, proxyfs_handle_t, handle), my_fd);
+	(void) pfs_close_my_fd(my_fd);
 
 	/* Release the handle we just allocated. */
 	(*new_obj)->obj_ops.release(*new_obj);
@@ -1121,7 +1117,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 
 	if (created) {
 		/* Remove the file we just created */
-		proxyfs_unlink(export->mount_handle, obj_hdl->inum, name);
+		proxyfs_unlink(export->mount_handle, myself->inum, (char *)name);
 	}
 
 	return status;
@@ -1142,7 +1138,7 @@ fsal_status_t proxyfs_open2(struct fsal_obj_handle *obj_hdl,
 fsal_openflags_t proxyfs_status2(struct fsal_obj_handle *obj_hdl,
 			     struct state_t *state)
 {
-	proxyfs_file_handle_t *my_fd = (proxyfs_file_handle_t *)(state + 1);
+	proxyfs_fd_t *my_fd = (proxyfs_fd_t *)(state + 1);
 
 	return my_fd->openflags;
 }
@@ -1163,21 +1159,20 @@ fsal_openflags_t proxyfs_status2(struct fsal_obj_handle *obj_hdl,
  * @return FSAL status.
  */
 
-fsal_status_t proxyfs_reopen2(struct fsal_obj_handle *obj_hdl,
+fsal_status_t pfs_reopen2(struct fsal_obj_handle *obj_hdl,
 			   struct state_t *state,
 			   fsal_openflags_t openflags)
 {
 	fsal_status_t status = {0, 0};
 
-	int posix_flags = 0;
 	fsal_openflags_t old_openflags;
 
 	proxyfs_fd_t temp_fd;
-	bzero(&temp_fd, sizeof(proxyfs_fd_t);
+	bzero(&temp_fd, sizeof(proxyfs_fd_t));
 	temp_fd.openflags = FSAL_O_CLOSED;
-	temp_fd.fdlock = PTHREAD_RWLOCK_INITIALIZER;
+	PTHREAD_RWLOCK_init(&temp_fd.fdlock, NULL);
 
-	proxtfs_fd_t *my_fd = &temp_fd;
+	proxyfs_fd_t *my_fd = &temp_fd;
 
 	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 
@@ -1213,7 +1208,7 @@ fsal_status_t proxyfs_reopen2(struct fsal_obj_handle *obj_hdl,
 		 */
 		PTHREAD_RWLOCK_wrlock(&my_share_fd->fdlock);
 
-		pfs_close_my_fd(myself, my_share_fd);
+		pfs_close_my_fd(my_share_fd);
 		my_share_fd = my_fd;
 
 		PTHREAD_RWLOCK_unlock(&my_share_fd->fdlock);
@@ -1237,7 +1232,7 @@ fsal_status_t proxyfs_reopen2(struct fsal_obj_handle *obj_hdl,
  * We do not need file descriptors for non-regular files, so this never has to
  * handle them.
  */
-fsal_status_t pfs_find_fd(proxyfs_ **fd,
+fsal_status_t pfs_find_fd(proxyfs_fd_t **fd,
 			   struct fsal_obj_handle *obj_hdl,
 			   bool bypass,
 			   struct state_t *state,
@@ -1248,9 +1243,9 @@ fsal_status_t pfs_find_fd(proxyfs_ **fd,
 {
 	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 	proxyfs_fd_t temp_fd;
-	bzero(&temp_fd, sizeof(proxyfs_fd_t);
+	bzero(&temp_fd, sizeof(proxyfs_fd_t));
 	temp_fd.openflags = FSAL_O_CLOSED;
-	temp_fd.fdlock = PTHREAD_RWLOCK_INITIALIZER;
+	PTHREAD_RWLOCK_init(&temp_fd.fdlock, NULL);
 
 	proxyfs_fd_t *out_fd = &temp_fd;
 	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
@@ -1264,8 +1259,8 @@ fsal_status_t pfs_find_fd(proxyfs_ **fd,
 			      &reusing_open_state_fd);
 
 	LogFullDebug(COMPONENT_FSAL,
-		     "fd = %p", out_fd->fd);
-	*fd = out_fd->fd;
+		     "fd = %p", out_fd);
+	*fd = out_fd;
 	return status;
 }
 
@@ -1309,7 +1304,6 @@ fsal_status_t pfs_read2(struct fsal_obj_handle *obj_hdl,
 	bool closefd = false;
 	fsal_openflags_t openflags = FSAL_O_READ;
 
-
 	int err;
 	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
 
@@ -1319,13 +1313,6 @@ fsal_status_t pfs_read2(struct fsal_obj_handle *obj_hdl,
 		/* Currently we don't support READ_PLUS */
 		return fsalstat(ERR_FSAL_NOTSUPP, 0);
 	}
-
-	proxyfs_io_request_t *req = (proxyfs_io_request_t *)malloc(sizeof(proxyfs_io_request_t));
-	if (req == NULL) {
-		errno = ENOMEM;
-		return proxyfs2fsal_error(ENOMEM);
-	}
-	bzero(req, sizeof(proxyfs_io_request_t));
 
 	/* Acquire state's fdlock to prevent OPEN upgrade closing the
 	 * file descriptor while we use it.
@@ -1339,27 +1326,42 @@ fsal_status_t pfs_read2(struct fsal_obj_handle *obj_hdl,
 	/* Get a usable file descriptor */
 	status = pfs_find_fd(&my_fd, obj_hdl, bypass, state, openflags,
 			      &has_lock, &closefd, false);
+	if (FSAL_IS_ERROR(status)) {
+		if (state) {
+			PTHREAD_RWLOCK_unlock(&state_fd->fdlock);
+		}
+		return status;
+	}
+
+	proxyfs_io_request_t *req = (proxyfs_io_request_t *)malloc(sizeof(proxyfs_io_request_t));
+	if (req == NULL) {
+		errno = ENOMEM;
+		if (state) {
+			PTHREAD_RWLOCK_unlock(&state_fd->fdlock);
+		}
+		return posix2fsal_status(ENOMEM);
+	}
+	bzero(req, sizeof(proxyfs_io_request_t));
 
 	req->op = IO_READ;
 	req->mount_handle = export->mount_handle;
 	req->inode_number = handle->inum;
 	req->offset = offset;
 	req->length = buffer_size;
-	req->data = buffer
+	req->data = buffer;
 	req->error = 0;
 	req->done_cb = NULL;
 	req->done_cb_arg = NULL;
 	req->done_cb_fd = -1;
 
-
 	err = proxyfs_sync_io(req);
 
-	if(stat) {
+	if(state) {
 		PTHREAD_RWLOCK_unlock(&state_fd->fdlock);
 	}
 
 	if (closefd) {
-		proxyfs_close_fd(my_fd);
+		pfs_close_my_fd(my_fd);
 	}
 
 	if (has_lock) {
@@ -1369,13 +1371,13 @@ fsal_status_t pfs_read2(struct fsal_obj_handle *obj_hdl,
 	if (err != 0) {
 		free(req);
 		errno = EIO;
-		return proxyfs2fsal_error(EIO);
+		return posix2fsal_status(EIO);
 	}
 
 	if (req->error != 0) {
 		errno = req->error;
 		free(req);
-		return proxyfs2fsal_error(errno);
+		return posix2fsal_status(errno);
 	}
 
 	*read_amount = req->out_size;
@@ -1431,18 +1433,12 @@ fsal_status_t pfs_write2(struct fsal_obj_handle *obj_hdl,
 	int err;
 	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
 
-	struct export *export =
-	    container_of(op_ctx->fsal_export, struct export, export);
+	proxyfs_export_t *export =
+	    container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
 	if (info != NULL) {
 		/* Currently we don't support READ_PLUS */
 		return fsalstat(ERR_FSAL_NOTSUPP, 0);
-	}
-
-	proxyfs_io_request_t *req = (proxyfs_io_request_t *)malloc(sizeof(proxyfs_io_request_t));
-	if (req == NULL) {
-		errno = ENOMEM;
-		return proxyfs2fsal_error(ENOMEM);
 	}
 
 	/* Acquire state's fdlock to prevent OPEN upgrade closing the
@@ -1460,7 +1456,19 @@ fsal_status_t pfs_write2(struct fsal_obj_handle *obj_hdl,
 	if (FSAL_IS_ERROR(status)) {
 		LogDebug(COMPONENT_FSAL,
 			 "find_fd failed %s", msg_fsal_err(status.major));
-		goto out;
+		if (state) {
+			PTHREAD_RWLOCK_unlock(&state_fd->fdlock);
+		}
+		return status;
+	}
+
+	proxyfs_io_request_t *req = (proxyfs_io_request_t *)malloc(sizeof(proxyfs_io_request_t));
+	if (req == NULL) {
+		errno = ENOMEM;
+		if (state) {
+			PTHREAD_RWLOCK_unlock(&state_fd->fdlock);
+		}
+		return posix2fsal_status(ENOMEM);
 	}
 
 	req->op = IO_WRITE;
@@ -1468,7 +1476,7 @@ fsal_status_t pfs_write2(struct fsal_obj_handle *obj_hdl,
 	req->inode_number = handle->inum;
 	req->offset = offset;
 	req->length = buffer_size;
-	req->data = buffer
+	req->data = buffer;
 	req->error = 0;
 	req->done_cb = NULL;
 	req->done_cb_arg = NULL;
@@ -1485,19 +1493,19 @@ fsal_status_t pfs_write2(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (closefd) {
-		proxyfs_close_fd(my_fd);
+		pfs_close_my_fd(my_fd);
 	}
 
 	if (err != 0) {
 		free(req);
 		errno = EIO;
-		return proxyfs2fsal_error(EIO);
+		return posix2fsal_status(EIO);
 	}
 
 	if (req->error != 0) {
 		errno = req->error;
 		free(req);
-		return proxyfs2fsal_error(errno);
+		return posix2fsal_status(errno);
 	}
 
 	*wrote_amount = req->out_size;
@@ -1538,9 +1546,9 @@ fsal_status_t pfs_commit2(struct fsal_obj_handle *obj_hdl,
 	fsal_status_t status = {ERR_FSAL_NO_ERROR, 0};
 
 	proxyfs_fd_t temp_fd;
-	bzero(&temp_fd, sizeof(proxyfs_fd_t);
+	bzero(&temp_fd, sizeof(proxyfs_fd_t));
 	temp_fd.openflags = FSAL_O_CLOSED;
-	temp_fd.fdlock = PTHREAD_RWLOCK_INITIALIZER;
+	PTHREAD_RWLOCK_init(&temp_fd.fdlock, NULL);
 
 	proxyfs_fd_t *out_fd = &temp_fd;
 
@@ -1558,11 +1566,11 @@ fsal_status_t pfs_commit2(struct fsal_obj_handle *obj_hdl,
 
 	int err = proxyfs_flush(export->mount_handle, myself->inum);
 	if (err != 0) {
-		return proxyfs2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	if (closefd) {
-		pfs_close_my_fd(myself, out_fd);
+		pfs_close_my_fd(out_fd);
 	}
 
 	if (has_lock) {
@@ -1603,7 +1611,6 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 	struct flock lock_args;
 	fsal_status_t status = {0, 0};
-	int retval = 0;
 
 	proxyfs_fd_t *my_fd;
 	proxyfs_fd_t *state_fd;
@@ -1615,7 +1622,7 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 	fsal_openflags_t openflags = FSAL_O_RDWR;
 
 	proxyfs_export_t *export =
-	    container_of(op_ctx->fsal_export, struct export, export);
+	    container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
 	LogFullDebug(COMPONENT_FSAL,
 		     "Locking: op:%d type:%d start:%" PRIu64 " length:%"
@@ -1642,7 +1649,7 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 
 	if (lock_op != FSAL_OP_LOCKT && state == NULL) {
 		LogCrit(COMPONENT_FSAL, "Non TEST operation with NULL state");
-		return fsalstat(posix2fsal_error(EINVAL), EINVAL);
+		return posix2fsal_status(EINVAL);
 	}
 
 	if (request_lock->lock_type == FSAL_LOCK_R) {
@@ -1676,6 +1683,7 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 		return fsalstat(ERR_FSAL_BAD_RANGE, 0);
 	}
 
+	int lock_cmd;
 	if (lock_op == FSAL_OP_LOCKT) {
 		lock_cmd = F_GETLK;
 	} else {
@@ -1696,7 +1704,7 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (closefd) {
-		pfs_close_my_fd(myself, my_fd);
+		pfs_close_my_fd(my_fd);
 	}
 
 	if (has_lock) {
@@ -1710,7 +1718,7 @@ fsal_status_t pfs_lock_op2(struct fsal_obj_handle *obj_hdl,
 	}
 
 	if (err != 0) {
-		return posix2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
 	/* F_UNLCK is returned then the tested operation would be possible. */
@@ -1747,8 +1755,10 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 			    struct state_t *state,
 			    struct attrlist *attrib_set)
 {
-	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 	fsal_status_t status = {0, 0};
+
+#if 0
+	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
 	int rc = 0;
 
 	bool has_lock = false;
@@ -1761,17 +1771,6 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 	/* Mask of attributes to set */
 	uint32_t mask = 0;
 	bool reusing_open_state_fd = false;
-
-	if (attrib_set->valid_mask & ~CEPH_SETTABLE_ATTRIBUTES) {
-		LogDebug(COMPONENT_FSAL,
-			 "bad mask %"PRIx64" not settable %"PRIx64,
-			 attrib_set->valid_mask,
-			 attrib_set->valid_mask & ~CEPH_SETTABLE_ATTRIBUTES);
-		return fsalstat(ERR_FSAL_INVAL, 0);
-	}
-
-	LogAttrlist(COMPONENT_FSAL, NIV_FULL_DEBUG,
-		    "attrs ", attrib_set, false);
 
 	/* apply umask, if mode attribute is to be changed */
 	if (FSAL_TEST_MASK(attrib_set->valid_mask, ATTR_MODE))
@@ -1842,7 +1841,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 			LogDebug(COMPONENT_FSAL,
 				 "clock_gettime returned %s (%d)",
 				 strerror(errno), errno);
-			status = fsalstat(posix2fsal_error(errno), errno);
+			status = posix2fsal_status(errno);
 			goto out;
 		}
 		stx.atim = timestamp;
@@ -1862,7 +1861,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 			LogDebug(COMPONENT_FSAL,
 				 "clock_gettime returned %s (%d)",
 				 strerror(errno), errno);
-			status = fsalstat(posix2fsal_error(errno), errno);
+			status = posix2fsal_status(errno);
 			goto out;
 		}
 		stx.mtim = timestamp;
@@ -1881,7 +1880,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 	rc = proxyfs_setattr(export->mount_handle, myself->inum, &stx, mask);
 	if (rc < 0) {
 		LogDebug(COMPONENT_FSAL, "setattrx returned %s (%d)", strerror(-rc), -rc);
-		status = posix2fsal_error(rc);
+		status = posix2fsal_status(rc);
 	} else {
 		/* Success */
 		status = fsalstat(ERR_FSAL_NO_ERROR, 0);
@@ -1892,7 +1891,7 @@ fsal_status_t pfs_setattr2(struct fsal_obj_handle *obj_hdl,
 	if (has_lock) {
 		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	}
-
+#endif
 	return status;
 }
 
@@ -1914,7 +1913,7 @@ fsal_status_t pfs_close2(struct fsal_obj_handle *obj_hdl,
 			 struct state_t *state)
 {
 	proxyfs_handle_t *myself = container_of(obj_hdl, proxyfs_handle_t, handle);
-	proxyfs_fd_t *my_fd = &container_of(state, proxyfs_fd_t, state)->fd;
+	proxyfs_fd_t *my_fd = &container_of(state, proxyfs_state_fd_t, state)->fd;
 
 	if (state->state_type == STATE_TYPE_SHARE ||
 	    state->state_type == STATE_TYPE_NLM_SHARE ||
@@ -1929,7 +1928,7 @@ fsal_status_t pfs_close2(struct fsal_obj_handle *obj_hdl,
 		PTHREAD_RWLOCK_unlock(&obj_hdl->obj_lock);
 	}
 
-	return pfs_close_my_fd(myself, my_fd);
+	return pfs_close_my_fd(my_fd);
 }
 
 /**
@@ -1957,14 +1956,14 @@ static fsal_status_t handle_to_wire(const struct fsal_obj_handle *handle_pub,
 		/* Digested Handles */
 	case FSAL_DIGEST_NFSV3:
 	case FSAL_DIGEST_NFSV4:
-		if (fh_desc->len < sizeof(handle->vi)) {
+		if (fh_desc->len < sizeof(proxyfs_file_handle_t)) {
 			LogMajor(COMPONENT_FSAL,
 				 "digest_handle: space too small for handle.  Need %zu, have %zu",
-				 sizeof(vinodeno_t), fh_desc->len);
+				 sizeof(proxyfs_file_handle_t), fh_desc->len);
 			return fsalstat(ERR_FSAL_TOOSMALL, 0);
 		} else {
-			memcpy(fh_desc->addr, &handle->vi, sizeof(vinodeno_t));
-			fh_desc->len = sizeof(handle->vi);
+			memcpy(fh_desc->addr, &handle->handle, sizeof(proxyfs_file_handle_t));
+			fh_desc->len = sizeof(handle->handle);
 		}
 		break;
 
@@ -1990,8 +1989,8 @@ static void handle_to_key(struct fsal_obj_handle *handle_pub,
 	/* The private 'full' object handle */
 	proxyfs_handle_t *handle = container_of(handle_pub, proxyfs_handle_t, handle);
 
-	fh_desc->addr = &handle->vi;
-	fh_desc->len = sizeof(vinodeno_t);
+	fh_desc->addr = &handle->handle;
+	fh_desc->len = sizeof(proxyfs_file_handle_t);
 }
 
 /**
@@ -2005,8 +2004,8 @@ static void handle_to_key(struct fsal_obj_handle *handle_pub,
 
 void handle_ops_init(struct fsal_obj_ops *ops)
 {
-	ops->get_ref = pfs_get_ref; // Not sure if needed?
-	ops->put_ref = pfs_put_ref; // Not sure if needed?
+//	ops->get_ref = pfs_get_ref; // Not sure if needed?
+//	ops->put_ref = pfs_put_ref; // Not sure if needed?
 
 	ops->release = pfs_release; // Releases private resource associated with a fh.
 	ops->merge   = pfs_merge;   // Merge a fh to original fh.
@@ -2061,8 +2060,8 @@ void handle_ops_init(struct fsal_obj_ops *ops)
 
 	// Extended API functions:
 	ops->open2 = pfs_open2;
-	ops->check_verifier = pfs_check_verifier;
-	ops->status2 = pfs_status2;
+//	ops->check_verifier = pfs_check_verifier;
+//	ops->status2 = pfs_status2;
 	ops->reopen2 = pfs_reopen2;
 	ops->read2 = pfs_read2;
 	ops->write2 = pfs_write2;

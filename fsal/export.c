@@ -1,14 +1,28 @@
 /**
  * @brief Implements PROXYFS FSAL moduleoperation create_export
  */
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <pthread.h>
+#include "fsal.h"
+#include "FSAL/fsal_config.h"
+#include "fsal_convert.h"
+#include "config_parsing.h"
+#include "nfs_exports.h"
+#include "export_mgr.h"
+#include "pnfs_utils.h"
+#include "sal_data.h"
+#include "FSAL/fsal_commonlib.h"
 
 #include "handle.h"
 
 static struct config_item export_params[] = {
-    CONF_ITEM_NOOP("name")
+    CONF_ITEM_NOOP("name"),
     CONF_MAND_STR("volume", 1, MAXPATHLEN, NULL, proxyfs_export, volname),
-    CONF_EOL
-}
+    CONFIG_EOL
+};
+
 static struct config_block export_param_block = {
     .dbus_interface_name = "org.ganesha.nfsd.config.fsal.proxyfs-export%d",
 	.blk_desc.name = "FSAL",
@@ -16,7 +30,9 @@ static struct config_block export_param_block = {
 	.blk_desc.u.blk.init = noop_conf_init,
 	.blk_desc.u.blk.params = export_params,
 	.blk_desc.u.blk.commit = noop_conf_commit
-}
+};
+
+static void export_ops_init(struct export_ops *ops);
 
 fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
 				      void *parse_node,
@@ -54,7 +70,8 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
     export->savedgid = getegid();
 
     // Mount the volume:
-    err = proxyfs_mount(export->volname, mount_option, export->saveduid, export->savedgid, &export->mount_handle);
+    // TBD: Get the mount_option
+    err = proxyfs_mount(export->volname, 0, export->saveduid, export->savedgid, &export->mount_handle);
     if (err != 0) {
         gsh_free(export);
         status.major = ERR_FSAL_SERVERFAULT;
@@ -70,7 +87,7 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
         return status;
     }
 
-    export->root = construct_handle(export, export->mount_handle->root_dir_inode_num, pst->mode);
+    export->root = pfs_construct_handle(export, export->mount_handle->root_dir_inode_num, pst->mode);
     free(pst);
 	err = fsal_attach_export(fsal_hdl, &export->export.exports);
 	if (err != 0) {
@@ -80,8 +97,6 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
 			op_ctx->ctx_export->fullpath);
 		return status;
 	}
-
-	fsal_attached = true;
 
     export->export.fsal = fsal_hdl;
     export->export.up_ops = up_ops;
@@ -107,7 +122,7 @@ fsal_status_t proxyfs_create_export(struct fsal_module *fsal_hdl,
 void pfs_export_release(struct fsal_export *exp_hdl) {
     proxyfs_export_t *export = container_of(exp_hdl, proxyfs_export_t, export);
 
-    proxyfs_deconstruct_handle(export->root);
+    pfs_deconstruct_handle(export->root);
     export->root = NULL;
     fsal_detach_export(export->export.fsal, &export->export.exports);
     free_export_ops(&export->export);
@@ -116,21 +131,28 @@ void pfs_export_release(struct fsal_export *exp_hdl) {
     gsh_free(export);
 }
 
+// TBD need to fix the conflict between this implimentation and in internal.c
+#if 0
 void proxyfs2fsal_attributes(proxyfs_stat_t *pst, struct attrlist *fsalattr) {
     fsalattr->valid_mask |= ATTR_TYPE|ATTR_FILEID|ATTR_MODE|ATTR_OWNER|ATTR_GROUP|ATTR_SIZE|ATTR_NUMLINKS|ATTR_ATIME|ATTR_MTIME|ATTR_CTIME;
     fsalattr->supported = ((const attrmask_t) (ATTRS_POSIX));
     fsalattr->type = posix2fsal_type(pst->mode);
     fsalattr->fileid = pst->ino;
     fsalattr->mode = unix2fsal_mode(pst->mode);
-    fsalattr->uid = pst->uid;
-    fsalattr->gid = pst->gid;
+    fsalattr->owner = pst->uid;
+    fsalattr->group = pst->gid;
     fsalattr->filesize = pst->size;
     fsalattr->numlinks = pst->nlink;
-    fsalattr->atime = pst->atim;
-    fsalattr->ctime = pst->atim;
-    fsalattr->mtime = pst->atim;
+    copy_ts(&fsalattr->atime, &pst->atim);
+    copy_ts(&fsalattr->ctime, &pst->ctim);
+    copy_ts(&fsalattr->mtime, &pst->mtim);
+	fsalattr->chgtime =
+			gsh_time_cmp(&fsalattr->mtime, &fsalattr->ctime) > 0 ?
+			fsalattr->mtime : fsalattr->ctime;
+	fsalattr->change = timespec_to_nsecs(&fsalattr->chgtime);
+    copy_ts(&fsalattr->creation, &pst->crtim);
 }
-
+#endif
 
 /**
  * @brief Look up a path
@@ -192,12 +214,12 @@ fsal_status_t pfs_lookup_path(struct fsal_export *exp_hdl,
     *handle = NULL;
     // special case - if asking for root:
     if (strcmp(realpath, "/") == 0) {
-        *handle = export->root;
+        *handle = &export->root->handle;
         return status;
     }
 
     proxyfs_stat_t *pst;
-    int ret = proxyfs_get_stat_path(export->mount_handle, realpath, &pst);
+    int ret = proxyfs_get_stat_path(export->mount_handle, (char *)realpath, &pst);
     if (ret != 0) {
         status.major = ERR_FSAL_SERVERFAULT;
         return status;
@@ -270,7 +292,7 @@ fsal_status_t pfs_wire_to_host(struct fsal_export *exp_hdl,
  *
  * @retval FSAL status.
  */
-fsal_status_t pfs_get_fs_dynamic_info)(struct fsal_export *exp_hdl,
+fsal_status_t pfs_get_fs_dynamic_info(struct fsal_export *exp_hdl,
 					      struct fsal_obj_handle *obj_hdl,
 					      fsal_dynamicfsinfo_t *info) {
     proxyfs_export_t *export = container_of(exp_hdl, proxyfs_export_t, export);
@@ -279,20 +301,22 @@ fsal_status_t pfs_get_fs_dynamic_info)(struct fsal_export *exp_hdl,
 	int err = proxyfs_statvfs(export->mount_handle, &stat_vfs);
 	if (err != 0) {
 		errno = err;
-		return proxyfs2fsal_error(err);
+		return posix2fsal_status(err);
 	}
 
-	bzero(info, sizeof(struct vfs_statvfs_struct));
-    info->total_bytes = stat_vfs.f_frsize * stat_vfs.f_blocks;
-	info->free_bytes = stat_vfs.f_frsize * stat_vfs.f_bfree;
-	info->avail_bytes = stat_vfs.f_frsize * stat_vfs.f_bavail;
-	info->total_files = stat_vfs.f_files;
-	info->free_files = stat_vfs.f_ffree;
-	info->avail_files = stat_vfs.f_favail;
+    info->total_bytes = stat_vfs->f_frsize * stat_vfs->f_blocks;
+	info->free_bytes = stat_vfs->f_frsize * stat_vfs->f_bfree;
+	info->avail_bytes = stat_vfs->f_frsize * stat_vfs->f_bavail;
+	info->total_files = stat_vfs->f_files;
+	info->free_files = stat_vfs->f_ffree;
+	info->avail_files = stat_vfs->f_favail;
+    info->maxread = 0;
+    info->maxwrite = 0;
 	info->time_delta.tv_sec = 1;
 	info->time_delta.tv_nsec = 0;
 
     free(stat_vfs);
+    return posix2fsal_status(0);
 }
 
 /**
@@ -308,10 +332,10 @@ fsal_status_t pfs_get_fs_dynamic_info)(struct fsal_export *exp_hdl,
  * @retval true if the feature is supported.
  * @retval false if the feature is unsupported or unknown.
  */
-bool proxyfs_supports(struct fsal_export *exp_hdl,
+bool pfs_supports(struct fsal_export *exp_hdl,
 			     fsal_fsinfo_options_t option) {
-    proxyfs_fsal_module_t *myself = container_of(hdl, proxyfs_fsal_module_t, fsal);
-	return fsal_supports(&myself->fsinfo, option);
+    proxyfs_fsal_module_t *myself = container_of(exp_hdl->fsal, proxyfs_fsal_module_t, fsal);
+	return fsal_supports(&myself->fs_info, option);
 }
 
 /**
@@ -321,7 +345,7 @@ bool proxyfs_supports(struct fsal_export *exp_hdl,
 
  * @return Greatest file size supported.
  */
-uint64_t proxyfs_maxfilesize(struct fsal_export *exp_hdl) {
+uint64_t pfs_maxfilesize(struct fsal_export *exp_hdl) {
     return UINT64_MAX;
 }
 
@@ -332,7 +356,7 @@ uint64_t proxyfs_maxfilesize(struct fsal_export *exp_hdl) {
  *
  * @return Greatest read size supported.
  */
-uint32_t proxyfs_maxread(struct fsal_export *exp_hdl) {
+uint32_t pfs_maxread(struct fsal_export *exp_hdl) {
     return 0x400000;
 }
 
@@ -343,7 +367,7 @@ uint32_t proxyfs_maxread(struct fsal_export *exp_hdl) {
  *
  * @return Greatest write size supported.
  */
-uint32_t proxyfs_maxwrite(struct fsal_export *exp_hdl) {
+uint32_t pfs_maxwrite(struct fsal_export *exp_hdl) {
     return 0x400000;
 }
 
@@ -354,7 +378,7 @@ uint32_t proxyfs_maxwrite(struct fsal_export *exp_hdl) {
  *
  * @return Greatest link count supported.
  */
-uint32_t proxyfs_maxlink(struct fsal_export *exp_hdl) {
+uint32_t pfs_maxlink(struct fsal_export *exp_hdl) {
     return 1024;
 }
 
@@ -365,7 +389,7 @@ uint32_t proxyfs_maxlink(struct fsal_export *exp_hdl) {
  *
  * @return Greatest name length supported.
  */
-uint32_t proxyfs_maxnamelen(struct fsal_export *exp_hdl) {
+uint32_t pfs_maxnamelen(struct fsal_export *exp_hdl) {
     return UINT32_MAX;
 }
 
@@ -376,7 +400,7 @@ uint32_t proxyfs_maxnamelen(struct fsal_export *exp_hdl) {
  *
  * @return Greatest path length supported.
  */
-uint32_t proxyfs_maxpathlen(struct fsal_export *exp_hdl) {
+uint32_t pfs_maxpathlen(struct fsal_export *exp_hdl) {
     return UINT32_MAX;
 }
 
@@ -390,7 +414,7 @@ uint32_t proxyfs_maxpathlen(struct fsal_export *exp_hdl) {
  *
  * @return Lease time.
  */
-struct timespec proxyfs_lease_time(struct fsal_export *exp_hdl) {
+struct timespec pfs_lease_time(struct fsal_export *exp_hdl) {
 	struct timespec lease = { 300, 0 };
 
 	return lease;
@@ -411,7 +435,7 @@ struct timespec proxyfs_lease_time(struct fsal_export *exp_hdl) {
  *
  * @return supported ACL types.
  */
-fsal_aclsupp_t proxyfs_acl_support(struct fsal_export *exp_hdl) {
+fsal_aclsupp_t pfs_acl_support(struct fsal_export *exp_hdl) {
     return FSAL_ACLSUPPORT_ALLOW;
 }
 
@@ -427,7 +451,7 @@ fsal_aclsupp_t proxyfs_acl_support(struct fsal_export *exp_hdl) {
  *
  * @return supported attributes.
  */
-attrmask_t proxyfs_supported_attrs(struct fsal_export *exp_hdl) {
+attrmask_t pfs_supported_attrs(struct fsal_export *exp_hdl) {
     return ATTRS_POSIX;
 }
 
@@ -442,10 +466,10 @@ attrmask_t proxyfs_supported_attrs(struct fsal_export *exp_hdl) {
  *
  * @return creation umask.
  */
-uint32_t proxyfs_umask(struct fsal_export *exp_hdl) {
-    proxyfs_fsal_module_t *myself = container_of(hdl, proxyfs_fsal_module_t, fsal);
+uint32_t pfs_umask(struct fsal_export *exp_hdl) {
+    proxyfs_fsal_module_t *myself = container_of(exp_hdl->fsal, proxyfs_fsal_module_t, fsal);
 
-    return fsal_umask(&myself->fsal);
+    return fsal_umask(&myself->fs_info);
 }
 
 /**
@@ -460,57 +484,10 @@ uint32_t proxyfs_umask(struct fsal_export *exp_hdl) {
  *
  * @return permissions on named attributes.
  */
-uint32_t proxyfs_xattr_access_rights(struct fsal_export *exp_hdl) {
-    proxyfs_fsal_module_t *myself = container_of(hdl, proxyfs_fsal_module_t, fsal);
+uint32_t pfs_xattr_access_rights(struct fsal_export *exp_hdl) {
+    proxyfs_fsal_module_t *myself = container_of(exp_hdl->fsal, proxyfs_fsal_module_t, fsal);
 
-    return fsal_xattr_access_rights(&myself->fsal);
-}
-
-/**
- * @brief Allocate a state_t structure
- *
- * Note that this is not expected to fail since memory allocation is
- * expected to abort on failure.
- *
- * @param[in] exp_hdl               Export state_t will be associated with
- * @param[in] state_type            Type of state to allocate
- * @param[in] related_state         Related state if appropriate
- *
- * @returns a state structure.
- */
-
-static inline struct state_t *init_state(struct state_t *state,
-					 struct fsal_export *exp_hdl,
-					 enum state_type state_type,
-					 struct state_t *related_state)
-{
-	state->state_exp = exp_hdl;
-	state->state_type = state_type;
-
-	if (state_type == STATE_TYPE_LOCK ||
-	    state_type == STATE_TYPE_NLM_LOCK)
-		state->state_data.lock.openstate = related_state;
-
-	return state;
-}
-
-struct state_t *proxyfs_alloc_state(struct fsal_export *exp_hdl,
-				 enum state_type state_type,
-				 struct state_t *related_state)
-{
-	struct state_t *state;
-	struct ceph_fd *my_fd;
-
-	state = init_state(gsh_calloc(1, sizeof(struct ceph_state_fd)),
-			   exp_hdl, state_type, related_state);
-
-	my_fd = &container_of(state, struct ceph_state_fd, state)->ceph_fd;
-
-	my_fd->fd = NULL;
-	my_fd->openflags = FSAL_O_CLOSED;
-	PTHREAD_RWLOCK_init(&my_fd->fdlock, NULL);
-
-	return state;
+    return fsal_xattr_access_rights(&myself->fs_info);
 }
 
 /**
@@ -522,27 +499,38 @@ struct state_t *proxyfs_alloc_state(struct fsal_export *exp_hdl,
  */
 void proxyfs_free_state(struct fsal_export *exp_hdl, struct state_t *state)
 {
-	struct ceph_state_fd *state_fd = container_of(state,
-						      struct ceph_state_fd,
-						      state);
-	struct ceph_fd *my_fd = &state_fd->ceph_fd;
+	proxyfs_state_fd_t *state_fd = container_of(state, proxyfs_state_fd_t, state);
+	proxyfs_fd_t *my_fd = &state_fd->fd;
 
 	PTHREAD_RWLOCK_destroy(&my_fd->fdlock);
 
 	gsh_free(state_fd);
 }
 
+static fsal_status_t pfs_create_handle(struct fsal_export *export_pub,
+				   struct gsh_buffdesc *fh_desc,
+				   struct fsal_obj_handle **pub_handle,
+				   struct attrlist *attrs_out) {
+
+    fsal_status_t status = { ERR_FSAL_NO_ERROR, 0};
+
+    //proxyfs_handle_t *phandle = pfs_construct_handle(export, inum, mode);
+    //TBD: UNDER CONSTRUCTION
+    return status;
+}
+
 void export_ops_init(struct export_ops *ops) {
     ops->release = pfs_export_release;
     ops->lookup_path = pfs_lookup_path;
     ops->wire_to_host = pfs_wire_to_host;
+
     ops->create_handle = pfs_create_handle;
-    ops->get_fs_dynamic_info = pfs_get_dynamic_info;
+//    ops->get_fs_dynamic_info = pfs_get_dynamic_info;
     ops->fs_supports = pfs_supports;
     ops->fs_maxfilesize = pfs_maxfilesize;
     ops->fs_maxread = pfs_maxread;
     ops->fs_maxwrite = pfs_maxwrite;
-    ops->fs_maxlink = pfs_malink;
+    ops->fs_maxlink = pfs_maxlink;
     ops->fs_maxpathlen = pfs_maxpathlen;
     ops->fs_lease_time = pfs_lease_time;
     ops->fs_acl_support = pfs_acl_support;
@@ -561,6 +549,4 @@ void export_ops_init(struct export_ops *ops) {
 	ops->fs_loc_body_size = fs_loc_body_size;
 	ops->fs_da_addr_size = fs_da_addr_size;
     */
-}
-
 }

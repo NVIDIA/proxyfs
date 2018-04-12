@@ -12,6 +12,7 @@ SET(fsalproxyfs_LIB_SRCS
   main.c
   export.c
   handle.c
+  internal.c
 )
 
 add_library(fsalproxyfs MODULE ${fsalproxyfs_LIB_SRCS})

@@ -1,15 +1,19 @@
 #include "handle.h"
+#include <sys/types.h>
+#include <attr/xattr.h> /* ENOATTR */
+#include "fsal_api.h"
+#include "fsal_convert.h"
+#include "FSAL/fsal_commonlib.h"
 
 proxyfs_handle_t *pfs_construct_handle(proxyfs_export_t *export, uint64_t inum, uint32_t mode)
 {
 	proxyfs_handle_t *handle = gsh_calloc(1, sizeof(proxyfs_handle_t));
-	handle->fd.inum = inum;
-	handle->mount_handle = export->mount_handle;
-	handle->up_ops = export->export.up_ops;
+	handle->inum = inum;
+	handle->export = export;
+	//handle->up_ops = export->export.up_ops;
 	fsal_obj_handle_init(&handle->handle, &export->export, posix2fsal_type(mode));
 	handle_ops_init(&handle->handle.obj_ops);
 	handle->handle.fsid = export->fsid;
-	handle->fileid = inum;
 
 	// We don't have a fsid, how will that work?
 	handle->export = export;
@@ -18,11 +22,16 @@ proxyfs_handle_t *pfs_construct_handle(proxyfs_export_t *export, uint64_t inum, 
 
 void pfs_decosntruct_handle(proxyfs_handle_t *handle)
 {
-	fsal_obj_handle_fini(handle->handle);
+	fsal_obj_handle_fini(&handle->handle);
 	gsh_free(handle);
 }
 
-void proxyfs2fsal_attributes(proxyfs_stat_t *pst, struct attrlist *attrs) {
+void copy_ts(struct timespec *ts_dst, proxyfs_timespec_t *pts_src) {
+    ts_dst->tv_sec = pts_src->sec;
+    ts_dst->tv_nsec = pts_src->nsec;
+}
+
+void proxyfs2fsal_attributes(proxyfs_stat_t *pst, struct attrlist *fsalattr) {
     proxyfs_export_t *export = container_of(op_ctx->fsal_export, proxyfs_export_t, export);
 
 	fsalattr->supported = op_ctx->fsal_export->exp_ops.fs_supported_attrs(
@@ -54,15 +63,15 @@ void proxyfs2fsal_attributes(proxyfs_stat_t *pst, struct attrlist *attrs) {
 		fsalattr->group = pst->gid;
 
 	if (FSAL_TEST_MASK(fsalattr->valid_mask, ATTR_ATIME)) {
-		fsalattr->atime = pst->atim;
+	    copy_ts(&fsalattr->atime, &pst->atim);
 	}
 
 	if (FSAL_TEST_MASK(fsalattr->valid_mask, ATTR_CTIME)) {
-		fsalattr->ctime = pst->ctim;
+    	copy_ts(&fsalattr->ctime, &pst->ctim);
 	}
 
 	if (FSAL_TEST_MASK(fsalattr->valid_mask, ATTR_MTIME)) {
-		fsalattr->mtime = pst->mtim;
+		copy_ts(&fsalattr->mtime, &pst->mtim);
 	}
 
 	if (FSAL_TEST_MASK(fsalattr->valid_mask, ATTR_CHGTIME)) {

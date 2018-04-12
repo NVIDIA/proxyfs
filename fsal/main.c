@@ -35,11 +35,11 @@
 #include "FSAL/fsal_init.h"
 #include "handle.h"
 #include "FSAL/fsal_commonlib.h"
-
+#include "fsal_pnfs.h"
 /* Swift ProxyFS FSAL module private storage
  */
 
-static const char *module_name = "ProxyFS"
+static const char *module_name = "ProxyFS";
 
 /* filesystem info for ProxyFS */
 static struct fsal_staticfsinfo_t default_proxyfs_info = {
@@ -61,7 +61,7 @@ static struct fsal_staticfsinfo_t default_proxyfs_info = {
 	.acl_support = FSAL_ACLSUPPORT_ALLOW | FSAL_ACLSUPPORT_DENY,
 	.cansettime = true,
 	.homogenous = true,
-	.supported_attrs = PROXYFS_SUPPORTED_ATTRIBUTES,
+	.supported_attrs = ATTRS_POSIX,
 	.maxread = 0,
 	.maxwrite = 0,
 	.umask = 0,
@@ -128,8 +128,8 @@ MODULE_INIT void proxyfs_init(void)
 	/* register_fsal seems to expect zeroed memory. */
 	memset(myself, 0, sizeof(*myself));
 
-	if (register_fsal(myself, proxyfs_name, FSAL_MAJOR_VERSION,
-			  FSAL_MINOR_VERSION, FSAL_ID_PROXYFS) != 0) {
+	if (register_fsal(myself, module_name, FSAL_MAJOR_VERSION,
+			  FSAL_MINOR_VERSION, 9) != 0) {
 		LogCrit(COMPONENT_FSAL,
 			"ProxyFS FSAL module failed to register.");
 		return;

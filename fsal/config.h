@@ -2,18 +2,8 @@
 #define __FSAL_PROXYFS_CONFIG_H__
 
 #include "handle.h"
+#include <stdint.h>
 
-typedef struct proxyfs_config_params_s {
-    char *pfsd_addr;
-    uint32 pfsd_rpc_port;
-    uint32 pfsd_fast_port;
-} proxyfs_config_params_t;
-
-typedef struct proxyfs_fsal_module {
-	struct fsal_module module;
-	struct fsal_staticfsinfo_t fsinfo;
-	proxyfs_config_params_t config;
-} proxyfs_fsal_module_t;
 
 #endif // __PROXYFS_CONFIG_H__
 
