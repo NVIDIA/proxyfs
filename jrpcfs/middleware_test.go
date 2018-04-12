@@ -135,8 +135,13 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
 
+	signalHandlerIsArmed := false
 	doneChan := make(chan bool)
-	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+
+	for !signalHandlerIsArmed {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	err = stats.Up(testConfMap)
 	if nil != err {
