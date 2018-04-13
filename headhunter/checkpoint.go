@@ -1282,21 +1282,30 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
-			/*
-				// SSTODO: need to schedule delete as this snapshot is deleted... or something similar...
-				swiftclient.ObjectDeleteAsync(
-					volume.accountName,
-					volume.checkpointContainerName,
-					utils.Uint64ToHexStr(objectNumber),
-					swiftclient.SkipRetry,
-					volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-					nil)
-			*/
+			volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODOStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
 		}
+	}
+
+	if 0 < len(volume.delayedObjectDeleteSSTODOList) {
+		go volume.performDelayedObjectDeletes(volume.delayedObjectDeleteSSTODOList)
+		volume.delayedObjectDeleteSSTODOList = make([]delayedObjectDeleteSSTODOStruct, 0)
 	}
 
 	err = nil
 	return
+}
+
+func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteSSTODOList []delayedObjectDeleteSSTODOStruct) {
+	for _, delayedObjectDeleteSSTODO := range delayedObjectDeleteSSTODOList {
+		err := swiftclient.ObjectDelete(
+			volume.accountName,
+			delayedObjectDeleteSSTODO.containerName,
+			utils.Uint64ToHexStr(delayedObjectDeleteSSTODO.objectNumber),
+			swiftclient.SkipRetry)
+		if nil != err {
+			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDeleteSSTODO.containerName, delayedObjectDeleteSSTODO.objectNumber, err)
+		}
+	}
 }
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {

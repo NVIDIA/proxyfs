@@ -39,6 +39,11 @@ type bPlusTreeWrapperStruct struct {
 	bPlusTree   sortedmap.BPlusTree
 }
 
+type delayedObjectDeleteSSTODOStruct struct {
+	containerName string
+	objectNumber  uint64
+}
+
 type volumeStruct struct {
 	sync.Mutex
 	volumeName                       string
@@ -70,6 +75,7 @@ type volumeStruct struct {
 	inodeRecBPlusTreeLayout                 sortedmap.LayoutReport
 	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
 	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
+	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 }
 
 type globalsStruct struct {
@@ -395,10 +401,11 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
-		volumeName:                  volumeName,
-		checkpointChunkedPutContext: nil,
-		checkpointDoneWaitGroup:     nil,
-		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
+		volumeName:                    volumeName,
+		checkpointChunkedPutContext:   nil,
+		checkpointDoneWaitGroup:       nil,
+		checkpointRequestChan:         make(chan *checkpointRequestStruct, 1),
+		delayedObjectDeleteSSTODOList: make([]delayedObjectDeleteSSTODOStruct, 0),
 	}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")

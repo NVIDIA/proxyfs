@@ -9,6 +9,7 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
@@ -248,16 +249,40 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 	return
 }
 
+/*
+	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
+	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)
+*/
 func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
+	var (
+		containerNameAsValue      sortedmap.Value
+		delayedObjectDeleteSSTODO delayedObjectDeleteSSTODOStruct
+		ok                        bool
+	)
+
 	volume.Lock()
+	defer volume.Unlock()
+
+	containerNameAsValue, ok, err = volume.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("Missing logSegmentNumber (0x%016X) in volume %v LogSegmentRec B+Tree", logSegmentNumber, volume.volumeName)
+		return
+	}
 
 	_, err = volume.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+	if nil != err {
+		return
+	}
 
 	volume.recordTransaction(transactionDeleteLogSegmentRec, logSegmentNumber, nil)
 
-	// SSTODO: need to record this DELETE for later removal
+	delayedObjectDeleteSSTODO.containerName = utils.ByteSliceToString(containerNameAsValue.([]byte))
+	delayedObjectDeleteSSTODO.objectNumber = logSegmentNumber
 
-	volume.Unlock()
+	volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODO)
 
 	return
 }
