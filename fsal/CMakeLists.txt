@@ -18,7 +18,7 @@ SET(fsalproxyfs_LIB_SRCS
 add_library(fsalproxyfs MODULE ${fsalproxyfs_LIB_SRCS})
 add_sanitizers(fsalproxyfs)
 
-target_link_libraries(fsalproxyfs ${SYSTEM_LIBRARIES})
+target_link_libraries(fsalproxyfs ${SYSTEM_LIBRARIES} proxyfs)
 
 set_target_properties(fsalproxyfs PROPERTIES VERSION 4.2.0 SOVERSION 4)
 
