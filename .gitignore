@@ -15,6 +15,9 @@ dist/
 CommonMountPoint
 MountPoint0
 
+# Replay Logs
+CommonVolume.rlog
+
 # specific binaries
 jrpcfs/test/client
 
