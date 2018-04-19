@@ -13,40 +13,54 @@ import (
 
 type testGlobalsStruct struct {
 	t           *testing.T
+	useUDP      bool //          Logically useTCP == !useUDP
+	udpLAddr    *net.UDPAddr
+	tcpLAddr    *net.TCPAddr
 	udpConn     *net.UDPConn
 	tcpListener *net.TCPListener
 	statsLog    []string
-	donePending bool      //   true if parent has called Close() to terminate testStatsd
-	doneChan    chan bool //   sufficient to buffer the lone true
+	donePending bool      //     true if parent has called Close() to terminate testStatsd
+	doneChan    chan bool //     sufficient to buffer the lone true
 	doneErr     error
 	stopPending bool
 }
 
 var testGlobals testGlobalsStruct
 
+/*
+	useUDP           bool   //              Logically useTCP == !useUDP
+	udpLAddr         *net.UDPAddr
+	tcpLAddr         *net.TCPAddr
+	globals.ipAddr = "localhost" // Hard-coded since we only want to talk to the local StatsD
+		globals.udpLAddr, err = net.ResolveUDPAddr("udp", globals.ipAddr+":0")
+		globals.tcpLAddr, err = net.ResolveTCPAddr("tcp", globals.ipAddr+":0")
+*/
+
 func TestStatsAPIviaUDP(t *testing.T) {
+	var (
+		confMap     conf.ConfMap
+		confStrings []string
+		err         error
+		portString  string
+	)
+
 	testGlobals.t = t
 
-	confStrings := []string{
-		"Stats.IPAddr=localhost",
-		"Stats.UDPPort=41582",
-		"Stats.BufferLength=1000",
-		"Stats.MaxLatency=100ms",
+	testGlobals.useUDP = true
+
+	testGlobals.udpLAddr, err = net.ResolveUDPAddr("udp", "localhost:0")
+	if nil != err {
+		t.Fatalf("net.RessolveUDPAddr(\"udp\", \"localhost:0\") returned error: %v", err)
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	testGlobals.udpConn, err = net.ListenUDP("udp", testGlobals.udpLAddr)
 	if nil != err {
-		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+		t.Fatalf("net.ListenUDP(\"udp\", testGlobals.udpLAddr) returned error: %v", err)
 	}
 
-	err = Up(confMap)
+	_, portString, err = net.SplitHostPort(testGlobals.udpConn.LocalAddr().String())
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) returned error: %v", err)
-	}
-
-	testGlobals.udpConn, err = net.ListenUDP("udp", globals.udpRAddr)
-	if nil != err {
-		t.Fatalf("net.ListenUDP(\"udp\", globals.udpRAddr) returned error: %v", err)
+		t.Fatalf("net.SplitHostPort(testGlobals.udpConn.LocalAddr().String()) returned error: %v", err)
 	}
 
 	testGlobals.statsLog = make([]string, 0, 100)
@@ -57,6 +71,23 @@ func TestStatsAPIviaUDP(t *testing.T) {
 	testGlobals.stopPending = false
 
 	go testStatsd()
+
+	confStrings = []string{
+		"Stats.IPAddr=localhost",
+		"Stats.UDPPort=" + portString,
+		"Stats.BufferLength=1000",
+		"Stats.MaxLatency=100ms",
+	}
+
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
+	if nil != err {
+		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+	}
+
+	err = Up(confMap)
+	if nil != err {
+		t.Fatalf("stats.Up(confMap) returned error: %v", err)
+	}
 
 	testSendStats()
 	testVerifyStats()
@@ -81,28 +112,30 @@ func TestStatsAPIviaUDP(t *testing.T) {
 }
 
 func TestStatsAPIviaTCP(t *testing.T) {
+	var (
+		confMap     conf.ConfMap
+		confStrings []string
+		err         error
+		portString  string
+	)
+
 	testGlobals.t = t
 
-	confStrings := []string{
-		"Stats.IPAddr=localhost",
-		"Stats.TCPPort=41582",
-		"Stats.BufferLength=1000",
-		"Stats.MaxLatency=100ms",
+	testGlobals.useUDP = false
+
+	testGlobals.tcpLAddr, err = net.ResolveTCPAddr("tcp", "localhost:0")
+	if nil != err {
+		t.Fatalf("net.RessolveTCPAddr(\"tcp\", \"localhost:0\") returned error: %v", err)
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	testGlobals.tcpListener, err = net.ListenTCP("tcp", testGlobals.tcpLAddr)
 	if nil != err {
-		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+		t.Fatalf("net.ListenTCP(\"tcp\", testGlobals.tcpLAddr) returned error: %v", err)
 	}
 
-	err = Up(confMap)
+	_, portString, err = net.SplitHostPort(testGlobals.tcpListener.Addr().String())
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) returned error: %v", err)
-	}
-
-	testGlobals.tcpListener, err = net.ListenTCP("tcp", globals.tcpRAddr)
-	if nil != err {
-		t.Fatalf("net.ListenTCP(\"tcp\", globals.tcpRAddr) returned error: %v", err)
+		t.Fatalf("net.SplitHostPort(testGlobals.tcpListener.Addr().String()) returned error: %v", err)
 	}
 
 	testGlobals.statsLog = make([]string, 0, 100)
@@ -113,6 +146,23 @@ func TestStatsAPIviaTCP(t *testing.T) {
 	testGlobals.stopPending = false
 
 	go testStatsd()
+
+	confStrings = []string{
+		"Stats.IPAddr=localhost",
+		"Stats.TCPPort=" + portString,
+		"Stats.BufferLength=1000",
+		"Stats.MaxLatency=100ms",
+	}
+
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
+	if nil != err {
+		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
+	}
+
+	err = Up(confMap)
+	if nil != err {
+		t.Fatalf("stats.Up(confMap) returned error: %v", err)
+	}
 
 	testSendStats()
 	testVerifyStats()
@@ -137,11 +187,18 @@ func TestStatsAPIviaTCP(t *testing.T) {
 }
 
 func testStatsd() {
-	buf := make([]byte, 2048)
+	var (
+		buf         []byte
+		bufConsumed int
+		err         error
+		testTCPConn *net.TCPConn
+	)
+
+	buf = make([]byte, 2048)
 
 	for {
-		if globals.useUDP {
-			bufConsumed, _, err := testGlobals.udpConn.ReadFromUDP(buf)
+		if testGlobals.useUDP {
+			bufConsumed, _, err = testGlobals.udpConn.ReadFromUDP(buf)
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
@@ -160,8 +217,8 @@ func testStatsd() {
 			}
 
 			testGlobals.statsLog = append(testGlobals.statsLog, string(buf[:bufConsumed]))
-		} else { // globals.useTCP
-			testTCPConn, err := testGlobals.tcpListener.AcceptTCP()
+		} else { // testGlobals.useTCP
+			testTCPConn, err = testGlobals.tcpListener.AcceptTCP()
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
@@ -178,7 +235,7 @@ func testStatsd() {
 				return
 			}
 
-			bufConsumed, err := testTCPConn.Read(buf)
+			bufConsumed, err = testTCPConn.Read(buf)
 			if nil != err {
 				if !testGlobals.stopPending {
 					testGlobals.doneErr = err
@@ -210,7 +267,11 @@ func testStatsd() {
 }
 
 func testSendStats() {
-	sleepDuration := 4 * globals.maxLatency
+	var (
+		sleepDuration time.Duration
+	)
+
+	sleepDuration = 4 * globals.maxLatency
 
 	IncrementOperations(&LogSegCreateOps)
 	IncrementOperationsAndBytes(SwiftObjTail, 1024)
