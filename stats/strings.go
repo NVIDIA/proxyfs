@@ -207,8 +207,8 @@ var (
 	SwiftObjPutCtxSendChunkBytes      = "proxyfs.swiftclient.object-put-context.send-chunk.bytes"
 	SwiftChunkedConnsCreateOps        = "proxyfs.swiftclient.chunked-connections-create.operations"
 	SwiftChunkedConnsReuseOps         = "proxyfs.swiftclient.chunked-connections-reuse.operations"
-	SwiftNonchunkedConnsCreateOps     = "proxyfs.swiftclient.non-chunked-connections-create.operations"
-	SwiftNonchunkedConnsReuseOps      = "proxyfs.swiftclient.non-chunked-connections-reuse.operations"
+	SwiftNonChunkedConnsCreateOps     = "proxyfs.swiftclient.non-chunked-connections-create.operations"
+	SwiftNonChunkedConnsReuseOps      = "proxyfs.swiftclient.non-chunked-connections-reuse.operations"
 	SwiftChunkedStarvationCallbacks   = "proxyfs.swiftclient.chunked-connections-starved-callback.operations"
 
 	SwiftAccountDeleteRetryOps        = "proxyfs.swiftclient.account-delete.retry.operations"         // failed operations that were retried (*not* number of retries)

@@ -85,10 +85,12 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 		if nil != err {
 			logger.FatalfWithError(err, "swiftclient.acquireChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
 		}
+		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 	} else {
 		globals.chunkedConnectionPool.lifoIndex--
 		connection = globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex]
 		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = nil
+		stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
 	}
 
 	globals.chunkedConnectionPool.Unlock()
@@ -149,10 +151,12 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 		if nil != err {
 			logger.FatalfWithError(err, "swiftclient.acquireNonChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
 		}
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
 	} else {
 		globals.nonChunkedConnectionPool.lifoIndex--
 		connection = globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex]
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnsReuseOps)
 	}
 
 	globals.nonChunkedConnectionPool.Unlock()
