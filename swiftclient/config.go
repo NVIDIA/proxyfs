@@ -181,23 +181,24 @@ func Up(confMap conf.ConfMap) (err error) {
 
 // PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	globals.connectionNonce++
 	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
 	return
 }
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	globals.connectionNonce++
 	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
 	return
 }
 
 // Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
+	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
-
 	return
 }

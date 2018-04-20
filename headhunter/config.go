@@ -76,6 +76,7 @@ type volumeStruct struct {
 	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
 	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
+	backgroundObjectDeleteWG                sync.WaitGroup
 }
 
 type globalsStruct struct {
@@ -502,6 +503,8 @@ func downVolume(volumeName string) (err error) {
 	checkpointRequest.waitGroup.Wait()
 
 	err = checkpointRequest.err
+
+	volume.backgroundObjectDeleteWG.Wait()
 
 	return
 }
