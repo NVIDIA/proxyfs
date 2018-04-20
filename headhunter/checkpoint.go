@@ -1253,9 +1253,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
-		}
 	}
 	for objectNumber, bytesUsedThisBPlusTree = range volume.logSegmentRecBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
@@ -1263,9 +1260,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
-		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
 		}
 	}
 	for objectNumber, bytesUsedThisBPlusTree = range volume.bPlusTreeObjectBPlusTreeLayout {
@@ -1275,13 +1269,13 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
-		}
 	}
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
+			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
+			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
+			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
 			volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODOStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
 		}
 	}
