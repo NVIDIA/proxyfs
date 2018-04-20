@@ -1281,6 +1281,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	}
 
 	if 0 < len(volume.delayedObjectDeleteSSTODOList) {
+		volume.backgroundObjectDeleteWG.Add(1)
 		go volume.performDelayedObjectDeletes(volume.delayedObjectDeleteSSTODOList)
 		volume.delayedObjectDeleteSSTODOList = make([]delayedObjectDeleteSSTODOStruct, 0)
 	}
@@ -1300,6 +1301,7 @@ func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteSSTOD
 			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDeleteSSTODO.containerName, delayedObjectDeleteSSTODO.objectNumber, err)
 		}
 	}
+	volume.backgroundObjectDeleteWG.Done()
 }
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {
