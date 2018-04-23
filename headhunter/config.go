@@ -34,9 +34,19 @@ const (
 )
 
 type bPlusTreeWrapperStruct struct {
-	volume      *volumeStruct
+	volumeView  *volumeViewStruct
 	wrapperType uint32 // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
 	bPlusTree   sortedmap.BPlusTree
+}
+
+type volumeViewStruct struct {
+	volume                         *volumeStruct
+	inodeRecWrapper                *bPlusTreeWrapperStruct
+	logSegmentRecWrapper           *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
+	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
+	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
+	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
 }
 
 type delayedObjectDeleteSSTODOStruct struct {
@@ -69,12 +79,7 @@ type volumeStruct struct {
 	checkpointHeaderVersion                 uint64
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                         *bPlusTreeWrapperStruct
-	logSegmentRecWrapper                    *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper                  *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout                 sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
+	liveView                                *volumeViewStruct
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
