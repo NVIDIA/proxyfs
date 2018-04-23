@@ -81,7 +81,7 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
+	valueAsValue, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -108,13 +108,13 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 
 	volume.Lock()
 
-	ok, err := volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valueToTree)
+	ok, err := volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, valueToTree)
+		_, err = volume.liveView.inodeRecWrapper.bPlusTree.Put(inodeNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -145,14 +145,14 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 	volume.Lock()
 
 	for i, inodeNumber := range inodeNumbers {
-		ok, nonShadowingErr := volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valuesToTree[i])
+		ok, nonShadowingErr := volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valuesToTree[i])
 		if nil != nonShadowingErr {
 			volume.Unlock()
 			err = nonShadowingErr
 			return
 		}
 		if !ok {
-			_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, valuesToTree[i])
+			_, err = volume.liveView.inodeRecWrapper.bPlusTree.Put(inodeNumber, valuesToTree[i])
 			if nil != err {
 				volume.Unlock()
 				return
@@ -171,7 +171,7 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 	volume.Lock()
 
-	_, err = volume.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
+	_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 
 	volume.recordTransaction(transactionDeleteInodeRec, inodeNumber, nil)
 
@@ -182,7 +182,7 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 
 func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error) {
 	volume.Lock()
-	key, _, ok, err := volume.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
+	key, _, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
 		volume.Unlock()
 		return
@@ -201,7 +201,7 @@ func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+	valueAsValue, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -228,13 +228,13 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 
 	volume.Lock()
 
-	ok, err := volume.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, valueToTree)
+	ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.logSegmentRecWrapper.bPlusTree.Put(logSegmentNumber, valueToTree)
+		_, err = volume.liveView.logSegmentRecWrapper.bPlusTree.Put(logSegmentNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -263,7 +263,7 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 	volume.Lock()
 	defer volume.Unlock()
 
-	containerNameAsValue, ok, err = volume.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+	containerNameAsValue, ok, err = volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
 	if nil != err {
 		return
 	}
@@ -272,7 +272,7 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 		return
 	}
 
-	_, err = volume.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+	_, err = volume.liveView.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
 	if nil != err {
 		return
 	}
@@ -289,7 +289,7 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 
 func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNumber uint64, ok bool, err error) {
 	volume.Lock()
-	key, _, ok, err := volume.logSegmentRecWrapper.bPlusTree.GetByIndex(int(index))
+	key, _, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
 		volume.Unlock()
 		return
@@ -308,7 +308,7 @@ func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNum
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.GetByKey(objectNumber)
+	valueAsValue, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByKey(objectNumber)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -335,13 +335,13 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 
 	volume.Lock()
 
-	ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, valueToTree)
+	ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
 		return
 	}
 	if !ok {
-		_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Put(objectNumber, valueToTree)
+		_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Put(objectNumber, valueToTree)
 		if nil != err {
 			volume.Unlock()
 			return
@@ -359,7 +359,7 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
 	volume.Lock()
 
-	_, err = volume.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
+	_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
 
 	volume.recordTransaction(transactionDeleteBPlusTreeObject, objectNumber, nil)
 
@@ -370,7 +370,7 @@ func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err erro
 
 func (volume *volumeStruct) IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error) {
 	volume.Lock()
-	key, _, ok, err := volume.bPlusTreeObjectWrapper.bPlusTree.GetByIndex(int(index))
+	key, _, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
 		volume.Unlock()
 		return
@@ -417,16 +417,16 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	switch treeType {
 	case InodeRecBPlusTree:
 		treeName = "InodeRec"
-		treeWrapper = volume.inodeRecWrapper
-		trackingLayoutReport = volume.inodeRecBPlusTreeLayout
+		treeWrapper = volume.liveView.inodeRecWrapper
+		trackingLayoutReport = volume.liveView.inodeRecBPlusTreeLayout
 	case LogSegmentRecBPlusTree:
 		treeName = "LogSegmentRec"
-		treeWrapper = volume.logSegmentRecWrapper
-		trackingLayoutReport = volume.logSegmentRecBPlusTreeLayout
+		treeWrapper = volume.liveView.logSegmentRecWrapper
+		trackingLayoutReport = volume.liveView.logSegmentRecBPlusTreeLayout
 	case BPlusTreeObjectBPlusTree:
 		treeName = "BPlusTreeObject"
-		treeWrapper = volume.bPlusTreeObjectWrapper
-		trackingLayoutReport = volume.bPlusTreeObjectBPlusTreeLayout
+		treeWrapper = volume.liveView.bPlusTreeObjectWrapper
+		trackingLayoutReport = volume.liveView.bPlusTreeObjectBPlusTreeLayout
 	default:
 		err = fmt.Errorf("fetchLayoutReport(treeType %d): bad tree type", treeType)
 		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
