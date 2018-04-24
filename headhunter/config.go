@@ -80,6 +80,10 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
 	liveView                                *volumeViewStruct
+	snapViewByID                            sortedmap.LLRBTree
+	snapViewByTimeStamp                     sortedmap.LLRBTree
+	snapViewByName                          sortedmap.LLRBTree
+	snapViewBeingDeleted                    sortedmap.LLRBTree
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
