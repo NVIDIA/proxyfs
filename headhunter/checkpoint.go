@@ -32,7 +32,8 @@ type uint64Struct struct {
 
 const (
 	checkpointHeaderVersion2 uint64 = iota + 2
-	// uint64 in %016X indicating checkpointHeaderVersion2
+	checkpointHeaderVersion3
+	// uint64 in %016X indicating checkpointHeaderVersion2 or checkpointHeaderVersion3
 	// ' '
 	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
 	// ' '
@@ -44,6 +45,12 @@ const (
 type checkpointHeaderV2Struct struct {
 	CheckpointObjectTrailerV2StructObjectNumber uint64 // checkpointObjectTrailerV2Struct found at "tail" of object
 	CheckpointObjectTrailerV2StructObjectLength uint64 // this length includes the three B+Tree "layouts" appended
+	ReservedToNonce                             uint64 // highest nonce value reserved
+}
+
+type checkpointHeaderV3Struct struct {
+	CheckpointObjectTrailerV3StructObjectNumber uint64 // checkpointObjectTrailerV3Struct found at "tail" of object
+	CheckpointObjectTrailerV3StructObjectLength uint64 // this length includes appended non-fixed sized arrays
 	ReservedToNonce                             uint64 // highest nonce value reserved
 }
 
@@ -65,9 +72,41 @@ type checkpointObjectTrailerV2Struct struct {
 	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
 }
 
+type checkpointObjectTrailerV3Struct struct {
+	InodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
+	InodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
+	InodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
+	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV2Struct
+	LogSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
+	LogSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
+	LogSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
+	LogSegmentRecBPlusTreeLayoutNumElements   uint64 // elements immediately follow inodeRecBPlusTreeLayout
+	BPlusTreeObjectBPlusTreeObjectNumber      uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
+	BPlusTreeObjectBPlusTreeObjectOffset      uint64 // ...and offset into the Object where root starts
+	BPlusTreeObjectBPlusTreeObjectLength      uint64 // ...and length if that root node
+	BPlusTreeObjectBPlusTreeLayoutNumElements uint64 // elements immediately follow logSegmentRecBPlusTreeLayout
+	SnapShotIDNumBits                         uint64 // number of bits reserved to hold SnapShotIDs
+	SnapShotListNumElements                   uint64 // elements immediately follow bPlusTreeObjectBPlusTreeLayout
+	SnapShotListTotalSize                     uint64 // size of entire SnapShotList
+	// inodeRecBPlusTreeLayout        serialized as [inodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
+	// logSegmentBPlusTreeLayout      serialized as [logSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
+	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
+	// snapShotList                   serialized as [snapShotListNumElements                  ]elementOfSnapShotListStruct
+}
+
 type elementOfBPlusTreeLayoutStruct struct {
 	ObjectNumber uint64
 	ObjectBytes  uint64
+}
+
+type elementOfSnapShotListStruct struct {
+	ID        uint64
+	TimeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
+	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
+	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
+	Name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
+	//                       func utils.ByteSliceToString(byteSlice []byte)        (str string)
+	//                       func utils.StringToByteSlice(str string)              (byteSlice []byte)
 }
 
 type checkpointRequestStruct struct {
