@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type Key interface{}
@@ -98,6 +99,31 @@ func CompareUint64(key1 Key, key2 Key) (result int, err error) {
 		result = 0
 	} else { // key1Uint64 > key2Uint64
 		result = 1
+	}
+
+	err = nil
+
+	return
+}
+
+func CompareTime(key1 Key, key2 Key) (result int, err error) {
+	key1Time, ok := key1.(time.Time)
+	if !ok {
+		err = fmt.Errorf("CompareTime(non-time.Time,) not supported")
+		return
+	}
+	key2Time, ok := key2.(time.Time)
+	if !ok {
+		err = fmt.Errorf("CompareTime(time.Time, non-time.Time) not supported")
+		return
+	}
+
+	if key1Time.Before(key2Time) {
+		result = -1
+	} else if key1Time.After(key2Time) {
+		result = 1
+	} else { // key1Time == key2Time
+		result = 0
 	}
 
 	err = nil
