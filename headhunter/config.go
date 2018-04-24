@@ -27,26 +27,26 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
-const (
-	inodeRecBPlusTreeWrapperType uint32 = iota
-	logSegmentRecBPlusTreeWrapperType
-	bPlusTreeObjectBPlusTreeWrapperType
-)
-
 type bPlusTreeWrapperStruct struct {
-	volumeView  *volumeViewStruct
-	wrapperType uint32 // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
-	bPlusTree   sortedmap.BPlusTree
+	volumeView              *volumeViewStruct
+	bPlusTree               sortedmap.BPlusTree
+	trackingBPlusTreeLayout sortedmap.LayoutReport
 }
 
 type volumeViewStruct struct {
-	volume                         *volumeStruct
-	inodeRecWrapper                *bPlusTreeWrapperStruct
-	logSegmentRecWrapper           *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper         *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout        sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout   sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout sortedmap.LayoutReport
+	volume                *volumeStruct
+	nonce                 uint64    //   supplies strict time-ordering of views regardless timebase resets
+	snapShotID            uint64    //   only valid for active SnapShot views
+	snapShotTimeStamp     time.Time //   only valid for active SnapShot views
+	snapShotName          string    //   only valid for active SnapShot views
+	holdOffDeletesWG      sync.WaitGroup
+	trackingObjectCreates bool //        creates need not be tracked for the oldest SnapShot
+	//                                     (or liveView if no active SnapShots precede it)
+	inodeRecWrapper        *bPlusTreeWrapperStruct
+	logSegmentRecWrapper   *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper *bPlusTreeWrapperStruct
+	createdObjectsWrapper  *bPlusTreeWrapperStruct
+	deletedObjectsWrapper  *bPlusTreeWrapperStruct
 }
 
 type delayedObjectDeleteSSTODOStruct struct {
@@ -80,10 +80,11 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
 	liveView                                *volumeViewStruct
-	snapViewByID                            sortedmap.LLRBTree
-	snapViewByTimeStamp                     sortedmap.LLRBTree
-	snapViewByName                          sortedmap.LLRBTree
-	snapViewBeingDeleted                    sortedmap.LLRBTree
+	viewByNonce                             sortedmap.LLRBTree // non-live volumeViewStruct's all in this LLRBTree
+	snapViewByID                            sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
+	snapViewByTimeStamp                     sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
+	snapViewByName                          sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
+	snapViewBeingDeleted                    sortedmap.LLRBTree // volumeVewStruct's being deleted are in this LLRBTree (key:Nonce)
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
