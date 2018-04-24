@@ -418,15 +418,15 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	case InodeRecBPlusTree:
 		treeName = "InodeRec"
 		treeWrapper = volume.liveView.inodeRecWrapper
-		trackingLayoutReport = volume.liveView.inodeRecBPlusTreeLayout
+		trackingLayoutReport = volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout
 	case LogSegmentRecBPlusTree:
 		treeName = "LogSegmentRec"
 		treeWrapper = volume.liveView.logSegmentRecWrapper
-		trackingLayoutReport = volume.liveView.logSegmentRecBPlusTreeLayout
+		trackingLayoutReport = volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout
 	case BPlusTreeObjectBPlusTree:
 		treeName = "BPlusTreeObject"
 		treeWrapper = volume.liveView.bPlusTreeObjectWrapper
-		trackingLayoutReport = volume.liveView.bPlusTreeObjectBPlusTreeLayout
+		trackingLayoutReport = volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout
 	default:
 		err = fmt.Errorf("fetchLayoutReport(treeType %d): bad tree type", treeType)
 		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)

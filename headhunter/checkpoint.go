@@ -99,14 +99,28 @@ type elementOfBPlusTreeLayoutStruct struct {
 	ObjectBytes  uint64
 }
 
-type elementOfSnapShotListStruct struct {
-	ID        uint64
-	TimeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
+type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
+	nonce uint64 //        supplies strict time-ordering of SnapShots regardless timebase resets
+	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
+	//                       ID == 0                     reserved for the "live" view
+	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
+	//                                                             or to indicate a SnapShot being deleted
+	timeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
 	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
-	Name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
+	name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func utils.ByteSliceToString(byteSlice []byte)        (str string)
 	//                       func utils.StringToByteSlice(str string)              (byteSlice []byte)
+	createdObjectsBPlusTreeObjectNumber      uint64
+	createdObjectsBPlusTreeObjectOffset      uint64
+	createdObjectsBPlusTreeObjectLength      uint64
+	createdObjectsBPlusTreeLayoutNumElements uint64
+	// createdObjectsBPlusTreeLayout serialized as [createdObjectsBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
+	deletedObjectsBPlusTreeObjectNumber      uint64
+	deletedObjectsBPlusTreeObjectOffset      uint64
+	deletedObjectsBPlusTreeObjectLength      uint64
+	deletedObjectsBPlusTreeLayoutNumElements uint64
+	// deletedObjectsBPlusTreeLayout serialized as [deletedObjectsBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
 }
 
 type checkpointRequestStruct struct {
@@ -599,58 +613,12 @@ func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObje
 		return
 	}
 
-	// Deserialize volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
+	// Load volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper B+Trees
 
-	expectedCheckpointObjectTrailerSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
-	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
-	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
-	expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
-	expectedCheckpointObjectTrailerSize += bytesConsumed
-
-	if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
-		err = fmt.Errorf("checkpointObjectTrailer for volume %v does not match required size", volumeView.volume.volumeName)
-		return
+	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 	}
-
-	volumeView.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-	volumeView.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-	volumeView.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
-
-	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-		if nil != err {
-			return
-		}
-
-		volumeView.inodeRecBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-	}
-
-	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-		if nil != err {
-			return
-		}
-
-		volumeView.logSegmentRecBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-	}
-
-	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
-		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-		if nil != err {
-			return
-		}
-
-		volumeView.bPlusTreeObjectBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-	}
-
-	// Load volumeView.{inodeRec|logSegmentRec|bPlusTreeObject} B+Trees
-
-	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{volumeView: volumeView, wrapperType: inodeRecBPlusTreeWrapperType}
-	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{volumeView: volumeView, wrapperType: logSegmentRecBPlusTreeWrapperType}
-	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{volumeView: volumeView, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
 
 	if 0 == checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber {
 		volumeView.inodeRecWrapper.bPlusTree =
@@ -671,6 +639,11 @@ func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObje
 		if nil != err {
 			return
 		}
+	}
+
+	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 	}
 
 	if 0 == checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber {
@@ -694,6 +667,11 @@ func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObje
 		}
 	}
 
+	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
 	if 0 == checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber {
 		volumeView.bPlusTreeObjectWrapper.bPlusTree =
 			sortedmap.NewBPlusTree(
@@ -713,6 +691,49 @@ func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObje
 		if nil != err {
 			return
 		}
+	}
+
+	// Deserialize volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper LayoutReports
+
+	expectedCheckpointObjectTrailerSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
+	expectedCheckpointObjectTrailerSize += bytesConsumed
+
+	if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
+		err = fmt.Errorf("checkpointObjectTrailer for volume %v does not match required size", volumeView.volume.volumeName)
+		return
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.inodeRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.logSegmentRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
 	}
 
 	err = nil
@@ -870,13 +891,10 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				BPlusTreeObjectBPlusTreeLayoutNumElements: 0,
 			}
 
-			volume.liveView.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-			volume.liveView.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-			volume.liveView.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
-
-			volume.liveView.inodeRecWrapper = &bPlusTreeWrapperStruct{volumeView: volume.liveView, wrapperType: inodeRecBPlusTreeWrapperType}
-			volume.liveView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{volumeView: volume.liveView, wrapperType: logSegmentRecBPlusTreeWrapperType}
-			volume.liveView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{volumeView: volume.liveView, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
+			volume.liveView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
 
 			volume.liveView.inodeRecWrapper.bPlusTree =
 				sortedmap.NewBPlusTree(
@@ -885,12 +903,22 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					volume.liveView.inodeRecWrapper,
 					globals.inodeRecCache)
 
+			volume.liveView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
 			volume.liveView.logSegmentRecWrapper.bPlusTree =
 				sortedmap.NewBPlusTree(
 					volume.maxLogSegmentsPerMetadataNode,
 					sortedmap.CompareUint64,
 					volume.liveView.logSegmentRecWrapper,
 					globals.logSegmentRecCache)
+
+			volume.liveView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
 
 			volume.liveView.bPlusTreeObjectWrapper.bPlusTree =
 				sortedmap.NewBPlusTree(
@@ -1220,9 +1248,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
-	volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecBPlusTreeLayout))
-	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecBPlusTreeLayout))
-	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectBPlusTreeLayout))
+	volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout))
+	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout))
+	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout))
 
 	checkpointTrailerBuf, err = cstruct.Pack(volume.checkpointObjectTrailer, LittleEndian)
 	if nil != err {
@@ -1236,7 +1264,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.inodeRecBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1244,7 +1272,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.logSegmentRecBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1252,7 +1280,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.bPlusTreeObjectBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1332,7 +1360,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
 
-	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.inodeRecBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
@@ -1340,7 +1368,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
 	}
-	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.logSegmentRecBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
@@ -1348,7 +1376,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
 	}
-	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.bPlusTreeObjectBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
@@ -1359,9 +1387,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
-			delete(volume.liveView.inodeRecBPlusTreeLayout, objectNumber)
-			delete(volume.liveView.logSegmentRecBPlusTreeLayout, objectNumber)
-			delete(volume.liveView.bPlusTreeObjectBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout, objectNumber)
 			volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODOStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
 		}
 	}
