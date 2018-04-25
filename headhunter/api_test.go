@@ -96,6 +96,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthTCPPort=9999",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
 		"SwiftClient.RetryLimitObject=0",
