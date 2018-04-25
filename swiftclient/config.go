@@ -64,6 +64,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		chunkedConnectionPoolSize    uint16
 		freeConnectionIndex          uint16
 		noAuthTCPPort                uint16
+		noAuthIPAddr                 string
 		nonChunkedConnectionPoolSize uint16
 	)
 
@@ -76,7 +77,12 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.noAuthStringAddr = "127.0.0.1:" + strconv.Itoa(int(noAuthTCPPort))
+	noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
+	if nil != err {
+		noAuthIPAddr = "127.0.0.1"
+	}
+	globals.noAuthStringAddr = noAuthIPAddr + ":" + strconv.Itoa(int(noAuthTCPPort))
+
 
 	globals.noAuthTCPAddr, err = net.ResolveTCPAddr("tcp4", globals.noAuthStringAddr)
 	if nil != err {
