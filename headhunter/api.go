@@ -14,6 +14,8 @@ const (
 	InodeRecBPlusTree
 	LogSegmentRecBPlusTree
 	BPlusTreeObjectBPlusTree
+	CreatedObjectsBPlusTree
+	DeletedObjectsBPlusTree
 )
 
 // VolumeHandle is used to operate on a given volume's database

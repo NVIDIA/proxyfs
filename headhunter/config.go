@@ -56,23 +56,24 @@ type delayedObjectDeleteSSTODOStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	volumeName                       string
-	accountName                      string
-	maxFlushSize                     uint64
-	nonceValuesToReserve             uint16
-	maxInodesPerMetadataNode         uint64
-	maxLogSegmentsPerMetadataNode    uint64
-	maxDirFileNodesPerMetadataNode   uint64
-	checkpointContainerName          string
-	checkpointContainerStoragePolicy string
-	checkpointInterval               time.Duration
-	replayLogFileName                string   //      if != "", use replay log to reduce RPO to zero
-	replayLogFile                    *os.File //        opened on first Put or Delete after checkpoint
-	//                                                  closed/deleted on successful checkpoint
-	defaultReplayLogWriteBuffer             []byte // used for O_DIRECT writes to replay log
+	volumeName                              string
+	accountName                             string
+	maxFlushSize                            uint64
+	nonceValuesToReserve                    uint16
+	maxInodesPerMetadataNode                uint64
+	maxLogSegmentsPerMetadataNode           uint64
+	maxDirFileNodesPerMetadataNode          uint64
+	maxCreatedDeletedObjectsPerMetadataNode uint64
+	checkpointContainerName                 string
+	checkpointContainerStoragePolicy        string
+	checkpointInterval                      time.Duration
+	replayLogFileName                       string   //           if != "", use replay log to reduce RPO to zero
+	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
+	//                                                            closed/deleted on successful checkpoint
+	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointFlushedData                   bool
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
-	checkpointChunkedPutContextObjectNumber uint64 // ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
+	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
@@ -99,6 +100,7 @@ type globalsStruct struct {
 	inodeRecCache                           sortedmap.BPlusTreeCache
 	logSegmentRecCache                      sortedmap.BPlusTreeCache
 	bPlusTreeObjectCache                    sortedmap.BPlusTreeCache
+	createdDeletedObjectsCache              sortedmap.BPlusTreeCache
 	volumeMap                               map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
@@ -109,6 +111,8 @@ func Up(confMap conf.ConfMap) (err error) {
 	var (
 		bPlusTreeObjectCacheEvictHighLimit       uint64
 		bPlusTreeObjectCacheEvictLowLimit        uint64
+		createdDeletedObjectsCacheEvictHighLimit uint64
+		createdDeletedObjectsCacheEvictLowLimit  uint64
 		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
 		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
@@ -197,6 +201,17 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
+
+	createdDeletedObjectsCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictLowLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictLowLimit = logSegmentRecCacheEvictLowLimit // TODO: Eventually just return
+	}
+	createdDeletedObjectsCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictHighLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictHighLimit = logSegmentRecCacheEvictHighLimit // TODO: Eventually just return
+	}
+
+	globals.createdDeletedObjectsCache = sortedmap.NewBPlusTreeCache(createdDeletedObjectsCacheEvictLowLimit, createdDeletedObjectsCacheEvictHighLimit)
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
@@ -453,6 +468,11 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volume.maxDirFileNodesPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxDirFileNodesPerMetadataNode")
 	if nil != err {
 		return
+	}
+
+	volume.maxCreatedDeletedObjectsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxCreatedDeletedObjectsPerMetadataNode")
+	if nil != err {
+		volume.maxCreatedDeletedObjectsPerMetadataNode = volume.maxLogSegmentsPerMetadataNode // TODO: Eventually just return
 	}
 
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")
