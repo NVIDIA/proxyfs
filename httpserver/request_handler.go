@@ -1046,7 +1046,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		err                       error
 		layoutReportIndex         int
 		layoutReportMap           sortedmap.LayoutReport
-		layoutReportSet           [4]*layoutReportSetElementStruct
+		layoutReportSet           [6]*layoutReportSetElementStruct
 		layoutReportSetElement    *layoutReportSetElementStruct
 		layoutReportSetJSON       bytes.Buffer
 		layoutReportSetJSONPacked []byte
@@ -1066,6 +1066,12 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 	}
 	layoutReportSet[headhunter.BPlusTreeObjectBPlusTree] = &layoutReportSetElementStruct{
 		TreeName: "B+Plus Tree Objects B+Tree",
+	}
+	layoutReportSet[headhunter.CreatedObjectsBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Created Objects B+Tree",
+	}
+	layoutReportSet[headhunter.DeletedObjectsBPlusTree] = &layoutReportSetElementStruct{
+		TreeName: "Deleted Objects B+Tree",
 	}
 
 	for treeTypeIndex, layoutReportSetElement = range layoutReportSet {

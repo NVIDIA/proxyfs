@@ -409,7 +409,6 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		objectBytesTracked   uint64
 		objectNumber         uint64
 		ok                   bool
-		trackingLayoutReport sortedmap.LayoutReport
 		treeName             string
 		treeWrapper          *bPlusTreeWrapperStruct
 	)
@@ -418,15 +417,18 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	case InodeRecBPlusTree:
 		treeName = "InodeRec"
 		treeWrapper = volume.liveView.inodeRecWrapper
-		trackingLayoutReport = volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout
 	case LogSegmentRecBPlusTree:
 		treeName = "LogSegmentRec"
 		treeWrapper = volume.liveView.logSegmentRecWrapper
-		trackingLayoutReport = volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout
 	case BPlusTreeObjectBPlusTree:
 		treeName = "BPlusTreeObject"
 		treeWrapper = volume.liveView.bPlusTreeObjectWrapper
-		trackingLayoutReport = volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout
+	case CreatedObjectsBPlusTree:
+		treeName = "CreatedObjectObject"
+		treeWrapper = volume.liveView.createdObjectsWrapper
+	case DeletedObjectsBPlusTree:
+		treeName = "DeletedObjectObject"
+		treeWrapper = volume.liveView.deletedObjectsWrapper
 	default:
 		err = fmt.Errorf("fetchLayoutReport(treeType %d): bad tree type", treeType)
 		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
@@ -444,7 +446,7 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	discrepencies = 0
 
 	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
-		objectBytesTracked, ok = trackingLayoutReport[objectNumber]
+		objectBytesTracked, ok = treeWrapper.trackingBPlusTreeLayout[objectNumber]
 		if ok {
 			if objectBytesMeasured != objectBytesTracked {
 				discrepencies++
@@ -456,7 +458,7 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		}
 	}
 
-	for objectNumber, objectBytesTracked = range trackingLayoutReport {
+	for objectNumber, objectBytesTracked = range treeWrapper.trackingBPlusTreeLayout {
 		objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
 		if ok {
 			// Already handled above
@@ -478,6 +480,12 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 // FetchLayoutReport returns the B+Tree sortedmap.LayoutReport for one or all
 // of the HeadHunter tables. In the case of requesting "all", the checkpoint
 // overhead will also be included.
+//
+// Note that only the "live" view information is reported. If prior SnapShot's
+// exist, these will not be reported (even t for the "all" case). This is
+// primarily due to the fact that SnapShot's inherently overlap in the objects
+// they reference. In the case where one or more SnapShot's exist, the
+// CreatedObjectsBPlusTree should be expected to be empty.
 func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error) {
 	var (
 		checkpointLayoutReport sortedmap.LayoutReport
@@ -493,7 +501,7 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	defer volume.Unlock()
 
 	if MergedBPlusTree == treeType {
-		// First, accumulate the 3 B+Tree sortedmap.LayoutReport's
+		// First, accumulate the 5 B+Tree sortedmap.LayoutReport's
 
 		layoutReport, _, err = volume.fetchLayoutReport(InodeRecBPlusTree)
 		if nil != err {
@@ -512,6 +520,30 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 			}
 		}
 		perTreeLayoutReport, _, err = volume.fetchLayoutReport(BPlusTreeObjectBPlusTree)
+		if nil != err {
+			return
+		}
+		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
+			objectBytes, ok = layoutReport[objectNumber]
+			if ok {
+				layoutReport[objectNumber] = objectBytes + perTreeObjectBytes
+			} else {
+				layoutReport[objectNumber] = perTreeObjectBytes
+			}
+		}
+		perTreeLayoutReport, _, err = volume.fetchLayoutReport(CreatedObjectsBPlusTree)
+		if nil != err {
+			return
+		}
+		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
+			objectBytes, ok = layoutReport[objectNumber]
+			if ok {
+				layoutReport[objectNumber] = objectBytes + perTreeObjectBytes
+			} else {
+				layoutReport[objectNumber] = perTreeObjectBytes
+			}
+		}
+		perTreeLayoutReport, _, err = volume.fetchLayoutReport(DeletedObjectsBPlusTree)
 		if nil != err {
 			return
 		}

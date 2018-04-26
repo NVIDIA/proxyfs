@@ -693,6 +693,32 @@ func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObje
 		}
 	}
 
+	// Fake load volumeView.{createdObjects|deletedObjects}Wrapper B+Trees
+
+	volumeView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport), // Nothing to deserialize into this
+	}
+
+	volumeView.createdObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
+	volumeView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport), // Nothing to deserialize into this
+	}
+
+	volumeView.deletedObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
 	// Deserialize volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper LayoutReports
 
 	expectedCheckpointObjectTrailerSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
@@ -926,6 +952,30 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					sortedmap.CompareUint64,
 					volume.liveView.bPlusTreeObjectWrapper,
 					globals.bPlusTreeObjectCache)
+
+			volume.liveView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.createdObjectsWrapper.bPlusTree =
+				sortedmap.NewBPlusTree(
+					volume.maxCreatedDeletedObjectsPerMetadataNode,
+					sortedmap.CompareUint64,
+					volume.liveView.createdObjectsWrapper,
+					globals.createdDeletedObjectsCache)
+
+			volume.liveView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.deletedObjectsWrapper.bPlusTree =
+				sortedmap.NewBPlusTree(
+					volume.maxCreatedDeletedObjectsPerMetadataNode,
+					sortedmap.CompareUint64,
+					volume.liveView.createdObjectsWrapper,
+					globals.createdDeletedObjectsCache)
 		} else {
 			// Load/process checkpointObjectTrailerV2Struct
 
