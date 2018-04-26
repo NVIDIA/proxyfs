@@ -100,7 +100,7 @@ type elementOfBPlusTreeLayoutStruct struct {
 }
 
 type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
-	nonce uint64 //        supplies strict time-ordering of SnapShots regardless timebase resets
+	nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
 	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
 	//                       ID == 0                     reserved for the "live" view
 	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
@@ -984,6 +984,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				return
 			}
 		}
+
+		// Fake load of snapShotViewTree
+
+		volume.snapShotViewTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+	} else if checkpointHeaderVersion3 == checkpointVersion {
+		// TODO
 	} else {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, checkpointVersion)
 		return

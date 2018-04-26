@@ -34,19 +34,59 @@ type bPlusTreeWrapperStruct struct {
 }
 
 type volumeViewStruct struct {
-	volume                *volumeStruct
-	nonce                 uint64    //   supplies strict time-ordering of views regardless timebase resets
-	snapShotID            uint64    //   only valid for active SnapShot views
-	snapShotTimeStamp     time.Time //   only valid for active SnapShot views
-	snapShotName          string    //   only valid for active SnapShot views
-	holdOffDeletesWG      sync.WaitGroup
-	trackingObjectCreates bool //        creates need not be tracked for the oldest SnapShot
-	//                                     (or liveView if no active SnapShots precede it)
+	volume                 *volumeStruct
+	nonce                  uint64    //   supplies strict time-ordering of views regardless of timebase resets
+	snapShotID             uint64    //   only valid for active SnapShot views
+	snapShotTimeStamp      time.Time //   only valid for active SnapShot views
+	snapShotName           string    //   only valid for active SnapShot views
 	inodeRecWrapper        *bPlusTreeWrapperStruct
 	logSegmentRecWrapper   *bPlusTreeWrapperStruct
 	bPlusTreeObjectWrapper *bPlusTreeWrapperStruct
-	createdObjectsWrapper  *bPlusTreeWrapperStruct
-	deletedObjectsWrapper  *bPlusTreeWrapperStruct
+	createdObjectsWrapper  *bPlusTreeWrapperStruct // if volumeView is     the liveView, should be empty
+	//                                                if volumeView is not the liveView, tracks objects created between this and the next volumeView
+	deletedObjectsWrapper *bPlusTreeWrapperStruct //  if volumeView is     the liveView, tracks objects to be deleted at next checkpoint
+	//                                                if volumeView is not the liveView, tracks objects deleted between this and the next volumeView
+	// upon object creation:
+	//   if prior volumeView exists:
+	//     add object to that volumeView's createdObjects
+	//   else:
+	//     do nothing
+	//
+	// upon object deletion:
+	//   if prior volumeView exists:
+	//     if object in prior volumeView createdObjects:
+	//       remove object from prior volumeView createdObjects
+	//       add object to liveView deletedObjects
+	//     else:
+	//       add object to prior volumeView deletedObjects
+	//   else:
+	//     add object to liveView deletedObjects
+	//
+	// upon next checkpoint:
+	//   remove all objects from liveView deletedObjects
+	//   schedule background deletion of those removed objects
+	//
+	// upon SnapShot creation:
+	//   take a fresh checkpoint (will drain liveView deletedObjects)
+	//   create a fresh volumeView
+	//   take a fresh checkpoint (will record volumeView in this checkpoint)
+	//
+	// upon volumeView deletion:
+	//   if deleted volumeView is oldest:
+	//     discard volumeView createdObjects
+	//     schedule background deletion of volumeView deletedObjects
+	//     discard volumeView deletedObjects
+	//   else:
+	//     createdObjects merged into prior volumeView
+	//     discard volumeView createdObjects
+	//     for each object in deletedObjects:
+	//       if object in prior volumeView createdObjects:
+	//         remove object from prior volumeView createdObjects
+	//         schedule background deletion of object
+	//       else:
+	//         add object to prior volumeView deletedObjects
+	//     discard volumeView deletedObjects
+	//   discard volumeView
 }
 
 type delayedObjectDeleteSSTODOStruct struct {
@@ -81,11 +121,7 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
 	liveView                                *volumeViewStruct
-	viewByNonce                             sortedmap.LLRBTree // non-live volumeViewStruct's all in this LLRBTree
-	snapViewByID                            sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
-	snapViewByTimeStamp                     sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
-	snapViewByName                          sortedmap.LLRBTree // non-live active volumeViewStruct's in this LLRBTree
-	snapViewBeingDeleted                    sortedmap.LLRBTree // volumeVewStruct's being deleted are in this LLRBTree (key:Nonce)
+	snapShotViewTree                        sortedmap.LLRBTree
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
@@ -94,7 +130,7 @@ type globalsStruct struct {
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
 	checkpointHeaderV2StructSize            uint64
-	checkpointObjectTrailerStructSize       uint64
+	checkpointHeaderV3StructSize            uint64
 	elementOfBPlusTreeLayoutStructSize      uint64
 	replayLogTransactionFixedPartStructSize uint64
 	inodeRecCache                           sortedmap.BPlusTreeCache
@@ -114,7 +150,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
 		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -142,7 +178,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
@@ -365,7 +401,7 @@ func Down() (err error) {
 func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
 		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -385,7 +421,7 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 		return
 	}
 
-	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
