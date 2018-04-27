@@ -3004,9 +3004,9 @@ func (mS *mountStruct) SnapShotCreate(name string) (id uint64, err error) {
 	defer vS.snapShotMutex.Unlock()
 
 	snapShot = &snapShotStruct{
-		id:        id,
-		timeStamp: time.Now(),
-		name:      name,
+		id:   id,
+		time: time.Now(),
+		name: name,
 	}
 
 	vS.snapShotMap[id] = snapShot // TODO: Need to actually create it
@@ -3058,7 +3058,7 @@ func (mS *mountStruct) SnapShotList(orderBy string, direction string) (list []Sn
 	list = make([]SnapShotStruct, 0, len(vS.snapShotMap))
 
 	for _, snapShot = range vS.snapShotMap {
-		list = append(list, SnapShotStruct{ID: snapShot.id, TimeStamp: snapShot.timeStamp, Name: snapShot.name})
+		list = append(list, SnapShotStruct{ID: snapShot.id, Time: snapShot.time, Name: snapShot.name})
 	}
 
 	switch strings.ToLower(orderBy) {
@@ -3076,9 +3076,9 @@ func (mS *mountStruct) SnapShotList(orderBy string, direction string) (list []Sn
 		}
 	default:
 		if "desc" == strings.ToLower(direction) {
-			sort.Slice(list, func(i int, j int) bool { return list[j].TimeStamp.Before(list[i].TimeStamp) })
+			sort.Slice(list, func(i int, j int) bool { return list[j].Time.Before(list[i].Time) })
 		} else {
-			sort.Slice(list, func(i int, j int) bool { return list[i].TimeStamp.Before(list[j].TimeStamp) })
+			sort.Slice(list, func(i int, j int) bool { return list[i].Time.Before(list[j].Time) })
 		}
 	}
 

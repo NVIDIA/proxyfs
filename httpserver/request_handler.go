@@ -1182,7 +1182,7 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, snapShot = range list {
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, snapShot.ID, snapShot.TimeStamp.Format(time.RFC3339), snapShot.Name)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, snapShot.ID, snapShot.Time.Format(time.RFC3339), snapShot.Name)))
 		}
 
 		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsBottomTemplate, requestState.volume.name)))

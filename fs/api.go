@@ -157,9 +157,9 @@ type JobHandle interface {
 }
 
 type SnapShotStruct struct {
-	ID        uint64
-	TimeStamp time.Time
-	Name      string
+	ID   uint64
+	Time time.Time
+	Name string
 }
 
 // Mount handle interface
