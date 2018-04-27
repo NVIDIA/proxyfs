@@ -35,10 +35,10 @@ type bPlusTreeWrapperStruct struct {
 
 type volumeViewStruct struct {
 	volume                 *volumeStruct
-	nonce                  uint64    //   supplies strict time-ordering of views regardless of timebase resets
-	snapShotID             uint64    //   only valid for active SnapShot views
-	snapShotTimeStamp      time.Time //   only valid for active SnapShot views
-	snapShotName           string    //   only valid for active SnapShot views
+	nonce                  uint64 // supplies strict time-ordering of views regardless of timebase resets
+	snapShotID             uint64
+	snapShotTimeStamp      time.Time
+	snapShotName           string
 	inodeRecWrapper        *bPlusTreeWrapperStruct
 	logSegmentRecWrapper   *bPlusTreeWrapperStruct
 	bPlusTreeObjectWrapper *bPlusTreeWrapperStruct
@@ -121,7 +121,10 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
 	liveView                                *volumeViewStruct
-	snapShotViewTree                        sortedmap.LLRBTree
+	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
+	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
+	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
+	viewTreeByName                          sortedmap.LLRBTree // key == volumeViewStruct.Name;  value == *volumeViewStruct
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }

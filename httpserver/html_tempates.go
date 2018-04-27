@@ -412,7 +412,7 @@ const snapShotsTopTemplate string = `<!doctype html>
         <thead>
           <tr>
             <th scope="col" id="header-id" class="fit clickable">ID</th>
-            <th scope="col" id="header-timestamp" class="w-25 clickable">TimeStamp</th>
+            <th scope="col" id="header-timestamp" class="w-25 clickable">Time</th>
             <th scope="col" id="header-name" class="clickable">Name</th>
             <th class="fit">&nbsp;</th>
           </tr>

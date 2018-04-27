@@ -33,9 +33,9 @@ type mountStruct struct {
 }
 
 type snapShotStruct struct {
-	id        uint64
-	timeStamp time.Time
-	name      string
+	id   uint64
+	time time.Time
+	name string
 }
 
 type volumeStruct struct {

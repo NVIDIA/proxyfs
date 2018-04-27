@@ -985,9 +985,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 
-		// Fake load of snapShotViewTree
+		// Fake load of viewTreeBy{Nonce|ID|Time|Name}
 
-		volume.snapShotViewTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByNonce = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByID = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByTime = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByName = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
 	} else if checkpointHeaderVersion3 == checkpointVersion {
 		// TODO
 	} else {
