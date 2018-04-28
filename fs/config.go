@@ -47,7 +47,6 @@ type volumeStruct struct {
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
 	jobRWMutex               sync.RWMutex
-	snapShotMutex            sync.Mutex
 	snapShotMap              map[uint64]*snapShotStruct
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle

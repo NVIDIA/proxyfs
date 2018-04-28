@@ -5,8 +5,6 @@ package fs
 import "C"
 
 import (
-	"time"
-
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -156,12 +154,6 @@ type JobHandle interface {
 	Info() (info []string)
 }
 
-type SnapShotStruct struct {
-	ID   uint64
-	Time time.Time
-	Name string
-}
-
 // Mount handle interface
 
 func Mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
@@ -210,7 +202,6 @@ type MountHandle interface {
 	SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error)
 	SnapShotCreate(name string) (id uint64, err error)
 	SnapShotDelete(id uint64) (err error)
-	SnapShotList(orderBy string, direction string) (list []SnapShotStruct)
 	StatVfs() (statVFS StatVFS, err error)
 	Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error)
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
