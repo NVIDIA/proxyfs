@@ -1,6 +1,7 @@
 package headhunter
 
 import (
+	"container/list"
 	"fmt"
 	"hash/crc64"
 	"os"
@@ -37,7 +38,7 @@ type volumeViewStruct struct {
 	volume                 *volumeStruct
 	nonce                  uint64 // supplies strict time-ordering of views regardless of timebase resets
 	snapShotID             uint64
-	snapShotTimeStamp      time.Time
+	snapShotTime           time.Time
 	snapShotName           string
 	inodeRecWrapper        *bPlusTreeWrapperStruct
 	logSegmentRecWrapper   *bPlusTreeWrapperStruct
@@ -115,6 +116,8 @@ type volumeStruct struct {
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
+	snapShotIDNumBits                       uint16
+	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
 	checkpointHeaderVersion                 uint64
@@ -125,6 +128,7 @@ type volumeStruct struct {
 	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
 	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
 	viewTreeByName                          sortedmap.LLRBTree // key == volumeViewStruct.Name;  value == *volumeViewStruct
+	availableSnapShotIDList                 *list.List
 	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
@@ -536,6 +540,19 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	} else {
 		// Disable Replay Log
 		volume.replayLogFileName = ""
+	}
+
+	volume.snapShotIDNumBits, err = confMap.FetchOptionValueUint16(volumeSectionName, "SnapShotIDNumBits")
+	if nil != err {
+		volume.snapShotIDNumBits = 10 // TODO: Eventually just return
+	}
+	if 2 > volume.snapShotIDNumBits {
+		err = fmt.Errorf("[%v]SnapShotIDNumBits must be at least 2", volumeSectionName)
+		return
+	}
+	if 32 < volume.snapShotIDNumBits {
+		err = fmt.Errorf("[%v]SnapShotIDNumBits must be no more than 32", volumeSectionName)
+		return
 	}
 
 	err = volume.getCheckpoint(autoFormat)

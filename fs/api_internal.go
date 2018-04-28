@@ -8,7 +8,6 @@ import (
 	"math"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -2988,100 +2987,14 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) SnapShotCreate(name string) (id uint64, err error) {
-	var (
-		snapShot *snapShotStruct
-		vS       *volumeStruct
-	)
-
-	vS = mS.volStruct
-
-	id, err = vS.headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		return
-	}
-
-	vS.snapShotMutex.Lock()
-	defer vS.snapShotMutex.Unlock()
-
-	snapShot = &snapShotStruct{
-		id:   id,
-		time: time.Now(),
-		name: name,
-	}
-
-	vS.snapShotMap[id] = snapShot // TODO: Need to actually create it
-
-	err = nil
-
+	// TODO: Does FS Layer need to do anything here?
+	id, err = mS.volStruct.inodeVolumeHandle.SnapShotCreateByFSLayer(name)
 	return
 }
 
 func (mS *mountStruct) SnapShotDelete(id uint64) (err error) {
-	var (
-		ok bool
-		vS *volumeStruct
-	)
-
-	vS = mS.volStruct
-
-	vS.snapShotMutex.Lock()
-	defer vS.snapShotMutex.Unlock()
-
-	_, ok = vS.snapShotMap[id]
-	if !ok {
-		err = fmt.Errorf("SnapShot ID == 0x%016X not found", id)
-		return
-	}
-
-	delete(vS.snapShotMap, id) // TODO: Need to actually delete it
-
-	err = nil
-
-	return
-}
-
-// SnapShotList produces an ordered list of available SnapShots.
-// orderBy & direction should be case insensitive
-// orderBy   is one of "" (assume "timestamp"), "id", "timestamp", or "name"
-// direction is one of "" (assume "asc"), "asc", or "desc"
-func (mS *mountStruct) SnapShotList(orderBy string, direction string) (list []SnapShotStruct) {
-	var (
-		snapShot *snapShotStruct
-		vS       *volumeStruct
-	)
-
-	vS = mS.volStruct
-
-	vS.snapShotMutex.Lock()
-	defer vS.snapShotMutex.Unlock()
-
-	list = make([]SnapShotStruct, 0, len(vS.snapShotMap))
-
-	for _, snapShot = range vS.snapShotMap {
-		list = append(list, SnapShotStruct{ID: snapShot.id, Time: snapShot.time, Name: snapShot.name})
-	}
-
-	switch strings.ToLower(orderBy) {
-	case "id":
-		if "desc" == strings.ToLower(direction) {
-			sort.Slice(list, func(i int, j int) bool { return list[i].ID > list[j].ID })
-		} else {
-			sort.Slice(list, func(i int, j int) bool { return list[i].ID < list[j].ID })
-		}
-	case "name":
-		if "desc" == strings.ToLower(direction) {
-			sort.Slice(list, func(i int, j int) bool { return list[i].Name > list[j].Name })
-		} else {
-			sort.Slice(list, func(i int, j int) bool { return list[i].Name < list[j].Name })
-		}
-	default:
-		if "desc" == strings.ToLower(direction) {
-			sort.Slice(list, func(i int, j int) bool { return list[j].Time.Before(list[i].Time) })
-		} else {
-			sort.Slice(list, func(i int, j int) bool { return list[i].Time.Before(list[j].Time) })
-		}
-	}
-
+	// TODO: Does FS Layer need to do anything here?
+	err = mS.volStruct.inodeVolumeHandle.SnapShotDeleteByFSLayer(id)
 	return
 }
 

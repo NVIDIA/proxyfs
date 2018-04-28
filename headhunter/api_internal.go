@@ -1,8 +1,10 @@
 package headhunter
 
 import (
+	"container/list"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/swiftstack/sortedmap"
 
@@ -34,6 +36,10 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		checkpointHeaderValues     []string
 		newReservedToNonce         uint64
 	)
+
+	if volume.nextNonce >= volume.maxNonce {
+		logger.Fatalf("Nonces have been exhausted !!!")
+	}
 
 	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
 		newReservedToNonce = volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve)
@@ -573,6 +579,237 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	} else {
 		layoutReport, _, err = volume.fetchLayoutReport(treeType)
 	}
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, err error) {
+	var (
+		availableSnapShotIDListElement *list.Element
+		ok                             bool
+		snapShotNonce                  uint64
+		snapShotTime                   time.Time
+		volumeView                     *volumeViewStruct
+	)
+
+	volume.Lock()
+
+	_, ok, err = volume.viewTreeByName.GetByKey(name)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if ok {
+		volume.Unlock()
+		err = fmt.Errorf("SnapShot Name \"%v\" already in use", name)
+		return
+	}
+
+	ok = true
+
+	for ok {
+		snapShotTime = time.Now()
+		_, ok, err = volume.viewTreeByTime.GetByKey(snapShotTime)
+		if nil != err {
+			volume.Unlock()
+			return
+		}
+	}
+
+	if 0 == volume.availableSnapShotIDList.Len() {
+		volume.Unlock()
+		err = fmt.Errorf("No SnapShot IDs available")
+		return
+	}
+
+	snapShotNonce, err = volume.fetchNonceWhileLocked()
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+
+	availableSnapShotIDListElement = volume.availableSnapShotIDList.Front()
+	id, ok = availableSnapShotIDListElement.Value.(uint64)
+	if !ok {
+		logger.Fatalf("Logic error - volume %v has non-uint64 element at Front() of availableSnapShotIDList", volume.volumeName)
+	}
+	_ = volume.availableSnapShotIDList.Remove(availableSnapShotIDListElement)
+
+	volumeView = &volumeViewStruct{
+		volume:       volume,
+		nonce:        snapShotNonce,
+		snapShotID:   id,
+		snapShotTime: snapShotTime,
+		snapShotName: name,
+	}
+
+	ok, err = volume.viewTreeByNonce.Put(snapShotNonce, volumeView)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.Put() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByNonce.Put() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByID.Put(id, volumeView)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByID.Put() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByID.Put() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByTime.Put(snapShotTime, volumeView)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByTime.Put() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByTime.Put() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByName.Put(name, volumeView)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByName.Put() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByName.Put() returned ok == false")
+	}
+
+	volume.Unlock()
+
+	return // TODO - there's more to do here...
+}
+
+func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
+	var (
+		ok         bool
+		value      sortedmap.Value
+		volumeView *volumeViewStruct
+	)
+
+	volume.Lock()
+
+	value, ok, err = volume.viewTreeByID.GetByKey(id)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		err = fmt.Errorf("viewTreeByID.GetByKey(0x%016X) not found", id)
+		return
+	}
+
+	volumeView, ok = value.(*volumeViewStruct)
+	if !ok {
+		logger.Fatalf("viewTreeByID.GetByKey(0x%016X) returned something other than a volumeView", id)
+	}
+
+	ok, err = volume.viewTreeByNonce.DeleteByKey(volumeView.nonce)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.DeleteByKey() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByNonce.DeleteByKey() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByID.DeleteByKey(id)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByID.DeleteByKey() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByID.DeleteByKey() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByTime.DeleteByKey(volumeView.snapShotTime)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() returned ok == false")
+	}
+
+	ok, err = volume.viewTreeByName.DeleteByKey(volumeView.snapShotName)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() failed with error: %v", err)
+	}
+	if !ok {
+		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() returned ok == false")
+	}
+
+	volume.availableSnapShotIDList.PushBack(id)
+
+	volume.Unlock()
+
+	return // TODO - there's more to do here...
+}
+
+func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed bool) (list []SnapShotStruct) {
+	var (
+		err        error
+		len        int
+		listIndex  int
+		ok         bool
+		treeIndex  int
+		value      sortedmap.Value
+		volumeView *volumeViewStruct
+	)
+
+	len, err = viewTree.Len()
+	if nil != err {
+		logger.Fatalf("headhunter.snapShotList() for volume %v hit viewTree.Len() error: %v", volume.volumeName, err)
+	}
+
+	list = make([]SnapShotStruct, len, len)
+
+	for treeIndex = 0; treeIndex < len; treeIndex++ {
+		if reversed {
+			listIndex = len - 1 - treeIndex
+		} else {
+			listIndex = treeIndex
+		}
+
+		_, value, ok, err = viewTree.GetByIndex(treeIndex)
+		if nil != err {
+			logger.Fatalf("headhunter.snapShotList() for volume %v hit viewTree.GetByIndex() error: %v", volume.volumeName, err)
+		}
+		if !ok {
+			logger.Fatalf("headhunter.snapShotList() for volume %v hit viewTree.GetByIndex() !ok", volume.volumeName)
+		}
+
+		volumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("headhunter.snapShotList() for volume %v hit value.(*volumeViewStruct) !ok", volume.volumeName)
+		}
+
+		list[listIndex].ID = volumeView.snapShotID
+		list[listIndex].Time = volumeView.snapShotTime
+		list[listIndex].Name = volumeView.snapShotName
+	}
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotListByID(reversed bool) (list []SnapShotStruct) {
+	volume.Lock()
+	list = volume.snapShotList(volume.viewTreeByID, reversed)
+	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotListByTime(reversed bool) (list []SnapShotStruct) {
+	volume.Lock()
+	list = volume.snapShotList(volume.viewTreeByTime, reversed)
+	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotListByName(reversed bool) (list []SnapShotStruct) {
+	volume.Lock()
+	list = volume.snapShotList(volume.viewTreeByName, reversed)
+	volume.Unlock()
 
 	return
 }

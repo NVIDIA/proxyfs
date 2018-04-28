@@ -1130,33 +1130,49 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 
 func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
-		directionString      string
-		directionStringSlice []string
-		err                  error
-		list                 []fs.SnapShotStruct
-		listJSON             bytes.Buffer
-		listJSONPacked       []byte
-		orderByString        string
-		orderByStringSlice   []string
-		queryValues          url.Values
-		snapShot             fs.SnapShotStruct
+		directionStringCanonicalized string
+		directionStringSlice         []string
+		err                          error
+		list                         []headhunter.SnapShotStruct
+		listJSON                     bytes.Buffer
+		listJSONPacked               []byte
+		orderByStringCanonicalized   string
+		orderByStringSlice           []string
+		queryValues                  url.Values
+		reversed                     bool
+		snapShot                     headhunter.SnapShotStruct
 	)
 
 	queryValues = request.URL.Query()
-	orderByStringSlice = queryValues["orderby"]
-	if 0 == len(orderByStringSlice) {
-		orderByString = ""
-	} else {
-		orderByString = orderByStringSlice[0]
-	}
+
 	directionStringSlice = queryValues["direction"]
+
 	if 0 == len(directionStringSlice) {
-		directionString = ""
+		reversed = false
 	} else {
-		directionString = directionStringSlice[0]
+		directionStringCanonicalized = strings.ToLower(directionStringSlice[0])
+		if "desc" == directionStringCanonicalized {
+			reversed = true
+		} else {
+			reversed = false
+		}
 	}
 
-	list = requestState.volume.fsMountHandle.SnapShotList(orderByString, directionString)
+	orderByStringSlice = queryValues["orderby"]
+
+	if 0 == len(orderByStringSlice) {
+		list = requestState.volume.headhunterVolumeHandle.SnapShotListByTime(reversed)
+	} else {
+		orderByStringCanonicalized = strings.ToLower(orderByStringSlice[0])
+		switch orderByStringCanonicalized {
+		case "id":
+			list = requestState.volume.headhunterVolumeHandle.SnapShotListByID(reversed)
+		case "name":
+			list = requestState.volume.headhunterVolumeHandle.SnapShotListByName(reversed)
+		default: // assume "time"
+			list = requestState.volume.headhunterVolumeHandle.SnapShotListByTime(reversed)
+		}
+	}
 
 	if requestState.formatResponseAsJSON {
 		responseWriter.Header().Set("Content-Type", "application/json")
@@ -1492,13 +1508,13 @@ func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request,
 	)
 
 	snapShotID, err = volume.fsMountHandle.SnapShotCreate(request.FormValue("name"))
-	if nil != err {
-		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	if nil == err {
+		responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/snapshot/%v", volume.name, snapShotID))
+
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusConflict)
 	}
-
-	responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/snapshot/%v", volume.name, snapShotID))
-
-	responseWriter.WriteHeader(http.StatusCreated)
 }
 
 func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.ResponseWriter) {

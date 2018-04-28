@@ -1,6 +1,7 @@
 package headhunter
 
 import (
+	"container/list"
 	"fmt"
 	"hash/crc64"
 	"io"
@@ -790,6 +791,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		replayLogPosition             int64
 		replayLogSize                 int64
 		replayLogTransactionFixedPart replayLogTransactionFixedPartStruct
+		snapShotID                    uint64
+		snapShotIDLimit               uint64
 		storagePolicyHeaderValues     []string
 		value                         []byte
 		valueLen                      uint64
@@ -989,8 +992,20 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 		volume.viewTreeByNonce = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
 		volume.viewTreeByID = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
-		volume.viewTreeByTime = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
-		volume.viewTreeByName = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByTime = sortedmap.NewLLRBTree(sortedmap.CompareTime, nil)
+		volume.viewTreeByName = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+		// Fake derivation of available SnapShotIDs and maxNonce
+
+		volume.availableSnapShotIDList = list.New()
+
+		snapShotIDLimit = uint64(1) << uint64(volume.snapShotIDNumBits)
+
+		for snapShotID = uint64(2); snapShotID < snapShotIDLimit; snapShotID++ {
+			volume.availableSnapShotIDList.PushBack(snapShotID)
+		}
+
+		volume.maxNonce = (1 << (64 - volume.snapShotIDNumBits)) - 1
 	} else if checkpointHeaderVersion3 == checkpointVersion {
 		// TODO
 	} else {
@@ -1014,9 +1029,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			// No Replay Log found... simply return now
 			err = nil
 			return
-		} else {
-			logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_RDWR,) failed", volume.replayLogFileName)
 		}
+		logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_RDWR,) failed", volume.replayLogFileName)
 	}
 
 	// Compute current end of Replay Log and round it down to replayLogWriteBufferAlignment multiple if necessary
