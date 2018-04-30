@@ -6,8 +6,8 @@ func (vS *volumeStruct) GetFSID() (fsid uint64) {
 }
 
 func (vS *volumeStruct) SnapShotCreateByFSLayer(name string) (id uint64, err error) {
-	// TODO: Does Inode Layer need to do anything here?
 	id, err = vS.headhunterVolumeHandle.SnapShotCreateByInodeLayer(name)
+	// TODO: Does Inode Layer need to do anything here?
 	return
 }
 

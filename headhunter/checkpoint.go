@@ -152,6 +152,11 @@ type replayLogTransactionFixedPartStruct struct { //          transactions begin
 	TransactionType                                 uint64 // transactionType from above const() block
 }
 
+type delayedObjectDeleteStruct struct {
+	containerName string
+	objectNumber  uint64
+}
+
 func constructReplayLogWriteBuffer(minBufferSize uint64) (alignedBuf []byte) {
 	var (
 		alignedBufAddr   uintptr
@@ -995,6 +1000,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		volume.viewTreeByTime = sortedmap.NewLLRBTree(sortedmap.CompareTime, nil)
 		volume.viewTreeByName = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
+		volume.priorView = nil
+
 		// Fake derivation of available SnapShotIDs and maxNonce
 
 		volume.availableSnapShotIDList = list.New()
@@ -1272,9 +1279,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		checkpointObjectTrailerEndingOffset    uint64
 		checkpointTrailerBuf                   []byte
 		combinedBPlusTreeLayout                sortedmap.LayoutReport
+		containerNameAsByteSlice               []byte
+		containerNameAsValue                   sortedmap.Value
+		delayedObjectDeleteList                []delayedObjectDeleteStruct
 		elementOfBPlusTreeLayout               elementOfBPlusTreeLayoutStruct
 		elementOfBPlusTreeLayoutBuf            []byte
+		logSegmentObjectsToDelete              int
 		objectNumber                           uint64
+		objectNumberAsKey                      sortedmap.Key
 		ok                                     bool
 		treeLayoutBuf                          []byte
 		treeLayoutBufSize                      uint64
@@ -1317,6 +1329,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 	err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Prune()
+	if nil != err {
+		return
+	}
+	err = volume.liveView.createdObjectsWrapper.bPlusTree.Prune()
+	if nil != err {
+		return
+	}
+	err = volume.liveView.deletedObjectsWrapper.bPlusTree.Prune()
 	if nil != err {
 		return
 	}
@@ -1457,41 +1477,99 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
 		}
 	}
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.createdObjectsWrapper.trackingBPlusTreeLayout {
+		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
+		if ok {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
+		} else {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+	}
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.deletedObjectsWrapper.trackingBPlusTreeLayout {
+		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
+		if ok {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
+		} else {
+			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
+		}
+	}
+
+	logSegmentObjectsToDelete, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Len()
+	if nil != err {
+		logger.Fatalf("volume.liveView.deletedObjectsWrapper.bPlusTree.Len() failed: %v", err)
+	}
+
+	delayedObjectDeleteList = make([]delayedObjectDeleteStruct, 0, len(combinedBPlusTreeLayout)+logSegmentObjectsToDelete)
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
 			delete(volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout, objectNumber)
 			delete(volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout, objectNumber)
 			delete(volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout, objectNumber)
-			volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODOStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
+			delete(volume.liveView.createdObjectsWrapper.trackingBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.deletedObjectsWrapper.trackingBPlusTreeLayout, objectNumber)
+			delayedObjectDeleteList = append(delayedObjectDeleteList, delayedObjectDeleteStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
 		}
 	}
 
-	if 0 < len(volume.delayedObjectDeleteSSTODOList) {
+	for ; logSegmentObjectsToDelete > 0; logSegmentObjectsToDelete-- {
+		objectNumberAsKey, containerNameAsValue, ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
+		if nil != err {
+			logger.Fatalf("volume.liveView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) failed: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("volume.liveView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) returned !ok")
+		}
+
+		objectNumber, ok = objectNumberAsKey.(uint64)
+		if !ok {
+			logger.Fatalf("objectNumberAsKey.(uint64) returned !ok")
+		}
+
+		containerNameAsByteSlice, ok = containerNameAsValue.([]byte)
+		if !ok {
+			logger.Fatalf("containerNameAsValue.([]byte) returned !ok")
+		}
+
+		delayedObjectDeleteList = append(delayedObjectDeleteList, delayedObjectDeleteStruct{containerName: string(containerNameAsByteSlice[:]), objectNumber: objectNumber})
+
+		ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0)
+		if nil != err {
+			logger.Fatalf("volume.liveView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) failed: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("volume.liveView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) returned !ok")
+		}
+	}
+
+	if 0 < len(delayedObjectDeleteList) {
 		volume.backgroundObjectDeleteWG.Add(1)
-		go volume.performDelayedObjectDeletes(volume.delayedObjectDeleteSSTODOList)
-		volume.delayedObjectDeleteSSTODOList = make([]delayedObjectDeleteSSTODOStruct, 0)
+		go volume.performDelayedObjectDeletes(delayedObjectDeleteList)
 	}
 
 	err = nil
 	return
 }
 
-func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteSSTODOList []delayedObjectDeleteSSTODOStruct) {
-	for _, delayedObjectDeleteSSTODO := range delayedObjectDeleteSSTODOList {
+func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteList []delayedObjectDeleteStruct) {
+	for _, delayedObjectDelete := range delayedObjectDeleteList {
 		err := swiftclient.ObjectDelete(
 			volume.accountName,
-			delayedObjectDeleteSSTODO.containerName,
-			utils.Uint64ToHexStr(delayedObjectDeleteSSTODO.objectNumber),
+			delayedObjectDelete.containerName,
+			utils.Uint64ToHexStr(delayedObjectDelete.objectNumber),
 			swiftclient.SkipRetry)
 		if nil != err {
-			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDeleteSSTODO.containerName, delayedObjectDeleteSSTODO.objectNumber, err)
+			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDelete.objectNumber, err)
 		}
 	}
 	volume.backgroundObjectDeleteWG.Done()
 }
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {
+	var (
+		ok bool
+	)
+
 	if nil == volume.checkpointChunkedPutContext {
 		volume.checkpointChunkedPutContextObjectNumber, err = volume.fetchNonceWhileLocked()
 		if nil != err {
@@ -1503,6 +1581,16 @@ func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err er
 				utils.Uint64ToHexStr(volume.checkpointChunkedPutContextObjectNumber))
 		if nil != err {
 			return
+		}
+		if nil != volume.priorView {
+			ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(volume.checkpointChunkedPutContextObjectNumber, []byte(volume.checkpointContainerName))
+			if nil != err {
+				return
+			}
+			if !ok {
+				err = fmt.Errorf("volume.priorView.createdObjectsWrapper.bPlusTree.Put() returned !ok")
+				return
+			}
 		}
 	}
 	err = nil

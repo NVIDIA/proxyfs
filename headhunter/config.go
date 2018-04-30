@@ -90,11 +90,6 @@ type volumeViewStruct struct {
 	//   discard volumeView
 }
 
-type delayedObjectDeleteSSTODOStruct struct {
-	containerName string
-	objectNumber  uint64
-}
-
 type volumeStruct struct {
 	sync.Mutex
 	volumeName                              string
@@ -124,12 +119,12 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
 	liveView                                *volumeViewStruct
+	priorView                               *volumeViewStruct
 	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
 	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
 	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
 	viewTreeByName                          sortedmap.LLRBTree // key == volumeViewStruct.Name;  value == *volumeViewStruct
 	availableSnapShotIDList                 *list.List
-	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
 
@@ -470,11 +465,10 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
-		volumeName:                    volumeName,
-		checkpointChunkedPutContext:   nil,
-		checkpointDoneWaitGroup:       nil,
-		checkpointRequestChan:         make(chan *checkpointRequestStruct, 1),
-		delayedObjectDeleteSSTODOList: make([]delayedObjectDeleteSSTODOStruct, 0),
+		volumeName:                  volumeName,
+		checkpointChunkedPutContext: nil,
+		checkpointDoneWaitGroup:     nil,
+		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
 	}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")

@@ -11,7 +11,6 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
@@ -247,6 +246,14 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 		}
 	}
 
+	if nil != volume.priorView {
+		_, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(logSegmentNumber, valueToTree)
+		if nil != err {
+			volume.Unlock()
+			return
+		}
+	}
+
 	volume.recordTransaction(transactionPutLogSegmentRec, logSegmentNumber, value)
 
 	volume.Unlock()
@@ -261,9 +268,8 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 */
 func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
 	var (
-		containerNameAsValue      sortedmap.Value
-		delayedObjectDeleteSSTODO delayedObjectDeleteSSTODOStruct
-		ok                        bool
+		containerNameAsValue sortedmap.Value
+		ok                   bool
 	)
 
 	volume.Lock()
@@ -283,12 +289,30 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 		return
 	}
 
+	if nil == volume.priorView {
+		_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+		if nil != err {
+			return
+		}
+	} else {
+		ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+		if nil != err {
+			return
+		}
+		if ok {
+			_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+			if nil != err {
+				return
+			}
+		} else {
+			_, err = volume.priorView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+			if nil != err {
+				return
+			}
+		}
+	}
+
 	volume.recordTransaction(transactionDeleteLogSegmentRec, logSegmentNumber, nil)
-
-	delayedObjectDeleteSSTODO.containerName = utils.ByteSliceToString(containerNameAsValue.([]byte))
-	delayedObjectDeleteSSTODO.objectNumber = logSegmentNumber
-
-	volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODO)
 
 	return
 }
@@ -675,6 +699,8 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		logger.Fatalf("Logic error - viewTreeByName.Put() returned ok == false")
 	}
 
+	volume.priorView = volumeView
+
 	volume.Unlock()
 
 	return // TODO - there's more to do here...
@@ -682,9 +708,10 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 
 func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	var (
-		ok         bool
-		value      sortedmap.Value
-		volumeView *volumeViewStruct
+		ok                     bool
+		remainingSnapShotCount int
+		value                  sortedmap.Value
+		volumeView             *volumeViewStruct
 	)
 
 	volume.Lock()
@@ -735,6 +762,28 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	}
 	if !ok {
 		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() returned ok == false")
+	}
+
+	remainingSnapShotCount, err = volume.viewTreeByNonce.Len()
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.Len() failed with error: %v", err)
+	}
+
+	if 0 == remainingSnapShotCount {
+		volume.priorView = nil
+	} else {
+		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(remainingSnapShotCount - 1)
+		if nil != err {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) failed with error: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) returned ok == false")
+		}
+		volumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("viewTreeByNonce.GetByIndex(<last>) returned something other than a volumeView")
+		}
+		volume.priorView = volumeView
 	}
 
 	volume.availableSnapShotIDList.PushBack(id)
