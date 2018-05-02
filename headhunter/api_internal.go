@@ -659,6 +659,14 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	}
 	_ = volume.availableSnapShotIDList.Remove(availableSnapShotIDListElement)
 
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
 	volumeView = &volumeViewStruct{
 		volume:       volume,
 		nonce:        snapShotNonce,
@@ -701,17 +709,28 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 
 	volume.priorView = volumeView
 
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
 	volume.Unlock()
 
-	return // TODO - there's more to do here...
+	return
 }
 
 func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	var (
-		ok                     bool
-		remainingSnapShotCount int
-		value                  sortedmap.Value
-		volumeView             *volumeViewStruct
+		deletedVolumeView                   *volumeViewStruct
+		newPriorVolumeView                  *volumeViewStruct
+		ok                                  bool
+		predecessorToDeletedVolumeView      *volumeViewStruct
+		predecessorToDeletedVolumeViewIndex int
+		remainingSnapShotCount              int
+		value                               sortedmap.Value
 	)
 
 	volume.Lock()
@@ -727,12 +746,12 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		return
 	}
 
-	volumeView, ok = value.(*volumeViewStruct)
+	deletedVolumeView, ok = value.(*volumeViewStruct)
 	if !ok {
 		logger.Fatalf("viewTreeByID.GetByKey(0x%016X) returned something other than a volumeView", id)
 	}
 
-	ok, err = volume.viewTreeByNonce.DeleteByKey(volumeView.nonce)
+	ok, err = volume.viewTreeByNonce.DeleteByKey(deletedVolumeView.nonce)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByNonce.DeleteByKey() failed with error: %v", err)
 	}
@@ -748,7 +767,7 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.Fatalf("Logic error - viewTreeByID.DeleteByKey() returned ok == false")
 	}
 
-	ok, err = volume.viewTreeByTime.DeleteByKey(volumeView.snapShotTime)
+	ok, err = volume.viewTreeByTime.DeleteByKey(deletedVolumeView.snapShotTime)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() failed with error: %v", err)
 	}
@@ -756,7 +775,7 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() returned ok == false")
 	}
 
-	ok, err = volume.viewTreeByName.DeleteByKey(volumeView.snapShotName)
+	ok, err = volume.viewTreeByName.DeleteByKey(deletedVolumeView.snapShotName)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() failed with error: %v", err)
 	}
@@ -779,18 +798,76 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		if !ok {
 			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) returned ok == false")
 		}
-		volumeView, ok = value.(*volumeViewStruct)
+		newPriorVolumeView, ok = value.(*volumeViewStruct)
 		if !ok {
-			logger.Fatalf("viewTreeByNonce.GetByIndex(<last>) returned something other than a volumeView")
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) returned something other than a volumeView")
 		}
-		volume.priorView = volumeView
+		volume.priorView = newPriorVolumeView
 	}
 
 	volume.availableSnapShotIDList.PushBack(id)
 
+	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+
+	predecessorToDeletedVolumeViewIndex, _, err = volume.viewTreeByNonce.BisectLeft(id)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() failed with error: %v", err)
+	}
+
+	if -1 == predecessorToDeletedVolumeViewIndex {
+		// TODO
+		//     discard volumeView createdObjects
+		//     schedule background deletion of volumeView deletedObjects
+		//     discard volumeView deletedObjects
+	} else {
+		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(predecessorToDeletedVolumeViewIndex)
+		if nil != err {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() failed with error: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned ok == false")
+		}
+		predecessorToDeletedVolumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned something other than a volumeView")
+		}
+
+		if nil == predecessorToDeletedVolumeView {
+		}
+		// TODO
+		//     createdObjects merged into prior volumeView
+		//     discard volumeView createdObjects
+		//     for each object in deletedObjects:
+		//       if object in prior volumeView createdObjects:
+		//         remove object from prior volumeView createdObjects
+		//         schedule background deletion of object
+		//       else:
+		//         add object to prior volumeView deletedObjects
+		//     discard volumeView deletedObjects
+	}
+
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
 	volume.Unlock()
 
-	return // TODO - there's more to do here...
+	return
 }
 
 func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed bool) (list []SnapShotStruct) {
