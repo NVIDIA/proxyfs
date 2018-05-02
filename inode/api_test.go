@@ -680,7 +680,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("NumDirEntries(RootDirInodeNumber) should have returned numEntries == 2")
 	}
 
-	dirEntrySlice, moreEntries, err := testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err := testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
@@ -689,6 +689,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned moreEntries == false")
 	}
 	if 2 != len(dirEntrySlice) {
+		fmt.Printf("got: %v  len(%d)", dirEntrySlice, len(dirEntrySlice))
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) should have returned dirEntrySlice with 2 elements")
 	}
 	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != ".") || (dirEntrySlice[0].NextDirLocation != 1) {
@@ -973,7 +974,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Lookup(RootDirInodeNumber, \"symlink_to_link_1_to_file_inode\") returned unexpected InodeNumber")
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 1, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 1, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 1, 0) failed: %v", err)
 	}
@@ -999,6 +1000,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, InodeDirLocation(0)) should have returned dirEntrySlice with 2 elements, got %v elements", len(dirEntrySlice))
 	}
 	if (dirEntrySlice[0].InodeNumber != RootDirInodeNumber) || (dirEntrySlice[0].Basename != "..") || (dirEntrySlice[0].NextDirLocation != 2) {
+		fmt.Printf("dirEntrySlice[0] %v  dirEntrySlice %v\n", dirEntrySlice[0], dirEntrySlice)
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 60, InodeDirLocation(0)) returned unexpected dirEntrySlice[0]")
 	}
 	if (dirEntrySlice[1].InodeNumber != fileInodeNumber) || (dirEntrySlice[1].Basename != "link_1_to_file_inode") || (dirEntrySlice[1].NextDirLocation != 3) {
@@ -1439,7 +1441,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Link(RootDirInodeNumber, \"3rdLocation\", file2Inode, false) failed: %v", err)
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
 	}
@@ -1467,7 +1469,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Move(RootDirInodeNumber, \"1stLocation\", RootDirInodeNumber, \"2ndLocation\") failed: %v", err)
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
 	}
@@ -1499,7 +1501,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Move(RootDirInodeNumber, \"2ndLocation\", RootDirInodeNumber, \"3rdLocation\") failed: %v", err)
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
 	}
@@ -1607,7 +1609,7 @@ func TestAPI(t *testing.T) {
 	testMetadata.LinkCount = 3
 	checkMetadata(t, postMetadata, testMetadata, MetadataLinkCountField, "GetMetadata() after Link()")
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
 	}
@@ -1630,7 +1632,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[3]")
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(subDirInode, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(subDirInode, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) failed: %v", err)
 	}
@@ -1652,7 +1654,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Move(RootDirInodeNumber, \"3rdLocation\", subDirInode, \"4thLocation\") failed: %v", err)
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) failed: %v", err)
 	}
@@ -1672,7 +1674,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
-	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(subDirInode, 0, 0)
+	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(subDirInode, 0, 0, InodeDirLocation(-1))
 	if nil != err {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) failed: %v", err)
 	}

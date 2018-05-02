@@ -609,7 +609,7 @@ func (vS *volumeStruct) NumDirEntries(dirInodeNumber InodeNumber) (numEntries ui
 }
 
 // A maxEntries or maxBufSize argument of zero is interpreted to mean "no maximum".
-func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntries []DirEntry, moreEntries bool, err error) {
+func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned interface{}) (dirEntries []DirEntry, moreEntries bool, err error) {
 	var (
 		bufSize              uint64
 		dirIndex             int
@@ -647,46 +647,33 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		return
 	}
 
-	switch len(prevReturned) {
-	case 0:
-		dirIndex = int(0)
-	case 1:
-		var (
-			foundDoingBisectRight          bool
-			okAsInodeDirLocation           bool
-			okAsString                     bool
-			prevReturnedAsInodeDirLocation InodeDirLocation
-			prevReturnedAsString           string
-		)
-
-		prevReturnedAsInodeDirLocation, okAsInodeDirLocation = prevReturned[0].(InodeDirLocation)
-		prevReturnedAsString, okAsString = prevReturned[0].(string)
-
-		if okAsInodeDirLocation {
-			if 0 > prevReturnedAsInodeDirLocation {
-				dirIndex = int(0)
-			} else {
-				dirIndex = int(prevReturnedAsInodeDirLocation + 1)
-			}
-		} else if okAsString {
-			dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
-			if nil != err {
-				err = blunder.AddError(err, blunder.IOError)
-				return
-			}
-			if foundDoingBisectRight {
-				dirIndex++
-			}
+	switch prev := prevReturned.(type) {
+	case InodeDirLocation:
+		if prev < 0 {
+			dirIndex = int(0)
 		} else {
-			err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
-			err = blunder.AddError(err, blunder.NotSupportedError)
+			dirIndex = int(prev + 1)
+		}
+	case string:
+		var (
+			foundDoingBisectRight bool
+		)
+		dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prev)
+		if nil != err {
+			err = blunder.AddError(err, blunder.IOError)
 			return
 		}
+		if foundDoingBisectRight {
+			dirIndex++
+		}
 	default:
-		err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
+		err = fmt.Errorf("ReadDir() accepts only InodeDirLocation or string for prevReturned argument")
 		err = blunder.AddError(err, blunder.NotSupportedError)
 		return
 	}
+
+	fmt.Printf("ReadDir(inum %d, prevReturned '%v') dirIndex %d  dirMappingLen %d  dirMapping %v\n",
+		dirInodeNumber, prevReturned, dirIndex, dirMappingLen, dirMapping)
 
 	atLeastOneEntryFound = false
 	bufSize = 0
@@ -700,6 +687,7 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		if !okGetByIndex {
 			break
 		}
+		fmt.Printf("dirIndex %d key %v\n", dirIndex, key)
 
 		atLeastOneEntryFound = true
 

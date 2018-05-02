@@ -2567,8 +2567,9 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	inodeLock.Unlock()
 
 	if err != nil {
-		// When the client uses location-based readdir, it knows it is done when it reads beyond
-		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
+		// When the client uses location-based readdir, it knows it is
+		// done when it reads beyond the last entry and gets a not found
+		// error. Because of this, we don't log not found as an error.
 		if blunder.IsNot(err, blunder.NotFoundError) {
 			logger.ErrorWithError(err)
 		}
