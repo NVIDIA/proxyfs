@@ -610,6 +610,8 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, err error) {
 	var (
 		availableSnapShotIDListElement *list.Element
+		objectBytes                    uint64
+		objectNumber                   uint64
 		ok                             bool
 		snapShotNonce                  uint64
 		snapShotTime                   time.Time
@@ -675,6 +677,117 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		snapShotName: name,
 	}
 
+	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber {
+		volumeView.inodeRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxInodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+	} else {
+		volumeView.inodeRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<InodeRecBPlusTree>) failed with error: %v", err)
+		}
+		for objectNumber, objectBytes = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
+			volumeView.inodeRecWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
+		}
+	}
+
+	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber {
+		volumeView.logSegmentRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxLogSegmentsPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+	} else {
+		volumeView.logSegmentRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<LogSegmentRecBPlusTree>) failed with error: %v", err)
+		}
+		for objectNumber, objectBytes = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
+			volumeView.logSegmentRecWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
+		}
+	}
+
+	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxDirFileNodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+	} else {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
+				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
+				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<BPlusTreeObjectBPlusTree>) failed with error: %v", err)
+		}
+		for objectNumber, objectBytes = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
+			volumeView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
+		}
+	}
+
+	volumeView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	volumeView.createdObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
+	volumeView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	volumeView.deletedObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
 	ok, err = volume.viewTreeByNonce.Put(snapShotNonce, volumeView)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByNonce.Put() failed with error: %v", err)
@@ -724,13 +837,15 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 
 func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	var (
-		deletedVolumeView                   *volumeViewStruct
-		newPriorVolumeView                  *volumeViewStruct
-		ok                                  bool
-		predecessorToDeletedVolumeView      *volumeViewStruct
-		predecessorToDeletedVolumeViewIndex int
-		remainingSnapShotCount              int
-		value                               sortedmap.Value
+		deletedVolumeView              *volumeViewStruct
+		deletedVolumeViewIndex         int
+		found                          bool
+		key                            sortedmap.Key
+		newPriorVolumeView             *volumeViewStruct
+		ok                             bool
+		predecessorToDeletedVolumeView *volumeViewStruct
+		remainingSnapShotCount         int
+		value                          sortedmap.Value
 	)
 
 	volume.Lock()
@@ -750,6 +865,131 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	if !ok {
 		logger.Fatalf("viewTreeByID.GetByKey(0x%016X) returned something other than a volumeView", id)
 	}
+	deletedVolumeViewIndex, found, err = volume.viewTreeByNonce.BisectLeft(deletedVolumeView.nonce)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() failed with error: %v", err)
+	}
+	if !found {
+		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() returned found == false")
+	}
+
+	if 0 == deletedVolumeViewIndex {
+		ok = true
+		for ok {
+			ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+			}
+		}
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) returned ok == false")
+				}
+				ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+				if nil != err {
+					logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+				}
+			}
+		}
+	} else {
+		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(deletedVolumeViewIndex - 1)
+		if nil != err {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() failed with error: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned ok == false")
+		}
+		predecessorToDeletedVolumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned something other than a volumeView")
+		}
+
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) returned ok == false")
+				}
+				ok, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put(key, value)
+				if nil != err {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put() returned ok == false")
+				}
+			}
+		}
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				_, found, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.BisectLeft(key)
+				if nil != err {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.BisectLeft(key) failed with error: %v", err)
+				}
+				if found {
+					ok, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key)
+					if nil != err {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key) failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key) returned ok == false")
+					}
+					ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+					if nil != err {
+						logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+					}
+				} else {
+					ok, err = predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+					if nil != err {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+					}
+				}
+			}
+		}
+	}
+
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
 
 	ok, err = volume.viewTreeByNonce.DeleteByKey(deletedVolumeView.nonce)
 	if nil != err {
@@ -807,56 +1047,6 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 
 	volume.availableSnapShotIDList.PushBack(id)
 
-	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true)
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true)
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true)
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-
-	predecessorToDeletedVolumeViewIndex, _, err = volume.viewTreeByNonce.BisectLeft(id)
-	if nil != err {
-		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() failed with error: %v", err)
-	}
-
-	if -1 == predecessorToDeletedVolumeViewIndex {
-		// TODO
-		//     discard volumeView createdObjects
-		//     schedule background deletion of volumeView deletedObjects
-		//     discard volumeView deletedObjects
-	} else {
-		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(predecessorToDeletedVolumeViewIndex)
-		if nil != err {
-			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() failed with error: %v", err)
-		}
-		if !ok {
-			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned ok == false")
-		}
-		predecessorToDeletedVolumeView, ok = value.(*volumeViewStruct)
-		if !ok {
-			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned something other than a volumeView")
-		}
-
-		if nil == predecessorToDeletedVolumeView {
-		}
-		// TODO
-		//     createdObjects merged into prior volumeView
-		//     discard volumeView createdObjects
-		//     for each object in deletedObjects:
-		//       if object in prior volumeView createdObjects:
-		//         remove object from prior volumeView createdObjects
-		//         schedule background deletion of object
-		//       else:
-		//         add object to prior volumeView deletedObjects
-		//     discard volumeView deletedObjects
-	}
-
 	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
 	err = volume.putCheckpoint()
 	if nil != err {
@@ -864,6 +1054,51 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 	}
 	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
+	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Discard()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Discard() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Discard()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Discard() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Discard()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Discard() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Discard()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Discard() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Purge(true)
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Purge(true) failed with error: %v", err)
+	}
+	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Discard()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Discard() failed with error: %v", err)
+	}
 
 	volume.Unlock()
 
