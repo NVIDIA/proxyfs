@@ -40,18 +40,16 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		logger.Fatalf("Nonces have been exhausted !!!")
 	}
 
-	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
-		newReservedToNonce = volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve)
+	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
+		newReservedToNonce = volume.checkpointHeader.reservedToNonce + uint64(volume.nonceValuesToReserve)
 
 		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
 		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
 
-		// checkpointHeaderVersion2 == volume.checkpointHeaderVersion
-
 		checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-			checkpointHeaderVersion2,
-			volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber,
-			volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength,
+			volume.checkpointHeader.checkpointVersion,
+			volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber,
+			volume.checkpointHeader.checkpointObjectTrailerStructObjectLength,
 			newReservedToNonce,
 		)
 
@@ -66,7 +64,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 			return
 		}
 
-		volume.checkpointHeader.ReservedToNonce = newReservedToNonce
+		volume.checkpointHeader.reservedToNonce = newReservedToNonce
 	}
 
 	nonce = volume.nextNonce

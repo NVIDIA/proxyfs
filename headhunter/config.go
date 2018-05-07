@@ -21,6 +21,10 @@ const (
 )
 
 const (
+	liveSnapShotID = uint64(0)
+)
+
+const (
 	AccountHeaderName           = "X-ProxyFS-BiModal"
 	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
 	AccountHeaderValue          = "true"
@@ -109,15 +113,16 @@ type volumeStruct struct {
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointFlushedData                   bool
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
-	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
+	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
 	snapShotIDNumBits                       uint16
+	snapShotIDShift                         uint64 //             inodeNumber >> snapShotIDNumBits == snapShotID
+	dotSnapShotDirSnapShotID                uint64 //             .snapshot/ pseudo directory Inode's snapShotID
 	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
-	checkpointHeaderVersion                 uint64
-	checkpointHeader                        *checkpointHeaderV2Struct
-	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
+	checkpointHeader                        *checkpointHeaderStruct
+	checkpointObjectTrailer                 *checkpointObjectTrailerV3Struct
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
 	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
@@ -131,8 +136,6 @@ type volumeStruct struct {
 type globalsStruct struct {
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
-	checkpointHeaderV2StructSize            uint64
-	checkpointHeaderV3StructSize            uint64
 	elementOfBPlusTreeLayoutStructSize      uint64
 	replayLogTransactionFixedPartStructSize uint64
 	inodeRecCache                           sortedmap.BPlusTreeCache
@@ -151,8 +154,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		bPlusTreeObjectCacheEvictLowLimit        uint64
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -171,16 +172,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
 
 	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
@@ -402,8 +393,6 @@ func Down() (err error) {
 // Format runs an instance of the headhunter package for formatting a new volume
 func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -414,16 +403,6 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
 
 	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
