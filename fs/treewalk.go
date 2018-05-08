@@ -1013,7 +1013,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	// If vVS.lostAndFoundDirInodeNumber is empty, remove it
 
-	_, moreEntries, err = vVS.inodeVolumeHandle.ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0)
+	_, moreEntries, err = vVS.inodeVolumeHandle.ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0, 0)
 	if nil != err {
 		vVS.jobLogErr("Got ReadDir(vVS.lostAndFoundDirInodeNumber, 2, 0) failure: %v", err)
 		return
