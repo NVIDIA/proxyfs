@@ -111,7 +111,6 @@ type volumeStruct struct {
 	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
 	//                                                            closed/deleted on successful checkpoint
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
-	checkpointFlushedData                   bool
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
@@ -122,7 +121,6 @@ type volumeStruct struct {
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
 	checkpointHeader                        *checkpointHeaderStruct
-	checkpointObjectTrailer                 *checkpointObjectTrailerV3Struct
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
 	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct

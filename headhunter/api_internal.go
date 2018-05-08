@@ -607,13 +607,22 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 
 func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, err error) {
 	var (
-		availableSnapShotIDListElement *list.Element
-		objectBytes                    uint64
-		objectNumber                   uint64
-		ok                             bool
-		snapShotNonce                  uint64
-		snapShotTime                   time.Time
-		volumeView                     *volumeViewStruct
+		availableSnapShotIDListElement           *list.Element
+		bPlusTreeObjectBPlusTreeRootObjectLength uint64
+		bPlusTreeObjectBPlusTreeRootObjectNumber uint64
+		bPlusTreeObjectBPlusTreeRootObjectOffset uint64
+		inodeRecBPlusTreeRootObjectLength        uint64
+		inodeRecBPlusTreeRootObjectNumber        uint64
+		inodeRecBPlusTreeRootObjectOffset        uint64
+		logSegmentRecBPlusTreeRootObjectLength   uint64
+		logSegmentRecBPlusTreeRootObjectNumber   uint64
+		logSegmentRecBPlusTreeRootObjectOffset   uint64
+		objectBytes                              uint64
+		objectNumber                             uint64
+		ok                                       bool
+		snapShotNonce                            uint64
+		snapShotTime                             time.Time
+		volumeView                               *volumeViewStruct
 	)
 
 	volume.Lock()
@@ -680,7 +689,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 	}
 
-	if 0 == volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber {
+	inodeRecBPlusTreeRootObjectNumber,
+		inodeRecBPlusTreeRootObjectOffset,
+		inodeRecBPlusTreeRootObjectLength = volume.liveView.inodeRecWrapper.bPlusTree.FetchLocation()
+
+	if 0 == inodeRecBPlusTreeRootObjectNumber {
 		volumeView.inodeRecWrapper.bPlusTree =
 			sortedmap.NewBPlusTree(
 				volumeView.volume.maxInodesPerMetadataNode,
@@ -690,9 +703,9 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	} else {
 		volumeView.inodeRecWrapper.bPlusTree, err =
 			sortedmap.OldBPlusTree(
-				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
-				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
-				volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
+				inodeRecBPlusTreeRootObjectNumber,
+				inodeRecBPlusTreeRootObjectOffset,
+				inodeRecBPlusTreeRootObjectLength,
 				sortedmap.CompareUint64,
 				volumeView.inodeRecWrapper,
 				globals.inodeRecCache)
@@ -709,7 +722,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 	}
 
-	if 0 == volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber {
+	logSegmentRecBPlusTreeRootObjectNumber,
+		logSegmentRecBPlusTreeRootObjectOffset,
+		logSegmentRecBPlusTreeRootObjectLength = volume.liveView.logSegmentRecWrapper.bPlusTree.FetchLocation()
+
+	if 0 == logSegmentRecBPlusTreeRootObjectNumber {
 		volumeView.logSegmentRecWrapper.bPlusTree =
 			sortedmap.NewBPlusTree(
 				volumeView.volume.maxLogSegmentsPerMetadataNode,
@@ -719,9 +736,9 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	} else {
 		volumeView.logSegmentRecWrapper.bPlusTree, err =
 			sortedmap.OldBPlusTree(
-				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
-				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
-				volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
+				logSegmentRecBPlusTreeRootObjectNumber,
+				logSegmentRecBPlusTreeRootObjectOffset,
+				logSegmentRecBPlusTreeRootObjectLength,
 				sortedmap.CompareUint64,
 				volumeView.logSegmentRecWrapper,
 				globals.logSegmentRecCache)
@@ -738,7 +755,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 	}
 
-	if 0 == volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber {
+	bPlusTreeObjectBPlusTreeRootObjectNumber,
+		bPlusTreeObjectBPlusTreeRootObjectOffset,
+		bPlusTreeObjectBPlusTreeRootObjectLength = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.FetchLocation()
+
+	if 0 == bPlusTreeObjectBPlusTreeRootObjectNumber {
 		volumeView.bPlusTreeObjectWrapper.bPlusTree =
 			sortedmap.NewBPlusTree(
 				volumeView.volume.maxDirFileNodesPerMetadataNode,
@@ -748,9 +769,9 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	} else {
 		volumeView.bPlusTreeObjectWrapper.bPlusTree, err =
 			sortedmap.OldBPlusTree(
-				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
-				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
-				volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
+				bPlusTreeObjectBPlusTreeRootObjectNumber,
+				bPlusTreeObjectBPlusTreeRootObjectOffset,
+				bPlusTreeObjectBPlusTreeRootObjectLength,
 				sortedmap.CompareUint64,
 				volumeView.bPlusTreeObjectWrapper,
 				globals.bPlusTreeObjectCache)

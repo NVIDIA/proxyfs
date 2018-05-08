@@ -95,8 +95,6 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		return
 	}
 
-	bPlusTreeWrapper.volumeView.volume.checkpointFlushedData = true
-
 	bytesUsed, ok = bPlusTreeWrapper.trackingBPlusTreeLayout[objectNumber]
 
 	if ok {
