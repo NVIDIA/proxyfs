@@ -15,6 +15,7 @@ type LayoutReport map[uint64]uint64
 // BPlusTree interface declares the available methods available for a B+Tree
 type BPlusTree interface {
 	SortedMap
+	FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64)
 	FetchLayoutReport() (layoutReport LayoutReport, err error)
 	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error)
 	Purge(full bool) (err error)

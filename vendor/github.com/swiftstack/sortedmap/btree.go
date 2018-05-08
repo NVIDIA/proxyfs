@@ -789,6 +789,14 @@ func (tree *btreeTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 	}
 }
 
+func (tree *btreeTreeStruct) FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64) {
+	rootObjectNumber = tree.root.objectNumber
+	rootObjectOffset = tree.root.objectOffset
+	rootObjectLength = tree.root.objectLength
+
+	return
+}
+
 func (tree *btreeTreeStruct) FetchLayoutReport() (layoutReport LayoutReport, err error) {
 	tree.Lock()
 	defer tree.Unlock()
