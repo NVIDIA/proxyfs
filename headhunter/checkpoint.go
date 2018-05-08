@@ -1100,7 +1100,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					volume.liveView.deletedObjectsWrapper,
 					globals.createdDeletedObjectsCache)
 
-			// Compute SnapShotID shotcuts
+			// Compute SnapShotID shortcuts
 
 			volume.snapShotIDShift = uint64(64) - uint64(volume.snapShotIDNumBits)
 			volume.dotSnapShotDirSnapShotID = (uint64(1) << uint64(volume.snapShotIDNumBits)) - uint64(1)
@@ -1140,6 +1140,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			if nil != err {
 				return
 			}
+			checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
 			// Load liveView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper B+Trees
 
@@ -1254,7 +1255,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
 			expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
 			expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.SnapShotListTotalSize
-			expectedCheckpointObjectTrailerSize += bytesConsumed
 
 			if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
 				err = fmt.Errorf("checkpointObjectTrailer for volume %v does not match required size", volume.volumeName)
@@ -1264,36 +1264,36 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			// Deserialize liveView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper LayoutReports
 
 			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
 				if nil != err {
 					return
 				}
+				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
 				volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
 			}
 
 			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
 				if nil != err {
 					return
 				}
+				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
 				volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
 			}
 
 			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
 				if nil != err {
 					return
 				}
+				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
 				volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
 			}
 
-			// Compute SnapShotID shotcuts
+			// Compute SnapShotID shortcuts
 
 			volume.snapShotIDShift = uint64(64) - uint64(volume.snapShotIDNumBits)
 			volume.dotSnapShotDirSnapShotID = (uint64(1) << uint64(volume.snapShotIDNumBits)) - uint64(1)
@@ -1307,10 +1307,10 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			// Load of viewTreeBy{Nonce|ID|Time|Name}
 
-			checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-
 			for snapShotIndex = 0; snapShotIndex < volume.checkpointObjectTrailer.SnapShotListNumElements; snapShotIndex++ {
 				volumeView = &volumeViewStruct{volume: volume}
+
+				// elementOfSnapShotListStruct.nonce
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the nonce", volume.volumeName, snapShotIndex)
@@ -1322,6 +1322,16 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 				volumeView.nonce = snapShotNonceStruct.u64
+				_, ok, err = volume.viewTreeByNonce.GetByKey(volumeView.nonce)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByNonce.GetByKey(%v) for SnapShotList element %v failed: %v", volume.volumeName, volumeView.nonce, snapShotIndex, err)
+				}
+				if ok {
+					err = fmt.Errorf("Volume %v's viewTreeByNonce already contained nonce %v for SnapShotList element %v ", volume.volumeName, volumeView.nonce, snapShotIndex)
+					return
+				}
+
+				// elementOfSnapShotListStruct.id
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the id", volume.volumeName, snapShotIndex)
@@ -1333,6 +1343,20 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 				volumeView.snapShotID = snapShotIDStruct.u64
+				if volumeView.snapShotID >= volume.dotSnapShotDirSnapShotID {
+					err = fmt.Errorf("Invalid volumeView.snapShotID (%v) for configured volume.snapShotIDNumBits (%v)", volumeView.snapShotID, volume.snapShotIDNumBits)
+					return
+				}
+				_, ok, err = volume.viewTreeByID.GetByKey(volumeView.snapShotID)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByID.GetByKey(%v) for SnapShotList element %v failed: %v", volume.volumeName, volumeView.snapShotID, snapShotIndex, err)
+				}
+				if ok {
+					err = fmt.Errorf("Volume %v's viewTreeByID already contained snapShotID %v for SnapShotList element %v ", volume.volumeName, volumeView.snapShotID, snapShotIndex)
+					return
+				}
+
+				// elementOfSnapShotListStruct.timeStamp
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the timeStamp len", volume.volumeName, snapShotIndex)
@@ -1350,10 +1374,20 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				snapShotTimeStampBuf = checkpointObjectTrailerBuf[:snapShotTimeStampBufLenStruct.u64]
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotTimeStampBufLenStruct.u64:]
 				err = volumeView.snapShotTime.UnmarshalBinary(snapShotTimeStampBuf)
-				if uint64(len(checkpointObjectTrailerBuf)) < snapShotTimeStampBufLenStruct.u64 {
-					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v's' timeStamp", volume.volumeName, snapShotIndex)
+				if nil != err {
+					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v's' timeStamp (err: %v)", volume.volumeName, snapShotIndex, err)
 					return
 				}
+				_, ok, err = volume.viewTreeByTime.GetByKey(volumeView.snapShotTime)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByTime.GetByKey(%v) for SnapShotList element %v failed: %v", volume.volumeName, volumeView.snapShotTime, snapShotIndex, err)
+				}
+				if ok {
+					err = fmt.Errorf("Volume %v's viewTreeByTime already contained snapShotTime %v for SnapShotList element %v ", volume.volumeName, volumeView.snapShotTime, snapShotIndex)
+					return
+				}
+
+				// elementOfSnapShotListStruct.name
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the name len", volume.volumeName, snapShotIndex)
@@ -1371,6 +1405,16 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				snapShotNameBuf = checkpointObjectTrailerBuf[:snapShotNameBufLenStruct.u64]
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotNameBufLenStruct.u64:]
 				volumeView.snapShotName = utils.ByteSliceToString(snapShotNameBuf)
+				_, ok, err = volume.viewTreeByName.GetByKey(volumeView.snapShotName)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByName.GetByKey(%v) for SnapShotList element %v failed: %v", volume.volumeName, volumeView.snapShotName, snapShotIndex, err)
+				}
+				if ok {
+					err = fmt.Errorf("Volume %v's viewTreeByName already contained snapShotName %v for SnapShotList element %v ", volume.volumeName, volumeView.snapShotName, snapShotIndex)
+					return
+				}
+
+				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1382,6 +1426,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
+				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectOffset
+
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
 					return
@@ -1391,6 +1437,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+
+				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1428,6 +1476,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
+				// elementOfSnapShotListStruct.createdObjectsBPlusTreeLayoutNumElements
+
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeLayoutNumElements", volume.volumeName, snapShotIndex)
 					return
@@ -1438,7 +1488,21 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// TODO: read in serialized createdObjectsBPlusTreeLayout
+				if uint64(len(checkpointObjectTrailerBuf)) < (snapShotCreatedObjectsBPlusTreeLayoutNumElementsStruct.u64 * globals.elementOfBPlusTreeLayoutStructSize) {
+					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeLayout", volume.volumeName, snapShotIndex)
+					return
+				}
+				for layoutReportIndex = 0; layoutReportIndex < snapShotCreatedObjectsBPlusTreeLayoutNumElementsStruct.u64; layoutReportIndex++ {
+					bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+					if nil != err {
+						return
+					}
+					checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+
+					volumeView.createdObjectsWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+				}
+
+				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1450,6 +1514,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
+				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectOffset
+
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
 					return
@@ -1459,6 +1525,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+
+				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1496,6 +1564,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
+				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeLayoutNumElements
+
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeLayoutNumElements", volume.volumeName, snapShotIndex)
 					return
@@ -1506,9 +1576,38 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// TODO: read in serialized deletedObjectsBPlusTreeLayout
+				if uint64(len(checkpointObjectTrailerBuf)) < (snapShotDeletedObjectsBPlusTreeLayoutNumElementsStruct.u64 * globals.elementOfBPlusTreeLayoutStructSize) {
+					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeLayout", volume.volumeName, snapShotIndex)
+					return
+				}
+				for layoutReportIndex = 0; layoutReportIndex < snapShotDeletedObjectsBPlusTreeLayoutNumElementsStruct.u64; layoutReportIndex++ {
+					bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+					if nil != err {
+						return
+					}
+					checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// TODO: Insert volumeView into viewTreeBy{Nonce|ID|Time|Name}
+					volumeView.deletedObjectsWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+				}
+
+				// Insert volumeView into viewTreeBy{Nonce|ID|Time|Name}
+
+				_, err = volume.viewTreeByNonce.Put(volumeView.nonce, volumeView)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByNonce.Put() for SnapShotList element %v failed: %v", volume.volumeName, snapShotIndex, err)
+				}
+				_, err = volume.viewTreeByID.Put(volumeView.snapShotID, volumeView)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByID.Put() for SnapShotList element %v failed: %v", volume.volumeName, snapShotIndex, err)
+				}
+				_, err = volume.viewTreeByTime.Put(volumeView.snapShotTime, volumeView)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByTime.Put() for SnapShotList element %v failed: %v", volume.volumeName, snapShotIndex, err)
+				}
+				_, err = volume.viewTreeByName.Put(volumeView.snapShotName, volumeView)
+				if nil != err {
+					logger.Fatalf("Logic error - volume %v's viewTreeByName.Put() for SnapShotList element %v failed: %v", volume.volumeName, snapShotIndex, err)
+				}
 			}
 
 			if 0 == volume.checkpointObjectTrailer.SnapShotListNumElements {
@@ -1531,6 +1630,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			if 0 != len(checkpointObjectTrailerBuf) {
 				err = fmt.Errorf("Extra %v bytes found in volume %v's checkpointObjectTrailer", len(checkpointObjectTrailerBuf), volume.volumeName)
+				return
 			}
 
 			// Derive available SnapShotIDs
