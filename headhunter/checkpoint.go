@@ -104,7 +104,6 @@ type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... 
 	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
 	//                       ID == 0                     reserved for the "live" view
 	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
-	//                                                             or to indicate a SnapShot being deleted
 	timeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
 	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
@@ -620,9 +619,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		replayLogPosition                                  int64
 		replayLogSize                                      int64
 		replayLogTransactionFixedPart                      replayLogTransactionFixedPartStruct
+		snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct uint64Struct
 		snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct uint64Struct
 		snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct uint64Struct
-		snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct uint64Struct
 		snapShotCreatedObjectsBPlusTreeObjectLengthStruct  uint64Struct
 		snapShotCreatedObjectsBPlusTreeObjectNumberStruct  uint64Struct
 		snapShotCreatedObjectsBPlusTreeObjectOffsetStruct  uint64Struct
@@ -631,13 +630,13 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		snapShotDeletedObjectsBPlusTreeObjectOffsetStruct  uint64Struct
 		snapShotID                                         uint64
 		snapShotIDStruct                                   uint64Struct
+		snapShotInodeRecBPlusTreeObjectLengthStruct        uint64Struct
 		snapShotInodeRecBPlusTreeObjectNumberStruct        uint64Struct
 		snapShotInodeRecBPlusTreeObjectOffsetStruct        uint64Struct
-		snapShotInodeRecBPlusTreeObjectLengthStruct        uint64Struct
 		snapShotIndex                                      uint64
+		snapShotLogSegmentRecBPlusTreeObjectLengthStruct   uint64Struct
 		snapShotLogSegmentRecBPlusTreeObjectNumberStruct   uint64Struct
 		snapShotLogSegmentRecBPlusTreeObjectOffsetStruct   uint64Struct
-		snapShotLogSegmentRecBPlusTreeObjectLengthStruct   uint64Struct
 		snapShotNameBuf                                    []byte
 		snapShotNameBufLenStruct                           uint64Struct
 		snapShotNonceStruct                                uint64Struct
@@ -2128,27 +2127,73 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 func (volume *volumeStruct) putCheckpoint() (err error) {
 	var (
-		bytesUsedCumulative                    uint64
-		bytesUsedThisBPlusTree                 uint64
-		checkpointContainerHeaders             map[string][]string
-		checkpointHeaderValue                  string
-		checkpointHeaderValues                 []string
-		checkpointObjectTrailer                *checkpointObjectTrailerV3Struct
-		checkpointObjectTrailerBeginningOffset uint64
-		checkpointObjectTrailerEndingOffset    uint64
-		checkpointTrailerBuf                   []byte
-		combinedBPlusTreeLayout                sortedmap.LayoutReport
-		containerNameAsByteSlice               []byte
-		containerNameAsValue                   sortedmap.Value
-		delayedObjectDeleteList                []delayedObjectDeleteStruct
-		elementOfBPlusTreeLayout               elementOfBPlusTreeLayoutStruct
-		elementOfBPlusTreeLayoutBuf            []byte
-		logSegmentObjectsToDelete              int
-		objectNumber                           uint64
-		objectNumberAsKey                      sortedmap.Key
-		ok                                     bool
-		treeLayoutBuf                          []byte
-		treeLayoutBufSize                      uint64
+		bytesUsedCumulative                                uint64
+		bytesUsedThisBPlusTree                             uint64
+		checkpointContainerHeaders                         map[string][]string
+		checkpointHeaderValue                              string
+		checkpointHeaderValues                             []string
+		checkpointObjectTrailer                            *checkpointObjectTrailerV3Struct
+		checkpointObjectTrailerBeginningOffset             uint64
+		checkpointObjectTrailerEndingOffset                uint64
+		checkpointTrailerBuf                               []byte
+		combinedBPlusTreeLayout                            sortedmap.LayoutReport
+		containerNameAsByteSlice                           []byte
+		containerNameAsValue                               sortedmap.Value
+		delayedObjectDeleteList                            []delayedObjectDeleteStruct
+		elementOfBPlusTreeLayout                           elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayoutBuf                        []byte
+		elementOfSnapShotListBuf                           []byte
+		logSegmentObjectsToDelete                          int
+		objectNumber                                       uint64
+		objectNumberAsKey                                  sortedmap.Key
+		ok                                                 bool
+		snapShotBPlusTreeObjectBPlusTreeObjectLengthBuf    []byte
+		snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct uint64Struct
+		snapShotBPlusTreeObjectBPlusTreeObjectNumberBuf    []byte
+		snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct uint64Struct
+		snapShotBPlusTreeObjectBPlusTreeObjectOffsetBuf    []byte
+		snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct uint64Struct
+		snapShotCreatedObjectsBPlusTreeObjectLengthBuf     []byte
+		snapShotCreatedObjectsBPlusTreeObjectLengthStruct  uint64Struct
+		snapShotCreatedObjectsBPlusTreeObjectNumberBuf     []byte
+		snapShotCreatedObjectsBPlusTreeObjectNumberStruct  uint64Struct
+		snapShotCreatedObjectsBPlusTreeObjectOffsetBuf     []byte
+		snapShotCreatedObjectsBPlusTreeObjectOffsetStruct  uint64Struct
+		snapShotDeletedObjectsBPlusTreeObjectLengthBuf     []byte
+		snapShotDeletedObjectsBPlusTreeObjectLengthStruct  uint64Struct
+		snapShotDeletedObjectsBPlusTreeObjectNumberBuf     []byte
+		snapShotDeletedObjectsBPlusTreeObjectNumberStruct  uint64Struct
+		snapShotDeletedObjectsBPlusTreeObjectOffsetBuf     []byte
+		snapShotDeletedObjectsBPlusTreeObjectOffsetStruct  uint64Struct
+		snapShotIDBuf                                      []byte
+		snapShotIDStruct                                   uint64Struct
+		snapShotInodeRecBPlusTreeObjectLengthBuf           []byte
+		snapShotInodeRecBPlusTreeObjectLengthStruct        uint64Struct
+		snapShotInodeRecBPlusTreeObjectNumberBuf           []byte
+		snapShotInodeRecBPlusTreeObjectNumberStruct        uint64Struct
+		snapShotInodeRecBPlusTreeObjectOffsetBuf           []byte
+		snapShotInodeRecBPlusTreeObjectOffsetStruct        uint64Struct
+		snapShotListBuf                                    []byte
+		snapShotLogSegmentRecBPlusTreeObjectLengthBuf      []byte
+		snapShotLogSegmentRecBPlusTreeObjectLengthStruct   uint64Struct
+		snapShotLogSegmentRecBPlusTreeObjectNumberBuf      []byte
+		snapShotLogSegmentRecBPlusTreeObjectNumberStruct   uint64Struct
+		snapShotLogSegmentRecBPlusTreeObjectOffsetBuf      []byte
+		snapShotLogSegmentRecBPlusTreeObjectOffsetStruct   uint64Struct
+		snapShotNameBuf                                    []byte
+		snapShotNameBufLenBuf                              []byte
+		snapShotNameBufLenStruct                           uint64Struct
+		snapShotNonceBuf                                   []byte
+		snapShotNonceStruct                                uint64Struct
+		snapShotTimeStampBuf                               []byte
+		snapShotTimeStampBufLenBuf                         []byte
+		snapShotTimeStampBufLenStruct                      uint64Struct
+		treeLayoutBuf                                      []byte
+		treeLayoutBufSize                                  uint64
+		volumeView                                         *volumeViewStruct
+		volumeViewAsValue                                  sortedmap.Value
+		volumeViewCount                                    int
+		volumeViewIndex                                    int
 	)
 
 	checkpointObjectTrailer = &checkpointObjectTrailerV3Struct{}
@@ -2173,6 +2218,47 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
+	}
+
+	volumeViewCount, err = volume.viewTreeByNonce.Len()
+	if nil != err {
+		logger.Fatalf("volume.viewTreeByNonce.Len() failed: %v", err)
+	}
+
+	for volumeViewIndex = 0; volumeViewIndex < volumeViewCount; volumeViewIndex++ {
+		_, volumeViewAsValue, ok, err = volume.viewTreeByNonce.GetByIndex(volumeViewIndex)
+		if nil != err {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) failed: %v", volumeViewIndex, err)
+		}
+		if !ok {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned !ok", volumeViewIndex)
+		}
+
+		volumeView, ok = volumeViewAsValue.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned something other than a *volumeViewStruct", volumeViewIndex)
+		}
+
+		// TODO: Resolve DEADLOCK here...
+		//       If volumeView == priorView, Flush() will attempt to do a PUT to createdObjectsWrapper for any new Object created but can't because Flush() is holding the lock on the tree already :-(
+
+		_, _, _, err = volumeView.createdObjectsWrapper.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+		_, _, _, err = volumeView.deletedObjectsWrapper.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+
+		err = volumeView.createdObjectsWrapper.bPlusTree.Prune()
+		if nil != err {
+			return
+		}
+		err = volumeView.deletedObjectsWrapper.bPlusTree.Prune()
+		if nil != err {
+			return
+		}
 	}
 
 	err = volume.liveView.inodeRecWrapper.bPlusTree.Prune()
@@ -2205,6 +2291,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout))
+	checkpointObjectTrailer.CreatedObjectsBPlusTreeLayoutNumElements = uint64(len(volume.liveView.createdObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout))
+	checkpointObjectTrailer.DeletedObjectsBPlusTreeLayoutNumElements = uint64(len(volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout))
 
 	checkpointTrailerBuf, err = cstruct.Pack(checkpointObjectTrailer, LittleEndian)
 	if nil != err {
@@ -2214,6 +2302,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	treeLayoutBufSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
+	treeLayoutBufSize += checkpointObjectTrailer.CreatedObjectsBPlusTreeLayoutNumElements
+	treeLayoutBufSize += checkpointObjectTrailer.DeletedObjectsBPlusTreeLayoutNumElements
 	treeLayoutBufSize *= globals.elementOfBPlusTreeLayoutStructSize
 
 	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
@@ -2257,11 +2347,195 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
 
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.createdObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout {
+		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
+			return
+		}
+		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
+	}
+
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout {
+		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
+			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
+			return
+		}
+		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
+	}
+
 	volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
 	volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
 	volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
 	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
 	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
+
+	checkpointObjectTrailer.SnapShotIDNumBits = uint64(volume.snapShotIDNumBits)
+
+	checkpointObjectTrailer.SnapShotListNumElements = uint64(volumeViewCount)
+
+	snapShotListBuf = make([]byte, 0)
+
+	for volumeViewIndex = 0; volumeViewIndex < volumeViewCount; volumeViewIndex++ {
+		_, volumeViewAsValue, ok, err = volume.viewTreeByNonce.GetByIndex(volumeViewIndex)
+		if nil != err {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) failed: %v", volumeViewIndex, err)
+		}
+		if !ok {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned !ok", volumeViewIndex)
+		}
+
+		volumeView, ok = volumeViewAsValue.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned something other than a *volumeViewStruct", volumeViewIndex)
+		}
+
+		snapShotNonceStruct.u64 = volumeView.nonce
+		snapShotNonceBuf, err = cstruct.Pack(snapShotNonceStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotNonceStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotIDStruct.u64 = volumeView.snapShotID
+		snapShotIDBuf, err = cstruct.Pack(snapShotIDStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotIDStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotTimeStampBuf, err = volumeView.snapShotTime.MarshalBinary()
+		if nil != err {
+			logger.Fatalf("volumeView.snapShotTime.MarshalBinary()for volumeViewIndex %v failed: %v", volumeViewIndex, err)
+		}
+		snapShotTimeStampBufLenStruct.u64 = uint64(len(snapShotTimeStampBuf))
+		snapShotTimeStampBufLenBuf, err = cstruct.Pack(snapShotTimeStampBufLenStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotTimeStampBufLenStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotNameBuf = utils.StringToByteSlice(volumeView.snapShotName)
+		snapShotNameBufLenStruct.u64 = uint64(len(snapShotNameBuf))
+		snapShotNameBufLenBuf, err = cstruct.Pack(snapShotNameBufLenStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotNameBufLenStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotInodeRecBPlusTreeObjectNumberStruct.u64,
+			snapShotInodeRecBPlusTreeObjectOffsetStruct.u64,
+			snapShotInodeRecBPlusTreeObjectLengthStruct.u64 = volumeView.inodeRecWrapper.bPlusTree.FetchLocation()
+		snapShotInodeRecBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotInodeRecBPlusTreeObjectNumberStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotInodeRecBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotInodeRecBPlusTreeObjectOffsetBuf, err = cstruct.Pack(snapShotInodeRecBPlusTreeObjectOffsetStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotInodeRecBPlusTreeObjectOffsetStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotInodeRecBPlusTreeObjectLengthBuf, err = cstruct.Pack(snapShotInodeRecBPlusTreeObjectLengthStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotInodeRecBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotLogSegmentRecBPlusTreeObjectNumberStruct.u64,
+			snapShotLogSegmentRecBPlusTreeObjectOffsetStruct.u64,
+			snapShotLogSegmentRecBPlusTreeObjectLengthStruct.u64 = volumeView.logSegmentRecWrapper.bPlusTree.FetchLocation()
+		snapShotLogSegmentRecBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectNumberStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotLogSegmentRecBPlusTreeObjectOffsetBuf, err = cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectOffsetStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectOffsetStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotLogSegmentRecBPlusTreeObjectLengthBuf, err = cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectLengthStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.u64,
+			snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct.u64,
+			snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct.u64 = volumeView.bPlusTreeObjectWrapper.bPlusTree.FetchLocation()
+		snapShotBPlusTreeObjectBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotBPlusTreeObjectBPlusTreeObjectOffsetBuf, err = cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotBPlusTreeObjectBPlusTreeObjectLengthBuf, err = cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotCreatedObjectsBPlusTreeObjectNumberStruct.u64,
+			snapShotCreatedObjectsBPlusTreeObjectOffsetStruct.u64,
+			snapShotCreatedObjectsBPlusTreeObjectLengthStruct.u64 = volumeView.createdObjectsWrapper.bPlusTree.FetchLocation()
+		snapShotCreatedObjectsBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectNumberStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotCreatedObjectsBPlusTreeObjectOffsetBuf, err = cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectOffsetStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectOffsetStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotCreatedObjectsBPlusTreeObjectLengthBuf, err = cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectLengthStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
+		}
+
+		snapShotDeletedObjectsBPlusTreeObjectNumberStruct.u64,
+			snapShotDeletedObjectsBPlusTreeObjectOffsetStruct.u64,
+			snapShotDeletedObjectsBPlusTreeObjectLengthStruct.u64 = volumeView.deletedObjectsWrapper.bPlusTree.FetchLocation()
+		snapShotDeletedObjectsBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectNumberStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotDeletedObjectsBPlusTreeObjectOffsetBuf, err = cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectOffsetStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectOffsetStruct, LittleEndian) failed: %v", err)
+		}
+		snapShotDeletedObjectsBPlusTreeObjectLengthBuf, err = cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectLengthStruct, LittleEndian)
+		if nil != err {
+			logger.Fatalf("cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
+		}
+
+		elementOfSnapShotListBuf = make([]byte, 0, 19*globals.uint64Size+snapShotTimeStampBufLenStruct.u64+snapShotNameBufLenStruct.u64)
+
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotNonceBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotIDBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotTimeStampBufLenBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotTimeStampBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotNameBufLenBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotNameBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotInodeRecBPlusTreeObjectNumberBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotInodeRecBPlusTreeObjectOffsetBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotInodeRecBPlusTreeObjectLengthBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotLogSegmentRecBPlusTreeObjectNumberBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotLogSegmentRecBPlusTreeObjectOffsetBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotLogSegmentRecBPlusTreeObjectLengthBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotBPlusTreeObjectBPlusTreeObjectNumberBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotBPlusTreeObjectBPlusTreeObjectOffsetBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotBPlusTreeObjectBPlusTreeObjectLengthBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotCreatedObjectsBPlusTreeObjectNumberBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotCreatedObjectsBPlusTreeObjectOffsetBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotCreatedObjectsBPlusTreeObjectLengthBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotDeletedObjectsBPlusTreeObjectNumberBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotDeletedObjectsBPlusTreeObjectOffsetBuf...)
+		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotDeletedObjectsBPlusTreeObjectLengthBuf...)
+
+		snapShotListBuf = append(snapShotListBuf, elementOfSnapShotListBuf...)
+	}
+
+	checkpointObjectTrailer.SnapShotListTotalSize = uint64(len(snapShotListBuf))
 
 	err = volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
@@ -2281,6 +2555,13 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	err = volume.sendChunkToCheckpointChunkedPutContext(treeLayoutBuf)
 	if nil != err {
 		return
+	}
+
+	if 0 < len(snapShotListBuf) {
+		err = volume.sendChunkToCheckpointChunkedPutContext(snapShotListBuf)
+		if nil != err {
+			return
+		}
 	}
 
 	checkpointObjectTrailerEndingOffset, err = volume.bytesPutToCheckpointChunkedPutContext()
