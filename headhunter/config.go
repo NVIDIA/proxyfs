@@ -32,10 +32,18 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
+type bPlusTreeTrackerStruct struct {
+	sync.Mutex
+	bPlusTreeLayout sortedmap.LayoutReport
+}
+
 type bPlusTreeWrapperStruct struct {
-	volumeView              *volumeViewStruct
-	bPlusTree               sortedmap.BPlusTree
-	trackingBPlusTreeLayout sortedmap.LayoutReport
+	volumeView       *volumeViewStruct
+	bPlusTree        sortedmap.BPlusTree
+	bPlusTreeTracker *bPlusTreeTrackerStruct // For inodeRecWrapper, logSegmentRecWrapper, & bPlusTreeObjectWrapper:
+	//                                            only valid for liveView... nil otherwise
+	//                                          For createdObjectsWrapper & deletedObjectsWrapper:
+	//                                            all volumeView's share the correspond one created for liveView
 }
 
 type volumeViewStruct struct {

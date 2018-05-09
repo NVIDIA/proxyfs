@@ -471,10 +471,12 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 
 	// Compare measuredLayoutReport & trackingLayoutReport computing discrepencies
 
+	treeWrapper.bPlusTreeTracker.Lock()
+
 	discrepencies = 0
 
 	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
-		objectBytesTracked, ok = treeWrapper.trackingBPlusTreeLayout[objectNumber]
+		objectBytesTracked, ok = treeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 		if ok {
 			if objectBytesMeasured != objectBytesTracked {
 				discrepencies++
@@ -486,7 +488,7 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		}
 	}
 
-	for objectNumber, objectBytesTracked = range treeWrapper.trackingBPlusTreeLayout {
+	for objectNumber, objectBytesTracked = range treeWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
 		if ok {
 			// Already handled above
@@ -495,6 +497,8 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in trackingLayoutReport but missing from measuredLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
 		}
 	}
+
+	treeWrapper.bPlusTreeTracker.Unlock()
 
 	// In the case that they differ, return measuredLayoutReport rather than trackingLayoutReport
 
@@ -617,8 +621,6 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		logSegmentRecBPlusTreeRootObjectLength   uint64
 		logSegmentRecBPlusTreeRootObjectNumber   uint64
 		logSegmentRecBPlusTreeRootObjectOffset   uint64
-		objectBytes                              uint64
-		objectNumber                             uint64
 		ok                                       bool
 		snapShotNonce                            uint64
 		snapShotTime                             time.Time
@@ -685,8 +687,8 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	}
 
 	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{
-		volumeView:              volumeView,
-		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
 	}
 
 	inodeRecBPlusTreeRootObjectNumber,
@@ -712,14 +714,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		if nil != err {
 			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<InodeRecBPlusTree>) failed with error: %v", err)
 		}
-		for objectNumber, objectBytes = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
-			volumeView.inodeRecWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
-		}
 	}
 
 	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
-		volumeView:              volumeView,
-		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
 	}
 
 	logSegmentRecBPlusTreeRootObjectNumber,
@@ -745,14 +744,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		if nil != err {
 			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<LogSegmentRecBPlusTree>) failed with error: %v", err)
 		}
-		for objectNumber, objectBytes = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
-			volumeView.logSegmentRecWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
-		}
 	}
 
 	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
-		volumeView:              volumeView,
-		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
 	}
 
 	bPlusTreeObjectBPlusTreeRootObjectNumber,
@@ -778,14 +774,11 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		if nil != err {
 			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<BPlusTreeObjectBPlusTree>) failed with error: %v", err)
 		}
-		for objectNumber, objectBytes = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
-			volumeView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout[objectNumber] = objectBytes
-		}
 	}
 
 	volumeView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
-		volumeView:              volumeView,
-		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+		volumeView:       volumeView,
+		bPlusTreeTracker: volumeView.volume.liveView.createdObjectsWrapper.bPlusTreeTracker,
 	}
 
 	volumeView.createdObjectsWrapper.bPlusTree =
@@ -796,8 +789,8 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 			globals.createdDeletedObjectsCache)
 
 	volumeView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
-		volumeView:              volumeView,
-		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+		volumeView:       volumeView,
+		bPlusTreeTracker: volumeView.volume.liveView.deletedObjectsWrapper.bPlusTreeTracker,
 	}
 
 	volumeView.deletedObjectsWrapper.bPlusTree =
