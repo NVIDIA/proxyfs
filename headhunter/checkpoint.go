@@ -28,7 +28,7 @@ var (
 )
 
 type uint64Struct struct {
-	u64 uint64
+	U64 uint64
 }
 
 const (
@@ -1410,7 +1410,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				volumeView.nonce = snapShotNonceStruct.u64
+				volumeView.nonce = snapShotNonceStruct.U64
 				_, ok, err = volume.viewTreeByNonce.GetByKey(volumeView.nonce)
 				if nil != err {
 					logger.Fatalf("Logic error - volume %v's viewTreeByNonce.GetByKey(%v) for SnapShotList element %v failed: %v", volume.volumeName, volumeView.nonce, snapShotIndex, err)
@@ -1431,7 +1431,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				volumeView.snapShotID = snapShotIDStruct.u64
+				volumeView.snapShotID = snapShotIDStruct.U64
 				if volumeView.snapShotID >= volume.dotSnapShotDirSnapShotID {
 					err = fmt.Errorf("Invalid volumeView.snapShotID (%v) for configured volume.snapShotIDNumBits (%v)", volumeView.snapShotID, volume.snapShotIDNumBits)
 					return
@@ -1456,12 +1456,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				if uint64(len(checkpointObjectTrailerBuf)) < snapShotTimeStampBufLenStruct.u64 {
+				if uint64(len(checkpointObjectTrailerBuf)) < snapShotTimeStampBufLenStruct.U64 {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the timeStamp", volume.volumeName, snapShotIndex)
 					return
 				}
-				snapShotTimeStampBuf = checkpointObjectTrailerBuf[:snapShotTimeStampBufLenStruct.u64]
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotTimeStampBufLenStruct.u64:]
+				snapShotTimeStampBuf = checkpointObjectTrailerBuf[:snapShotTimeStampBufLenStruct.U64]
+				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotTimeStampBufLenStruct.U64:]
 				err = volumeView.snapShotTime.UnmarshalBinary(snapShotTimeStampBuf)
 				if nil != err {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v's' timeStamp (err: %v)", volume.volumeName, snapShotIndex, err)
@@ -1487,12 +1487,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				if uint64(len(checkpointObjectTrailerBuf)) < snapShotNameBufLenStruct.u64 {
+				if uint64(len(checkpointObjectTrailerBuf)) < snapShotNameBufLenStruct.U64 {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the name", volume.volumeName, snapShotIndex)
 					return
 				}
-				snapShotNameBuf = checkpointObjectTrailerBuf[:snapShotNameBufLenStruct.u64]
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotNameBufLenStruct.u64:]
+				snapShotNameBuf = checkpointObjectTrailerBuf[:snapShotNameBufLenStruct.U64]
+				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[snapShotNameBufLenStruct.U64:]
 				volumeView.snapShotName = utils.ByteSliceToString(snapShotNameBuf)
 				_, ok, err = volume.viewTreeByName.GetByKey(volumeView.snapShotName)
 				if nil != err {
@@ -1544,7 +1544,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					bPlusTreeTracker: nil,
 				}
 
-				if 0 == snapShotInodeRecBPlusTreeObjectNumberStruct.u64 {
+				if 0 == snapShotInodeRecBPlusTreeObjectNumberStruct.U64 {
 					volumeView.inodeRecWrapper.bPlusTree =
 						sortedmap.NewBPlusTree(
 							volume.maxInodesPerMetadataNode,
@@ -1554,9 +1554,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				} else {
 					volumeView.inodeRecWrapper.bPlusTree, err =
 						sortedmap.OldBPlusTree(
-							snapShotInodeRecBPlusTreeObjectNumberStruct.u64,
-							snapShotInodeRecBPlusTreeObjectOffsetStruct.u64,
-							snapShotInodeRecBPlusTreeObjectLengthStruct.u64,
+							snapShotInodeRecBPlusTreeObjectNumberStruct.U64,
+							snapShotInodeRecBPlusTreeObjectOffsetStruct.U64,
+							snapShotInodeRecBPlusTreeObjectLengthStruct.U64,
 							sortedmap.CompareUint64,
 							volumeView.inodeRecWrapper,
 							globals.inodeRecCache)
@@ -1606,7 +1606,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					bPlusTreeTracker: nil,
 				}
 
-				if 0 == snapShotLogSegmentRecBPlusTreeObjectNumberStruct.u64 {
+				if 0 == snapShotLogSegmentRecBPlusTreeObjectNumberStruct.U64 {
 					volumeView.logSegmentRecWrapper.bPlusTree =
 						sortedmap.NewBPlusTree(
 							volume.maxLogSegmentsPerMetadataNode,
@@ -1616,9 +1616,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				} else {
 					volumeView.logSegmentRecWrapper.bPlusTree, err =
 						sortedmap.OldBPlusTree(
-							snapShotLogSegmentRecBPlusTreeObjectNumberStruct.u64,
-							snapShotLogSegmentRecBPlusTreeObjectOffsetStruct.u64,
-							snapShotLogSegmentRecBPlusTreeObjectLengthStruct.u64,
+							snapShotLogSegmentRecBPlusTreeObjectNumberStruct.U64,
+							snapShotLogSegmentRecBPlusTreeObjectOffsetStruct.U64,
+							snapShotLogSegmentRecBPlusTreeObjectLengthStruct.U64,
 							sortedmap.CompareUint64,
 							volumeView.logSegmentRecWrapper,
 							globals.logSegmentRecCache)
@@ -1668,7 +1668,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					bPlusTreeTracker: nil,
 				}
 
-				if 0 == snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.u64 {
+				if 0 == snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.U64 {
 					volumeView.bPlusTreeObjectWrapper.bPlusTree =
 						sortedmap.NewBPlusTree(
 							volume.maxDirFileNodesPerMetadataNode,
@@ -1678,9 +1678,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				} else {
 					volumeView.bPlusTreeObjectWrapper.bPlusTree, err =
 						sortedmap.OldBPlusTree(
-							snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.u64,
-							snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct.u64,
-							snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct.u64,
+							snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.U64,
+							snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct.U64,
+							snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct.U64,
 							sortedmap.CompareUint64,
 							volumeView.bPlusTreeObjectWrapper,
 							globals.logSegmentRecCache)
@@ -1730,7 +1730,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					bPlusTreeTracker: volumeView.volume.liveView.createdObjectsWrapper.bPlusTreeTracker,
 				}
 
-				if 0 == snapShotCreatedObjectsBPlusTreeObjectNumberStruct.u64 {
+				if 0 == snapShotCreatedObjectsBPlusTreeObjectNumberStruct.U64 {
 					volumeView.createdObjectsWrapper.bPlusTree =
 						sortedmap.NewBPlusTree(
 							volume.maxCreatedDeletedObjectsPerMetadataNode,
@@ -1740,9 +1740,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				} else {
 					volumeView.createdObjectsWrapper.bPlusTree, err =
 						sortedmap.OldBPlusTree(
-							snapShotCreatedObjectsBPlusTreeObjectNumberStruct.u64,
-							snapShotCreatedObjectsBPlusTreeObjectOffsetStruct.u64,
-							snapShotCreatedObjectsBPlusTreeObjectLengthStruct.u64,
+							snapShotCreatedObjectsBPlusTreeObjectNumberStruct.U64,
+							snapShotCreatedObjectsBPlusTreeObjectOffsetStruct.U64,
+							snapShotCreatedObjectsBPlusTreeObjectLengthStruct.U64,
 							sortedmap.CompareUint64,
 							volumeView.createdObjectsWrapper,
 							globals.createdDeletedObjectsCache)
@@ -1792,7 +1792,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					bPlusTreeTracker: volumeView.volume.liveView.deletedObjectsWrapper.bPlusTreeTracker,
 				}
 
-				if 0 == snapShotDeletedObjectsBPlusTreeObjectNumberStruct.u64 {
+				if 0 == snapShotDeletedObjectsBPlusTreeObjectNumberStruct.U64 {
 					volumeView.deletedObjectsWrapper.bPlusTree =
 						sortedmap.NewBPlusTree(
 							volume.maxCreatedDeletedObjectsPerMetadataNode,
@@ -1800,11 +1800,11 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 							volumeView.deletedObjectsWrapper,
 							globals.createdDeletedObjectsCache)
 				} else {
-					volumeView.createdObjectsWrapper.bPlusTree, err =
+					volumeView.deletedObjectsWrapper.bPlusTree, err =
 						sortedmap.OldBPlusTree(
-							snapShotDeletedObjectsBPlusTreeObjectNumberStruct.u64,
-							snapShotDeletedObjectsBPlusTreeObjectOffsetStruct.u64,
-							snapShotDeletedObjectsBPlusTreeObjectLengthStruct.u64,
+							snapShotDeletedObjectsBPlusTreeObjectNumberStruct.U64,
+							snapShotDeletedObjectsBPlusTreeObjectOffsetStruct.U64,
+							snapShotDeletedObjectsBPlusTreeObjectLengthStruct.U64,
 							sortedmap.CompareUint64,
 							volumeView.deletedObjectsWrapper,
 							globals.createdDeletedObjectsCache)
@@ -1861,7 +1861,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			volume.availableSnapShotIDList = list.New()
 
 			for snapShotID = uint64(1); snapShotID < volume.dotSnapShotDirSnapShotID; snapShotID++ {
-				volume.availableSnapShotIDList.PushBack(snapShotID)
 				_, ok, err = volume.viewTreeByID.GetByKey(snapShotID)
 				if nil != err {
 					logger.Fatalf("Logic error - volume %v's viewTreeByID.GetByKey() failed: %v", volume.volumeName, err)
@@ -2147,6 +2146,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		objectNumber                                       uint64
 		objectNumberAsKey                                  sortedmap.Key
 		ok                                                 bool
+		postponedCreatedObjectNumber                       uint64
+		postponedCreatedObjectsFound                       bool
 		snapShotBPlusTreeObjectBPlusTreeObjectLengthBuf    []byte
 		snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct uint64Struct
 		snapShotBPlusTreeObjectBPlusTreeObjectNumberBuf    []byte
@@ -2239,22 +2240,63 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned something other than a *volumeViewStruct", volumeViewIndex)
 		}
 
-		// TODO: Resolve DEADLOCK here...
-		//       If volumeView == priorView, Flush() will attempt to do a PUT to createdObjectsWrapper for any new Object created but can't because Flush() is holding the lock on the tree already :-(
+		if volumeView == volume.priorView {
+			// We must avoid a deadlock that would occur if, during Flush() of volume.priorView's
+			// createdObjectsWrapper.bPlusTree, we needed to do a Put() into it due to the creation
+			// of a new Checkpoint Object. The following sequence postpones those Put() calls
+			// until after the Flush() completes, performs them, then retries the Flush() call.
 
-		_, _, _, err = volumeView.createdObjectsWrapper.bPlusTree.Flush(false)
-		if nil != err {
-			return
-		}
-		_, _, _, err = volumeView.deletedObjectsWrapper.bPlusTree.Flush(false)
-		if nil != err {
-			return
+			volume.postponePriorViewCreatedObjectsPuts = true
+			postponedCreatedObjectsFound = true
+
+			for postponedCreatedObjectsFound {
+				_, _, _, err = volumeView.createdObjectsWrapper.bPlusTree.Flush(false)
+				if nil != err {
+					volume.postponePriorViewCreatedObjectsPuts = false
+					volume.postponedPriorViewCreatedObjectsPuts = make(map[uint64]struct{})
+					return
+				}
+
+				postponedCreatedObjectsFound = 0 < len(volume.postponedPriorViewCreatedObjectsPuts)
+
+				if postponedCreatedObjectsFound {
+					for postponedCreatedObjectNumber = range volume.postponedPriorViewCreatedObjectsPuts {
+						ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(postponedCreatedObjectNumber, []byte(volume.checkpointContainerName))
+						if nil != err {
+							volume.postponePriorViewCreatedObjectsPuts = false
+							volume.postponedPriorViewCreatedObjectsPuts = make(map[uint64]struct{})
+							return
+						}
+						if !ok {
+							volume.postponePriorViewCreatedObjectsPuts = false
+							volume.postponedPriorViewCreatedObjectsPuts = make(map[uint64]struct{})
+							err = fmt.Errorf("volume.priorView.createdObjectsWrapper.bPlusTree.Put() returned !ok")
+							return
+						}
+					}
+
+					volume.postponedPriorViewCreatedObjectsPuts = make(map[uint64]struct{})
+				}
+			}
+
+			volume.postponePriorViewCreatedObjectsPuts = false
+		} else {
+			_, _, _, err = volumeView.createdObjectsWrapper.bPlusTree.Flush(false)
+			if nil != err {
+				return
+			}
 		}
 
 		err = volumeView.createdObjectsWrapper.bPlusTree.Prune()
 		if nil != err {
 			return
 		}
+
+		_, _, _, err = volumeView.deletedObjectsWrapper.bPlusTree.Flush(false)
+		if nil != err {
+			return
+		}
+
 		err = volumeView.deletedObjectsWrapper.bPlusTree.Prune()
 		if nil != err {
 			return
@@ -2293,11 +2335,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.CreatedObjectsBPlusTreeLayoutNumElements = uint64(len(volume.liveView.createdObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.DeletedObjectsBPlusTreeLayoutNumElements = uint64(len(volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout))
-
-	checkpointTrailerBuf, err = cstruct.Pack(checkpointObjectTrailer, LittleEndian)
-	if nil != err {
-		return
-	}
 
 	treeLayoutBufSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
@@ -2399,13 +2436,13 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("volume.viewTreeByNonce.GetByIndex(%v) returned something other than a *volumeViewStruct", volumeViewIndex)
 		}
 
-		snapShotNonceStruct.u64 = volumeView.nonce
+		snapShotNonceStruct.U64 = volumeView.nonce
 		snapShotNonceBuf, err = cstruct.Pack(snapShotNonceStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotNonceStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotIDStruct.u64 = volumeView.snapShotID
+		snapShotIDStruct.U64 = volumeView.snapShotID
 		snapShotIDBuf, err = cstruct.Pack(snapShotIDStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotIDStruct, LittleEndian) failed: %v", err)
@@ -2415,22 +2452,22 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		if nil != err {
 			logger.Fatalf("volumeView.snapShotTime.MarshalBinary()for volumeViewIndex %v failed: %v", volumeViewIndex, err)
 		}
-		snapShotTimeStampBufLenStruct.u64 = uint64(len(snapShotTimeStampBuf))
+		snapShotTimeStampBufLenStruct.U64 = uint64(len(snapShotTimeStampBuf))
 		snapShotTimeStampBufLenBuf, err = cstruct.Pack(snapShotTimeStampBufLenStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotTimeStampBufLenStruct, LittleEndian) failed: %v", err)
 		}
 
 		snapShotNameBuf = utils.StringToByteSlice(volumeView.snapShotName)
-		snapShotNameBufLenStruct.u64 = uint64(len(snapShotNameBuf))
+		snapShotNameBufLenStruct.U64 = uint64(len(snapShotNameBuf))
 		snapShotNameBufLenBuf, err = cstruct.Pack(snapShotNameBufLenStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotNameBufLenStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotInodeRecBPlusTreeObjectNumberStruct.u64,
-			snapShotInodeRecBPlusTreeObjectOffsetStruct.u64,
-			snapShotInodeRecBPlusTreeObjectLengthStruct.u64 = volumeView.inodeRecWrapper.bPlusTree.FetchLocation()
+		snapShotInodeRecBPlusTreeObjectNumberStruct.U64,
+			snapShotInodeRecBPlusTreeObjectOffsetStruct.U64,
+			snapShotInodeRecBPlusTreeObjectLengthStruct.U64 = volumeView.inodeRecWrapper.bPlusTree.FetchLocation()
 		snapShotInodeRecBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotInodeRecBPlusTreeObjectNumberStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotInodeRecBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
@@ -2444,9 +2481,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("cstruct.Pack(snapShotInodeRecBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotLogSegmentRecBPlusTreeObjectNumberStruct.u64,
-			snapShotLogSegmentRecBPlusTreeObjectOffsetStruct.u64,
-			snapShotLogSegmentRecBPlusTreeObjectLengthStruct.u64 = volumeView.logSegmentRecWrapper.bPlusTree.FetchLocation()
+		snapShotLogSegmentRecBPlusTreeObjectNumberStruct.U64,
+			snapShotLogSegmentRecBPlusTreeObjectOffsetStruct.U64,
+			snapShotLogSegmentRecBPlusTreeObjectLengthStruct.U64 = volumeView.logSegmentRecWrapper.bPlusTree.FetchLocation()
 		snapShotLogSegmentRecBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectNumberStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
@@ -2460,9 +2497,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("cstruct.Pack(snapShotLogSegmentRecBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.u64,
-			snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct.u64,
-			snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct.u64 = volumeView.bPlusTreeObjectWrapper.bPlusTree.FetchLocation()
+		snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct.U64,
+			snapShotBPlusTreeObjectBPlusTreeObjectOffsetStruct.U64,
+			snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct.U64 = volumeView.bPlusTreeObjectWrapper.bPlusTree.FetchLocation()
 		snapShotBPlusTreeObjectBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
@@ -2476,9 +2513,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("cstruct.Pack(snapShotBPlusTreeObjectBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotCreatedObjectsBPlusTreeObjectNumberStruct.u64,
-			snapShotCreatedObjectsBPlusTreeObjectOffsetStruct.u64,
-			snapShotCreatedObjectsBPlusTreeObjectLengthStruct.u64 = volumeView.createdObjectsWrapper.bPlusTree.FetchLocation()
+		snapShotCreatedObjectsBPlusTreeObjectNumberStruct.U64,
+			snapShotCreatedObjectsBPlusTreeObjectOffsetStruct.U64,
+			snapShotCreatedObjectsBPlusTreeObjectLengthStruct.U64 = volumeView.createdObjectsWrapper.bPlusTree.FetchLocation()
 		snapShotCreatedObjectsBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectNumberStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
@@ -2492,9 +2529,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("cstruct.Pack(snapShotCreatedObjectsBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
 		}
 
-		snapShotDeletedObjectsBPlusTreeObjectNumberStruct.u64,
-			snapShotDeletedObjectsBPlusTreeObjectOffsetStruct.u64,
-			snapShotDeletedObjectsBPlusTreeObjectLengthStruct.u64 = volumeView.deletedObjectsWrapper.bPlusTree.FetchLocation()
+		snapShotDeletedObjectsBPlusTreeObjectNumberStruct.U64,
+			snapShotDeletedObjectsBPlusTreeObjectOffsetStruct.U64,
+			snapShotDeletedObjectsBPlusTreeObjectLengthStruct.U64 = volumeView.deletedObjectsWrapper.bPlusTree.FetchLocation()
 		snapShotDeletedObjectsBPlusTreeObjectNumberBuf, err = cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectNumberStruct, LittleEndian)
 		if nil != err {
 			logger.Fatalf("cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectNumberStruct, LittleEndian) failed: %v", err)
@@ -2508,7 +2545,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			logger.Fatalf("cstruct.Pack(snapShotDeletedObjectsBPlusTreeObjectLengthStruct, LittleEndian) failed: %v", err)
 		}
 
-		elementOfSnapShotListBuf = make([]byte, 0, 19*globals.uint64Size+snapShotTimeStampBufLenStruct.u64+snapShotNameBufLenStruct.u64)
+		elementOfSnapShotListBuf = make([]byte, 0, 19*globals.uint64Size+snapShotTimeStampBufLenStruct.U64+snapShotNameBufLenStruct.U64)
 
 		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotNonceBuf...)
 		elementOfSnapShotListBuf = append(elementOfSnapShotListBuf, snapShotIDBuf...)
@@ -2536,6 +2573,11 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	}
 
 	checkpointObjectTrailer.SnapShotListTotalSize = uint64(len(snapShotListBuf))
+
+	checkpointTrailerBuf, err = cstruct.Pack(checkpointObjectTrailer, LittleEndian)
+	if nil != err {
+		return
+	}
 
 	err = volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
@@ -2758,13 +2800,22 @@ func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err er
 			return
 		}
 		if nil != volume.priorView {
-			ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(volume.checkpointChunkedPutContextObjectNumber, []byte(volume.checkpointContainerName))
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("volume.priorView.createdObjectsWrapper.bPlusTree.Put() returned !ok")
-				return
+			if volume.postponePriorViewCreatedObjectsPuts {
+				_, ok = volume.postponedPriorViewCreatedObjectsPuts[volume.checkpointChunkedPutContextObjectNumber]
+				if ok {
+					err = fmt.Errorf("volume.postponedPriorViewCreatedObjectsPuts[volume.checkpointChunkedPutContextObjectNumber] check returned ok")
+					return
+				}
+				volume.postponedPriorViewCreatedObjectsPuts[volume.checkpointChunkedPutContextObjectNumber] = struct{}{}
+			} else {
+				ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(volume.checkpointChunkedPutContextObjectNumber, []byte(volume.checkpointContainerName))
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("volume.priorView.createdObjectsWrapper.bPlusTree.Put() returned !ok")
+					return
+				}
 			}
 		}
 	}

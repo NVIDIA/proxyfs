@@ -131,6 +131,8 @@ type volumeStruct struct {
 	checkpointHeader                        *checkpointHeaderStruct
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
+	postponePriorViewCreatedObjectsPuts     bool
+	postponedPriorViewCreatedObjectsPuts    map[uint64]struct{}
 	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
 	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
 	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
@@ -450,10 +452,12 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
-		volumeName:                  volumeName,
-		checkpointChunkedPutContext: nil,
-		checkpointDoneWaitGroup:     nil,
-		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
+		volumeName:                           volumeName,
+		checkpointChunkedPutContext:          nil,
+		checkpointDoneWaitGroup:              nil,
+		checkpointRequestChan:                make(chan *checkpointRequestStruct, 1),
+		postponePriorViewCreatedObjectsPuts:  false,
+		postponedPriorViewCreatedObjectsPuts: make(map[uint64]struct{}),
 	}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")

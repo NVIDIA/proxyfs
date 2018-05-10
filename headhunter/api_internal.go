@@ -260,10 +260,6 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 	return
 }
 
-/*
-	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
-	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)
-*/
 func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
 	var (
 		containerNameAsValue sortedmap.Value
