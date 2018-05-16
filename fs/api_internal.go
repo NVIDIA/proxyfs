@@ -1942,7 +1942,9 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 	haveObstacle := false
 	var obstacleInodeNumber inode.InodeNumber
 	if 0 == len(dirs) {
-		obstacleInodeNumber, err1 := mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, vObjectBaseName)
+
+		var err1 error
+		obstacleInodeNumber, err1 = mS.volStruct.VolumeHandle.Lookup(dirInodeNumber, vObjectBaseName)
 		if err1 != nil && blunder.Errno(err1) == int(blunder.NotFoundError) {
 			// File not found? Good!
 		} else if err1 != nil {
