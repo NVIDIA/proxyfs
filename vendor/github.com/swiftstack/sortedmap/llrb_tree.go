@@ -11,7 +11,7 @@ package sortedmap
 // same coloring scheme and will simplify the algorithms even more (with only a negligible
 // performance impact). The implementation herein utilizes this 2-3 Tree basis.
 
-import "sync"
+import "github.com/swiftstack/ProxyFS/trackedlock"
 
 const (
 	RED   = true
@@ -28,7 +28,7 @@ type llrbNodeStruct struct {
 }
 
 type llrbTreeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	Compare
 	LLRBTreeCallbacks
 	root *llrbNodeStruct

@@ -3,9 +3,10 @@ package sortedmap
 import (
 	"fmt"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 const (
@@ -13,7 +14,7 @@ const (
 )
 
 type testBPlusTreeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	nextObjectNumber uint64
 	objectMap        map[uint64][]byte
 }
