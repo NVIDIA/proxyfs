@@ -3,8 +3,8 @@ package sortedmap
 import (
 	"fmt"
 	"runtime"
-	"sync"
 
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/cstruct"
 )
 
@@ -23,7 +23,7 @@ type btreeNodeCacheElement struct { //    only accessed while holding btreeNodeC
 }
 
 type btreeNodeCacheStruct struct {
-	sync.Mutex //            protects both this btreeNodeCacheStruct & every btreeNodeCacheElement
+	trackedlock.Mutex //            protects both this btreeNodeCacheStruct & every btreeNodeCacheElement
 	//                         {clean|dirty}LRUs are populated while holding a btreeTreeStruct.Mutex
 	//                         {clean|dirty}LRUs are drained in a separate goroutine to avoid deadlock
 	evictLowLimit  uint64 // evictions continue until evictLowLimit  >= cleanLRUItems + dirtyLRUItems
@@ -90,7 +90,7 @@ type staleOnDiskReferenceStruct struct {
 }
 
 type btreeTreeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	minKeysPerNode uint64 //                           only applies to non-Root nodes
 	//                                                 "order" according to Bayer & McCreight (1972) & Comer (1979)
 	maxKeysPerNode uint64 //                           "order" according to Knuth (1998)
