@@ -17,6 +17,7 @@ type localLockTrack struct {
 	owners       uint64 // Count of threads which own lock
 	waiters      uint64 // Count of threads which want to own the lock (either shared or exclusive)
 	state        lockState
+	exclOwner    CallerID
 	listOfOwners []CallerID
 	waitReqQ     *list.List // List of requests waiting for lock
 }
@@ -167,6 +168,17 @@ func grantAndSignal(track *localLockTrack, localQRequest *localLockRequest) {
 	track.state = localQRequest.requestedState
 	track.listOfOwners = append(track.listOfOwners, localQRequest.LockCallerID)
 	track.owners++
+
+	if track.state == exclusive {
+		if track.exclOwner != nil || track.owners != 1 {
+			panic(fmt.Sprintf("granted exclusive lock when (exclOwner != nil || track.owners != 1)! "+
+				"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+				track.lockId, track.owners, track.waiters, track.state,
+				*track.exclOwner, track.listOfOwners))
+		}
+		track.exclOwner = localQRequest.LockCallerID
+	}
+
 	localQRequest.wakeUp = true
 	localQRequest.Cond.Broadcast()
 }
@@ -260,6 +272,20 @@ func (l *RWLockStruct) commonLock(requestedState lockState, try bool) (err error
 		localRequest.Cond.Wait()
 	}
 
+	// sanity check request and lock state
+	if localRequest.wakeUp != true {
+		panic(fmt.Sprintf("commonLock(): thread awoke without being signalled; localRequest %v "+
+			"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+			localRequest, track.lockId, track.owners, track.waiters, track.state,
+			*track.exclOwner, track.listOfOwners))
+	}
+	if track.state == stale || track.owners == 0 || (track.owners > 1 && track.state != shared) {
+		panic(fmt.Sprintf("commonLock(): lock is in undefined state: localRequest %v "+
+			"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+			localRequest, track.lockId, track.owners, track.waiters, track.state,
+			*track.exclOwner, track.listOfOwners))
+	}
+
 	// At this point, we got the lock either by the call to processLocalQ() above
 	// or as a result of processLocalQ() being called from the unlock() path.
 
@@ -297,6 +323,16 @@ func (l *RWLockStruct) unlock() (err error) {
 	// Set stale and signal any waiters
 	track.owners--
 	removeFromListOfOwners(track.listOfOwners, l.LockCallerID)
+	if track.state == exclusive {
+		if track.owners != 0 || track.exclOwner == nil {
+			panic(fmt.Sprintf("releasing exclusive lock when (exclOwner == nil || track.owners != 0)! "+
+				"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+				track.lockId, track.owners, track.waiters, track.state,
+				*track.exclOwner, track.listOfOwners))
+		}
+		track.exclOwner = nil
+	}
+
 	if track.owners == 0 {
 		track.state = stale
 	} else {
