@@ -1,6 +1,7 @@
 package jrpcfs
 
 import (
+	"container/list"
 	"fmt"
 	"io"
 	"net"
@@ -58,13 +59,17 @@ func ioServerLoop() {
 		elm := globals.connections.PushBack(conn)
 		globals.connLock.Unlock()
 
-		go func() {
-			ioHandle(conn)
+		go func(myConn net.Conn, myElm *list.Element) {
+			ioHandle(myConn)
 			globals.connLock.Lock()
-			globals.connections.Remove(elm)
+			globals.connections.Remove(myElm)
+
+			// There is a race condition where the connection could have been
+			// closed in Down().  However, closing it twice is okay.
+			myConn.Close()
 			globals.connLock.Unlock()
 			globals.connWG.Done()
-		}()
+		}(conn, elm)
 	}
 }
 
@@ -360,13 +365,10 @@ func ioHandle(conn net.Conn) {
 		mountHandle fs.MountHandle
 	)
 
-	// NOTE: Allocate 64k buffer and context on the stack; this function runs in a goroutine
-	//       and only processes one request at a time.
-	//
-	//var dataStorage [64 * 1024]byte
+	// NOTE: This function runs in a goroutine and only processes
+	//		 one request at a time.
 	ctxStorage := ioContext{op: InvalidOp}
 	ctx := &ctxStorage
-	// XXX TODO: no sync.Pool for now, just alloc on the stack
 
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
@@ -376,10 +378,6 @@ func ioHandle(conn net.Conn) {
 		if printDebugLogs {
 			logger.Infof("Waiting for RPC request; ctx.data size is %v.", len(ctx.data))
 		}
-
-		// XXX TODO: no sync.Pool for now, just alloc on the stack
-		// Get a context struct to use
-		//ctx := ioContextPool.Get()
 
 		// Get RPC request
 		err := getRequest(conn, ctx)
