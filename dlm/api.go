@@ -51,6 +51,8 @@ package dlm
 import (
 	"fmt"
 	"sync"
+
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type NotifyReason uint32
@@ -89,10 +91,12 @@ var nextCallerID uint64 = 1000
 func GenerateCallerID() (callerID CallerID) {
 
 	// TODO - we need to use a nonce value instead of this when we have clustering
+	// include the goroutine ID to aid debugging
+	var goID uint64 = utils.GetGID()
 
 	callerIDLock.Lock()
 
-	callerIDStr := fmt.Sprintf("%d", nextCallerID)
+	callerIDStr := fmt.Sprintf("%d-%d", goID, nextCallerID)
 	callerID = CallerID(&callerIDStr)
 	nextCallerID++
 
