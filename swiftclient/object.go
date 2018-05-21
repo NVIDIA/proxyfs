@@ -275,7 +275,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, offset, length, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -453,7 +453,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectLoad, accountName, containerName, objectName, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -570,7 +570,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectRead, accountName, containerName, objectName, offset, capacity, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)
@@ -686,7 +686,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectTail, accountName, containerName, objectName, length, uint32(httpStatus))
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		releaseNonChunkedConnection(connection, false)

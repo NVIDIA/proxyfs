@@ -5,7 +5,9 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -56,6 +58,9 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpValue(value sortedmap.Value)
 }
 
 func (bPlusTreeWrapper *bPlusTreeWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	stats.IncrementOperations(&stats.HeadhunterBPlusTreeNodeFaults)
+	evtlog.Record(evtlog.FormatHeadhunterBPlusTreeNodeFault, bPlusTreeWrapper.volumeView.volume.volumeName, objectNumber, objectOffset, objectLength)
+
 	nodeByteSlice, err =
 		swiftclient.ObjectGet(
 			bPlusTreeWrapper.volumeView.volume.accountName,
@@ -63,6 +68,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) GetNode(objectNumber uint64, obj
 			utils.Uint64ToHexStr(objectNumber),
 			objectOffset,
 			objectLength)
+
 	return
 }
 
