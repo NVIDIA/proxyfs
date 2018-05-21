@@ -46,7 +46,10 @@ func (vS *volumeStruct) getReadLock(inodeNumber inode.InodeNumber, callerID dlm.
 	}
 
 	err = lock.ReadLock()
-	return lock, err
+	if err != nil {
+		return nil, err
+	}
+	return lock, nil
 }
 
 func (vS *volumeStruct) getWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
@@ -56,7 +59,10 @@ func (vS *volumeStruct) getWriteLock(inodeNumber inode.InodeNumber, callerID dlm
 	}
 
 	err = lock.WriteLock()
-	return lock, err
+	if err != nil {
+		return nil, err
+	}
+	return lock, nil
 }
 
 // These functions ensure that a lock of the right type is held by the given callerID. If the lock is not held, they
@@ -73,7 +79,10 @@ func (vS *volumeStruct) ensureReadLock(inodeNumber inode.InodeNumber, callerID d
 	}
 
 	err = lock.ReadLock()
-	return lock, err
+	if err != nil {
+		return nil, err
+	}
+	return lock, nil
 }
 
 func (vS *volumeStruct) ensureWriteLock(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
@@ -87,5 +96,8 @@ func (vS *volumeStruct) ensureWriteLock(inodeNumber inode.InodeNumber, callerID 
 	}
 
 	err = lock.WriteLock()
-	return lock, err
+	if err != nil {
+		return nil, err
+	}
+	return lock, nil
 }

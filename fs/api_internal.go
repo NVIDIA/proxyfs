@@ -1814,9 +1814,12 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 	//
 	// We take locks as we go so that nobody can sneak d3 in ahead of
 	// us.
-	var dirEntInodeLock *dlm.RWLockStruct
+	var (
+		dirEntInodeLock *dlm.RWLockStruct
+		dirInodeLock    *dlm.RWLockStruct
+	)
 	callerID := dlm.GenerateCallerID()
-	dirInodeLock, err := mS.volStruct.getWriteLock(dirInodeNumber, callerID)
+	dirInodeLock, err = mS.volStruct.getWriteLock(dirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
@@ -1843,68 +1846,86 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 			// NotFoundError just means that it's time to start making
 			// directories. We deliberately do not unlock dirInodeLock
 			// here.
+			err = nil
 			break
-		} else if err1 != nil {
+		}
+		if err1 != nil {
 			// Mysterious error; just bail
 			err = err1
-		} else {
-			// There's a directory entry there; let's go see what it is
-			dirs = dirs[0 : len(dirs)-1]
-			dirEntInodeLock, err1 = mS.volStruct.getWriteLock(dirEntInodeNumber, callerID)
+			return
+		}
+
+		// There's a directory entry there; let's go see what it is
+		dirs = dirs[0 : len(dirs)-1]
+		dirEntInodeLock, err1 = mS.volStruct.getWriteLock(dirEntInodeNumber, callerID)
+		if err1 != nil {
+			dirEntInodeLock = nil
+			err = err1
+			return
+		}
+
+		dirEntInodeType, err1 := mS.volStruct.VolumeHandle.GetType(dirEntInodeNumber)
+		if err1 != nil {
+			err = err1
+			return
+		}
+
+		switch dirEntInodeType {
+
+		case inode.FileType:
+			// We're processing the directory portion of the
+			// object path, so if we run into a file, that's an
+			// error
+			err = blunder.NewError(blunder.NotDirError, "%s is a file, not a directory", thisDir)
+			return
+
+		case inode.SymlinkType:
+			target, err1 := mS.volStruct.VolumeHandle.GetSymlink(dirEntInodeNumber)
+			dirEntInodeLock.Unlock()
+			dirEntInodeLock = nil
 			if err1 != nil {
 				err = err1
 				return
 			}
 
-			dirEntInodeType, err1 := mS.volStruct.VolumeHandle.GetType(dirEntInodeNumber)
-			if err1 != nil {
-				err = err1
-				return
-			}
-
-			if dirEntInodeType == inode.FileType {
-				// We're processing the directory portion of the
-				// object path, so if we run into a file, that's an
-				// error
-				err = blunder.NewError(blunder.NotDirError, "%s is a file, not a directory", thisDir)
-				return
-			} else if dirEntInodeType == inode.SymlinkType {
-				target, err1 := mS.volStruct.VolumeHandle.GetSymlink(dirEntInodeNumber)
-				dirEntInodeLock.Unlock()
-				dirEntInodeLock = nil
+			if strings.HasPrefix(target, "/") {
+				// Absolute symlink: restart traversal from the
+				// root directory.
+				dirInodeLock.Unlock()
+				dirInodeNumber = inode.RootDirInodeNumber
+				dirInodeLock, err1 = mS.volStruct.getWriteLock(inode.RootDirInodeNumber, nil)
 				if err1 != nil {
+					dirInodeLock = nil
 					err = err1
 					return
 				}
-
-				if strings.HasPrefix(target, "/") {
-					// Absolute symlink: restart traversal from the
-					// root directory.
-					dirInodeLock.Unlock()
-					dirInodeNumber = inode.RootDirInodeNumber
-					dirInodeLock, err1 = mS.volStruct.getWriteLock(inode.RootDirInodeNumber, nil)
-					if err1 != nil {
-						err = err1
-						return
-					}
-				}
-				dirs = append(dirs, revSplitPath(target)...)
-			} else {
-				// There's actually a subdirectory here. Lock it
-				// before unlocking the current directory so there's
-				// no window for anyone else to sneak into.
-				dirInodeLock.Unlock()
-
-				dirInodeNumber = dirEntInodeNumber
-				dirInodeLock = dirEntInodeLock
-				dirEntInodeLock = nil // avoid double-cleanup in defer
 			}
+			dirs = append(dirs, revSplitPath(target)...)
+
+		case inode.DirType:
+			// There's actually a subdirectory here. Switch
+			// to the new directory and continue.
+			dirInodeLock.Unlock()
+
+			dirInodeNumber = dirEntInodeNumber
+			dirInodeLock = dirEntInodeLock
+			dirEntInodeLock = nil // avoid double-cleanup in defer
+
+		default:
+			// We're processing the directory portion of the
+			// object path, so if its something else, that's an
+			// error
+			err = blunder.NewError(blunder.NotDirError, "%s is a '%v', not a directory",
+				thisDir, dirEntInodeType)
+			return
 		}
 	}
 
-	// Now, dirInodeNumber is the inode of the lowest existing directory. Anything else is created by us and isn't part
-	// of the filesystem tree until we Link() it in, so we only need to hold this one lock. Call the inode-creator
-	// function and start linking stuff together.
+	// Now, dirInodeNumber is the inode of the lowest existing
+	// directory. Anything else is created by us and isn't part of the
+	// filesystem tree until we Link() it in, so we only need to hold
+	// DirInodeLock on the directory.  Call the inode-creator function and
+	// start linking stuff together.
 	fileInodeNumber, err = makeInodeFunc()
 	if err != nil {
 		return
@@ -1977,7 +1998,8 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 	// Note that we don't have a lock on highestUnlinkedInodeNumber.
 	// That's because this inode was created in this function, so
 	// nobody else knows it exists, so we don't have to worry about
-	// anyone else accessing it.
+	// anyone else accessing it (except for NFS lookup-by-handle
+	// which we'll ignore).
 	err = mS.volStruct.VolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber, false)
 	if err != nil {
 		logger.ErrorfWithError(err, "MiddlewarePutComplete: failed final Link(%v, %v, %v)", dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
@@ -1987,8 +2009,12 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 		// to try.
 		if haveObstacle {
 			relinkErr := mS.volStruct.VolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber, false)
-			// the rest of the relevant variables were logged in the previous error-logging call
-			logger.ErrorfWithError(relinkErr, "MiddlewarePutComplete: relink failed for inode=%v name=%v", obstacleInodeNumber, vObjectBaseName)
+			if relinkErr != nil {
+				// the rest of the relevant variables were logged in the previous error-logging call
+				logger.ErrorfWithError(relinkErr,
+					"MiddlewarePutComplete: relink failed for inode=%v name=%v",
+					obstacleInodeNumber, vObjectBaseName)
+			}
 		}
 
 		return
