@@ -2,6 +2,7 @@
 package jrpcfs
 
 import (
+	"container/list"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -69,13 +70,17 @@ func jrpcServerLoop() {
 		elm := globals.connections.PushBack(conn)
 		globals.connLock.Unlock()
 
-		go func() {
+		go func(myConn net.Conn, myElm *list.Element) {
 			srv.ServeCodec(jsonrpc.NewServerCodec(conn))
 			globals.connLock.Lock()
-			globals.connections.Remove(elm)
+			globals.connections.Remove(myElm)
+
+			// There is a race condition where the connection could have been
+			// closed in Down().  However, closing it twice is okay.
+			myConn.Close()
 			globals.connLock.Unlock()
 			globals.connWG.Done()
-		}()
+		}(conn, elm)
 	}
 }
 
