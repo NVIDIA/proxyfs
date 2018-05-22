@@ -71,7 +71,7 @@ func jrpcServerLoop() {
 		globals.connLock.Unlock()
 
 		go func(myConn net.Conn, myElm *list.Element) {
-			srv.ServeCodec(jsonrpc.NewServerCodec(conn))
+			srv.ServeCodec(jsonrpc.NewServerCodec(myConn))
 			globals.connLock.Lock()
 			globals.connections.Remove(myElm)
 
