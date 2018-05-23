@@ -87,11 +87,6 @@ type CoalesceElement struct {
 	ElementName                    string
 }
 
-func (de *DirEntry) Size() int {
-	// sizeof(InodeNumber) + sizeof(InodeType) + sizeof(DirLocation) + string data + null byte delimiter
-	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.NextDirLocation)) + len(de.Basename) + 1
-}
-
 type ReadPlanStep struct {
 	LogSegmentNumber uint64 // If == 0, Length specifies zero-file size
 	Offset           uint64 // If zero-fill case, == 0
@@ -105,6 +100,11 @@ type ReadPlanStep struct {
 const (
 	RootDirInodeNumber = InodeNumber(1)
 )
+
+func (de *DirEntry) Size() int {
+	// sizeof(InodeNumber) + sizeof(InodeType) + sizeof(DirLocation) + string data + null byte delimiter
+	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.NextDirLocation)) + len(de.Basename) + 1
+}
 
 // AccountNameToVolumeName returns the corresponding volumeName for the supplied accountName (if any).
 func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {
@@ -131,6 +131,8 @@ type VolumeHandle interface {
 	// Generic methods, implemented volume.go
 
 	GetFSID() (fsid uint64)
+	SnapShotCreateByFSLayer(name string) (id uint64, err error)
+	SnapShotDeleteByFSLayer(id uint64) (err error)
 
 	// Common Inode methods, implemented in inode.go
 

@@ -34,23 +34,19 @@ gobinsubdirs = \
 	proxyfsd/proxyfsd \
 	ramswift/ramswift
 
-gostringerdirs = \
-	blunder \
-	inode
-
 uname := $(shell uname)
 
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: version fmt stringer pre-generate generate install test python-test vet c-clean c-build c-install c-test
+    all: version fmt stringer generate install test python-test c-clean c-build c-install c-test
 
-    all-deb-builder: version fmt pre-generate stringer generate install vet c-clean c-build c-install-deb-builder
+    all-deb-builder: version fmt stringer generate install c-clean c-build c-install-deb-builder
 else
-    all: version fmt stringer pre-generate generate install test vet
+    all: version fmt stringer generate install test
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install pre-generate python-test stringer test version vet
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install python-test stringer test version
 
 bench:
 	@set -e; \
@@ -145,12 +141,6 @@ install:
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
 
-pre-generate:
-	@set -e; \
-	for gosubdir in $(gostringerdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir pre-generate; \
-	done
-
 python-test:
 	cd pfs_middleware && tox -e py27,py27-old-swift,lint
 
@@ -168,12 +158,3 @@ test:
 
 version:
 	@go version
-
-vet:
-	@set -e; \
-	for gosubdir in $(gopkgsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir vet; \
-	done; \
-	for gosubdir in $(gobinsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir vet; \
-	done

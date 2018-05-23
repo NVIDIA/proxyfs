@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/sortedmap"
@@ -12,7 +11,6 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -999,19 +997,5 @@ func (vS *volumeStruct) getObjectPathFromLogSegmentNumber(logSegmentNumber uint6
 
 func (vS *volumeStruct) getObjectPathFromContainerNameAndLogSegmentNumber(containerName string, logSegmentNumber uint64) (objectPath string) {
 	objectPath = fmt.Sprintf("/v1/%s/%s/%016X", vS.accountName, containerName, logSegmentNumber)
-	return
-}
-
-func (vS *volumeStruct) deleteLogSegmentAsync(logSegmentNumber uint64, checkpointDoneWaitGroup *sync.WaitGroup) (err error) {
-	containerName, err := vS.getLogSegmentContainer(logSegmentNumber)
-	if nil != err {
-		return
-	}
-	objectName := fmt.Sprintf("%016X", logSegmentNumber)
-	err = vS.headhunterVolumeHandle.DeleteLogSegmentRec(logSegmentNumber)
-	if nil != err {
-		return
-	}
-	swiftclient.ObjectDeleteAsync(vS.accountName, containerName, objectName, swiftclient.SkipRetry, checkpointDoneWaitGroup, nil)
 	return
 }

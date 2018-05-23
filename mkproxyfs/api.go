@@ -163,7 +163,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 
 					for !isEmpty {
 						for _, objectName = range objectList {
-							err = swiftclient.ObjectDeleteSync(accountName, containerName, objectName, 0)
+							err = swiftclient.ObjectDelete(accountName, containerName, objectName, 0)
 							if nil != err {
 								err = fmt.Errorf("failed to DELETE %v/%v/%v: %v", accountName, containerName, objectName, err)
 								return

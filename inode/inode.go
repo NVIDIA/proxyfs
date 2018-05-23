@@ -350,7 +350,6 @@ func (vS *volumeStruct) flushInodeNumber(inodeNumber InodeNumber) (err error) {
 
 func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	var (
-		checkpointDoneWaitGroup   *sync.WaitGroup
 		dirtyInodeNumbers         []uint64
 		dirtyInodeRecBytes        []byte
 		dirtyInodeRecs            [][]byte
@@ -471,15 +470,12 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 		for _, inode = range inodes {
 			inode.dirty = false
 		}
-		checkpointDoneWaitGroup = vS.headhunterVolumeHandle.FetchNextCheckPointDoneWaitGroup()
-	} else {
-		checkpointDoneWaitGroup = nil
 	}
 
 	// Now do phase one of garbage collection
 	if 0 < len(emptyLogSegments) {
 		for _, logSegmentNumber = range emptyLogSegments {
-			err = vS.deleteLogSegmentAsync(logSegmentNumber, checkpointDoneWaitGroup)
+			err = vS.headhunterVolumeHandle.DeleteLogSegmentRec(logSegmentNumber)
 			if nil != err {
 				logger.WarnfWithError(err, "couldn't delete garbage log segment")
 			}
@@ -863,10 +859,8 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 			return
 		}
 
-		checkpointDoneWaitGroup := vS.headhunterVolumeHandle.FetchNextCheckPointDoneWaitGroup()
-
 		for logSegmentNumber := range ourInode.LogSegmentMap {
-			deleteSegmentErr := vS.deleteLogSegmentAsync(logSegmentNumber, checkpointDoneWaitGroup)
+			deleteSegmentErr := vS.headhunterVolumeHandle.DeleteLogSegmentRec(logSegmentNumber)
 			if nil != deleteSegmentErr {
 				logger.WarnfWithError(deleteSegmentErr, "couldn't delete destroy'd log segment")
 				return

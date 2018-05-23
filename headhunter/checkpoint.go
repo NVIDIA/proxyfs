@@ -1,6 +1,7 @@
 package headhunter
 
 import (
+	"container/list"
 	"fmt"
 	"hash/crc64"
 	"io"
@@ -32,7 +33,8 @@ type uint64Struct struct {
 
 const (
 	checkpointHeaderVersion2 uint64 = iota + 2
-	// uint64 in %016X indicating checkpointHeaderVersion2
+	checkpointHeaderVersion3
+	// uint64 in %016X indicating checkpointHeaderVersion2 or checkpointHeaderVersion3
 	// ' '
 	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
 	// ' '
@@ -44,6 +46,12 @@ const (
 type checkpointHeaderV2Struct struct {
 	CheckpointObjectTrailerV2StructObjectNumber uint64 // checkpointObjectTrailerV2Struct found at "tail" of object
 	CheckpointObjectTrailerV2StructObjectLength uint64 // this length includes the three B+Tree "layouts" appended
+	ReservedToNonce                             uint64 // highest nonce value reserved
+}
+
+type checkpointHeaderV3Struct struct {
+	CheckpointObjectTrailerV3StructObjectNumber uint64 // checkpointObjectTrailerV3Struct found at "tail" of object
+	CheckpointObjectTrailerV3StructObjectLength uint64 // this length includes appended non-fixed sized arrays
 	ReservedToNonce                             uint64 // highest nonce value reserved
 }
 
@@ -65,9 +73,55 @@ type checkpointObjectTrailerV2Struct struct {
 	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
 }
 
+type checkpointObjectTrailerV3Struct struct {
+	InodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
+	InodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
+	InodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
+	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV2Struct
+	LogSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
+	LogSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
+	LogSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
+	LogSegmentRecBPlusTreeLayoutNumElements   uint64 // elements immediately follow inodeRecBPlusTreeLayout
+	BPlusTreeObjectBPlusTreeObjectNumber      uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of bPlusTreeObject B+Tree
+	BPlusTreeObjectBPlusTreeObjectOffset      uint64 // ...and offset into the Object where root starts
+	BPlusTreeObjectBPlusTreeObjectLength      uint64 // ...and length if that root node
+	BPlusTreeObjectBPlusTreeLayoutNumElements uint64 // elements immediately follow logSegmentRecBPlusTreeLayout
+	SnapShotIDNumBits                         uint64 // number of bits reserved to hold SnapShotIDs
+	SnapShotListNumElements                   uint64 // elements immediately follow bPlusTreeObjectBPlusTreeLayout
+	SnapShotListTotalSize                     uint64 // size of entire SnapShotList
+	// inodeRecBPlusTreeLayout        serialized as [inodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
+	// logSegmentBPlusTreeLayout      serialized as [logSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
+	// bPlusTreeObjectBPlusTreeLayout serialized as [bPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
+	// snapShotList                   serialized as [snapShotListNumElements                  ]elementOfSnapShotListStruct
+}
+
 type elementOfBPlusTreeLayoutStruct struct {
 	ObjectNumber uint64
 	ObjectBytes  uint64
+}
+
+type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
+	nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
+	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
+	//                       ID == 0                     reserved for the "live" view
+	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
+	//                                                             or to indicate a SnapShot being deleted
+	timeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
+	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
+	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
+	name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
+	//                       func utils.ByteSliceToString(byteSlice []byte)        (str string)
+	//                       func utils.StringToByteSlice(str string)              (byteSlice []byte)
+	createdObjectsBPlusTreeObjectNumber      uint64
+	createdObjectsBPlusTreeObjectOffset      uint64
+	createdObjectsBPlusTreeObjectLength      uint64
+	createdObjectsBPlusTreeLayoutNumElements uint64
+	// createdObjectsBPlusTreeLayout serialized as [createdObjectsBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
+	deletedObjectsBPlusTreeObjectNumber      uint64
+	deletedObjectsBPlusTreeObjectOffset      uint64
+	deletedObjectsBPlusTreeObjectLength      uint64
+	deletedObjectsBPlusTreeLayoutNumElements uint64
+	// deletedObjectsBPlusTreeLayout serialized as [deletedObjectsBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
 }
 
 type checkpointRequestStruct struct {
@@ -532,43 +586,217 @@ func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedma
 	return
 }
 
-func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
+func (volumeView *volumeViewStruct) loadCheckpointObjectTrailerV2(checkpointObjectTrailerV2StructObjectNumber uint64, checkpointObjectTrailerV2StructObjectLength uint64) (checkpointObjectTrailer *checkpointObjectTrailerV2Struct, err error) {
 	var (
-		accountHeaderValues                 []string
-		accountHeaders                      map[string][]string
 		bytesConsumed                       uint64
-		bytesNeeded                         uint64
-		checkpointContainerHeaders          map[string][]string
-		checkpointHeader                    checkpointHeaderV2Struct
-		checkpointHeaderValue               string
-		checkpointHeaderValueSlice          []string
-		checkpointHeaderValues              []string
 		checkpointObjectTrailerBuf          []byte
-		checkpointVersion                   uint64
-		computedCRC64                       uint64
-		defaultReplayLogReadBuffer          []byte
 		elementOfBPlusTreeLayout            elementOfBPlusTreeLayoutStruct
 		expectedCheckpointObjectTrailerSize uint64
-		i                                   uint64
-		inodeNumber                         uint64
 		layoutReportIndex                   uint64
-		logSegmentNumber                    uint64
-		numInodes                           uint64
-		objectNumber                        uint64
-		ok                                  bool
-		replayLogReadBuffer                 []byte
-		replayLogReadBufferPosition         uint64
-		replayLogPosition                   int64
-		replayLogSize                       int64
-		replayLogTransactionFixedPart       replayLogTransactionFixedPartStruct
-		storagePolicyHeaderValues           []string
-		value                               []byte
-		valueLen                            uint64
 	)
 
-	volume.inodeRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: inodeRecBPlusTreeWrapperType}
-	volume.logSegmentRecWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: logSegmentRecBPlusTreeWrapperType}
-	volume.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{volume: volume, wrapperType: bPlusTreeObjectBPlusTreeWrapperType}
+	// Read in checkpointObjectTrailerV2Struct
+
+	checkpointObjectTrailerBuf, err =
+		swiftclient.ObjectTail(
+			volumeView.volume.accountName,
+			volumeView.volume.checkpointContainerName,
+			utils.Uint64ToHexStr(checkpointObjectTrailerV2StructObjectNumber),
+			checkpointObjectTrailerV2StructObjectLength)
+	if nil != err {
+		return
+	}
+
+	checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{}
+
+	bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, checkpointObjectTrailer, LittleEndian)
+	if nil != err {
+		return
+	}
+
+	// Load volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper B+Trees
+
+	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber {
+		volumeView.inodeRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxInodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+	} else {
+		volumeView.inodeRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
+				checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
+				checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+		if nil != err {
+			return
+		}
+	}
+
+	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber {
+		volumeView.logSegmentRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxLogSegmentsPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+	} else {
+		volumeView.logSegmentRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
+				checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
+				checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+		if nil != err {
+			return
+		}
+	}
+
+	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+	}
+
+	if 0 == checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxDirFileNodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+	} else {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
+				checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
+				checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+		if nil != err {
+			return
+		}
+	}
+
+	// Fake load volumeView.{createdObjects|deletedObjects}Wrapper B+Trees
+
+	volumeView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport), // Nothing to deserialize into this
+	}
+
+	volumeView.createdObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
+	volumeView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:              volumeView,
+		trackingBPlusTreeLayout: make(sortedmap.LayoutReport), // Nothing to deserialize into this
+	}
+
+	volumeView.deletedObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
+	// Deserialize volumeView.{inodeRec|logSegmentRec|bPlusTreeObject}Wrapper LayoutReports
+
+	expectedCheckpointObjectTrailerSize = checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
+	expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
+	expectedCheckpointObjectTrailerSize += bytesConsumed
+
+	if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
+		err = fmt.Errorf("checkpointObjectTrailer for volume %v does not match required size", volumeView.volume.volumeName)
+		return
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.inodeRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.logSegmentRecWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+	}
+
+	for layoutReportIndex = 0; layoutReportIndex < checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
+		checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
+		bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
+		if nil != err {
+			return
+		}
+
+		volumeView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
+	}
+
+	err = nil
+	return
+}
+
+func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
+	var (
+		accountHeaderValues           []string
+		accountHeaders                map[string][]string
+		bytesNeeded                   uint64
+		checkpointContainerHeaders    map[string][]string
+		checkpointHeader              checkpointHeaderV2Struct
+		checkpointHeaderValue         string
+		checkpointHeaderValueSlice    []string
+		checkpointHeaderValues        []string
+		checkpointVersion             uint64
+		computedCRC64                 uint64
+		defaultReplayLogReadBuffer    []byte
+		inodeIndex                    uint64
+		inodeNumber                   uint64
+		logSegmentNumber              uint64
+		numInodes                     uint64
+		objectNumber                  uint64
+		ok                            bool
+		replayLogReadBuffer           []byte
+		replayLogReadBufferPosition   uint64
+		replayLogPosition             int64
+		replayLogSize                 int64
+		replayLogTransactionFixedPart replayLogTransactionFixedPartStruct
+		snapShotID                    uint64
+		snapShotIDLimit               uint64
+		storagePolicyHeaderValues     []string
+		value                         []byte
+		valueLen                      uint64
+	)
 
 	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
 	if nil == err {
@@ -674,9 +902,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			return
 		}
 
-		volume.inodeRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-		volume.logSegmentRecBPlusTreeLayout = make(sortedmap.LayoutReport)
-		volume.bPlusTreeObjectBPlusTreeLayout = make(sortedmap.LayoutReport)
+		volume.liveView = &volumeViewStruct{volume: volume}
 
 		if 0 == volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber {
 			volume.checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{
@@ -693,133 +919,95 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				BPlusTreeObjectBPlusTreeObjectLength:      0,
 				BPlusTreeObjectBPlusTreeLayoutNumElements: 0,
 			}
-		} else {
-			// Read in checkpointObjectTrailerV2Struct
-			checkpointObjectTrailerBuf, err =
-				swiftclient.ObjectTail(
-					volume.accountName,
-					volume.checkpointContainerName,
-					utils.Uint64ToHexStr(volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber),
-					volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength)
-			if nil != err {
-				return
+
+			volume.liveView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
 			}
 
-			volume.checkpointObjectTrailer = &checkpointObjectTrailerV2Struct{}
-
-			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, volume.checkpointObjectTrailer, LittleEndian)
-			if nil != err {
-				return
-			}
-
-			// Deserialize volume.{inodeRec|logSegmentRec|bPlusTreeObject}BPlusTreeLayout LayoutReports
-
-			expectedCheckpointObjectTrailerSize = volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements
-			expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements
-			expectedCheckpointObjectTrailerSize += volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
-			expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
-			expectedCheckpointObjectTrailerSize += bytesConsumed
-
-			if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
-				err = fmt.Errorf("volume.checkpointObjectTrailer for volume %v does not match required size", volume.volumeName)
-				return
-			}
-
-			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-				if nil != err {
-					return
-				}
-
-				volume.inodeRecBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-			}
-
-			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-				if nil != err {
-					return
-				}
-
-				volume.logSegmentRecBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-			}
-
-			for layoutReportIndex = 0; layoutReportIndex < volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements; layoutReportIndex++ {
-				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
-				bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, &elementOfBPlusTreeLayout, LittleEndian)
-				if nil != err {
-					return
-				}
-
-				volume.bPlusTreeObjectBPlusTreeLayout[elementOfBPlusTreeLayout.ObjectNumber] = elementOfBPlusTreeLayout.ObjectBytes
-			}
-		}
-
-		// Load volume.{inodeRec|logSegmentRec|bPlusTreeObject} B+Trees
-
-		if 0 == volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber {
-			volume.inodeRecWrapper.bPlusTree =
+			volume.liveView.inodeRecWrapper.bPlusTree =
 				sortedmap.NewBPlusTree(
 					volume.maxInodesPerMetadataNode,
 					sortedmap.CompareUint64,
-					volume.inodeRecWrapper,
+					volume.liveView.inodeRecWrapper,
 					globals.inodeRecCache)
-		} else {
-			volume.inodeRecWrapper.bPlusTree, err =
-				sortedmap.OldBPlusTree(
-					volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
-					volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
-					volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
-					sortedmap.CompareUint64,
-					volume.inodeRecWrapper,
-					globals.inodeRecCache)
-			if nil != err {
-				return
-			}
-		}
 
-		if 0 == volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber {
-			volume.logSegmentRecWrapper.bPlusTree =
+			volume.liveView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.logSegmentRecWrapper.bPlusTree =
 				sortedmap.NewBPlusTree(
 					volume.maxLogSegmentsPerMetadataNode,
 					sortedmap.CompareUint64,
-					volume.logSegmentRecWrapper,
+					volume.liveView.logSegmentRecWrapper,
 					globals.logSegmentRecCache)
-		} else {
-			volume.logSegmentRecWrapper.bPlusTree, err =
-				sortedmap.OldBPlusTree(
-					volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
-					volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
-					volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
+
+			volume.liveView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.bPlusTreeObjectWrapper.bPlusTree =
+				sortedmap.NewBPlusTree(
+					volume.maxDirFileNodesPerMetadataNode,
 					sortedmap.CompareUint64,
-					volume.logSegmentRecWrapper,
-					globals.logSegmentRecCache)
+					volume.liveView.bPlusTreeObjectWrapper,
+					globals.bPlusTreeObjectCache)
+
+			volume.liveView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.createdObjectsWrapper.bPlusTree =
+				sortedmap.NewBPlusTree(
+					volume.maxCreatedDeletedObjectsPerMetadataNode,
+					sortedmap.CompareUint64,
+					volume.liveView.createdObjectsWrapper,
+					globals.createdDeletedObjectsCache)
+
+			volume.liveView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+				volumeView:              volume.liveView,
+				trackingBPlusTreeLayout: make(sortedmap.LayoutReport),
+			}
+
+			volume.liveView.deletedObjectsWrapper.bPlusTree =
+				sortedmap.NewBPlusTree(
+					volume.maxCreatedDeletedObjectsPerMetadataNode,
+					sortedmap.CompareUint64,
+					volume.liveView.createdObjectsWrapper,
+					globals.createdDeletedObjectsCache)
+		} else {
+			// Load/process checkpointObjectTrailerV2Struct
+
+			volume.checkpointObjectTrailer, err = volume.liveView.loadCheckpointObjectTrailerV2(volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber, volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength)
 			if nil != err {
 				return
 			}
 		}
 
-		if 0 == volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber {
-			volume.bPlusTreeObjectWrapper.bPlusTree =
-				sortedmap.NewBPlusTree(
-					volume.maxDirFileNodesPerMetadataNode,
-					sortedmap.CompareUint64,
-					volume.bPlusTreeObjectWrapper,
-					globals.bPlusTreeObjectCache)
-		} else {
-			volume.bPlusTreeObjectWrapper.bPlusTree, err =
-				sortedmap.OldBPlusTree(
-					volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
-					volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
-					volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
-					sortedmap.CompareUint64,
-					volume.bPlusTreeObjectWrapper,
-					globals.bPlusTreeObjectCache)
-			if nil != err {
-				return
-			}
+		// Fake load of viewTreeBy{Nonce|ID|Time|Name}
+
+		volume.viewTreeByNonce = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByID = sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil)
+		volume.viewTreeByTime = sortedmap.NewLLRBTree(sortedmap.CompareTime, nil)
+		volume.viewTreeByName = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+		// Fake derivation of available SnapShotIDs and maxNonce
+
+		volume.availableSnapShotIDList = list.New()
+
+		snapShotIDLimit = uint64(1) << uint64(volume.snapShotIDNumBits)
+
+		for snapShotID = uint64(2); snapShotID < snapShotIDLimit; snapShotID++ {
+			volume.availableSnapShotIDList.PushBack(snapShotID)
 		}
+
+		volume.maxNonce = (1 << (64 - volume.snapShotIDNumBits)) - 1
+	} else if checkpointHeaderVersion3 == checkpointVersion {
+		// TODO
 	} else {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, checkpointVersion)
 		return
@@ -841,9 +1029,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			// No Replay Log found... simply return now
 			err = nil
 			return
-		} else {
-			logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_RDWR,) failed", volume.replayLogFileName)
 		}
+		logger.FatalfWithError(err, "platform.OpenFileSync(%v,os.O_RDWR,) failed", volume.replayLogFileName)
 	}
 
 	// Compute current end of Replay Log and round it down to replayLogWriteBufferAlignment multiple if necessary
@@ -932,14 +1119,14 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
 
-			ok, err = volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
+			ok, err = volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
 			}
 			if !ok {
-				_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, value)
+				_, err = volume.liveView.inodeRecWrapper.bPlusTree.Put(inodeNumber, value)
 				if nil != err {
-					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.inodeRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
 				}
 			}
 		case transactionPutInodeRecs:
@@ -948,7 +1135,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
 			replayLogReadBufferPosition += globals.uint64Size
-			for i = 0; i < numInodes; i++ {
+			for inodeIndex = 0; inodeIndex < numInodes; inodeIndex++ {
 				_, err = cstruct.Unpack(replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+globals.uint64Size], &inodeNumber, LittleEndian)
 				if nil != err {
 					logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
@@ -963,14 +1150,14 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
 				replayLogReadBufferPosition += valueLen
 
-				ok, err = volume.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
+				ok, err = volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
 				if nil != err {
-					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
 				}
 				if !ok {
-					_, err = volume.inodeRecWrapper.bPlusTree.Put(inodeNumber, value)
+					_, err = volume.liveView.inodeRecWrapper.bPlusTree.Put(inodeNumber, value)
 					if nil != err {
-						logger.Fatalf("Reply Log for Volume %s hit unexpected volume.inodeRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+						logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
 					}
 				}
 			}
@@ -980,9 +1167,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
 
-			_, err = volume.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
+			_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.inodeRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
 			}
 		case transactionPutLogSegmentRec:
 			_, err = cstruct.Unpack(replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+globals.uint64Size], &logSegmentNumber, LittleEndian)
@@ -998,14 +1185,14 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
 
-			ok, err = volume.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, value)
+			ok, err = volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, value)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.logSegmentRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
 			}
 			if !ok {
-				_, err = volume.logSegmentRecWrapper.bPlusTree.Put(logSegmentNumber, value)
+				_, err = volume.liveView.logSegmentRecWrapper.bPlusTree.Put(logSegmentNumber, value)
 				if nil != err {
-					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.logSegmentRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
 				}
 			}
 		case transactionDeleteLogSegmentRec:
@@ -1014,9 +1201,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
 
-			_, err = volume.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+			_, err = volume.liveView.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.logSegmentRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
 			}
 		case transactionPutBPlusTreeObject:
 			_, err = cstruct.Unpack(replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+globals.uint64Size], &objectNumber, LittleEndian)
@@ -1032,14 +1219,14 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
 
-			ok, err = volume.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, value)
+			ok, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, value)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.bPlusTreeObjectWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
 			}
 			if !ok {
-				_, err = volume.bPlusTreeObjectWrapper.bPlusTree.Put(objectNumber, value)
+				_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Put(objectNumber, value)
 				if nil != err {
-					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.bPlusTreeObjectWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
 				}
 			}
 		case transactionDeleteBPlusTreeObject:
@@ -1048,9 +1235,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
 
-			_, err = volume.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
+			_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
 			if nil != err {
-				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
 			}
 		default:
 			// Corruption in replayLogTransactionFixedPart - so exit as if Replay Log ended here
@@ -1098,21 +1285,21 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
-		err = volume.inodeRecWrapper.bPlusTree.Flush(false)
+		err = volume.liveView.inodeRecWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}
 	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
-		err = volume.logSegmentRecWrapper.bPlusTree.Flush(false)
+		err = volume.liveView.logSegmentRecWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}
 	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 		volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
-		err = volume.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
+		err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
 	if nil != err {
 		return
 	}
@@ -1121,22 +1308,22 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return // since nothing was flushed, we can simply return
 	}
 
-	err = volume.inodeRecWrapper.bPlusTree.Prune()
+	err = volume.liveView.inodeRecWrapper.bPlusTree.Prune()
 	if nil != err {
 		return
 	}
-	err = volume.logSegmentRecWrapper.bPlusTree.Prune()
+	err = volume.liveView.logSegmentRecWrapper.bPlusTree.Prune()
 	if nil != err {
 		return
 	}
-	err = volume.bPlusTreeObjectWrapper.bPlusTree.Prune()
+	err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Prune()
 	if nil != err {
 		return
 	}
 
-	volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.inodeRecBPlusTreeLayout))
-	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.logSegmentRecBPlusTreeLayout))
-	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.bPlusTreeObjectBPlusTreeLayout))
+	volume.checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout))
+	volume.checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout))
+	volume.checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout))
 
 	checkpointTrailerBuf, err = cstruct.Pack(volume.checkpointObjectTrailer, LittleEndian)
 	if nil != err {
@@ -1150,7 +1337,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.inodeRecBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1158,7 +1345,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.logSegmentRecBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1166,7 +1353,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
 
-	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.bPlusTreeObjectBPlusTreeLayout {
+	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
 			return
@@ -1246,54 +1433,62 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
 
-	for objectNumber, bytesUsedThisBPlusTree = range volume.inodeRecBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
-		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.inodeRecBPlusTreeLayout, objectNumber)
 		}
 	}
-	for objectNumber, bytesUsedThisBPlusTree = range volume.logSegmentRecBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
-		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.logSegmentRecBPlusTreeLayout, objectNumber)
 		}
 	}
-	for objectNumber, bytesUsedThisBPlusTree = range volume.bPlusTreeObjectBPlusTreeLayout {
+	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedCumulative + bytesUsedThisBPlusTree
 		} else {
 			combinedBPlusTreeLayout[objectNumber] = bytesUsedThisBPlusTree
-		}
-		if bytesUsedThisBPlusTree == 0 {
-			delete(volume.bPlusTreeObjectBPlusTreeLayout, objectNumber)
 		}
 	}
 
 	for objectNumber, bytesUsedCumulative = range combinedBPlusTreeLayout {
 		if 0 == bytesUsedCumulative {
-			swiftclient.ObjectDeleteAsync(
-				volume.accountName,
-				volume.checkpointContainerName,
-				utils.Uint64ToHexStr(objectNumber),
-				swiftclient.SkipRetry,
-				volume.fetchNextCheckPointDoneWaitGroupWhileLocked(),
-				nil)
+			delete(volume.liveView.inodeRecWrapper.trackingBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.logSegmentRecWrapper.trackingBPlusTreeLayout, objectNumber)
+			delete(volume.liveView.bPlusTreeObjectWrapper.trackingBPlusTreeLayout, objectNumber)
+			volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODOStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
 		}
+	}
+
+	if 0 < len(volume.delayedObjectDeleteSSTODOList) {
+		volume.backgroundObjectDeleteWG.Add(1)
+		go volume.performDelayedObjectDeletes(volume.delayedObjectDeleteSSTODOList)
+		volume.delayedObjectDeleteSSTODOList = make([]delayedObjectDeleteSSTODOStruct, 0)
 	}
 
 	err = nil
 	return
+}
+
+func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteSSTODOList []delayedObjectDeleteSSTODOStruct) {
+	for _, delayedObjectDeleteSSTODO := range delayedObjectDeleteSSTODOList {
+		err := swiftclient.ObjectDelete(
+			volume.accountName,
+			delayedObjectDeleteSSTODO.containerName,
+			utils.Uint64ToHexStr(delayedObjectDeleteSSTODO.objectNumber),
+			swiftclient.SkipRetry)
+		if nil != err {
+			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDeleteSSTODO.containerName, delayedObjectDeleteSSTODO.objectNumber, err)
+		}
+	}
+	volume.backgroundObjectDeleteWG.Done()
 }
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {

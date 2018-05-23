@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -156,11 +155,13 @@ func TestGetAFnName(t *testing.T) {
 	assert := assert.New(t)
 
 	fnWithPackage := GetAFnName(0)
-	fmt.Printf("Func plus package is %v\n", fnWithPackage)
+	//fmt.Printf("Func plus package is %v\n", fnWithPackage)
 	assert.Equal(fnWithPackage, "utils.TestGetAFnName")
 
 	fn, pkg, gid := GetFuncPackage(0)
-	fmt.Printf("Func is %v, package is %v, gid is %v\n", fn, pkg, gid)
+	if 0 == gid { // Dummuy reference to gid
+	}
+	//fmt.Printf("Func is %v, package is %v, gid is %v\n", fn, pkg, gid)
 	assert.Equal(pkg, "utils")
 	assert.Equal(fn, "TestGetAFnName")
 }
@@ -174,7 +175,7 @@ func TestStopwatch(t *testing.T) {
 	// Create stopwatch
 	//
 	sw1 := NewStopwatch()
-	fmt.Printf("After creation: sw1 is %v\n", sw1)
+	//fmt.Printf("After creation: sw1 is %v\n", sw1)
 
 	// check stuff
 	startTime1 := sw1.StartTime                    // Save startTime for later checks
@@ -190,7 +191,7 @@ func TestStopwatch(t *testing.T) {
 	// Stop it
 	assert.True(sw1.IsRunning) // stopwatch is still running
 	elapsed1 := sw1.Stop()
-	fmt.Printf("After stop: sw1 is %v\n", sw1)
+	//fmt.Printf("After stop: sw1 is %v\n", sw1)
 
 	// check stuff
 	assert.False(sw1.IsRunning)                  // stopwatch is not running
@@ -216,7 +217,7 @@ func TestStopwatch(t *testing.T) {
 	// Create another stopwatch
 	//
 	sw2 := NewStopwatch()
-	fmt.Printf("After creation: sw2 is %v\n", sw2)
+	//fmt.Printf("After creation: sw2 is %v\n", sw2)
 
 	// check stuff
 	startTime2 := sw2.StartTime                    // Save startTime for later checks
@@ -234,7 +235,7 @@ func TestStopwatch(t *testing.T) {
 	//
 	assert.True(sw2.IsRunning) // stopwatch is still running
 	elapsed2 := sw2.Elapsed()
-	fmt.Printf("While running: sw2 is %v\n", sw2)
+	//fmt.Printf("While running: sw2 is %v\n", sw2)
 
 	// check stuff
 	assert.True(sw2.StopTime.IsZero())       // Stop time isn't set yet because we're not stopped
@@ -245,7 +246,7 @@ func TestStopwatch(t *testing.T) {
 	// Stop and then call Elapsed() again
 	//
 	elapsed3 := sw2.Stop()
-	fmt.Printf("After stop: sw2 is %v\n", sw2)
+	//fmt.Printf("After stop: sw2 is %v\n", sw2)
 
 	// check stuff
 	assert.False(sw2.IsRunning)                  // stopwatch is not running
@@ -259,7 +260,7 @@ func TestStopwatch(t *testing.T) {
 	// restart a previously running stopwatch
 	//
 	sw2.Restart()
-	fmt.Printf("After restart: sw2 is %v\n", sw2)
+	//fmt.Printf("After restart: sw2 is %v\n", sw2)
 
 	// check stuff
 	startTime3 := sw2.StartTime                    // Save startTime for later checks
@@ -277,7 +278,7 @@ func TestStopwatch(t *testing.T) {
 	//
 	assert.True(sw2.IsRunning) // stopwatch is still running
 	elapsed4 := sw2.Stop()
-	fmt.Printf("After stop: sw2 is %v\n", sw2)
+	//fmt.Printf("After stop: sw2 is %v\n", sw2)
 
 	// check stuff
 	assert.False(sw2.IsRunning)                  // stopwatch is not running
@@ -301,7 +302,7 @@ func TestStopwatch(t *testing.T) {
 	// restart a non-previously running stopwatch
 	//
 	sw3 := NewStopwatch()
-	fmt.Printf("After creation: sw3 is %v\n", sw3)
+	//fmt.Printf("After creation: sw3 is %v\n", sw3)
 
 	// check stuff
 	startTime4 := sw3.StartTime                    // Save startTime for later checks
@@ -312,7 +313,7 @@ func TestStopwatch(t *testing.T) {
 
 	// Attempt restart, shouldn't do anything since not stopped
 	sw3.Restart()
-	fmt.Printf("After restart: sw3 is %v\n", sw3)
+	//fmt.Printf("After restart: sw3 is %v\n", sw3)
 
 	// check stuff
 	assert.True(sw3.StartTime == startTime4)       // StartTime hasn't changed

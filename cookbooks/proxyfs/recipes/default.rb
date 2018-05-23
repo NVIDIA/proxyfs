@@ -371,7 +371,7 @@ if File.exist?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}")
   end
 else
   execute "Check out samba" do
-    command "git clone -b samba-4.6.12 --single-branch --depth 1 https://github.com/samba-team/samba.git #{SAMBA_DIR}"
+    command "git clone -b samba-#{SAMBA_VERSION} --single-branch --depth 1 https://github.com/samba-team/samba.git #{SAMBA_DIR}"
     cwd SAMBA_PARENT_DIR
     not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}") }
   end

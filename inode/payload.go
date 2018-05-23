@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -27,6 +29,9 @@ func (tnl *treeNodeLoadable) GetNode(objectNumber uint64, objectOffset uint64, o
 		err = fmt.Errorf("*treeNodeLoadable.GetNode(): Unexpected (non-zero) objectOffset (%v)", objectOffset)
 		return
 	}
+
+	stats.IncrementOperations(&stats.DirFileBPlusTreeNodeFaults)
+	evtlog.Record(evtlog.FormatDirFileBPlusTreeNodeFault, tnl.inode.volume.volumeName, uint64(tnl.inode.InodeNumber), objectNumber)
 
 	nodeByteSlice, err = tnl.inode.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumber)
 

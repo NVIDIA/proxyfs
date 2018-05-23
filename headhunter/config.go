@@ -1,6 +1,7 @@
 package headhunter
 
 import (
+	"container/list"
 	"fmt"
 	"hash/crc64"
 	"os"
@@ -27,61 +28,122 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
-const (
-	inodeRecBPlusTreeWrapperType uint32 = iota
-	logSegmentRecBPlusTreeWrapperType
-	bPlusTreeObjectBPlusTreeWrapperType
-)
-
 type bPlusTreeWrapperStruct struct {
-	volume      *volumeStruct
-	wrapperType uint32 // Either inodeRecBPlusTreeWrapperType, logSegmentRecBPlusTreeWrapperType, or bPlusTreeObjectBPlusTreeWrapperType
-	bPlusTree   sortedmap.BPlusTree
+	volumeView              *volumeViewStruct
+	bPlusTree               sortedmap.BPlusTree
+	trackingBPlusTreeLayout sortedmap.LayoutReport
+}
+
+type volumeViewStruct struct {
+	volume                 *volumeStruct
+	nonce                  uint64 // supplies strict time-ordering of views regardless of timebase resets
+	snapShotID             uint64
+	snapShotTime           time.Time
+	snapShotName           string
+	inodeRecWrapper        *bPlusTreeWrapperStruct
+	logSegmentRecWrapper   *bPlusTreeWrapperStruct
+	bPlusTreeObjectWrapper *bPlusTreeWrapperStruct
+	createdObjectsWrapper  *bPlusTreeWrapperStruct // if volumeView is     the liveView, should be empty
+	//                                                if volumeView is not the liveView, tracks objects created between this and the next volumeView
+	deletedObjectsWrapper *bPlusTreeWrapperStruct //  if volumeView is     the liveView, tracks objects to be deleted at next checkpoint
+	//                                                if volumeView is not the liveView, tracks objects deleted between this and the next volumeView
+	// upon object creation:
+	//   if prior volumeView exists:
+	//     add object to that volumeView's createdObjects
+	//   else:
+	//     do nothing
+	//
+	// upon object deletion:
+	//   if prior volumeView exists:
+	//     if object in prior volumeView createdObjects:
+	//       remove object from prior volumeView createdObjects
+	//       add object to liveView deletedObjects
+	//     else:
+	//       add object to prior volumeView deletedObjects
+	//   else:
+	//     add object to liveView deletedObjects
+	//
+	// upon next checkpoint:
+	//   remove all objects from liveView deletedObjects
+	//   schedule background deletion of those removed objects
+	//
+	// upon SnapShot creation:
+	//   take a fresh checkpoint (will drain liveView deletedObjects)
+	//   create a fresh volumeView
+	//   take a fresh checkpoint (will record volumeView in this checkpoint)
+	//
+	// upon volumeView deletion:
+	//   if deleted volumeView is oldest:
+	//     discard volumeView createdObjects
+	//     schedule background deletion of volumeView deletedObjects
+	//     discard volumeView deletedObjects
+	//   else:
+	//     createdObjects merged into prior volumeView
+	//     discard volumeView createdObjects
+	//     for each object in deletedObjects:
+	//       if object in prior volumeView createdObjects:
+	//         remove object from prior volumeView createdObjects
+	//         schedule background deletion of object
+	//       else:
+	//         add object to prior volumeView deletedObjects
+	//     discard volumeView deletedObjects
+	//   discard volumeView
+}
+
+type delayedObjectDeleteSSTODOStruct struct {
+	containerName string
+	objectNumber  uint64
 }
 
 type volumeStruct struct {
 	sync.Mutex
-	volumeName                       string
-	accountName                      string
-	maxFlushSize                     uint64
-	nonceValuesToReserve             uint16
-	maxInodesPerMetadataNode         uint64
-	maxLogSegmentsPerMetadataNode    uint64
-	maxDirFileNodesPerMetadataNode   uint64
-	checkpointContainerName          string
-	checkpointContainerStoragePolicy string
-	checkpointInterval               time.Duration
-	replayLogFileName                string   //      if != "", use replay log to reduce RPO to zero
-	replayLogFile                    *os.File //        opened on first Put or Delete after checkpoint
-	//                                                  closed/deleted on successful checkpoint
-	defaultReplayLogWriteBuffer             []byte // used for O_DIRECT writes to replay log
+	volumeName                              string
+	accountName                             string
+	maxFlushSize                            uint64
+	nonceValuesToReserve                    uint16
+	maxInodesPerMetadataNode                uint64
+	maxLogSegmentsPerMetadataNode           uint64
+	maxDirFileNodesPerMetadataNode          uint64
+	maxCreatedDeletedObjectsPerMetadataNode uint64
+	checkpointContainerName                 string
+	checkpointContainerStoragePolicy        string
+	checkpointInterval                      time.Duration
+	replayLogFileName                       string   //           if != "", use replay log to reduce RPO to zero
+	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
+	//                                                            closed/deleted on successful checkpoint
+	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointFlushedData                   bool
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
-	checkpointChunkedPutContextObjectNumber uint64 // ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
+	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
+	snapShotIDNumBits                       uint16
+	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
 	checkpointHeaderVersion                 uint64
 	checkpointHeader                        *checkpointHeaderV2Struct
 	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
-	inodeRecWrapper                         *bPlusTreeWrapperStruct
-	logSegmentRecWrapper                    *bPlusTreeWrapperStruct
-	bPlusTreeObjectWrapper                  *bPlusTreeWrapperStruct
-	inodeRecBPlusTreeLayout                 sortedmap.LayoutReport
-	logSegmentRecBPlusTreeLayout            sortedmap.LayoutReport
-	bPlusTreeObjectBPlusTreeLayout          sortedmap.LayoutReport
+	liveView                                *volumeViewStruct
+	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
+	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
+	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
+	viewTreeByName                          sortedmap.LLRBTree // key == volumeViewStruct.Name;  value == *volumeViewStruct
+	availableSnapShotIDList                 *list.List
+	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
+	backgroundObjectDeleteWG                sync.WaitGroup
 }
 
 type globalsStruct struct {
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
 	checkpointHeaderV2StructSize            uint64
-	checkpointObjectTrailerStructSize       uint64
+	checkpointHeaderV3StructSize            uint64
 	elementOfBPlusTreeLayoutStructSize      uint64
 	replayLogTransactionFixedPartStructSize uint64
 	inodeRecCache                           sortedmap.BPlusTreeCache
 	logSegmentRecCache                      sortedmap.BPlusTreeCache
 	bPlusTreeObjectCache                    sortedmap.BPlusTreeCache
+	createdDeletedObjectsCache              sortedmap.BPlusTreeCache
 	volumeMap                               map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
@@ -92,8 +154,10 @@ func Up(confMap conf.ConfMap) (err error) {
 	var (
 		bPlusTreeObjectCacheEvictHighLimit       uint64
 		bPlusTreeObjectCacheEvictLowLimit        uint64
+		createdDeletedObjectsCacheEvictHighLimit uint64
+		createdDeletedObjectsCacheEvictLowLimit  uint64
 		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -121,7 +185,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
@@ -180,6 +244,17 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
+
+	createdDeletedObjectsCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictLowLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictLowLimit = logSegmentRecCacheEvictLowLimit // TODO: Eventually just return
+	}
+	createdDeletedObjectsCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictHighLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictHighLimit = logSegmentRecCacheEvictHighLimit // TODO: Eventually just return
+	}
+
+	globals.createdDeletedObjectsCache = sortedmap.NewBPlusTreeCache(createdDeletedObjectsCacheEvictLowLimit, createdDeletedObjectsCacheEvictHighLimit)
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
@@ -333,7 +408,7 @@ func Down() (err error) {
 func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
 		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointObjectTrailerV2Struct     checkpointObjectTrailerV2Struct
+		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -353,7 +428,7 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 		return
 	}
 
-	globals.checkpointObjectTrailerStructSize, _, err = cstruct.Examine(dummyCheckpointObjectTrailerV2Struct)
+	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
@@ -395,10 +470,11 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
-		volumeName:                  volumeName,
-		checkpointChunkedPutContext: nil,
-		checkpointDoneWaitGroup:     nil,
-		checkpointRequestChan:       make(chan *checkpointRequestStruct, 1),
+		volumeName:                    volumeName,
+		checkpointChunkedPutContext:   nil,
+		checkpointDoneWaitGroup:       nil,
+		checkpointRequestChan:         make(chan *checkpointRequestStruct, 1),
+		delayedObjectDeleteSSTODOList: make([]delayedObjectDeleteSSTODOStruct, 0),
 	}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
@@ -437,6 +513,11 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 		return
 	}
 
+	volume.maxCreatedDeletedObjectsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxCreatedDeletedObjectsPerMetadataNode")
+	if nil != err {
+		volume.maxCreatedDeletedObjectsPerMetadataNode = volume.maxLogSegmentsPerMetadataNode // TODO: Eventually just return
+	}
+
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")
 	if nil != err {
 		return
@@ -459,6 +540,19 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	} else {
 		// Disable Replay Log
 		volume.replayLogFileName = ""
+	}
+
+	volume.snapShotIDNumBits, err = confMap.FetchOptionValueUint16(volumeSectionName, "SnapShotIDNumBits")
+	if nil != err {
+		volume.snapShotIDNumBits = 10 // TODO: Eventually just return
+	}
+	if 2 > volume.snapShotIDNumBits {
+		err = fmt.Errorf("[%v]SnapShotIDNumBits must be at least 2", volumeSectionName)
+		return
+	}
+	if 32 < volume.snapShotIDNumBits {
+		err = fmt.Errorf("[%v]SnapShotIDNumBits must be no more than 32", volumeSectionName)
+		return
 	}
 
 	err = volume.getCheckpoint(autoFormat)
@@ -495,6 +589,8 @@ func downVolume(volumeName string) (err error) {
 	checkpointRequest.waitGroup.Wait()
 
 	err = checkpointRequest.err
+
+	volume.backgroundObjectDeleteWG.Wait()
 
 	return
 }

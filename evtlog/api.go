@@ -10,6 +10,7 @@ const (
 	FormatTestPatternS08X
 	FormatTestPatternS016X
 	FormatTestPatternS016X016X
+	FormatTestPatternS016X016X016X
 	FormatTestPatternS016Xslice
 	FormatTestPatternS016XS
 	FormatTestPatternSS
@@ -17,6 +18,7 @@ const (
 	FormatTestPatternSSS
 	FormatTestPatternSSS03D
 	FormatTestPatternSSS016X03D
+	FormatTestPatternSSS016X016X03D
 	FormatHalterArm
 	FormatHalterDisarm
 	FormatUpSequenceStart
@@ -37,11 +39,12 @@ const (
 	FormatContainerHead
 	FormatContainerPost
 	FormatContainerPut
-	FormatObjectDeleteAsync
-	FormatObjectDeleteSync
+	FormatObjectDelete
 	FormatObjectGet
 	FormatObjectHead
-	FormatObjectPost
+	FormatObjectLoad
+	FormatObjectRead
+	FormatObjectTail
 	FormatObjectPutChunkedStart
 	FormatObjectPutChunkedEnd
 	FormatHeadhunterCheckpointStart
@@ -58,6 +61,8 @@ const (
 	FormatHeadhunterMissingInodeRec
 	FormatHeadhunterMissingLogSegmentRec
 	FormatHeadhunterMissingBPlusTreeObject
+	FormatHeadhunterBPlusTreeNodeFault
+	FormatDirFileBPlusTreeNodeFault
 	FormatFlushInodesEntry
 	FormatFlushInodesDirOrFilePayloadObjectNumberUpdated
 	FormatFlushInodesErrorOnInode
@@ -70,19 +75,21 @@ const (
 type patternType uint32
 
 const (
-	patternFixed      patternType = iota // <timestamp> + "..."
-	patternS                             // <timestamp> + "...%s..."
-	patternS03D                          // <timestamp> + "...%s...%03d..."
-	patternS08X                          // <timestamp> + "...%s...%08X..."
-	patternS016X                         // <timestamp> + "...%s...%016X..."
-	patternS016X016X                     // <timestamp> + "...%s...%016X...%016X..."
-	patternS016Xslice                    // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
-	patternS016XS                        // <timestamp> + "...%s...%016X...%s..."
-	patternSS                            // <timestamp> + "...%s...%s..."
-	patternSS03D                         // <timestamp> + "...%s...%s...%03d..."
-	patternSSS                           // <timestamp> + "...%s...%s...%s..."
-	patternSSS03D                        // <timestamp> + "...%s...%s...%s...%03d..."
-	patternSSS016X03D                    // <timestamp> + "...%s...%s...%s...%016X...%03d..."
+	patternFixed          patternType = iota // <timestamp> + "..."
+	patternS                                 // <timestamp> + "...%s..."
+	patternS03D                              // <timestamp> + "...%s...%03d..."
+	patternS08X                              // <timestamp> + "...%s...%08X..."
+	patternS016X                             // <timestamp> + "...%s...%016X..."
+	patternS016X016X                         // <timestamp> + "...%s...%016X...%016X..."
+	patternS016X016X016X                     // <timestamp> + "...%s...%016X...%016X...%016X..."
+	patternS016Xslice                        // <timestamp> + "...%s...[...%016X...]..." where '[' & ']' delineate slice
+	patternS016XS                            // <timestamp> + "...%s...%016X...%s..."
+	patternSS                                // <timestamp> + "...%s...%s..."
+	patternSS03D                             // <timestamp> + "...%s...%s...%03d..."
+	patternSSS                               // <timestamp> + "...%s...%s...%s..."
+	patternSSS03D                            // <timestamp> + "...%s...%s...%s...%03d..."
+	patternSSS016X03D                        // <timestamp> + "...%s...%s...%s...%016X...%03d..."
+	patternSSS016X016X03D                    // <timestamp> + "...%s...%s...%s...%016X...%016X...%03d..."
 )
 
 const (
@@ -120,6 +127,10 @@ var (
 			patternType:  patternS016X016X,
 			formatString: "%s Test for patternS016X016X arg0:%s arg1:%016X arg2:%016X",
 		},
+		eventType{ // FormatTestPatternS016X016X016X
+			patternType:  patternS016X016X016X,
+			formatString: "%s Test for patternS016X016X016X arg0:%s arg1:%016X arg2:%016X arg3:%016X",
+		},
 		eventType{ // FormatTestPatternS016Xslice
 			patternType:  patternS016Xslice,
 			formatString: "%s Test for patternS016Xslice arg0:%s arg1:[0x%016X]",
@@ -147,6 +158,10 @@ var (
 		eventType{ // FormatTestPatternSSS016X03D
 			patternType:  patternSSS016X03D,
 			formatString: "%s Test for patternSSS016X03D arg0:%s arg1:%s arg2:%s arg3:%016X arg4:%03d",
+		},
+		eventType{ // FormatTestPatternSSS016X016X03D
+			patternType:  patternSSS016X016X03D,
+			formatString: "%s Test for patternSSS016X016X03D arg0:%s arg1:%s arg2:%s arg3:%016X arg4:%016X arg5:%03d",
 		},
 		eventType{ // FormatHalterArm
 			patternType:  patternS08X,
@@ -228,33 +243,37 @@ var (
 			patternType:  patternSS03D,
 			formatString: "%s Container PUT %s/%s had status %03d",
 		},
-		eventType{ // FormatObjectDeleteAsync
-			patternType:  patternSSS,
-			formatString: "%s Object DELETE (Async) %s/%s/%s issued",
-		},
 		eventType{ // FormatObjectDelete
 			patternType:  patternSSS03D,
-			formatString: "%s Object DELETE (Sync) %s/%s/%s had status %03d",
+			formatString: "%s Object DELETE %s/%s/%s had status %03d",
 		},
 		eventType{ // FormatObjectGet
-			patternType:  patternSSS03D,
-			formatString: "%s Object GET %s/%s/%s had status %03d",
+			patternType:  patternSSS016X016X03D,
+			formatString: "%s Object GET %s/%s/%s (offset 0x%016X length 0x%016X) had status %03d",
 		},
 		eventType{ // FormatObjectHead
 			patternType:  patternSSS03D,
 			formatString: "%s Object HEAD %s/%s/%s had status %03d",
 		},
-		eventType{ // FormatObjectPost
+		eventType{ // FormatObjectLoad
 			patternType:  patternSSS03D,
-			formatString: "%s Object POST %s/%s/%s had status %03d",
+			formatString: "%s Object LOAD %s/%s/%s had status %03d",
+		},
+		eventType{ // FormatObjectRead
+			patternType:  patternSSS016X016X03D,
+			formatString: "%s Object READ %s/%s/%s (offset 0x%016X length 0x%016X) had status %03d",
+		},
+		eventType{ // FormatObjectTail
+			patternType:  patternSSS016X03D,
+			formatString: "%s Object TAIL %s/%s/%s (length 0x%016X) had status %03d",
 		},
 		eventType{ // FormatObjectPutChunkedStart
 			patternType:  patternSSS,
 			formatString: "%s Object (chunked) PUT %s/%s/%s initiated",
 		},
-		eventType{ // FormatObjecFormatObjectPutChunkedEndtPut
+		eventType{ // FormatObjectPutChunkedEnd
 			patternType:  patternSSS016X03D,
-			formatString: "%s Object (chunked) PUT %s/%s/%s (for 0x%016X bytes) had status %03d",
+			formatString: "%s Object (chunked) PUT %s/%s/%s (length 0x%016X) had status %03d",
 		},
 		eventType{ // FormatHeadhunterCheckpointStart
 			patternType:  patternS,
@@ -311,6 +330,14 @@ var (
 		eventType{ // FormatHeadhunterMissingBPlusTreeObject
 			patternType:  patternS016X,
 			formatString: "%s Headhunter recording DeleteBPlusTreeObject for Volume '%s' Virtual Object# 0x%016X",
+		},
+		eventType{ // FormatHeadhunterBPlusTreeNodeFault
+			patternType:  patternS016X016X016X,
+			formatString: "%s Headhunter B+Tree NodeFault for Volume '%s' from Object# 0x%016X Offset 0x%016X Length 0x%016X",
+		},
+		eventType{ // FormatDirFileBPlusTreeNodeFault
+			patternType:  patternS016X016X,
+			formatString: "%s Inode B+Tree NodeFault for Volume '%s' for Inode# 0x%016X from Virtual Object# 0x%016X",
 		},
 		eventType{ // FormatFlushInodesEntry
 			patternType:  patternS016Xslice,

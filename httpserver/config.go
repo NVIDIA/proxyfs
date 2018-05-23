@@ -51,12 +51,13 @@ type JobStatusJSONPackedStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	name             string
-	headhunterHandle headhunter.VolumeHandle
-	fsckActiveJob    *jobStruct
-	fsckJobs         sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
-	scrubActiveJob   *jobStruct
-	scrubJobs        sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	name                   string
+	fsMountHandle          fs.MountHandle
+	headhunterVolumeHandle headhunter.VolumeHandle
+	fsckActiveJob          *jobStruct
+	fsckJobs               sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	scrubActiveJob         *jobStruct
+	scrubJobs              sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
 }
 
 type globalsStruct struct {
@@ -129,7 +130,12 @@ func Up(confMap conf.ConfMap) (err error) {
 					scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 				}
 
-				volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+				volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+				if nil != err {
+					return
+				}
+
+				volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
 				if nil != err {
 					return
 				}
@@ -358,7 +364,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 					}
 
-					volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+					volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+					if nil != err {
+						return
+					}
+
+					volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
 					if nil != err {
 						return
 					}

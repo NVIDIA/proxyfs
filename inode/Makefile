@@ -1,6 +1,6 @@
 gosubdir := github.com/swiftstack/ProxyFS/inode
 
-gostringerfiles := \
+generatedfiles := \
 	inodetype_string.go
 
 include ../GoMakefile

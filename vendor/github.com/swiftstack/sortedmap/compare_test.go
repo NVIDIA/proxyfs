@@ -1,6 +1,9 @@
 package sortedmap
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCompareFunctions(t *testing.T) {
 	var (
@@ -126,6 +129,36 @@ func TestCompareFunctions(t *testing.T) {
 	_, err = CompareUint64(string("2"), uint64(2))
 	if nil == err {
 		t.Fatalf("CompareUint64(string(\"2\"), uint64(2)) should have failed")
+	}
+
+	result, err = CompareTime(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC))
+	if nil != err {
+		t.Fatalf("CompareTime(time.Date(2000,1,1,0,0,0,0,time.UTC),time.Date(3000,1,1,0,0,0,0,time.UTC)) should not have failed")
+	}
+	if result >= 0 {
+		t.Fatalf("CompareTime(time.Date(2000,1,1,0,0,0,0,time.UTC),time.Date(3000,1,1,0,0,0,0,time.UTC)) should have been < 0")
+	}
+	result, err = CompareTime(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	if nil != err {
+		t.Fatalf("CompareTime(time.Date(2000,1,1,0,0,0,0,time.UTC),time.Date(2000,1,1,0,0,0,0,time.UTC)) should not have failed")
+	}
+	if result != 0 {
+		t.Fatalf("CompareTime(time.Date(2000,1,1,0,0,0,0,time.UTC),time.Date(2000,1,1,0,0,0,0,time.UTC)) should have been == 0")
+	}
+	result, err = CompareTime(time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC))
+	if nil != err {
+		t.Fatalf("CompareTime(time.Date(3000,1,1,0,0,0,0,time.UTC),time.Date(2000,1,1,0,0,0,0,time.UTC)) should not have failed")
+	}
+	if result <= 0 {
+		t.Fatalf("CompareTime(time.Date(3000,1,1,0,0,0,0,time.UTC),time.Date(2000,1,1,0,0,0,0,time.UTC)) should have been > 0")
+	}
+	_, err = CompareTime(time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), string("not a time.Time"))
+	if nil == err {
+		t.Fatalf("CompareTime(time.Date(2000,1,1,0,0,0,0,time.UTC),string(\"not a time.Time\")) should have failed")
+	}
+	_, err = CompareTime(string("not a time.Time"), time.Date(3000, 1, 1, 0, 0, 0, 0, time.UTC))
+	if nil == err {
+		t.Fatalf("CompareTime(string(\"not a time.Time\"),time.Date(3000,1,1,0,0,0,0,time.UTC)) should have failed")
 	}
 
 	result, err = CompareString(string("1"), string("2"))
