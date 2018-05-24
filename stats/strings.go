@@ -131,7 +131,21 @@ var (
 	SymlinkCreateOps             = "proxyfs.inode.symlink.create.operations"
 	SymlinkReadOps               = "proxyfs.inode.symlink.read.operations"
 
+	DirEntryCacheHits        = "proxyfs.inode.dir.entry.cache.hit.operations"
+	DirEntryCacheMisses      = "proxyfs.inode.dir.entry.cache.miss.operations"
+	FileExtentMapCacheHits   = "proxyfs.inode.file.extent.map.cache.hit.operations"
+	FileExtentMapCacheMisses = "proxyfs.inode.file.extent.map.cache.miss.operations"
+
 	DirFileBPlusTreeNodeFaults = "proxyfs.inode.payload.node.fault.operations"
+
+	InodeRecCacheHits                = "proxyfs.headhunter.inode.rec.cache.hit.operations"
+	InodeRecCacheMisses              = "proxyfs.headhunter.inode.rec.cache.miss.operations"
+	LogSegmentRecCacheHits           = "proxyfs.headhunter.log.segment.rec.cache.hit.operations"
+	LogSegmentRecCacheMisses         = "proxyfs.headhunter.log.segment.rec.cache.miss.operations"
+	BPlusTreeObjectCacheHits         = "proxyfs.headhunter.bplus.tree.object.cache.hit.operations"
+	BPlusTreeObjectCacheMisses       = "proxyfs.headhunter.bplus.tree.object.cache.miss.operations"
+	CreatedDeletedObjectsCacheHits   = "proxyfs.headhunter.created.deleted.objects.cache.hit.operations"
+	CreatedDeletedObjectsCacheMisses = "proxyfs.headhunter.created.deleted.objects.cache.miss.operations"
 
 	HeadhunterBPlusTreeNodeFaults = "proxyfs.headhunter.bptree.node.fault.operations"
 

@@ -19,6 +19,7 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -1559,8 +1560,26 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.
 func (volume *volumeStruct) checkpointDaemon() {
 	var (
-		checkpointRequest *checkpointRequestStruct
-		exitOnCompletion  bool
+		bPlusTreeObjectCacheHits              uint64
+		bPlusTreeObjectCacheHitsDelta         uint64
+		bPlusTreeObjectCacheMisses            uint64
+		bPlusTreeObjectCacheMissesDelta       uint64
+		checkpointListener                    VolumeEventListener
+		checkpointListeners                   []VolumeEventListener
+		checkpointRequest                     *checkpointRequestStruct
+		createdDeletedObjectsCacheHits        uint64
+		createdDeletedObjectsCacheHitsDelta   uint64
+		createdDeletedObjectsCacheMisses      uint64
+		createdDeletedObjectsCacheMissesDelta uint64
+		exitOnCompletion                      bool
+		inodeRecCacheHits                     uint64
+		inodeRecCacheHitsDelta                uint64
+		inodeRecCacheMisses                   uint64
+		inodeRecCacheMissesDelta              uint64
+		logSegmentRecCacheHits                uint64
+		logSegmentRecCacheHitsDelta           uint64
+		logSegmentRecCacheMisses              uint64
+		logSegmentRecCacheMissesDelta         uint64
 	)
 
 	for {
@@ -1612,7 +1631,76 @@ func (volume *volumeStruct) checkpointDaemon() {
 			volume.checkpointDoneWaitGroup = nil
 		}
 
+		checkpointListeners = make([]VolumeEventListener, 0, len(volume.eventListeners))
+
+		for checkpointListener = range volume.eventListeners {
+			checkpointListeners = append(checkpointListeners, checkpointListener)
+		}
+
 		volume.Unlock()
+
+		for _, checkpointListener = range checkpointListeners {
+			checkpointListener.CheckpointCompleted()
+		}
+
+		// Update Global B+Tree Cache stats now
+
+		inodeRecCacheHits, inodeRecCacheMisses, _, _ = globals.inodeRecCache.Stats()
+		logSegmentRecCacheHits, logSegmentRecCacheMisses, _, _ = globals.logSegmentRecCache.Stats()
+		bPlusTreeObjectCacheHits, bPlusTreeObjectCacheMisses, _, _ = globals.bPlusTreeObjectCache.Stats()
+		createdDeletedObjectsCacheHits, createdDeletedObjectsCacheMisses, _, _ = globals.createdDeletedObjectsCache.Stats()
+
+		inodeRecCacheHitsDelta = inodeRecCacheHits - globals.inodeRecCachePriorCacheHits
+		inodeRecCacheMissesDelta = inodeRecCacheMisses - globals.inodeRecCachePriorCacheMisses
+
+		logSegmentRecCacheHitsDelta = logSegmentRecCacheHits - globals.logSegmentRecCachePriorCacheHits
+		logSegmentRecCacheMissesDelta = logSegmentRecCacheMisses - globals.logSegmentRecCachePriorCacheMisses
+
+		bPlusTreeObjectCacheHitsDelta = bPlusTreeObjectCacheHits - globals.bPlusTreeObjectCachePriorCacheHits
+		bPlusTreeObjectCacheMissesDelta = bPlusTreeObjectCacheMisses - globals.bPlusTreeObjectCachePriorCacheMisses
+
+		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheHits - globals.createdDeletedObjectsCachePriorCacheHits
+		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
+
+		globals.Lock()
+
+		if 0 != inodeRecCacheHitsDelta {
+			stats.IncrementOperationsBy(&stats.InodeRecCacheHits, inodeRecCacheHitsDelta)
+			globals.inodeRecCachePriorCacheHits = inodeRecCacheHits
+		}
+		if 0 != inodeRecCacheMissesDelta {
+			stats.IncrementOperationsBy(&stats.InodeRecCacheMisses, inodeRecCacheMissesDelta)
+			globals.inodeRecCachePriorCacheMisses = inodeRecCacheMisses
+		}
+
+		if 0 != logSegmentRecCacheHitsDelta {
+			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheHits, logSegmentRecCacheHitsDelta)
+			globals.logSegmentRecCachePriorCacheHits = logSegmentRecCacheHits
+		}
+		if 0 != logSegmentRecCacheMissesDelta {
+			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheMisses, logSegmentRecCacheMissesDelta)
+			globals.logSegmentRecCachePriorCacheMisses = logSegmentRecCacheMisses
+		}
+
+		if 0 != bPlusTreeObjectCacheHitsDelta {
+			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheHits, bPlusTreeObjectCacheHitsDelta)
+			globals.bPlusTreeObjectCachePriorCacheHits = bPlusTreeObjectCacheHits
+		}
+		if 0 != bPlusTreeObjectCacheMissesDelta {
+			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheMisses, bPlusTreeObjectCacheMissesDelta)
+			globals.bPlusTreeObjectCachePriorCacheMisses = bPlusTreeObjectCacheMisses
+		}
+
+		if 0 != createdDeletedObjectsCacheHitsDelta {
+			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheHits, createdDeletedObjectsCacheHitsDelta)
+			globals.createdDeletedObjectsCachePriorCacheHits = createdDeletedObjectsCacheHits
+		}
+		if 0 != createdDeletedObjectsCacheMissesDelta {
+			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheMisses, createdDeletedObjectsCacheMissesDelta)
+			globals.createdDeletedObjectsCachePriorCacheMisses = createdDeletedObjectsCacheMisses
+		}
+
+		globals.Unlock()
 
 		if exitOnCompletion {
 			return

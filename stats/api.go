@@ -34,6 +34,12 @@ func IncrementOperations(statName *string) {
 	go incrementOperations(statName)
 }
 
+// IncrementOperationsBy sends an increment by <incBy> of .operations to statsd.
+func IncrementOperationsBy(statName *string, incBy uint64) {
+	// Do this in a goroutine since channel operations are suprisingly expensive due to locking underneath
+	go incrementOperationsBy(statName, incBy)
+}
+
 // IncrementOperationsAndBytes sends an increment of .operations and .bytes to statsd.
 func IncrementOperationsAndBytes(stat MultipleStat, bytes uint64) {
 	// Do this in a goroutine since channel operations are suprisingly expensive due to locking underneath

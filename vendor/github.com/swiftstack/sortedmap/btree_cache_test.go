@@ -193,6 +193,10 @@ func (tree *testBPlusTreeStruct) UnpackValue(payloadData []byte) (value Value, b
 
 func TestBPlusTreeCache(t *testing.T) {
 	var (
+		cacheHits       uint64
+		cacheMisses     uint64
+		evictHighLimit  uint64
+		evictLowLimit   uint64
 		treeA           BPlusTree // map[uint16]uint32
 		treeB           BPlusTree // map[uint16]uint32
 		treeCache       BPlusTreeCache
@@ -306,5 +310,22 @@ func TestBPlusTreeCache(t *testing.T) {
 	}
 	if 0 != treeCacheStruct.dirtyLRUItems {
 		t.Fatalf("Expected treeCacheStruct.dirtyLRUItems to be 0 (was %v)", treeCacheStruct.dirtyLRUItems)
+	}
+
+	// Finally, query treeCacheStruct Stats()
+
+	cacheHits, cacheMisses, evictLowLimit, evictHighLimit = treeCacheStruct.Stats()
+
+	if 20 != cacheHits {
+		t.Fatalf("Expected cacheHits to be 20 (was %v)", cacheHits)
+	}
+	if 5 != cacheMisses {
+		t.Fatalf("Expected cacheMisses to be 5 (was %v)", cacheMisses)
+	}
+	if 1 != evictLowLimit {
+		t.Fatalf("Expected evictLowLimit to be 1 (was %v)", evictLowLimit)
+	}
+	if 4 != evictHighLimit {
+		t.Fatalf("Expected evictHighLimit to be 4 (was %v)", evictHighLimit)
 	}
 }

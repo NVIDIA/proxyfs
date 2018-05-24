@@ -14,6 +14,40 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func (volume *volumeStruct) RegisterForEvents(listener VolumeEventListener) {
+	var (
+		ok bool
+	)
+
+	volume.Lock()
+
+	_, ok = volume.eventListeners[listener]
+	if ok {
+		logger.Fatalf("headhunter.RegisterForEvents() called for volume %v listener %v already active", volume.volumeName)
+	}
+
+	volume.eventListeners[listener] = struct{}{}
+
+	volume.Unlock()
+}
+
+func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
+	var (
+		ok bool
+	)
+
+	volume.Lock()
+
+	_, ok = volume.eventListeners[listener]
+	if !ok {
+		logger.Fatalf("headhunter.UnregisterForEvents() called for volume %v listener %v not active", volume.volumeName)
+	}
+
+	delete(volume.eventListeners, listener)
+
+	volume.Unlock()
+}
+
 func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
 	accountName = volume.accountName
 	checkpointContainerName = volume.checkpointContainerName

@@ -74,19 +74,23 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	whoAmI                       string
-	myPrivateIPAddr              string
-	dirEntryCache                sortedmap.BPlusTreeCache
-	fileExtentMapCache           sortedmap.BPlusTreeCache
-	volumeMap                    map[string]*volumeStruct      // key == volumeStruct.volumeName
-	accountMap                   map[string]*volumeStruct      // key == volumeStruct.accountName
-	flowControlMap               map[string]*flowControlStruct // key == flowControlStruct.flowControlName
-	fileExtentStructSize         uint64                        // pre-calculated size of cstruct-packed fileExtentStruct
-	supportedOnDiskInodeVersions map[Version]struct{}          // key == on disk inode version
-	corruptionDetectedTrueBuf    []byte                        // holds serialized CorruptionDetected == true
-	corruptionDetectedFalseBuf   []byte                        // holds serialized CorruptionDetected == false
-	versionV1Buf                 []byte                        // holds serialized Version            == V1
-	inodeRecDefaultPreambleBuf   []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	whoAmI                             string
+	myPrivateIPAddr                    string
+	dirEntryCache                      sortedmap.BPlusTreeCache
+	dirEntryCachePriorCacheHits        uint64
+	dirEntryCachePriorCacheMisses      uint64
+	fileExtentMapCache                 sortedmap.BPlusTreeCache
+	fileExtentMapCachePriorCacheHits   uint64
+	fileExtentMapCachePriorCacheMisses uint64
+	volumeMap                          map[string]*volumeStruct      // key == volumeStruct.volumeName
+	accountMap                         map[string]*volumeStruct      // key == volumeStruct.accountName
+	flowControlMap                     map[string]*flowControlStruct // key == flowControlStruct.flowControlName
+	fileExtentStructSize               uint64                        // pre-calculated size of cstruct-packed fileExtentStruct
+	supportedOnDiskInodeVersions       map[Version]struct{}          // key == on disk inode version
+	corruptionDetectedTrueBuf          []byte                        // holds serialized CorruptionDetected == true
+	corruptionDetectedFalseBuf         []byte                        // holds serialized CorruptionDetected == false
+	versionV1Buf                       []byte                        // holds serialized Version            == V1
+	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
 }
 
 var globals globalsStruct
@@ -164,6 +168,9 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.dirEntryCache = sortedmap.NewBPlusTreeCache(dirEntryCacheEvictLowLimit, dirEntryCacheEvictHighLimit)
 
+	globals.dirEntryCachePriorCacheHits = 0
+	globals.dirEntryCachePriorCacheMisses = 0
+
 	fileExtentMapEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictLowLimit")
 	if nil != err {
 		return
@@ -174,6 +181,9 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.fileExtentMapCache = sortedmap.NewBPlusTreeCache(fileExtentMapEvictLowLimit, fileExtentMapEvictHighLimit)
+
+	globals.fileExtentMapCachePriorCacheHits = 0
+	globals.fileExtentMapCachePriorCacheMisses = 0
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.accountMap = make(map[string]*volumeStruct)
@@ -370,6 +380,8 @@ func Up(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
+
+			volume.headhunterVolumeHandle.RegisterForEvents(volume)
 		}
 
 		globals.volumeMap[volume.volumeName] = volume
@@ -502,6 +514,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesDeletedSet {
 		volume = globals.volumeMap[volumeName]
+		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
@@ -511,6 +524,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesNewlyInactiveSet {
 		volume = globals.volumeMap[volumeName]
+		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
 		volume.active = false
 		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
@@ -854,6 +868,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
+
+			volume.headhunterVolumeHandle.RegisterForEvents(volume)
 		}
 	}
 
