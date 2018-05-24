@@ -15,6 +15,7 @@ type LayoutReport map[uint64]uint64
 // BPlusTree interface declares the available methods available for a B+Tree
 type BPlusTree interface {
 	SortedMap
+	FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64)
 	FetchLayoutReport() (layoutReport LayoutReport, err error)
 	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error)
 	Purge(full bool) (err error)
@@ -37,6 +38,7 @@ type BPlusTreeCallbacks interface {
 }
 
 type BPlusTreeCache interface {
+	Stats() (cacheHits uint64, cacheMisses uint64, evictLowLimit uint64, evictHighLimit uint64)
 	UpdateLimits(evictLowLimit uint64, evictHighLimit uint64)
 }
 
@@ -51,6 +53,8 @@ func NewBPlusTreeCache(evictLowLimit uint64, evictHighLimit uint64) (bPlusTreeCa
 		dirtyLRUTail:   nil,
 		dirtyLRUItems:  0,
 		drainerActive:  false,
+		cacheHits:      0,
+		cacheMisses:    0,
 	}
 	return
 }

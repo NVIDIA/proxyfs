@@ -25,8 +25,14 @@ type SnapShotStruct struct {
 	Name string
 }
 
+type VolumeEventListener interface {
+	CheckpointCompleted()
+}
+
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
+	RegisterForEvents(listener VolumeEventListener)
+	UnregisterForEvents(listener VolumeEventListener)
 	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)

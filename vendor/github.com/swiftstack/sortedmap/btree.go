@@ -34,7 +34,9 @@ type btreeNodeCacheStruct struct {
 	dirtyLRUHead   *btreeNodeStruct
 	dirtyLRUTail   *btreeNodeStruct
 	dirtyLRUItems  uint64
-	drainerActive  bool // if true, btreeNodeCacheDrainer() is already attempting to evict cleanLRU elements
+	drainerActive  bool //   if true, btreeNodeCacheDrainer() is already attempting to evict cleanLRU elements
+	cacheHits      uint64
+	cacheMisses    uint64
 }
 
 type btreeNodeStruct struct {
@@ -112,8 +114,10 @@ func (tree *btreeTreeStruct) BisectLeft(key Key) (index int, found bool, err err
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -226,8 +230,10 @@ func (tree *btreeTreeStruct) BisectRight(key Key) (index int, found bool, err er
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -356,8 +362,10 @@ func (tree *btreeTreeStruct) DeleteByIndex(index int) (ok bool, err error) {
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -416,8 +424,10 @@ func (tree *btreeTreeStruct) DeleteByKey(key Key) (ok bool, err error) {
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -499,8 +509,10 @@ func (tree *btreeTreeStruct) GetByIndex(index int) (key Key, value Value, ok boo
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -547,8 +559,10 @@ func (tree *btreeTreeStruct) GetByKey(key Key) (value Value, ok bool, err error)
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -598,7 +612,10 @@ func (tree *btreeTreeStruct) Len() (numberOfItems int, err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
-	if !tree.root.loaded {
+	if tree.root.loaded {
+		tree.incCacheHits()
+	} else {
+		tree.incCacheMisses()
 		err = tree.loadNode(tree.root)
 		if nil != err {
 			return
@@ -631,8 +648,10 @@ func (tree *btreeTreeStruct) PatchByIndex(index int, value Value) (ok bool, err 
 
 	for {
 		if node.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(node)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -675,7 +694,10 @@ func (tree *btreeTreeStruct) PatchByKey(key Key, value Value) (ok bool, err erro
 	node := tree.root
 
 	for {
-		if !node.loaded {
+		if node.loaded {
+			tree.incCacheHits()
+		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -729,7 +751,10 @@ func (tree *btreeTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 	node := tree.root
 
 	for {
-		if !node.loaded {
+		if node.loaded {
+			tree.incCacheHits()
+		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				return
@@ -787,6 +812,14 @@ func (tree *btreeTreeStruct) Put(key Key, value Value) (ok bool, err error) {
 			node = node.nonLeafLeftChild
 		}
 	}
+}
+
+func (tree *btreeTreeStruct) FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64) {
+	rootObjectNumber = tree.root.objectNumber
+	rootObjectOffset = tree.root.objectOffset
+	rootObjectLength = tree.root.objectLength
+
+	return
 }
 
 func (tree *btreeTreeStruct) FetchLayoutReport() (layoutReport LayoutReport, err error) {
@@ -865,7 +898,10 @@ func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemInd
 	netIndex := uint64(thisItemIndexToTouch)
 
 	for {
-		if !node.loaded {
+		if node.loaded {
+			tree.incCacheHits()
+		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(node) // will also mark node clean/used in LRU
 			if nil != err {
 				// Upon detected corruption, just return
@@ -953,6 +989,27 @@ func (tree *btreeTreeStruct) Discard() (err error) {
 	return
 }
 
+func (bPlusTreeCache *btreeNodeCacheStruct) Stats() (cacheHits uint64, cacheMisses uint64, evictLowLimit uint64, evictHighLimit uint64) {
+	bPlusTreeCache.Lock()
+	cacheHits = bPlusTreeCache.cacheHits
+	cacheMisses = bPlusTreeCache.cacheMisses
+	evictLowLimit = bPlusTreeCache.evictLowLimit
+	evictHighLimit = bPlusTreeCache.evictHighLimit
+	bPlusTreeCache.Unlock()
+	return
+}
+
+func (bPlusTreeCache *btreeNodeCacheStruct) UpdateLimits(evictLowLimit uint64, evictHighLimit uint64) {
+	bPlusTreeCache.Lock()
+	bPlusTreeCache.evictLowLimit = evictLowLimit
+	bPlusTreeCache.evictHighLimit = evictHighLimit
+	if !bPlusTreeCache.drainerActive && (0 < bPlusTreeCache.cleanLRUItems) && (bPlusTreeCache.evictHighLimit < (bPlusTreeCache.cleanLRUItems + bPlusTreeCache.dirtyLRUItems)) {
+		bPlusTreeCache.drainerActive = true
+		go bPlusTreeCache.btreeNodeCacheDrainer()
+	}
+	bPlusTreeCache.Unlock()
+}
+
 // Helper functions
 
 func (tree *btreeTreeStruct) pruneWhileLocked() (err error) {
@@ -980,7 +1037,10 @@ func (tree *btreeTreeStruct) pruneWhileLocked() (err error) {
 }
 
 func (tree *btreeTreeStruct) discardNode(node *btreeNodeStruct) (err error) {
-	if !node.loaded {
+	if node.loaded {
+		tree.incCacheHits()
+	} else {
+		tree.incCacheMisses()
 		err = tree.loadNode(node)
 		if nil != err {
 			return
@@ -1265,8 +1325,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		}
 
 		if leftSiblingNode.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(leftSiblingNode)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(leftSiblingNode) // will also mark leftSiblingNode clean/used in LRU
 			if nil != err {
 				return
@@ -1416,8 +1478,10 @@ func (tree *btreeTreeStruct) rebalanceHere(rebalanceNode *btreeNodeStruct, paren
 		rightSiblingNode = rightSiblingNodeAsValue.(*btreeNodeStruct)
 
 		if rightSiblingNode.loaded {
+			tree.incCacheHits()
 			tree.markNodeUsed(rightSiblingNode)
 		} else {
+			tree.incCacheMisses()
 			err = tree.loadNode(rightSiblingNode) // will also mark rightSiblingNode clean/used in LRU
 			if nil != err {
 				return
@@ -1878,6 +1942,22 @@ func (tree *btreeTreeStruct) initNodeAsEvicted(node *btreeNodeStruct) {
 		node.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
 		node.btreeNodeCacheElement.nextBTreeNode = nil
 		node.btreeNodeCacheElement.prevBTreeNode = nil
+	}
+}
+
+func (tree *btreeTreeStruct) incCacheHits() {
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		tree.nodeCache.cacheHits++
+		tree.nodeCache.Unlock()
+	}
+}
+
+func (tree *btreeTreeStruct) incCacheMisses() {
+	if nil != tree.nodeCache {
+		tree.nodeCache.Lock()
+		tree.nodeCache.cacheMisses++
+		tree.nodeCache.Unlock()
 	}
 }
 
@@ -2390,19 +2470,11 @@ func (bPlusTreeCache *btreeNodeCacheStruct) btreeNodeCacheDrainer() {
 	}
 }
 
-func (bPlusTreeCache *btreeNodeCacheStruct) UpdateLimits(evictLowLimit uint64, evictHighLimit uint64) {
-	bPlusTreeCache.Lock()
-	bPlusTreeCache.evictLowLimit = evictLowLimit
-	bPlusTreeCache.evictHighLimit = evictHighLimit
-	if !bPlusTreeCache.drainerActive && (0 < bPlusTreeCache.cleanLRUItems) && (bPlusTreeCache.evictHighLimit < (bPlusTreeCache.cleanLRUItems + bPlusTreeCache.dirtyLRUItems)) {
-		bPlusTreeCache.drainerActive = true
-		go bPlusTreeCache.btreeNodeCacheDrainer()
-	}
-	bPlusTreeCache.Unlock()
-}
-
 func (tree *btreeTreeStruct) touchNode(node *btreeNodeStruct) (err error) {
-	if !node.loaded {
+	if node.loaded {
+		tree.incCacheHits()
+	} else {
+		tree.incCacheMisses()
 		err = tree.loadNode(node)
 		if nil != err {
 			return

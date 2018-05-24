@@ -274,6 +274,7 @@ func testSendStats() {
 	sleepDuration = 4 * globals.maxLatency
 
 	IncrementOperations(&LogSegCreateOps)
+	IncrementOperationsBy(&FileFlushOps, 3)
 	IncrementOperationsAndBytes(SwiftObjTail, 1024)
 	IncrementOperationsEntriesAndBytes(DirRead, 48, 2048)
 	IncrementOperationsAndBucketedBytes(FileRead, 4096)
@@ -309,6 +310,8 @@ func testVerifyStats() {
 
 	expectedStats = []string{
 		LogSegCreateOps + ":1|c",
+
+		FileFlushOps + ":3|c",
 
 		SwiftObjTailOps + ":1|c",
 		SwiftObjTailBytes + ":1024|c",

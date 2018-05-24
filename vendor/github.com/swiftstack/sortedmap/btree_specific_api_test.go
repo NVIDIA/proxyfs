@@ -195,9 +195,12 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		logSegmentNumber           uint64
 		ok                         bool
 		persistentContext          *specificBPlusTreeTestContextStruct
-		rootLogSegmentNumber       uint64
-		rootLogOffset              uint64
-		rootLogLength              uint64
+		rootObjectNumberFromFetch  uint64
+		rootObjectNumberFromFlush  uint64
+		rootObjectOffsetFromFetch  uint64
+		rootObjectOffsetFromFlush  uint64
+		rootObjectLengthFromFetch  uint64
+		rootObjectLengthFromFlush  uint64
 		valueAsValueStructExpected valueStruct
 		valueAsValueStructReturned valueStruct
 		valueAsValueStructToInsert valueStruct
@@ -209,6 +212,17 @@ func TestBPlusTreeSpecific(t *testing.T) {
 	btreeCacheNew = NewBPlusTreeCache(100, 200)
 
 	btreeNew = NewBPlusTree(specificBPlusTreeTestNumKeysMaxSmall, CompareUint32, persistentContext, btreeCacheNew)
+
+	rootObjectNumberFromFetch, rootObjectOffsetFromFetch, rootObjectLengthFromFetch = btreeNew.FetchLocation()
+	if uint64(0) != rootObjectNumberFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned non-zero rootObjectNumber")
+	}
+	if uint64(0) != rootObjectOffsetFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned non-zero rootObjectOffset")
+	}
+	if uint64(0) != rootObjectLengthFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned non-zero rootObjectLength")
+	}
 
 	valueAsValueStructToInsert = valueStruct{u32: 5, s8: uint32To8ReplicaByteArray(5)}
 	ok, err = btreeNew.Put(uint32(5), valueAsValueStructToInsert)
@@ -237,9 +251,20 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		t.Fatalf("btreeNew.Put(uint32(7), valueAsValueStructToInsert)).ok should have been true")
 	}
 
-	rootLogSegmentNumber, rootLogOffset, rootLogLength, err = btreeNew.Flush(false)
+	rootObjectNumberFromFlush, rootObjectOffsetFromFlush, rootObjectLengthFromFlush, err = btreeNew.Flush(false)
 	if nil != err {
 		t.Fatalf("btreeNew.Flush(false) should not have failed")
+	}
+
+	rootObjectNumberFromFetch, rootObjectOffsetFromFetch, rootObjectLengthFromFetch = btreeNew.FetchLocation()
+	if rootObjectNumberFromFlush != rootObjectNumberFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned unexpected rootObjectNumber")
+	}
+	if rootObjectOffsetFromFlush != rootObjectOffsetFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned unexpected rootObjectOffset")
+	}
+	if rootObjectLengthFromFlush != rootObjectLengthFromFetch {
+		t.Fatalf("btreeNew.FetchLocation() returned unexpected rootObjectLength")
 	}
 
 	valueAsValueReturned, ok, err = btreeNew.GetByKey(uint32(5))
@@ -255,7 +280,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 		t.Fatalf("btreeNew.GetByKey(uint32(5)).value should have been valueAsValueStructExpected")
 	}
 
-	rootLogSegmentNumber, rootLogOffset, rootLogLength, err = btreeNew.Flush(true)
+	rootObjectNumberFromFlush, rootObjectOffsetFromFlush, rootObjectLengthFromFlush, err = btreeNew.Flush(true)
 	if nil != err {
 		t.Fatalf("btreeNew.Flush(true) should not have failed")
 	}
@@ -316,7 +341,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 
 	btreeCacheOld = NewBPlusTreeCache(100, 200)
 
-	btreeOld, err = OldBPlusTree(rootLogSegmentNumber, rootLogOffset, rootLogLength, CompareUint32, persistentContext, btreeCacheOld)
+	btreeOld, err = OldBPlusTree(rootObjectNumberFromFlush, rootObjectOffsetFromFlush, rootObjectLengthFromFlush, CompareUint32, persistentContext, btreeCacheOld)
 	if nil != err {
 		t.Fatalf("OldBPlusTree() should not have failed")
 	}
