@@ -625,7 +625,7 @@ class PfsMiddleware(object):
                 self.logger.error("Error resolving hostname %r", host)
                 raise
 
-        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
+        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '300.0'))
         self.bimodal_recheck_interval = float(conf.get(
             'bimodal_recheck_interval', '60.0'))
         self.max_get_time = int(conf.get('max_get_time', '86400'))
