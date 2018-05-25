@@ -229,25 +229,29 @@ const metricsTemplate string = `<!doctype html>
       };
       var getTabBarButtonMarkup = function(prefix, text, active) {
         var button_markup = "";
-        button_markup += "          <label class=\"btn btn-sm btn-primary" + (active ? " active" : "") + "\" onclick=\"updateDataWithPrefix('" + prefix + "');\">\n";
-        button_markup += "            <input type=\"radio\" name=\"options\" id=\"option1\" autocomplete=\"off\" checked> " + text + "\n";
+        button_markup += "          <label class=\"btn btn-sm btn-primary" + (active ? " active" : "") + "\" onclick=\"newPrefixSelected('" + prefix + "');\">\n";
+        button_markup += "            <input type=\"radio\" name=\"options\" id=\"option-" + prefix + "\" autocomplete=\"off\" checked> " + text + "\n";
         button_markup += "          </label>\n";
         return button_markup;
       };
-      var buildTabBarWithPrefixes = function(tab_bar_id, prefixes) {
+      var buildTabBarWithPrefixes = function(tab_bar_id, prefixes, selected_prefix) {
         var tab_bar_markup = "";
-        tab_bar_markup += getTabBarButtonMarkup("", "All", true);
+        tab_bar_markup += getTabBarButtonMarkup("", "All", selected_prefix == "");
         var prefixes_length = prefixes.length;
         for (var i = 0; i < prefixes_length; i++) {
           var prefix = prefixes[i];
-          tab_bar_markup += getTabBarButtonMarkup(prefix + "_", prefix, false);
+          tab_bar_markup += getTabBarButtonMarkup(prefix, prefix, selected_prefix == prefix);
         }
         document.getElementById(tab_bar_id).innerHTML = tab_bar_markup;
       };
       var filterDataByPrefix = function(data, prefix) {
+        var prefix_to_search = prefix;
+        if (prefix_to_search !== "") {
+          prefix_to_search += "_";
+        }
         var filtered = {};
         for (var key in data) {
-          if (key.startsWith(prefix)) {
+          if (key.startsWith(prefix_to_search)) {
             filtered[key] = data[key];
           }
         }
@@ -263,13 +267,21 @@ const metricsTemplate string = `<!doctype html>
         }
         return table_markup;
       };
-      var updateDataWithPrefix = function(prefix) {
+      var newPrefixSelected = function(prefix) {
         var filteredData = filterDataByPrefix(json_data, prefix);
         document.getElementById("metrics-data").innerHTML = getTableMarkupWithData(filteredData);
+        window.location.hash = prefix;
       };
       var prefixes = getPrefixes(json_data, 2);
-      buildTabBarWithPrefixes("tab-bar", prefixes);
-      updateDataWithPrefix("");
+      var anchor = window.location.hash;
+      if (anchor !== "") {
+        anchor = anchor.substr(1);
+        if (prefixes.indexOf(anchor) == -1) {
+          anchor = "";
+        }
+      }
+      buildTabBarWithPrefixes("tab-bar", prefixes, anchor);
+      newPrefixSelected(anchor);
     </script>
   </body>
 </html>
