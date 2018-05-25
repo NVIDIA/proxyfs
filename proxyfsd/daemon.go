@@ -2,6 +2,8 @@ package proxyfsd
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -294,6 +296,12 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 	}()
 
 	evtlog.Record(evtlog.FormatUpSequenceEnd)
+
+	// create HTTP server for stack tracebacks, profiling, and other good stuff
+	go func() {
+		logger.Infof("proxyfsd.Daemon() starting debug HTTP server: %s",
+			http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	// Arm signal handler used to indicate termination and wait on it
 	//
