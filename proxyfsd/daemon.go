@@ -2,6 +2,8 @@ package proxyfsd
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -301,6 +303,11 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	}()
 
 	evtlog.Record(evtlog.FormatUpSequenceEnd)
+
+	go func() {
+		logger.Infof("proxyfsd.Daemon() starting debug HTTP server: %s",
+			http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	// Arm signal handler used to indicate termination and wait on it
 	//

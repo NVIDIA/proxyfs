@@ -1,0 +1,93 @@
+#!/usr/bin/bash
+#
+# Collect periodic heap profiles from proxyfsd using the 
+# HTTP interface.  This requies that proxyfsd be compiled with the
+# patch included below.
+#
+CMDNAME=`basename $0`
+HEAP_PROFILE_URL="http://localhost:6060/debug/pprof/heap"
+HEAP_PROFILE_SEC=180
+
+
+# patch for proxyfsd/daemon.go
+#
+cat <<!EOT > /dev/null
+a/proxyfsd/daemon.go b/proxyfsd/daemon.go
+index 656412a..8c441b7 100644
+--- a/proxyfsd/daemon.go
++++ b/proxyfsd/daemon.go
+@@ -2,6 +2,8 @@ package proxyfsd
+
+import (
+"fmt"
++       "net/http"
++       _ "net/http/pprof"
+"os"
+"os/signal"
+"sync"
+@@ -246,6 +248,11 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
+	wg.Done()
+}()
+
++       go func() {
++               logger.Infof("proxyfsd.Daemon() starting debug HTTP server: %s",
++                       http.ListenAndServe("localhost:6060", nil))
++       }()
++
+// Arm signal handler used to indicate termination and wait on it
+//
+// Note: signalled chan must be buffered to avoid race with window between
+!EOT
+
+function usage {
+echo "${CMDNAME} <dirname>" 1>&2
+exit 2
+}
+
+function timestamp {
+/bin/date +%Y-%m-%d_%H%M.%S
+}
+
+dirname="$1"
+if [ ! -d "$dirname" ]; then
+echo "${CMDNAME}: target directory '${dirname}' does not exist" 1>&2
+usage
+fi
+
+wget --no-verbose -O /dev/null ${HEAP_PROFILE_URL} > /dev/null
+if [ $? != 0 ]; then
+echo "${CMDNAME}: proxyfsd http server at '${HEAP_PROFILE_URL}' did not respond. Is the patch applied?" 1>&2
+usage
+fi
+
+proxyfsd_loc="/opt/ss/bin/proxyfsd /usr/bin/proxyfsd"
+proxyfsd_bin=""
+for fl in $proxyfsd_loc; do
+if [ -f "$fl" -a -x "$fl" ]; then
+	proxyfsd_bin="$fl"
+	break
+fi
+done
+if [ -z "$proxyfsd_bin" ]; then
+echo "${CMDNAME}: can not find proxyfsd executable" 1>&2
+usage
+fi
+
+cp $proxyfsd_bin "$dirname/proxyfsd-`timestamp`"
+if [ $? != 0 ]; then
+echo "${CMDNAME}: copy of '$proxyfsd_bin' to $dirname failed"
+usage
+fi
+
+while true; do
+
+	outfl="${dirname}/heap-`timestamp`.prof"
+	wget --no-verbose -O $outfl $HEAP_PROFILE_URL
+	# echo "collected $outfl"
+
+	sleep $HEAP_PROFILE_SEC
+	if [ $? != 0 ]; then
+		echo "$CMDNAME: sleep exited with rc $?; exiting"
+		break
+	fi
+done
