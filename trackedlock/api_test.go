@@ -40,13 +40,13 @@ var (
 	watcherRank2LogMatch = `^trackedlock watcher: (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec rank 2; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*)$`
 	watcherRank3LogMatch = `^trackedlock watcher: (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec rank 3; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*)$`
 
-	// matches: "Unlock(): *trackedlock.Mutex at 0xc420110000 locked for 3.003 sec; stack at call to Lock():\ngoroutine 19 [running]:\n...\n stack at Unlock():\ngoroutine 19 [running]:\n..."
+	// matches: "Unlock(): *trackedlock.Mutex at 0xc420110000 locked for 3.003 sec; stack at call to Lock():\ngoroutine 19 [running]:\n...\nstack at Unlock():\ngoroutine 19 [running]:\n..."
 	//
-	unlockLogMatch = `^Unlock\(\): (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*) stack at Unlock\(\):\\n(?P<unlockStack>.*)$`
+	unlockLogMatch = `^Unlock\(\): (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*)\\nstack at Unlock\(\):\\n(?P<unlockStack>.*)$`
 
-	// matches: "RUnlock(): *trackedlock.RWMutex at 0xc420100000 locked for 5.000001 sec; stack at call to RLock():\ngoroutine 5 [running]:\n...\n stack at RUnlock():\ngoroutine 5 [running]:\n..."
+	// matches: "RUnlock(): *trackedlock.RWMutex at 0xc420100000 locked for 5.000001 sec; stack at call to RLock():\ngoroutine 5 [running]:\n...\nstack at RUnlock():\ngoroutine 5 [running]:\n..."
 	//
-	rUnlockLogMatch = `^RUnlock\(\): (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*) stack at RUnlock\(\):\\n(?P<unlockStack>.*)$`
+	rUnlockLogMatch = `^RUnlock\(\): (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>[0-9.]+) sec; stack at call to (?P<locker>[a-zA-Z0-9_()]+):\\n(?P<lockStack>.*)\\nstack at RUnlock\(\):\\n(?P<unlockStack>.*)$`
 
 	watcherRank0LogRE = regexp.MustCompile(watcherRank0LogMatch)
 	watcherRank1LogRE = regexp.MustCompile(watcherRank1LogMatch)
@@ -325,15 +325,26 @@ func TestStartupShutdown(t *testing.T) {
 
 	// startup of logger was already done
 
-	// first test -- get some locks before lock tracking is initialized and
-	// then call Up(); test passes if nothing bad happens when they are
-	// released after Up() returns
+	// the locks we play with
 	var (
 		mutex1   Mutex
 		rwMutex1 RWMutex
 		rwMutex2 RWMutex
 		err      error
 	)
+
+	// get and release some locks before lock tracking is Up()
+	mutex1.Lock()
+	rwMutex1.Lock()
+	rwMutex2.RLock()
+
+	mutex1.Unlock()
+	rwMutex1.Unlock()
+	rwMutex2.RUnlock()
+
+	// second test -- get some locks before lock tracking is initialized and
+	// then call Up(); test passes if nothing bad happens when they are
+	// released after Up() returns
 	mutex1.Lock()
 	rwMutex1.Lock()
 	rwMutex2.RLock()
@@ -349,7 +360,7 @@ func TestStartupShutdown(t *testing.T) {
 	rwMutex1.Unlock()
 	rwMutex2.RUnlock()
 
-	// final test -- get some locks after lock tracking is initialized and
+	// third test -- get some locks after lock tracking is initialized and
 	// then call Down() for it; test passes if nothing bad happens when they
 	// are released after Down() returns
 	mutex1.Lock()
@@ -363,6 +374,15 @@ func TestStartupShutdown(t *testing.T) {
 	}
 
 	// release the locks acquired before this package was "Up()"
+	mutex1.Unlock()
+	rwMutex1.Unlock()
+	rwMutex2.RUnlock()
+
+	// fourth test -- get and release locks even though lock tracking is down
+	mutex1.Lock()
+	rwMutex1.Lock()
+	rwMutex2.RLock()
+
 	mutex1.Unlock()
 	rwMutex1.Unlock()
 	rwMutex2.RUnlock()
@@ -417,18 +437,21 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 
 // Make sure we can reload trackedlock with new values.
 //
-// There are 3 possible states with 6 possible transitions, of which we're only
-// going to test 5.  The interesting states are:
+// There are 3 possible states for lock tracking with 6 possible transitions
+// between states, of which we're only going to test 5.  The states are:
 //
 //   T W  Description
 //   0 0  Lock tracking and lock watcher disabled
 //   1 0  Lock tracking enabled lock watcher disabled
 //   1 1  Lock tracking enabled and lock watcher enabled
 //
-// This test will go through the following states, acquiring locks in each of
-// states 0, 1, 2, and 3 and releasing them in states 1, 2, 3, 4.
+// In addition, locks can be acquired and released before the package is Up() or
+// after it is Down(); TestStartupShutdown() tests those transitions
 //
-// State T W  Description
+// This test will go through the following steps, acquiring locks in each of
+// steps 0, 1, 2, and 3 and releasing them in states 1, 2, 3, 4.
+//
+// Step  T W  Description
 //   0   0 0  Lock tracking and lock watcher disabled
 //   1   1 0  Lock tracking enabled lock watcher disabled
 //   2   1 1  Lock tracking enabled and lock watcher enabled
@@ -440,33 +463,25 @@ func TestReload(t *testing.T) {
 
 	// get a copy of what's written to the log
 	var logcopy logger.LogTarget
-	logcopy.Init(100)
+	logcopy.Init(256)
 	logger.AddLogTarget(logcopy)
 
 	var err error
 
-	// this succeeded the first time or we wouldn't get here
+	// bring the package up using the default config
 	confMap, _ := conf.MakeConfMapFromStrings(confStrings)
-	err = confMap.UpdateFromString("TrackedLock.LockCheckPeriod=0s")
-	if nil != err {
-		t.Fatalf("UpdateFromString('TrackedLock.LockCheckPeriod=0s') failed: %v", err)
-	}
-	err = confMap.UpdateFromString("TrackedLock.LockHoldTimeLimit=0s")
-	if nil != err {
-		t.Fatalf("UpdateFromString('TrackedLock.LockHoldTimeLimit=0s') failed: %v", err)
-	}
-
-	// bring the package up again
 	err = globals.Up(confMap)
 	if err != nil {
-		t.Fatalf("TestReload(): Up() failed: %v", err)
-	}
-	if globals.lockCheckPeriod != 0 || globals.lockHoldTimeLimit != 0 {
-		t.Fatalf("TestReload(): Up() for state 0: lockCheckPeriod=%d or lockHoldTimeLimit=%d set incorrectly",
-			globals.lockCheckPeriod, globals.lockHoldTimeLimit)
+		t.Fatalf("Up() failed: %v", err)
 	}
 
-	// locks acquired in state 0
+	// transition to step 0: lock tracking disabled; watching disabled
+	updateTrackingState(t, "0s", "0s")
+
+	// Acquire some locks in state 0 (the names all start with 0). Because
+	// the code tracking of a RWMutex held in writer (exclusive) mode is the
+	// same code used to track a Mutex, there is not need to test RWMutex
+	// held in writer mode separately from the mutexes.
 	var (
 		mutex01, mutex02, mutex03, mutex04, mutex05           Mutex
 		rwMutex01, rwMutex02, rwMutex03, rwMutex04, rwMutex05 RWMutex
@@ -482,24 +497,14 @@ func TestReload(t *testing.T) {
 	rwMutex04.RLock()
 	rwMutex05.RLock()
 
-	// transition to state 1 -- reload trackedlock with lock tracking enabled
-	err = confMap.UpdateFromString("TrackedLock.LockHoldTimeLimit=1s")
-	if nil != err {
-		t.Fatalf("UpdateFromString() for state 1 failed: %v", err)
-	}
-	err = globals.updateStateFromConfMap(confMap)
-	if nil != err {
-		t.Fatalf("updateStateFromConfMap() for state 1 failed: %v", err)
-	}
-	if globals.lockCheckPeriod != 0 || globals.lockHoldTimeLimit != time.Second {
-		t.Fatalf("TestReload(): updateStateFromConfMap() for state 1 didn't set variables")
-	}
+	// transistion to step 1: lock tracking enabled; watching disabled
+	updateTrackingState(t, "1s", "0s")
 
-	// release locks for state 1
+	// release locks for step 1
 	mutex01.Unlock()
 	rwMutex01.RUnlock()
 
-	// locks acquired in state 1
+	// locks acquired in step 1
 	var (
 		mutex12, mutex13, mutex14, mutex15         Mutex
 		rwMutex12, rwMutex13, rwMutex14, rwMutex15 RWMutex
@@ -513,26 +518,16 @@ func TestReload(t *testing.T) {
 	rwMutex14.RLock()
 	rwMutex15.RLock()
 
-	// transition to state 2 -- reload trackedlock with lock tracking and watching enabled
-	err = confMap.UpdateFromString("TrackedLock.LockCheckPeriod=2s")
-	if nil != err {
-		t.Fatalf("UpdateFromString() for state 2 failed: %v", err)
-	}
-	err = globals.updateStateFromConfMap(confMap)
-	if nil != err {
-		t.Fatalf("updateStateFromConfMap() for state 2 failed: %v", err)
-	}
-	if globals.lockCheckPeriod != 2*time.Second || globals.lockHoldTimeLimit != time.Second {
-		t.Fatalf("TestReload(): updateStateFromConfMap() for state 2 didn't set variables")
-	}
+	// transistion to step 2: lock tracking enabled; watching enabled
+	updateTrackingState(t, "1s", "2s")
 
-	// release locks for state 2
+	// release locks for step 2
 	mutex02.Unlock()
 	mutex12.Unlock()
 	rwMutex02.RUnlock()
 	rwMutex12.RUnlock()
 
-	// locks acquired in state 2
+	// locks acquired in step 2
 	var (
 		mutex23, mutex24, mutex25       Mutex
 		rwMutex23, rwMutex24, rwMutex25 RWMutex
@@ -545,18 +540,8 @@ func TestReload(t *testing.T) {
 	rwMutex25.RLock()
 
 	// change the lock watcher interval to 1 sec and verify locks aren't
-	// forgotten
-	err = confMap.UpdateFromString("TrackedLock.LockCheckPeriod=1s")
-	if nil != err {
-		t.Fatalf("UpdateFromString() for state 2 failed: %v", err)
-	}
-	err = globals.updateStateFromConfMap(confMap)
-	if nil != err {
-		t.Fatalf("updateStateFromConfMap() for state 2 failed: %v", err)
-	}
-	if globals.lockCheckPeriod != time.Second || globals.lockHoldTimeLimit != time.Second {
-		t.Fatalf("TestReload(): updateStateFromConfMap() for state 2 didn't set variables")
-	}
+	// forgotten (this is still step 2)
+	updateTrackingState(t, "1s", "1s")
 
 	// wait 2.1 sec so locks are held more than 1 sec and the lock watcher
 	// has a chance to run and take notice
@@ -577,20 +562,10 @@ func TestReload(t *testing.T) {
 		t.Errorf("TestReload(): mutex23 type reported as '%s' instead of '*trackedlock.Mutex'", fields["type"])
 	}
 
-	// transition to state 3 -- reload trackedlock with lock tracking and watching enabled
-	err = confMap.UpdateFromString("TrackedLock.LockCheckPeriod=0s")
-	if nil != err {
-		t.Fatalf("UpdateFromString() for state 3 failed: %v", err)
-	}
-	err = globals.updateStateFromConfMap(confMap)
-	if nil != err {
-		t.Fatalf("updateStateFromConfMap() for state 3 failed: %v", err)
-	}
-	if globals.lockCheckPeriod != 0 || globals.lockHoldTimeLimit != time.Second {
-		t.Fatalf("TestReload(): updateStateFromConfMap() for state 3 didn't set variables")
-	}
+	// transistion to step 3: lock tracking enabled; watching disabled
+	updateTrackingState(t, "1s", "0s")
 
-	// release locks for state 3
+	// release locks for step 3
 	mutex03.Unlock()
 	mutex13.Unlock()
 	mutex23.Unlock()
@@ -598,7 +573,7 @@ func TestReload(t *testing.T) {
 	rwMutex13.RUnlock()
 	rwMutex23.RUnlock()
 
-	// locks acquired in state 3
+	// locks acquired in step 3
 	var (
 		mutex34, mutex35     Mutex
 		rwMutex34, rwMutex35 RWMutex
@@ -608,20 +583,10 @@ func TestReload(t *testing.T) {
 	rwMutex34.RLock()
 	rwMutex35.RLock()
 
-	// transition to state 4 -- reload trackedlock with lock tracking and watching enabled
-	err = confMap.UpdateFromString("TrackedLock.LockHoldTimeLimit=0s")
-	if nil != err {
-		t.Fatalf("UpdateFromString() for state 4 failed: %v", err)
-	}
-	err = globals.updateStateFromConfMap(confMap)
-	if nil != err {
-		t.Fatalf("updateStateFromConfMap() for state 4 failed: %v", err)
-	}
-	if globals.lockCheckPeriod != 0 || globals.lockHoldTimeLimit != 0 {
-		t.Fatalf("TestReload(): updateStateFromConfMap() for state 4 didn't set variables")
-	}
+	// transistion to step 4: lock tracking disabled; watching disabled
+	updateTrackingState(t, "0s", "0s")
 
-	// locks acquired in state 3
+	// locks acquired in step 4
 	var (
 		mutex45   Mutex
 		rwMutex45 RWMutex
@@ -629,7 +594,7 @@ func TestReload(t *testing.T) {
 	mutex45.Lock()
 	rwMutex45.RLock()
 
-	// release locks for state 4
+	// release locks for step 4
 	mutex04.Unlock()
 	mutex14.Unlock()
 	mutex24.Unlock()
@@ -639,13 +604,13 @@ func TestReload(t *testing.T) {
 	rwMutex24.RUnlock()
 	rwMutex34.RUnlock()
 
-	// transition to state 5 -- shutdown this package
+	// transition to step 5 -- shutdown this package
 	err = globals.Down(confMap)
 	if nil != err {
 		t.Fatalf("Down() failed: %v", err)
 	}
 
-	// release locks for state 4
+	// release locks for step 5 (after tracking shutdown)
 	mutex05.Unlock()
 	mutex15.Unlock()
 	mutex25.Unlock()
@@ -657,10 +622,170 @@ func TestReload(t *testing.T) {
 	rwMutex35.RUnlock()
 	rwMutex45.RUnlock()
 
-	// Shutdown other packages
-	err = logger.Down(confMap)
-	if nil != err {
-		t.Fatalf("stats.Down() failed: %v", err)
+}
+
+// Make sure we can transition from one lock tracking state to another without
+// panics or spurious log messages.
+//
+// There are 3 possible states of lock tracking, which are:
+//
+// Tracking
+//  State   T W  Description
+//    0     0 0  Lock tracking and lock watcher disabled
+//    1     1 0  Lock tracking enabled; lock watcher disabled
+//    2     1 1  Lock tracking enabled and lock watcher enabled
+//
+// A lock can be acquired in one tracking state and released in another, which
+// might trigger misbehavior in the tracking code.  Further, while locks are
+// tracked in states 1 and 2, they are watched only in state 2, and watching
+// locks causes the allocation of additional data structures at lock time which
+// persist across unlock (for the watcher), so a lock acquired in state 2,
+// released in any state, then acquired again in state 0 (or 1) and then watched
+// again as a result of transitioning to state 2 might trigger bogus log messages.
+//
+// Create a set of locks, each of which is acquired and released twice, and test
+// all of the possibilites (there are 3^4 or 81 such combinations).  Check the
+// log or bogus entries as well.
+//
+func TestStateTransitions(t *testing.T) {
+
+	// get a copy of what's written to the log
+	var logcopy logger.LogTarget
+	logcopy.Init(256)
+	logger.AddLogTarget(logcopy)
+
+	// bring the package up using the default config
+	confMap, _ := conf.MakeConfMapFromStrings(confStrings)
+	_ = logger.Up(confMap)
+
+	err := globals.Up(confMap)
+	if err != nil {
+		t.Fatalf("Up() failed: %v", err)
 	}
 
+	mutexes := [3][3][3][3]Mutex{}
+	rwMutexes := [3][3][3][3]RWMutex{}
+
+	// helper functcion to update the lock tracking state; note that state 2
+	// enables the lock watcher and this is the last state set by the loops,
+	// below, so the lock watcher is running during the pauses
+	setTrackingState := func(newState int) {
+		switch newState {
+
+		case 0:
+			// state 0: lock tracking disabled; watching disabled
+			updateTrackingState(t, "0s", "0s")
+
+		case 1:
+			// state 1: lock tracking enabled; watching disabled
+			updateTrackingState(t, "2s", "0s")
+
+		case 2:
+			// state 2: lock tracking enabled; watching enable
+			updateTrackingState(t, "2s", "1s")
+		}
+	}
+
+	// The first step is lock all of the mutexs; the first array index is
+	// the tracking state the mutex is locked in.
+	for state := 0; state < 3; state += 1 {
+
+		setTrackingState(state)
+		for j := 0; j < 3; j += 1 {
+			for k := 0; k < 3; k += 1 {
+				for l := 0; l < 3; l += 1 {
+					mutexes[state][j][k][l].Lock()
+					rwMutexes[state][j][k][l].RLock()
+				}
+			}
+		}
+	}
+
+	// wait for the lock watcher to run
+	sleep(1.2)
+
+	// lockwatcher should not have identified any locks as held too long
+	fields, _, err := logger.ParseLogForFunc(logcopy, "lockWatcher", watcherRank0LogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by lockWatcher when none should exist: %v", fields)
+	}
+
+	// The second step is to unlock all of the mutexs; the second array
+	// index is the tracking state the mutex is unlocked in.  Note that we
+	// iterate over the second array index in the outermost loop.
+	for state := 0; state < 3; state += 1 {
+
+		setTrackingState(state)
+		for i := 0; i < 3; i += 1 {
+			for k := 0; k < 3; k += 1 {
+				for l := 0; l < 3; l += 1 {
+					mutexes[i][state][k][l].Unlock()
+					rwMutexes[i][state][k][l].RUnlock()
+				}
+			}
+		}
+	}
+
+	// unlock should not have flagged any locks as held too long
+	// (first wait a little for log messages to get logged)
+	sleep(0.1)
+	fields, _, err = logger.ParseLogForFunc(logcopy, "unlockTrack", unlockLogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by unlockTrack() when none should exist: %v", fields)
+	}
+	fields, _, err = logger.ParseLogForFunc(logcopy, "rUnlockTrack", rUnlockLogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by rUnlockTrack() when none should exist: %v", fields)
+	}
+
+	// The third step is lock all of the mutexs a second time; the third
+	// array index is the tracking state the mutex is locked in.
+	for state := 0; state < 3; state += 1 {
+
+		setTrackingState(state)
+		for i := 0; i < 3; i += 1 {
+			for j := 0; j < 3; j += 1 {
+				for l := 0; l < 3; l += 1 {
+					mutexes[i][j][state][l].Lock()
+					rwMutexes[i][j][state][l].RLock()
+				}
+			}
+		}
+	}
+
+	// wait for the lock watcher to run
+	sleep(1.2)
+
+	// lockwatcher should not have identified any locks as held too long
+	fields, _, err = logger.ParseLogForFunc(logcopy, "lockWatcher", watcherRank0LogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by lockWatcher when none should exist: %v", fields)
+	}
+
+	// The fourth step is to unlock all of the mutexs; the second array
+	// index is the lock tracking state the mutex is unlocked in.
+	for state := 0; state < 3; state += 1 {
+
+		setTrackingState(state)
+		for i := 0; i < 3; i += 1 {
+			for j := 0; j < 3; j += 1 {
+				for k := 0; k < 3; k += 1 {
+					mutexes[i][j][k][state].Unlock()
+					rwMutexes[i][j][k][state].RUnlock()
+				}
+			}
+		}
+	}
+
+	// unlock should not have flagged any locks as held too long
+	// (first wait a little for log messages to get logged)
+	sleep(0.1)
+	fields, _, err = logger.ParseLogForFunc(logcopy, "unlockTrack", unlockLogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by unlockTrack() when none should exist: %v", fields)
+	}
+	fields, _, err = logger.ParseLogForFunc(logcopy, "rUnlockTrack", rUnlockLogRE, 256)
+	if err == nil {
+		t.Errorf("found a complaint by rUnlockTrack() when none should exist: %v", fields)
+	}
 }

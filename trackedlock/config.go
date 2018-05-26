@@ -34,6 +34,13 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 		globals.lockCheckPeriod = time.Duration(20 * time.Second)
 	}
 
+	// if there is no lockHoldTimeLimit then the lock watcher should not run
+	if globals.lockHoldTimeLimit == 0 && globals.lockCheckPeriod != 0 {
+		logger.Warnf("config variable 'TrackedLock.LockCheckPeriod' > 0 but" +
+			" 'TrackedLock.LockHoldTimeLImit' == 0; setting LockCheckPeriod to 0")
+		globals.lockCheckPeriod = 0
+	}
+
 	// log information upto 16 locks
 	globals.lockWatcherLocksLogged = 16
 
@@ -131,6 +138,10 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 
 		// if we're going to stop watching, clean out the map
 		if globals.lockCheckPeriod == 0 {
+
+			globals.mapMutex.Lock()
+			defer globals.mapMutex.Unlock()
+
 			for key, _ := range globals.mutexMap {
 				delete(globals.mutexMap, key)
 			}

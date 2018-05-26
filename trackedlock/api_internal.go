@@ -31,6 +31,11 @@ var globals globalsStruct
 type stackTraceSlice []byte
 type stackTraceBuf [4040]byte
 
+// time.IsZero() will return true if applied to timeZero.  It indicates an
+// uninitialized time stamp.
+//
+var timeZero time.Time
+
 type stackTraceObj struct {
 	stackTrace    stackTraceSlice // stack trace of curent or last locker
 	stackTraceBuf stackTraceBuf   // storage for stack trace slice
@@ -70,11 +75,12 @@ type RWMutexTrack struct {
 //
 func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 
-	// if lock tracking is disabled, just get the lock and record the
-	// current time (time.Now() is kind've expensive, but may still be worth
-	// getting)
+	// if lock tracking is disabled, just mark the lock as locked and clear
+	// the last locked time.  (Recording the current time using time.Now()
+	// is too expensive, but we don't want this lock marked as held too long
+	// if lock tracking is enabled while its locked.)
 	if globals.lockHoldTimeLimit == 0 {
-		mt.lockTime = time.Now()
+		mt.lockTime = timeZero
 		mt.lockCnt = -1
 		return
 	}
@@ -90,8 +96,8 @@ func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 
 	// add to the list of watched mutexes if anybody is watching -- its only
 	// at this point that we need to know if this a Mutex or RWMutex, and it
-	// only happens once
-	if !mt.isWatched && globals.lockCheckPeriod != 0 && globals.lockHoldTimeLimit != 0 {
+	// only happens when not currently watched
+	if !mt.isWatched && globals.lockCheckPeriod != 0 {
 		globals.mapMutex.Lock()
 
 		if rwmt != nil {
@@ -110,8 +116,9 @@ func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 //
 func (mt *MutexTrack) unlockTrack(wrappedLock interface{}) {
 
-	// if we're checking the lock hold time then check it
-	if globals.lockHoldTimeLimit != 0 {
+	// if we're checking the lock hold time and the locking time is recorded
+	// then check it
+	if globals.lockHoldTimeLimit != 0 && !mt.lockTime.IsZero() {
 		now := time.Now()
 		if now.Sub(mt.lockTime) >= globals.lockHoldTimeLimit {
 
@@ -126,7 +133,8 @@ func (mt *MutexTrack) unlockTrack(wrappedLock interface{}) {
 			if mt.lockStack != nil {
 				lockStr = string(mt.lockStack.stackTrace)
 			}
-			logger.Warnf("Unlock(): %T at %p locked for %f sec; stack at call to Lock():\n%s stack at Unlock():\n%s",
+			logger.Warnf("Unlock(): %T at %p locked for %f sec;"+
+				" stack at call to Lock():\n%s\nstack at Unlock():\n%s",
 				wrappedLock, wrappedLock,
 				float64(now.Sub(mt.lockTime))/float64(time.Second), lockStr, unlockStr)
 		}
@@ -155,19 +163,16 @@ func (rwmt *RWMutexTrack) unlockTrack(wrappedLock interface{}) {
 //
 func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 
-	// if lock tracking is disabled, just get the lock and record the
-	// current time (time.Now() is kind've expensive, still probably
-	// worthwhile.
-	//
-	// Note that when lock tracking is disabled, mt.lockTime is being
-	// updated when the locks is acquired shared and mt.lockCnt is not being
-	// updated.
+	// if lock tracking is disabled, just mark the lock as locked and clear
+	// the last locked time.  (Recording the current time using time.Now()
+	// is too expensive, but we don't want this lock marked as held too long
+	// if lock tracking is enabled while its locked.)
 	if globals.lockHoldTimeLimit == 0 {
 		rwmt.sharedStateLock.Lock()
 		rwmt.tracker.lockCnt += 1
+		rwmt.tracker.lockTime = timeZero
 		rwmt.sharedStateLock.Unlock()
 
-		rwmt.tracker.lockTime = time.Now()
 		return
 	}
 
@@ -195,7 +200,7 @@ func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 	rwmt.tracker.lockCnt += 1
 
 	// add to the list of watched mutexes if anybody is watching
-	if !rwmt.tracker.isWatched && globals.lockCheckPeriod != 0 && globals.lockHoldTimeLimit != 0 {
+	if !rwmt.tracker.isWatched && globals.lockCheckPeriod != 0 {
 
 		globals.mapMutex.Lock()
 		globals.rwMutexMap[rwmt] = wrappedLock
@@ -212,8 +217,8 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 	if globals.lockHoldTimeLimit == 0 {
 		rwmt.sharedStateLock.Lock()
 
-		// if lock hold time is not being checked, discard info left
-		// over from an earlier time when it was
+		// since lock hold time is not being checked, discard any info
+		// left over from an earlier time when it was
 		if rwmt.rLockStack != nil {
 			for goId, lockStack := range rwmt.rLockStack {
 				stackTraceObjPool.Put(lockStack)
@@ -225,27 +230,19 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 		}
 		rwmt.tracker.lockCnt -= 1
 
-		// if lock hold time was being checked, discard that information
-		if rwmt.rLockStack != nil {
-			for goId, lockStack := range rwmt.rLockStack {
-				stackTraceObjPool.Put(lockStack)
-				delete(rwmt.rLockStack, goId)
-				delete(rwmt.rLockTime, goId)
-			}
-			rwmt.rLockStack = nil
-			rwmt.rLockTime = nil
-		}
 		rwmt.sharedStateLock.Unlock()
 		return
 	}
 
+	// Lock tracking is enabled; track the unlock of this lock.
+	//
 	// If the goroutine unlocking a shared lock is not the same as the one
 	// that locked it then we cannot match up RLock() and RUnlock()
 	// operations (unless we add an API that allows lock "ownership" to be
 	// passed between goroutines and the client of the API actually calls
 	// it). This is complicated by the situation when lock tracking
 	// (globals.lockHoldTimeLimit > 0) is enabled after some locks have
-	// already been acquired.
+	// already been acquired in reader mode.
 	//
 	// To handle the second case this code does not kick up a fuss if it
 	// can't find an RLock() operation with a goID corresponding to this
@@ -256,7 +253,6 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 	// bunch of stale entries which would trigger false instances of "lock
 	// held too long" by the lock watcher.  To compensate for this, when the
 	// last RLock() is released, we clear out extra stale entries.
-	//
 	goId := utils.GetGoId()
 	now := time.Now()
 	rwmt.sharedStateLock.Lock()
@@ -268,8 +264,8 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 		cnt := runtime.Stack(stackTrace, false)
 		stackTrace = stackTrace[0:cnt]
 
-		logger.Warnf(
-			"RUnlock(): %T at %p locked for %f sec; stack at call to RLock():\n%s stack at RUnlock():\n%s",
+		logger.Warnf("RUnlock(): %T at %p locked for %f sec;"+
+			" stack at call to RLock():\n%s\nstack at RUnlock():\n%s",
 			wrappedLock, wrappedLock, float64(now.Sub(rLockTime))/float64(time.Second),
 			rwmt.rLockStack[goId].stackTrace, string(stackTrace))
 	}
@@ -352,12 +348,21 @@ func lockWatcher() {
 		// globals.lockWatcherLocksLogged locks.  They are sorted longest to
 		// shortest.
 		//
-		// longestDuration is the minum lock hold time needed to be added to the
+		// longestDuration is the minimum lock hold time needed to be added to the
 		// slice, which increases once the slice is full.
+		//
+		// Note that this could be running after lock tracking or the lock watcher
+		// has been disabled (globals.lockHoldTimeLimit and/or
+		// globals.lockCheckPeriod could be 0).
 		var (
 			longLockHolders = make([]*longLockHolder, 0)
 			longestDuration = globals.lockHoldTimeLimit
 		)
+		if globals.lockHoldTimeLimit == 0 {
+			// ignore locks held less than 10 years
+			longestDuration, _ = time.ParseDuration("24h")
+			longestDuration *= 365 * 10
+		}
 
 		// now does not change during a loop iteration
 		now := time.Now()
@@ -391,9 +396,11 @@ func lockWatcher() {
 			if lockedDuration > longestDuration {
 
 				// We do not hold a lock that prevents mt.lockStack.stackTrace
-				// from changing if the Mutex were to be unlocked right now.
-				// Although its unlikely since the mutex has been held so long,
-				// try to copy the stack robustly.
+				// from changing if the Mutex were to be unlocked right now,
+				// although its unlikely since the mutex has been held so long,
+				// so try to copy the stack robustly.  If it does change it
+				// might be reused and now hold another stack and this stack
+				// trace would be wrong.
 				var (
 					mtStackTraceObj *stackTraceObj = mt.lockStack
 					mtStack         string
@@ -451,9 +458,13 @@ func lockWatcher() {
 
 					// We do not hold a lock that prevents
 					// rwmt.lockStack.stackTrace from changing if the
-					// RWMutex were to be unlocked right now.  Although its
-					// unlikely since the rwmutex has been held so long,
-					// try to copy the stack robustly.
+					// RWMutex were to be unlocked right now, although its
+					// unlikely since the rwmutex has been held so long, so
+					// try to copy the stack robustly.  If it does change i
+					// it might be reused and now hold another stack.
+					// might be reused and now hold another stack and this
+					// stack trace would be wrong.
+
 					var (
 						rwmtStackTraceObj *stackTraceObj = rwmt.tracker.lockStack
 						rwmtStack         string
@@ -511,7 +522,8 @@ func lockWatcher() {
 		// log a Warning for each lock that has been held too long,
 		// from longest to shortest
 		for i := 0; i < len(longLockHolders); i += 1 {
-			logger.Warnf("trackedlock watcher: %T at %p locked for %f sec rank %d; stack at call to %s:\n%s",
+			logger.Warnf("trackedlock watcher: %T at %p locked for %f sec rank %d;"+
+				" stack at call to %s:\n%s\n",
 				longLockHolders[i].lockPtr, longLockHolders[i].lockPtr,
 				float64(now.Sub(longLockHolders[i].lockTime))/float64(time.Second), i,
 				longLockHolders[i].lockOp, longLockHolders[i].lockStackStr)

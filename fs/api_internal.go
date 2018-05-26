@@ -612,7 +612,7 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 
 }
 
-// Unlock a given range. All locks held in this range by the process (indentified by Pid) are removed.
+// Unlock a given range. All locks held in this range by the process (identified by Pid) are removed.
 func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
 
 	flockList := mS.getFileLockList(inodeNumber)
