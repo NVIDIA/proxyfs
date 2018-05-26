@@ -613,7 +613,7 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 
 }
 
-// Unlock a given range. All locks held in this range by the process (indentified by Pid) are removed.
+// Unlock a given range. All locks held in this range by the process (identified by Pid) are removed.
 func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
 
 	flockList := mS.getFileLockList(inodeNumber)
@@ -2009,12 +2009,14 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
+	logger.Tracef("calling mS.resolvePathForRead() for '%s'", entityPath)
 	ino, inoType, inoLock, err := mS.resolvePathForRead(entityPath, nil)
 	if err != nil {
 		return
 	}
 	defer inoLock.Unlock()
 
+	logger.Tracef("calling mS.getstatHelper(ino %d) for '%s'", ino, entityPath)
 	statResult, err := mS.getstatHelper(ino, inoLock.GetCallerID())
 	if err != nil {
 		return
