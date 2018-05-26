@@ -534,7 +534,7 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 
 }
 
-// Unlock a given range. All locks held in this range by the process (indentified by Pid) are removed.
+// Unlock a given range. All locks held in this range by the process (identified by Pid) are removed.
 func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
 
 	flockList := mS.getFileLockList(inodeNumber)
@@ -1723,15 +1723,20 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 }
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
+
+	logger.Tracef("entered for '%s'", entityPath)
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
+	logger.Tracef("calling mS.resolvePathForRead() for '%s'", entityPath)
 	ino, inoType, inoLock, err := mS.resolvePathForRead(entityPath, nil)
 	if err != nil {
 		return
 	}
 	defer inoLock.Unlock()
 
+	logger.Tracef("calling mS.getstatHelper(ino %d) for '%s'", ino, entityPath)
 	statResult, err := mS.getstatHelper(ino, inoLock.GetCallerID())
 	if err != nil {
 		return
@@ -1743,6 +1748,7 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 	response.InodeNumber = ino
 	response.NumWrites = statResult[StatNumWrites]
 
+	logger.Tracef("calling VolumeHnadle.GetStream(ino %d) for '%s'", ino, entityPath)
 	response.Metadata, err = mS.volStruct.VolumeHandle.GetStream(ino, MiddlewareStream)
 	if err != nil {
 		response.Metadata = []byte{}
@@ -1756,6 +1762,8 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 		return
 	}
 	stats.IncrementOperations(&stats.FsMwHeadResponseOps)
+
+	logger.Tracef("returning with response for '%s'", entityPath)
 	return
 }
 
