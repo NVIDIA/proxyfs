@@ -5,6 +5,41 @@
 set -e
 set -x
 
+# Install yum-utils to deal with yum repos
+
+yum -y install yum-utils
+
+# Disable generic CentOS 7 repos
+
+yum-config-manager --disable CentOS-Base
+yum-config-manager --disable CentOS-CR
+yum-config-manager --disable CentOS-Debuginfo
+yum-config-manager --disable CentOS-fasttrack
+yum-config-manager --disable CentOS-Media
+yum-config-manager --disable CentOS-Sources
+yum-config-manager --disable CentOS-Vault
+
+rm -rf /etc/yum.repos.d/CentOS-Base.repo
+rm -rf /etc/yum.repos.d/CentOS-CR.repo
+rm -rf /etc/yum.repos.d/CentOS-Debuginfo.repo
+rm -rf /etc/yum.repos.d/CentOS-fasttrack.repo
+rm -rf /etc/yum.repos.d/CentOS-Media.repo
+rm -rf /etc/yum.repos.d/CentOS-Sources.repo
+rm -rf /etc/yum.repos.d/CentOS-Vault.repo
+
+# Add and enable CentOS 7.4 repos
+
+yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/os/x86_64/
+yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/updates/x86_64/
+yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/extras/x86_64/
+yum-config-manager --add-repo http://vault.centos.org/centos/7.4.1708/centosplus/x86_64/
+yum-config-manager --enable vault.centos.org_centos_7.4.1708_os_x86_64_
+yum-config-manager --enable vault.centos.org_centos_7.4.1708_updates_x86_64_
+yum-config-manager --enable vault.centos.org_centos_7.4.1708_extras_x86_64_
+yum-config-manager --enable vault.centos.org_centos_7.4.1708_centosplus_x86_64_
+
+yum clean all
+
 # Install tools needed above what's in a minimal base box
 
 yum -y install wget git nfs-utils vim
@@ -194,7 +229,7 @@ python setup.py develop
 cd ~swift
 git clone https://github.com/openstack/swift.git
 cd swift
-git checkout -b 5cf96230c82d4fcbac297775997a7e0abe3e9ff9
+git checkout 5cf96230c82d4fcbac297775997a7e0abe3e9ff9
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 pip install -r test-requirements.txt
@@ -298,14 +333,6 @@ yum -y install wireshark-gnome \
 echo "X11Forwarding yes" >> /etc/sysconfig/sshd
 systemctl restart sshd
 usermod -aG wireshark vagrant
-
-# Install opera
-
-yum -y install http://download3.operacdn.com/pub/opera/desktop/51.0.2830.40/linux/opera-stable_51.0.2830.40_amd64.rpm
-yum -y install gnu-free-fonts-common
-yum -y install gnu-free-mono-fonts
-yum -y install gnu-free-sans-fonts
-yum -y install gnu-free-serif-fonts
 
 # Install benchmark support tools
 
