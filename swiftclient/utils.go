@@ -88,10 +88,12 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 			globals.starvationUnderway = true
 			go chunkedConnectionPoolInStarvationMode()
 		}
+		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolStallOps)
 		cv = sync.NewCond(&globals.chunkedConnectionPool)
 		_ = globals.chunkedConnectionPool.waiters.PushBack(cv)
 		cv.Wait()
 	} else {
+		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolNonStallOps)
 		globals.chunkedConnectionPool.poolInUse++
 	}
 
@@ -156,10 +158,12 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 	globals.nonChunkedConnectionPool.Lock()
 
 	if globals.nonChunkedConnectionPool.poolInUse >= globals.nonChunkedConnectionPool.poolCapacity {
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolStallOps)
 		cv = sync.NewCond(&globals.nonChunkedConnectionPool)
 		_ = globals.nonChunkedConnectionPool.waiters.PushBack(cv)
 		cv.Wait()
 	} else {
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolNonStallOps)
 		globals.nonChunkedConnectionPool.poolInUse++
 	}
 

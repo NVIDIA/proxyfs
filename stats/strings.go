@@ -272,4 +272,9 @@ var (
 	SwiftObjReadRetrySuccessOps          = "proxyfs.swiftclient.object-read.retry.success.operations"
 	SwiftObjTailRetryOps                 = "proxyfs.swiftclient.object-tail.retry.operations"
 	SwiftObjTailRetrySuccessOps          = "proxyfs.swiftclient.object-tail.retry.success.operations"
+
+	SwiftChunkedConnectionPoolNonStallOps    = "proxyfs.swiftclient.chunked-connection-pool.non-stall.operations"
+	SwiftChunkedConnectionPoolStallOps       = "proxyfs.swiftclient.chunked-connection-pool.stall.operations"
+	SwiftNonChunkedConnectionPoolNonStallOps = "proxyfs.swiftclient.non-chunked-connection-pool.non-stall.operations"
+	SwiftNonChunkedConnectionPoolStallOps    = "proxyfs.swiftclient.non-chunked-connection-pool.stall.operations"
 )
