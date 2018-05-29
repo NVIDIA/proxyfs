@@ -260,6 +260,10 @@ func incrementOperations(statName *string) {
 	incrementSomething(statName, 1)
 }
 
+func incrementOperationsBy(statName *string, incBy uint64) {
+	incrementSomething(statName, incBy)
+}
+
 func incrementOperationsAndBytes(stat MultipleStat, bytes uint64) {
 	opsStat, bytesStat, _, _, _, _ := stat.findStatStrings(bytes, 1)
 	incrementSomething(opsStat, 1)
