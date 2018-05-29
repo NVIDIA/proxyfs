@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"runtime"
 	"strconv"
@@ -141,6 +142,16 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		_, _ = responseWriter.Write([]byte(jsontreeDotJSContent))
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
+	case "/debug/pprof" == path:
+		pprof.Index(responseWriter, request)
+	case "/debug/pprof/cmdline" == path:
+		pprof.Cmdline(responseWriter, request)
+	case "/debug/pprof/profile" == path:
+		pprof.Profile(responseWriter, request)
+	case "/debug/pprof/symbol" == path:
+		pprof.Symbol(responseWriter, request)
+	case "/debug/pprof/trace" == path:
+		pprof.Trace(responseWriter, request)
 	case "/open-iconic/font/css/open-iconic-bootstrap.min.css" == path:
 		responseWriter.Header().Set("Content-Type", openIconicBootstrapDotCSSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
