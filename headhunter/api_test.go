@@ -213,6 +213,9 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") [case 1] returned error: %v", err)
 	}
 
+	volume.RegisterForEvents(nil)
+	volume.UnregisterForEvents(nil)
+
 	firstUpNonce, err := volume.FetchNonce()
 	if nil != err {
 		t.Fatalf("FetchNonce() [case 1] returned error: %v", err)

@@ -122,6 +122,7 @@ type volumeStruct struct {
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
+	eventListeners                          map[VolumeEventListener]struct{}
 	snapShotIDNumBits                       uint16
 	snapShotIDShift                         uint64 //             inodeNumber >> snapShotIDNumBits == snapShotID
 	dotSnapShotDirSnapShotID                uint64 //             .snapshot/ pseudo directory Inode's snapShotID
@@ -142,15 +143,24 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	crc64ECMATable                          *crc64.Table
-	uint64Size                              uint64
-	elementOfBPlusTreeLayoutStructSize      uint64
-	replayLogTransactionFixedPartStructSize uint64
-	inodeRecCache                           sortedmap.BPlusTreeCache
-	logSegmentRecCache                      sortedmap.BPlusTreeCache
-	bPlusTreeObjectCache                    sortedmap.BPlusTreeCache
-	createdDeletedObjectsCache              sortedmap.BPlusTreeCache
-	volumeMap                               map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+	sync.Mutex
+	crc64ECMATable                             *crc64.Table
+	uint64Size                                 uint64
+	elementOfBPlusTreeLayoutStructSize         uint64
+	replayLogTransactionFixedPartStructSize    uint64
+	inodeRecCache                              sortedmap.BPlusTreeCache
+	inodeRecCachePriorCacheHits                uint64
+	inodeRecCachePriorCacheMisses              uint64
+	logSegmentRecCache                         sortedmap.BPlusTreeCache
+	logSegmentRecCachePriorCacheHits           uint64
+	logSegmentRecCachePriorCacheMisses         uint64
+	bPlusTreeObjectCache                       sortedmap.BPlusTreeCache
+	bPlusTreeObjectCachePriorCacheHits         uint64
+	bPlusTreeObjectCachePriorCacheMisses       uint64
+	createdDeletedObjectsCache                 sortedmap.BPlusTreeCache
+	createdDeletedObjectsCachePriorCacheHits   uint64
+	createdDeletedObjectsCachePriorCacheMisses uint64
+	volumeMap                                  map[string]*volumeStruct // key == ramVolumeStruct.volumeName
 }
 
 var globals globalsStruct
@@ -175,21 +185,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		whoAmI                                   string
 	)
 
-	// Pre-compute crc64 ECMA Table & useful cstruct sizes
-
-	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
-
-	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
-	if nil != err {
-		return
-	}
-
-	globals.replayLogTransactionFixedPartStructSize, _, err = cstruct.Examine(dummyReplayLogTransactionFixedPartStruct)
+	err = commonInitialization(confMap)
 	if nil != err {
 		return
 	}
@@ -205,50 +201,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
-
-	inodeRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictLowLimit")
-	if nil != err {
-		return
-	}
-	inodeRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictHighLimit")
-	if nil != err {
-		return
-	}
-
-	globals.inodeRecCache = sortedmap.NewBPlusTreeCache(inodeRecCacheEvictLowLimit, inodeRecCacheEvictHighLimit)
-
-	logSegmentRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictLowLimit")
-	if nil != err {
-		return
-	}
-	logSegmentRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictHighLimit")
-	if nil != err {
-		return
-	}
-
-	globals.logSegmentRecCache = sortedmap.NewBPlusTreeCache(logSegmentRecCacheEvictLowLimit, logSegmentRecCacheEvictHighLimit)
-
-	bPlusTreeObjectCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictLowLimit")
-	if nil != err {
-		return
-	}
-	bPlusTreeObjectCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictHighLimit")
-	if nil != err {
-		return
-	}
-
-	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
-
-	createdDeletedObjectsCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictLowLimit")
-	if nil != err {
-		createdDeletedObjectsCacheEvictLowLimit = logSegmentRecCacheEvictLowLimit // TODO: Eventually just return
-	}
-	createdDeletedObjectsCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictHighLimit")
-	if nil != err {
-		createdDeletedObjectsCacheEvictHighLimit = logSegmentRecCacheEvictHighLimit // TODO: Eventually just return
-	}
-
-	globals.createdDeletedObjectsCache = sortedmap.NewBPlusTreeCache(createdDeletedObjectsCacheEvictLowLimit, createdDeletedObjectsCacheEvictHighLimit)
 
 	globals.volumeMap = make(map[string]*volumeStruct)
 
@@ -400,27 +352,7 @@ func Down() (err error) {
 
 // Format runs an instance of the headhunter package for formatting a new volume
 func Format(confMap conf.ConfMap, volumeName string) (err error) {
-	var (
-		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
-		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
-		dummyUint64                              uint64
-	)
-
-	// Pre-compute crc64 ECMA Table & useful cstruct sizes
-
-	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
-
-	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
-	if nil != err {
-		return
-	}
-
-	globals.replayLogTransactionFixedPartStructSize, _, err = cstruct.Examine(dummyReplayLogTransactionFixedPartStruct)
+	err = commonInitialization(confMap)
 	if nil != err {
 		return
 	}
@@ -441,6 +373,114 @@ func Format(confMap conf.ConfMap, volumeName string) (err error) {
 	return
 }
 
+func commonInitialization(confMap conf.ConfMap) (err error) {
+	var (
+		bPlusTreeObjectCacheEvictHighLimit       uint64
+		bPlusTreeObjectCacheEvictLowLimit        uint64
+		createdDeletedObjectsCacheEvictHighLimit uint64
+		createdDeletedObjectsCacheEvictLowLimit  uint64
+		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
+		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
+		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
+		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
+		dummyUint64                              uint64
+		inodeRecCacheEvictHighLimit              uint64
+		inodeRecCacheEvictLowLimit               uint64
+		logSegmentRecCacheEvictHighLimit         uint64
+		logSegmentRecCacheEvictLowLimit          uint64
+	)
+
+	// Pre-compute crc64 ECMA Table & useful cstruct sizes
+
+	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
+
+	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
+	if nil != err {
+		return
+	}
+
+	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
+	if nil != err {
+		return
+	}
+
+	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
+	if nil != err {
+		return
+	}
+
+	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	if nil != err {
+		return
+	}
+
+	globals.replayLogTransactionFixedPartStructSize, _, err = cstruct.Examine(dummyReplayLogTransactionFixedPartStruct)
+	if nil != err {
+		return
+	}
+
+	// Initialize B+Tree caches
+
+	inodeRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictLowLimit")
+	if nil != err {
+		return
+	}
+	inodeRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "InodeRecCacheEvictHighLimit")
+	if nil != err {
+		return
+	}
+
+	globals.inodeRecCache = sortedmap.NewBPlusTreeCache(inodeRecCacheEvictLowLimit, inodeRecCacheEvictHighLimit)
+
+	globals.inodeRecCachePriorCacheHits = 0
+	globals.inodeRecCachePriorCacheMisses = 0
+
+	logSegmentRecCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictLowLimit")
+	if nil != err {
+		return
+	}
+	logSegmentRecCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "LogSegmentRecCacheEvictHighLimit")
+	if nil != err {
+		return
+	}
+
+	globals.logSegmentRecCache = sortedmap.NewBPlusTreeCache(logSegmentRecCacheEvictLowLimit, logSegmentRecCacheEvictHighLimit)
+
+	globals.logSegmentRecCachePriorCacheHits = 0
+	globals.logSegmentRecCachePriorCacheMisses = 0
+
+	bPlusTreeObjectCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictLowLimit")
+	if nil != err {
+		return
+	}
+	bPlusTreeObjectCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "BPlusTreeObjectCacheEvictHighLimit")
+	if nil != err {
+		return
+	}
+
+	globals.bPlusTreeObjectCache = sortedmap.NewBPlusTreeCache(bPlusTreeObjectCacheEvictLowLimit, bPlusTreeObjectCacheEvictHighLimit)
+
+	globals.bPlusTreeObjectCachePriorCacheHits = 0
+	globals.bPlusTreeObjectCachePriorCacheMisses = 0
+
+	createdDeletedObjectsCacheEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictLowLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictLowLimit = logSegmentRecCacheEvictLowLimit // TODO: Eventually just return
+	}
+	createdDeletedObjectsCacheEvictHighLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "CreatedDeletedObjectsCacheEvictHighLimit")
+	if nil != err {
+		createdDeletedObjectsCacheEvictHighLimit = logSegmentRecCacheEvictHighLimit // TODO: Eventually just return
+	}
+
+	globals.createdDeletedObjectsCache = sortedmap.NewBPlusTreeCache(createdDeletedObjectsCacheEvictLowLimit, createdDeletedObjectsCacheEvictHighLimit)
+
+	globals.createdDeletedObjectsCachePriorCacheHits = 0
+	globals.createdDeletedObjectsCachePriorCacheMisses = 0
+
+	err = nil
+	return
+}
+
 func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err error) {
 	var (
 		flowControlName        string
@@ -455,6 +495,7 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 		volumeName:                           volumeName,
 		checkpointChunkedPutContext:          nil,
 		checkpointDoneWaitGroup:              nil,
+		eventListeners:                       make(map[VolumeEventListener]struct{}),
 		checkpointRequestChan:                make(chan *checkpointRequestStruct, 1),
 		postponePriorViewCreatedObjectsPuts:  false,
 		postponedPriorViewCreatedObjectsPuts: make(map[uint64]struct{}),
