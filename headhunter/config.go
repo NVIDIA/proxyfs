@@ -168,21 +168,10 @@ var globals globalsStruct
 // Up starts the headhunter package
 func Up(confMap conf.ConfMap) (err error) {
 	var (
-		bPlusTreeObjectCacheEvictHighLimit       uint64
-		bPlusTreeObjectCacheEvictLowLimit        uint64
-		createdDeletedObjectsCacheEvictHighLimit uint64
-		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
-		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
-		dummyUint64                              uint64
-		inodeRecCacheEvictHighLimit              uint64
-		inodeRecCacheEvictLowLimit               uint64
-		logSegmentRecCacheEvictHighLimit         uint64
-		logSegmentRecCacheEvictLowLimit          uint64
-		primaryPeerList                          []string
-		volumeName                               string
-		volumeList                               []string
-		whoAmI                                   string
+		primaryPeerList []string
+		volumeName      string
+		volumeList      []string
+		whoAmI          string
 	)
 
 	err = commonInitialization(confMap)
@@ -379,8 +368,6 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 		bPlusTreeObjectCacheEvictLowLimit        uint64
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -395,16 +382,6 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
 
 	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
