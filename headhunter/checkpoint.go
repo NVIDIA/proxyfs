@@ -2349,12 +2349,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
-			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
-			return
+			logger.Fatalf("cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian) for volume %v inodeRec failed: %v", volume.volumeName, err)
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
@@ -2362,12 +2357,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
-			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
-			return
+			logger.Fatalf("cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian) for volume %v logSegmentRec failed: %v", volume.volumeName, err)
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
@@ -2375,12 +2365,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
-			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
-			return
+			logger.Fatalf("cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian) for volume %v bPlusTreeObject failed: %v", volume.volumeName, err)
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
@@ -2388,12 +2373,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.createdObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
-			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
-			return
+			logger.Fatalf("cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian) for volume %v createdObjects failed: %v", volume.volumeName, err)
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
@@ -2401,12 +2381,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	for elementOfBPlusTreeLayout.ObjectNumber, elementOfBPlusTreeLayout.ObjectBytes = range volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		elementOfBPlusTreeLayoutBuf, err = cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian)
 		if nil != err {
-			volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-			volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
-			return
+			logger.Fatalf("cstruct.Pack(&elementOfBPlusTreeLayout, LittleEndian) for volume %v deletedObjects failed: %v", volume.volumeName, err)
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
@@ -2617,6 +2592,16 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
+	// Before updating checkpointHeader, start accounting for unreferencing of prior checkpointTrailer
+
+	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
+
+	if 0 != volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber {
+		combinedBPlusTreeLayout[volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber] = 0
+	}
+
+	// Now update checkpointHeader atomically indicating checkpoint is complete
+
 	volume.checkpointHeader.checkpointVersion = checkpointVersion3
 
 	volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
@@ -2640,6 +2625,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
+	// Remove replayLogFile if necessary
+
 	if nil != volume.replayLogFile {
 		err = volume.replayLogFile.Close()
 		if nil != err {
@@ -2657,7 +2644,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		}
 	}
 
-	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
+	// Now continue computing what checkpoint objects may be deleted
 
 	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Lock()
 	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Lock()

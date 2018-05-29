@@ -132,6 +132,7 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 				err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing too many bytes (0x%016X) in objectNumber 0x%016X", objectLength, objectNumber)
 				logger.ErrorfWithError(err, "disk corruption or logic error [case 1]")
 			} else {
+				// Decrement bytesUsed... leaving a zero value to indicate object may be deleted at end of checkpoint
 				bytesUsed -= objectLength
 				bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
 				err = nil

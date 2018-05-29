@@ -43,7 +43,7 @@ type bPlusTreeWrapperStruct struct {
 	bPlusTreeTracker *bPlusTreeTrackerStruct // For inodeRecWrapper, logSegmentRecWrapper, & bPlusTreeObjectWrapper:
 	//                                            only valid for liveView... nil otherwise
 	//                                          For createdObjectsWrapper & deletedObjectsWrapper:
-	//                                            all volumeView's share the correspond one created for liveView
+	//                                            all volumeView's share the corresponding one created for liveView
 }
 
 type volumeViewStruct struct {
