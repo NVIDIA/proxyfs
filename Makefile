@@ -26,6 +26,7 @@ gobinsubdirs = \
 	inodeworkout \
 	pfs-crash \
 	pfs-stress \
+	pfs-swift-load \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	pfsworkout \
