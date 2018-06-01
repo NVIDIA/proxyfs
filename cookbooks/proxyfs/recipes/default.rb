@@ -17,6 +17,7 @@ ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
 VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
+JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
 # SAMBA_PARENT_DIR == VFS_SRC_DIR
 # We're doing this to only need to change SAMBA_PARENT_DIR in case we decide to
 # change the location of samba again in the future.
@@ -501,6 +502,37 @@ link '/usr/bin/proxyfsd' do
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
+end
+
+# Creating link to jrpcclient's libs into the new /opt/ss path
+link '/opt/ss/lib64/libproxyfs.so.1.0.0' do
+  to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+  link_type :symbolic
+  owner "root"
+  group "root"
+end
+
+link '/opt/ss/lib64/libproxyfs.so.1' do
+  to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+  link_type :symbolic
+  owner "root"
+  group "root"
+end
+
+link '/opt/ss/lib64/libproxyfs.so' do
+  to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+  link_type :symbolic
+  owner "root"
+  group "root"
+end
+
+# Creating link to vfs' libs into the new /opt/ss path
+bash 'Link VFS' do
+  code <<-EOH
+  /usr/bin/install -c -d /opt/ss/lib64/samba/vfs
+  /usr/bin/install -c -m 755 proxyfs.so /opt/ss/lib64/samba/vfs
+  EOH
+  cwd VFS_SRC_DIR
 end
 
 cookbook_file "#{HOME_DIR}/.gdbinit" do
