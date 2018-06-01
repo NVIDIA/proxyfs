@@ -42,6 +42,24 @@ file "/etc/profile.d/golang_path.sh" do
   mode '0644'
 end
 
+if node[:platform_family].include?("rhel")
+  cookbook_file "/etc/yum.repos.d/swiftstack-controller.repo" do
+    source "etc/yum.repos.d/swiftstack-controller.repo"
+    owner "root"
+    group "root"
+  end
+
+  cookbook_file "/etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller" do
+    source "etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller"
+    owner "root"
+    group "root"
+  end
+
+  execute "yum makecache" do
+    command "yum makecache"
+  end
+end
+
 ruby_block "update_profile_and_bashrc" do
   block do
 
@@ -65,7 +83,7 @@ ruby_block "update_profile_and_bashrc" do
 
     file = Chef::Util::FileEdit.new(DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
-    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin:/opt/ss/bin:/opt/ss/sbin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
@@ -93,7 +111,7 @@ ruby_block "update_profile_and_bashrc" do
 
     file = Chef::Util::FileEdit.new(ROOT_DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
-    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin:/opt/ss/bin:/opt/ss/sbin")
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
@@ -210,6 +228,18 @@ cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
   only_if { ::File.directory?("/usr/lib/systemd/system/") }
 end
 
+cookbook_file "/usr/lib/systemd/system/smb.service" do
+  source "usr/lib/systemd/system/smb.service"
+  # notifies :restart, 'service[smb]'
+  only_if { ::File.directory?("/usr/lib/systemd/system/") }
+end
+
+cookbook_file "/usr/lib/systemd/system/nmb.service" do
+  source "usr/lib/systemd/system/nmb.service"
+  # notifies :restart, 'service[nmb]'
+  only_if { ::File.directory?("/usr/lib/systemd/system/") }
+end
+
 cookbook_file "/etc/init/proxyfsd.conf" do
   source "etc/init/proxyfsd.upstart"
   # notifies :restart, 'service[proxyfsd]'
@@ -223,44 +253,46 @@ end
 if node[:platform_family].include?("rhel")
 
   # packages
-  samba_packages = [["samba", "4.6.2-12.el7_4"], ["samba-client", "4.6.2-12.el7_4"]]
+#   samba_packages = [["samba"], ["samba-client"]]
+  samba_packages = [["ss-samba"]]
 
   samba_deps = [
-    ["gcc", "4.8.5-16.el7_4.2"],
-    ["gcc-c++", "4.8.5-16.el7_4.2"],
-    ["python-devel", "2.7.5-58.el7"],
-    ["gnutls-devel", "3.3.26-9.el7"],
-    ["libacl-devel", "2.2.51-12.el7"],
-    ["openldap-devel", "2.4.44-5.el7"],
-    ["cifs-utils", "6.2-10.el7"],
+    ["gcc"],
+    ["gcc-c++"],
+    ["python-devel"],
+    ["gnutls-devel"],
+    ["libacl-devel"],
+    ["openldap-devel"],
+    ["cifs-utils"],
+    ["pam-devel"],
   ]
 
   proxyfs_packages = [
-    ["json-c-devel", "0.11-4.el7_0"],
-    ["fuse", "2.9.2-8.el7"],
+    ["json-c-devel"],
+    ["fuse"],
   ]
 
   wireshark_packages = [
-    ["wireshark", "1.10.14-14.el7"],
-    ["libcap", "2.22-9.el7"],
+    ["wireshark"],
+    ["libcap"],
   ]
 
   ssh_packages = [
-    ["sshpass", "1.06-2.el7"],
+    ["sshpass"],
   ]
 
   nfs_packages = [
-    ["nfs-utils", "1.3.0-0.48.el7_4.1"],
+    ["nfs-utils"],
   ]
 
   gdb_packages = [
-    ["gdb", "7.6.1-100.el7_4.1"],
-    ["yum-utils", "1.1.31-42.el7"],
+    ["gdb"],
+    ["yum-utils"],
   ]
 
   utils_packages = [
-    ["atop", "2.3.0-8.el7"],
-    ["vim-common", "7.4.160-2.el7"],
+    ["atop"],
+    ["vim-common"],
   ]
 
 else # assume debian
@@ -277,6 +309,7 @@ else # assume debian
     ["libldap2-dev"],
     ["pkg-config"],
     ["cifs-utils"],
+    ["libpam0g-dev"],
   ]
 
   proxyfs_packages = [
@@ -359,8 +392,8 @@ end
 # Check out and build samba
 #
 OS_DISTRO="centos"
-OS_DISTRO_VERSION="7.4"
-SAMBA_VERSION="4.6.12"
+OS_DISTRO_VERSION="7.5"
+SAMBA_VERSION="4.6.2"
 
 SAMBA_DIR="build-samba-#{SAMBA_VERSION.gsub(".", "-")}-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
 
@@ -398,23 +431,24 @@ end
 #
 # Configure Samba
 #
-execute "Setup Samba password" do
-  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | smbpasswd -a -s #{node['swift_user']}"
-end
 
-execute "Setup /etc/samba/smb.conf" do
-  command "cat sample_entry_smb_conf.txt >> /etc/samba/smb.conf "
+execute "Setup /opt/ss/etc/samba/smb.conf" do
+  command "cat sample_entry_smb_conf.txt > /opt/ss/etc/samba/smb.conf "
   cwd "#{VFS_SRC_DIR}"
 end
 
 ruby_block "update_smb_conf" do
   block do
-    smb_conf = "/etc/samba/smb.conf"
+    smb_conf = "/opt/ss/etc/samba/smb.conf"
 
     file = Chef::Util::FileEdit.new(smb_conf)
     file.search_file_replace(/valid users = CHANGEME/, "valid users = #{node['swift_user']}")
     file.write_file
   end
+end
+
+execute "Setup Samba password" do
+  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /opt/ss/bin/smbpasswd -a -s #{node['swift_user']}"
 end
 
 #
