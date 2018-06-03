@@ -124,9 +124,9 @@ func main() {
 	}
 	switch swiftMethod {
 	case http.MethodGet:
-		log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+		// Nothing extra to do here
 	case http.MethodHead:
-		log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+		// Nothing extra to do here
 	case http.MethodPut:
 		swiftPutSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftPutSize")
 		if nil != err {
@@ -134,7 +134,7 @@ func main() {
 		}
 		swiftPutBuffer = make([]byte, swiftPutSize)
 	case http.MethodDelete:
-		log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+		// Nothing extra to do here
 	default:
 		log.Fatalf("SwiftMethod: %v not supported", swiftMethod)
 	}
@@ -449,39 +449,54 @@ func (worker *workerStruct) workerThreadLauncher() {
 
 		switch swiftMethod {
 		case http.MethodGet:
-			log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+			methodRequest, err = http.NewRequest("GET", url, nil)
+			if nil != err {
+				log.Fatal(err)
+			}
 		case http.MethodHead:
-			log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+			methodRequest, err = http.NewRequest("HEAD", url, nil)
+			if nil != err {
+				log.Fatal(err)
+			}
 		case http.MethodPut:
 			swiftPutReader = bytes.NewReader(swiftPutBuffer)
 			methodRequest, err = http.NewRequest("PUT", url, swiftPutReader)
 			if nil != err {
 				log.Fatal(err)
 			}
-			methodRequest.Header.Set("Content-Length", fmt.Sprintf("%d", swiftPutSize))
-			methodRequest.Header.Set("X-Auth-Token", swiftAuthToken)
-			methodResponse, err = httpClient.Do(methodRequest)
-			if nil != err {
-				log.Fatal(err)
-			}
-			_, err = ioutil.ReadAll(methodResponse.Body)
-			methodResponse.Body.Close()
-			if nil != err {
-				log.Fatal(err)
-			}
-			switch methodResponse.StatusCode {
-			case http.StatusCreated:
-				worker.incMethodsCompleted()
-				methodNumberToStart = worker.fetchNextMethodNumberToStart()
-			case http.StatusUnauthorized:
-				worker.updateSwiftAuthToken()
-			default:
-				log.Fatalf("%s response had unexpected status: %s (%d)", swiftMethod, methodResponse.Status, methodResponse.StatusCode)
-			}
 		case http.MethodDelete:
-			log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
+			methodRequest, err = http.NewRequest("DELETE", url, nil)
+			if nil != err {
+				log.Fatal(err)
+			}
 		default:
 			log.Fatalf("SwiftMethod: %v not supported", swiftMethod)
+		}
+
+		methodRequest.Header.Set("X-Auth-Token", swiftAuthToken)
+		methodResponse, err = httpClient.Do(methodRequest)
+		if nil != err {
+			log.Fatal(err)
+		}
+		_, err = ioutil.ReadAll(methodResponse.Body)
+		methodResponse.Body.Close()
+		if nil != err {
+			log.Fatal(err)
+		}
+		switch methodResponse.StatusCode {
+		case http.StatusOK:
+			worker.incMethodsCompleted()
+			methodNumberToStart = worker.fetchNextMethodNumberToStart()
+		case http.StatusNoContent:
+			worker.incMethodsCompleted()
+			methodNumberToStart = worker.fetchNextMethodNumberToStart()
+		case http.StatusCreated:
+			worker.incMethodsCompleted()
+			methodNumberToStart = worker.fetchNextMethodNumberToStart()
+		case http.StatusUnauthorized:
+			worker.updateSwiftAuthToken()
+		default:
+			log.Fatalf("%s response had unexpected status: %s (%d)", swiftMethod, methodResponse.Status, methodResponse.StatusCode)
 		}
 	}
 }
