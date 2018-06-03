@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -36,6 +37,8 @@ var (
 	optionFormat     bool
 	swiftMethod      string // One of http.MethodGet, http.MethodHead, http.MethodPut, or http.MethodDelete
 	swiftProxyURL    string
+	swiftPutBuffer   []byte
+	swiftPutSize     uint64
 	workerArray      []*workerStruct
 	workerMap        map[string]*workerStruct
 	workersGoGate    sync.WaitGroup
@@ -125,7 +128,11 @@ func main() {
 	case http.MethodHead:
 		log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
 	case http.MethodPut:
-		// OK
+		swiftPutSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftPutSize")
+		if nil != err {
+			return
+		}
+		swiftPutBuffer = make([]byte, swiftPutSize)
 	case http.MethodDelete:
 		log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
 	default:
@@ -423,6 +430,7 @@ func (worker *workerStruct) workerThreadLauncher() {
 		methodRequest       *http.Request
 		methodResponse      *http.Response
 		swiftAuthToken      string
+		swiftPutReader      *bytes.Reader
 		url                 string
 	)
 
@@ -445,10 +453,12 @@ func (worker *workerStruct) workerThreadLauncher() {
 		case http.MethodHead:
 			log.Fatalf("SwiftMethod: %v not (yet) supported", swiftMethod)
 		case http.MethodPut:
-			methodRequest, err = http.NewRequest("PUT", url, nil)
+			swiftPutReader = bytes.NewReader(swiftPutBuffer)
+			methodRequest, err = http.NewRequest("PUT", url, swiftPutReader)
 			if nil != err {
 				log.Fatal(err)
 			}
+			methodRequest.Header.Set("Content-Length", fmt.Sprintf("%d", swiftPutSize))
 			methodRequest.Header.Set("X-Auth-Token", swiftAuthToken)
 			methodResponse, err = httpClient.Do(methodRequest)
 			if nil != err {
