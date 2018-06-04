@@ -16,19 +16,20 @@ import (
 
 type workerStruct struct {
 	sync.Mutex
-	name                    string
-	swiftAuthUser           string
-	swiftAuthKey            string
-	swiftAccount            string
-	swiftContainer          string
-	numThreads              uint16
-	swiftAuthToken          string
-	swiftAuthTokenUpdate    sync.WaitGroup
-	swiftAuthTokenUpdating  bool
-	authorizationsPerformed uint64
-	nextMethodNumberToStart uint64
-	methodsCompleted        uint64
-	priorMethodsCompleted   uint64
+	name                        string
+	swiftAuthUser               string
+	swiftAuthKey                string
+	swiftAccount                string
+	swiftContainer              string
+	swiftContainerStoragePolicy string
+	numThreads                  uint16
+	swiftAuthToken              string
+	swiftAuthTokenUpdate        sync.WaitGroup
+	swiftAuthTokenUpdating      bool
+	authorizationsPerformed     uint64
+	nextMethodNumberToStart     uint64
+	methodsCompleted            uint64
+	priorMethodsCompleted       uint64
 }
 
 var (
@@ -118,35 +119,39 @@ func main() {
 
 	// Process resultant confMap
 
-	swiftMethod, err = confMap.FetchOptionValueString("LoadParameters", "SwiftMethod")
-	if nil != err {
-		log.Fatal(err)
-	}
-	switch swiftMethod {
-	case http.MethodGet:
-		// Nothing extra to do here
-	case http.MethodHead:
-		// Nothing extra to do here
-	case http.MethodPut:
-		swiftPutSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftPutSize")
+	if optionDestroy && !optionFormat {
+		// SwiftMethod not required if we are only going to optionDestoy (and exit)
+	} else {
+		swiftMethod, err = confMap.FetchOptionValueString("LoadParameters", "SwiftMethod")
 		if nil != err {
-			return
+			log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"SwiftMethod\") failed: %v", err)
 		}
-		swiftPutBuffer = make([]byte, swiftPutSize)
-	case http.MethodDelete:
-		// Nothing extra to do here
-	default:
-		log.Fatalf("SwiftMethod: %v not supported", swiftMethod)
+		switch swiftMethod {
+		case http.MethodGet:
+			// Nothing extra to do here
+		case http.MethodHead:
+			// Nothing extra to do here
+		case http.MethodPut:
+			swiftPutSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftPutSize")
+			if nil != err {
+				return
+			}
+			swiftPutBuffer = make([]byte, swiftPutSize)
+		case http.MethodDelete:
+			// Nothing extra to do here
+		default:
+			log.Fatalf("SwiftMethod: %s not supported", swiftMethod)
+		}
 	}
 
 	swiftProxyURL, err = confMap.FetchOptionValueString("LoadParameters", "SwiftProxy")
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"SwiftProxy\") failed: %v", err)
 	}
 
 	workerList, err = confMap.FetchOptionValueStringSlice("LoadParameters", "WorkerList")
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"WorkerList\") failed: %v", err)
 	}
 	if 0 == len(workerList) {
 		log.Fatalf("WorkerList must not be empty")
@@ -154,17 +159,17 @@ func main() {
 
 	displayInterval, err = confMap.FetchOptionValueDuration("LoadParameters", "DisplayInterval")
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalf("confMap.FetchOptionValueDuration(\"LoadParameters\", \"DisplayInterval\") failed: %v", err)
 	}
 
 	infoResponse, err = http.Get(swiftProxyURL + "info")
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalf("http.Get(\"%sinfo\") failed: %v", swiftProxyURL, err)
 	}
 	_, err = ioutil.ReadAll(infoResponse.Body)
 	infoResponse.Body.Close()
 	if nil != err {
-		log.Fatal(err)
+		log.Fatalf("ioutil.ReadAll(infoResponse.Body) failed: %v", err)
 	}
 
 	workerArray = make([]*workerStruct, 0, len(workerList))
@@ -186,10 +191,32 @@ func main() {
 		workerSectionName = "Worker:" + workerName
 
 		worker.swiftAuthUser, err = confMap.FetchOptionValueString(workerSectionName, "SwiftUser")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"SwiftUser\") failed: %v", workerSectionName, err)
+		}
 		worker.swiftAuthKey, err = confMap.FetchOptionValueString(workerSectionName, "SwiftKey")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"SwiftKey\") failed: %v", workerSectionName, err)
+		}
 		worker.swiftAccount, err = confMap.FetchOptionValueString(workerSectionName, "SwiftAccount")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"SwiftAccount\") failed: %v", workerSectionName, err)
+		}
 		worker.swiftContainer, err = confMap.FetchOptionValueString(workerSectionName, "SwiftContainer")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"SwiftContainer\") failed: %v", workerSectionName, err)
+		}
 		worker.numThreads, err = confMap.FetchOptionValueUint16(workerSectionName, "NumThreads")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueUint16(\"%s\", \"NumThreads\") failed: %v", workerSectionName, err)
+		}
+
+		if optionFormat {
+			worker.swiftContainerStoragePolicy, err = confMap.FetchOptionValueString(workerSectionName, "SwiftContainerStoragePolicy")
+			if nil != err {
+				log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"SwiftContainerStoragePolicy\") failed: %v", workerSectionName, err)
+			}
+		}
 
 		workerArray = append(workerArray, worker)
 		workerMap[workerName] = worker
@@ -276,17 +303,17 @@ func (worker *workerStruct) workerLauncher() {
 			swiftAuthToken = worker.fetchSwiftAuthToken()
 			containerGetRequest, err = http.NewRequest("GET", containerURL, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"GET\", \"%s\", nil) failed: %v", containerURL, err)
 			}
 			containerGetRequest.Header.Set("X-Auth-Token", swiftAuthToken)
 			containerGetResponse, err = httpClient.Do(containerGetRequest)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("httpClient.Do(containerGetRequest) failed: %v", err)
 			}
 			containerGetBody, err = ioutil.ReadAll(containerGetResponse.Body)
 			containerGetResponse.Body.Close()
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("ioutil.ReadAll(containerGetResponse.Body) failed: %v", err)
 			}
 
 			switch containerGetResponse.StatusCode {
@@ -305,17 +332,17 @@ func (worker *workerStruct) workerLauncher() {
 						swiftAuthToken = worker.fetchSwiftAuthToken()
 						objectDeleteRequest, err = http.NewRequest("DELETE", objectURL, nil)
 						if nil != err {
-							log.Fatal(err)
+							log.Fatalf("http.NewRequest(\"DELETE\", \"%s\", nil) failed: %v", objectURL, err)
 						}
 						objectDeleteRequest.Header.Set("X-Auth-Token", swiftAuthToken)
 						objectDeleteResponse, err = httpClient.Do(objectDeleteRequest)
 						if nil != err {
-							log.Fatal(err)
+							log.Fatalf("httpClient.Do(objectDeleteRequest) failed: %v", err)
 						}
 						_, err = ioutil.ReadAll(objectDeleteResponse.Body)
 						objectDeleteResponse.Body.Close()
 						if nil != err {
-							log.Fatal(err)
+							log.Fatalf("ioutil.ReadAll(objectDeleteResponse.Body) failed: %v", err)
 						}
 
 						switch objectDeleteResponse.StatusCode {
@@ -348,17 +375,17 @@ func (worker *workerStruct) workerLauncher() {
 			swiftAuthToken = worker.fetchSwiftAuthToken()
 			containerDeleteRequest, err = http.NewRequest("DELETE", containerURL, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"DELETE\", \"%s\", nil) failed: %v", containerURL, err)
 			}
 			containerDeleteRequest.Header.Set("X-Auth-Token", swiftAuthToken)
 			containerDeleteResponse, err = httpClient.Do(containerDeleteRequest)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("httpClient.Do(containerDeleteRequest) failed: %v", err)
 			}
 			_, err = ioutil.ReadAll(containerDeleteResponse.Body)
 			containerDeleteResponse.Body.Close()
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("ioutil.ReadAll(containerDeleteResponse.Body) failed: %v", err)
 			}
 
 			switch containerDeleteResponse.StatusCode {
@@ -387,17 +414,18 @@ func (worker *workerStruct) workerLauncher() {
 			swiftAuthToken = worker.fetchSwiftAuthToken()
 			containerPutRequest, err = http.NewRequest("PUT", containerURL, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"PUT\", \"%s\", nil) failed: %v", containerURL, err)
 			}
 			containerPutRequest.Header.Set("X-Auth-Token", swiftAuthToken)
+			containerPutRequest.Header.Set("X-Storage-Policy", worker.swiftContainerStoragePolicy)
 			containerPutResponse, err = httpClient.Do(containerPutRequest)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("httpClient.Do(containerPutRequest) failed: %v", err)
 			}
 			_, err = ioutil.ReadAll(containerPutResponse.Body)
 			containerPutResponse.Body.Close()
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("ioutil.ReadAll(containerPutResponse.Body) failed: %v", err)
 			}
 
 			switch containerPutResponse.StatusCode {
@@ -451,37 +479,37 @@ func (worker *workerStruct) workerThreadLauncher() {
 		case http.MethodGet:
 			methodRequest, err = http.NewRequest("GET", url, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"GET\", \"%s\", nil) failed: %v", url, err)
 			}
 		case http.MethodHead:
 			methodRequest, err = http.NewRequest("HEAD", url, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"HEAD\", \"%s\", nil) failed: %v", url, err)
 			}
 		case http.MethodPut:
 			swiftPutReader = bytes.NewReader(swiftPutBuffer)
 			methodRequest, err = http.NewRequest("PUT", url, swiftPutReader)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"PUT\", \"%s\", swiftPutReader) failed: %v", url, err)
 			}
 		case http.MethodDelete:
 			methodRequest, err = http.NewRequest("DELETE", url, nil)
 			if nil != err {
-				log.Fatal(err)
+				log.Fatalf("http.NewRequest(\"DELETE\", \"%s\", nil) failed: %v", url, err)
 			}
 		default:
-			log.Fatalf("SwiftMethod: %v not supported", swiftMethod)
+			log.Fatalf("SwiftMethod: %s not supported", swiftMethod)
 		}
 
 		methodRequest.Header.Set("X-Auth-Token", swiftAuthToken)
 		methodResponse, err = httpClient.Do(methodRequest)
 		if nil != err {
-			log.Fatal(err)
+			log.Fatalf("httpClient.Do(methodRequest) failed: %v", err)
 		}
 		_, err = ioutil.ReadAll(methodResponse.Body)
 		methodResponse.Body.Close()
 		if nil != err {
-			log.Fatal(err)
+			log.Fatalf("ioutil.ReadAll(methodResponse.Body) failed: %v", err)
 		}
 		switch methodResponse.StatusCode {
 		case http.StatusOK:
@@ -490,13 +518,15 @@ func (worker *workerStruct) workerThreadLauncher() {
 		case http.StatusNoContent:
 			worker.incMethodsCompleted()
 			methodNumberToStart = worker.fetchNextMethodNumberToStart()
+		case http.StatusNotFound:
+			methodNumberToStart = worker.fetchNextMethodNumberToStart()
 		case http.StatusCreated:
 			worker.incMethodsCompleted()
 			methodNumberToStart = worker.fetchNextMethodNumberToStart()
 		case http.StatusUnauthorized:
 			worker.updateSwiftAuthToken()
 		default:
-			log.Fatalf("%s response had unexpected status: %s (%d)", swiftMethod, methodResponse.Status, methodResponse.StatusCode)
+			log.Fatalf("%s response for url \"%s\" had unexpected status: %s (%d)", swiftMethod, url, methodResponse.Status, methodResponse.StatusCode)
 		}
 	}
 }
@@ -551,7 +581,7 @@ func (worker *workerStruct) updateSwiftAuthToken() {
 
 		getRequest, err = http.NewRequest("GET", swiftProxyURL+"auth/v1.0", nil)
 		if nil != err {
-			log.Fatal(err)
+			log.Fatalf("http.NewRequest(\"GET\", \"%sauth/v1.0\", nil) failed: %v", swiftProxyURL, err)
 		}
 
 		getRequest.Header.Set("X-Auth-User", worker.swiftAuthUser)
@@ -561,12 +591,12 @@ func (worker *workerStruct) updateSwiftAuthToken() {
 
 		getResponse, err = httpClient.Do(getRequest)
 		if nil != err {
-			log.Fatal(err)
+			log.Fatalf("httpClient.Do(getRequest) failed: %v", err)
 		}
 		_, err = ioutil.ReadAll(getResponse.Body)
 		getResponse.Body.Close()
 		if nil != err {
-			log.Fatal(err)
+			log.Fatalf("ioutil.ReadAll(getResponse.Body) failed: %v", err)
 		}
 
 		worker.Lock()
