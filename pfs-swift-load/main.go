@@ -16,20 +16,19 @@ import (
 
 type workerStruct struct {
 	sync.Mutex
-	name                        string
-	swiftAuthUser               string
-	swiftAuthKey                string
-	swiftAccount                string
-	swiftContainer              string
-	swiftContainerStoragePolicy string
-	numThreads                  uint16
-	swiftAuthToken              string
-	swiftAuthTokenUpdate        sync.WaitGroup
-	swiftAuthTokenUpdating      bool
-	authorizationsPerformed     uint64
-	nextMethodNumberToStart     uint64
-	methodsCompleted            uint64
-	priorMethodsCompleted       uint64
+	name                          string
+	swiftAuthUser                 string
+	swiftAuthKey                  string
+	swiftAccount                  string
+	swiftContainer                string
+	swiftContainerStoragePolicy   string
+	numThreads                    uint16
+	swiftAuthToken                string
+	swiftAuthTokenUpdateWaitGroup *sync.WaitGroup
+	authorizationsPerformed       uint64
+	nextMethodNumberToStart       uint64
+	methodsCompleted              uint64
+	priorMethodsCompleted         uint64
 }
 
 var (
@@ -179,13 +178,13 @@ func main() {
 
 	for _, workerName = range workerList {
 		worker = &workerStruct{
-			name:                    workerName,
-			swiftAuthToken:          "",
-			swiftAuthTokenUpdating:  false,
-			authorizationsPerformed: 0,
-			nextMethodNumberToStart: 0,
-			methodsCompleted:        0,
-			priorMethodsCompleted:   0,
+			name:                          workerName,
+			swiftAuthToken:                "",
+			swiftAuthTokenUpdateWaitGroup: nil,
+			authorizationsPerformed:       0,
+			nextMethodNumberToStart:       0,
+			methodsCompleted:              0,
+			priorMethodsCompleted:         0,
 		}
 
 		workerSectionName = "Worker:" + workerName
@@ -546,16 +545,24 @@ func (worker *workerStruct) incMethodsCompleted() {
 }
 
 func (worker *workerStruct) fetchSwiftAuthToken() (swiftAuthToken string) {
+	var (
+		swiftAuthTokenUpdateWaitGroup *sync.WaitGroup
+	)
+
 	for {
 		worker.Lock()
-		if worker.swiftAuthTokenUpdating {
-			worker.Unlock()
-			worker.swiftAuthTokenUpdate.Wait()
-		} else {
+
+		swiftAuthTokenUpdateWaitGroup = worker.swiftAuthTokenUpdateWaitGroup
+
+		if nil == swiftAuthTokenUpdateWaitGroup {
 			swiftAuthToken = worker.swiftAuthToken
 			worker.Unlock()
 			return
 		}
+
+		worker.Unlock()
+
+		swiftAuthTokenUpdateWaitGroup.Wait()
 	}
 }
 
@@ -569,44 +576,48 @@ func (worker *workerStruct) updateSwiftAuthToken() {
 
 	worker.Lock()
 
-	if worker.swiftAuthTokenUpdating {
+	if nil != worker.swiftAuthTokenUpdateWaitGroup {
 		worker.Unlock()
 
 		_ = worker.fetchSwiftAuthToken()
-	} else {
-		worker.swiftAuthTokenUpdating = true
-		worker.swiftAuthTokenUpdate.Add(1)
 
-		worker.Unlock()
-
-		getRequest, err = http.NewRequest("GET", swiftProxyURL+"auth/v1.0", nil)
-		if nil != err {
-			log.Fatalf("http.NewRequest(\"GET\", \"%sauth/v1.0\", nil) failed: %v", swiftProxyURL, err)
-		}
-
-		getRequest.Header.Set("X-Auth-User", worker.swiftAuthUser)
-		getRequest.Header.Set("X-Auth-Key", worker.swiftAuthKey)
-
-		httpClient = &http.Client{}
-
-		getResponse, err = httpClient.Do(getRequest)
-		if nil != err {
-			log.Fatalf("httpClient.Do(getRequest) failed: %v", err)
-		}
-		_, err = ioutil.ReadAll(getResponse.Body)
-		getResponse.Body.Close()
-		if nil != err {
-			log.Fatalf("ioutil.ReadAll(getResponse.Body) failed: %v", err)
-		}
-
-		worker.Lock()
-
-		worker.swiftAuthToken = getResponse.Header.Get("X-Auth-Token")
-
-		worker.swiftAuthTokenUpdating = false
-		worker.authorizationsPerformed++
-		worker.swiftAuthTokenUpdate.Done()
-
-		worker.Unlock()
+		return
 	}
+
+	worker.swiftAuthTokenUpdateWaitGroup = &sync.WaitGroup{}
+	worker.swiftAuthTokenUpdateWaitGroup.Add(1)
+
+	worker.Unlock()
+
+	getRequest, err = http.NewRequest("GET", swiftProxyURL+"auth/v1.0", nil)
+	if nil != err {
+		log.Fatalf("http.NewRequest(\"GET\", \"%sauth/v1.0\", nil) failed: %v", swiftProxyURL, err)
+	}
+
+	getRequest.Header.Set("X-Auth-User", worker.swiftAuthUser)
+	getRequest.Header.Set("X-Auth-Key", worker.swiftAuthKey)
+
+	httpClient = &http.Client{}
+
+	getResponse, err = httpClient.Do(getRequest)
+	if nil != err {
+		log.Fatalf("httpClient.Do(getRequest) failed: %v", err)
+	}
+	_, err = ioutil.ReadAll(getResponse.Body)
+	getResponse.Body.Close()
+	if nil != err {
+		log.Fatalf("ioutil.ReadAll(getResponse.Body) failed: %v", err)
+	}
+
+	worker.Lock()
+
+	worker.swiftAuthToken = getResponse.Header.Get("X-Auth-Token")
+
+	worker.authorizationsPerformed++
+
+	worker.swiftAuthTokenUpdateWaitGroup.Done()
+
+	worker.swiftAuthTokenUpdateWaitGroup = nil
+
+	worker.Unlock()
 }
