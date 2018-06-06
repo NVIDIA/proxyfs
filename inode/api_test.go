@@ -86,7 +86,6 @@ func testSetup() (err error) {
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10s",
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
 		"Volume:TestVolume.FlowControl=TestFlowControl",
 		"Volume:TestVolume.NonceValuesToReserve=100",
