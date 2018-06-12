@@ -827,7 +827,7 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		sortedmap.NewBPlusTree(
 			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
 			sortedmap.CompareUint64,
-			volumeView.volume.liveView.createdObjectsWrapper,
+			volumeView.volume.liveView.deletedObjectsWrapper,
 			globals.createdDeletedObjectsCache)
 
 	ok, err = volume.viewTreeByNonce.Put(snapShotNonce, volumeView)
