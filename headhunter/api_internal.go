@@ -1097,49 +1097,29 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	}
 	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
 
-	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true)
+	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Prune()
 	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Discard()
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Discard() failed with error: %v", err)
+		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Prune() failed with error: %v", err)
 	}
 
-	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true)
+	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Prune()
 	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Discard()
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Discard() failed with error: %v", err)
+		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Prune() failed with error: %v", err)
 	}
 
-	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true)
+	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Prune()
 	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Discard()
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Discard() failed with error: %v", err)
+		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Prune() failed with error: %v", err)
 	}
 
-	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Purge(true)
+	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Prune()
 	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Discard()
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Discard() failed with error: %v", err)
+		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Prune() failed with error: %v", err)
 	}
 
-	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Purge(true)
+	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Prune()
 	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Purge(true) failed with error: %v", err)
-	}
-	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Discard()
-	if nil != err {
-		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Discard() failed with error: %v", err)
+		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Prune() failed with error: %v", err)
 	}
 
 	volume.Unlock()
