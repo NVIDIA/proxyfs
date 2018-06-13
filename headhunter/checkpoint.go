@@ -601,6 +601,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		checkpointObjectTrailerV2                          *checkpointObjectTrailerV2Struct
 		checkpointObjectTrailerV3                          *checkpointObjectTrailerV3Struct
 		computedCRC64                                      uint64
+		containerNameAsValue                               sortedmap.Value
 		createdObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
 		defaultReplayLogReadBuffer                         []byte
 		deletedObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
@@ -1982,7 +1983,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			replayLogReadBufferPosition += globals.uint64Size
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
-
 			ok, err = volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
@@ -2013,7 +2013,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				value = make([]byte, valueLen)
 				copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
 				replayLogReadBufferPosition += valueLen
-
 				ok, err = volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, value)
 				if nil != err {
 					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
@@ -2030,7 +2029,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
-
 			_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
@@ -2048,7 +2046,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			replayLogReadBufferPosition += globals.uint64Size
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
-
 			ok, err = volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, value)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
@@ -2059,15 +2056,49 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
 				}
 			}
+			if nil != volume.priorView {
+				_, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(logSegmentNumber, value)
+				if nil != err {
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.priorView.createdObjectsWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+				}
+			}
 		case transactionDeleteLogSegmentRec:
 			_, err = cstruct.Unpack(replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+globals.uint64Size], &logSegmentNumber, LittleEndian)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
-
+			containerNameAsValue, ok, err = volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+			if nil != err {
+				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey() failure: %v", volume.volumeName, err)
+			}
+			if !ok {
+				logger.Fatalf("Replay Log for Volume %s hit unexpected missing logSegmentNumber (0x%016X) in LogSegmentRecB+Tree", volume.volumeName, logSegmentNumber)
+			}
 			_, err = volume.liveView.logSegmentRecWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.logSegmentRecWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
+			}
+			if nil == volume.priorView {
+				_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+				if nil != err {
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.deletedObjectsWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+				}
+			} else {
+				ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+				if nil != err {
+					logger.Fatalf("Reply Log for Volume %s hit unexpected volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
+				}
+				if ok {
+					_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+					if nil != err {
+						logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.deletedObjectsWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+					}
+				} else {
+					_, err = volume.priorView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+					if nil != err {
+						logger.Fatalf("Reply Log for Volume %s hit unexpected volume.priorView.deletedObjectsWrapper.bPlusTree.Put() failure: %v", volume.volumeName, err)
+					}
+				}
 			}
 		case transactionPutBPlusTreeObject:
 			_, err = cstruct.Unpack(replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+globals.uint64Size], &objectNumber, LittleEndian)
@@ -2082,7 +2113,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			replayLogReadBufferPosition += globals.uint64Size
 			value = make([]byte, valueLen)
 			copy(value, replayLogReadBuffer[replayLogReadBufferPosition:replayLogReadBufferPosition+valueLen])
-
 			ok, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, value)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey() failure: %v", volume.volumeName, err)
@@ -2098,7 +2128,6 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected cstruct.Unpack() failure: %v", volume.volumeName, err)
 			}
-
 			_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
 			if nil != err {
 				logger.Fatalf("Reply Log for Volume %s hit unexpected volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey() failure: %v", volume.volumeName, err)
