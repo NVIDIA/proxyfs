@@ -2345,14 +2345,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
-	err = volume.liveView.createdObjectsWrapper.bPlusTree.Prune()
-	if nil != err {
-		return
-	}
-	err = volume.liveView.deletedObjectsWrapper.bPlusTree.Prune()
-	if nil != err {
-		return
-	}
 
 	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Lock()
 	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Lock()
