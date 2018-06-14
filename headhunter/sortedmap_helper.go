@@ -96,8 +96,6 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 	}
 
 	if nil != bPlusTreeWrapper.bPlusTreeTracker {
-		bPlusTreeWrapper.bPlusTreeTracker.Lock()
-
 		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
 		if ok {
@@ -107,8 +105,6 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		}
 
 		bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
-
-		bPlusTreeWrapper.bPlusTreeTracker.Unlock()
 	}
 
 	err = bPlusTreeWrapper.volumeView.volume.closeCheckpointChunkedPutContextIfNecessary()
@@ -123,8 +119,6 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 	)
 
 	if nil != bPlusTreeWrapper.bPlusTreeTracker {
-		bPlusTreeWrapper.bPlusTreeTracker.Lock()
-
 		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
 		if ok {
@@ -141,8 +135,6 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 			err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing bytes (0x%016X) in unreferenced objectNumber 0x%016X", objectLength, objectNumber)
 			logger.ErrorfWithError(err, "disk corruption or logic error [case 2]")
 		}
-
-		bPlusTreeWrapper.bPlusTreeTracker.Unlock()
 	}
 
 	return // err set as appropriate regardless of path

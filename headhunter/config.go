@@ -33,7 +33,6 @@ const (
 )
 
 type bPlusTreeTrackerStruct struct {
-	sync.Mutex
 	bPlusTreeLayout sortedmap.LayoutReport
 }
 

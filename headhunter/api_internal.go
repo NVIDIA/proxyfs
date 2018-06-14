@@ -501,8 +501,6 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 
 	// Compare measuredLayoutReport & trackingLayoutReport computing discrepencies
 
-	treeWrapper.bPlusTreeTracker.Lock()
-
 	discrepencies = 0
 
 	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
@@ -527,8 +525,6 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in trackingLayoutReport but missing from measuredLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
 		}
 	}
-
-	treeWrapper.bPlusTreeTracker.Unlock()
 
 	// In the case that they differ, return measuredLayoutReport rather than trackingLayoutReport
 

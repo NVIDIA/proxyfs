@@ -2346,12 +2346,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		return
 	}
 
-	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Lock()
-
 	checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout))
@@ -2406,12 +2400,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
-
-	volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
 
 	checkpointObjectTrailer.SnapShotIDNumBits = uint64(volume.snapShotIDNumBits)
 
@@ -2667,12 +2655,6 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	// Now continue computing what checkpoint objects may be deleted
 
-	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Lock()
-	volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Lock()
-
 	for objectNumber, bytesUsedThisBPlusTree = range volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		bytesUsedCumulative, ok = combinedBPlusTreeLayout[objectNumber]
 		if ok {
@@ -2728,15 +2710,28 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			delete(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout, objectNumber)
 			delete(volume.liveView.createdObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout, objectNumber)
 			delete(volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.bPlusTreeLayout, objectNumber)
-			delayedObjectDeleteList = append(delayedObjectDeleteList, delayedObjectDeleteStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
+
+			if nil == volume.priorView {
+				delayedObjectDeleteList = append(delayedObjectDeleteList, delayedObjectDeleteStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
+			} else {
+				ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey(objectNumber)
+				if nil != err {
+					logger.Fatalf("volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey(objectNumber==0x%016X) failed: %v", objectNumber, err)
+				}
+				if ok {
+					delayedObjectDeleteList = append(delayedObjectDeleteList, delayedObjectDeleteStruct{containerName: volume.checkpointContainerName, objectNumber: objectNumber})
+				} else {
+					ok, err = volume.priorView.deletedObjectsWrapper.bPlusTree.Put(objectNumber, utils.StringToByteSlice(volume.checkpointContainerName))
+					if nil != err {
+						logger.Fatalf("volume.priorView.deletedObjectsWrapper.bPlusTree.Put(objectNumber==0x%016X,%s) failed: %v", objectNumber, volume.checkpointContainerName, err)
+					}
+					if !ok {
+						logger.Fatalf("volume.priorView.deletedObjectsWrapper.bPlusTree.Put(objectNumber==0x%016X,%s) returned !ok", objectNumber, volume.checkpointContainerName)
+					}
+				}
+			}
 		}
 	}
-
-	volume.liveView.deletedObjectsWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.createdObjectsWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.Unlock()
-	volume.liveView.inodeRecWrapper.bPlusTreeTracker.Unlock()
 
 	for ; logSegmentObjectsToDelete > 0; logSegmentObjectsToDelete-- {
 		objectNumberAsKey, containerNameAsValue, ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
