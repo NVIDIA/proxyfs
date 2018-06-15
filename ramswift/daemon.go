@@ -1487,11 +1487,13 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 	for {
 		resp, err = http.Get("http://" + globals.noAuthAddr + "/info")
 		if nil != err {
-			log.Fatalf("failed GET of \"/info\": %v", err)
+			log.Printf("failed GET of \"/info\": %v", err)
+			continue
 		}
 		if http.StatusOK == resp.StatusCode {
 			break
 		}
+		log.Printf("GET of \"/info\" returned Status %v", resp.Status)
 		time.Sleep(100 * time.Millisecond)
 	}
 
