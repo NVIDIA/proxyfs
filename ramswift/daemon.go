@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -66,6 +67,7 @@ type globalsStruct struct {
 	sync.Mutex                      // protects globalsStruct.swiftAccountMap
 	whoAmI                          string
 	noAuthTCPPort                   uint16
+	noAuthAddr                      string
 	swiftAccountMap                 map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
 	accountMethodCount              methodStruct
 	containerMethodCount            methodStruct
@@ -1165,18 +1167,6 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 		volumeSectionName string
 	)
 
-	// Find out who "we" are
-
-	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
-	}
-
-	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
-	if nil != err {
-		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
-	}
-
 	// Fetch and configure volumes for which "we" are the PrimaryPeer
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
@@ -1219,7 +1209,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 
 	// Launch HTTP Server on the requested noAuthTCPPort
 
-	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(globals.noAuthTCPPort)), httpRequestHandler{})
+	http.ListenAndServe(globals.noAuthAddr, httpRequestHandler{})
 }
 
 func updateConf(confMap conf.ConfMap) {
@@ -1447,6 +1437,7 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 	var (
 		confMap        conf.ConfMap
 		err            error
+		resp           *http.Response
 		signalChan     chan os.Signal
 		signalReceived os.Signal
 	)
@@ -1473,9 +1464,36 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
 	}
 
+	// Find out who "we" are
+
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
+	}
+
+	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
+	}
+
+	globals.noAuthAddr = "127.0.0.1:" + strconv.Itoa(int(globals.noAuthTCPPort))
+
 	// Kick off NoAuth Swift Proxy Emulator
 
 	go serveNoAuthSwift(confMap)
+
+	// Wait for serveNoAuthSwift() to begin serving
+
+	for {
+		resp, err = http.Get("http://" + globals.noAuthAddr + "/info")
+		if nil != err {
+			log.Fatalf("failed GET of \"/info\": %v", err)
+		}
+		if http.StatusOK == resp.StatusCode {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Arm signal handler used to indicate termination and wait on it
 	//
