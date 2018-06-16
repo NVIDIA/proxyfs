@@ -173,7 +173,6 @@ func TestHeadHunterStress(t *testing.T) {
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10h", // We never want a time-based checkpoint
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.FlowControl=TestFlowControl",
 		"Volume:TestVolume.NonceValuesToReserve=1", // We want to force worst-case nonce fetching
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
