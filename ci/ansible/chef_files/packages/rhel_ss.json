@@ -1,0 +1,37 @@
+{
+  "samba_packages": [
+    ["ss-samba"]
+  ],
+  "samba_deps": [
+    ["gcc"],
+    ["gcc-c++"],
+    ["python-devel"],
+    ["gnutls-devel"],
+    ["libacl-devel"],
+    ["openldap-devel"],
+    ["cifs-utils"],
+    ["pam-devel"]
+  ],
+  "proxyfs_packages": [
+    ["json-c-devel"],
+    ["fuse"]
+  ],
+  "wireshark_packages": [
+    ["wireshark"],
+    ["libcap"]
+  ],
+  "ssh_packages": [
+    ["sshpass"]
+  ],
+  "nfs_packages": [
+    ["nfs-utils"]
+  ],
+  "gdb_packages": [
+    ["gdb"],
+    ["yum-utils"]
+  ],
+  "utils_packages": [
+    ["atop"],
+    ["vim-common"]
+  ]
+}
