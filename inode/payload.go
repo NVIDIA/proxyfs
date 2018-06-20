@@ -25,15 +25,23 @@ type treeNodeLoadable struct {
 }
 
 func (tnl *treeNodeLoadable) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		inodeNumberAdordnedWithSnapShotID uint64
+		objectNumberAdordedWithSnapShotID uint64
+	)
+
+	inodeNumberAdordnedWithSnapShotID = tnl.inode.volume.headhunterVolumeHandle.SnapShotIDAndNonceEncode(tnl.inode.snapShotID, uint64(tnl.inode.InodeNumber))
+	objectNumberAdordedWithSnapShotID = tnl.inode.volume.headhunterVolumeHandle.SnapShotIDAndNonceEncode(tnl.inode.snapShotID, objectNumber)
+
 	if 0 != objectOffset {
 		err = fmt.Errorf("*treeNodeLoadable.GetNode(): Unexpected (non-zero) objectOffset (%v)", objectOffset)
 		return
 	}
 
 	stats.IncrementOperations(&stats.DirFileBPlusTreeNodeFaults)
-	evtlog.Record(evtlog.FormatDirFileBPlusTreeNodeFault, tnl.inode.volume.volumeName, uint64(tnl.inode.InodeNumber), objectNumber)
+	evtlog.Record(evtlog.FormatDirFileBPlusTreeNodeFault, tnl.inode.volume.volumeName, inodeNumberAdordnedWithSnapShotID, objectNumberAdordedWithSnapShotID)
 
-	nodeByteSlice, err = tnl.inode.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumber)
+	nodeByteSlice, err = tnl.inode.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumberAdordedWithSnapShotID)
 
 	if (nil == err) && (uint64(len(nodeByteSlice)) != objectLength) {
 		err = fmt.Errorf("*treeNodeLoadable.GetNode(): Requested objectLength (%v) != Actual objectLength (%v)", objectLength, len(nodeByteSlice))

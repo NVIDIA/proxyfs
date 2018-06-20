@@ -102,6 +102,10 @@ const (
 	RootDirInodeNumber = InodeNumber(1)
 )
 
+const (
+	SnapShotDirName = ".snapshot"
+)
+
 func (de *DirEntry) Size() int {
 	// sizeof(InodeNumber) + sizeof(InodeType) + sizeof(DirLocation) + string data + null byte delimiter
 	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.NextDirLocation)) + len(de.Basename) + 1

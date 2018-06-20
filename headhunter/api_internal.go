@@ -115,10 +115,53 @@ func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
 	return
 }
 
+func (volume *volumeStruct) findVolumeViewAndNonceWhileLocked(key uint64) (volumeView *volumeViewStruct, nonce uint64, ok bool, err error) {
+	var (
+		snapShotID     uint64
+		snapShotIDType SnapShotIDType
+		value          sortedmap.Value
+	)
+
+	snapShotIDType, snapShotID, nonce = volume.SnapShotU64Decode(key)
+
+	if SnapShotIDTypeDotSnapShot == snapShotIDType {
+		err = fmt.Errorf("findVolumeViewAndNonceWhileLocked() called for SnapShotIDTypeDotSnapShot key")
+		return
+	}
+
+	if SnapShotIDTypeLive == snapShotIDType {
+		volumeView = volume.liveView
+		ok = true
+		err = nil
+		return
+	}
+
+	value, ok, err = volume.viewTreeByID.GetByKey(snapShotID)
+	if (nil != err) || !ok {
+		return
+	}
+
+	volumeView, ok = value.(*volumeViewStruct)
+
+	return
+}
+
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(inodeNumber)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingInodeRec, volume.volumeName, inodeNumber)
+		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.inodeRecWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -238,7 +281,19 @@ func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(logSegmentNumber)
+	if (nil != err) || !ok {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingLogSegmentRec, volume.volumeName, logSegmentNumber)
+		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRecWrapper.bPlusTree", logSegmentNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.logSegmentRecWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -366,7 +421,19 @@ func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNum
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByKey(objectNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(objectNumber)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingBPlusTreeObject, volume.volumeName, objectNumber)
+		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObjectWrapper.bPlusTree", objectNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.bPlusTreeObjectWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -1123,6 +1190,49 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	return
 }
 
+func (volume *volumeStruct) SnapShotCount() (snapShotCount uint64) {
+	var (
+		err error
+		len int
+	)
+
+	len, err = volume.viewTreeByID.Len()
+	if nil != err {
+		logger.Fatalf("headhunter.SnapShotCount() for volume %v hit viewTreeByID.Len() error: %v", volume.volumeName, err)
+	}
+	snapShotCount = uint64(len)
+	return
+}
+
+func (volume *volumeStruct) SnapShotLookupByName(name string) (snapShot SnapShotStruct, ok bool) {
+	var (
+		err        error
+		value      sortedmap.Value
+		volumeView *volumeViewStruct
+	)
+
+	value, ok, err = volume.viewTreeByName.GetByKey(name)
+	if nil != err {
+		logger.Fatalf("headhunter.SnapShotLookupByName() for volume %v hit viewTreeByName.GetByKey(\"%v\") error: %v", volume.volumeName, name, err)
+	}
+	if !ok {
+		return
+	}
+
+	volumeView, ok = value.(*volumeViewStruct)
+	if !ok {
+		logger.Fatalf("headhunter.SnapShotLookupByName() for volume %v hit value.(*volumeViewStruct) !ok", volume.volumeName)
+	}
+
+	snapShot = SnapShotStruct{
+		ID:   volumeView.snapShotID,
+		Time: volumeView.snapShotTime,
+		Name: volumeView.snapShotName, // == name
+	}
+
+	return
+}
+
 func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed bool) (list []SnapShotStruct) {
 	var (
 		err        error
@@ -1189,6 +1299,37 @@ func (volume *volumeStruct) SnapShotListByName(reversed bool) (list []SnapShotSt
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByName, reversed)
 	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotU64Decode(snapShotU64 uint64) (snapShotIDType SnapShotIDType, snapShotID uint64, nonce uint64) {
+	snapShotID = snapShotU64 >> volume.snapShotIDShift
+	if 0 == snapShotID {
+		snapShotIDType = SnapShotIDTypeLive
+	} else if volume.dotSnapShotDirSnapShotID == snapShotID {
+		snapShotIDType = SnapShotIDTypeDotSnapShot
+	} else {
+		snapShotIDType = SnapShotIDTypeSnapShot
+	}
+
+	nonce = snapShotU64 & volume.snapShotU64NonceMask
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotIDAndNonceEncode(snapShotID uint64, nonce uint64) (snapShotU64 uint64) {
+	snapShotU64 = snapShotID
+	snapShotU64 = snapShotU64 << volume.snapShotIDShift
+	snapShotU64 = snapShotU64 | nonce
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotTypeDotSnapShotAndNonceEncode(nonce uint64) (snapShotU64 uint64) {
+	snapShotU64 = volume.dotSnapShotDirSnapShotID
+	snapShotU64 = snapShotU64 << volume.snapShotIDShift
+	snapShotU64 = snapShotU64 | nonce
 
 	return
 }
