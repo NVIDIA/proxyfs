@@ -9,6 +9,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -169,6 +170,7 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 		fileInode     *inMemoryInodeStruct
 		readPlan      []ReadPlanStep
 		readPlanBytes uint64
+		snapShotID    uint64
 	)
 
 	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
@@ -177,7 +179,9 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 		return
 	}
 
-	readPlan, readPlanBytes, err = vS.getReadPlanHelper(fileInode, &offset, &length)
+	_, snapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+
+	readPlan, readPlanBytes, err = vS.getReadPlanHelper(snapShotID, fileInode, &offset, &length)
 	if nil != err {
 		logger.WarnWithError(err)
 		return
@@ -198,6 +202,7 @@ func (vS *volumeStruct) Read(fileInodeNumber InodeNumber, offset uint64, length 
 func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64, length *uint64) (readPlan []ReadPlanStep, err error) {
 	var (
 		readPlanBytes uint64
+		snapShotID    uint64
 	)
 
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
@@ -214,7 +219,9 @@ func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64,
 		}
 	}
 
-	readPlan, readPlanBytes, err = vS.getReadPlanHelper(fileInode, offset, length)
+	_, snapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+
+	readPlan, readPlanBytes, err = vS.getReadPlanHelper(snapShotID, fileInode, offset, length)
 	if nil != err {
 		logger.ErrorWithError(err)
 		return
@@ -224,7 +231,7 @@ func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64,
 	return
 }
 
-func (vS *volumeStruct) getReadPlanHelper(fileInode *inMemoryInodeStruct, requestedOffset *uint64, requestedLength *uint64) (readPlan []ReadPlanStep, readPlanBytes uint64, err error) {
+func (vS *volumeStruct) getReadPlanHelper(snapShotID uint64, fileInode *inMemoryInodeStruct, requestedOffset *uint64, requestedLength *uint64) (readPlan []ReadPlanStep, readPlanBytes uint64, err error) {
 	var (
 		offset uint64
 	)
@@ -330,7 +337,7 @@ func (vS *volumeStruct) getReadPlanHelper(fileInode *inMemoryInodeStruct, reques
 		if terminalOffset <= (curExtent.FileOffset + curExtent.Length) {
 			// [curOffset:terminalOffset) is completed by some or all of curExtent
 			step := ReadPlanStep{
-				LogSegmentNumber: curExtent.LogSegmentNumber,
+				LogSegmentNumber: vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShotID, curExtent.LogSegmentNumber),
 				Offset:           curExtent.LogSegmentOffset + skipSize,
 				Length:           terminalOffset - curOffset,
 				AccountName:      vS.accountName,
@@ -345,7 +352,7 @@ func (vS *volumeStruct) getReadPlanHelper(fileInode *inMemoryInodeStruct, reques
 		} else {
 			// [curOffset:terminalOffset) extends beyond curExtent
 			step := ReadPlanStep{
-				LogSegmentNumber: curExtent.LogSegmentNumber,
+				LogSegmentNumber: vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShotID, curExtent.LogSegmentNumber),
 				Offset:           curExtent.LogSegmentOffset + skipSize,
 				Length:           curExtent.Length - skipSize,
 				AccountName:      vS.accountName,
@@ -583,6 +590,12 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 }
 
 func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("Write() on non-LiveView fileInodeNumber not allowed")
+		return
+	}
+
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -632,6 +645,12 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 }
 
 func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, objectPath string, objectOffset uint64, length uint64, patchOnly bool) (err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("Wrote() on non-LiveView fileInodeNumber not allowed")
+		return
+	}
+
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if err != nil {
 		logger.ErrorWithError(err)
@@ -711,7 +730,11 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 }
 
 func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetSize() on non-LiveView fileInodeNumber not allowed")
+		return
+	}
 
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {
@@ -738,7 +761,6 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 }
 
 func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err error) {
-
 	fileInode, ok, err := vS.fetchInode(fileInodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software bug
@@ -802,14 +824,35 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 	// While this does result in log segments being shared by two inodes (an illegal state), we undo the damage later by
 	// deleting the elements' inodes but not their log segments. Also, we carefully manage transactions so this whole
 	// thing is atomic.
+
+	if (RootDirInodeNumber == containingDirInodeNumber) && (SnapShotDirName == combinationName) {
+		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() into /%v not allowed", SnapShotDirName)
+		return
+	}
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(containingDirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() into non-LiveView containingDirInodeNumber not allowed")
+		return
+	}
+
 	elementInodes := make([]*inMemoryInodeStruct, len(elements))
 	elementDirInodes := make([]*inMemoryInodeStruct, len(elements))
 
 	alreadyFlushing := make(map[InodeNumber]bool)
 
-	// Validate that no element inodes are duplicated
+	// Validate that no element inodes are from non-LiveView's or duplicated
 	seenInode := make(map[InodeNumber]bool)
 	for _, element := range elements {
+		snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(element.ContainingDirectoryInodeNumber))
+		if headhunter.SnapShotIDTypeLive != snapShotIDType {
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() from non-LiveView ContainingDirectoryInodeNumber not allowed")
+			return
+		}
+		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(element.ElementInodeNumber))
+		if headhunter.SnapShotIDTypeLive != snapShotIDType {
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() from non-LiveView ElementInodeNumber not allowed")
+			return
+		}
 		if seenInode[element.ElementInodeNumber] {
 			err = blunder.NewError(blunder.InvalidArgError, "Inode %v passed to Coalesce() twice", element.ElementInodeNumber)
 			return
@@ -971,6 +1014,12 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 	return
 }
 
+func (vS *volumeStruct) setLogSegmentContainer(logSegmentNumber uint64, containerName string) (err error) {
+	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
+	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)
+	return
+}
+
 func (vS *volumeStruct) getLogSegmentContainer(logSegmentNumber uint64) (containerName string, err error) {
 	containerNameAsByteSlice, err := vS.headhunterVolumeHandle.GetLogSegmentRec(logSegmentNumber)
 	if nil != err {
@@ -980,32 +1029,19 @@ func (vS *volumeStruct) getLogSegmentContainer(logSegmentNumber uint64) (contain
 	return
 }
 
-func (vS *volumeStruct) setLogSegmentContainer(logSegmentNumber uint64, containerName string) (err error) {
-	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
-	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)
-	return
-}
-
 func (vS *volumeStruct) getObjectLocationFromLogSegmentNumber(logSegmentNumber uint64) (containerName string, objectName string, objectPath string, err error) {
+	var (
+		nonce uint64
+	)
+
 	containerName, err = vS.getLogSegmentContainer(logSegmentNumber)
 	if nil != err {
 		return
 	}
-	objectName = fmt.Sprintf("%016X", logSegmentNumber)
-	objectPath = vS.getObjectPathFromContainerNameAndLogSegmentNumber(containerName, logSegmentNumber)
-	return
-}
 
-func (vS *volumeStruct) getObjectPathFromLogSegmentNumber(logSegmentNumber uint64) (objectPath string, err error) {
-	containerName, err := vS.getLogSegmentContainer(logSegmentNumber)
-	if nil != err {
-		return
-	}
-	objectPath = vS.getObjectPathFromContainerNameAndLogSegmentNumber(containerName, logSegmentNumber)
-	return
-}
+	_, _, nonce = vS.headhunterVolumeHandle.SnapShotU64Decode(logSegmentNumber)
 
-func (vS *volumeStruct) getObjectPathFromContainerNameAndLogSegmentNumber(containerName string, logSegmentNumber uint64) (objectPath string) {
-	objectPath = fmt.Sprintf("/v1/%s/%s/%016X", vS.accountName, containerName, logSegmentNumber)
+	objectName = fmt.Sprintf("%016X", nonce)
+	objectPath = fmt.Sprintf("/v1/%s/%s/%016X", vS.accountName, containerName, nonce)
 	return
 }
