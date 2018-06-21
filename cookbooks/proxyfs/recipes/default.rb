@@ -326,10 +326,7 @@ end
 OS_DISTRO="centos"
 OS_DISTRO_VERSION="7.5"
 
-SAMBA_VERSION=""
-if ss_packages
-  SAMBA_VERSION="4.6.2"
-end
+SAMBA_VERSION = ss_packages ? "4.6.2" : ""
 
 bash 'Check out samba + build headers if needed' do
   code <<-EOH
@@ -388,14 +385,9 @@ ruby_block "update_smb_conf" do
   end
 end
 
-if ss_packages
-  execute "Setup Samba password" do
-    command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /opt/ss/bin/smbpasswd -a -s #{node['swift_user']}"
-  end
-else
-  execute "Setup Samba password" do
-    command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /bin/smbpasswd -a -s #{node['swift_user']}"
-  end
+smbpasswd_path = ss_packages ? "/opt/ss/bin/smbpasswd" : "/bin/smbpasswd"
+execute "Setup Samba password" do
+  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | #{smbpasswd_path} -a -s #{node['swift_user']}"
 end
 
 #
