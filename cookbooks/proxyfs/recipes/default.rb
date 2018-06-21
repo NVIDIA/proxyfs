@@ -316,7 +316,6 @@ end
 execute "Remove samba symbolic link" do
   command "rm -f samba"
   cwd SAMBA_PARENT_DIR
-  not_if { ::File.exists?(SAMBA_SRC_DIR) }
 end
 
 
