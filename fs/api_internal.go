@@ -2988,8 +2988,8 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) SnapShotCreate(name string) (id uint64, err error) {
-	// TODO: Does FS Layer need to do anything here?
 	id, err = mS.volStruct.inodeVolumeHandle.SnapShotCreateByFSLayer(name)
+	// TODO: Does FS Layer need to do anything here?
 	return
 }
 

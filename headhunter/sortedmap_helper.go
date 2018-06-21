@@ -95,17 +95,17 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		return
 	}
 
-	bPlusTreeWrapper.volumeView.volume.checkpointFlushedData = true
+	if nil != bPlusTreeWrapper.bPlusTreeTracker {
+		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
-	bytesUsed, ok = bPlusTreeWrapper.trackingBPlusTreeLayout[objectNumber]
+		if ok {
+			bytesUsed += uint64(len(nodeByteSlice))
+		} else {
+			bytesUsed = uint64(len(nodeByteSlice))
+		}
 
-	if ok {
-		bytesUsed += uint64(len(nodeByteSlice))
-	} else {
-		bytesUsed = uint64(len(nodeByteSlice))
+		bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
 	}
-
-	bPlusTreeWrapper.trackingBPlusTreeLayout[objectNumber] = bytesUsed
 
 	err = bPlusTreeWrapper.volumeView.volume.closeCheckpointChunkedPutContextIfNecessary()
 
@@ -118,20 +118,23 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 		ok        bool
 	)
 
-	bytesUsed, ok = bPlusTreeWrapper.trackingBPlusTreeLayout[objectNumber]
+	if nil != bPlusTreeWrapper.bPlusTreeTracker {
+		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
-	if ok {
-		if objectLength > bytesUsed {
-			err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing too many bytes (0x%016X) in objectNumber 0x%016X", objectLength, objectNumber)
-			logger.ErrorfWithError(err, "disk corruption or logic error [case 1]")
+		if ok {
+			if objectLength > bytesUsed {
+				err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing too many bytes (0x%016X) in objectNumber 0x%016X", objectLength, objectNumber)
+				logger.ErrorfWithError(err, "disk corruption or logic error [case 1]")
+			} else {
+				// Decrement bytesUsed... leaving a zero value to indicate object may be deleted at end of checkpoint
+				bytesUsed -= objectLength
+				bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
+				err = nil
+			}
 		} else {
-			bytesUsed -= objectLength
-			bPlusTreeWrapper.trackingBPlusTreeLayout[objectNumber] = bytesUsed
-			err = nil
+			err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing bytes (0x%016X) in unreferenced objectNumber 0x%016X", objectLength, objectNumber)
+			logger.ErrorfWithError(err, "disk corruption or logic error [case 2]")
 		}
-	} else {
-		err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing bytes (0x%016X) in unreferenced objectNumber 0x%016X", objectLength, objectNumber)
-		logger.ErrorfWithError(err, "disk corruption or logic error [case 2]")
 	}
 
 	return // err set as appropriate regardless of path
