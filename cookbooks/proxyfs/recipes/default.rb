@@ -327,51 +327,43 @@ end
 OS_DISTRO="centos"
 OS_DISTRO_VERSION="7.5"
 
+SAMBA_VERSION=""
 if ss_packages
   SAMBA_VERSION="4.6.2"
-else
-  # We need to check what version of Samba has been installed in order to try
-  # to build its matching headers.
-  execute "Get Samba version" do
-    command '/usr/bin/smbstatus | grep "Samba version" | cut -d" " -f3 > /tmp/samba_version.txt'
-  end
-  SAMBA_VERSION = File.read('/tmp/samba_version.txt')
-  execute "Cleanup Samba version file" do
-    command "rm -rf /tmp/samba_version.txt"
-  end
 end
 
-SAMBA_DIR="build-samba-#{SAMBA_VERSION.gsub(".", "-")}-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
+bash 'Check out samba + build headers if needed' do
+  code <<-EOH
+  if [ "#{SAMBA_VERSION}" = "" ]; then
+    SAMBA_VERSION="`smbstatus -V | cut -d' ' -f2 | tr -d '\\n'`"
+  else
+    SAMBA_VERSION="#{SAMBA_VERSION}"
+  fi
+  SAMBA_DIR="build-samba-`echo ${SAMBA_VERSION} | sed -e 's:\\.:-:g'`-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
 
-if File.exist?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}")
-  link "#{SAMBA_SRC_DIR}" do
-    to "#{SAMBA_DIR}"
-    link_type :symbolic
-  end
-else
-  execute "Check out samba" do
-    command "git clone -b samba-#{SAMBA_VERSION} --single-branch --depth 1 https://github.com/samba-team/samba.git #{SAMBA_DIR}"
-    cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}") }
-  end
+  if [ -d "#{SAMBA_PARENT_DIR}/${SAMBA_DIR}" ]; then
+    ln -s ${SAMBA_DIR} #{SAMBA_SRC_DIR}
+  else
+    # Check out samba
+    git clone -b samba-${SAMBA_VERSION} --single-branch --depth 1 https://github.com/samba-team/samba.git ${SAMBA_DIR}
 
-  link "#{SAMBA_SRC_DIR}" do
-    to "#{SAMBA_DIR}"
-    link_type :symbolic
-  end
+    ln -s ${SAMBA_DIR} #{SAMBA_SRC_DIR}
 
-  execute "Configure samba src" do
-    command "./configure"
-    cwd SAMBA_SRC_DIR
+    cd #{SAMBA_SRC_DIR}
+
+    # Configure samba src
     # lockfile dropped by `waf configure`
-    not_if { ::File.exists?("#{SAMBA_SRC_DIR}/.lock-wscript") }
-  end
+    if [ ! -f "#{SAMBA_SRC_DIR}/.lock-wscript" ]; then
+      ./configure
+    fi
 
-  execute "Build samba headers" do
-    command "make GEN_NDR_TABLES"
-    cwd SAMBA_SRC_DIR
-    not_if { ::File.exists?(SAMBA_SRC_DIR + "/bin/default/librpc/gen_ndr/server_id.h") }
-  end
+    # Build samba headers
+    if [ ! -f "#{SAMBA_SRC_DIR}/bin/default/librpc/gen_ndr/server_id.h" ]; then
+      make GEN_NDR_TABLES
+    fi
+  fi
+  EOH
+  cwd SAMBA_PARENT_DIR
 end
 
 #
@@ -397,8 +389,14 @@ ruby_block "update_smb_conf" do
   end
 end
 
-execute "Setup Samba password" do
-  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /opt/ss/bin/smbpasswd -a -s #{node['swift_user']}"
+if ss_packages
+  execute "Setup Samba password" do
+    command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /opt/ss/bin/smbpasswd -a -s #{node['swift_user']}"
+  end
+else
+  execute "Setup Samba password" do
+    command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | /bin/smbpasswd -a -s #{node['swift_user']}"
+  end
 end
 
 #
