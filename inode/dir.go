@@ -61,13 +61,18 @@ func (vS *volumeStruct) createRootOrSubDir(filePerm InodeMode, userID InodeUserI
 
 	dirInode.payload = dirMapping
 
-	// If creating RootDir, since this must be atomic, caller already holds vS.Mutex
-	if !isRootDir {
-		vS.Lock()
+	if isRootDir {
+		// If creating RootDir, since this must be atomic, caller already holds vS.Mutex
+		ok, err = vS.inodeCacheInsertWhileLocked(dirInode)
+	} else {
+		ok, err = vS.inodeCacheInsert(dirInode)
 	}
-	vS.inodeCache[dirInodeNumber] = dirInode
-	if !isRootDir {
-		vS.Unlock()
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("inodeCacheInsert(dirInode) failed")
+		return
 	}
 
 	// If creating RootDir, force an immediate flush to ensure it is atomically created as well

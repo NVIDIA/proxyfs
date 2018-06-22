@@ -1,6 +1,8 @@
 package inode
 
 import (
+	"fmt"
+
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -22,9 +24,14 @@ func (vS *volumeStruct) CreateSymlink(target string, filePerm InodeMode, userID 
 	symlinkInode.SymlinkTarget = target
 	symlinkInodeNumber = symlinkInode.InodeNumber
 
-	vS.Lock()
-	vS.inodeCache[symlinkInodeNumber] = symlinkInode
-	vS.Unlock()
+	ok, err := vS.inodeCacheInsert(symlinkInode)
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("inodeCacheInsert(symlinkInode) failed")
+		return
+	}
 
 	err = vS.flushInode(symlinkInode)
 	if err != nil {

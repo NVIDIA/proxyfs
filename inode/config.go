@@ -69,7 +69,10 @@ type volumeStruct struct {
 	defaultPhysicalContainerLayout *physicalContainerLayoutStruct
 	flowControl                    *flowControlStruct
 	headhunterVolumeHandle         headhunter.VolumeHandle
-	inodeCache                     map[InodeNumber]*inMemoryInodeStruct //      key == InodeNumber
+	inodeCache                     sortedmap.LLRBTree //                        key == InodeNumber; value == *inMemoryInodeStruct
+	inodeCacheLRUHead              *inMemoryInodeStruct
+	inodeCacheLRUTail              *inMemoryInodeStruct
+	inodeCacheLRUItems             uint64
 }
 
 type globalsStruct struct {
@@ -202,8 +205,12 @@ func Up(confMap conf.ConfMap) (err error) {
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
 			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-			inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
+			inodeCacheLRUHead:              nil,
+			inodeCacheLRUTail:              nil,
+			inodeCacheLRUItems:             0,
 		}
+
+		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
 		volume.fsid, err = confMap.FetchOptionValueUint64(volumeSectionName, "FSID")
 		if nil != err {
@@ -551,7 +558,10 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
 		}
 		volume.flowControl = nil
-		volume.inodeCache = make(map[InodeNumber]*inMemoryInodeStruct)
+		volume.inodeCache = nil
+		volume.inodeCacheLRUHead = nil
+		volume.inodeCacheLRUTail = nil
+		volume.inodeCacheLRUItems = 0
 	}
 
 	err = nil
@@ -729,8 +739,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayoutSet:     make(map[string]struct{}),
 				physicalContainerNamePrefixSet: make(map[string]struct{}),
 				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-				inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
+				inodeCacheLRUHead:              nil,
+				inodeCacheLRUTail:              nil,
+				inodeCacheLRUItems:             0,
 			}
+
+			volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
 			globals.volumeMap[volume.volumeName] = volume
 			globals.accountMap[volume.accountName] = volume

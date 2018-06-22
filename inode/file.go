@@ -59,9 +59,14 @@ func (vS *volumeStruct) createFileInode(filePerm InodeMode, userID InodeUserID, 
 
 	fileInode.payload = extents
 
-	vS.Lock()
-	vS.inodeCache[fileInode.InodeNumber] = fileInode
-	vS.Unlock()
+	ok, err := vS.inodeCacheInsert(fileInode)
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("inodeCacheInsert(fileInode) failed")
+		return
+	}
 
 	stats.IncrementOperations(&stats.FileCreateSuccessOps)
 	return
@@ -769,17 +774,22 @@ func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err e
 }
 
 func flush(fileInode *inMemoryInodeStruct, andPurge bool) (err error) {
-	volume := fileInode.volume
-	inodeNumber := fileInode.InodeNumber
-	err = volume.flushInode(fileInode)
+	vS := fileInode.volume
+	err = vS.flushInode(fileInode)
 	if nil != err {
 		logger.ErrorfWithError(err, "flushInode(fileInode) failed")
 	}
 
 	if andPurge {
-		volume.Lock()
-		delete(volume.inodeCache, inodeNumber)
-		volume.Unlock()
+		var ok bool
+		ok, err = vS.inodeCacheDrop(fileInode)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("inodeCacheDrop(fileInode) failed")
+			return
+		}
 	}
 
 	return

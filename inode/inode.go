@@ -66,16 +66,69 @@ type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMem
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex     //                                                Used to synchronize with background fileInodeFlusherDaemon
-	sync.WaitGroup //                                                FileInode Flush requests wait on this
-	dirty          bool
-	volume         *volumeStruct
-	payload        interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
+	sync.Mutex        //                                                Used to synchronize with background fileInodeFlusherDaemon
+	sync.WaitGroup    //                                                FileInode Flush requests wait on this
+	inodeCacheLRUNext *inMemoryInodeStruct
+	inodeCacheLRUPrev *inMemoryInodeStruct
+	dirty             bool
+	volume            *volumeStruct
+	payload           interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
 	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
 	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
 	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
 	inFlightLogSegmentErrors map[uint64]error                     // FileInode: key == logSegmentNumber; value == err (if non nil)
 	onDiskInodeV1Struct                                           // Real on-disk inode information embedded here
+}
+
+func (vS *volumeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	keyAsInodeNumber, ok := key.(InodeNumber)
+	if !ok {
+		err = fmt.Errorf("inode.volumeStruct.DumpKey() could not parse key as a InodeNumber")
+		return
+	}
+
+	keyAsString = fmt.Sprintf("0x%016X", keyAsInodeNumber)
+
+	err = nil
+	return
+}
+
+func (vS *volumeStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	valueAsInMemoryInodeStructPtr, ok := value.(*inMemoryInodeStruct)
+	if !ok {
+		err = fmt.Errorf("inode.volumeStruct.DumpValue() could not parse value as a *inMemoryInodeStruct")
+		return
+	}
+
+	valueAsString = fmt.Sprintf("%016p", valueAsInMemoryInodeStructPtr)
+
+	err = nil
+	return
+}
+
+func compareInodeNumber(key1 sortedmap.Key, key2 sortedmap.Key) (result int, err error) {
+	key1InodeNumber, ok := key1.(InodeNumber)
+	if !ok {
+		err = fmt.Errorf("compareInodeNumber(non-InodeNumber,) not supported")
+		return
+	}
+	key2InodeNumber, ok := key2.(InodeNumber)
+	if !ok {
+		err = fmt.Errorf("compareInodeNumber(InodeNumber, non-InodeNumber) not supported")
+		return
+	}
+
+	if key1InodeNumber < key2InodeNumber {
+		result = -1
+	} else if key1InodeNumber == key2InodeNumber {
+		result = 0
+	} else { // key1InodeNumber > key2InodeNumber
+		result = 1
+	}
+
+	err = nil
+
+	return
 }
 
 func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode *inMemoryInodeStruct, ok bool, err error) {
@@ -136,6 +189,8 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	}
 
 	inMemoryInode = &inMemoryInodeStruct{
+		inodeCacheLRUNext:        nil,
+		inodeCacheLRUPrev:        nil,
 		dirty:                    true,
 		volume:                   vS,
 		openLogSegment:           nil,
@@ -203,22 +258,168 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	return
 }
 
-func (vS *volumeStruct) fetchInode(inodeNumber InodeNumber) (inode *inMemoryInodeStruct, ok bool, err error) {
-	vS.Lock()
-	inode, ok = vS.inodeCache[inodeNumber]
-	vS.Unlock()
+func (vS *volumeStruct) inodeCacheFetchWhileLocked(inodeNumber InodeNumber) (inode *inMemoryInodeStruct, ok bool, err error) {
+	var (
+		inodeAsValue sortedmap.Value
+	)
+
+	inodeAsValue, ok, err = vS.inodeCache.GetByKey(inodeNumber)
+	if nil != err {
+		return
+	}
 
 	if ok {
-		err = nil
+		inode, ok = inodeAsValue.(*inMemoryInodeStruct)
+		if ok {
+			vS.inodeCacheTouchWhileLocked(inode)
+			err = nil
+		} else {
+			ok = false
+			err = fmt.Errorf("inodeCache[inodeNumber==0x%016X] contains a value not mappable to a *inMemoryInodeStruct", inodeNumber)
+		}
+	}
+
+	return
+}
+
+func (vS *volumeStruct) inodeCacheFetch(inodeNumber InodeNumber) (inode *inMemoryInodeStruct, ok bool, err error) {
+	vS.Lock()
+	inode, ok, err = vS.inodeCacheFetchWhileLocked(inodeNumber)
+	vS.Unlock()
+	return
+}
+
+func (vS *volumeStruct) inodeCacheInsertWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {
+	ok, err = vS.inodeCache.Put(inode.InodeNumber, inode)
+	if (nil != err) || !ok {
+		return
+	}
+
+	// Place inode at the MRU end of inodeCacheLRU
+
+	if 0 == vS.inodeCacheLRUItems {
+		vS.inodeCacheLRUHead = inode
+		vS.inodeCacheLRUTail = inode
+		vS.inodeCacheLRUItems = 1
+	} else {
+		inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
+		inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode
+
+		vS.inodeCacheLRUTail = inode
+		vS.inodeCacheLRUItems++
+	}
+
+	return
+}
+
+func (vS *volumeStruct) inodeCacheInsert(inode *inMemoryInodeStruct) (ok bool, err error) {
+	vS.Lock()
+	ok, err = vS.inodeCacheInsertWhileLocked(inode)
+	vS.Unlock()
+	return
+}
+
+func (vS *volumeStruct) inodeCacheTouchWhileLocked(inode *inMemoryInodeStruct) {
+	// Move inode to the MRU end of inodeCacheLRU
+
+	if inode != vS.inodeCacheLRUTail {
+		if inode == vS.inodeCacheLRUHead {
+			vS.inodeCacheLRUHead = inode.inodeCacheLRUNext
+			vS.inodeCacheLRUHead.inodeCacheLRUPrev = nil
+
+			inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
+			inode.inodeCacheLRUNext = nil
+
+			vS.inodeCacheLRUTail.inodeCacheLRUNext = inode
+			vS.inodeCacheLRUTail = inode
+		} else {
+			inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode.inodeCacheLRUNext
+			inode.inodeCacheLRUNext.inodeCacheLRUPrev = inode.inodeCacheLRUPrev
+
+			inode.inodeCacheLRUNext = nil
+			inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
+
+			vS.inodeCacheLRUTail.inodeCacheLRUNext = inode
+			vS.inodeCacheLRUTail = inode
+		}
+	}
+}
+
+func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
+	vS.Lock()
+	vS.inodeCacheTouchWhileLocked(inode)
+	vS.Unlock()
+}
+
+func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {
+	ok, err = vS.inodeCache.DeleteByKey(inode.InodeNumber)
+	if (nil != err) || !ok {
+		return
+	}
+
+	// TODO: Remove inode from inodeCacheLRU
+
+	if inode == vS.inodeCacheLRUHead {
+		if inode == vS.inodeCacheLRUTail {
+			vS.inodeCacheLRUHead = nil
+			vS.inodeCacheLRUTail = nil
+			vS.inodeCacheLRUItems = 0
+		} else {
+			vS.inodeCacheLRUHead = inode.inodeCacheLRUNext
+			vS.inodeCacheLRUHead.inodeCacheLRUPrev = nil
+			vS.inodeCacheLRUItems--
+
+			inode.inodeCacheLRUNext = nil
+		}
+	} else {
+		if inode == vS.inodeCacheLRUTail {
+			vS.inodeCacheLRUTail = inode.inodeCacheLRUPrev
+			vS.inodeCacheLRUTail.inodeCacheLRUNext = nil
+			vS.inodeCacheLRUItems--
+
+			inode.inodeCacheLRUPrev = nil
+		} else {
+			inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode.inodeCacheLRUNext
+			inode.inodeCacheLRUNext.inodeCacheLRUPrev = inode.inodeCacheLRUPrev
+			vS.inodeCacheLRUItems--
+
+			inode.inodeCacheLRUNext = nil
+			inode.inodeCacheLRUPrev = nil
+		}
+	}
+
+	return
+}
+
+func (vS *volumeStruct) inodeCacheDrop(inode *inMemoryInodeStruct) (ok bool, err error) {
+	vS.Lock()
+	ok, err = vS.inodeCacheDropWhileLocked(inode)
+	vS.Unlock()
+	return
+}
+
+func (vS *volumeStruct) fetchInode(inodeNumber InodeNumber) (inode *inMemoryInodeStruct, ok bool, err error) {
+	inode, ok, err = vS.inodeCacheFetch(inodeNumber)
+	if nil != err {
+		return
+	}
+
+	if ok {
 		return
 	}
 
 	inode, ok, err = vS.fetchOnDiskInode(inodeNumber)
-	if err == nil && ok {
-		vS.Lock()
-		vS.inodeCache[inodeNumber] = inode
-		vS.Unlock()
+	if nil != err {
+		return
 	}
+
+	if ok {
+		ok, err = vS.inodeCacheInsert(inode)
+		if (nil == err) && !ok {
+			err = fmt.Errorf("inodeCacheInsert(inode) failed")
+		}
+	}
+
 	return
 }
 
@@ -262,6 +463,8 @@ func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType
 	birthTime := time.Now()
 
 	inMemoryInode = &inMemoryInodeStruct{
+		inodeCacheLRUNext:        nil,
+		inodeCacheLRUPrev:        nil,
 		dirty:                    true,
 		volume:                   vS,
 		openLogSegment:           nil,
@@ -346,7 +549,7 @@ func (vS *volumeStruct) flushInodeNumber(inodeNumber InodeNumber) (err error) {
 	return
 }
 
-// REVIEW TODO: Need to clearly explain what "flush" means (i.e. "to HH", not "to disk")
+// REVIEW: Need to clearly explain what "flush" means (i.e. "to HH", not "to disk")
 
 func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 	var (
@@ -419,8 +622,8 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 					err = blunder.AddError(err, blunder.InodeFlushError)
 					return
 				}
-				// REVIEW TODO: What if cache pressure flushed before we got here?
-				//              Is it possible that Number doesn't get updated?
+				// REVIEW: What if cache pressure flushed before we got here?
+				//         Is it possible that Number doesn't get updated?
 
 				if inode.PayloadObjectNumber != 0 {
 					logger.Tracef("flushInodes(): volume '%s' %v inode %d: updating Payload"+
@@ -490,36 +693,34 @@ func (vS *volumeStruct) flushInodes(inodes []*inMemoryInodeStruct) (err error) {
 
 func (vS *volumeStruct) flushInodeNumbers(inodeNumbers []InodeNumber) (err error) {
 	var (
-		inode *inMemoryInodeStruct
-		ok    bool
+		inode       *inMemoryInodeStruct
+		inodes      []*inMemoryInodeStruct
+		inodeNumber InodeNumber
+		ok          bool
 	)
-	// Fetch referenced inodes
-	inodes := make([]*inMemoryInodeStruct, 0, len(inodeNumbers))
-	for _, inodeNumber := range inodeNumbers {
-		vS.Lock()
-		_, ok = vS.inodeCache[inodeNumber]
-		vS.Unlock()
-		if ok {
-			inode, ok, err = vS.fetchInode(inodeNumber)
-			if nil != err {
-				// the inode is locked so this should never happen (unless the inode
-				// was evicted from the cache and it was corrupt when read from disk)
-				// (err includes volume name and inode number)
-				logger.ErrorfWithError(err, "%s: fetch of inode to flush failed", utils.GetFnName())
-				err = blunder.AddError(err, blunder.InodeFlushError)
-				return
-			}
-			if !ok {
-				// this should never happen (see above)
-				err = fmt.Errorf("%s: fetch of inode %d volume '%s' failed because it is unallocated",
-					utils.GetFnName(), inodeNumber, vS.volumeName)
-				logger.ErrorWithError(err)
-				err = blunder.AddError(err, blunder.NotFoundError)
-				return
-			}
 
-			inodes = append(inodes, inode)
+	// Fetch referenced inodes
+	inodes = make([]*inMemoryInodeStruct, 0, len(inodeNumbers))
+	for _, inodeNumber = range inodeNumbers {
+		inode, ok, err = vS.fetchInode(inodeNumber)
+		if nil != err {
+			// the inode is locked so this should never happen (unless the inode
+			// was evicted from the cache and it was corrupt when read from disk)
+			// (err includes volume name and inode number)
+			logger.ErrorfWithError(err, "%s: fetch of inode to flush failed", utils.GetFnName())
+			err = blunder.AddError(err, blunder.InodeFlushError)
+			return
 		}
+		if !ok {
+			// this should never happen (see above)
+			err = fmt.Errorf("%s: fetch of inode %d volume '%s' failed because it is unallocated",
+				utils.GetFnName(), inodeNumber, vS.volumeName)
+			logger.ErrorWithError(err)
+			err = blunder.AddError(err, blunder.NotFoundError)
+			return
+		}
+
+		inodes = append(inodes, inode)
 	}
 
 	err = vS.flushInodes(inodes)
@@ -568,8 +769,8 @@ func fetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error)
 
 	volumeHandle = volume
 
-	volume.Lock()         // TODO: Once Tracker https://www.pivotaltracker.com/story/show/133377567
-	defer volume.Unlock() //       is resolved, these two lines should be removed
+	volume.Lock()         // REVIEW: Once Tracker https://www.pivotaltracker.com/story/show/133377567
+	defer volume.Unlock() //         is resolved, these two lines should be removed
 
 	if !volume.active {
 		err = fmt.Errorf("%s: volumeName \"%v\" not active", utils.GetFnName(), volumeName)
@@ -777,24 +978,28 @@ func (vS *volumeStruct) ProvisionObject() (objectPath string, err error) {
 }
 
 func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
-	vS.Lock()
-	defer vS.Unlock()
+	var (
+		inode *inMemoryInodeStruct
+		ok    bool
+	)
 
-	inMemoryInode, ok := vS.inodeCache[inodeNumber]
-
-	if !ok {
-		err = nil
+	inode, ok, err = vS.inodeCacheFetch(inodeNumber)
+	if (nil != err) || !ok {
 		return
 	}
 
-	if inMemoryInode.dirty {
+	if inode.dirty {
 		err = fmt.Errorf("Inode dirty... cannot be purged")
 		return
 	}
 
-	delete(vS.inodeCache, inodeNumber)
-
-	err = nil
+	ok, err = vS.inodeCacheDrop(inode)
+	if nil != err {
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("inodeCacheDrop(inode) failed")
+	}
 
 	return
 }
@@ -819,9 +1024,15 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 		return
 	}
 
-	vS.Lock()
-	delete(vS.inodeCache, inodeNumber)
-	vS.Unlock()
+	ok, err = vS.inodeCacheDrop(ourInode)
+	if nil != err {
+		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode failed: %v", utils.GetFnName(), err)
+		return
+	}
+	if !ok {
+		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode returned !ok", utils.GetFnName())
+		return
+	}
 
 	if ourInode.InodeType == FileType {
 		_ = vS.doFileInodeDataFlush(ourInode)
@@ -1500,9 +1711,8 @@ func validateFileExtents(ourInode *inMemoryInodeStruct) (err error) {
 		}
 
 		if contentLength < endOffset {
-			// XXX TODO CONSIDER: it might be helpful to continue and make a
-			// combined report of all insufficiently long log segments, rather than
-			// erroring out immediately
+			// REVIEW: it might be helpful to continue and make a combined report of all
+			//         insufficiently long log segments, rather than erroring out immediately
 			err = fmt.Errorf("expected %q to have at least %v bytes, content length was %v", objectPath, endOffset, contentLength)
 			logger.ErrorWithError(err)
 			return err
@@ -1545,12 +1755,14 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err erro
 	err = vS.flushInodeNumber(inodeNumber)
 	if nil != err {
 		logger.ErrorfWithError(err, "couldn't flush inode %v", inodeNumber)
+		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 
 	err = vS.Purge(inodeNumber)
 	if nil != err {
 		logger.ErrorfWithError(err, "couldn't purge inode %v", inodeNumber)
+		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 
@@ -1559,6 +1771,7 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err erro
 		// this indicates diskj corruption or software error
 		// (err includes volume name and inode number)
 		logger.ErrorfWithError(err, "%s: fetch of inode failed", utils.GetFnName())
+		err = blunder.AddError(err, blunder.CorruptInodeError)
 		return
 	}
 	if !ok {
