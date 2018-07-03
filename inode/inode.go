@@ -365,10 +365,10 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		for ic := vS.inodeCacheLRUHead; ic != nil && belowLimit == false; ic = nextIc {
 			nextIc = ic.inodeCacheLRUNext
 
+			// TODO -  grab DLM lock on inode via callback
 			// Only discard inodes with no write requests outstanding to Swift.
 			if ic.inFlightLogSegmentMap == nil {
 
-				// TODO -  grab DLM lock on inode via callback
 				vS.inodeCacheDropWhileLocked(ic)
 
 				inUse = vS.inodeCacheLRUItems * globals.inodeSize
@@ -376,6 +376,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 					belowLimit = true
 				}
 			}
+			// TODO -  release DLM lock on inode via callback
 		}
 	}
 
