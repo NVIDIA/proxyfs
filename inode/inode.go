@@ -351,13 +351,45 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 	vS.Unlock()
 }
 
+// TODO - correct location???
+// TODO: What happens if the volume is removed?  What if
+// failover?  How is goroutine stopped?
+func (vS *volumeStruct) inodeCacheDiscard() {
+	var belowLimit = false
+
+	vS.Lock()
+
+	inUse := vS.inodeCacheLRUItems * globals.inodeSize
+	if inUse > vS.inodeCacheLRUbytes {
+		var nextIc *inMemoryInodeStruct
+		for ic := vS.inodeCacheLRUHead; ic != nil && belowLimit == false; ic = nextIc {
+			nextIc = ic.inodeCacheLRUNext
+
+			// Only discard inodes with no write requests outstanding to Swift.
+			if ic.inFlightLogSegmentMap == nil {
+
+				// TODO -  grab DLM lock on inode via callback
+				vS.inodeCacheDropWhileLocked(ic)
+
+				inUse = vS.inodeCacheLRUItems * globals.inodeSize
+				if inUse < vS.inodeCacheLRUbytes {
+					belowLimit = true
+				}
+			}
+		}
+	}
+
+	vS.Unlock()
+}
+
 func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {
 	ok, err = vS.inodeCache.DeleteByKey(inode.InodeNumber)
 	if (nil != err) || !ok {
 		return
 	}
 
-	// TODO: Remove inode from inodeCacheLRU
+	// QUESTION - Is the above TODO still correct?????
+	// Looks like the code below removes it already.
 
 	if inode == vS.inodeCacheLRUHead {
 		if inode == vS.inodeCacheLRUTail {

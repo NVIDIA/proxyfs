@@ -2,6 +2,7 @@ package inode
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -73,6 +74,8 @@ type volumeStruct struct {
 	inodeCacheLRUHead              *inMemoryInodeStruct
 	inodeCacheLRUTail              *inMemoryInodeStruct
 	inodeCacheLRUItems             uint64
+	inodeCacheLRUbytes             uint64
+	inodeCacheLRUticker            *time.Ticker
 }
 
 type globalsStruct struct {
@@ -94,6 +97,7 @@ type globalsStruct struct {
 	corruptionDetectedFalseBuf         []byte                        // holds serialized CorruptionDetected == false
 	versionV1Buf                       []byte                        // holds serialized Version            == V1
 	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	inodeSize                          uint64                        // size of in-memory inode struct
 }
 
 var globals globalsStruct
@@ -192,6 +196,9 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
+	// TODO - Is this correct?
+	globals.inodeSize = uint64(reflect.TypeOf(inMemoryInodeStruct).Size())
+
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
@@ -209,6 +216,17 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUTail:              nil,
 			inodeCacheLRUItems:             0,
 		}
+
+		// TODO - get two tunable parameters (number of bytes in inode cache and number of seconds
+		// for ticker) from config file
+		volume.inodeCacheLRUticker = time.NewTicker(5 * time.Second)
+		go func() {
+			for range volume.inodeCacheLRUticker.C {
+
+				// TODO - Do we have to worry about the volume being removed?
+				volume.inodeCacheDiscard()
+			}
+		}()
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
@@ -894,7 +912,17 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 }
 
 func Down() (err error) {
+
+	// Stop the goroutine which culls the inodeCache
+	// TODO - Any issues with the pause/resume code?????
+	for _, volume := range globals.volumeMap {
+		if volume.active {
+			volume.inodeCacheLRUticker.Stop()
+		}
+	}
+
 	err = nil // Nothing to do
+
 	return
 }
 
