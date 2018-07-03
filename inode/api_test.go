@@ -94,6 +94,8 @@ func testSetup() (err error) {
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
 		"Volume:TestVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:TestVolume.MaxBytesInodeCache=100000",
+		"Volume:TestVolume.InodeCacheEvictInterval=1s",
 		"FSGlobals.VolumeList=TestVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",

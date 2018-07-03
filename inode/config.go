@@ -2,9 +2,9 @@ package inode
 
 import (
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -74,8 +74,9 @@ type volumeStruct struct {
 	inodeCacheLRUHead              *inMemoryInodeStruct
 	inodeCacheLRUTail              *inMemoryInodeStruct
 	inodeCacheLRUItems             uint64
-	inodeCacheLRUbytes             uint64
-	inodeCacheLRUticker            *time.Ticker
+	inodeCacheLRUMaxBytes          uint64
+	inodeCacheLRUTicker            *time.Ticker
+	inodeCacheLRUTickerInterval    time.Duration
 }
 
 type globalsStruct struct {
@@ -120,6 +121,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		flowControl                                    *flowControlStruct
 		flowControlName                                string
 		flowControlSectionName                         string
+		LRUCacheMaxBytes                               uint64
+		LRUDiscardTimeInterval                         time.Duration
 		ok                                             bool
 		peerName                                       string
 		peerNames                                      []string
@@ -196,8 +199,8 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
-	// TODO - Is this correct?
-	globals.inodeSize = uint64(reflect.TypeOf(inMemoryInodeStruct).Size())
+	var tmpInode inMemoryInodeStruct
+	globals.inodeSize = uint64(unsafe.Sizeof(tmpInode))
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
@@ -217,11 +220,22 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUItems:             0,
 		}
 
-		// TODO - get two tunable parameters (number of bytes in inode cache and number of seconds
-		// for ticker) from config file
-		volume.inodeCacheLRUticker = time.NewTicker(5 * time.Second)
+		// TODO - should these config settings have defaults?
+		LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
+		if nil != err {
+			return
+		}
+		volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
+
+		LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
+		if nil != err {
+			return
+		}
+		volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+
+		volume.inodeCacheLRUTicker = time.NewTicker(time.Duration(volume.inodeCacheLRUTickerInterval) * time.Second)
 		go func() {
-			for range volume.inodeCacheLRUticker.C {
+			for range volume.inodeCacheLRUTicker.C {
 
 				// TODO - Do we have to worry about the volume being removed?
 				volume.inodeCacheDiscard()
@@ -917,7 +931,7 @@ func Down() (err error) {
 	// TODO - Any issues with the pause/resume code?????
 	for _, volume := range globals.volumeMap {
 		if volume.active {
-			volume.inodeCacheLRUticker.Stop()
+			volume.inodeCacheLRUTicker.Stop()
 		}
 	}
 

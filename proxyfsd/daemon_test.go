@@ -122,6 +122,8 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.MaxInodesPerMetadataNode=32",
 		"Volume:CommonVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:CommonVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:CommonVolume.MaxBytesInodeCache=100000",
+		"Volume:CommonVolume.InodeCacheEvictInterval=1s",
 
 		"FSGlobals.VolumeList=CommonVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",

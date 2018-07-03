@@ -360,7 +360,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 	vS.Lock()
 
 	inUse := vS.inodeCacheLRUItems * globals.inodeSize
-	if inUse > vS.inodeCacheLRUbytes {
+	if inUse > vS.inodeCacheLRUMaxBytes {
 		var nextIc *inMemoryInodeStruct
 		for ic := vS.inodeCacheLRUHead; ic != nil && belowLimit == false; ic = nextIc {
 			nextIc = ic.inodeCacheLRUNext
@@ -372,7 +372,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 				vS.inodeCacheDropWhileLocked(ic)
 
 				inUse = vS.inodeCacheLRUItems * globals.inodeSize
-				if inUse < vS.inodeCacheLRUbytes {
+				if inUse < vS.inodeCacheLRUMaxBytes {
 					belowLimit = true
 				}
 			}
