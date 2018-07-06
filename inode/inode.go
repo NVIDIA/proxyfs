@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -365,8 +366,14 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		for ic := vS.inodeCacheLRUHead; ic != nil && belowLimit == false; ic = nextIc {
 			nextIc = ic.inodeCacheLRUNext
 
-			// TODO -  grab DLM lock on inode via callback
+			id := dlm.GenerateCallerID()
+			// TODO - how handle the error?
+			// iLock, err := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
+			iLock, _ := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
+			iLock.WriteLock()
+
 			// Only discard inodes with no write requests outstanding to Swift.
+			// TODO - do we also have to check the dirty flag too???
 			if ic.inFlightLogSegmentMap == nil {
 
 				vS.inodeCacheDropWhileLocked(ic)
@@ -376,7 +383,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 					belowLimit = true
 				}
 			}
-			// TODO -  release DLM lock on inode via callback
+			iLock.Unlock()
 		}
 	}
 
