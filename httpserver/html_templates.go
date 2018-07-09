@@ -352,6 +352,7 @@ const volumeListPerVolumeTemplate string = `          <tr>
             <td class="fit"><a href="/volume/%[1]v/fsck-job" class="btn btn-sm btn-primary">FSCK jobs</a></td>
             <td class="fit"><a href="/volume/%[1]v/scrub-job" class="btn btn-sm btn-primary">SCRUB jobs</a></td>
             <td class="fit"><a href="/volume/%[1]v/layout-report" class="btn btn-sm btn-primary">Layout Report</a></td>
+            <td class="fit"><a href="/volume/%[1]v/extent-map" class="btn btn-sm btn-primary">Extent Map</a></td>
           </tr>
 `
 
@@ -896,6 +897,182 @@ const layoutReportBottom string = `    <div>
     <script src="/jquery-3.2.1.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+  </body>
+</html>
+`
+
+// To use: fmt.Sprintf(extentMapTemplate, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
+const extentMapTemplate string = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="/bootstrap.min.css">
+    <link rel="stylesheet" href="/styles.css">
+    <title>Extent Map %[2]v - %[1]v</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
+      <a class="navbar-brand" href="#">%[1]v</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNavDropdown">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/metrics">StatsD/Prometheus</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/trigger">Triggers</a>
+          </li>
+          <li class="nav-item active">
+            <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <div class="container">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/">Home</a></li>
+          <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
+          <li class="breadcrumb-item active" aria-current="page">Extent Map %[2]v</li>
+        </ol>
+      </nav>
+
+      <h1 class="display-4">
+        Extent Map
+        <small class="text-muted">%[2]v</small>
+      </h1>
+
+      <div class="alert alert-danger" id="error-message" role="alert"></div>
+
+      <form id="new-path-form">
+        <div class="input-group mb-3">
+            <input type="text" id="path-text-box" class="form-control path-text-box" placeholder="path/to/check" aria-label="Path to check">
+            <div class="input-group-append">
+              <input type="submit" class="btn btn-primary" value="Search">
+            </div>
+        </div>
+      </form>
+
+      <br>
+      <table class="table table-sm table-striped table-hover" id="extent-map-table">
+        <thead>
+          <tr>
+            <th scope="col">File Offset</th>
+            <th scope="col" class="w-50">Container/Object</th>
+            <th scope="col">Object Offset</th>
+            <th scope="col">Length</th>
+          </tr>
+        </thead>
+        <tbody id="extent-map-data"></tbody>
+      </table>
+    </div>
+    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="popper.min.js"></script>
+    <script src="/bootstrap.min.js"></script>
+    <script type="text/javascript">
+      var json_data = %[3]v
+      var path = %[4]v;
+      var volume = "%[2]v";
+      var server_error = %[5]v;
+
+      $("#new-path-form").submit(function(e){
+        e.preventDefault();
+        var new_path = $("#path-text-box").val().trim();
+        if (new_path != "" && !new_path.startsWith("/")) {
+          new_path = "/" + new_path;
+        }
+        var new_url = "/volume/" + volume + "/extent-map" + new_path;
+        window.location = new_url;
+      });
+
+      var hideError = function() {
+        document.getElementById("error-message").style.display = "none";
+      };
+
+      var showPathError = function(path) {
+        var msg_to_print = "";
+        if (path !== null) {
+          msg_to_print = "<p>There was an error getting extent map for path:</p><pre>" + path + "</pre>";
+        } else {
+          msg_to_print = "<p>There was an error getting extent map for path:</p><pre>(error retrieving input path)</pre>";
+        }
+        showCustomError(msg_to_print);
+      };
+
+      var showCustomError = function(text) {
+        document.getElementById("error-message").innerHTML = text;
+      };
+
+      var getTableMarkupWithData = function(data) {
+        var table_markup = "";
+        for (var key in data) {
+          table_markup += "          <tr>\n";
+          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["file_offset"] + "</pre></td>\n";
+          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["container_name"] + "/" + data[key]["object_name"] + "</pre></td>\n";
+          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["object_offset"] + "</pre></td>\n";
+          table_markup += "            <td><pre class=\"no-margin\">" + data[key]["length"] + "</pre></td>\n";
+          table_markup += "          </tr>\n";
+        }
+        return table_markup;
+      };
+
+      var buildTable = function(data) {
+        document.getElementById("extent-map-data").innerHTML = getTableMarkupWithData(data);
+      };
+
+      var hideTable = function() {
+        document.getElementById("extent-map-table").style.display = "none";
+      };
+
+      var fillInTextBox = function(path) {
+        document.getElementById("path-text-box").value = path;
+      };
+
+      var selectSearchText = function() {
+        var pat_text_box = document.getElementById("path-text-box");
+        pat_text_box.setSelectionRange(0, pat_text_box.value.length)
+      };
+
+      if (server_error) {
+        // Error finding path
+        hideTable();
+        fillInTextBox(path);
+        showPathError(path);
+        selectSearchText();
+      } else if (json_data === null && path === null) {
+        // Empty form
+        hideTable();
+        hideError();
+        selectSearchText();
+      } else if (json_data === null || path === null) {
+        // This should never happen!
+        hideTable();
+        var msg_to_print = "<p>Oops, that's embarrassing... Something went wrong server side: ";
+        if (json_data === null) {
+          msg_to_print += "'json_data' is null, but 'path' is not:</p><pre>" + path + "</pre>";
+          fillInTextBox(path);
+        } else {
+          msg_to_print += "'path' is null, but 'json_data' is not:</p><pre>" + JSON.stringify(json_data, null, 2) + "</pre>";
+        }
+        showCustomError(msg_to_print);
+        selectSearchText();
+      } else {
+        // Path has been found
+        hideError();
+        fillInTextBox(path);
+        buildTable(json_data);
+        selectSearchText();
+      }
+    </script>
   </body>
 </html>
 `
