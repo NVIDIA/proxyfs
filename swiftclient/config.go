@@ -79,7 +79,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
 	if nil != err {
-		noAuthIPAddr = "127.0.0.1"
+		return
 	}
 	globals.noAuthStringAddr = noAuthIPAddr + ":" + strconv.Itoa(int(noAuthTCPPort))
 

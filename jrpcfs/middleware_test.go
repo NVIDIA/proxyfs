@@ -55,6 +55,7 @@ func testSetup() []func() {
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
 		"SwiftClient.RetryLimitObject=5",

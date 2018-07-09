@@ -58,6 +58,7 @@ func testSetup() (err error) {
 		"Stats.MaxLatency=1s",
 		"Logging.LogFilePath=proxyfsd.log",
 		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
 		"SwiftClient.RetryLimitObject=1",
