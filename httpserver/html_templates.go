@@ -1,6 +1,7 @@
 package httpserver
 
-// To use: fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(indexDotHTMLTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -8,11 +9,11 @@ const indexDotHTMLTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>ProxyFS Management - %[1]v</title>
+    <title>ProxyFS Management - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -102,7 +103,8 @@ const indexDotHTMLTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(configTemplate, globals.ipAddrTCPPort, confMapJSONString)
+// To use: fmt.Sprintf(configTemplate, gitDescribeOutput, globals.ipAddrTCPPort, confMapJSONString)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -110,11 +112,11 @@ const configTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Config - %[1]v</title>
+    <title>Config - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -155,7 +157,7 @@ const configTemplate string = `<!doctype html>
     <script src="/bootstrap.min.js"></script>
     <script src="/jsontree.js"></script>
     <script type="text/javascript">
-      var json_data = %[2]v;
+      var json_data = %[3]v;
       document.getElementById("json_data").innerHTML = JSONTree.create(json_data, null, 1);
       JSONTree.collapse();
     </script>
@@ -163,7 +165,8 @@ const configTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(metricsTemplate, globals.ipAddrTCPPort, metricsJSONString)
+// To use: fmt.Sprintf(metricsTemplate, gitDescribeOutput, globals.ipAddrTCPPort, metricsJSONString)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const metricsTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -171,11 +174,11 @@ const metricsTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Metrics - %[1]v</title>
+    <title>Metrics - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -219,7 +222,7 @@ const metricsTemplate string = `<!doctype html>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
-      var json_data = %[2]v;
+      var json_data = %[3]v;
       var getPrefixes = function(data, levels) {
         var prefixes = new Set();
         for (var key in data) {
@@ -287,7 +290,8 @@ const metricsTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(volumeListTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const volumeListTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -295,11 +299,11 @@ const volumeListTopTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Volumes - %[1]v</title>
+    <title>Volumes - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -367,7 +371,8 @@ const volumeListBottom string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, volumeName)
+// To use: fmt.Sprintf(snapShotsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const snapShotsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -376,11 +381,11 @@ const snapShotsTopTemplate string = `<!doctype html>
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
     <link href="/open-iconic/font/css/open-iconic-bootstrap.min.css" rel="stylesheet">
-    <title>%[2]v SnapShots - %[1]v</title>
+    <title>%[2]v SnapShots - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -409,13 +414,13 @@ const snapShotsTopTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">SnapShots %[2]v</li>
+          <li class="breadcrumb-item active" aria-current="page">SnapShots %[3]v</li>
         </ol>
       </nav>
       <div id="alert-area"></div>
       <h1 class="display-4">
         SnapShots
-        <small class="text-muted">%[2]v</small>
+        <small class="text-muted">%[3]v</small>
       </h1>
       <form class="float-right" onsubmit="return createSnapShot();">
         <div class="input-group mb-3">
@@ -585,7 +590,8 @@ const snapShotsBottomTemplate string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
+// To use: fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const jobsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -593,11 +599,11 @@ const jobsTopTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>%[3]v Jobs %[2]v - %[1]v</title>
+    <title>%[4]v Jobs %[3]v - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -626,12 +632,12 @@ const jobsTopTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">%[3]v Jobs %[2]v</li>
+          <li class="breadcrumb-item active" aria-current="page">%[4]v Jobs %[3]v</li>
         </ol>
       </nav>
       <h1 class="display-4">
-        %[3]v Jobs
-        <small class="text-muted">%[2]v</small>
+        %[4]v Jobs
+        <small class="text-muted">%[3]v</small>
       </h1>
       <table class="table table-sm table-striped table-hover">
         <thead>
@@ -704,7 +710,8 @@ const jobsBottom string = `    <script src="/jquery-3.2.1.min.js"></script>
 </html>
 `
 
-// To use: fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
+// To use: fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const jobTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -712,11 +719,11 @@ const jobTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>%[5]v %[3]v Job - %[1]v</title>
+    <title>%[6]v %[4]v Job - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -745,13 +752,13 @@ const jobTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item"><a href="/volume/%[2]v/%[4]v-job">%[3]v Jobs %[2]v</a></li>
-          <li class="breadcrumb-item active" aria-current="page">%[5]v</li>
+          <li class="breadcrumb-item"><a href="/volume/%[3]v/%[5]v-job">%[4]v Jobs %[3]v</a></li>
+          <li class="breadcrumb-item active" aria-current="page">%[6]v</li>
         </ol>
       </nav>
       <h1 class="display-4">
-        %[3]v Job
-        <small class="text-muted">%[5]v</small>
+        %[4]v Job
+        <small class="text-muted">%[6]v</small>
       </h1>
       <br>
       <dl class="row" id="job-info"></dl>
@@ -760,7 +767,7 @@ const jobTemplate string = `<!doctype html>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
-      var json_data = %[6]v;
+      var json_data = %[7]v;
       var getDescriptionListEntryMarkup = function(dt, dd) {
         var markup = "";
         markup += "         <dt class=\"col-sm-2\">\n";
@@ -823,7 +830,8 @@ const jobTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(layoutReportTopTemplate, globals.ipAddrTCPPort, volumeName)
+// To use: fmt.Sprintf(layoutReportTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const layoutReportTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -831,11 +839,11 @@ const layoutReportTopTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Layout Report %[2]v - %[1]v</title>
+    <title>Layout Report %[3]v - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -864,12 +872,12 @@ const layoutReportTopTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Layout Report %[2]v</li>
+          <li class="breadcrumb-item active" aria-current="page">Layout Report %[3]v</li>
         </ol>
       </nav>
       <h1 class="display-4">
         Layout Report
-        <small class="text-muted">%[2]v</small>
+        <small class="text-muted">%[3]v</small>
       </h1>
 `
 
@@ -905,7 +913,8 @@ const layoutReportBottom string = `    <div>
 </html>
 `
 
-// To use: fmt.Sprintf(extentMapTemplate, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
+// To use: fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const extentMapTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -913,11 +922,11 @@ const extentMapTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Extent Map %[2]v - %[1]v</title>
+    <title>Extent Map %[3]v - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
@@ -946,13 +955,13 @@ const extentMapTemplate string = `<!doctype html>
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/">Home</a></li>
           <li class="breadcrumb-item"><a href="/volume">Volumes</a></li>
-          <li class="breadcrumb-item active" aria-current="page">Extent Map %[2]v</li>
+          <li class="breadcrumb-item active" aria-current="page">Extent Map %[3]v</li>
         </ol>
       </nav>
 
       <h1 class="display-4">
         Extent Map
-        <small class="text-muted">%[2]v</small>
+        <small class="text-muted">%[3]v</small>
       </h1>
 
       <div class="alert alert-danger" id="error-message" role="alert"></div>
@@ -983,10 +992,10 @@ const extentMapTemplate string = `<!doctype html>
     <script src="popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
-      var json_data = %[3]v
-      var path = %[4]v;
-      var volume = "%[2]v";
-      var server_error = %[5]v;
+      var json_data = %[4]v
+      var path = %[5]v;
+      var volume = "%[3]v";
+      var server_error = %[6]v;
 
       $("#new-path-form").submit(function(e){
         e.preventDefault();
@@ -1081,7 +1090,8 @@ const extentMapTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(triggerTopTemplate, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(triggerTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const triggerTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -1089,11 +1099,11 @@ const triggerTopTemplate string = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <link rel="stylesheet" href="/bootstrap.min.css">
     <link rel="stylesheet" href="/styles.css">
-    <title>Triggers - %[1]v</title>
+    <title>Triggers - %[2]v</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <a class="navbar-brand" href="#">%[1]v</a>
+      <a class="navbar-brand" href="#">%[2]v</a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
