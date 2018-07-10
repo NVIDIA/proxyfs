@@ -340,6 +340,7 @@ const volumeListTopTemplate string = `<!doctype html>
             <th class="fit">&nbsp;</th>
             <th class="fit">&nbsp;</th>
             <th class="fit">&nbsp;</th>
+            <th class="fit">&nbsp;</th>
           </tr>
         </thead>
         <tbody>
@@ -416,10 +417,13 @@ const snapShotsTopTemplate string = `<!doctype html>
         SnapShots
         <small class="text-muted">%[2]v</small>
       </h1>
-      <form class="form-inline float-right" onsubmit="return createSnapShot();">
-        <label class="sr-only" for="new-snapshot-name">Name</label>
-        <input type="text" name="name" class="form-control form-control-sm mb-2 mr-sm-2" id="new-snapshot-name" placeholder="New snapshot name" autofocus="autofocus">
-        <button type="submit" class="btn btn-sm btn-primary mb-2">Create snapshot</span></button>
+      <form class="float-right" onsubmit="return createSnapShot();">
+        <div class="input-group mb-3">
+          <input type="text" name="name" class="form-control form-control-sm mb-2" id="new-snapshot-name" placeholder="New snapshot name" aria-label="Name" autofocus="autofocus">
+          <div class="input-group-append">
+            <button type="submit" class="btn btn-sm btn-primary mb-2">Create snapshot</span></button>
+          </div>
+        </div>
       </form>
       <table class="table table-sm table-striped table-hover">
         <thead>
@@ -955,10 +959,10 @@ const extentMapTemplate string = `<!doctype html>
 
       <form id="new-path-form">
         <div class="input-group mb-3">
-            <input type="text" id="path-text-box" class="form-control path-text-box" placeholder="path/to/check" aria-label="Path to check">
-            <div class="input-group-append">
-              <input type="submit" class="btn btn-primary" value="Search">
-            </div>
+          <input type="text" id="path-text-box" class="form-control path-text-box" placeholder="path/to/check" aria-label="Path to check">
+          <div class="input-group-append">
+            <input type="submit" class="btn btn-primary" value="Search">
+          </div>
         </div>
       </form>
 
