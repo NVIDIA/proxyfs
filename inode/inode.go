@@ -378,14 +378,14 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		// Inode is locked; skip it
 		if err != nil {
 			// Move inode to tail of LRU
-			vS.inodeCacheTouch(ic)
+			vS.inodeCacheTouchWhileLocked(ic)
 			continue
 		}
 
 		if (ic.inFlightLogSegmentMap != nil) && (ic.dirty == false) {
 			// The inode is busy - drop the DLM lock and move to tail
 			inodeRWLock.Unlock()
-			vS.inodeCacheTouch(ic)
+			vS.inodeCacheTouchWhileLocked(ic)
 			continue
 		}
 
@@ -398,6 +398,15 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
 			panic(pStr)
 		}
+
+		// TODO - I am releasing the locks out of order here.   That seems wrong.
+		// We acquire the locks in this order:
+		// 1. Volume lock
+		// 2. DLM lock for inode
+		//
+		// We then release the volume lock before deleting the inode from the cache and
+		// then releasing the DLM lock.  Is this okay?
+		inodeRWLock.Unlock()
 
 		// vS.inodeCacheDrop() removed the inode from the freelist so
 		// the head is now different
