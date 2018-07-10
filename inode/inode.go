@@ -352,41 +352,57 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 	vS.Unlock()
 }
 
-// TODO - correct location???
 // TODO: What happens if the volume is removed?  What if
-// failover?  How is goroutine stopped?
+// failover?
 func (vS *volumeStruct) inodeCacheDiscard() {
-	var belowLimit = false
+	inodesToDrop := uint64(0)
 
 	vS.Lock()
 
-	inUse := vS.inodeCacheLRUItems * globals.inodeSize
-	if inUse > vS.inodeCacheLRUMaxBytes {
-		var nextIc *inMemoryInodeStruct
-		for ic := vS.inodeCacheLRUHead; ic != nil && belowLimit == false; ic = nextIc {
-			nextIc = ic.inodeCacheLRUNext
-
-			id := dlm.GenerateCallerID()
-			// TODO - how handle the error?
-			// iLock, err := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
-			iLock, _ := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
-			iLock.WriteLock()
-
-			// Only discard inodes with no write requests outstanding to Swift.
-			// TODO - do we also have to check the dirty flag too???
-			if ic.inFlightLogSegmentMap == nil {
-
-				vS.inodeCacheDropWhileLocked(ic)
-
-				inUse = vS.inodeCacheLRUItems * globals.inodeSize
-				if inUse < vS.inodeCacheLRUMaxBytes {
-					belowLimit = true
-				}
-			}
-			iLock.Unlock()
-		}
+	if vS.inodeCacheLRUItems*globals.inodeSize > vS.inodeCacheLRUMaxBytes {
+		// Check, at most, 1.25 * (minimum_number_to_drop)
+		inodesToDrop = vS.inodeCacheLRUItems*globals.inodeSize - vS.inodeCacheLRUMaxBytes
+		inodesToDrop += inodesToDrop / 4
 	}
+	for vS.inodeCacheLRUItems*globals.inodeSize > vS.inodeCacheLRUMaxBytes &&
+		inodesToDrop > 0 {
+		inodesToDrop--
 
+		ic := vS.inodeCacheLRUHead
+
+		// Create a DLM lock object
+		id := dlm.GenerateCallerID()
+		inodeRWLock, _ := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
+		err := inodeRWLock.TryWriteLock()
+
+		// Inode is locked; skip it
+		if err != nil {
+			// Move inode to tail of LRU
+			vS.inodeCacheTouch(ic)
+			continue
+		}
+
+		if (ic.inFlightLogSegmentMap != nil) && (ic.dirty == false) {
+			// The inode is busy - drop the DLM lock and move to tail
+			inodeRWLock.Unlock()
+			vS.inodeCacheTouch(ic)
+			continue
+		}
+
+		vS.Unlock()
+
+		var ok bool
+
+		ok, err = vS.inodeCacheDrop(ic)
+		if err != nil || !ok {
+			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
+			panic(pStr)
+		}
+
+		// vS.inodeCacheDrop() removed the inode from the freelist so
+		// the head is now different
+		vS.Lock()
+	}
 	vS.Unlock()
 }
 
