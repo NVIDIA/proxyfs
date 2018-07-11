@@ -232,8 +232,8 @@ func Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 		volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+		volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
 
-		volume.inodeCacheLRUTicker = time.NewTicker(time.Duration(volume.inodeCacheLRUTickerInterval) * time.Second)
 		go func() {
 			for range volume.inodeCacheLRUTicker.C {
 
