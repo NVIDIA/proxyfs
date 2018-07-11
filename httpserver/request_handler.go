@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/pprof"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -184,6 +186,10 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", stylesDotCSSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(stylesDotCSSContent))
+	case "/version" == path:
+		responseWriter.Header().Set("Content-Type", "text/plain")
+		responseWriter.WriteHeader(http.StatusOK)
+		_, _ = responseWriter.Write([]byte(gitDescribeOutput))
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -196,7 +202,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, globals.ipAddrTCPPort)))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
 }
 
 func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -264,7 +270,7 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, gitDescribeOutput, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
 	}
 }
 
@@ -385,7 +391,7 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, gitDescribeOutput, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
 		} else {
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
@@ -579,7 +585,7 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, globals.ipAddrTCPPort)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
 		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerAllArmedOrDisarmedActiveString))
 		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerTableTop))
 
@@ -664,19 +670,26 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	switch numPathParts {
+	case 0:
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	case 1:
 		// Form: /volume
+	case 2:
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	case 3:
+		// Form: /volume/<volume-name>/extent-map
 		// Form: /volume/<volume-name>/fsck-job
 		// Form: /volume/<volume-name>/layout-report
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
 	case 4:
+		// Form: /volume/<volume-name>/extent-map/<basename>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
+		// Form: /volume/<volume-name>/extent-map/<dir>/.../<basename>
 	}
 
 	acceptHeader = request.Header.Get("Accept")
@@ -741,7 +754,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, globals.ipAddrTCPPort)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
 
 			for volumeListIndex, volumeName = range volumeList {
 				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)))
@@ -753,7 +766,8 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	// If we reach here, numPathParts is either 3 or 4
+	// If we reach here, numPathParts is at least 3
+
 	volumeName = pathSplit[2]
 
 	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
@@ -772,6 +786,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	requestState.formatResponseCompactly = formatResponseCompactly
 
 	switch pathSplit[3] {
+	case "extent-map":
+		doExtentMap(responseWriter, request, requestState)
+
 	case "fsck-job":
 		doJob(fsckJobType, responseWriter, request, requestState)
 
@@ -791,6 +808,116 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
+func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		dirInodeNumber      inode.InodeNumber
+		err                 error
+		extentMap           []ExtentMapElementStruct
+		extentMapJSONBuffer bytes.Buffer
+		extentMapJSONPacked []byte
+		fileOffset          uint64
+		path                string
+		pathDoubleQuoted    string
+		pathPartIndex       int
+		readPlan            []inode.ReadPlanStep
+		readPlanStep        inode.ReadPlanStep
+	)
+
+	if 3 > requestState.numPathParts {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	if (3 == requestState.numPathParts) && requestState.formatResponseAsJSON {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if 3 == requestState.numPathParts {
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", "null", "false")))
+		return
+	}
+
+	dirEntryInodeNumber = inode.RootDirInodeNumber
+	pathPartIndex = 3
+
+	path = strings.Join(requestState.pathSplit[4:], "/")
+	pathDoubleQuoted = "\"" + path + "\""
+
+	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
+		dirInodeNumber = dirEntryInodeNumber
+		dirEntryInodeNumber, err = requestState.volume.fsMountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
+		if nil != err {
+			if requestState.formatResponseAsJSON {
+				responseWriter.WriteHeader(http.StatusNotFound)
+				return
+			} else {
+				responseWriter.Header().Set("Content-Type", "text/html")
+				responseWriter.WriteHeader(http.StatusOK)
+
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
+				return
+			}
+		}
+	}
+
+	readPlan, err = requestState.volume.fsMountHandle.FetchReadPlan(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber, uint64(0), uint64(math.MaxUint64))
+	if nil != err {
+		if requestState.formatResponseAsJSON {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		} else {
+			responseWriter.Header().Set("Content-Type", "text/html")
+			responseWriter.WriteHeader(http.StatusOK)
+
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
+			return
+		}
+	}
+
+	extentMap = make([]ExtentMapElementStruct, 0, len(readPlan))
+
+	fileOffset = uint64(0)
+
+	for _, readPlanStep = range readPlan {
+		extentMap = append(extentMap, ExtentMapElementStruct{
+			FileOffset:    fileOffset,
+			ContainerName: readPlanStep.ContainerName,
+			ObjectName:    readPlanStep.ObjectName,
+			ObjectOffset:  readPlanStep.Offset,
+			Length:        readPlanStep.Length,
+		})
+
+		fileOffset += readPlanStep.Length
+	}
+
+	extentMapJSONPacked, err = json.Marshal(extentMap)
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	if requestState.formatResponseAsJSON {
+		responseWriter.Header().Set("Content-Type", "application/json")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		if requestState.formatResponseCompactly {
+			_, _ = responseWriter.Write(extentMapJSONPacked)
+		} else {
+			json.Indent(&extentMapJSONBuffer, extentMapJSONPacked, "", "\t")
+			_, _ = responseWriter.Write(extentMapJSONBuffer.Bytes())
+			_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
+		}
+	} else {
+		responseWriter.Header().Set("Content-Type", "text/html")
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, utils.ByteSliceToString(extentMapJSONPacked), pathDoubleQuoted, "false")))
+	}
+}
+
 func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
 	var (
 		err                     error
@@ -803,7 +930,7 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 		jobID                   uint64
 		jobIDAsKey              sortedmap.Key
 		jobPerJobTemplate       string
-		jobsIDListJSON          bytes.Buffer
+		jobsIDListJSONBuffer    bytes.Buffer
 		jobsIDListJSONPacked    []byte
 		jobStatusJSONBuffer     bytes.Buffer
 		jobStatusJSONPacked     []byte
@@ -887,8 +1014,8 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 			if formatResponseCompactly {
 				_, _ = responseWriter.Write(jobsIDListJSONPacked)
 			} else {
-				json.Indent(&jobsIDListJSON, jobsIDListJSONPacked, "", "\t")
-				_, _ = responseWriter.Write(jobsIDListJSON.Bytes())
+				json.Indent(&jobsIDListJSONBuffer, jobsIDListJSONPacked, "", "\t")
+				_, _ = responseWriter.Write(jobsIDListJSONBuffer.Bytes())
 				_, _ = responseWriter.Write(utils.StringToByteSlice("\n"))
 			}
 		} else {
@@ -897,9 +1024,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 
 			switch jobType {
 			case fsckJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "FSCK")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "FSCK")))
 			case scrubJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
 
 			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
@@ -1033,9 +1160,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 
 		switch jobType {
 		case fsckJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		case scrubJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		}
 	}
 
@@ -1123,7 +1250,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, layoutReportSetElement = range layoutReportSet {
 			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName)))
@@ -1206,7 +1333,7 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, globals.ipAddrTCPPort, requestState.volume.name)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, snapShot = range list {
 			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, snapShot.ID, snapShot.Time.Format(time.RFC3339), snapShot.Name)))

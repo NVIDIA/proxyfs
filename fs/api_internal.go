@@ -319,6 +319,63 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
+func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64) (readPlan []inode.ReadPlanStep, err error) {
+	var (
+		inodeLock   *dlm.RWLockStruct
+		inodeType   inode.InodeType
+		localLength uint64
+		localOffset uint64
+	)
+
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
+
+	inodeLock, err = mS.volStruct.initInodeLock(inodeNumber, nil)
+	if nil != err {
+		return
+	}
+	err = inodeLock.ReadLock()
+	if nil != err {
+		return
+	}
+	defer inodeLock.Unlock()
+
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
+		inode.NoOverride) {
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		return
+	}
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
+		inode.OwnerOverride) {
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		return
+	}
+
+	inodeType, err = mS.volStruct.inodeVolumeHandle.GetType(inodeNumber)
+	if nil != err {
+		logger.ErrorfWithError(err, "couldn't get type for inode %v", inodeNumber)
+		return
+	}
+	// Make sure the inode number is for a file inode
+	if inodeType != inode.FileType {
+		err = fmt.Errorf("%s: expected inode %v to be a file inode, got %v", utils.GetFnName(), inodeNumber, inodeType)
+		logger.ErrorWithError(err)
+		err = blunder.AddError(err, blunder.NotFileError)
+		return
+	}
+
+	localOffset = offset
+	localLength = length
+
+	readPlan, err = mS.volStruct.inodeVolumeHandle.GetReadPlan(inodeNumber, &localOffset, &localLength)
+
+	if localOffset != offset {
+		err = blunder.NewError(blunder.BadSeekError, "supplied offset (0x%016X) could not be honored", offset)
+	}
+
+	return
+}
+
 func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 	var (
 		err error

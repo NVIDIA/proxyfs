@@ -15,6 +15,14 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+type ExtentMapElementStruct struct {
+	FileOffset    uint64 `json:"file_offset"`
+	ContainerName string `json:"container_name"`
+	ObjectName    string `json:"object_name"`
+	ObjectOffset  uint64 `json:"object_offset"`
+	Length        uint64 `json:"length"`
+}
+
 type jobState uint8
 
 const (

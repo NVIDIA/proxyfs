@@ -362,29 +362,30 @@ func TestGetstat(t *testing.T) {
 
 // TestAllAPIPositiveCases() follows the following "positive" test steps:
 //
-//    Mount          A                                    : mount the specified test Volume (must be empty)
-//    Mkdir          A/B/                                 : create a subdirectory within Volume directory
-//    Create      #1 A/C                                  : create and open a normal file within Volume directory
-//    Lookup      #1 A/C                                  : fetch the inode name of the just created normal file
-//    Write          A/C                                  : write something to normal file
-//    Read           A/C                                  : read back what was just written to normal file
-//    Getstat     #1 A/C                                  : check the current size of the normal file
-//    Resize         A/C                                  : truncate the file
-//    Getstat     #2 A/C                                  : verify the size of the normal file is now zero
-//    Symlink        A/D->A/C                             : create a symlink to the normal file
-//    Lookup      #2 A/D                                  : fetch the inode name of the just created symlink
-//    Readsymlink    A/D                                  : read the symlink to ensure it points to the normal file
-//    Lookup      #3 A/B/                                 : fetch the inode name of the subdirectory
-//    Create      #2 A/B/E                                : create a normal file within subdirectory
-//    Readdir     #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
-//    Statfs         A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
-//    Unlink      #1 A/B/E                                : delete the normal file within the subdirectory
-//    Readdir     #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
-//    Readdir     #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
-//    Unlink      #2 A/D                                  : delete the symlink
-//    Unlink      #3 A/C                                  : delete the normal file
-//    Unlink      #4 A/B                                  : delete the subdirectory
-//    Unmount        A                                    : unmount the Volume
+//    Mount             A                                    : mount the specified test Volume (must be empty)
+//    Mkdir             A/B/                                 : create a subdirectory within Volume directory
+//    Create         #1 A/C                                  : create and open a normal file within Volume directory
+//    Lookup         #1 A/C                                  : fetch the inode name of the just created normal file
+//    Write             A/C                                  : write something to normal file
+//    Read              A/C                                  : read back what was just written to normal file
+//    FetchReadPlan     A/C                                  : fetch readPlan for entire file
+//    Getstat        #1 A/C                                  : check the current size of the normal file
+//    Resize            A/C                                  : truncate the file
+//    Getstat        #2 A/C                                  : verify the size of the normal file is now zero
+//    Symlink           A/D->A/C                             : create a symlink to the normal file
+//    Lookup         #2 A/D                                  : fetch the inode name of the just created symlink
+//    Readsymlink       A/D                                  : read the symlink to ensure it points to the normal file
+//    Lookup         #3 A/B/                                 : fetch the inode name of the subdirectory
+//    Create         #2 A/B/E                                : create a normal file within subdirectory
+//    Readdir        #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
+//    Statfs            A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
+//    Unlink         #1 A/B/E                                : delete the normal file within the subdirectory
+//    Readdir        #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
+//    Readdir        #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
+//    Unlink         #2 A/D                                  : delete the symlink
+//    Unlink         #3 A/C                                  : delete the normal file
+//    Unlink         #4 A/B                                  : delete the subdirectory
+//    Unmount           A                                    : unmount the Volume
 //
 // TODO: Rename(), Link() tests
 
@@ -445,6 +446,20 @@ func TestAllAPIPositiveCases(t *testing.T) {
 	}
 	if 0 != bytes.Compare(bufToWrite, read_buf) {
 		t.Fatalf("Read() returned data different from what was written")
+	}
+
+	read_plan, err := mS.FetchReadPlan(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, uint64(0), uint64(len(bufToWrite)))
+	if nil != err {
+		t.Fatalf("FetchReadPlan() returned error: %v", err)
+	}
+	if 1 != len(read_plan) {
+		t.Fatalf("FetchReadPlan() returned unexpected len(read_plan): %v (should be 1)", len(read_plan))
+	}
+	if uint64(0) != read_plan[0].Offset {
+		t.Fatalf("FetchReadPlan() returned unexpected read_plan[0].Offset: %v (should be 0)", read_plan[0].Offset)
+	}
+	if uint64(len(bufToWrite)) != read_plan[0].Length {
+		t.Fatalf("FetchReadPlan() returned unexpected read_plan[0].Length: %v (should be %v)", read_plan[0].Length, uint64(len(bufToWrite)))
 	}
 
 	//    Getstat     #1 A/C                                  : check the current size of the normal file
