@@ -1,7 +1,6 @@
 package httpserver
 
 // To use: fmt.Sprintf(indexDotHTMLTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -35,6 +34,7 @@ const indexDotHTMLTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -104,7 +104,6 @@ const indexDotHTMLTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(configTemplate, gitDescribeOutput, globals.ipAddrTCPPort, confMapJSONString)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -138,6 +137,7 @@ const configTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -166,7 +166,6 @@ const configTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(metricsTemplate, gitDescribeOutput, globals.ipAddrTCPPort, metricsJSONString)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const metricsTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -200,6 +199,7 @@ const metricsTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -291,7 +291,6 @@ const metricsTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(volumeListTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const volumeListTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -325,6 +324,7 @@ const volumeListTopTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -372,7 +372,6 @@ const volumeListBottom string = `        </tbody>
 `
 
 // To use: fmt.Sprintf(snapShotsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const snapShotsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -407,6 +406,7 @@ const snapShotsTopTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -591,7 +591,6 @@ const snapShotsBottomTemplate string = `        </tbody>
 `
 
 // To use: fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const jobsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -625,6 +624,7 @@ const jobsTopTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -711,7 +711,6 @@ const jobsBottom string = `    <script src="/jquery-3.2.1.min.js"></script>
 `
 
 // To use: fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const jobTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -745,6 +744,7 @@ const jobTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -831,7 +831,6 @@ const jobTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(layoutReportTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const layoutReportTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -865,6 +864,7 @@ const layoutReportTopTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -914,7 +914,6 @@ const layoutReportBottom string = `    <div>
 `
 
 // To use: fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const extentMapTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -948,6 +947,7 @@ const extentMapTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes <span class="sr-only">(current)</span></a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
@@ -1091,7 +1091,6 @@ const extentMapTemplate string = `<!doctype html>
 `
 
 // To use: fmt.Sprintf(triggerTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
-// TODO: Incorporate %[1]v (gitDescribeOutput) into navigation code below
 const triggerTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -1125,6 +1124,7 @@ const triggerTopTemplate string = `<!doctype html>
             <a class="nav-link" href="/volume">Volumes</a>
           </li>
         </ul>
+        <span class="navbar-text">Version %[1]v</span>
       </div>
     </nav>
     <div class="container">
