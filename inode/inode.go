@@ -1714,6 +1714,12 @@ func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGr
 }
 
 func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		err = fmt.Errorf("No stream '%v'", inodeStreamName)
+		return buf, blunder.AddError(err, blunder.StreamNotFound)
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
