@@ -359,13 +359,14 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 
 	vS.Lock()
 
-	if vS.inodeCacheLRUItems*globals.inodeSize > vS.inodeCacheLRUMaxBytes {
+	if (vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes {
 		// Check, at most, 1.25 * (minimum_number_to_drop)
-		inodesToDrop = vS.inodeCacheLRUItems*globals.inodeSize - vS.inodeCacheLRUMaxBytes
+		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
+		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
 	}
-	for vS.inodeCacheLRUItems*globals.inodeSize > vS.inodeCacheLRUMaxBytes &&
-		inodesToDrop > 0 {
+	for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
+		(inodesToDrop > 0) {
 		inodesToDrop--
 
 		ic := vS.inodeCacheLRUHead
