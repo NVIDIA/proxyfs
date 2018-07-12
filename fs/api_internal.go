@@ -330,7 +330,7 @@ func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.Ino
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err = mS.volStruct.initInodeLock(inodeNumber, nil)
+	inodeLock, err = inode.InitInodeLock(mS.VolumeName(), inodeNumber, nil)
 	if nil != err {
 		return
 	}
