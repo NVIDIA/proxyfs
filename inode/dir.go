@@ -785,6 +785,35 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		value                        sortedmap.Value
 	)
 
+	// The following defer'd func() is useful for debugging... so leaving it in here as a comment
+	/*
+		defer func() {
+			logger.Errorf("Executed inode.ReadDir()...")
+			logger.Errorf("  dirInodeNumber: 0x%016X", dirInodeNumber)
+			logger.Errorf("  maxEntries:     0x%016X", maxEntries)
+			logger.Errorf("  maxBufSize:     0x%016X", maxBufSize)
+			switch len(prevReturned) {
+			case 0:
+				// Nothing
+			case 1:
+				logger.Errorf("  prevReturned:   %v", prevReturned[0])
+			default:
+				logger.Errorf("  len(prevReturned) [%v] should have been 0 or 1", len(prevReturned))
+			}
+			if nil == err {
+				for dirEntriesIndex, dirEntry := range dirEntries {
+					logger.Errorf("  dirEntries[%v]:", dirEntriesIndex)
+					logger.Errorf("    InodeNumber:     0x%016X", dirEntry.InodeNumber)
+					logger.Errorf("    Basename:        %s", dirEntry.Basename)
+					logger.Errorf("    InodeType:       %v", dirEntry.Type)
+					logger.Errorf("    NextDirLocation: %v", dirEntry.NextDirLocation)
+				}
+			}
+			logger.Errorf("  moreEntries:    %v", moreEntries)
+			logger.Errorf("  err:            %v", err)
+		}()
+	*/
+
 	stats.IncrementOperations(&stats.DirReaddirOps)
 
 	dirEntries = make([]DirEntry, 0, int(maxEntries))
@@ -1028,13 +1057,31 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 				dirIndex = int(prevReturnedAsInodeDirLocation + 1)
 			}
 		} else if okAsString {
-			dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
-			if nil != err {
-				err = blunder.AddError(err, blunder.IOError)
-				return
-			}
-			if foundDoingBisectRight {
-				dirIndex++
+			if snapShotDirToBeInserted {
+				if SnapShotDirName == prevReturnedAsString {
+					dirIndex = snapShotDirIndex + 1
+				} else {
+					dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
+					if nil != err {
+						err = blunder.AddError(err, blunder.IOError)
+						return
+					}
+					if dirIndex >= snapShotDirIndex {
+						dirIndex++
+					}
+					if foundDoingBisectRight {
+						dirIndex++
+					}
+				}
+			} else {
+				dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
+				if nil != err {
+					err = blunder.AddError(err, blunder.IOError)
+					return
+				}
+				if foundDoingBisectRight {
+					dirIndex++
+				}
 			}
 		} else {
 			err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
