@@ -352,8 +352,7 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 	vS.Unlock()
 }
 
-// TODO: What happens if the volume is removed?  What if
-// failover?
+// The inode cache discard thread calls this routine when the ticker goes off.
 func (vS *volumeStruct) inodeCacheDiscard() {
 	inodesToDrop := uint64(0)
 
@@ -373,7 +372,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 
 		// Create a DLM lock object
 		id := dlm.GenerateCallerID()
-		inodeRWLock, _ := InitInodeLock(vS.volumeName, ic.InodeNumber, id)
+		inodeRWLock, _ := vS.InitInodeLock(ic.InodeNumber, id)
 		err := inodeRWLock.TryWriteLock()
 
 		// Inode is locked; skip it
@@ -400,13 +399,14 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 			panic(pStr)
 		}
 
-		// TODO - I am releasing the locks out of order here.   That seems wrong.
+		// NOTE: Releasing the locks out of order here.
+		//
 		// We acquire the locks in this order:
 		// 1. Volume lock
 		// 2. DLM lock for inode
 		//
 		// We then release the volume lock before deleting the inode from the cache and
-		// then releasing the DLM lock.  Is this okay?
+		// then releasing the DLM lock.
 		inodeRWLock.Unlock()
 
 		// vS.inodeCacheDrop() removed the inode from the freelist so
@@ -421,9 +421,6 @@ func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (o
 	if (nil != err) || !ok {
 		return
 	}
-
-	// QUESTION - Is the above TODO still correct?????
-	// Looks like the code below removes it already.
 
 	if inode == vS.inodeCacheLRUHead {
 		if inode == vS.inodeCacheLRUTail {

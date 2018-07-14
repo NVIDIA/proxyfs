@@ -103,6 +103,42 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
+func stopInodeCacheDiscard(volume *volumeStruct) {
+	if volume.active {
+		volume.inodeCacheLRUTicker.Stop()
+	}
+}
+
+func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSectionName string) (err error) {
+
+	var (
+		LRUCacheMaxBytes       uint64
+		LRUDiscardTimeInterval time.Duration
+	)
+	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
+	if nil != err {
+		return
+	}
+	volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
+
+	LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
+	if nil != err {
+		return
+	}
+	volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+	volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
+
+	// Start ticker for inode cache discard thread
+	go func() {
+		for range volume.inodeCacheLRUTicker.C {
+
+			volume.inodeCacheDiscard()
+		}
+	}()
+
+	return
+}
+
 func Up(confMap conf.ConfMap) (err error) {
 	var (
 		alreadyInAccountMap                            bool
@@ -121,8 +157,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		flowControl                                    *flowControlStruct
 		flowControlName                                string
 		flowControlSectionName                         string
-		LRUCacheMaxBytes                               uint64
-		LRUDiscardTimeInterval                         time.Duration
 		ok                                             bool
 		peerName                                       string
 		peerNames                                      []string
@@ -220,27 +254,10 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUItems:             0,
 		}
 
-		// TODO - should these config settings have defaults?
-		LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
+		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
 		if nil != err {
 			return
 		}
-		volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
-
-		LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
-		if nil != err {
-			return
-		}
-		volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
-		volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
-
-		go func() {
-			for range volume.inodeCacheLRUTicker.C {
-
-				// TODO - Do we have to worry about the volume being removed?
-				volume.inodeCacheDiscard()
-			}
-		}()
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
@@ -526,6 +543,9 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	volumesNewlyInactiveSet = make(map[string]bool)
 
 	for volumeName, volume = range globals.volumeMap {
+		// Stop the routine discarding inodes from the inode cache.
+		stopInodeCacheDiscard(volume)
+
 		_, ok = newVolumeSet[volumeName]
 		if ok {
 			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
@@ -917,6 +937,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			volume.headhunterVolumeHandle.RegisterForEvents(volume)
 		}
+
+		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+		if nil != err {
+			return
+		}
 	}
 
 	adoptFlowControlReadCacheParameters(confMap, true)
@@ -928,11 +953,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 func Down() (err error) {
 
 	// Stop the goroutine which culls the inodeCache
-	// TODO - Any issues with the pause/resume code?????
 	for _, volume := range globals.volumeMap {
-		if volume.active {
-			volume.inodeCacheLRUTicker.Stop()
-		}
+		stopInodeCacheDiscard(volume)
 	}
 
 	err = nil // Nothing to do

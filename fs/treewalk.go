@@ -1241,7 +1241,7 @@ func (sVS *scrubVolumeStruct) scrubVolumeInode(inodeNumber uint64) {
 
 	defer sVS.jobReleaseParallelism()
 
-	inodeLock, err = inode.InitInodeLock(sVS.jobStruct.volumeName, inode.InodeNumber(inodeNumber), nil)
+	inodeLock, err = sVS.jobStruct.inodeVolumeHandle.InitInodeLock(inode.InodeNumber(inodeNumber), nil)
 	if nil != err {
 		sVS.jobLogErr("Got initInodeLock(0x%016X) failure: %v", inodeNumber, err)
 		return

@@ -9,6 +9,7 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -133,6 +134,14 @@ type VolumeHandle interface {
 	GetFSID() (fsid uint64)
 	SnapShotCreateByFSLayer(name string) (id uint64, err error)
 	SnapShotDeleteByFSLayer(id uint64) (err error)
+
+	// Wrapper methods around DLM locks.  Implemented in locker.go
+	MakeLockID(inodeNumber InodeNumber) (lockID string, err error)
+	InitInodeLock(inodeNumber InodeNumber, callerID dlm.CallerID) (lock *dlm.RWLockStruct, err error)
+	GetReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
+	GetWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
+	EnsureReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
+	EnsureWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
 
 	// Common Inode methods, implemented in inode.go
 
