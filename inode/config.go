@@ -105,7 +105,11 @@ var globals globalsStruct
 
 func stopInodeCacheDiscard(volume *volumeStruct) {
 	if volume.active {
-		volume.inodeCacheLRUTicker.Stop()
+		if volume.inodeCacheLRUTicker != nil {
+			volume.inodeCacheLRUTicker.Stop()
+			logger.Infof("Inode cache discard ticker for 'volume: %v' stopped.",
+				volume.volumeName)
+		}
 	}
 }
 
@@ -125,8 +129,17 @@ func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSe
 	if nil != err {
 		return
 	}
+
+	if LRUDiscardTimeInterval == 0 {
+		logger.Infof("Inode cache discard ticker for 'volume: %v' is disabled.",
+			volume.volumeName)
+		return
+	}
 	volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
 	volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
+
+	logger.Infof("Inode cache discard ticker for 'volume: %v' is: %v MaxBytesInodeCache: %v",
+		volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
 
 	// Start ticker for inode cache discard thread
 	go func() {
