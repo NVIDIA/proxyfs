@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -351,13 +352,75 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 	vS.Unlock()
 }
 
+// The inode cache discard thread calls this routine when the ticker goes off.
+func (vS *volumeStruct) inodeCacheDiscard() {
+	inodesToDrop := uint64(0)
+
+	vS.Lock()
+
+	if (vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes {
+		// Check, at most, 1.25 * (minimum_number_to_drop)
+		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
+		inodesToDrop = inodesToDrop / globals.inodeSize
+		inodesToDrop += inodesToDrop / 4
+	}
+	for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
+		(inodesToDrop > 0) {
+		inodesToDrop--
+
+		ic := vS.inodeCacheLRUHead
+
+		// Create a DLM lock object
+		id := dlm.GenerateCallerID()
+		inodeRWLock, _ := vS.InitInodeLock(ic.InodeNumber, id)
+		err := inodeRWLock.TryWriteLock()
+
+		// Inode is locked; skip it
+		if err != nil {
+			// Move inode to tail of LRU
+			vS.inodeCacheTouchWhileLocked(ic)
+			continue
+		}
+
+		if (ic.inFlightLogSegmentMap != nil) && (ic.dirty == false) {
+			// The inode is busy - drop the DLM lock and move to tail
+			inodeRWLock.Unlock()
+			vS.inodeCacheTouchWhileLocked(ic)
+			continue
+		}
+
+		vS.Unlock()
+
+		var ok bool
+
+		ok, err = vS.inodeCacheDrop(ic)
+		if err != nil || !ok {
+			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
+			panic(pStr)
+		}
+
+		// NOTE: Releasing the locks out of order here.
+		//
+		// We acquire the locks in this order:
+		// 1. Volume lock
+		// 2. DLM lock for inode
+		//
+		// We then release the volume lock before deleting the inode from the cache and
+		// then releasing the DLM lock.
+		inodeRWLock.Unlock()
+
+		// vS.inodeCacheDrop() removed the inode from the freelist so
+		// the head is now different
+		vS.Lock()
+	}
+	vS.Unlock()
+}
+
 func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {
 	ok, err = vS.inodeCache.DeleteByKey(inode.InodeNumber)
 	if (nil != err) || !ok {
 		return
 	}
-
-	// TODO: Remove inode from inodeCacheLRU
 
 	if inode == vS.inodeCacheLRUHead {
 		if inode == vS.inodeCacheLRUTail {
