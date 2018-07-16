@@ -754,6 +754,7 @@ func (vS *volumeStruct) NumDirEntries(dirInodeNumber InodeNumber) (numEntries ui
 // A maxEntries or maxBufSize argument of zero is interpreted to mean "no maximum".
 func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntries []DirEntry, moreEntries bool, err error) {
 	var (
+		atLeastOneEntryFound         bool
 		bufSize                      uint64
 		dirEntryBasename             string
 		dirEntryBasenameAsKey        sortedmap.Key
@@ -763,7 +764,7 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		dirMapping                   sortedmap.BPlusTree
 		dirMappingLen                int         // If snapShotDirToBeInserted, this is 1 + dirMapping.Len()
 		dotDotInodeNumberReplacement InodeNumber // If == 0, do not replace ..'s InodeNumber
-		atLeastOneEntryFound         bool
+		foundPrevReturned            bool
 		inode                        *inMemoryInodeStruct
 		key                          sortedmap.Key
 		nextEntry                    DirEntry
@@ -891,10 +892,12 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 					dirIndex = int(prevReturnedAsInodeDirLocation + 1)
 				}
 			} else if okAsString {
-				for dirIndex = int(0); dirIndex < len(snapShotList); dirIndex++ {
-					if prevReturnedAsString < snapShotList[dirIndex].Name {
-						break
-					}
+				dirIndex, foundPrevReturned, err = snapShotListSorted.BisectRight(prevReturnedAsString)
+				if nil != err {
+					err = fmt.Errorf("ReadDir() encountered error bisecting SnapShotListSorted: %v", err)
+				}
+				if foundPrevReturned {
+					dirIndex++
 				}
 			} else {
 				err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
@@ -922,8 +925,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 				break
 			}
 
-			atLeastOneEntryFound = true
-
 			dirEntryBasenameAsKey, dirEntryInodeNumberAsValue, okGetByIndex, err = snapShotListSorted.GetByIndex(dirIndex)
 			if nil != err {
 				err = fmt.Errorf("ReadDir() encountered error accessing SnapShotListSorted: %v", err)
@@ -949,6 +950,8 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 				err = blunder.AddError(err, blunder.IOError)
 				return
 			}
+
+			atLeastOneEntryFound = true
 
 			nextEntry = DirEntry{
 				InodeNumber:     dirEntryInodeNumber,
