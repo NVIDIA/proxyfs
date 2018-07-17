@@ -1,5 +1,30 @@
 # ProxyFS Release Notes
 
+## 1.5.4 (July XXXX, 2018)
+
+Add a background thread which discards non-dirty inodes from the inode
+cache if the size of the inode cache exceeds a per volume tunable.
+
+The per volume tunable is named "MaxBytesInodeCache" and is presently
+set at "1048576".
+
+The background thread only runs at certain intervals.   The intervals
+for which it runs is tunable on a per volume basis and the tunable is
+named "InodeCacheEvictInterval".  At present, this tunable is set at
+"5s" or every 5 seconds.
+
+To disable the background thread set "InodeCacheEvictInterval" to "0s"
+or 0 seconds.
+
+TODO
+----
+
+1. Ed writeup on snapshots
+2. Kota fix for:
+    Add NoAuthIPAddr option to swiftclient
+    Added default SwiftClient.NoAuthIPAddr
+3. Craig fixes to jrpcclient
+
 ## 1.5.3 (April 3, 2018)
 
 Ignore SIGPIPE, SIGCHLD, and some other signals that were causing
