@@ -50,8 +50,8 @@ func TestAPI(t *testing.T) {
 
 		"StatsLogger.Period=0s",
 
-		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
+		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
 		"SwiftClient.RetryLimitObject=5",
