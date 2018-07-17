@@ -54,6 +54,7 @@ func testSetup() []func() {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
@@ -518,7 +519,7 @@ func testRpcHeadObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/plants/eggplant.txt")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 }
@@ -539,7 +540,7 @@ func testRpcHeadUpdatedObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/README")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	// We've got different CTime and MTime, since we POSTed after writing
 	assert.True(statResult[fs.StatCTime] > statResult[fs.StatMTime], "Expected StatCTime (%v) > StatMTime (%v)", statResult[fs.StatCTime], statResult[fs.StatMTime])
@@ -1567,7 +1568,7 @@ func TestPutObjectCompound(t *testing.T) {
 	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("hello world!"), contents)
-	assert.Equal(uint64(theInode), putCompleteResp.InodeNumber)
+	assert.Equal(uint64(theInode), uint64(putCompleteResp.InodeNumber))
 	// 2 is the number of log segments we wrote
 	assert.Equal(uint64(2), putCompleteResp.NumWrites)
 
@@ -2025,7 +2026,7 @@ func TestRpcCoalesce(t *testing.T) {
 
 	combinedInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerAName+"/combined-file")
 	assert.Nil(err)
-	assert.Equal(uint64(combinedInode), coalesceReply.InodeNumber)
+	assert.Equal(uint64(combinedInode), uint64(coalesceReply.InodeNumber))
 	assert.True(coalesceReply.NumWrites > 0)
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)

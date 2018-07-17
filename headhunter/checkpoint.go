@@ -1048,6 +1048,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 		volume.snapShotIDShift = uint64(64) - uint64(volume.snapShotIDNumBits)
 		volume.dotSnapShotDirSnapShotID = (uint64(1) << uint64(volume.snapShotIDNumBits)) - uint64(1)
+		volume.snapShotU64NonceMask = (uint64(1) << volume.snapShotIDShift) - uint64(1)
 
 		// Fake load of viewTreeBy{Nonce|ID|Time|Name}
 
@@ -1163,6 +1164,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			volume.snapShotIDShift = uint64(64) - uint64(volume.snapShotIDNumBits)
 			volume.dotSnapShotDirSnapShotID = (uint64(1) << uint64(volume.snapShotIDNumBits)) - uint64(1)
+			volume.snapShotU64NonceMask = (uint64(1) << volume.snapShotIDShift) - uint64(1)
 
 			// Initialize viewTreeBy{Nonce|ID|Time|Name}
 
@@ -1388,6 +1390,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			volume.snapShotIDShift = uint64(64) - uint64(volume.snapShotIDNumBits)
 			volume.dotSnapShotDirSnapShotID = (uint64(1) << uint64(volume.snapShotIDNumBits)) - uint64(1)
+			volume.snapShotU64NonceMask = (uint64(1) << volume.snapShotIDShift) - uint64(1)
 
 			// Load SnapShotList
 

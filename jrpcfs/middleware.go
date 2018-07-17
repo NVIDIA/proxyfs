@@ -171,7 +171,7 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	reply.FileSize = resp.FileSize
 	reply.ModificationTime = resp.ModificationTime
 	reply.AttrChangeTime = resp.AttrChangeTime
-	reply.InodeNumber = uint64(resp.InodeNumber)
+	reply.InodeNumber = int64(uint64(resp.InodeNumber))
 	reply.NumWrites = resp.NumWrites
 
 	reply.IsDir = resp.IsDir
@@ -215,10 +215,12 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, reply.InodeNumber, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	var ino uint64
+	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		return err
 	}
+	reply.InodeNumber = int64(ino)
 
 	return err
 }
@@ -269,7 +271,7 @@ func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkd
 	mtime, ctime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
-	reply.InodeNumber = uint64(inodeNumber)
+	reply.InodeNumber = int64(uint64(inodeNumber))
 	reply.NumWrites = numWrites
 	return
 }
@@ -289,7 +291,7 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 	mtime, ctime, ino, numWrites, err := mountHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
-	reply.InodeNumber = uint64(ino)
+	reply.InodeNumber = int64(uint64(ino))
 	reply.NumWrites = numWrites
 
 	return err
@@ -359,7 +361,9 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 
 	_, destContainer, destObject, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
 
-	reply.InodeNumber, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	var ino uint64
+	ino, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	reply.InodeNumber = int64(ino)
 	return
 }
 

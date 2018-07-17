@@ -46,9 +46,11 @@ type bPlusTreeWrapperStruct struct {
 }
 
 type volumeViewStruct struct {
-	volume                 *volumeStruct
-	nonce                  uint64 // supplies strict time-ordering of views regardless of timebase resets
-	snapShotID             uint64
+	volume     *volumeStruct
+	nonce      uint64 // supplies strict time-ordering of views regardless of timebase resets
+	snapShotID uint64 // in the range [1:2^SnapShotIDNumBits-2]
+	//                     ID == 0                     reserved for the "live" view
+	//                     ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
 	snapShotTime           time.Time
 	snapShotName           string
 	inodeRecWrapper        *bPlusTreeWrapperStruct
@@ -123,8 +125,9 @@ type volumeStruct struct {
 	checkpointDoneWaitGroup                 *sync.WaitGroup
 	eventListeners                          map[VolumeEventListener]struct{}
 	snapShotIDNumBits                       uint16
-	snapShotIDShift                         uint64 //             inodeNumber >> snapShotIDNumBits == snapShotID
+	snapShotIDShift                         uint64 //             e.g. inodeNumber >> snapShotIDNumBits == snapShotID
 	dotSnapShotDirSnapShotID                uint64 //             .snapshot/ pseudo directory Inode's snapShotID
+	snapShotU64NonceMask                    uint64 //             used to mask of snapShotID bits
 	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
