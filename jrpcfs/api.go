@@ -612,6 +612,7 @@ type GetContainerReq struct {
 	Marker     string // marker from query string, used in pagination
 	Prefix     string // only look at entries starting with this
 	MaxEntries uint64 // maximum number of entries to return
+	Delimiter  string // only match up to the first occurrence of delimiter (excluding prefix)
 }
 
 // Response object for RpcGetAccount
