@@ -1130,8 +1130,12 @@ class PfsMiddleware(object):
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
         prefix = req.params.get('prefix', '')
+        delimiter = req.params.get('delimiter', '')
+        # For now, we only support "/" as a delimiter
+        if delimiter not in ("", "/"):
+            return swob.HTTPBadRequest(request=req)
         get_container_request = rpc.get_container_request(
-            urllib_parse.unquote(req.path), marker, limit, prefix)
+            urllib_parse.unquote(req.path), marker, limit, prefix, delimiter)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
         except utils.RpcError as err:
@@ -1151,7 +1155,7 @@ class PfsMiddleware(object):
                 container_ents)
         elif resp_content_type == "application/json":
             resp.body = self._json_container_get_response(
-                container_ents, ctx.account_name)
+                container_ents, ctx.account_name, delimiter)
         elif resp_content_type.endswith("/xml"):
             resp.body = self._xml_container_get_response(
                 container_ents, ctx.account_name, ctx.container_name)
@@ -1174,7 +1178,8 @@ class PfsMiddleware(object):
             chunks.append("\n")
         return ''.join(chunks)
 
-    def _json_container_get_response(self, container_entries, account_name):
+    def _json_container_get_response(self, container_entries, account_name,
+                                     delimiter):
         json_entries = []
         for ent in container_entries:
             name = ent["Basename"]
@@ -1200,8 +1205,16 @@ class PfsMiddleware(object):
                 "hash": etag,
                 "last_modified": last_modified}
             json_entries.append(json_entry)
+
+            if delimiter != "" and "IsDir" in ent and ent["IsDir"]:
+                json_entries.append({"subdir": ent["Basename"] + delimiter})
+
         return json.dumps(json_entries)
 
+    # TODO: This method is usually non reachable, because at some point in the
+    # pipeline, we convert JSON to XML. We should either remove this or update
+    # it to support delimiters in case it's really needed.
+    # Same thing probably applies to plain text responses.
     def _xml_container_get_response(self, container_entries, account_name,
                                     container_name):
         root_node = ET.Element('container', name=container_name)

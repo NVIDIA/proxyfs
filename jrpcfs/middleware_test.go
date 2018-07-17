@@ -697,6 +697,44 @@ func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
 	assert.Equal(".git/logs/refs/stash", ents[3].Basename)
 }
 
+func TestRpcGetContainerPrefixAndDelimiter(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+
+	request := GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     ".git/logs/refs/",
+		Delimiter:  "/",
+	}
+	response := GetContainerReply{}
+	err := server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(3, len(response.ContainerEntries))
+	ents := response.ContainerEntries
+	assert.Equal(".git/logs/refs/.DS_Store", ents[0].Basename)
+	assert.Equal(".git/logs/refs/heads", ents[1].Basename)
+	assert.Equal(".git/logs/refs/stash", ents[2].Basename)
+
+	// Try with a prefix without a trailing slash
+	request = GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     ".git/logs/refs",
+		Delimiter:  "/",
+	}
+	response = GetContainerReply{}
+	err = server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(1, len(response.ContainerEntries))
+	ents = response.ContainerEntries
+	assert.Equal(".git/logs/refs", ents[0].Basename)
+}
+
 func TestRpcGetContainerPaginated(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
