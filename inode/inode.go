@@ -373,8 +373,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
 		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
-		for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
-			(inodesToDrop > 0) {
+		for inodesToDrop > 0 {
 			inodesToDrop--
 
 			ic := vS.inodeCacheLRUHead
