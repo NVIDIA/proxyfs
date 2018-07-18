@@ -284,7 +284,7 @@ def parse_get_account_response(get_account_response):
         return (mtime, account_entries)
 
 
-def get_container_request(path, marker, limit, prefix):
+def get_container_request(path, marker, limit, prefix, delimiter):
     """
     Return a JSON-RPC request to get a container listing for a given
     container.
@@ -298,12 +298,16 @@ def get_container_request(path, marker, limit, prefix):
     :param limit: maximum number of entries to return
 
     :param prefix: prefix of all returned entries' filenames
+
+    :param delimiter: delimiter value, which returns the object names that are
+                      nested in the container
     """
     # This RPC method takes one positional argument, which is a JSON object
     # with two fields: the path and the ranges.
     return jsonrpc_request("Server.RpcGetContainer",
                            [{"VirtPath": path, "Marker": marker,
-                             "MaxEntries": limit, "Prefix": prefix}])
+                             "MaxEntries": limit, "Prefix": prefix,
+                             "Delimiter": delimiter}])
 
 
 def parse_get_container_response(get_container_response):

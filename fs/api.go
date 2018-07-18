@@ -181,7 +181,7 @@ type MountHandle interface {
 	MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
 	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
-	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error)
+	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error)
 	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
 	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
