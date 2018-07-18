@@ -373,52 +373,52 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
 		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
-	}
-	for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
-		(inodesToDrop > 0) {
-		inodesToDrop--
+		for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
+			(inodesToDrop > 0) {
+			inodesToDrop--
 
-		ic := vS.inodeCacheLRUHead
+			ic := vS.inodeCacheLRUHead
 
-		// Create a DLM lock object
-		id := dlm.GenerateCallerID()
-		inodeRWLock, _ := vS.InitInodeLock(ic.InodeNumber, id)
-		err := inodeRWLock.TryWriteLock()
+			// Create a DLM lock object
+			id := dlm.GenerateCallerID()
+			inodeRWLock, _ := vS.InitInodeLock(ic.InodeNumber, id)
+			err := inodeRWLock.TryWriteLock()
 
-		// Inode is locked; skip it
-		if err != nil {
-			// Move inode to tail of LRU
-			vS.inodeCacheTouchWhileLocked(ic)
-			continue
-		}
+			// Inode is locked; skip it
+			if err != nil {
+				// Move inode to tail of LRU
+				vS.inodeCacheTouchWhileLocked(ic)
+				continue
+			}
 
-		if ic.dirty {
-			// The inode is busy - drop the DLM lock and move to tail
+			if ic.dirty {
+				// The inode is busy - drop the DLM lock and move to tail
+				inodeRWLock.Unlock()
+				vS.inodeCacheTouchWhileLocked(ic)
+				continue
+			}
+
+			var ok bool
+
+			ok, err = vS.inodeCacheDropWhileLocked(ic)
+			if err != nil || !ok {
+				pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
+				panic(pStr)
+			}
+
+			// NOTE: Releasing the locks out of order here.
+			//
+			// We acquire the locks in this order:
+			// 1. Volume lock
+			// 2. DLM lock for inode
+			//
+			// We then release the volume lock before deleting the inode from the cache and
+			// then releasing the DLM lock.
 			inodeRWLock.Unlock()
-			vS.inodeCacheTouchWhileLocked(ic)
-			continue
+
+			// NOTE: vS.inodeCacheDropWhileLocked() removed the inode from the LRU list so
+			// the head is now different
 		}
-
-		var ok bool
-
-		ok, err = vS.inodeCacheDropWhileLocked(ic)
-		if err != nil || !ok {
-			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
-			panic(pStr)
-		}
-
-		// NOTE: Releasing the locks out of order here.
-		//
-		// We acquire the locks in this order:
-		// 1. Volume lock
-		// 2. DLM lock for inode
-		//
-		// We then release the volume lock before deleting the inode from the cache and
-		// then releasing the DLM lock.
-		inodeRWLock.Unlock()
-
-		// NOTE: vS.inodeCacheDropWhileLocked() removed the inode from the LRU list so
-		// the head is now different
 	}
 	vS.Unlock()
 }
