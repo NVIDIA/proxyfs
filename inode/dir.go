@@ -653,15 +653,24 @@ func (vS *volumeStruct) lookup(dirInodeNumber InodeNumber, basename string) (tar
 			return
 		}
 
-		// See if basename is the name for an active SnapShot
-
-		snapShot, ok = vS.headhunterVolumeHandle.SnapShotLookupByName(basename)
-
-		if ok {
-			targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShot.ID, dirInodeNonce))
+		switch basename {
+		case ".":
+			targetInodeNumber = dirInodeNumber
 			err = nil
-		} else {
-			err = blunder.AddError(fmt.Errorf("/%v/%v SnapShot not found", SnapShotDirName, basename), blunder.NotFoundError)
+		case "..":
+			targetInodeNumber = RootDirInodeNumber
+			err = nil
+		default:
+			// See if basename is the name for an active SnapShot
+
+			snapShot, ok = vS.headhunterVolumeHandle.SnapShotLookupByName(basename)
+
+			if ok {
+				targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShot.ID, dirInodeNonce))
+				err = nil
+			} else {
+				err = blunder.AddError(fmt.Errorf("/%v/%v SnapShot not found", SnapShotDirName, basename), blunder.NotFoundError)
+			}
 		}
 
 		return
