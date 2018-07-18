@@ -83,6 +83,7 @@ func TestDaemon(t *testing.T) {
 
 		"HTTPServer.TCPPort=53461",
 
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
