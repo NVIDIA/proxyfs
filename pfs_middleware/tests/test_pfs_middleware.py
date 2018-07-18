@@ -1712,6 +1712,61 @@ class TestContainerGet(BaseMiddlewareTest):
                 "AUTH_test", 4974021, 1),
             "last_modified": "2016-08-23T20:47:20.833933"})
 
+    def test_json_with_delimiter(self):
+        req = swob.Request.blank(
+            '/v1/AUTH_test/a-container?prefix=&delimiter=/',
+            headers={"Accept": "application/json"})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        resp_data = json.loads(body)
+        self.assertIsInstance(resp_data, list)
+        self.assertEqual(len(resp_data), 7)
+        self.assertEqual(resp_data[0], {
+            "name": "images",
+            "bytes": 0,
+            "content_type": "application/directory",
+            "hash": "d41d8cd98f00b204e9800998ecf8427e",
+            "last_modified": "2016-08-23T01:30:16.359210"})
+        self.assertEqual(resp_data[1], {
+            "subdir": "images/"})
+        self.assertEqual(resp_data[2], {
+            "name": "images/avocado.png",
+            "bytes": 3503770,
+            "content_type": "snack/millenial",
+            "hash": mware.construct_etag(
+                "AUTH_test", 9213768, 2),
+            "last_modified": "2016-08-23T01:30:16.859210"})
+        self.assertEqual(resp_data[3], {
+            "name": "images/banana.png",
+            "bytes": 2189865,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 8878410, 2),
+            "last_modified": "2016-08-23T01:31:13.000000"})
+        self.assertEqual(resp_data[4], {
+            "name": "images/cherimoya.png",
+            "bytes": 1636662,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 8879064, 2),
+            "last_modified": "2016-08-23T01:31:57.767421"})
+        self.assertEqual(resp_data[5], {
+            "name": "images/durian.png",
+            "bytes": 8414281,
+            "content_type": "image/png",
+            "hash": "34f99f7784c573541e11e5ad66f065c8",
+            "last_modified": "2016-08-23T20:47:13.074910"})
+        self.assertEqual(resp_data[6], {
+            "name": "images/elderberry.png",
+            "bytes": 3178293,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 4974021, 1),
+            "last_modified": "2016-08-23T20:47:20.833933"})
+
     def test_json_query_param(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container?format=json')
         status, headers, body = self.call_pfs(req)
@@ -1721,6 +1776,11 @@ class TestContainerGet(BaseMiddlewareTest):
                          "application/json; charset=utf-8")
         json.loads(body)  # doesn't crash
 
+    # TODO: The tests don't seem to access the code from the same path as
+    # regular requests, so we're testing a code path that is usually not
+    # reachable. Should we just get rid of that part of the code?
+    # For now, delimiter support is non-existent from the tests' point of view
+    # when requesting XML output.
     def test_xml(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container',
                                  headers={"Accept": "text/xml"})
@@ -1865,6 +1925,20 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(rpc_method, "Server.RpcGetContainer")
         self.assertEqual(rpc_args[0]["Prefix"], "cow")
 
+    def test_delimiter(self):
+        req = swob.Request.blank('/v1/AUTH_test/a-container?delimiter=/')
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+
+        rpc_calls = self.fake_rpc.calls
+        self.assertEqual(len(rpc_calls), 2)
+        # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
+        # relevant to what we're testing here
+        rpc_method, rpc_args = rpc_calls[1]
+        # sanity check
+        self.assertEqual(rpc_method, "Server.RpcGetContainer")
+        self.assertEqual(rpc_args[0]["Delimiter"], "/")
+
     def test_default_limit(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container')
         status, _, _ = self.call_pfs(req)
@@ -1994,6 +2068,165 @@ class TestContainerGet(BaseMiddlewareTest):
         req = swob.Request.blank('/v1/AUTH_test/a-container')
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '500 Internal Error')
+
+
+class TestContainerGetDelimiter(BaseMiddlewareTest):
+    def setUp(self):
+        super(TestContainerGetDelimiter, self).setUp()
+        self.serialized_container_metadata = ""
+
+    def _mock_RpcGetContainerDelimiterNoTrailingSlash(self, get_container_req):
+        return {
+            "error": None,
+            "result": {
+                "Metadata": base64.b64encode(
+                    self.serialized_container_metadata),
+                "ModificationTime": 1510790796076041000,
+                "ContainerEntries": [{
+                    "Basename": "images",
+                    "FileSize": 0,
+                    "ModificationTime": 1471915816359209849,
+                    "IsDir": True,
+                    "InodeNumber": 2489682,
+                    "NumWrites": 0,
+                    "Metadata": "",
+                }]}}
+
+    def _mock_RpcGetContainerDelimiterWithTrailingSlash(self,
+                                                        get_container_req):
+        return {
+            "error": None,
+            "result": {
+                "Metadata": base64.b64encode(
+                    self.serialized_container_metadata),
+                "ModificationTime": 1510790796076041000,
+                "ContainerEntries": [{
+                    "Basename": "images/avocado.png",
+                    "FileSize": 70,
+                    "ModificationTime": 1471915816859209471,
+                    "IsDir": False,
+                    "InodeNumber": 9213768,
+                    "NumWrites": 2,
+                    "Metadata": base64.b64encode(json.dumps({
+                        "Content-Type": "snack/millenial" +
+                                        ";swift_bytes=3503770"})),
+                }, {
+                    "Basename": "images/banana.png",
+                    "FileSize": 2189865,
+                    # has fractional seconds = 0 to cover edge cases
+                    "ModificationTime": 1471915873000000000,
+                    "IsDir": False,
+                    "InodeNumber": 8878410,
+                    "NumWrites": 2,
+                    "Metadata": "",
+                }, {
+                    "Basename": "images/cherimoya.png",
+                    "FileSize": 1636662,
+                    "ModificationTime": 1471915917767421311,
+                    "IsDir": False,
+                    "InodeNumber": 8879064,
+                    "NumWrites": 2,
+                    # Note: this has NumWrites=2, but the original MD5
+                    # starts with "1:", so it is stale and must not be
+                    # used.
+                    "Metadata": base64.b64encode(json.dumps({
+                        mware.ORIGINAL_MD5_HEADER:
+                        "1:552528fbf2366f8a4711ac0a3875188b"})),
+                }, {
+                    "Basename": "images/durian.png",
+                    "FileSize": 8414281,
+                    "ModificationTime": 1471985233074909930,
+                    "IsDir": False,
+                    "InodeNumber": 5807979,
+                    "NumWrites": 3,
+                    "Metadata": base64.b64encode(json.dumps({
+                        mware.ORIGINAL_MD5_HEADER:
+                        "3:34f99f7784c573541e11e5ad66f065c8"})),
+                }, {
+                    "Basename": "images/elderberry.png",
+                    "FileSize": 3178293,
+                    "ModificationTime": 1471985240833932653,
+                    "IsDir": False,
+                    "InodeNumber": 4974021,
+                    "NumWrites": 1,
+                    "Metadata": "",
+                }]}}
+
+    def test_json_no_trailing_slash(self):
+        self.fake_rpc.register_handler(
+            "Server.RpcGetContainer",
+            self._mock_RpcGetContainerDelimiterNoTrailingSlash)
+
+        req = swob.Request.blank(
+            '/v1/AUTH_test/a-container?prefix=images&delimiter=/',
+            headers={"Accept": "application/json"})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        resp_data = json.loads(body)
+        self.assertIsInstance(resp_data, list)
+        self.assertEqual(len(resp_data), 2)
+        self.assertEqual(resp_data[0], {
+            "name": "images",
+            "bytes": 0,
+            "content_type": "application/directory",
+            "hash": "d41d8cd98f00b204e9800998ecf8427e",
+            "last_modified": "2016-08-23T01:30:16.359210"})
+        self.assertEqual(resp_data[1], {
+            "subdir": "images/"})
+
+    def test_json_with_trailing_slash(self):
+        self.fake_rpc.register_handler(
+            "Server.RpcGetContainer",
+            self._mock_RpcGetContainerDelimiterWithTrailingSlash)
+
+        req = swob.Request.blank(
+            '/v1/AUTH_test/a-container?prefix=images/&delimiter=/',
+            headers={"Accept": "application/json"})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        resp_data = json.loads(body)
+        self.assertIsInstance(resp_data, list)
+        self.assertEqual(len(resp_data), 5)
+        self.assertEqual(resp_data[0], {
+            "name": "images/avocado.png",
+            "bytes": 3503770,
+            "content_type": "snack/millenial",
+            "hash": mware.construct_etag(
+                "AUTH_test", 9213768, 2),
+            "last_modified": "2016-08-23T01:30:16.859210"})
+        self.assertEqual(resp_data[1], {
+            "name": "images/banana.png",
+            "bytes": 2189865,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 8878410, 2),
+            "last_modified": "2016-08-23T01:31:13.000000"})
+        self.assertEqual(resp_data[2], {
+            "name": "images/cherimoya.png",
+            "bytes": 1636662,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 8879064, 2),
+            "last_modified": "2016-08-23T01:31:57.767421"})
+        self.assertEqual(resp_data[3], {
+            "name": "images/durian.png",
+            "bytes": 8414281,
+            "content_type": "image/png",
+            "hash": "34f99f7784c573541e11e5ad66f065c8",
+            "last_modified": "2016-08-23T20:47:13.074910"})
+        self.assertEqual(resp_data[4], {
+            "name": "images/elderberry.png",
+            "bytes": 3178293,
+            "content_type": "image/png",
+            "hash": mware.construct_etag(
+                "AUTH_test", 4974021, 1),
+            "last_modified": "2016-08-23T20:47:20.833933"})
 
 
 class TestContainerPost(BaseMiddlewareTest):

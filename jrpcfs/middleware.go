@@ -191,7 +191,7 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 		return err
 	}
 
-	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.Prefix)
+	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.Prefix, in.Delimiter)
 	if err != nil {
 		return err
 	}

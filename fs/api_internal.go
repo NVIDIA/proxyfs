@@ -1443,7 +1443,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error) {
+func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error) {
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1469,6 +1469,13 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 		var recursiveDescents []dirToDescend
 		areMoreEntries := true
 		lastBasename := ""
+		var delimiterSet bool
+		if delimiter != "" {
+			delimiterSet = true
+		} else {
+			delimiterSet = false
+		}
+		prefixMatched := false
 
 		// Note that we're taking advantage of the fact that
 		// Readdir() returns things in lexicographic order, which
@@ -1498,7 +1505,9 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 			}
 
 			// If we've got pending recursive descents that should go before the next dirEnt, handle them
-			for len(recursiveDescents) > 0 && (len(dirEnts) == 0 || (recursiveDescents[0].name < dirEnts[0].Basename)) {
+			// If delimiter has been set and prefix has been matched, it means we're only interested in the
+			// current level in the hierarchy, so we want to stop recursion.
+			for len(recursiveDescents) > 0 && (len(dirEnts) == 0 || (recursiveDescents[0].name < dirEnts[0].Basename)) && (!delimiterSet || !prefixMatched) {
 				err = recursiveReaddirPlus(recursiveDescents[0].path, recursiveDescents[0].ino)
 				if err != nil {
 					// already logged
@@ -1515,7 +1524,13 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 			// avoid having to refill dirEnts at more than one
 			// location in the code.
 			if !(len(dirEnts) > 0) {
-				continue
+				if delimiterSet && prefixMatched {
+					// We ran out of dirEnts and we won't do more recursion because the delimiter
+					// was set and the prefix was already matched => return!
+					return nil
+				} else {
+					continue
+				}
 			}
 
 			dirEnt := dirEnts[0]
@@ -1574,6 +1589,10 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				if !strings.HasPrefix(fileName, prefix) {
 					continue
 				}
+				if delimiterSet {
+					// We only care about 'prefixMatched' if delimiter was set
+					prefixMatched = true
+				}
 
 				// Alternate data streams live in the inode, so this is almost certainly still cached from the Getstat()
 				// call, and hence is very cheap to retrieve.
@@ -1616,6 +1635,10 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				// "d-README", which is not what the Swift API
 				// demands.
 				if fileName > marker && strings.HasPrefix(fileName, prefix) {
+					if delimiterSet {
+						// We only care about 'prefixMatched' if delimiter was set
+						prefixMatched = true
+					}
 					containerEnt := ContainerEntry{
 						Basename:         fileName,
 						FileSize:         0,
