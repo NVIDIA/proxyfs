@@ -392,18 +392,16 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 			continue
 		}
 
-		if (ic.inFlightLogSegmentMap != nil) && (ic.dirty == false) {
+		if ic.dirty {
 			// The inode is busy - drop the DLM lock and move to tail
 			inodeRWLock.Unlock()
 			vS.inodeCacheTouchWhileLocked(ic)
 			continue
 		}
 
-		vS.Unlock()
-
 		var ok bool
 
-		ok, err = vS.inodeCacheDrop(ic)
+		ok, err = vS.inodeCacheDropWhileLocked(ic)
 		if err != nil || !ok {
 			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
 			panic(pStr)
@@ -419,9 +417,8 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		// then releasing the DLM lock.
 		inodeRWLock.Unlock()
 
-		// vS.inodeCacheDrop() removed the inode from the freelist so
+		// NOTE: vS.inodeCacheDropWhileLocked() removed the inode from the LRU list so
 		// the head is now different
-		vS.Lock()
 	}
 	vS.Unlock()
 }
