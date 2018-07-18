@@ -121,33 +121,36 @@ func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSe
 	)
 	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
 	if nil != err {
-		return
+		LRUCacheMaxBytes = 10485760 // TODO - Remove setting a default value
+		err = nil
 	}
 	volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
 
 	LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
 	if nil != err {
-		return
+		LRUDiscardTimeInterval = 1 * time.Second // TODO - Remove setting a default value
+		err = nil
 	}
 
-	if LRUDiscardTimeInterval == 0 {
+	if LRUDiscardTimeInterval != 0 {
+		volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+		volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
+
+		logger.Infof("Inode cache discard ticker for 'volume: %v' is: %v MaxBytesInodeCache: %v",
+			volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
+
+		// Start ticker for inode cache discard thread
+		go func() {
+			for range volume.inodeCacheLRUTicker.C {
+
+				volume.inodeCacheDiscard()
+			}
+		}()
+	} else {
 		logger.Infof("Inode cache discard ticker for 'volume: %v' is disabled.",
 			volume.volumeName)
 		return
 	}
-	volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
-	volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
-
-	logger.Infof("Inode cache discard ticker for 'volume: %v' is: %v MaxBytesInodeCache: %v",
-		volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
-
-	// Start ticker for inode cache discard thread
-	go func() {
-		for range volume.inodeCacheLRUTicker.C {
-
-			volume.inodeCacheDiscard()
-		}
-	}()
 
 	return
 }
@@ -265,11 +268,6 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUHead:              nil,
 			inodeCacheLRUTail:              nil,
 			inodeCacheLRUItems:             0,
-		}
-
-		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
-		if nil != err {
-			return
 		}
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
@@ -451,6 +449,11 @@ func Up(confMap conf.ConfMap) (err error) {
 			}
 
 			volume.headhunterVolumeHandle.RegisterForEvents(volume)
+
+			err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+			if nil != err {
+				return
+			}
 		}
 
 		globals.volumeMap[volume.volumeName] = volume
@@ -557,6 +560,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName, volume = range globals.volumeMap {
 		// Stop the routine discarding inodes from the inode cache.
+		// This will be restarted in ExpandAndResume().
 		stopInodeCacheDiscard(volume)
 
 		_, ok = newVolumeSet[volumeName]
@@ -776,6 +780,13 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						err = fmt.Errorf("Volume \"%v\" changed its FlowControl name", volumeName)
 						return
 					}
+
+					// Start inode cache discard timer on a previously active volume.   This
+					// timer was stopped during pause.
+					err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+					if nil != err {
+						return
+					}
 				} else { // newly active
 					volume.active = true
 					newlyActiveVolumeSet[volumeName] = volume
@@ -949,11 +960,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			}
 
 			volume.headhunterVolumeHandle.RegisterForEvents(volume)
-		}
 
-		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
-		if nil != err {
-			return
+			// Start inode discard timer on newly active volumes
+			err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+			if nil != err {
+				return
+			}
 		}
 	}
 
@@ -965,7 +977,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 func Down() (err error) {
 
-	// Stop the goroutine which culls the inodeCache
+	// Stop the inode discard timer
 	for _, volume := range globals.volumeMap {
 		stopInodeCacheDiscard(volume)
 	}
