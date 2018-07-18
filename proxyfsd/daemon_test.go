@@ -83,6 +83,7 @@ func TestDaemon(t *testing.T) {
 
 		"HTTPServer.TCPPort=53461",
 
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
@@ -122,6 +123,8 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.MaxInodesPerMetadataNode=32",
 		"Volume:CommonVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:CommonVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:CommonVolume.MaxBytesInodeCache=100000",
+		"Volume:CommonVolume.InodeCacheEvictInterval=1s",
 
 		"FSGlobals.VolumeList=CommonVolume",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",

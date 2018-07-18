@@ -13,8 +13,10 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/halter"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -66,13 +68,14 @@ type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMem
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex        //                                                Used to synchronize with background fileInodeFlusherDaemon
-	sync.WaitGroup    //                                                FileInode Flush requests wait on this
+	sync.Mutex        //                                             Used to synchronize with background fileInodeFlusherDaemon
+	sync.WaitGroup    //                                             FileInode Flush requests wait on this
 	inodeCacheLRUNext *inMemoryInodeStruct
 	inodeCacheLRUPrev *inMemoryInodeStruct
 	dirty             bool
 	volume            *volumeStruct
-	payload           interface{} //                                    DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
+	snapShotID        uint64
+	payload           interface{} //                                 DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
 	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
 	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
 	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
@@ -138,10 +141,15 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 		corruptionDetected                CorruptionDetected
 		inodeRec                          []byte
 		onDiskInodeV1                     *onDiskInodeV1Struct
+		snapShotID                        uint64
+		snapShotIDType                    headhunter.SnapShotIDType
 		version                           Version
 	)
 
-	logger.Tracef("inode.fetchOnDiskInode(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+	snapShotIDType, snapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		logger.Fatalf("fetchOnDiskInode for headhunter.SnapShotIDTypeDotSnapShot not allowed")
+	}
 
 	inodeRec, ok, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil != err {
@@ -191,13 +199,16 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	inMemoryInode = &inMemoryInodeStruct{
 		inodeCacheLRUNext:        nil,
 		inodeCacheLRUPrev:        nil,
-		dirty:                    true,
+		dirty:                    false,
 		volume:                   vS,
+		snapShotID:               snapShotID,
 		openLogSegment:           nil,
 		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
 		inFlightLogSegmentErrors: make(map[uint64]error),
 		onDiskInodeV1Struct:      *onDiskInodeV1,
 	}
+
+	inMemoryInode.onDiskInodeV1Struct.InodeNumber = inodeNumber
 
 	switch inMemoryInode.InodeType {
 	case DirType:
@@ -351,13 +362,75 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 	vS.Unlock()
 }
 
+// The inode cache discard thread calls this routine when the ticker goes off.
+func (vS *volumeStruct) inodeCacheDiscard() {
+	inodesToDrop := uint64(0)
+
+	vS.Lock()
+
+	if (vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes {
+		// Check, at most, 1.25 * (minimum_number_to_drop)
+		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
+		inodesToDrop = inodesToDrop / globals.inodeSize
+		inodesToDrop += inodesToDrop / 4
+	}
+	for ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) &&
+		(inodesToDrop > 0) {
+		inodesToDrop--
+
+		ic := vS.inodeCacheLRUHead
+
+		// Create a DLM lock object
+		id := dlm.GenerateCallerID()
+		inodeRWLock, _ := vS.InitInodeLock(ic.InodeNumber, id)
+		err := inodeRWLock.TryWriteLock()
+
+		// Inode is locked; skip it
+		if err != nil {
+			// Move inode to tail of LRU
+			vS.inodeCacheTouchWhileLocked(ic)
+			continue
+		}
+
+		if (ic.inFlightLogSegmentMap != nil) && (ic.dirty == false) {
+			// The inode is busy - drop the DLM lock and move to tail
+			inodeRWLock.Unlock()
+			vS.inodeCacheTouchWhileLocked(ic)
+			continue
+		}
+
+		vS.Unlock()
+
+		var ok bool
+
+		ok, err = vS.inodeCacheDrop(ic)
+		if err != nil || !ok {
+			pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
+			panic(pStr)
+		}
+
+		// NOTE: Releasing the locks out of order here.
+		//
+		// We acquire the locks in this order:
+		// 1. Volume lock
+		// 2. DLM lock for inode
+		//
+		// We then release the volume lock before deleting the inode from the cache and
+		// then releasing the DLM lock.
+		inodeRWLock.Unlock()
+
+		// vS.inodeCacheDrop() removed the inode from the freelist so
+		// the head is now different
+		vS.Lock()
+	}
+	vS.Unlock()
+}
+
 func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {
 	ok, err = vS.inodeCache.DeleteByKey(inode.InodeNumber)
 	if (nil != err) || !ok {
 		return
 	}
-
-	// TODO: Remove inode from inodeCacheLRU
 
 	if inode == vS.inodeCacheLRUHead {
 		if inode == vS.inodeCacheLRUTail {
@@ -460,18 +533,31 @@ func (vS *volumeStruct) fetchInodeType(inodeNumber InodeNumber, expectedType Ino
 }
 
 func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType, fileMode InodeMode, userID InodeUserID, groupID InodeGroupID, inodeNumber InodeNumber, volumeLocked bool) (inMemoryInode *inMemoryInodeStruct) {
-	birthTime := time.Now()
+	var (
+		birthTime      time.Time
+		nonce          uint64
+		snapShotID     uint64
+		snapShotIDType headhunter.SnapShotIDType
+	)
+
+	snapShotIDType, snapShotID, nonce = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		logger.Fatalf("makeInMemoryInodeWithThisInodeNumber for headhunter.SnapShotIDTypeDotSnapShot not allowed")
+	}
+
+	birthTime = time.Now()
 
 	inMemoryInode = &inMemoryInodeStruct{
 		inodeCacheLRUNext:        nil,
 		inodeCacheLRUPrev:        nil,
 		dirty:                    true,
 		volume:                   vS,
+		snapShotID:               snapShotID,
 		openLogSegment:           nil,
 		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
 		inFlightLogSegmentErrors: make(map[uint64]error),
 		onDiskInodeV1Struct: onDiskInodeV1Struct{
-			InodeNumber:      InodeNumber(inodeNumber),
+			InodeNumber:      InodeNumber(nonce),
 			InodeType:        inodeType,
 			CreationTime:     birthTime,
 			ModificationTime: birthTime,
@@ -861,7 +947,37 @@ func (vS *volumeStruct) provisionObject() (containerName string, objectNumber ui
 }
 
 func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID, otherGroupIDs []InodeGroupID, accessMode InodeMode, override AccessOverride) (accessReturn bool) {
-	ourInode, ok, err := vS.fetchInode(inodeNumber)
+	var (
+		adjustedInodeNumber InodeNumber
+		err                 error
+		groupIDCheck        bool
+		ok                  bool
+		otherGroupID        InodeGroupID
+		ourInode            *inMemoryInodeStruct
+		ourInodeGroupID     InodeGroupID
+		ourInodeMode        InodeMode
+		ourInodeUserID      InodeUserID
+		snapShotIDType      headhunter.SnapShotIDType
+	)
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+
+	switch snapShotIDType {
+	case headhunter.SnapShotIDTypeLive:
+		adjustedInodeNumber = inodeNumber
+	case headhunter.SnapShotIDTypeSnapShot:
+		adjustedInodeNumber = inodeNumber
+	case headhunter.SnapShotIDTypeDotSnapShot:
+		adjustedInodeNumber = RootDirInodeNumber
+	default:
+		logger.Fatalf("headhunter.SnapShotU64Decode(inodeNumber == 0x%016X) returned unknown snapShotIDType: %v", inodeNumber, snapShotIDType)
+	}
+	if (headhunter.SnapShotIDTypeLive != snapShotIDType) && (0 != (W_OK & accessMode)) {
+		err = blunder.NewError(blunder.InvalidArgError, "Access() where accessMode includes W_OK of non-LiveView inodeNumber not allowed")
+		return
+	}
+
+	ourInode, ok, err = vS.fetchInode(adjustedInodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software bug
 		// (err includes volume name and inode number)
@@ -881,6 +997,15 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 		return
 	}
 
+	ourInodeUserID = ourInode.UserID
+	ourInodeGroupID = ourInode.GroupID
+
+	if headhunter.SnapShotIDTypeLive == snapShotIDType {
+		ourInodeMode = ourInode.Mode
+	} else {
+		ourInodeMode = ourInode.Mode // TODO: Make it read-only...
+	}
+
 	if F_OK == accessMode {
 		// the inode exists so its F_OK
 		accessReturn = true
@@ -888,7 +1013,7 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 	}
 
 	if P_OK == accessMode {
-		accessReturn = (InodeRootUserID == userID) || (userID == ourInode.UserID)
+		accessReturn = (InodeRootUserID == userID) || (userID == ourInodeUserID)
 		return
 	}
 
@@ -898,10 +1023,16 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 		return
 	}
 
+	// Only the LiveView is ever writeable... even by the root user
+	if (accessMode&W_OK != 0) && (headhunter.SnapShotIDTypeLive != snapShotIDType) {
+		accessReturn = false
+		return
+	}
+
 	// The root user (if not squashed) can do anything except exec files
 	// that are not executable by any user
 	if userID == InodeRootUserID {
-		if (accessMode&X_OK != 0) && (ourInode.Mode&(X_OK<<6|X_OK<<3|X_OK) == 0) {
+		if (accessMode&X_OK != 0) && (ourInodeMode&(X_OK<<6|X_OK<<3|X_OK) == 0) {
 			accessReturn = false
 		} else {
 			accessReturn = true
@@ -938,30 +1069,30 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 	// Similar rules apply to Read() and Truncate() (for ftruncate(2)), but
 	// not for execute permission.  Also, this only applies to regular files
 	// but we'll rely on the caller for that.
-	if userID == ourInode.UserID {
+	if userID == ourInodeUserID {
 		if override == OwnerOverride && (accessMode&X_OK == 0) {
 			accessReturn = true
 		} else {
-			accessReturn = (((ourInode.Mode >> 6) & accessMode) == accessMode)
+			accessReturn = (((ourInodeMode >> 6) & accessMode) == accessMode)
 		}
 		return
 	}
 
-	groupIDCheck := (groupID == ourInode.GroupID)
+	groupIDCheck = (groupID == ourInodeGroupID)
 	if !groupIDCheck {
-		for _, otherGroupID := range otherGroupIDs {
-			if otherGroupID == ourInode.GroupID {
+		for _, otherGroupID = range otherGroupIDs {
+			if otherGroupID == ourInodeGroupID {
 				groupIDCheck = true
 				break
 			}
 		}
 	}
 	if groupIDCheck {
-		accessReturn = ((((ourInode.Mode >> 3) & 07) & accessMode) == accessMode)
+		accessReturn = ((((ourInodeMode >> 3) & 07) & accessMode) == accessMode)
 		return
 	}
 
-	accessReturn = ((((ourInode.Mode >> 0) & 07) & accessMode) == accessMode)
+	accessReturn = ((((ourInodeMode >> 0) & 07) & accessMode) == accessMode)
 	return
 }
 
@@ -1006,6 +1137,12 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 
 func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 	logger.Tracef("inode.Destroy(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("Destroy() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	ourInode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
@@ -1089,12 +1226,26 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 }
 
 func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *MetadataStruct, err error) {
-	inode, ok, err := vS.fetchInode(inodeNumber)
-	if err != nil {
+	var (
+		inode          *inMemoryInodeStruct
+		ok             bool
+		pos            int
+		snapShotIDType headhunter.SnapShotIDType
+	)
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		// For /<SnapShotDirName>, start with metadata from /
+		inode, ok, err = vS.fetchInode(RootDirInodeNumber)
+	} else {
+		inode, ok, err = vS.fetchInode(inodeNumber)
+	}
+
+	if nil != err {
 		// this indicates disk corruption or software error
 		// (err includes volume name and inode number)
 		logger.ErrorfWithError(err, "%s: fetch of inode failed", utils.GetFnName())
-		return nil, err
+		return
 	}
 	if !ok {
 		// disk corruption or client request for unallocated inode
@@ -1102,7 +1253,7 @@ func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *Metadata
 			utils.GetFnName(), inodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		logger.InfoWithError(err)
-		return nil, err
+		return
 	}
 
 	metadata = &MetadataStruct{
@@ -1120,17 +1271,33 @@ func (vS *volumeStruct) GetMetadata(inodeNumber InodeNumber) (metadata *Metadata
 		GroupID:              inode.GroupID,
 	}
 
-	pos := 0
-	for inodeStreamName := range inode.StreamMap {
-		metadata.InodeStreamNameSlice[pos] = inodeStreamName
-		pos++
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		// For /<SnapShotDirName>, simply remove Write Access... and skip InodeStreamNameSlice
+		metadata.Mode &= metadata.Mode & ^(W_OK<<6 | W_OK<<3 | W_OK<<0)
+	} else {
+		if headhunter.SnapShotIDTypeSnapShot == snapShotIDType {
+			// For inodes in a SnapShot, simply remove Write Access
+			metadata.Mode &= metadata.Mode & ^(W_OK<<6 | W_OK<<3 | W_OK<<0)
+		}
+		pos = 0
+		for inodeStreamName := range inode.StreamMap {
+			metadata.InodeStreamNameSlice[pos] = inodeStreamName
+			pos++
+		}
 	}
 
 	stats.IncrementOperations(&stats.InodeGetMetadataOps)
-	return metadata, err
+	return
 }
 
 func (vS *volumeStruct) GetType(inodeNumber InodeNumber) (inodeType InodeType, err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		inodeType = DirType
+		err = nil
+		return
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software error
@@ -1154,7 +1321,31 @@ func (vS *volumeStruct) GetType(inodeNumber InodeNumber) (inodeType InodeType, e
 }
 
 func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64, err error) {
-	inode, ok, err := vS.fetchInode(inodeNumber)
+	var (
+		adjustLinkCountForSnapShotSubDirInRootDirInode bool
+		inode                                          *inMemoryInodeStruct
+		ok                                             bool
+		snapShotCount                                  uint64
+		snapShotIDType                                 headhunter.SnapShotIDType
+	)
+
+	if RootDirInodeNumber == inodeNumber {
+		// Account for .. in /<SnapShotDirName> if any SnapShot's exist
+		snapShotCount = vS.headhunterVolumeHandle.SnapShotCount()
+		adjustLinkCountForSnapShotSubDirInRootDirInode = (0 != snapShotCount)
+	} else {
+		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+		if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+			// linkCount == 1 (/<SnapShotDirName>'s '.') + 1 (/'s reference to <SnapShotDirName>) + # SnapShot's (/..' in each SnapShot's /)
+			snapShotCount = vS.headhunterVolumeHandle.SnapShotCount()
+			linkCount = 1 + 1 + snapShotCount
+			err = nil
+			return
+		}
+		adjustLinkCountForSnapShotSubDirInRootDirInode = false
+	}
+
+	inode, ok, err = vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software error
 		// (err includes volume name and inode number)
@@ -1170,12 +1361,23 @@ func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64,
 		return
 	}
 
-	linkCount = inode.LinkCount
+	if adjustLinkCountForSnapShotSubDirInRootDirInode {
+		linkCount = inode.LinkCount + 1
+	} else {
+		linkCount = inode.LinkCount
+	}
+
 	return
 }
 
 // SetLinkCount is used to adjust the LinkCount property to match current reference count during FSCK TreeWalk.
 func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) (err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetLinkCount() on non-LiveView inodeNumber not allowed")
+		return
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1205,7 +1407,11 @@ func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) 
 }
 
 func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime time.Time) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetCreationTime() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1236,7 +1442,11 @@ func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime ti
 }
 
 func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, ModificationTime time.Time) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetModificationTime() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1268,7 +1478,11 @@ func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, Modificatio
 }
 
 func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.Time) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetAccessTime() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1341,7 +1555,11 @@ func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode,
 }
 
 func (vS *volumeStruct) SetPermMode(inodeNumber InodeNumber, filePerm InodeMode) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetPermMode() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1381,7 +1599,11 @@ func (vS *volumeStruct) SetPermMode(inodeNumber InodeNumber, filePerm InodeMode)
 }
 
 func (vS *volumeStruct) SetOwnerUserID(inodeNumber InodeNumber, userID InodeUserID) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetOwnerUserID() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1415,7 +1637,11 @@ func (vS *volumeStruct) SetOwnerUserID(inodeNumber InodeNumber, userID InodeUser
 }
 
 func (vS *volumeStruct) SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetOwnerUserIDGroupID() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1450,7 +1676,11 @@ func (vS *volumeStruct) SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID In
 }
 
 func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGroupID) (err error) {
-	// NOTE: Errors are logged by the caller
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("SetOwnerGroupID() on non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
@@ -1484,6 +1714,12 @@ func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGr
 }
 
 func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		err = fmt.Errorf("No stream '%v'", inodeStreamName)
+		return buf, blunder.AddError(err, blunder.StreamNotFound)
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1517,6 +1753,12 @@ func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("PutStream() on non-LiveView inodeNumber not allowed")
+		return
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1553,6 +1795,12 @@ func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("DeleteStream() on non-LiveView inodeNumber not allowed")
+		return
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1585,6 +1833,13 @@ func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName st
 }
 
 func (vS *volumeStruct) FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error) {
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		layoutReport = make(sortedmap.LayoutReport)
+		err = nil
+		return
+	}
+
 	inode, ok, err := vS.fetchInode(inodeNumber)
 	if err != nil {
 		// this indicates disk corruption or software error
@@ -1621,12 +1876,12 @@ func (vS *volumeStruct) Optimize(inodeNumber InodeNumber, maxDuration time.Durat
 	return
 }
 
-func validateFileExtents(ourInode *inMemoryInodeStruct) (err error) {
+func validateFileExtents(snapShotID uint64, ourInode *inMemoryInodeStruct) (err error) {
 	var (
 		zero = uint64(0)
 	)
 
-	readPlan, readPlanBytes, err := ourInode.volume.getReadPlanHelper(ourInode, &zero, nil)
+	readPlan, readPlanBytes, err := ourInode.volume.getReadPlanHelper(snapShotID, ourInode, &zero, nil)
 	if err != nil {
 		return err
 	}
@@ -1725,9 +1980,16 @@ func validateFileExtents(ourInode *inMemoryInodeStruct) (err error) {
 
 func (vS *volumeStruct) markCorrupted(inodeNumber InodeNumber) (err error) {
 	var (
-		inodeRec []byte
-		ok       bool
+		inodeRec       []byte
+		ok             bool
+		snapShotIDType headhunter.SnapShotIDType
 	)
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "markCorrupted() of non-LiveView inodeNumber not allowed")
+		return
+	}
 
 	inodeRec, ok, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
 	if nil == err && ok && (len(globals.corruptionDetectedTrueBuf) <= len(inodeRec)) {
@@ -1744,6 +2006,20 @@ func (vS *volumeStruct) markCorrupted(inodeNumber InodeNumber) (err error) {
 }
 
 func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err error) {
+	var (
+		ok             bool
+		ourInode       *inMemoryInodeStruct
+		snapShotID     uint64
+		snapShotIDType headhunter.SnapShotIDType
+		tree           sortedmap.BPlusTree
+	)
+
+	snapShotIDType, snapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		err = nil // Since /<SnapShotDirName> is emulated, always return success
+		return
+	}
+
 	// we don't want to use the in-memory cache for this; we'll need to fetch
 	// the current real-world bits from disk.
 
@@ -1766,7 +2042,7 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err erro
 		return
 	}
 
-	ourInode, ok, err := vS.fetchInode(inodeNumber)
+	ourInode, ok, err = vS.fetchInode(inodeNumber)
 	if nil != err {
 		// this indicates diskj corruption or software error
 		// (err includes volume name and inode number)
@@ -1785,7 +2061,7 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err erro
 
 	switch ourInode.InodeType {
 	case DirType, FileType:
-		tree, ok := ourInode.payload.(sortedmap.BPlusTree)
+		tree, ok = ourInode.payload.(sortedmap.BPlusTree)
 		if !ok {
 			err = fmt.Errorf("type conversion of inode %v payload to sortedmap.BPlusTree failed", ourInode.InodeNumber)
 			err = blunder.AddError(err, blunder.CorruptInodeError)
@@ -1800,7 +2076,7 @@ func (vS *volumeStruct) Validate(inodeNumber InodeNumber, deeply bool) (err erro
 		}
 		if FileType == ourInode.InodeType {
 			if deeply {
-				err = validateFileExtents(ourInode)
+				err = validateFileExtents(snapShotID, ourInode)
 				if nil != err {
 					err = blunder.AddError(err, blunder.CorruptInodeError)
 					_ = vS.markCorrupted(inodeNumber)

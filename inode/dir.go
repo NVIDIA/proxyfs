@@ -7,6 +7,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -166,8 +167,24 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 		dirInode       *inMemoryInodeStruct
 		flushInodeList []*inMemoryInodeStruct
 		ok             bool
+		snapShotIDType headhunter.SnapShotIDType
 		targetInode    *inMemoryInodeStruct
 	)
+
+	if (RootDirInodeNumber == dirInodeNumber) && (SnapShotDirName == basename) {
+		err = blunder.NewError(blunder.InvalidArgError, "Link() to /%v not allowed", SnapShotDirName)
+		return
+	}
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Link() on non-LiveView dirInodeNumber not allowed")
+		return
+	}
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(targetInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Link() on non-LiveView targetInodeNumber not allowed")
+		return
+	}
 
 	stats.IncrementOperations(&stats.DirLinkOps)
 
@@ -293,9 +310,20 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 		dirInode            *inMemoryInodeStruct
 		flushInodeList      []*inMemoryInodeStruct
 		ok                  bool
+		snapShotIDType      headhunter.SnapShotIDType
 		untargetInode       *inMemoryInodeStruct
 		untargetInodeNumber InodeNumber
 	)
+
+	if (RootDirInodeNumber == dirInodeNumber) && (SnapShotDirName == basename) {
+		err = blunder.NewError(blunder.InvalidArgError, "Unlink() of /%v not allowed", SnapShotDirName)
+		return
+	}
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Unlink() on non-LiveView dirInodeNumber not allowed")
+		return
+	}
 
 	stats.IncrementOperations(&stats.DirUnlinkOps)
 
@@ -304,7 +332,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 		return err
 	}
 
-	untargetInodeNumber, err = vS.Lookup(dirInodeNumber, basename)
+	untargetInodeNumber, err = vS.lookup(dirInodeNumber, basename)
 	if nil != err {
 		err = blunder.AddError(err, blunder.NotFoundError)
 		return err
@@ -339,7 +367,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 		// Pre-flush untargetInode so that no time-based (implicit) flushes will occur during this transaction
 		err = vS.flushInode(untargetInode)
 		if err != nil {
-			logger.ErrorfWithError(err, "Move(): untargetInode flush error")
+			logger.ErrorfWithError(err, "Unlink(): untargetInode flush error")
 			panic(err)
 		}
 
@@ -362,6 +390,25 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 }
 
 func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error) {
+	if (RootDirInodeNumber == srcDirInodeNumber) && (SnapShotDirName == srcBasename) {
+		err = blunder.NewError(blunder.InvalidArgError, "Move() from /%v not allowed", SnapShotDirName)
+		return
+	}
+	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(srcDirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Move() on non-LiveView srcDirInodeNumber not allowed")
+		return
+	}
+	if (RootDirInodeNumber == dstDirInodeNumber) && (SnapShotDirName == dstBasename) {
+		err = blunder.NewError(blunder.InvalidArgError, "Move() into /%v not allowed", SnapShotDirName)
+		return
+	}
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dstDirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.InvalidArgError, "Move() on non-LiveView dstDirInodeNumber not allowed")
+		return
+	}
+
 	stats.IncrementOperations(&stats.DirRenameOps)
 
 	srcDirInode, err := vS.fetchInodeType(srcDirInodeNumber, DirType)
@@ -569,46 +616,146 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 	return
 }
 
-func (vS *volumeStruct) Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
-	stats.IncrementOperations(&stats.DirLookupOps)
+func (vS *volumeStruct) lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
+	var (
+		dirInode               *inMemoryInodeStruct
+		dirInodeNonce          uint64
+		dirInodeSnapShotID     uint64
+		dirInodeSnapShotIDType headhunter.SnapShotIDType
+		dirMapping             sortedmap.BPlusTree
+		ok                     bool
+		value                  sortedmap.Value
+		snapShot               headhunter.SnapShotStruct
+	)
 
-	dirInode, err := vS.fetchInodeType(dirInodeNumber, DirType)
-	if err != nil {
-		logger.ErrorWithError(err)
-		return 0, err
+	dirInodeSnapShotIDType, dirInodeSnapShotID, dirInodeNonce = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+
+	switch dirInodeSnapShotIDType {
+	case headhunter.SnapShotIDTypeLive:
+		if (uint64(RootDirInodeNumber) == dirInodeNonce) &&
+			(SnapShotDirName == basename) &&
+			(0 < vS.headhunterVolumeHandle.SnapShotCount()) {
+			// Lookup should only succeed there are any active SnapShot's
+
+			targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotTypeDotSnapShotAndNonceEncode(dirInodeNonce))
+			err = nil
+
+			return
+		}
+		// Let normal processing perform the lookup below (SnapShotID == 0, so InodeNumber "adornment" is a no-op)
+	case headhunter.SnapShotIDTypeSnapShot:
+		// Let normal processing perform the lookup below but "adorn" resultant InodeNumber's with the dirSnapShotID
+	case headhunter.SnapShotIDTypeDotSnapShot:
+		// Currently, this is only supported in RootDirInodeNumber
+
+		if uint64(RootDirInodeNumber) != dirInodeNonce {
+			err = blunder.AddError(fmt.Errorf("%v other than in '/' not supported", SnapShotDirName), blunder.NotFoundError)
+			return
+		}
+
+		switch basename {
+		case ".":
+			targetInodeNumber = dirInodeNumber
+			err = nil
+		case "..":
+			targetInodeNumber = RootDirInodeNumber
+			err = nil
+		default:
+			// See if basename is the name for an active SnapShot
+
+			snapShot, ok = vS.headhunterVolumeHandle.SnapShotLookupByName(basename)
+
+			if ok {
+				targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShot.ID, dirInodeNonce))
+				err = nil
+			} else {
+				err = blunder.AddError(fmt.Errorf("/%v/%v SnapShot not found", SnapShotDirName, basename), blunder.NotFoundError)
+			}
+		}
+
+		return
 	}
 
-	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
-	value, ok, err := dirMapping.GetByKey(basename)
+	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
+	if nil != err {
+		logger.ErrorWithError(err)
+		return
+	}
+
+	dirMapping = dirInode.payload.(sortedmap.BPlusTree)
+	value, ok, err = dirMapping.GetByKey(basename)
 	if nil != err {
 		panic(err)
 	}
 	if !ok {
-		err = fmt.Errorf("%v: unable to find basename %v in dirInode %v", utils.GetFnName(), basename, dirInodeNumber)
+		err = fmt.Errorf("unable to find basename %v in dirInode %v", basename, dirInodeNumber)
 		// There are cases where failing to find an inode is not an error.
 		// Not logging any errors here; let the caller decide if this is log-worthy
-		return 0, blunder.AddError(err, blunder.NotFoundError)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		return
 	}
-	targetInodeNumber = value.(InodeNumber)
+	targetInodeNumber, ok = value.(InodeNumber)
+	if !ok {
+		err = fmt.Errorf("dirMapping for basename %v in dirInode %v not an InodeNumber", basename, dirInodeNumber)
+		panic(err)
+	}
+	targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(dirInodeSnapShotID, uint64(targetInodeNumber)))
 
-	return targetInodeNumber, nil
+	return
+}
+
+func (vS *volumeStruct) Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
+	stats.IncrementOperations(&stats.DirLookupOps)
+
+	targetInodeNumber, err = vS.lookup(dirInodeNumber, basename)
+
+	return
 }
 
 func (vS *volumeStruct) NumDirEntries(dirInodeNumber InodeNumber) (numEntries uint64, err error) {
-	inode, err := vS.fetchInodeType(dirInodeNumber, DirType)
+	var (
+		adjustNumEntriesForSnapShotSubDirInRootDirInode bool
+		dirMapping                                      sortedmap.BPlusTree
+		dirMappingLen                                   int
+		inode                                           *inMemoryInodeStruct
+		snapShotCount                                   uint64
+		snapShotIDType                                  headhunter.SnapShotIDType
+	)
+
+	if RootDirInodeNumber == dirInodeNumber {
+		// Account for .. in /<SnapShotDirName> if any SnapShot's exist
+		snapShotCount = vS.headhunterVolumeHandle.SnapShotCount()
+		adjustNumEntriesForSnapShotSubDirInRootDirInode = (0 != snapShotCount)
+	} else {
+		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+		if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+			// numEntries == 1 ('.') + 1 ('..') + # SnapShot's
+			snapShotCount = vS.headhunterVolumeHandle.SnapShotCount()
+			numEntries = 1 + 1 + snapShotCount
+			err = nil
+			return
+		}
+		adjustNumEntriesForSnapShotSubDirInRootDirInode = false
+	}
+
+	inode, err = vS.fetchInodeType(dirInodeNumber, DirType)
 	if nil != err {
 		return
 	}
 
-	dirMapping := inode.payload.(sortedmap.BPlusTree)
+	dirMapping = inode.payload.(sortedmap.BPlusTree)
 
-	dirMappingLen, err := dirMapping.Len()
+	dirMappingLen, err = dirMapping.Len()
 	if nil != err {
 		err = blunder.AddError(err, blunder.IOError)
 		return
 	}
 
-	numEntries = uint64(dirMappingLen)
+	if adjustNumEntriesForSnapShotSubDirInRootDirInode {
+		numEntries = uint64(dirMappingLen) + 1
+	} else {
+		numEntries = uint64(dirMappingLen)
+	}
 
 	return
 }
@@ -616,23 +763,242 @@ func (vS *volumeStruct) NumDirEntries(dirInodeNumber InodeNumber) (numEntries ui
 // A maxEntries or maxBufSize argument of zero is interpreted to mean "no maximum".
 func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntries []DirEntry, moreEntries bool, err error) {
 	var (
-		bufSize              uint64
-		dirIndex             int
-		dirMapping           sortedmap.BPlusTree
-		dirMappingLen        int
-		atLeastOneEntryFound bool
-		inode                *inMemoryInodeStruct
-		key                  sortedmap.Key
-		nextEntry            DirEntry
-		okGetByIndex         bool
-		okPayloadBPlusTree   bool
-		value                sortedmap.Value
+		atLeastOneEntryFound         bool
+		bufSize                      uint64
+		dirEntryBasename             string
+		dirEntryBasenameAsKey        sortedmap.Key
+		dirEntryInodeNumber          InodeNumber
+		dirEntryInodeNumberAsValue   sortedmap.Value
+		dirIndex                     int
+		dirMapping                   sortedmap.BPlusTree
+		dirMappingLen                int         // If snapShotDirToBeInserted, this is 1 + dirMapping.Len()
+		dotDotInodeNumberReplacement InodeNumber // If == 0, do not replace ..'s InodeNumber
+		foundPrevReturned            bool
+		inode                        *inMemoryInodeStruct
+		key                          sortedmap.Key
+		nextEntry                    DirEntry
+		nonce                        uint64
+		okGetByIndex                 bool
+		okKeyAsString                bool
+		okPayloadBPlusTree           bool
+		okPutToSnapShotListSorted    bool
+		okValueAsInodeNumber         bool
+		snapShotDirFound             bool
+		snapShotDirIndex             int  // If snapShotDirToBeInserted, this is the index where it goes
+		snapShotDirToBeInserted      bool // Only true in /<SnapShotDirName>
+		snapShotID                   uint64
+		snapShotIDType               headhunter.SnapShotIDType
+		snapShotList                 []headhunter.SnapShotStruct
+		snapShotListElement          headhunter.SnapShotStruct
+		snapShotListSorted           sortedmap.LLRBTree // Will also include '.' & '..'
+		snapShotListSortedLen        int
+		value                        sortedmap.Value
 	)
+
+	// The following defer'd func() is useful for debugging... so leaving it in here as a comment
+	/*
+		defer func() {
+			logger.Errorf("Executed inode.ReadDir()...")
+			logger.Errorf("  dirInodeNumber: 0x%016X", dirInodeNumber)
+			logger.Errorf("  maxEntries:     0x%016X", maxEntries)
+			logger.Errorf("  maxBufSize:     0x%016X", maxBufSize)
+			switch len(prevReturned) {
+			case 0:
+				// Nothing
+			case 1:
+				logger.Errorf("  prevReturned:   %v", prevReturned[0])
+			default:
+				logger.Errorf("  len(prevReturned) [%v] should have been 0 or 1", len(prevReturned))
+			}
+			if nil == err {
+				for dirEntriesIndex, dirEntry := range dirEntries {
+					logger.Errorf("  dirEntries[%v]:", dirEntriesIndex)
+					logger.Errorf("    InodeNumber:     0x%016X", dirEntry.InodeNumber)
+					logger.Errorf("    Basename:        %s", dirEntry.Basename)
+					logger.Errorf("    InodeType:       %v", dirEntry.Type)
+					logger.Errorf("    NextDirLocation: %v", dirEntry.NextDirLocation)
+				}
+			}
+			logger.Errorf("  moreEntries:    %v", moreEntries)
+			logger.Errorf("  err:            %v", err)
+		}()
+	*/
 
 	stats.IncrementOperations(&stats.DirReaddirOps)
 
 	dirEntries = make([]DirEntry, 0, int(maxEntries))
 	moreEntries = false
+
+	snapShotIDType, snapShotID, nonce = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+
+	if headhunter.SnapShotIDTypeDotSnapShot == snapShotIDType {
+		if uint64(RootDirInodeNumber) != nonce {
+			err = fmt.Errorf("ReadDir() to %v not in '/' not supported", SnapShotDirName)
+			err = blunder.AddError(err, blunder.NotSupportedError)
+			return
+		}
+
+		snapShotList = vS.headhunterVolumeHandle.SnapShotListByName(false)
+
+		snapShotListSorted = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
+
+		okPutToSnapShotListSorted, err = snapShotListSorted.Put(".", dirInodeNumber)
+		if nil != err {
+			err = fmt.Errorf("ReadDir() encountered error populating SnapShotListSorted: %v", err)
+			err = blunder.AddError(err, blunder.IOError)
+			return
+		}
+		if !okPutToSnapShotListSorted {
+			err = fmt.Errorf("ReadDir() encountered !ok populating SnapShotListSorted")
+			err = blunder.AddError(err, blunder.IOError)
+			return
+		}
+
+		okPutToSnapShotListSorted, err = snapShotListSorted.Put("..", RootDirInodeNumber)
+		if nil != err {
+			err = fmt.Errorf("ReadDir() encountered error populating SnapShotListSorted: %v", err)
+			err = blunder.AddError(err, blunder.IOError)
+			return
+		}
+		if !okPutToSnapShotListSorted {
+			err = fmt.Errorf("ReadDir() encountered !ok populating SnapShotListSorted")
+			err = blunder.AddError(err, blunder.IOError)
+			return
+		}
+
+		for _, snapShotListElement = range snapShotList {
+			okPutToSnapShotListSorted, err = snapShotListSorted.Put(snapShotListElement.Name, InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShotListElement.ID, uint64(RootDirInodeNumber))))
+			if nil != err {
+				err = fmt.Errorf("ReadDir() encountered error populating SnapShotListSorted: %v", err)
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+			if !okPutToSnapShotListSorted {
+				err = fmt.Errorf("ReadDir() encountered !ok populating SnapShotListSorted")
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+		}
+
+		switch len(prevReturned) {
+		case 0:
+			dirIndex = int(0)
+		case 1:
+			var (
+				okAsInodeDirLocation           bool
+				okAsString                     bool
+				prevReturnedAsInodeDirLocation InodeDirLocation
+				prevReturnedAsString           string
+			)
+
+			prevReturnedAsInodeDirLocation, okAsInodeDirLocation = prevReturned[0].(InodeDirLocation)
+			prevReturnedAsString, okAsString = prevReturned[0].(string)
+
+			if okAsInodeDirLocation {
+				if 0 > prevReturnedAsInodeDirLocation {
+					dirIndex = int(0)
+				} else {
+					dirIndex = int(prevReturnedAsInodeDirLocation + 1)
+				}
+			} else if okAsString {
+				dirIndex, foundPrevReturned, err = snapShotListSorted.BisectRight(prevReturnedAsString)
+				if nil != err {
+					err = fmt.Errorf("ReadDir() encountered error bisecting SnapShotListSorted: %v", err)
+				}
+				if foundPrevReturned {
+					dirIndex++
+				}
+			} else {
+				err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
+				err = blunder.AddError(err, blunder.NotSupportedError)
+				return
+			}
+		default:
+			err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
+			err = blunder.AddError(err, blunder.NotSupportedError)
+			return
+		}
+
+		atLeastOneEntryFound = false
+		bufSize = 0
+
+		snapShotListSortedLen, err = snapShotListSorted.Len()
+		if nil != err {
+			err = fmt.Errorf("ReadDir() encountered error accessing SnapShotListSorted: %v", err)
+			err = blunder.AddError(err, blunder.IOError)
+			return
+		}
+
+		for {
+			if snapShotListSortedLen <= dirIndex {
+				break
+			}
+
+			dirEntryBasenameAsKey, dirEntryInodeNumberAsValue, okGetByIndex, err = snapShotListSorted.GetByIndex(dirIndex)
+			if nil != err {
+				err = fmt.Errorf("ReadDir() encountered error accessing SnapShotListSorted: %v", err)
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+			if !okGetByIndex {
+				err = fmt.Errorf("ReadDir() encountered !ok accessing SnapShotListSorted: %v", err)
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+
+			dirEntryBasename, okKeyAsString = dirEntryBasenameAsKey.(string)
+			if !okKeyAsString {
+				err = fmt.Errorf("ReadDir() encountered !ok accessing SnapShotListSorted: %v", err)
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+
+			dirEntryInodeNumber, okValueAsInodeNumber = dirEntryInodeNumberAsValue.(InodeNumber)
+			if !okValueAsInodeNumber {
+				err = fmt.Errorf("ReadDir() encountered !ok accessing SnapShotListSorted: %v", err)
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+
+			atLeastOneEntryFound = true
+
+			nextEntry = DirEntry{
+				InodeNumber:     dirEntryInodeNumber,
+				Basename:        dirEntryBasename,
+				NextDirLocation: InodeDirLocation(dirIndex) + 1,
+			}
+
+			if (0 != maxEntries) && (uint64(len(dirEntries)+1) > maxEntries) {
+				break
+			}
+			if (0 != maxBufSize) && ((bufSize + uint64(nextEntry.Size())) > maxBufSize) {
+				break
+			}
+
+			dirEntries = append(dirEntries, nextEntry)
+			bufSize += uint64(nextEntry.Size())
+			dirIndex++
+		}
+
+		moreEntries = dirIndex < dirMappingLen
+
+		if 0 == len(dirEntries) {
+			if atLeastOneEntryFound {
+				// moreEntries will be true despite none fitting withing supplied constraints
+			} else {
+				err = fmt.Errorf("ReadDir() called for prevReturned at or beyond end of directory")
+				err = blunder.AddError(err, blunder.NotFoundError)
+				return
+			}
+		}
+
+		stats.IncrementOperationsEntriesAndBytes(stats.DirRead, uint64(len(dirEntries)), bufSize)
+
+		err = nil
+		return
+	}
+
+	// If we reach here, snapShotIDType is one of headhunter.SnapShotIDType{Live|SnapShotIDTypeSnapShot}
 
 	inode, err = vS.fetchInodeType(dirInodeNumber, DirType)
 	if nil != err {
@@ -650,6 +1016,35 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	if nil != err {
 		err = blunder.AddError(err, blunder.IOError)
 		return
+	}
+
+	snapShotDirToBeInserted = false               // By default, SnapShotDirName not to be inserted
+	dotDotInodeNumberReplacement = InodeNumber(0) // By default, do not replace ..'s InodeNumber
+
+	if headhunter.SnapShotIDTypeLive == snapShotIDType {
+		if RootDirInodeNumber == dirInodeNumber {
+			if uint64(0) < vS.headhunterVolumeHandle.SnapShotCount() {
+				// Need to find a spot to insert SnapShotDirName
+
+				snapShotDirIndex, snapShotDirFound, err = dirMapping.BisectRight(SnapShotDirName)
+				if nil != err {
+					err = blunder.AddError(err, blunder.IOError)
+					return
+				}
+				if snapShotDirFound {
+					err = fmt.Errorf("ReadDir() encountered pre-existing /%v dirEntry", SnapShotDirName)
+					err = blunder.AddError(err, blunder.IOError)
+					return
+				}
+
+				snapShotDirToBeInserted = true
+				dirMappingLen++
+			}
+		}
+	} else {
+		if uint64(RootDirInodeNumber) == nonce {
+			dotDotInodeNumberReplacement = InodeNumber(vS.headhunterVolumeHandle.SnapShotTypeDotSnapShotAndNonceEncode(uint64(RootDirInodeNumber)))
+		}
 	}
 
 	switch len(prevReturned) {
@@ -674,13 +1069,31 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 				dirIndex = int(prevReturnedAsInodeDirLocation + 1)
 			}
 		} else if okAsString {
-			dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
-			if nil != err {
-				err = blunder.AddError(err, blunder.IOError)
-				return
-			}
-			if foundDoingBisectRight {
-				dirIndex++
+			if snapShotDirToBeInserted {
+				if SnapShotDirName == prevReturnedAsString {
+					dirIndex = snapShotDirIndex + 1
+				} else {
+					dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
+					if nil != err {
+						err = blunder.AddError(err, blunder.IOError)
+						return
+					}
+					if dirIndex >= snapShotDirIndex {
+						dirIndex++
+					}
+					if foundDoingBisectRight {
+						dirIndex++
+					}
+				}
+			} else {
+				dirIndex, foundDoingBisectRight, err = dirMapping.BisectRight(prevReturnedAsString)
+				if nil != err {
+					err = blunder.AddError(err, blunder.IOError)
+					return
+				}
+				if foundDoingBisectRight {
+					dirIndex++
+				}
 			}
 		} else {
 			err = fmt.Errorf("ReadDir() accepts only zero or one (InodeDirLocation or string) trailing prevReturned argument")
@@ -697,20 +1110,46 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	bufSize = 0
 
 	for {
-		key, value, okGetByIndex, err = dirMapping.GetByIndex(dirIndex)
-		if nil != err {
-			err = blunder.AddError(err, blunder.IOError)
-			return
-		}
-		if !okGetByIndex {
-			break
+		if snapShotDirToBeInserted && (dirIndex == snapShotDirIndex) {
+			dirEntryBasename = SnapShotDirName
+			dirEntryInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotTypeDotSnapShotAndNonceEncode(uint64(RootDirInodeNumber)))
+		} else {
+			if snapShotDirToBeInserted {
+				if dirIndex < snapShotDirIndex {
+					key, value, okGetByIndex, err = dirMapping.GetByIndex(dirIndex)
+				} else {
+					key, value, okGetByIndex, err = dirMapping.GetByIndex(dirIndex - 1)
+				}
+			} else {
+				key, value, okGetByIndex, err = dirMapping.GetByIndex(dirIndex)
+			}
+			if nil != err {
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+			if !okGetByIndex {
+				break
+			}
+
+			dirEntryBasename, okKeyAsString = key.(string)
+			if !okKeyAsString {
+				err = fmt.Errorf("ReadDir() encountered dirEntry with non-string Key")
+				err = blunder.AddError(err, blunder.IOError)
+				return
+			}
+
+			if (InodeNumber(0) != dotDotInodeNumberReplacement) && (".." == dirEntryBasename) {
+				dirEntryInodeNumber = dotDotInodeNumberReplacement
+			} else {
+				dirEntryInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShotID, uint64(value.(InodeNumber))))
+			}
 		}
 
 		atLeastOneEntryFound = true
 
 		nextEntry = DirEntry{
-			InodeNumber:     value.(InodeNumber),
-			Basename:        key.(string),
+			InodeNumber:     dirEntryInodeNumber,
+			Basename:        dirEntryBasename,
 			NextDirLocation: InodeDirLocation(dirIndex) + 1,
 		}
 
@@ -723,7 +1162,8 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 
 		dirEntries = append(dirEntries, nextEntry)
 		bufSize += uint64(nextEntry.Size())
-		dirIndex++
+
+		dirIndex++ // Consumed one dirEntry either manufactured (/<SnapShotDirName>) or from dirMapping
 	}
 
 	moreEntries = dirIndex < dirMappingLen
@@ -734,10 +1174,12 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		} else {
 			err = fmt.Errorf("ReadDir() called for prevReturned at or beyond end of directory")
 			err = blunder.AddError(err, blunder.NotFoundError)
+			return
 		}
 	}
 
 	stats.IncrementOperationsEntriesAndBytes(stats.DirRead, uint64(len(dirEntries)), bufSize)
 
+	err = nil
 	return
 }

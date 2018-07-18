@@ -802,7 +802,7 @@ func (s *Server) RpcCreate(in *CreateRequest, reply *InodeReply) (err error) {
 	}
 
 	fino, err := mountHandle.Create(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, inode.InodeMode(in.FileMode))
-	reply.InodeNumber = uint64(fino)
+	reply.InodeNumber = int64(uint64(fino))
 	return
 }
 
@@ -839,7 +839,7 @@ func (s *Server) RpcCreatePath(in *CreatePathRequest, reply *InodeReply) (err er
 
 	// Do the create
 	fino, err := mountHandle.Create(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, ino, basename, inode.InodeMode(in.FileMode))
-	reply.InodeNumber = uint64(fino)
+	reply.InodeNumber = int64(uint64(fino))
 	return
 }
 
@@ -935,7 +935,7 @@ func (stat *StatStruct) fsStatToStatStruct(fsStat fs.Stat) {
 	stat.ATimeNs = fsStat[fs.StatATime]
 	stat.Size = fsStat[fs.StatSize]
 	stat.NumLinks = fsStat[fs.StatNLink]
-	stat.StatInodeNumber = fsStat[fs.StatINum]
+	stat.StatInodeNumber = int64(fsStat[fs.StatINum])
 	stat.FileMode = uint32(fsStat[fs.StatMode])
 	stat.UserID = uint32(fsStat[fs.StatUserID])
 	stat.GroupID = uint32(fsStat[fs.StatGroupID])
@@ -1100,7 +1100,7 @@ func (s *Server) RpcLookupPath(in *LookupPathRequest, reply *InodeReply) (err er
 	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, in.Fullpath)
 	profiler.AddEventNow("after fs.LookupPath()")
 	if err == nil {
-		reply.InodeNumber = uint64(ino)
+		reply.InodeNumber = int64(uint64(ino))
 	}
 
 	// Save profiler with server op stats
@@ -1224,7 +1224,7 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 	// line below is for testing fault injection
 	//err = blunder.AddError(err, blunder.TryAgainError)
 	if err == nil {
-		reply.InodeNumber = uint64(ino)
+		reply.InodeNumber = int64(uint64(ino))
 	}
 
 	// Save profiler with server op stats
@@ -1248,7 +1248,7 @@ func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
 	}
 
 	ino, err := mountHandle.Mkdir(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, inode.InodeMode(in.FileMode))
-	reply.InodeNumber = uint64(ino)
+	reply.InodeNumber = int64(uint64(ino))
 	return
 }
 
@@ -1299,7 +1299,7 @@ func (s *Server) RpcMount(in *MountRequest, reply *MountReply) (err error) {
 	mountHandle, err := fs.Mount(in.VolumeName, fs.MountOptions(in.MountOptions))
 	if err == nil {
 		reply.MountID = allocateMountID(mountHandle)
-		reply.RootDirInodeNumber = uint64(inode.RootDirInodeNumber)
+		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 	}
 	return
 }
@@ -1350,10 +1350,10 @@ func (s *Server) RpcRead(in *ReadRequest, reply *ReadReply) (err error) {
 }
 
 func (dirEnt *DirEntry) fsDirentToDirEntryStruct(fsDirent inode.DirEntry) {
-	dirEnt.InodeNumber = uint64(fsDirent.InodeNumber)
+	dirEnt.InodeNumber = int64(uint64(fsDirent.InodeNumber))
 	dirEnt.Basename = fsDirent.Basename
 	dirEnt.FileType = uint16(fsDirent.Type)
-	dirEnt.NextDirLocation = uint32(fsDirent.NextDirLocation)
+	dirEnt.NextDirLocation = int64(fsDirent.NextDirLocation)
 }
 
 func (s *Server) RpcReaddir(in *ReaddirRequest, reply *ReaddirReply) (err error) {

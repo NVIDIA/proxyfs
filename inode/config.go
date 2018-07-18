@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -73,6 +74,9 @@ type volumeStruct struct {
 	inodeCacheLRUHead              *inMemoryInodeStruct
 	inodeCacheLRUTail              *inMemoryInodeStruct
 	inodeCacheLRUItems             uint64
+	inodeCacheLRUMaxBytes          uint64
+	inodeCacheLRUTicker            *time.Ticker
+	inodeCacheLRUTickerInterval    time.Duration
 }
 
 type globalsStruct struct {
@@ -94,9 +98,59 @@ type globalsStruct struct {
 	corruptionDetectedFalseBuf         []byte                        // holds serialized CorruptionDetected == false
 	versionV1Buf                       []byte                        // holds serialized Version            == V1
 	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	inodeSize                          uint64                        // size of in-memory inode struct
 }
 
 var globals globalsStruct
+
+func stopInodeCacheDiscard(volume *volumeStruct) {
+	if volume.active {
+		if volume.inodeCacheLRUTicker != nil {
+			volume.inodeCacheLRUTicker.Stop()
+			logger.Infof("Inode cache discard ticker for 'volume: %v' stopped.",
+				volume.volumeName)
+		}
+	}
+}
+
+func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSectionName string) (err error) {
+
+	var (
+		LRUCacheMaxBytes       uint64
+		LRUDiscardTimeInterval time.Duration
+	)
+	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
+	if nil != err {
+		return
+	}
+	volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
+
+	LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
+	if nil != err {
+		return
+	}
+
+	if LRUDiscardTimeInterval == 0 {
+		logger.Infof("Inode cache discard ticker for 'volume: %v' is disabled.",
+			volume.volumeName)
+		return
+	}
+	volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+	volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
+
+	logger.Infof("Inode cache discard ticker for 'volume: %v' is: %v MaxBytesInodeCache: %v",
+		volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
+
+	// Start ticker for inode cache discard thread
+	go func() {
+		for range volume.inodeCacheLRUTicker.C {
+
+			volume.inodeCacheDiscard()
+		}
+	}()
+
+	return
+}
 
 func Up(confMap conf.ConfMap) (err error) {
 	var (
@@ -192,6 +246,9 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
+	var tmpInode inMemoryInodeStruct
+	globals.inodeSize = uint64(unsafe.Sizeof(tmpInode))
+
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
 		return
@@ -208,6 +265,11 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUHead:              nil,
 			inodeCacheLRUTail:              nil,
 			inodeCacheLRUItems:             0,
+		}
+
+		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+		if nil != err {
+			return
 		}
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
@@ -494,6 +556,9 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	volumesNewlyInactiveSet = make(map[string]bool)
 
 	for volumeName, volume = range globals.volumeMap {
+		// Stop the routine discarding inodes from the inode cache.
+		stopInodeCacheDiscard(volume)
+
 		_, ok = newVolumeSet[volumeName]
 		if ok {
 			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
@@ -885,6 +950,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 			volume.headhunterVolumeHandle.RegisterForEvents(volume)
 		}
+
+		err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+		if nil != err {
+			return
+		}
 	}
 
 	adoptFlowControlReadCacheParameters(confMap, true)
@@ -894,7 +964,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 }
 
 func Down() (err error) {
+
+	// Stop the goroutine which culls the inodeCache
+	for _, volume := range globals.volumeMap {
+		stopInodeCacheDiscard(volume)
+	}
+
 	err = nil // Nothing to do
+
 	return
 }
 
