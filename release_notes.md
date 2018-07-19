@@ -1,36 +1,22 @@
 # ProxyFS Release Notes
 
-## 1.6.0 (July XXXX, 2018)
+## 1.6.1 (July 19, 2018)
 
-Add a background thread which discards non-dirty inodes from the inode
-cache if the size of the inode cache exceeds a per volume tunable. The per
-volume tunable is named "MaxBytesInodeCache" and defaults to "10485760".
-The background thread runs based on a per volume tunable named
-"InodeCacheEvictInterval".  The default is "1s" or once a second.
-To disable the background thread set "InodeCacheEvictInterval" to "0s"
-or 0 seconds.
+### Features:
 
-Added file system snapshots infrastructure. -- TODO - EXPAND, is it supported?
-is everything there? what about file system version changes? testing???
-no roll back? tunables, etc?
+* Added support for configuring the NoAuth Swift Proxy to an IP Address other than a default of (IPv4) localhost (127.0.0.1). Note that in the future, the defaulting to localhost may be removed, so users should take care to specify the NoAuth Swift Proxy IP Address in their configurations in the future.
+* Added support for the "delimiter=" option for Swift API GET requests. This, along with the "prefix=" option, enables viewing of the directory hierarchy inside a Container in the same way one would view a file system.
 
-Add fixes to jrpcclient to alleviate hangs seen by clients.
+### Bug Fixes:
 
-Add NoAuthIPAddr option to swiftclient.  It defaults to 127.0.0.1 which
-is the backend Swift proxy.  This allows the setting to be consistent with
-configuration settings in Swift proxy-server.conf.
+* SMB clients making multiple mounts to the same Samba/ProxyFS instance could encounter all sessions/mounts being closed when requesting any one of them to terminate. This has now been corrected.
+* Previously, a cache of Inode structures did not support eviction. As a result, a very large number of Inodes accessed since a ProxyFS instance was started could exhaust memory. To address this, a new background thread discards non-dirty Inodes from the Inode Cache. The behavior of the Inode Cache eviction thread is tuned by:
+>          MaxBytesInodeCache - defaults to 10485760 (10MB)
+>          InodeCacheEvictInterval - defaults to 1s (disabled if 0s)
 
+### Known Issues:
 
-TODO - do above comments cover these topics adequately?  What is the date,
-version, etc we should be using?
-
-----
-
-1. Ed writeup on snapshots
-2. Kota fix for:
-    Add NoAuthIPAddr option to swiftclient
-    Added default SwiftClient.NoAuthIPAddr
-3. Craig fixes to jrpcclient
+* As of this version, the metadata format has been updated from V2 to V3 in support of the SnapShot functionality. Unfortunately there is no going back. Once a V2 volume is mounted, it is immediately upgraded to V3 despite not (yet) having any SnapShots declared.
 
 ## 1.5.3 (April 3, 2018)
 
