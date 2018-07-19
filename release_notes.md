@@ -1,29 +1,24 @@
 # ProxyFS Release Notes
 
-## 1.5.4 (July XXXX, 2018)
+## 1.6.1 (July 19, 2018)
 
-Add a background thread which discards non-dirty inodes from the inode
-cache if the size of the inode cache exceeds a per volume tunable.
+### Features:
 
-The per volume tunable is named "MaxBytesInodeCache" and is presently
-set at "1048576".
+* Added support for configuring the NoAuth Swift Proxy to an IP Address other than a default of (IPv4) localhost (127.0.0.1). Note that in the future, the defaulting to localhost may be removed, so users should take care to specify the NoAuth Swift Proxy IP Address in their configurations in the future.
+* Added support for the "delimiter=" option for Swift API GET requests. This, along with the "prefix=" option, enables viewing of the directory hierarchy inside a Container in the same way one would view a file system.
+* Added support for SnapShots. These are invoked via the RESTful API exposed by the embedded HTTP Server inside each proxyfsd instance. Note that this API is only reachable via the PrivateIPAddr and performs not authentication/authorization. You can find the new RESTful methods underneath the /Volume/<volumeName> resource (along with FSCK, Scrub, and LayoutMap). Both JSON (textual) and formatted HTML is available.
+* Added support for viewing a FileInode's ExtentMap via this same RESTful API underneath the /Volume/<volumeName> resource (adjacent to the above-mentioned SnapShot resource).
 
-The background thread only runs at certain intervals.   The intervals
-for which it runs is tunable on a per volume basis and the tunable is
-named "InodeCacheEvictInterval".  At present, this tunable is set at
-"5s" or every 5 seconds.
+### Bug Fixes:
 
-To disable the background thread set "InodeCacheEvictInterval" to "0s"
-or 0 seconds.
+* SMB clients making multiple mounts to the same Samba/ProxyFS instance could encounter all sessions/mounts being closed when requesting any one of them to terminate. This has now been corrected.
+* Previously, a cache of Inode structures did not support eviction. As a result, a very large number of Inodes accessed since a ProxyFS instance was started could exhaust memory. To address this, a new background thread discards non-dirty Inodes from the Inode Cache. The behavior of the Inode Cache eviction thread is tuned by:
+>          MaxBytesInodeCache - defaults to 10485760 (10MB)
+>          InodeCacheEvictInterval - defaults to 1s (disabled if 0s)
 
-TODO
-----
+### Known Issues:
 
-1. Ed writeup on snapshots
-2. Kota fix for:
-    Add NoAuthIPAddr option to swiftclient
-    Added default SwiftClient.NoAuthIPAddr
-3. Craig fixes to jrpcclient
+* As of this version, the metadata format has been updated from V2 to V3 in support of the SnapShot functionality. Unfortunately there is no going back. Once a V2 volume is mounted, it is immediately upgraded to V3 despite not (yet) having any SnapShots declared.
 
 ## 1.5.3 (April 3, 2018)
 
