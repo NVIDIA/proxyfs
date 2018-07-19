@@ -73,12 +73,14 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	profileType, confErr := confMap.FetchOptionValueString("ProxyfsDebug", "ProfileType")
 	if confErr == nil {
 		switch profileType {
-		case "Memory":
-			defer profile.Start(profile.MemProfile).Stop()
 		case "Block":
 			defer profile.Start(profile.BlockProfile).Stop()
 		case "CPU":
 			defer profile.Start(profile.CPUProfile).Stop()
+		case "Memory":
+			defer profile.Start(profile.MemProfile).Stop()
+		case "Mutex":
+			defer profile.Start(profile.MutexProfile).Stop()
 		}
 	}
 	// If not specified in conf map or type doesn't match one of the above, don't do profiling.

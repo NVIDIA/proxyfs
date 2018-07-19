@@ -1,7 +1,6 @@
 package swiftclient
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -59,7 +58,6 @@ func TestUtils(t *testing.T) {
 		t.Fatalf("masterHeaders[\"Dummy-Header-W\"] returned !ok")
 	}
 	if 1 != len(masterDummyHeaderW) {
-		fmt.Println(masterDummyHeaderW)
 		t.Fatalf("masterHeaders[\"Dummy-Header-W\"] had unexpected len (%v)", len(masterDummyHeaderW))
 	}
 	if "W" != masterDummyHeaderW[0] {

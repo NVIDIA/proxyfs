@@ -3,7 +3,7 @@ package headhunter
 
 import (
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/swiftstack/sortedmap"
 )
@@ -15,12 +15,33 @@ const (
 	InodeRecBPlusTree
 	LogSegmentRecBPlusTree
 	BPlusTreeObjectBPlusTree
+	CreatedObjectsBPlusTree
+	DeletedObjectsBPlusTree
 )
+
+type SnapShotIDType uint8
+
+const (
+	SnapShotIDTypeLive SnapShotIDType = iota
+	SnapShotIDTypeSnapShot
+	SnapShotIDTypeDotSnapShot
+)
+
+type SnapShotStruct struct {
+	ID   uint64
+	Time time.Time
+	Name string
+}
+
+type VolumeEventListener interface {
+	CheckpointCompleted()
+}
 
 // VolumeHandle is used to operate on a given volume's database
 type VolumeHandle interface {
+	RegisterForEvents(listener VolumeEventListener)
+	UnregisterForEvents(listener VolumeEventListener)
 	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
-	FetchNextCheckPointDoneWaitGroup() (wg *sync.WaitGroup)
 	FetchNonce() (nonce uint64, err error)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)
@@ -37,6 +58,16 @@ type VolumeHandle interface {
 	IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error)
 	DoCheckpoint() (err error)
 	FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error)
+	SnapShotCreateByInodeLayer(name string) (id uint64, err error)
+	SnapShotDeleteByInodeLayer(id uint64) (err error)
+	SnapShotCount() (snapShotCount uint64)
+	SnapShotLookupByName(name string) (snapShot SnapShotStruct, ok bool)
+	SnapShotListByID(reversed bool) (list []SnapShotStruct)
+	SnapShotListByTime(reversed bool) (list []SnapShotStruct)
+	SnapShotListByName(reversed bool) (list []SnapShotStruct)
+	SnapShotU64Decode(snapShotU64 uint64) (snapShotIDType SnapShotIDType, snapShotID uint64, nonce uint64)
+	SnapShotIDAndNonceEncode(snapShotID uint64, nonce uint64) (snapShotU64 uint64)
+	SnapShotTypeDotSnapShotAndNonceEncode(nonce uint64) (snapShotU64 uint64)
 }
 
 // FetchVolumeHandle is used to fetch a VolumeHandle to use when operating on a given volume's database

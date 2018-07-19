@@ -14,7 +14,7 @@ type testObjectLocationStruct struct {
 	objectName    string
 }
 
-func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
+func TestEmptySegmentDeletion(t *testing.T) {
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
@@ -44,9 +44,12 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 	}
 
 	// inspect log segment map
-	ourInode, ok := volume.inodeCache[ino]
+	ourInode, ok, err := volume.fetchInode(ino)
+	if nil != err {
+		t.Fatalf("fetchInode(ino==0x%016X) failed: %v", ino, err)
+	}
 	if !ok {
-		t.Fatalf("expected to find inode #%v in cache", ino)
+		t.Fatalf("fetchInode(ino==0x%016X) returned !ok", ino)
 	}
 	segmentNumbers := make([]uint64, 0, 5)
 	segmentObjectLocations := make([]testObjectLocationStruct, 0, 5)
@@ -87,19 +90,19 @@ func TestPhaseOneEmptySegmentDeletion(t *testing.T) {
 
 	// the headhunter records got deleted, and ...
 	for _, segmentObjectLocation := range segmentObjectLocations {
-		var objectGetErr error
+		var objectContentLengthErr error
 
-		// wait for up to 100 sec for the object to be (async) deleted
-		for try := 0; try < 100; try++ {
-			_, objectGetErr = swiftclient.ObjectGet(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName, 0, 16)
-			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectGetErr)
-			if objectGetErr != nil {
+		// wait for up to 20 sec for the object to be (async) deleted
+		for try := 0; try < 20; try++ {
+			_, objectContentLengthErr = swiftclient.ObjectContentLength(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
+			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectContentLengthErr)
+			if objectContentLengthErr != nil {
 				break
 			}
 			time.Sleep(time.Second)
 		}
-		if objectGetErr == nil {
-			t.Errorf("expected object GET to fail for allegedly-deleted log segment object at %s/%s/%s", segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
+		if objectContentLengthErr == nil {
+			t.Errorf("expected ObjectContentLength() to fail for allegedly-deleted log segment object at %s/%s/%s", segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
 		}
 	}
 	// the underlying log segment objects got deleted!! Yaaay~! ☆✦❤

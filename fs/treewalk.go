@@ -596,7 +596,6 @@ func (vVS *validateVolumeStruct) validateVolumeIncrementByteCounts(inodeNumber u
 
 func (vVS *validateVolumeStruct) validateVolume() {
 	var (
-		asyncDeleteWaitGroup            sync.WaitGroup
 		checkpointContainerObjectList   []string
 		checkpointContainerObjectName   string
 		checkpointContainerObjectNumber uint64
@@ -1179,16 +1178,13 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 		if uint64(0) == checkpointContainerObjectNumber {
 			vVS.jobLogInfo("Removing unreferenced checkpointContainerObject %v", checkpointContainerObjectName)
-			asyncDeleteWaitGroup.Add(1)
-			swiftclient.ObjectDeleteAsync(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, swiftclient.SkipRetry, nil, &asyncDeleteWaitGroup)
+			swiftclient.ObjectDelete(vVS.accountName, vVS.checkpointContainerName, checkpointContainerObjectName, swiftclient.SkipRetry)
 		}
 
 		if vVS.stopFlag {
 			return // Note: Already scheduled async Object DELETEs will continue in the background
 		}
 	}
-
-	asyncDeleteWaitGroup.Wait()
 }
 
 func (sVS *scrubVolumeStruct) Active() (active bool) {
@@ -1245,7 +1241,7 @@ func (sVS *scrubVolumeStruct) scrubVolumeInode(inodeNumber uint64) {
 
 	defer sVS.jobReleaseParallelism()
 
-	inodeLock, err = sVS.volume.initInodeLock(inode.InodeNumber(inodeNumber), nil)
+	inodeLock, err = sVS.jobStruct.inodeVolumeHandle.InitInodeLock(inode.InodeNumber(inodeNumber), nil)
 	if nil != err {
 		sVS.jobLogErr("Got initInodeLock(0x%016X) failure: %v", inodeNumber, err)
 		return

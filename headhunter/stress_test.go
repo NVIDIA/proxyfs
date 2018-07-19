@@ -154,6 +154,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -173,7 +174,6 @@ func TestHeadHunterStress(t *testing.T) {
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10h", // We never want a time-based checkpoint
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.FlowControl=TestFlowControl",
 		"Volume:TestVolume.NonceValuesToReserve=1", // We want to force worst-case nonce fetching
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
@@ -351,6 +351,14 @@ func TestHeadHunterStress(t *testing.T) {
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
 				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
+				}
 				err = Up(confMap)
 				if nil != err {
 					t.Fatalf("headhunter.Up() returned error: %v", err)
@@ -431,6 +439,14 @@ func TestHeadHunterStress(t *testing.T) {
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
 				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
+				}
 				err = Up(confMap)
 				if nil != err {
 					t.Fatalf("headhunter.Up() returned error: %v", err)
@@ -504,6 +520,14 @@ func TestHeadHunterStress(t *testing.T) {
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
 				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
+				}
 				err = Up(confMap)
 				if nil != err {
 					t.Fatalf("headhunter.Up() returned error: %v", err)
@@ -570,6 +594,14 @@ func TestHeadHunterStress(t *testing.T) {
 				err = Down()
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
+				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
 				}
 				err = Up(confMap)
 				if nil != err {
@@ -644,6 +676,14 @@ func TestHeadHunterStress(t *testing.T) {
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
 				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
+				}
 				err = Up(confMap)
 				if nil != err {
 					t.Fatalf("headhunter.Up() returned error: %v", err)
@@ -710,6 +750,14 @@ func TestHeadHunterStress(t *testing.T) {
 				err = Down()
 				if nil != err {
 					t.Fatalf("headhunter.Down() returned error: %v", err)
+				}
+				err = swiftclient.Down()
+				if nil != err {
+					t.Fatalf("swiftclient.Down() returned error: %v", err)
+				}
+				err = swiftclient.Up(confMap)
+				if nil != err {
+					t.Fatalf("swiftclient.Up() returned error: %v", err)
 				}
 				err = Up(confMap)
 				if nil != err {

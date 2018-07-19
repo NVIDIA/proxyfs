@@ -19,6 +19,7 @@ func TestAPI(t *testing.T) {
 		retrievedRecordForFormatTestPatternS08X           string
 		retrievedRecordForFormatTestPatternS016X          string
 		retrievedRecordForFormatTestPatternS016X016X      string
+		retrievedRecordForFormatTestPatternS016X016X016X  string
 		retrievedRecordForFormatTestPatternS016XsliceLen0 string
 		retrievedRecordForFormatTestPatternS016XsliceLen1 string
 		retrievedRecordForFormatTestPatternS016XsliceLen3 string
@@ -28,6 +29,7 @@ func TestAPI(t *testing.T) {
 		retrievedRecordForFormatTestPatternSSS            string
 		retrievedRecordForFormatTestPatternSSS03D         string
 		retrievedRecordForFormatTestPatternSSS016X03D     string
+		retrievedRecordForFormatTestPatternSSS016X016X03D string
 	)
 
 	testConfMapStrings = []string{
@@ -65,6 +67,7 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternS08X, "arg0", uint32(1))
 	Record(FormatTestPatternS016X, "arg0", uint64(1))
 	Record(FormatTestPatternS016X016X, "arg0", uint64(1), uint64(2))
+	Record(FormatTestPatternS016X016X016X, "arg0", uint64(1), uint64(2), uint64(3))
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{})
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{uint64(0x101)})
 	Record(FormatTestPatternS016Xslice, "arg0", []uint64{uint64(0x101), uint64(0x102), uint64(0x103)})
@@ -74,6 +77,7 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternSSS, "arg0", "arg.1", "arg..2")
 	Record(FormatTestPatternSSS03D, "arg0", "arg.1", "arg..2", uint32(3))
 	Record(FormatTestPatternSSS016X03D, "arg0", "arg.1", "arg..2", uint64(3), uint32(4))
+	Record(FormatTestPatternSSS016X016X03D, "arg0", "arg.1", "arg..2", uint64(3), uint64(4), uint32(5))
 
 	retrievedRecordForFormatTestPatternFixed, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS, _ = Retrieve()
@@ -81,6 +85,7 @@ func TestAPI(t *testing.T) {
 	retrievedRecordForFormatTestPatternS08X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016X016X, _ = Retrieve()
+	retrievedRecordForFormatTestPatternS016X016X016X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen0, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen1, _ = Retrieve()
 	retrievedRecordForFormatTestPatternS016XsliceLen3, _ = Retrieve()
@@ -90,6 +95,7 @@ func TestAPI(t *testing.T) {
 	retrievedRecordForFormatTestPatternSSS, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSSS03D, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSSS016X03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSSS016X016X03D, _ = Retrieve()
 
 	if "Test for patternFixed" != retrievedRecordForFormatTestPatternFixed[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternFixed failed")
@@ -107,6 +113,9 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Retrieval of FormatTestPatternS016X failed")
 	}
 	if "Test for patternS016X016X arg0:arg0 arg1:0000000000000001 arg2:0000000000000002" != retrievedRecordForFormatTestPatternS016X016X[25:] {
+		t.Fatalf("Retrieval of FormatTestPatternS016X016X failed")
+	}
+	if "Test for patternS016X016X016X arg0:arg0 arg1:0000000000000001 arg2:0000000000000002 arg3:0000000000000003" != retrievedRecordForFormatTestPatternS016X016X016X[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternS016X016X failed")
 	}
 	if "Test for patternS016Xslice arg0:arg0 arg1:[]" != retrievedRecordForFormatTestPatternS016XsliceLen0[25:] {
@@ -134,6 +143,9 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Retrieval of FormatTestPatternSSS03D failed")
 	}
 	if "Test for patternSSS016X03D arg0:arg0 arg1:arg.1 arg2:arg..2 arg3:0000000000000003 arg4:004" != retrievedRecordForFormatTestPatternSSS016X03D[25:] {
+		t.Fatalf("Retrieval of FormatTestPatternSSS016X03D failed")
+	}
+	if "Test for patternSSS016X016X03D arg0:arg0 arg1:arg.1 arg2:arg..2 arg3:0000000000000003 arg4:0000000000000004 arg5:005" != retrievedRecordForFormatTestPatternSSS016X016X03D[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternSSS016X03D failed")
 	}
 

@@ -95,6 +95,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -114,7 +115,6 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10s",
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.FlowControl=TestFlowControl",
 		"Volume:TestVolume.NonceValuesToReserve=100",
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
@@ -212,6 +212,9 @@ func TestHeadHunterAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") [case 1] returned error: %v", err)
 	}
+
+	volume.RegisterForEvents(nil)
+	volume.UnregisterForEvents(nil)
 
 	firstUpNonce, err := volume.FetchNonce()
 	if nil != err {

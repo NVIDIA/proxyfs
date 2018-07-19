@@ -1,19 +1,24 @@
-package fs
+package inode
 
 import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/inode"
 )
 
 func TestLockerStuff(t *testing.T) {
 
-	var inodeNumber inode.InodeNumber = inode.InodeNumber(2)
+	var inodeNumber = InodeNumber(2)
+	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
+	if nil != err {
+		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
+	}
+
+	volume := testVolumeHandle.(*volumeStruct)
 
 	// Test: get a lock for vol A inode 2
-	srcDirLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
+	srcDirLock, err := volume.InitInodeLock(inodeNumber, nil)
 	if err != nil {
 		t.Fatalf("Failed to initInodeLock: %v", err)
 	}
@@ -21,7 +26,7 @@ func TestLockerStuff(t *testing.T) {
 
 	// Test: get a lock for vol A inode 3
 	inodeNumber++
-	dstDirLock, err := mS.volStruct.initInodeLock(inodeNumber, nil)
+	dstDirLock, err := volume.InitInodeLock(inodeNumber, nil)
 	if err != nil {
 		t.Fatalf("Failed to initInodeLock: %v", err)
 	}
@@ -37,16 +42,16 @@ func TestLockerStuff(t *testing.T) {
 	srcDirLock.Unlock()
 
 	// Simulate multi-lock move sequence
-	var srcDirInodeNumber inode.InodeNumber = 9001
-	var dstDirInodeNumber inode.InodeNumber = 9002
+	var srcDirInodeNumber InodeNumber = 9001
+	var dstDirInodeNumber InodeNumber = 9002
 	callerID := dlm.GenerateCallerID()
-	srcDirLock, err = mS.volStruct.initInodeLock(srcDirInodeNumber, callerID)
+	srcDirLock, err = volume.InitInodeLock(srcDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}
 	srcCallerID = srcDirLock.GetCallerID()
 
-	dstDirLock, err = mS.volStruct.initInodeLock(dstDirInodeNumber, callerID)
+	dstDirLock, err = volume.InitInodeLock(dstDirInodeNumber, callerID)
 	if err != nil {
 		return
 	}

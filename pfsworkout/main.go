@@ -1248,9 +1248,9 @@ func deleteObject(objectPath string) (err error) {
 		return
 	}
 
-	err = swiftclient.ObjectDeleteSync(accountName, containerName, objectName, swiftclient.SkipRetry)
+	err = swiftclient.ObjectDelete(accountName, containerName, objectName, swiftclient.SkipRetry)
 	if nil != err {
-		stepErrChan <- fmt.Errorf("swiftclient.ObjectDeleteSync(\"%v\", \"%v\", \"%v\", swiftclient.SkipRetry) failed: %v\n", accountName, containerName, objectName, err)
+		stepErrChan <- fmt.Errorf("swiftclient.ObjectDelete(\"%v\", \"%v\", \"%v\", swiftclient.SkipRetry) failed: %v\n", accountName, containerName, objectName, err)
 		return
 	}
 	return

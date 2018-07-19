@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -69,27 +70,90 @@ type volumeStruct struct {
 	defaultPhysicalContainerLayout *physicalContainerLayoutStruct
 	flowControl                    *flowControlStruct
 	headhunterVolumeHandle         headhunter.VolumeHandle
-	inodeCache                     map[InodeNumber]*inMemoryInodeStruct //      key == InodeNumber
+	inodeCache                     sortedmap.LLRBTree //                        key == InodeNumber; value == *inMemoryInodeStruct
+	inodeCacheLRUHead              *inMemoryInodeStruct
+	inodeCacheLRUTail              *inMemoryInodeStruct
+	inodeCacheLRUItems             uint64
+	inodeCacheLRUMaxBytes          uint64
+	inodeCacheLRUTicker            *time.Ticker
+	inodeCacheLRUTickerInterval    time.Duration
 }
 
 type globalsStruct struct {
 	sync.Mutex
-	whoAmI                       string
-	myPrivateIPAddr              string
-	dirEntryCache                sortedmap.BPlusTreeCache
-	fileExtentMapCache           sortedmap.BPlusTreeCache
-	volumeMap                    map[string]*volumeStruct      // key == volumeStruct.volumeName
-	accountMap                   map[string]*volumeStruct      // key == volumeStruct.accountName
-	flowControlMap               map[string]*flowControlStruct // key == flowControlStruct.flowControlName
-	fileExtentStructSize         uint64                        // pre-calculated size of cstruct-packed fileExtentStruct
-	supportedOnDiskInodeVersions map[Version]struct{}          // key == on disk inode version
-	corruptionDetectedTrueBuf    []byte                        // holds serialized CorruptionDetected == true
-	corruptionDetectedFalseBuf   []byte                        // holds serialized CorruptionDetected == false
-	versionV1Buf                 []byte                        // holds serialized Version            == V1
-	inodeRecDefaultPreambleBuf   []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	whoAmI                             string
+	myPrivateIPAddr                    string
+	dirEntryCache                      sortedmap.BPlusTreeCache
+	dirEntryCachePriorCacheHits        uint64
+	dirEntryCachePriorCacheMisses      uint64
+	fileExtentMapCache                 sortedmap.BPlusTreeCache
+	fileExtentMapCachePriorCacheHits   uint64
+	fileExtentMapCachePriorCacheMisses uint64
+	volumeMap                          map[string]*volumeStruct      // key == volumeStruct.volumeName
+	accountMap                         map[string]*volumeStruct      // key == volumeStruct.accountName
+	flowControlMap                     map[string]*flowControlStruct // key == flowControlStruct.flowControlName
+	fileExtentStructSize               uint64                        // pre-calculated size of cstruct-packed fileExtentStruct
+	supportedOnDiskInodeVersions       map[Version]struct{}          // key == on disk inode version
+	corruptionDetectedTrueBuf          []byte                        // holds serialized CorruptionDetected == true
+	corruptionDetectedFalseBuf         []byte                        // holds serialized CorruptionDetected == false
+	versionV1Buf                       []byte                        // holds serialized Version            == V1
+	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
+	inodeSize                          uint64                        // size of in-memory inode struct
 }
 
 var globals globalsStruct
+
+func stopInodeCacheDiscard(volume *volumeStruct) {
+	if volume.active {
+		if volume.inodeCacheLRUTicker != nil {
+			volume.inodeCacheLRUTicker.Stop()
+			logger.Infof("Inode cache discard ticker for 'volume: %v' stopped.",
+				volume.volumeName)
+		}
+	}
+}
+
+func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSectionName string) (err error) {
+
+	var (
+		LRUCacheMaxBytes       uint64
+		LRUDiscardTimeInterval time.Duration
+	)
+	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
+	if nil != err {
+		LRUCacheMaxBytes = 10485760 // TODO - Remove setting a default value
+		err = nil
+	}
+	volume.inodeCacheLRUMaxBytes = LRUCacheMaxBytes
+
+	LRUDiscardTimeInterval, err = confMap.FetchOptionValueDuration(volumeSectionName, "InodeCacheEvictInterval")
+	if nil != err {
+		LRUDiscardTimeInterval = 1 * time.Second // TODO - Remove setting a default value
+		err = nil
+	}
+
+	if LRUDiscardTimeInterval != 0 {
+		volume.inodeCacheLRUTickerInterval = LRUDiscardTimeInterval
+		volume.inodeCacheLRUTicker = time.NewTicker(volume.inodeCacheLRUTickerInterval)
+
+		logger.Infof("Inode cache discard ticker for 'volume: %v' is: %v MaxBytesInodeCache: %v",
+			volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
+
+		// Start ticker for inode cache discard thread
+		go func() {
+			for range volume.inodeCacheLRUTicker.C {
+
+				volume.inodeCacheDiscard()
+			}
+		}()
+	} else {
+		logger.Infof("Inode cache discard ticker for 'volume: %v' is disabled.",
+			volume.volumeName)
+		return
+	}
+
+	return
+}
 
 func Up(confMap conf.ConfMap) (err error) {
 	var (
@@ -164,6 +228,9 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.dirEntryCache = sortedmap.NewBPlusTreeCache(dirEntryCacheEvictLowLimit, dirEntryCacheEvictHighLimit)
 
+	globals.dirEntryCachePriorCacheHits = 0
+	globals.dirEntryCachePriorCacheMisses = 0
+
 	fileExtentMapEvictLowLimit, err = confMap.FetchOptionValueUint64("FSGlobals", "FileExtentMapEvictLowLimit")
 	if nil != err {
 		return
@@ -175,9 +242,15 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.fileExtentMapCache = sortedmap.NewBPlusTreeCache(fileExtentMapEvictLowLimit, fileExtentMapEvictHighLimit)
 
+	globals.fileExtentMapCachePriorCacheHits = 0
+	globals.fileExtentMapCachePriorCacheMisses = 0
+
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
+
+	var tmpInode inMemoryInodeStruct
+	globals.inodeSize = uint64(unsafe.Sizeof(tmpInode))
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
@@ -192,8 +265,12 @@ func Up(confMap conf.ConfMap) (err error) {
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
 			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-			inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
+			inodeCacheLRUHead:              nil,
+			inodeCacheLRUTail:              nil,
+			inodeCacheLRUItems:             0,
 		}
+
+		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
 		volume.fsid, err = confMap.FetchOptionValueUint64(volumeSectionName, "FSID")
 		if nil != err {
@@ -370,6 +447,13 @@ func Up(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
+
+			volume.headhunterVolumeHandle.RegisterForEvents(volume)
+
+			err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+			if nil != err {
+				return
+			}
 		}
 
 		globals.volumeMap[volume.volumeName] = volume
@@ -475,6 +559,10 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	volumesNewlyInactiveSet = make(map[string]bool)
 
 	for volumeName, volume = range globals.volumeMap {
+		// Stop the routine discarding inodes from the inode cache.
+		// This will be restarted in ExpandAndResume().
+		stopInodeCacheDiscard(volume)
+
 		_, ok = newVolumeSet[volumeName]
 		if ok {
 			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
@@ -502,6 +590,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesDeletedSet {
 		volume = globals.volumeMap[volumeName]
+		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
@@ -511,6 +600,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesNewlyInactiveSet {
 		volume = globals.volumeMap[volumeName]
+		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
 		volume.active = false
 		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
 		if nil != err {
@@ -537,7 +627,10 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
 		}
 		volume.flowControl = nil
-		volume.inodeCache = make(map[InodeNumber]*inMemoryInodeStruct)
+		volume.inodeCache = nil
+		volume.inodeCacheLRUHead = nil
+		volume.inodeCacheLRUTail = nil
+		volume.inodeCacheLRUItems = 0
 	}
 
 	err = nil
@@ -687,6 +780,13 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						err = fmt.Errorf("Volume \"%v\" changed its FlowControl name", volumeName)
 						return
 					}
+
+					// Start inode cache discard timer on a previously active volume.   This
+					// timer was stopped during pause.
+					err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+					if nil != err {
+						return
+					}
 				} else { // newly active
 					volume.active = true
 					newlyActiveVolumeSet[volumeName] = volume
@@ -715,8 +815,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayoutSet:     make(map[string]struct{}),
 				physicalContainerNamePrefixSet: make(map[string]struct{}),
 				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-				inodeCache:                     make(map[InodeNumber]*inMemoryInodeStruct),
+				inodeCacheLRUHead:              nil,
+				inodeCacheLRUTail:              nil,
+				inodeCacheLRUItems:             0,
 			}
+
+			volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
 
 			globals.volumeMap[volume.volumeName] = volume
 			globals.accountMap[volume.accountName] = volume
@@ -854,6 +958,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
+
+			volume.headhunterVolumeHandle.RegisterForEvents(volume)
+
+			// Start inode discard timer on newly active volumes
+			err = startInodeCacheDiscard(confMap, volume, volumeSectionName)
+			if nil != err {
+				return
+			}
 		}
 	}
 
@@ -864,7 +976,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 }
 
 func Down() (err error) {
+
+	// Stop the inode discard timer
+	for _, volume := range globals.volumeMap {
+		stopInodeCacheDiscard(volume)
+	}
+
 	err = nil // Nothing to do
+
 	return
 }
 

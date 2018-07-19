@@ -5,7 +5,9 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -56,13 +58,17 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DumpValue(value sortedmap.Value)
 }
 
 func (bPlusTreeWrapper *bPlusTreeWrapperStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	stats.IncrementOperations(&stats.HeadhunterBPlusTreeNodeFaults)
+	evtlog.Record(evtlog.FormatHeadhunterBPlusTreeNodeFault, bPlusTreeWrapper.volumeView.volume.volumeName, objectNumber, objectOffset, objectLength)
+
 	nodeByteSlice, err =
 		swiftclient.ObjectGet(
-			bPlusTreeWrapper.volume.accountName,
-			bPlusTreeWrapper.volume.checkpointContainerName,
+			bPlusTreeWrapper.volumeView.volume.accountName,
+			bPlusTreeWrapper.volumeView.volume.checkpointContainerName,
 			utils.Uint64ToHexStr(objectNumber),
 			objectOffset,
 			objectLength)
+
 	return
 }
 
@@ -72,57 +78,36 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		ok        bool
 	)
 
-	err = bPlusTreeWrapper.volume.openCheckpointChunkedPutContextIfNecessary()
+	err = bPlusTreeWrapper.volumeView.volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
 		return
 	}
 
-	objectNumber = bPlusTreeWrapper.volume.checkpointChunkedPutContextObjectNumber
+	objectNumber = bPlusTreeWrapper.volumeView.volume.checkpointChunkedPutContextObjectNumber
 
-	objectOffset, err = bPlusTreeWrapper.volume.bytesPutToCheckpointChunkedPutContext()
+	objectOffset, err = bPlusTreeWrapper.volumeView.volume.bytesPutToCheckpointChunkedPutContext()
 	if nil != err {
 		return
 	}
 
-	err = bPlusTreeWrapper.volume.sendChunkToCheckpointChunkedPutContext(nodeByteSlice)
+	err = bPlusTreeWrapper.volumeView.volume.sendChunkToCheckpointChunkedPutContext(nodeByteSlice)
 	if nil != err {
 		return
 	}
 
-	bPlusTreeWrapper.volume.checkpointFlushedData = true
+	if nil != bPlusTreeWrapper.bPlusTreeTracker {
+		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
-	switch bPlusTreeWrapper.wrapperType {
-
-	case inodeRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
-			bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
+			bytesUsed += uint64(len(nodeByteSlice))
 		} else {
-			bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
+			bytesUsed = uint64(len(nodeByteSlice))
 		}
 
-	case logSegmentRecBPlusTreeWrapperType:
-		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
-		if ok {
-			bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
-		} else {
-			bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
-		}
-
-	case bPlusTreeObjectBPlusTreeWrapperType:
-		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
-		if ok {
-			bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed + uint64(len(nodeByteSlice))
-		} else {
-			bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = uint64(len(nodeByteSlice))
-		}
-
-	default:
-		err = fmt.Errorf("Logic error: bPlusTreeWrapper.PutNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
-		panic(err)
+		bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
 	}
 
-	err = bPlusTreeWrapper.volume.closeCheckpointChunkedPutContextIfNecessary()
+	err = bPlusTreeWrapper.volumeView.volume.closeCheckpointChunkedPutContextIfNecessary()
 
 	return // err set as appropriate
 }
@@ -133,62 +118,23 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) DiscardNode(objectNumber uint64,
 		ok        bool
 	)
 
-	switch bPlusTreeWrapper.wrapperType {
+	if nil != bPlusTreeWrapper.bPlusTreeTracker {
+		bytesUsed, ok = bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 
-	case inodeRecBPlusTreeWrapperType:
-		logger.Tracef("headhunter.DiscardNode(): InodeRec Tree Object %016X  offset %d  length %d",
-			objectNumber, objectOffset, objectLength)
-		bytesUsed, ok = bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber]
 		if ok {
-			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
-				logger.ErrorWithError(err, "bad error")
+			if objectLength > bytesUsed {
+				err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing too many bytes (0x%016X) in objectNumber 0x%016X", objectLength, objectNumber)
+				logger.ErrorfWithError(err, "disk corruption or logic error [case 1]")
 			} else {
+				// Decrement bytesUsed... leaving a zero value to indicate object may be deleted at end of checkpoint
+				bytesUsed -= objectLength
+				bPlusTreeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber] = bytesUsed
 				err = nil
-				bPlusTreeWrapper.volume.inodeRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
 			}
 		} else {
-			err = fmt.Errorf("Logic error: [inodeRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
-			logger.ErrorfWithError(err, "disk corruption or logic error")
+			err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called referencing bytes (0x%016X) in unreferenced objectNumber 0x%016X", objectLength, objectNumber)
+			logger.ErrorfWithError(err, "disk corruption or logic error [case 2]")
 		}
-
-	case logSegmentRecBPlusTreeWrapperType:
-		logger.Tracef("headhunter.DiscardNode(): LogSegment Tree Object %016X  offset %d  length %d",
-			objectNumber, objectOffset, objectLength)
-		bytesUsed, ok = bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber]
-		if ok {
-			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
-				logger.ErrorWithError(err, "bad error")
-			} else {
-				err = nil
-				bPlusTreeWrapper.volume.logSegmentRecBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
-			}
-		} else {
-			err = fmt.Errorf("Logic error: [logSegmentRecBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
-			logger.ErrorfWithError(err, "disk corruption or logic error")
-		}
-
-	case bPlusTreeObjectBPlusTreeWrapperType:
-		logger.Tracef("headhunter.DiscardNode(): BPlusObject Tree Object %016X  offset %d  length %d",
-			objectNumber, objectOffset, objectLength)
-		bytesUsed, ok = bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber]
-		if ok {
-			if bytesUsed < objectLength {
-				err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called to dereference too many bytes in objectNumber 0x%016X", objectNumber)
-				logger.ErrorWithError(err, "bad error")
-			} else {
-				err = nil
-				bPlusTreeWrapper.volume.bPlusTreeObjectBPlusTreeLayout[objectNumber] = bytesUsed - objectLength
-			}
-		} else {
-			err = fmt.Errorf("Logic error: [bPlusTreeObjectBPlusTreeWrapperType] bPlusTreeWrapper.DiscardNode() called referencing invalid objectNumber: 0x%016X", objectNumber)
-			logger.ErrorfWithError(err, "disk corruption or logic error")
-		}
-
-	default:
-		err = fmt.Errorf("Logic error: bPlusTreeWrapper.DiscardNode() called for invalid wrapperType: %v", bPlusTreeWrapper.wrapperType)
-		logger.ErrorfWithError(err, "this is BIG error ...")
 	}
 
 	return // err set as appropriate regardless of path

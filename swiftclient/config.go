@@ -34,26 +34,6 @@ type connectionPoolStruct struct {
 	//                                                 poolInUse is decremented and connection is discarded
 }
 
-type pendingDeleteStruct struct {
-	next             *pendingDeleteStruct
-	accountName      string
-	containerName    string
-	objectName       string
-	operationOptions OperationOptions
-	wgPreCondition   *sync.WaitGroup
-	wgPostSignal     *sync.WaitGroup
-}
-
-type pendingDeletesStruct struct {
-	sync.Mutex
-	armed              bool
-	cond               *sync.Cond // Signal if adding 1st pendingDeleteStruct or shutting down
-	head               *pendingDeleteStruct
-	tail               *pendingDeleteStruct
-	shutdownWaitGroup  sync.WaitGroup
-	shutdownInProgress bool
-}
-
 type globalsStruct struct {
 	noAuthStringAddr                string
 	noAuthTCPAddr                   *net.TCPAddr
@@ -72,7 +52,6 @@ type globalsStruct struct {
 	stavationResolvedChan           chan bool // Signal this chan to halt calls to starvationCallback
 	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
-	pendingDeletes                  *pendingDeletesStruct
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 }
@@ -84,10 +63,15 @@ func Up(confMap conf.ConfMap) (err error) {
 	var (
 		chunkedConnectionPoolSize    uint16
 		freeConnectionIndex          uint16
+		noAuthIPAddr                 string
 		noAuthTCPPort                uint16
 		nonChunkedConnectionPoolSize uint16
-		pendingDeletes               *pendingDeletesStruct
 	)
+
+	noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
+	if nil != err {
+		noAuthIPAddr = "127.0.0.1" // TODO: Eventually just return
+	}
 
 	noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
@@ -98,7 +82,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.noAuthStringAddr = "127.0.0.1:" + strconv.Itoa(int(noAuthTCPPort))
+	globals.noAuthStringAddr = noAuthIPAddr + ":" + strconv.Itoa(int(noAuthTCPPort))
 
 	globals.noAuthTCPAddr, err = net.ResolveTCPAddr("tcp4", globals.noAuthStringAddr)
 	if nil != err {
@@ -198,62 +182,29 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
 
-	pendingDeletes = &pendingDeletesStruct{
-		armed:              false,
-		head:               nil,
-		tail:               nil,
-		shutdownInProgress: false,
-	}
-
-	pendingDeletes.cond = sync.NewCond(pendingDeletes)
-	pendingDeletes.shutdownWaitGroup.Add(1)
-
-	globals.pendingDeletes = pendingDeletes
-
-	go objectDeleteAsyncDaemon()
-
-	pendingDeletes.Lock()
-
-	for !pendingDeletes.armed {
-		pendingDeletes.Unlock()
-		time.Sleep(100 * time.Millisecond)
-		pendingDeletes.Lock()
-	}
-
-	pendingDeletes.Unlock()
-
 	return
 }
 
 // PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	globals.connectionNonce++
 	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
 	return
 }
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	globals.connectionNonce++
 	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
 	return
 }
 
 // Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
-	globals.pendingDeletes.Lock()
-
-	globals.pendingDeletes.shutdownInProgress = true
-
-	globals.pendingDeletes.cond.Signal()
-
-	globals.pendingDeletes.Unlock()
-
-	globals.pendingDeletes.shutdownWaitGroup.Wait()
-
+	drainConnectionPools()
+	globals.connectionNonce++
 	err = nil
-
 	return
 }

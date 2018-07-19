@@ -54,6 +54,7 @@ func testSetup() []func() {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
@@ -80,7 +81,6 @@ func testSetup() []func() {
 		"Volume:SomeVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:SomeVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:SomeVolume.CheckpointInterval=10s",
-		"Volume:SomeVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:SomeVolume.DefaultPhysicalContainerLayout=SomeContainerLayout",
 		"Volume:SomeVolume.FlowControl=JrpcfsTestFlowControl",
 		"Volume:SomeVolume.NonceValuesToReserve=100",
@@ -89,13 +89,14 @@ func testSetup() []func() {
 		"Volume:SomeVolume.MaxInodesPerMetadataNode=32",
 		"Volume:SomeVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:SomeVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:SomeVolume.MaxBytesInodeCache=100000",
+		"Volume:SomeVolume.InodeCacheEvictInterval=1s",
 		"Volume:SomeVolume2.FSID=2",
 		"Volume:SomeVolume2.PrimaryPeer=Peer0",
 		"Volume:SomeVolume2.AccountName=" + testAccountName2,
 		"Volume:SomeVolume2.CheckpointContainerName=.__checkpoint__",
 		"Volume:SomeVolume2.CheckpointContainerStoragePolicy=gold",
 		"Volume:SomeVolume2.CheckpointInterval=10s",
-		"Volume:SomeVolume2.CheckpointIntervalsPerCompaction=100",
 		"Volume:SomeVolume2.DefaultPhysicalContainerLayout=SomeContainerLayout2",
 		"Volume:SomeVolume2.FlowControl=JrpcfsTestFlowControl",
 		"Volume:SomeVolume2.NonceValuesToReserve=100",
@@ -104,6 +105,8 @@ func testSetup() []func() {
 		"Volume:SomeVolume2.MaxInodesPerMetadataNode=32",
 		"Volume:SomeVolume2.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:SomeVolume2.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:SomeVolume2.MaxBytesInodeCache=100000",
+		"Volume:SomeVolume2.InodeCacheEvictInterval=1s",
 		"FlowControl:JrpcfsTestFlowControl.MaxFlushSize=10027008",
 		"FlowControl:JrpcfsTestFlowControl.MaxFlushTime=2s",
 		"FlowControl:JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
@@ -135,8 +138,13 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
 
+	signalHandlerIsArmed := false
 	doneChan := make(chan bool)
-	go ramswift.Daemon("/dev/null", confStrings, nil, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+
+	for !signalHandlerIsArmed {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	err = stats.Up(testConfMap)
 	if nil != err {
@@ -511,7 +519,7 @@ func testRpcHeadObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/plants/eggplant.txt")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 }
@@ -532,7 +540,7 @@ func testRpcHeadUpdatedObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/README")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	// We've got different CTime and MTime, since we POSTed after writing
 	assert.True(statResult[fs.StatCTime] > statResult[fs.StatMTime], "Expected StatCTime (%v) > StatMTime (%v)", statResult[fs.StatCTime], statResult[fs.StatMTime])
@@ -1598,7 +1606,7 @@ func TestPutObjectCompound(t *testing.T) {
 	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("hello world!"), contents)
-	assert.Equal(uint64(theInode), putCompleteResp.InodeNumber)
+	assert.Equal(uint64(theInode), uint64(putCompleteResp.InodeNumber))
 	// 2 is the number of log segments we wrote
 	assert.Equal(uint64(2), putCompleteResp.NumWrites)
 
@@ -2056,7 +2064,7 @@ func TestRpcCoalesce(t *testing.T) {
 
 	combinedInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerAName+"/combined-file")
 	assert.Nil(err)
-	assert.Equal(uint64(combinedInode), coalesceReply.InodeNumber)
+	assert.Equal(uint64(combinedInode), uint64(coalesceReply.InodeNumber))
 	assert.True(coalesceReply.NumWrites > 0)
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)

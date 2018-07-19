@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
@@ -51,6 +50,7 @@ func TestAPI(t *testing.T) {
 
 		"StatsLogger.Period=0s",
 
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
@@ -719,11 +719,11 @@ func testOps(t *testing.T) {
 		t.Fatalf("ContainerGet(\"TestAccount\", \"TestContainer\") didn't return expected objectList")
 	}
 
-	// Send a Synchronous DELETE for object "FooBar"
+	// Send a DELETE for object "FooBar"
 
-	err = swiftclient.ObjectDeleteSync("TestAccount", "TestContainer", "FooBar", 0)
+	err = swiftclient.ObjectDelete("TestAccount", "TestContainer", "FooBar", 0)
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectDeleteSync(\"TestAccount\", \"TestContainer\". \"FooBar\", 0) failed: %v", err)
+		tErr := fmt.Sprintf("ObjectDelete(\"TestAccount\", \"TestContainer\". \"FooBar\", 0) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 
@@ -745,18 +745,13 @@ func testOps(t *testing.T) {
 		t.Fatalf("ContainerGet(\"TestAccount\", \"TestContainer\") didn't return expected objectList")
 	}
 
-	// Send a Asynchronous DELETE for object "FooBarCopy"
+	// Send a DELETE for object "FooBarCopy"
 
-	wgPreCondition := &sync.WaitGroup{}
-	wgPostSignal := &sync.WaitGroup{}
-
-	wgPreCondition.Add(1)
-	wgPostSignal.Add(1)
-
-	swiftclient.ObjectDeleteAsync("TestAccount", "TestContainer", "FooBarCopy", 0, wgPreCondition, wgPostSignal)
-
-	wgPreCondition.Done()
-	wgPostSignal.Wait()
+	err = swiftclient.ObjectDelete("TestAccount", "TestContainer", "FooBarCopy", 0)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectDelete(\"TestAccount\", \"TestContainer\". \"FooBarCopy\", 0) failed: %v", err)
+		t.Fatalf(tErr)
+	}
 
 	// Send a GET for container "TestContainer" expecting header Cat: Dog and objectList []string{}
 
@@ -835,7 +830,6 @@ func testOps(t *testing.T) {
 		tErr := fmt.Sprintf("AccountDelete(\"TestAccount\") failed: %v", err)
 		t.Fatalf(tErr)
 	}
-
 }
 
 // Extended testing of chunked put interface to exercise internal retries
@@ -882,7 +876,7 @@ func testChunkedPut(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 
-		err = swiftclient.ObjectDeleteSync(accountName, containerName, objName, 0)
+		err = swiftclient.ObjectDelete(accountName, containerName, objName, 0)
 		if nil != err {
 			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
 				accountName, containerName, objName, err)

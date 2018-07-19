@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -23,12 +25,23 @@ type treeNodeLoadable struct {
 }
 
 func (tnl *treeNodeLoadable) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+	var (
+		inodeNumberAdordnedWithSnapShotID uint64
+		objectNumberAdordedWithSnapShotID uint64
+	)
+
+	inodeNumberAdordnedWithSnapShotID = tnl.inode.volume.headhunterVolumeHandle.SnapShotIDAndNonceEncode(tnl.inode.snapShotID, uint64(tnl.inode.InodeNumber))
+	objectNumberAdordedWithSnapShotID = tnl.inode.volume.headhunterVolumeHandle.SnapShotIDAndNonceEncode(tnl.inode.snapShotID, objectNumber)
+
 	if 0 != objectOffset {
 		err = fmt.Errorf("*treeNodeLoadable.GetNode(): Unexpected (non-zero) objectOffset (%v)", objectOffset)
 		return
 	}
 
-	nodeByteSlice, err = tnl.inode.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumber)
+	stats.IncrementOperations(&stats.DirFileBPlusTreeNodeFaults)
+	evtlog.Record(evtlog.FormatDirFileBPlusTreeNodeFault, tnl.inode.volume.volumeName, inodeNumberAdordnedWithSnapShotID, objectNumberAdordedWithSnapShotID)
+
+	nodeByteSlice, err = tnl.inode.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumberAdordedWithSnapShotID)
 
 	if (nil == err) && (uint64(len(nodeByteSlice)) != objectLength) {
 		err = fmt.Errorf("*treeNodeLoadable.GetNode(): Requested objectLength (%v) != Actual objectLength (%v)", objectLength, len(nodeByteSlice))

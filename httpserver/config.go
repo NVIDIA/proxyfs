@@ -15,6 +15,14 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+type ExtentMapElementStruct struct {
+	FileOffset    uint64 `json:"file_offset"`
+	ContainerName string `json:"container_name"`
+	ObjectName    string `json:"object_name"`
+	ObjectOffset  uint64 `json:"object_offset"`
+	Length        uint64 `json:"length"`
+}
+
 type jobState uint8
 
 const (
@@ -51,12 +59,13 @@ type JobStatusJSONPackedStruct struct {
 
 type volumeStruct struct {
 	sync.Mutex
-	name             string
-	headhunterHandle headhunter.VolumeHandle
-	fsckActiveJob    *jobStruct
-	fsckJobs         sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
-	scrubActiveJob   *jobStruct
-	scrubJobs        sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	name                   string
+	fsMountHandle          fs.MountHandle
+	headhunterVolumeHandle headhunter.VolumeHandle
+	fsckActiveJob          *jobStruct
+	fsckJobs               sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	scrubActiveJob         *jobStruct
+	scrubJobs              sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
 }
 
 type globalsStruct struct {
@@ -129,7 +138,12 @@ func Up(confMap conf.ConfMap) (err error) {
 					scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 				}
 
-				volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+				volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+				if nil != err {
+					return
+				}
+
+				volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
 				if nil != err {
 					return
 				}
@@ -358,7 +372,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 						fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 					}
 
-					volume.headhunterHandle, err = headhunter.FetchVolumeHandle(volume.name)
+					volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+					if nil != err {
+						return
+					}
+
+					volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
 					if nil != err {
 						return
 					}

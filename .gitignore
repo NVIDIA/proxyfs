@@ -15,6 +15,9 @@ dist/
 CommonMountPoint
 MountPoint0
 
+# Replay Logs
+CommonVolume.rlog
+
 # specific binaries
 jrpcfs/test/client
 
@@ -51,10 +54,6 @@ count.out
 
 # log files
 *.log
-
-# generated code
-blunder/fserror_string.go
-inode/inodetype_string.go
 
 # tags
 tags
