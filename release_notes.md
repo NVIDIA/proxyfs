@@ -1,22 +1,29 @@
 # ProxyFS Release Notes
 
-## 1.5.4 (July XXXX, 2018)
+## 1.6.0 (July XXXX, 2018)
 
 Add a background thread which discards non-dirty inodes from the inode
-cache if the size of the inode cache exceeds a per volume tunable.
-
-The per volume tunable is named "MaxBytesInodeCache" and is presently
-set at "1048576".
-
-The background thread only runs at certain intervals.   The intervals
-for which it runs is tunable on a per volume basis and the tunable is
-named "InodeCacheEvictInterval".  At present, this tunable is set at
-"5s" or every 5 seconds.
-
+cache if the size of the inode cache exceeds a per volume tunable. The per
+volume tunable is named "MaxBytesInodeCache" and defaults to "10485760".
+The background thread runs based on a per volume tunable named
+"InodeCacheEvictInterval".  The default is "1s" or once a second.
 To disable the background thread set "InodeCacheEvictInterval" to "0s"
 or 0 seconds.
 
-TODO
+Added file system snapshots infrastructure. -- TODO - EXPAND, is it supported?
+is everything there? what about file system version changes? testing???
+no roll back? tunables, etc?
+
+Add fixes to jrpcclient to alleviate hangs seen by clients.
+
+Add NoAuthIPAddr option to swiftclient.  It defaults to 127.0.0.1 which
+is the backend Swift proxy.  This allows the setting to be consistent with
+configuration settings in Swift proxy-server.conf.
+
+
+TODO - do above comments cover these topics adequately?  What is the date,
+version, etc we should be using?
+
 ----
 
 1. Ed writeup on snapshots
