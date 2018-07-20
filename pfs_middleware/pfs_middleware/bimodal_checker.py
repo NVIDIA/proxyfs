@@ -36,6 +36,8 @@ from . import rpc, utils, swift_code
 # full header is "X-Account-Sysmeta-Proxyfs-Bimodal"
 SYSMETA_BIMODAL_INDICATOR = 'proxyfs-bimodal'
 
+RPC_FINDER_TIMEOUT_DEFAULT = 3.0
+
 
 class BimodalChecker(object):
     def __init__(self, app, conf, logger=None):
@@ -66,7 +68,8 @@ class BimodalChecker(object):
                 self.logger.error("Error resolving hostname %r", host)
                 raise
 
-        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
+        self.proxyfsd_rpc_timeout = float(conf.get('rpc_finder_timeout',
+                                                   RPC_FINDER_TIMEOUT_DEFAULT))
         self.bimodal_recheck_interval = float(conf.get(
             'bimodal_recheck_interval', '60.0'))
 
