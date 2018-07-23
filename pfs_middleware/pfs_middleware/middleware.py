@@ -168,7 +168,7 @@ MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
-RPC_TIMEOUT_DEFAULT = 10.0
+RPC_TIMEOUT_DEFAULT = 30.0
 
 
 def listing_iter_from_read_plan(read_plan):
