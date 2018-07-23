@@ -1,6 +1,6 @@
 # ProxyFS Release Notes
 
-## 1.6.1 (July 19, 2018)
+## 1.6.2 (July 23, 2018)
 
 ### Features:
 
@@ -8,6 +8,17 @@
 * Added support for the "delimiter=" option for Swift API GET requests. This, along with the "prefix=" option, enables viewing of the directory hierarchy inside a Container in the same way one would view a file system.
 * Added support for SnapShots. These are invoked via the RESTful API exposed by the embedded HTTP Server inside each proxyfsd instance. Note that this API is only reachable via the PrivateIPAddr and performs not authentication/authorization. You can find the new RESTful methods underneath the /Volume/<volumeName> resource (along with FSCK, Scrub, and LayoutMap). Both JSON (textual) and formatted HTML is available.
 * Added support for viewing a FileInode's ExtentMap via this same RESTful API underneath the /Volume/<volumeName> resource (adjacent to the above-mentioned SnapShot resource).
+* RPC Timeouts from pfs_middleware to proxyfsd have new defaults and are controllable via two distinct parameters optionally specified in the [filter:pfs] section of the proxy-server.conf:
+
+>        rpc_finder_timeout
+>            specified in (floating point) seconds
+>            defaults to 3.0
+>            applies when searching for a proxyfsd instance to ask where a particular Swift Account is being served
+
+>        rpc_timeout
+>            specified in (floating point) seconds
+>            defaults to 30.0
+>            applies to requests to the specific proxyfsd instance serving a particular BiModal Swift Account
 
 ### Bug Fixes:
 

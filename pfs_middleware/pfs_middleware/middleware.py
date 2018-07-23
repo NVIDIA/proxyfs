@@ -168,6 +168,8 @@ MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
+RPC_TIMEOUT_DEFAULT = 30.0
+
 
 def listing_iter_from_read_plan(read_plan):
     """
@@ -625,7 +627,8 @@ class PfsMiddleware(object):
                 self.logger.error("Error resolving hostname %r", host)
                 raise
 
-        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
+        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout',
+                                                   RPC_TIMEOUT_DEFAULT))
         self.bimodal_recheck_interval = float(conf.get(
             'bimodal_recheck_interval', '60.0'))
         self.max_get_time = int(conf.get('max_get_time', '86400'))
