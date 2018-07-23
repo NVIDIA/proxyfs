@@ -31,6 +31,12 @@ type workerStruct struct {
 	priorMethodsCompleted         uint64
 }
 
+type workerIntervalValues struct {
+	elapsedTime      time.Duration
+	methodsCompleted uint64
+	methodsDelta     uint64
+}
+
 var (
 	displayInterval  time.Duration
 	optionDestroy    bool
@@ -43,23 +49,25 @@ var (
 	workerMap        map[string]*workerStruct
 	workersGoGate    sync.WaitGroup
 	workersReadyGate sync.WaitGroup
+	outputFormat     string
 )
+
+var columnTitles = []string{"Elapsed time (s)", "Completed", "Delta"}
 
 func main() {
 	var (
-		args                   []string
-		confMap                conf.ConfMap
-		err                    error
-		infoResponse           *http.Response
-		methodsCompleted       uint64
-		methodsCompletedString string
-		methodsDelta           uint64
-		methodsDeltaString     string
-		optionString           string
-		worker                 *workerStruct
-		workerList             []string
-		workerName             string
-		workerSectionName      string
+		args              []string
+		confMap           conf.ConfMap
+		err               error
+		infoResponse      *http.Response
+		methodsCompleted  uint64
+		methodsDelta      uint64
+		optionString      string
+		worker            *workerStruct
+		workerList        []string
+		workerName        string
+		workerSectionName string
+		elapsedTime       time.Duration
 	)
 
 	// Parse arguments
@@ -161,6 +169,11 @@ func main() {
 		log.Fatalf("confMap.FetchOptionValueDuration(\"LoadParameters\", \"DisplayInterval\") failed: %v", err)
 	}
 
+	outputFormat, err = confMap.FetchOptionValueString("LoadParameters", "OutputFormat")
+	if nil != err {
+		log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"OutputFormat\") failed: %v", err)
+	}
+
 	infoResponse, err = http.Get(swiftProxyURL + "info")
 	if nil != err {
 		log.Fatalf("http.Get(\"%sinfo\") failed: %v", swiftProxyURL, err)
@@ -234,21 +247,17 @@ func main() {
 	}
 
 	// Print workerName's as column heads
-
-	fmt.Printf("       ")
-
-	for _, worker = range workerArray {
-		fmt.Printf("     %-20s", worker.name)
-	}
-
-	fmt.Println()
+	printHeaders(workerList, outputFormat)
 
 	// Workers (or, rather, all their Threads) are ready to go... so kick off the test
 
 	workersGoGate.Done()
-
+	elapsedTime = 0
+	var workersIntervals []workerIntervalValues
 	for {
 		time.Sleep(displayInterval)
+		elapsedTime += displayInterval
+		workersIntervals = nil
 
 		for _, worker = range workerArray {
 			worker.Lock()
@@ -257,14 +266,84 @@ func main() {
 			worker.priorMethodsCompleted = methodsCompleted
 			worker.Unlock()
 
-			methodsCompletedString = fmt.Sprintf("%d", methodsCompleted)
-			methodsDeltaString = fmt.Sprintf("(+%d)", methodsDelta)
-
-			fmt.Printf("  %12s %-10s", methodsCompletedString, methodsDeltaString)
+			workersIntervals = append(workersIntervals, workerIntervalValues{elapsedTime, methodsCompleted, methodsDelta})
 		}
-
-		fmt.Println()
+		printInterval(workersIntervals, outputFormat)
 	}
+}
+
+func printHeaders(workerList []string, format string) {
+	if format == "text" {
+		printPlainTextWorkerNames(workerList)
+	} else if format == "csv" {
+		printCSVWorkerNames(workerList)
+	} else {
+		log.Fatalf("Invalid value for config setting \"OutputFormat\": %v", format)
+	}
+
+	if format == "csv" {
+		printCSVColumnTitles(len(workerList))
+	}
+}
+
+func printCSVWorkerNames(workerList []string) {
+	var namesWithCommas []string
+	for _, workerName := range workerList {
+		namesWithCommas = append(namesWithCommas, fmt.Sprintf("%v%v", workerName, strings.Repeat(",", len(columnTitles)-1)))
+	}
+	fmt.Println(strings.Join(namesWithCommas, ","))
+}
+
+func printPlainTextWorkerNames(workerList []string) {
+	fmt.Printf("       ")
+	for _, workerName := range workerList {
+		fmt.Printf("     %-20s", workerName)
+	}
+	fmt.Println()
+}
+
+func printCSVColumnTitles(workerArrayLen int) {
+	fmt.Printf(strings.Join(columnTitles, ","))
+	for i := 1; i < workerArrayLen; i++ {
+		fmt.Printf(",%v", strings.Join(columnTitles, ","))
+	}
+	fmt.Println()
+}
+
+func printInterval(workersIntervals []workerIntervalValues, format string) {
+	if format == "text" {
+		printPlainTextInterval(workersIntervals)
+	} else if format == "csv" {
+		printCSVInterval(workersIntervals)
+	} else {
+		log.Fatalf("Invalid value for config setting \"OutputFormat\": %v", format)
+	}
+}
+
+func printCSVInterval(workersIntervals []workerIntervalValues) {
+	var workerIntervalStrings []string
+	for _, workerInterval := range workersIntervals {
+		workerIntervalStrings = append(workerIntervalStrings, workerInterval.toCSV())
+	}
+	fmt.Println(strings.Join(workerIntervalStrings, ","))
+}
+
+func printPlainTextInterval(workersIntervals []workerIntervalValues) {
+	var (
+		methodsCompletedString string
+		methodsDeltaString     string
+	)
+	for _, workerInterval := range workersIntervals {
+		methodsCompletedString = fmt.Sprintf("%d", workerInterval.methodsCompleted)
+		methodsDeltaString = fmt.Sprintf("(+%d)", workerInterval.methodsDelta)
+
+		fmt.Printf("  %12s %-10s", methodsCompletedString, methodsDeltaString)
+	}
+	fmt.Println()
+}
+
+func (workerInterval workerIntervalValues) toCSV() string {
+	return fmt.Sprintf("%v,%v,%v", workerInterval.elapsedTime.Seconds(), workerInterval.methodsCompleted, workerInterval.methodsDelta)
 }
 
 func (worker *workerStruct) workerLauncher() {
