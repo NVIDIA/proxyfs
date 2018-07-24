@@ -189,7 +189,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	case "/version" == path:
 		responseWriter.Header().Set("Content-Type", "text/plain")
 		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write([]byte(gitDescribeOutput))
+		_, _ = responseWriter.Write([]byte(proxyfsVersion))
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doGetOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
@@ -202,7 +202,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 func doGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/html")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
+	_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(indexDotHTMLTemplate, proxyfsVersion, globals.ipAddrTCPPort)))
 }
 
 func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
@@ -270,7 +270,7 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, gitDescribeOutput, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(configTemplate, proxyfsVersion, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
 	}
 }
 
@@ -391,7 +391,7 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, gitDescribeOutput, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(metricsTemplate, proxyfsVersion, globals.ipAddrTCPPort, utils.ByteSliceToString(metricsJSONPacked))))
 		} else {
 			responseWriter.Header().Set("Content-Type", "application/json")
 			responseWriter.WriteHeader(http.StatusOK)
@@ -585,7 +585,7 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(triggerTopTemplate, proxyfsVersion, globals.ipAddrTCPPort)))
 		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerAllArmedOrDisarmedActiveString))
 		_, _ = responseWriter.Write(utils.StringToByteSlice(triggerTableTop))
 
@@ -754,7 +754,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListTopTemplate, proxyfsVersion, globals.ipAddrTCPPort)))
 
 			for volumeListIndex, volumeName = range volumeList {
 				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(volumeListPerVolumeTemplate, volumeName)))
@@ -837,7 +837,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", "null", "false")))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name, "null", "null", "false")))
 		return
 	}
 
@@ -858,7 +858,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 				responseWriter.Header().Set("Content-Type", "text/html")
 				responseWriter.WriteHeader(http.StatusOK)
 
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
 				return
 			}
 		}
@@ -873,7 +873,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 			responseWriter.Header().Set("Content-Type", "text/html")
 			responseWriter.WriteHeader(http.StatusOK)
 
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name, "null", pathDoubleQuoted, "true")))
 			return
 		}
 	}
@@ -914,7 +914,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name, utils.ByteSliceToString(extentMapJSONPacked), pathDoubleQuoted, "false")))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(extentMapTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name, utils.ByteSliceToString(extentMapJSONPacked), pathDoubleQuoted, "false")))
 	}
 }
 
@@ -1024,9 +1024,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 
 			switch jobType {
 			case fsckJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "FSCK")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, "FSCK")))
 			case scrubJobType:
-				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "SCRUB")))
+				_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobsTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, "SCRUB")))
 			}
 
 			for jobsIndex = jobsCount - 1; jobsIndex >= 0; jobsIndex-- {
@@ -1160,9 +1160,9 @@ func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *htt
 
 		switch jobType {
 		case fsckJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, "FSCK", "fsck", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		case scrubJobType:
-			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
+			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(jobTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, "SCRUB", "scrub", job.id, utils.ByteSliceToString(jobStatusJSONPacked))))
 		}
 	}
 
@@ -1250,7 +1250,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, layoutReportSetElement = range layoutReportSet {
 			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName)))
@@ -1333,7 +1333,7 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 		responseWriter.Header().Set("Content-Type", "text/html")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, requestState.volume.name)))
+		_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, snapShot = range list {
 			_, _ = responseWriter.Write(utils.StringToByteSlice(fmt.Sprintf(snapShotsPerSnapShotTemplate, snapShot.ID, snapShot.Time.Format(time.RFC3339), snapShot.Name)))

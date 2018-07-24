@@ -1,6 +1,6 @@
 package httpserver
 
-// To use: fmt.Sprintf(indexDotHTMLTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(indexDotHTMLTemplate, proxyfsVersion, globals.ipAddrTCPPort)
 const indexDotHTMLTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -103,7 +103,7 @@ const indexDotHTMLTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(configTemplate, gitDescribeOutput, globals.ipAddrTCPPort, confMapJSONString)
+// To use: fmt.Sprintf(configTemplate, proxyfsVersion, globals.ipAddrTCPPort, confMapJSONString)
 const configTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -165,7 +165,7 @@ const configTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(metricsTemplate, gitDescribeOutput, globals.ipAddrTCPPort, metricsJSONString)
+// To use: fmt.Sprintf(metricsTemplate, proxyfsVersion, globals.ipAddrTCPPort, metricsJSONString)
 const metricsTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -290,7 +290,7 @@ const metricsTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(volumeListTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(volumeListTopTemplate, proxyfsVersion, globals.ipAddrTCPPort)
 const volumeListTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -371,7 +371,7 @@ const volumeListBottom string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(snapShotsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
+// To use: fmt.Sprintf(snapShotsTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName)
 const snapShotsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -590,7 +590,7 @@ const snapShotsBottomTemplate string = `        </tbody>
 </html>
 `
 
-// To use: fmt.Sprintf(jobsTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
+// To use: fmt.Sprintf(jobsTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"})
 const jobsTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -710,7 +710,7 @@ const jobsBottom string = `    <script src="/jquery-3.2.1.min.js"></script>
 </html>
 `
 
-// To use: fmt.Sprintf(jobTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
+// To use: fmt.Sprintf(jobTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, {"FSCK"|"SCRUB"}, {"fsck"|"scrub"}, jobID, jobStatusJSONString)
 const jobTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -830,7 +830,7 @@ const jobTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(layoutReportTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName)
+// To use: fmt.Sprintf(layoutReportTopTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName)
 const layoutReportTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -913,7 +913,7 @@ const layoutReportBottom string = `    <div>
 </html>
 `
 
-// To use: fmt.Sprintf(extentMapTemplate, gitDescribeOutput, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
+// To use: fmt.Sprintf(extentMapTemplate, proxyfsVersion, globals.ipAddrTCPPort, volumeName, extentMapJSONString, pathDoubleQuotedString, serverErrorBoolString)
 const extentMapTemplate string = `<!doctype html>
 <html lang="en">
   <head>
@@ -1090,7 +1090,7 @@ const extentMapTemplate string = `<!doctype html>
 </html>
 `
 
-// To use: fmt.Sprintf(triggerTopTemplate, gitDescribeOutput, globals.ipAddrTCPPort)
+// To use: fmt.Sprintf(triggerTopTemplate, proxyfsVersion, globals.ipAddrTCPPort)
 const triggerTopTemplate string = `<!doctype html>
 <html lang="en">
   <head>
