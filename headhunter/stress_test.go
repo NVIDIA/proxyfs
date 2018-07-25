@@ -154,6 +154,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -173,7 +174,6 @@ func TestHeadHunterStress(t *testing.T) {
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10h", // We never want a time-based checkpoint
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:TestVolume.FlowControl=TestFlowControl",
 		"Volume:TestVolume.NonceValuesToReserve=1", // We want to force worst-case nonce fetching
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",

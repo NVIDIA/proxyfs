@@ -39,8 +39,9 @@ func TestAPI(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
-		"SwiftClient.NoAuthTCPPort=9999",
 
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
+		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=5",
 		"SwiftClient.RetryLimitObject=5",

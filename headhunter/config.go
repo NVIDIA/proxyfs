@@ -21,6 +21,10 @@ const (
 )
 
 const (
+	liveSnapShotID = uint64(0)
+)
+
+const (
 	AccountHeaderName           = "X-ProxyFS-BiModal"
 	AccountHeaderNameTranslated = "X-Account-Sysmeta-Proxyfs-Bimodal"
 	AccountHeaderValue          = "true"
@@ -28,16 +32,25 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
+type bPlusTreeTrackerStruct struct {
+	bPlusTreeLayout sortedmap.LayoutReport
+}
+
 type bPlusTreeWrapperStruct struct {
-	volumeView              *volumeViewStruct
-	bPlusTree               sortedmap.BPlusTree
-	trackingBPlusTreeLayout sortedmap.LayoutReport
+	volumeView       *volumeViewStruct
+	bPlusTree        sortedmap.BPlusTree
+	bPlusTreeTracker *bPlusTreeTrackerStruct // For inodeRecWrapper, logSegmentRecWrapper, & bPlusTreeObjectWrapper:
+	//                                            only valid for liveView... nil otherwise
+	//                                          For createdObjectsWrapper & deletedObjectsWrapper:
+	//                                            all volumeView's share the corresponding one created for liveView
 }
 
 type volumeViewStruct struct {
-	volume                 *volumeStruct
-	nonce                  uint64 // supplies strict time-ordering of views regardless of timebase resets
-	snapShotID             uint64
+	volume     *volumeStruct
+	nonce      uint64 // supplies strict time-ordering of views regardless of timebase resets
+	snapShotID uint64 // in the range [1:2^SnapShotIDNumBits-2]
+	//                     ID == 0                     reserved for the "live" view
+	//                     ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
 	snapShotTime           time.Time
 	snapShotName           string
 	inodeRecWrapper        *bPlusTreeWrapperStruct
@@ -90,11 +103,6 @@ type volumeViewStruct struct {
 	//   discard volumeView
 }
 
-type delayedObjectDeleteSSTODOStruct struct {
-	containerName string
-	objectNumber  uint64
-}
-
 type volumeStruct struct {
 	sync.Mutex
 	volumeName                              string
@@ -112,25 +120,27 @@ type volumeStruct struct {
 	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
 	//                                                            closed/deleted on successful checkpoint
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
-	checkpointFlushedData                   bool
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
-	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerV2StructObjectNumber
+	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
 	checkpointDoneWaitGroup                 *sync.WaitGroup
 	eventListeners                          map[VolumeEventListener]struct{}
 	snapShotIDNumBits                       uint16
+	snapShotIDShift                         uint64 //             e.g. inodeNumber >> snapShotIDNumBits == snapShotID
+	dotSnapShotDirSnapShotID                uint64 //             .snapshot/ pseudo directory Inode's snapShotID
+	snapShotU64NonceMask                    uint64 //             used to mask of snapShotID bits
 	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
-	checkpointHeaderVersion                 uint64
-	checkpointHeader                        *checkpointHeaderV2Struct
-	checkpointObjectTrailer                 *checkpointObjectTrailerV2Struct
+	checkpointHeader                        *checkpointHeaderStruct
 	liveView                                *volumeViewStruct
+	priorView                               *volumeViewStruct
+	postponePriorViewCreatedObjectsPuts     bool
+	postponedPriorViewCreatedObjectsPuts    map[uint64]struct{}
 	viewTreeByNonce                         sortedmap.LLRBTree // key == volumeViewStruct.Nonce; value == *volumeViewStruct
 	viewTreeByID                            sortedmap.LLRBTree // key == volumeViewStruct.ID;    value == *volumeViewStruct
 	viewTreeByTime                          sortedmap.LLRBTree // key == volumeViewStruct.Time;  value == *volumeViewStruct
 	viewTreeByName                          sortedmap.LLRBTree // key == volumeViewStruct.Name;  value == *volumeViewStruct
 	availableSnapShotIDList                 *list.List
-	delayedObjectDeleteSSTODOList           []delayedObjectDeleteSSTODOStruct
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
 
@@ -138,8 +148,6 @@ type globalsStruct struct {
 	sync.Mutex
 	crc64ECMATable                             *crc64.Table
 	uint64Size                                 uint64
-	checkpointHeaderV2StructSize               uint64
-	checkpointHeaderV3StructSize               uint64
 	elementOfBPlusTreeLayoutStructSize         uint64
 	replayLogTransactionFixedPartStructSize    uint64
 	inodeRecCache                              sortedmap.BPlusTreeCache
@@ -362,8 +370,6 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 		bPlusTreeObjectCacheEvictLowLimit        uint64
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyCheckpointHeaderV2Struct            checkpointHeaderV2Struct
-		dummyCheckpointHeaderV3Struct            checkpointHeaderV3Struct
 		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
@@ -378,16 +384,6 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 	globals.crc64ECMATable = crc64.MakeTable(crc64.ECMA)
 
 	globals.uint64Size, _, err = cstruct.Examine(dummyUint64)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV2StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV2Struct)
-	if nil != err {
-		return
-	}
-
-	globals.checkpointHeaderV3StructSize, _, err = cstruct.Examine(dummyCheckpointHeaderV3Struct)
 	if nil != err {
 		return
 	}
@@ -475,12 +471,13 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	volumeSectionName = utils.VolumeNameConfSection(volumeName)
 
 	volume = &volumeStruct{
-		volumeName:                    volumeName,
-		checkpointChunkedPutContext:   nil,
-		checkpointDoneWaitGroup:       nil,
-		eventListeners:                make(map[VolumeEventListener]struct{}),
-		checkpointRequestChan:         make(chan *checkpointRequestStruct, 1),
-		delayedObjectDeleteSSTODOList: make([]delayedObjectDeleteSSTODOStruct, 0),
+		volumeName:                           volumeName,
+		checkpointChunkedPutContext:          nil,
+		checkpointDoneWaitGroup:              nil,
+		eventListeners:                       make(map[VolumeEventListener]struct{}),
+		checkpointRequestChan:                make(chan *checkpointRequestStruct, 1),
+		postponePriorViewCreatedObjectsPuts:  false,
+		postponedPriorViewCreatedObjectsPuts: make(map[uint64]struct{}),
 	}
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")

@@ -14,7 +14,7 @@ type testObjectLocationStruct struct {
 	objectName    string
 }
 
-func UnhideThisTestEmptySegmentDeletion(t *testing.T) {
+func TestEmptySegmentDeletion(t *testing.T) {
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
@@ -44,9 +44,12 @@ func UnhideThisTestEmptySegmentDeletion(t *testing.T) {
 	}
 
 	// inspect log segment map
-	ourInode, ok := volume.inodeCache[ino]
+	ourInode, ok, err := volume.fetchInode(ino)
+	if nil != err {
+		t.Fatalf("fetchInode(ino==0x%016X) failed: %v", ino, err)
+	}
 	if !ok {
-		t.Fatalf("expected to find inode #%v in cache", ino)
+		t.Fatalf("fetchInode(ino==0x%016X) returned !ok", ino)
 	}
 	segmentNumbers := make([]uint64, 0, 5)
 	segmentObjectLocations := make([]testObjectLocationStruct, 0, 5)

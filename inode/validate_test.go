@@ -66,9 +66,19 @@ func TestValidate(t *testing.T) {
 	}
 
 	// Now remove fileInodeNumber from inodeCache
-	testVolume.Lock()
-	delete(testVolume.inodeCache, fileInodeNumber)
-	testVolume.Unlock()
+	fileInode, ok, err := testVolume.inodeCacheFetch(fileInodeNumber)
+	if err != nil {
+		t.Fatalf("inodeCacheFetch(fileInodeNumber) failed: %v", err)
+	}
+	if ok {
+		ok, err = testVolume.inodeCacheDrop(fileInode)
+		if err != nil {
+			t.Fatalf("inodeCacheDrop(fileInode) failed: %v", err)
+		}
+		if !ok {
+			t.Fatalf("inodeCacheDrop(fileInode) returned !ok")
+		}
+	}
 
 	// Try to Validate, observe that it fails
 	validationErr := testVolumeHandle.Validate(fileInodeNumber, false)

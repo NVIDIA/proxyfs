@@ -115,6 +115,34 @@
 //    print "Returned MountID:  ", resp["result"]["MountID"]
 //    print "Returned rootInode:", resp["result"]["RootDirInodeNumber"]
 //
+//  On the C-side, jrpcclient leverages the popular json-c library. One glaring ommission of json-c is
+//  support for unsigned integers... specifically uint64_t's. The parser actually substitutes for any
+//  "number" that is bigger than math.MaxInt64 with math.MaxInt64 - rather than converting to the
+//  bit-compatible uint64_t interpretation. It's a mystery why... but this choice has spurred several
+//  to request json-c expand to directly support (particularly) uint64_t. Efforts have been started but,
+//  alas, never completed.
+//
+//  The ProxyFS work-around will be to pass vulnerable uint64's that have practical cases where the
+//  upper-most bit (the "sign" bit if it was an int64) as int64's. The int64 value will be the equivalent
+//  such that casting between int64_t's and uint64_t's will result in the desired value. It just so
+//  happens that jrpcclient is already doing the casting back and forth, so making that possible on the
+//  (here) Go side resolves the issue.
+//
+//  The impact on this change for the other JSON RPC client, pfs_middleware, should not be noticable so
+//  long as the cases where a uint64 comes across as a negative int64 are opaque to pfs_middleware.
+//
+//  It turns out that all uint64's previously in the jrpcfs-specified RPC (i.e. those in api.go) fall
+//  into three categories:
+//
+//    Practically never > math.MaxInt64 - e.g. MountID, Stat.Size
+//    Possibly          > math.MaxInt64 - specifically SnapShotIDs adorning InodeNumbers
+//
+//  In the "Possibly" category, the InodeNumbers are the worry here. Fortunately, InodeNumbers are
+//  considered "opaque" handles to ProxyFS resources and, as such, only need to preserve this identity
+//  property (whether signed or unsigned). For this reason, all InodeNumbers in the following API are
+//  passed as int64's rather than uint64's. In the case where the InodeNumber > math.MaxInt64, care
+//  is taken such that the negative value passed via the int64 is cast to the proper (large) uint64
+//  on each side of the RPC consistently.
 //
 package jrpcfs
 
@@ -176,10 +204,10 @@ type CreatePathRequest struct {
 // FileType here will be a uint16 containing DT_DIR|DT_REG|DT_LNK.
 //
 type DirEntry struct {
-	InodeNumber     uint64
+	InodeNumber     int64
 	FileType        uint16
 	Basename        string
-	NextDirLocation uint32
+	NextDirLocation int64
 }
 
 // FlushRequest is the request object for RpcFlush.
@@ -235,13 +263,13 @@ type FlockReply struct {
 // InodeHandle is embedded in a number of the request objects.
 type InodeHandle struct {
 	MountID     uint64
-	InodeNumber uint64
+	InodeNumber int64
 }
 
 // InodeReply is the reply object for requests that return an inode number.
 // This response object is used by a number of the methods.
 type InodeReply struct {
-	InodeNumber uint64
+	InodeNumber int64
 }
 
 // LogRequest is the request object for RpcLog.
@@ -259,7 +287,7 @@ type LookupPathRequest struct {
 type LinkRequest struct {
 	InodeHandle
 	Basename          string
-	TargetInodeNumber uint64
+	TargetInodeNumber int64
 }
 
 // LinkPathRequest is the request object for .
@@ -314,7 +342,7 @@ type MountRequest struct {
 // MountReply is the reply object for RpcMount.
 type MountReply struct {
 	MountID            uint64
-	RootDirInodeNumber uint64
+	RootDirInodeNumber int64
 }
 
 // PathHandle is embedded in a number of the request objects.
@@ -404,9 +432,9 @@ type RemoveXAttrPathRequest struct {
 // RenameRequest is the request object for RpcRename.
 type RenameRequest struct {
 	MountID           uint64
-	SrcDirInodeNumber uint64
+	SrcDirInodeNumber int64
 	SrcBasename       string
-	DstDirInodeNumber uint64
+	DstDirInodeNumber int64
 	DstBasename       string
 }
 
@@ -495,7 +523,7 @@ type StatStruct struct {
 	ATimeNs         uint64
 	Size            uint64
 	NumLinks        uint64
-	StatInodeNumber uint64
+	StatInodeNumber int64
 	FileMode        uint32
 	UserID          uint32
 	GroupID         uint32
@@ -589,7 +617,7 @@ type HeadReply struct {
 	IsDir            bool
 	ModificationTime uint64 // nanoseconds since epoch
 	AttrChangeTime   uint64 // nanoseconds since epoch
-	InodeNumber      uint64
+	InodeNumber      int64
 	NumWrites        uint64
 	Metadata         []byte // entity metadata, serialized
 }
@@ -612,6 +640,7 @@ type GetContainerReq struct {
 	Marker     string // marker from query string, used in pagination
 	Prefix     string // only look at entries starting with this
 	MaxEntries uint64 // maximum number of entries to return
+	Delimiter  string // only match up to the first occurrence of delimiter (excluding prefix)
 }
 
 // Response object for RpcGetAccount
@@ -632,7 +661,7 @@ type GetAccountReq struct {
 type GetObjectReply struct {
 	FileSize         uint64               // size of the file, in bytes
 	ReadEntsOut      []inode.ReadPlanStep // object/length/offset triples where the data is found
-	InodeNumber      uint64
+	InodeNumber      int64
 	NumWrites        uint64
 	Metadata         []byte // serialized object metadata (previously set by middleware empty if absent)
 	ModificationTime uint64 // file's mtime in nanoseconds since the epoch
@@ -673,7 +702,7 @@ type MiddlewarePostReq struct {
 type MiddlewareMkdirReply struct {
 	ModificationTime uint64
 	AttrChangeTime   uint64
-	InodeNumber      uint64
+	InodeNumber      int64
 	NumWrites        uint64
 }
 
@@ -698,7 +727,7 @@ type PutCompleteReq struct {
 type PutCompleteReply struct {
 	ModificationTime uint64
 	AttrChangeTime   uint64
-	InodeNumber      uint64
+	InodeNumber      int64
 	NumWrites        uint64
 }
 
@@ -751,7 +780,7 @@ type CoalesceReq struct {
 type CoalesceReply struct {
 	ModificationTime uint64
 	AttrChangeTime   uint64
-	InodeNumber      uint64
+	InodeNumber      int64
 	NumWrites        uint64
 }
 

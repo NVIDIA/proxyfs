@@ -122,7 +122,6 @@
         - libacl-devel
         - openldap-devel
         - json-c-devel
-        - samba
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
@@ -137,7 +136,6 @@
         - libldap2-dev
         - libjson-c-dev
         - libb64-dev
-        - samba
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
