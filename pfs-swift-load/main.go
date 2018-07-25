@@ -17,6 +17,7 @@ import (
 type workerStruct struct {
 	sync.Mutex
 	name                          string
+	directory                     string
 	swiftAuthUser                 string
 	swiftAuthKey                  string
 	swiftAccount                  string
@@ -32,42 +33,55 @@ type workerStruct struct {
 }
 
 type workerIntervalValues struct {
-	elapsedTime      time.Duration
 	methodsCompleted uint64
 	methodsDelta     uint64
 }
 
+const (
+	fileDelete = "delete"
+	fileRead   = "read"
+	fileStat   = "stat"
+	fileWrite  = "write"
+)
+
 var (
 	displayInterval  time.Duration
+	elapsedTime      time.Duration
+	fileBlockCount   uint64
+	fileBlockSize    uint64
+	fileMethod       string // One of fileWrite, fileStat, fileRead, fileDelete
+	fileWriteBuffer  []byte
+	mountPoint       string
 	optionDestroy    bool
 	optionFormat     bool
+	outputFormat     string
 	swiftMethod      string // One of http.MethodGet, http.MethodHead, http.MethodPut, or http.MethodDelete
+	swiftObjectSize  uint64
 	swiftProxyURL    string
 	swiftPutBuffer   []byte
-	swiftPutSize     uint64
 	workerArray      []*workerStruct
 	workerMap        map[string]*workerStruct
 	workersGoGate    sync.WaitGroup
 	workersReadyGate sync.WaitGroup
-	outputFormat     string
 )
 
-var columnTitles = []string{"Elapsed time (s)", "Completed", "Delta"}
+var columnTitles = []string{"ElapsedTime", "Completed", "Delta"}
 
 func main() {
 	var (
 		args              []string
 		confMap           conf.ConfMap
 		err               error
+		fileWorkerList    []string
 		infoResponse      *http.Response
 		methodsCompleted  uint64
 		methodsDelta      uint64
 		optionString      string
+		swiftWorkerList   []string
 		worker            *workerStruct
-		workerList        []string
 		workerName        string
 		workerSectionName string
-		elapsedTime       time.Duration
+		workersIntervals  []workerIntervalValues
 	)
 
 	// Parse arguments
@@ -126,42 +140,84 @@ func main() {
 
 	// Process resultant confMap
 
-	if optionDestroy && !optionFormat {
-		// SwiftMethod not required if we are only going to optionDestoy (and exit)
-	} else {
+	fileWorkerList, err = confMap.FetchOptionValueStringSlice("LoadParameters", "FileWorkerList")
+	if nil != err {
+		log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"FileWorkerList\") failed: %v", err)
+	}
+
+	if 0 < len(fileWorkerList) {
+		fileMethod, err = confMap.FetchOptionValueString("LoadParameters", "FileMethod")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"FileMethod\") failed: %v", err)
+		}
+
+		mountPoint, err = confMap.FetchOptionValueString("LoadParameters", "MountPoint")
+		if nil != err {
+			log.Fatalf("FileMethod %s requires specifying LoadParameters.MountPoint (err: %v)", fileMethod, err)
+		}
+		fileBlockCount, err = confMap.FetchOptionValueUint64("LoadParameters", "FileBlockCount")
+		if nil != err {
+			log.Fatalf("FileMethod %s requires specifying LoadParameters.FileBlockCount (err: %v)", fileMethod, err)
+		}
+		fileBlockSize, err = confMap.FetchOptionValueUint64("LoadParameters", "FileBlockSize")
+		if nil != err {
+			log.Fatalf("FileMethod %s requires specifying LoadParameters.FileBlockSize (err: %v)", fileMethod, err)
+		}
+
+		switch fileMethod {
+		case fileWrite:
+			fileWriteBuffer = make([]byte, fileBlockSize)
+		case fileStat:
+		case fileRead:
+		case fileDelete:
+		default:
+			log.Fatalf("FileMethod %s not supported", fileMethod)
+		}
+	}
+
+	swiftWorkerList, err = confMap.FetchOptionValueStringSlice("LoadParameters", "SwiftWorkerList")
+	if nil != err {
+		log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"SwiftWorkerList\") failed: %v", err)
+	}
+
+	if 0 < len(swiftWorkerList) {
 		swiftMethod, err = confMap.FetchOptionValueString("LoadParameters", "SwiftMethod")
 		if nil != err {
-			log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"SwiftMethod\") failed: %v", err)
+			log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"SwiftMethod\") failed: %v", err)
 		}
+
+		swiftObjectSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftObjectSize")
+		if nil != err {
+			log.Fatalf("SwiftMethod %s requires specifying LoadParameters.SwiftObjectSize (err: %v)", swiftMethod, err)
+		}
+		swiftProxyURL, err = confMap.FetchOptionValueString("LoadParameters", "SwiftProxy")
+		if nil != err {
+			log.Fatalf("SwiftMethod %s requires specifying LoadParameters.SwiftProxy (err: %v)", swiftMethod, err)
+		}
+
 		switch swiftMethod {
-		case http.MethodGet:
-			// Nothing extra to do here
-		case http.MethodHead:
-			// Nothing extra to do here
 		case http.MethodPut:
-			swiftPutSize, err = confMap.FetchOptionValueUint64("LoadParameters", "SwiftPutSize")
-			if nil != err {
-				return
-			}
-			swiftPutBuffer = make([]byte, swiftPutSize)
+			swiftPutBuffer = make([]byte, swiftObjectSize)
+		case http.MethodHead:
+		case http.MethodGet:
 		case http.MethodDelete:
-			// Nothing extra to do here
 		default:
-			log.Fatalf("SwiftMethod: %s not supported", swiftMethod)
+			log.Fatalf("SwiftMethod %s not supported", swiftMethod)
+		}
+
+		infoResponse, err = http.Get(swiftProxyURL + "info")
+		if nil != err {
+			log.Fatalf("http.Get(\"%sinfo\") failed: %v", swiftProxyURL, err)
+		}
+		_, err = ioutil.ReadAll(infoResponse.Body)
+		infoResponse.Body.Close()
+		if nil != err {
+			log.Fatalf("ioutil.ReadAll(infoResponse.Body) failed: %v", err)
 		}
 	}
 
-	swiftProxyURL, err = confMap.FetchOptionValueString("LoadParameters", "SwiftProxy")
-	if nil != err {
-		log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"SwiftProxy\") failed: %v", err)
-	}
-
-	workerList, err = confMap.FetchOptionValueStringSlice("LoadParameters", "WorkerList")
-	if nil != err {
-		log.Fatalf("confMap.FetchOptionValueStringSlice(\"LoadParameters\", \"WorkerList\") failed: %v", err)
-	}
-	if 0 == len(workerList) {
-		log.Fatalf("WorkerList must not be empty")
+	if (0 == len(fileWorkerList)) && (0 == len(swiftWorkerList)) {
+		log.Fatalf("FileWorkerList & SwiftWorkerList must not both be empty")
 	}
 
 	displayInterval, err = confMap.FetchOptionValueDuration("LoadParameters", "DisplayInterval")
@@ -174,22 +230,39 @@ func main() {
 		log.Fatalf("confMap.FetchOptionValueString(\"LoadParameters\", \"OutputFormat\") failed: %v", err)
 	}
 
-	infoResponse, err = http.Get(swiftProxyURL + "info")
-	if nil != err {
-		log.Fatalf("http.Get(\"%sinfo\") failed: %v", swiftProxyURL, err)
-	}
-	_, err = ioutil.ReadAll(infoResponse.Body)
-	infoResponse.Body.Close()
-	if nil != err {
-		log.Fatalf("ioutil.ReadAll(infoResponse.Body) failed: %v", err)
-	}
-
-	workerArray = make([]*workerStruct, 0, len(workerList))
+	workerArray = make([]*workerStruct, 0, len(fileWorkerList)+len(swiftWorkerList))
 	workerMap = make(map[string]*workerStruct)
 
 	workersGoGate.Add(1)
 
-	for _, workerName = range workerList {
+	for _, workerName = range fileWorkerList {
+		worker = &workerStruct{
+			name: workerName,
+			nextMethodNumberToStart: 0,
+			methodsCompleted:        0,
+			priorMethodsCompleted:   0,
+		}
+
+		workerSectionName = "Worker:" + workerName
+
+		worker.directory, err = confMap.FetchOptionValueString(workerSectionName, "Directory")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueString(\"%s\", \"Directory\") failed: %v", workerSectionName, err)
+		}
+		worker.numThreads, err = confMap.FetchOptionValueUint16(workerSectionName, "NumThreads")
+		if nil != err {
+			log.Fatalf("confMap.FetchOptionValueUint16(\"%s\", \"NumThreads\") failed: %v", workerSectionName, err)
+		}
+
+		workerArray = append(workerArray, worker)
+		workerMap[workerName] = worker
+
+		workersReadyGate.Add(1)
+
+		go worker.fileWorkerLauncher()
+	}
+
+	for _, workerName = range swiftWorkerList {
 		worker = &workerStruct{
 			name:                          workerName,
 			swiftAuthToken:                "",
@@ -235,7 +308,7 @@ func main() {
 
 		workersReadyGate.Add(1)
 
-		go worker.workerLauncher()
+		go worker.swiftWorkerLauncher()
 	}
 
 	workersReadyGate.Wait()
@@ -247,13 +320,23 @@ func main() {
 	}
 
 	// Print workerName's as column heads
-	printHeaders(workerList, outputFormat)
+
+	switch outputFormat {
+	case "text":
+		printPlainTextWorkerNames()
+	case "csv":
+		printCSVWorkerNames()
+		printCSVColumnTitles()
+	default:
+		log.Fatalf("OutputFormat %s not supported", outputFormat)
+	}
 
 	// Workers (or, rather, all their Threads) are ready to go... so kick off the test
 
 	workersGoGate.Done()
-	elapsedTime = 0
-	var workersIntervals []workerIntervalValues
+
+	elapsedTime = time.Duration(0)
+
 	for {
 		time.Sleep(displayInterval)
 		elapsedTime += displayInterval
@@ -266,87 +349,225 @@ func main() {
 			worker.priorMethodsCompleted = methodsCompleted
 			worker.Unlock()
 
-			workersIntervals = append(workersIntervals, workerIntervalValues{elapsedTime, methodsCompleted, methodsDelta})
+			workersIntervals = append(workersIntervals, workerIntervalValues{methodsCompleted, methodsDelta})
 		}
-		printInterval(workersIntervals, outputFormat)
+
+		if "text" == outputFormat {
+			printPlainTextInterval(workersIntervals)
+		} else { // "csv" == outputFormat
+			printCSVInterval(workersIntervals)
+		}
 	}
 }
 
-func printHeaders(workerList []string, format string) {
-	if format == "text" {
-		printPlainTextWorkerNames(workerList)
-	} else if format == "csv" {
-		printCSVWorkerNames(workerList)
-	} else {
-		log.Fatalf("Invalid value for config setting \"OutputFormat\": %v", format)
+func printPlainTextWorkerNames() {
+	var (
+		worker *workerStruct
+	)
+
+	fmt.Printf(" ElapsedTime      ")
+
+	for _, worker = range workerArray {
+		fmt.Printf("     %-20s", worker.name)
 	}
 
-	if format == "csv" {
-		printCSVColumnTitles(len(workerList))
-	}
+	fmt.Println()
 }
 
-func printCSVWorkerNames(workerList []string) {
-	var namesWithCommas []string
-	for _, workerName := range workerList {
-		namesWithCommas = append(namesWithCommas, fmt.Sprintf("%v%v", workerName, strings.Repeat(",", len(columnTitles)-1)))
+func printCSVWorkerNames() {
+	var (
+		namesWithCommas []string
+		worker          *workerStruct
+	)
+
+	for _, worker = range workerArray {
+		namesWithCommas = append(namesWithCommas, fmt.Sprintf("%v%v", worker.name, strings.Repeat(",", len(columnTitles)-1)))
 	}
+
 	fmt.Println(strings.Join(namesWithCommas, ","))
 }
 
-func printPlainTextWorkerNames(workerList []string) {
-	fmt.Printf("       ")
-	for _, workerName := range workerList {
-		fmt.Printf("     %-20s", workerName)
-	}
-	fmt.Println()
-}
+func printCSVColumnTitles() {
+	var (
+		i int
+	)
 
-func printCSVColumnTitles(workerArrayLen int) {
 	fmt.Printf(strings.Join(columnTitles, ","))
-	for i := 1; i < workerArrayLen; i++ {
+
+	for i = 1; i < len(workerArray); i++ {
 		fmt.Printf(",%v", strings.Join(columnTitles, ","))
 	}
+
 	fmt.Println()
-}
-
-func printInterval(workersIntervals []workerIntervalValues, format string) {
-	if format == "text" {
-		printPlainTextInterval(workersIntervals)
-	} else if format == "csv" {
-		printCSVInterval(workersIntervals)
-	} else {
-		log.Fatalf("Invalid value for config setting \"OutputFormat\": %v", format)
-	}
-}
-
-func printCSVInterval(workersIntervals []workerIntervalValues) {
-	var workerIntervalStrings []string
-	for _, workerInterval := range workersIntervals {
-		workerIntervalStrings = append(workerIntervalStrings, workerInterval.toCSV())
-	}
-	fmt.Println(strings.Join(workerIntervalStrings, ","))
 }
 
 func printPlainTextInterval(workersIntervals []workerIntervalValues) {
 	var (
+		elapsedTimeString      string
 		methodsCompletedString string
 		methodsDeltaString     string
+		workerInterval         workerIntervalValues
 	)
-	for _, workerInterval := range workersIntervals {
+
+	elapsedTimeString = fmt.Sprintf("%v", elapsedTime)
+
+	fmt.Printf("%10s", elapsedTimeString)
+
+	for _, workerInterval = range workersIntervals {
 		methodsCompletedString = fmt.Sprintf("%d", workerInterval.methodsCompleted)
 		methodsDeltaString = fmt.Sprintf("(+%d)", workerInterval.methodsDelta)
 
 		fmt.Printf("  %12s %-10s", methodsCompletedString, methodsDeltaString)
 	}
+
 	fmt.Println()
 }
 
-func (workerInterval workerIntervalValues) toCSV() string {
-	return fmt.Sprintf("%v,%v,%v", workerInterval.elapsedTime.Seconds(), workerInterval.methodsCompleted, workerInterval.methodsDelta)
+func printCSVInterval(workersIntervals []workerIntervalValues) {
+	var (
+		workerInterval        workerIntervalValues
+		workerIntervalStrings []string
+	)
+
+	for _, workerInterval = range workersIntervals {
+		workerIntervalStrings = append(workerIntervalStrings, workerInterval.toCSV())
+	}
+
+	fmt.Println(strings.Join(workerIntervalStrings, ","))
 }
 
-func (worker *workerStruct) workerLauncher() {
+func (workerInterval workerIntervalValues) toCSV() (csvString string) {
+	csvString = fmt.Sprintf("%v,%v,%v", elapsedTime.Seconds(), workerInterval.methodsCompleted, workerInterval.methodsDelta)
+
+	return
+}
+
+func (worker *workerStruct) fileWorkerLauncher() {
+	var (
+		err         error
+		path        string
+		threadIndex uint16
+	)
+
+	path = mountPoint + "/" + worker.directory
+
+	if optionDestroy {
+		err = os.RemoveAll(path)
+		if nil != err {
+			log.Fatalf("os.RemoveAll(\"%s\") failed: %v", path, err)
+		}
+
+		if !optionFormat {
+			// We are just going to exit if all we were asked to do was optionDestroy
+			workersReadyGate.Done()
+			return
+		}
+	}
+
+	if optionFormat {
+		err = os.Mkdir(path, os.ModePerm)
+		if nil != err {
+			log.Fatalf("os.Mkdir(\"%s\", os.ModePerm) failed: %v", path, err)
+		}
+	}
+
+	for threadIndex = 0; threadIndex < worker.numThreads; threadIndex++ {
+		workersReadyGate.Add(1)
+
+		go worker.fileWorkerThreadLauncher()
+	}
+
+	workersReadyGate.Done()
+
+	workersGoGate.Wait()
+}
+
+func (worker *workerStruct) fileWorkerThreadLauncher() {
+	var (
+		err                 error
+		file                *os.File
+		fileBlockIndex      uint64
+		fileReadAt          uint64
+		fileReadBuffer      []byte
+		methodNumberToStart uint64
+		path                string
+	)
+
+	fileReadBuffer = make([]byte, fileBlockSize)
+
+	workersReadyGate.Done()
+
+	workersGoGate.Wait()
+
+	methodNumberToStart = worker.fetchNextMethodNumberToStart()
+
+	for {
+		path = fmt.Sprintf("%s/%s/%016X", mountPoint, worker.directory, methodNumberToStart)
+
+		switch fileMethod {
+		case fileWrite:
+			file, err = os.Create(path)
+			if nil == err {
+				fileBlockIndex = uint64(0)
+				for (nil == err) && (fileBlockIndex < fileBlockCount) {
+					_, err = file.Write(fileWriteBuffer)
+					fileBlockIndex++
+				}
+				if nil == err {
+					err = file.Close()
+					if nil == err {
+						worker.incMethodsCompleted()
+					}
+				} else {
+					_ = file.Close()
+				}
+			}
+		case fileStat:
+			file, err = os.Open(path)
+			if nil == err {
+				_, err = file.Stat()
+				if nil == err {
+					err = file.Close()
+					if nil == err {
+						worker.incMethodsCompleted()
+					}
+				} else {
+					_ = file.Close()
+				}
+			}
+		case fileRead:
+			file, err = os.Open(path)
+			if nil == err {
+				fileBlockIndex = uint64(0)
+				fileReadAt = uint64(0)
+				for (nil == err) && (fileBlockIndex < fileBlockCount) {
+					_, err = file.ReadAt(fileReadBuffer, int64(fileReadAt))
+					fileBlockIndex++
+					fileReadAt += fileBlockSize
+				}
+				if nil == err {
+					err = file.Close()
+					if nil == err {
+						worker.incMethodsCompleted()
+					}
+				} else {
+					_ = file.Close()
+				}
+			}
+		case fileDelete:
+			err = os.Remove(path)
+			if nil == err {
+				worker.incMethodsCompleted()
+			}
+		default:
+			log.Fatalf("FileMethod %s not supported", fileMethod)
+		}
+
+		methodNumberToStart = worker.fetchNextMethodNumberToStart()
+	}
+}
+
+func (worker *workerStruct) swiftWorkerLauncher() {
 	var (
 		containerDeleteRequest  *http.Request
 		containerDeleteResponse *http.Response
@@ -520,7 +741,7 @@ func (worker *workerStruct) workerLauncher() {
 	for threadIndex = 0; threadIndex < worker.numThreads; threadIndex++ {
 		workersReadyGate.Add(1)
 
-		go worker.workerThreadLauncher()
+		go worker.swiftWorkerThreadLauncher()
 	}
 
 	workersReadyGate.Done()
@@ -528,7 +749,7 @@ func (worker *workerStruct) workerLauncher() {
 	workersGoGate.Wait()
 }
 
-func (worker *workerStruct) workerThreadLauncher() {
+func (worker *workerStruct) swiftWorkerThreadLauncher() {
 	var (
 		err                 error
 		httpClient          *http.Client
@@ -554,21 +775,21 @@ func (worker *workerStruct) workerThreadLauncher() {
 		swiftAuthToken = worker.fetchSwiftAuthToken()
 
 		switch swiftMethod {
-		case http.MethodGet:
-			methodRequest, err = http.NewRequest("GET", url, nil)
+		case http.MethodPut:
+			swiftPutReader = bytes.NewReader(swiftPutBuffer)
+			methodRequest, err = http.NewRequest("PUT", url, swiftPutReader)
 			if nil != err {
-				log.Fatalf("http.NewRequest(\"GET\", \"%s\", nil) failed: %v", url, err)
+				log.Fatalf("http.NewRequest(\"PUT\", \"%s\", swiftPutReader) failed: %v", url, err)
 			}
 		case http.MethodHead:
 			methodRequest, err = http.NewRequest("HEAD", url, nil)
 			if nil != err {
 				log.Fatalf("http.NewRequest(\"HEAD\", \"%s\", nil) failed: %v", url, err)
 			}
-		case http.MethodPut:
-			swiftPutReader = bytes.NewReader(swiftPutBuffer)
-			methodRequest, err = http.NewRequest("PUT", url, swiftPutReader)
+		case http.MethodGet:
+			methodRequest, err = http.NewRequest("GET", url, nil)
 			if nil != err {
-				log.Fatalf("http.NewRequest(\"PUT\", \"%s\", swiftPutReader) failed: %v", url, err)
+				log.Fatalf("http.NewRequest(\"GET\", \"%s\", nil) failed: %v", url, err)
 			}
 		case http.MethodDelete:
 			methodRequest, err = http.NewRequest("DELETE", url, nil)
@@ -576,7 +797,7 @@ func (worker *workerStruct) workerThreadLauncher() {
 				log.Fatalf("http.NewRequest(\"DELETE\", \"%s\", nil) failed: %v", url, err)
 			}
 		default:
-			log.Fatalf("SwiftMethod: %s not supported", swiftMethod)
+			log.Fatalf("SwiftMethod %s not supported", swiftMethod)
 		}
 
 		methodRequest.Header.Set("X-Auth-Token", swiftAuthToken)
@@ -607,20 +828,6 @@ func (worker *workerStruct) workerThreadLauncher() {
 			log.Fatalf("%s response for url \"%s\" had unexpected status: %s (%d)", swiftMethod, url, methodResponse.Status, methodResponse.StatusCode)
 		}
 	}
-}
-
-func (worker *workerStruct) fetchNextMethodNumberToStart() (methodNumberToStart uint64) {
-	worker.Lock()
-	methodNumberToStart = worker.nextMethodNumberToStart
-	worker.nextMethodNumberToStart = methodNumberToStart + 1
-	worker.Unlock()
-	return
-}
-
-func (worker *workerStruct) incMethodsCompleted() {
-	worker.Lock()
-	worker.methodsCompleted++
-	worker.Unlock()
 }
 
 func (worker *workerStruct) fetchSwiftAuthToken() (swiftAuthToken string) {
@@ -698,5 +905,19 @@ func (worker *workerStruct) updateSwiftAuthToken() {
 
 	worker.swiftAuthTokenUpdateWaitGroup = nil
 
+	worker.Unlock()
+}
+
+func (worker *workerStruct) fetchNextMethodNumberToStart() (methodNumberToStart uint64) {
+	worker.Lock()
+	methodNumberToStart = worker.nextMethodNumberToStart
+	worker.nextMethodNumberToStart = methodNumberToStart + 1
+	worker.Unlock()
+	return
+}
+
+func (worker *workerStruct) incMethodsCompleted() {
+	worker.Lock()
+	worker.methodsCompleted++
 	worker.Unlock()
 }
