@@ -376,15 +376,17 @@ func printPlainTextWorkerNames() {
 
 func printCSVWorkerNames() {
 	var (
-		namesWithCommas []string
-		worker          *workerStruct
+		firstRowValues []string
+		worker         *workerStruct
 	)
 
 	for _, worker = range workerArray {
-		namesWithCommas = append(namesWithCommas, fmt.Sprintf("%v%v", worker.name, strings.Repeat(",", len(columnTitles)-1)))
+		for range columnTitles {
+			firstRowValues = append(firstRowValues, worker.name)
+		}
 	}
 
-	fmt.Println(strings.Join(namesWithCommas, ","))
+	fmt.Println(strings.Join(firstRowValues, ","))
 }
 
 func printCSVColumnTitles() {
