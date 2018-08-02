@@ -36,6 +36,7 @@ def plot(plot_position, x_axis_data, x_axis_label):
     ax.set_xlabel(x_axis_label, color='k')
     ax.set_ylabel(OBJECTS_PER_SECOND_TEXT, color='k')
     ax.grid(color='tab:gray', linestyle='dashdot', linewidth=.4)
+    plt.legend()
 
 
 def parse_args():
@@ -79,5 +80,4 @@ if __name__ == '__main__':
     fig = plt.figure(figsize=FIG_SIZE)
     plot(1, data_frame[worker][ELAPSED_TIME_COL], ELAPSED_TIME_TEXT)
     plot(2, data_frame[worker][COMPLETED_COL], COMPLETED_TEXT)
-    plt.legend()
     plt.savefig(options['output'])
