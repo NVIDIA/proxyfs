@@ -99,6 +99,9 @@ type globalsStruct struct {
 	versionV1Buf                       []byte                        // holds serialized Version            == V1
 	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
 	inodeSize                          uint64                        // size of in-memory inode struct
+	openLogSegmentLRUHead              *inFlightLogSegmentStruct
+	openLogSegmentLRUTail              *inFlightLogSegmentStruct
+	openLogSegmentLRUItems             uint64
 }
 
 var globals globalsStruct
@@ -114,11 +117,11 @@ func stopInodeCacheDiscard(volume *volumeStruct) {
 }
 
 func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSectionName string) (err error) {
-
 	var (
 		LRUCacheMaxBytes       uint64
 		LRUDiscardTimeInterval time.Duration
 	)
+
 	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
 	if nil != err {
 		LRUCacheMaxBytes = 10485760 // TODO - Remove setting a default value
@@ -184,6 +187,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		physicalContainerLayoutSectionName             string
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
+		tempInode                                      inMemoryInodeStruct
 		versionV1                                      = Version(V1)
 		volume                                         *volumeStruct
 		volumeList                                     []string
@@ -249,8 +253,11 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
-	var tmpInode inMemoryInodeStruct
-	globals.inodeSize = uint64(unsafe.Sizeof(tmpInode))
+	globals.inodeSize = uint64(unsafe.Sizeof(tempInode))
+
+	globals.openLogSegmentLRUHead = nil
+	globals.openLogSegmentLRUTail = nil
+	globals.openLogSegmentLRUItems = 0
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
