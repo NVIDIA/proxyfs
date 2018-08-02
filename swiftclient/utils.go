@@ -63,7 +63,7 @@ func chunkedConnectionPoolInStarvationMode() {
 
 	for {
 		select {
-		case _ = <-globals.stavationResolvedChan:
+		case _ = <-globals.starvationResolvedChan:
 			return
 		case <-time.After(globals.starvationCallbackFrequency):
 			starvationCallback = globals.starvationCallback
@@ -140,7 +140,7 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		cv.Signal()
 		if globals.starvationUnderway && (0 == globals.chunkedConnectionPool.waiters.Len()) {
 			globals.starvationUnderway = false
-			globals.stavationResolvedChan <- true
+			globals.starvationResolvedChan <- true
 		}
 	} else {
 		globals.chunkedConnectionPool.poolInUse--

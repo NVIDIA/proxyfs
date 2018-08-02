@@ -10,6 +10,97 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
+func openLogSegmentLRUInsertWhileLocked(inFlightLogSegment *inFlightLogSegmentStruct) {
+	// Place inode at the MRU end of openLogSegmentLRU
+
+	if 0 == globals.openLogSegmentLRUItems {
+		globals.openLogSegmentLRUHead = inFlightLogSegment
+		globals.openLogSegmentLRUTail = inFlightLogSegment
+		globals.openLogSegmentLRUItems = 1
+	} else {
+		inFlightLogSegment.openLogSegmentLRUPrev = globals.openLogSegmentLRUTail
+		inFlightLogSegment.openLogSegmentLRUPrev.openLogSegmentLRUNext = inFlightLogSegment
+
+		globals.openLogSegmentLRUTail = inFlightLogSegment
+		globals.openLogSegmentLRUItems++
+	}
+}
+
+func openLogSegmentLRUInsert(inFlightLogSegment *inFlightLogSegmentStruct) {
+	globals.Lock()
+	openLogSegmentLRUInsertWhileLocked(inFlightLogSegment)
+	globals.Unlock()
+}
+
+func openLogSegmentLRUTouchWhileLocked(inFlightLogSegment *inFlightLogSegmentStruct) {
+	// Move inode to the MRU end of openLogSegmentLRU
+
+	if inFlightLogSegment != globals.openLogSegmentLRUTail {
+		if inFlightLogSegment == globals.openLogSegmentLRUHead {
+			globals.openLogSegmentLRUHead = inFlightLogSegment.openLogSegmentLRUNext
+			globals.openLogSegmentLRUHead.openLogSegmentLRUPrev = nil
+
+			inFlightLogSegment.openLogSegmentLRUPrev = globals.openLogSegmentLRUTail
+			inFlightLogSegment.openLogSegmentLRUNext = nil
+
+			globals.openLogSegmentLRUTail.openLogSegmentLRUNext = inFlightLogSegment
+			globals.openLogSegmentLRUTail = inFlightLogSegment
+		} else {
+			inFlightLogSegment.openLogSegmentLRUPrev.openLogSegmentLRUNext = inFlightLogSegment.openLogSegmentLRUNext
+			inFlightLogSegment.openLogSegmentLRUNext.openLogSegmentLRUPrev = inFlightLogSegment.openLogSegmentLRUPrev
+
+			inFlightLogSegment.openLogSegmentLRUNext = nil
+			inFlightLogSegment.openLogSegmentLRUPrev = globals.openLogSegmentLRUTail
+
+			globals.openLogSegmentLRUTail.openLogSegmentLRUNext = inFlightLogSegment
+			globals.openLogSegmentLRUTail = inFlightLogSegment
+		}
+	}
+}
+
+func openLogSegmentLRUTouch(inFlightLogSegment *inFlightLogSegmentStruct) {
+	globals.Lock()
+	openLogSegmentLRUTouchWhileLocked(inFlightLogSegment)
+	globals.Unlock()
+}
+
+func openLogSegmentLRURemoveWhileLocked(inFlightLogSegment *inFlightLogSegmentStruct) {
+	if inFlightLogSegment == globals.openLogSegmentLRUHead {
+		if inFlightLogSegment == globals.openLogSegmentLRUTail {
+			globals.openLogSegmentLRUHead = nil
+			globals.openLogSegmentLRUTail = nil
+			globals.openLogSegmentLRUItems = 0
+		} else {
+			globals.openLogSegmentLRUHead = inFlightLogSegment.openLogSegmentLRUNext
+			globals.openLogSegmentLRUHead.openLogSegmentLRUPrev = nil
+			globals.openLogSegmentLRUItems--
+
+			inFlightLogSegment.openLogSegmentLRUNext = nil
+		}
+	} else {
+		if inFlightLogSegment == globals.openLogSegmentLRUTail {
+			globals.openLogSegmentLRUTail = inFlightLogSegment.openLogSegmentLRUPrev
+			globals.openLogSegmentLRUTail.openLogSegmentLRUNext = nil
+			globals.openLogSegmentLRUItems--
+
+			inFlightLogSegment.openLogSegmentLRUPrev = nil
+		} else {
+			inFlightLogSegment.openLogSegmentLRUPrev.openLogSegmentLRUNext = inFlightLogSegment.openLogSegmentLRUNext
+			inFlightLogSegment.openLogSegmentLRUNext.openLogSegmentLRUPrev = inFlightLogSegment.openLogSegmentLRUPrev
+			globals.openLogSegmentLRUItems--
+
+			inFlightLogSegment.openLogSegmentLRUNext = nil
+			inFlightLogSegment.openLogSegmentLRUPrev = nil
+		}
+	}
+}
+
+func openLogSegmentLRURemove(inFlightLogSegment *inFlightLogSegmentStruct) {
+	globals.Lock()
+	openLogSegmentLRURemoveWhileLocked(inFlightLogSegment)
+	globals.Unlock()
+}
+
 func (flowControl *flowControlStruct) capReadCacheWhileLocked() {
 	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
 		delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
@@ -92,6 +183,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
 		if inFlightHit {
 			// Case 2: The lone step is satisfied by reading from an inFlightLogSegment
+			openLogSegmentLRUTouch(inFlightLogSegment)
 			buf, err = inFlightLogSegment.Read(step.Offset, step.Length)
 			if nil != err {
 				fileInode.Unlock()
@@ -176,6 +268,7 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 			inFlightLogSegment, inFlightHit = fileInode.inFlightLogSegmentMap[step.LogSegmentNumber]
 			if inFlightHit {
 				// The step is satisfied by reading from an inFlightLogSegment
+				openLogSegmentLRUTouch(inFlightLogSegment)
 				inFlightHitBuf, err = inFlightLogSegment.Read(step.Offset, step.Length)
 				if nil != err {
 					fileInode.Unlock()
@@ -289,11 +382,15 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 
 		fileInode.inFlightLogSegmentMap[fileInode.openLogSegment.logSegmentNumber] = fileInode.openLogSegment
 
+		openLogSegmentLRUInsert(fileInode.openLogSegment)
+
 		fileInode.openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(fileInode.openLogSegment.accountName, fileInode.openLogSegment.containerName, fileInode.openLogSegment.objectName)
 		if nil != err {
 			logger.ErrorfWithError(err, "Starting Chunked PUT to LogSegment failed")
 			return
 		}
+	} else {
+		openLogSegmentLRUTouch(fileInode.openLogSegment)
 	}
 
 	logSegmentNumber = fileInode.openLogSegment.logSegmentNumber
@@ -312,7 +409,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 
 	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
 		fileInode.Add(1)
-		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
+		go vS.inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
 	}
 
@@ -325,7 +422,7 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	if nil != fileInode.openLogSegment {
 		fileInode.Add(1)
-		go inFlightLogSegmentFlusher(fileInode.openLogSegment)
+		go vS.inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
 	}
 
@@ -333,9 +430,9 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	fileInode.Wait()
 
-	// REVIEW TODO: Does anybody every empty the errors map? Should they? Would this mask prior errors?
+	// REVIEW TODO: Does anybody ever empty the errors map? Should they? Would this mask prior errors?
 	//              File system could go "read only" if that's sufficient...
-	//              Problem with write-back data... must discard it...n
+	//              Problem with write-back data... must discard it...
 
 	if 0 == len(fileInode.inFlightLogSegmentErrors) {
 		err = nil
@@ -346,7 +443,7 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 	return
 }
 
-func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
+func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	var (
 		err error
 	)
@@ -358,6 +455,7 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 		inFlightLogSegment.fileInode.Lock()
 		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
 		delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+		openLogSegmentLRURemove(inFlightLogSegment)
 		inFlightLogSegment.fileInode.Unlock()
 		inFlightLogSegment.fileInode.Done()
 		return
@@ -366,6 +464,7 @@ func inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
 	inFlightLogSegment.fileInode.Lock()
 	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+	openLogSegmentLRURemove(inFlightLogSegment)
 	inFlightLogSegment.fileInode.Unlock()
 
 	// And we are done
