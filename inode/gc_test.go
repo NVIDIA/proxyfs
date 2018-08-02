@@ -1,7 +1,6 @@
 package inode
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -95,7 +94,7 @@ func TestEmptySegmentDeletion(t *testing.T) {
 		// wait for up to 20 sec for the object to be (async) deleted
 		for try := 0; try < 20; try++ {
 			_, objectContentLengthErr = swiftclient.ObjectContentLength(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
-			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectContentLengthErr)
+			//t.Logf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectContentLengthErr)
 			if objectContentLengthErr != nil {
 				break
 			}
