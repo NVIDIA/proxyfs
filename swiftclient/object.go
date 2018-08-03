@@ -857,6 +857,14 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 	return
 }
 
+func (chunkedPutContext *chunkedPutContextStruct) Active() (active bool) {
+	active = chunkedPutContext.active
+
+	stats.IncrementOperations(&stats.SwiftObjPutCtxActiveOps)
+
+	return
+}
+
 func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, err error) {
 	chunkedPutContext.Lock()
 	bytesPut = chunkedPutContext.bytesPut

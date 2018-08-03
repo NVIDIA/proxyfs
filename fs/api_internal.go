@@ -194,25 +194,6 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	inFlightFileInodeData.wg.Done()
 }
 
-func chunkedPutConnectionPoolStarvationCallback() {
-	var (
-		globalsListElement    *list.Element
-		inFlightFileInodeData *inFlightFileInodeDataStruct
-	)
-
-	globals.Lock()
-	globalsListElement = globals.inFlightFileInodeDataList.Front()
-	if nil == globalsListElement {
-		globals.Unlock()
-		return
-	}
-	_ = globals.inFlightFileInodeDataList.Remove(globalsListElement)
-	inFlightFileInodeData = globalsListElement.Value.(*inFlightFileInodeDataStruct)
-	inFlightFileInodeData.globalsListElement = nil
-	globals.Unlock()
-	inFlightFileInodeData.volStruct.inFlightFileInodeDataFlusher(inFlightFileInodeData.InodeNumber)
-}
-
 func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
 	var (
 		mS        *mountStruct
