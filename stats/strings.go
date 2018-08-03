@@ -207,6 +207,7 @@ var (
 	SwiftObjTailOps                   = "proxyfs.swiftclient.object-tail.operations"
 	SwiftObjTailBytes                 = "proxyfs.swiftclient.object-tail.bytes"
 	SwiftObjPutCtxFetchOps            = "proxyfs.swiftclient.object-put-context.fetch.operations"
+	SwiftObjPutCtxActiveOps           = "proxyfs.swiftclient.object-put-context.active.operations"
 	SwiftObjPutCtxBytesPutOps         = "proxyfs.swiftclient.object-put-context.bytes-put.operations"
 	SwiftObjPutCtxCloseOps            = "proxyfs.swiftclient.object-put-context.close.operations"
 	SwiftObjPutCtxReadOps             = "proxyfs.swiftclient.object-put-context.read.operations"

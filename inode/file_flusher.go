@@ -448,27 +448,53 @@ func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLo
 		err error
 	)
 
-	// Terminate Chunked PUT
-	err = inFlightLogSegment.Close()
-	if nil != err {
-		err = blunder.AddError(err, blunder.InodeFlushError)
-		inFlightLogSegment.fileInode.Lock()
-		inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
+	inFlightLogSegment.fileInode.Lock()
+	defer inFlightLogSegment.fileInode.Unlock()
+
+	// Handle the race between a DLM-serialized Flush triggering this versus the starvatation condition
+	// doing so... Either one will perform the appropriate steps to enable the Flush() to complete.
+
+	if inFlightLogSegment.Active() {
+		// Terminate Chunked PUT
+		err = inFlightLogSegment.Close()
+		if nil != err {
+			err = blunder.AddError(err, blunder.InodeFlushError)
+			inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
+			delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+			openLogSegmentLRURemove(inFlightLogSegment)
+			inFlightLogSegment.fileInode.Done()
+			return
+		}
+
+		// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
 		delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
 		openLogSegmentLRURemove(inFlightLogSegment)
-		inFlightLogSegment.fileInode.Unlock()
+
+		// And we are done
 		inFlightLogSegment.fileInode.Done()
+	}
+}
+
+func chunkedPutConnectionPoolStarvationCallback() {
+	var (
+		fileInode          *inMemoryInodeStruct
+		inFlightLogSegment *inFlightLogSegmentStruct
+		volume             *volumeStruct
+	)
+
+	globals.Lock()
+
+	if 0 == globals.openLogSegmentLRUItems {
+		globals.Unlock()
 		return
 	}
 
-	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
-	inFlightLogSegment.fileInode.Lock()
-	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
-	openLogSegmentLRURemove(inFlightLogSegment)
-	inFlightLogSegment.fileInode.Unlock()
+	inFlightLogSegment = globals.openLogSegmentLRUHead
 
-	// And we are done
-	inFlightLogSegment.fileInode.Done()
+	fileInode = inFlightLogSegment.fileInode
+	volume = fileInode.volume
 
-	return
+	globals.Unlock()
+
+	volume.inFlightLogSegmentFlusher(inFlightLogSegment)
 }

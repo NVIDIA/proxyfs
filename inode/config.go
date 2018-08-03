@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -495,6 +496,8 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.corruptionDetectedFalseBuf...)
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.versionV1Buf...)
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
@@ -516,6 +519,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volumesNewlyInactiveSet map[string]bool
 		whoAmI                  string
 	)
+
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	peerPrivateIPAddrMap = make(map[string]string)
 
@@ -978,11 +983,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	adoptFlowControlReadCacheParameters(confMap, true)
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
 
 func Down() (err error) {
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	// Stop the inode discard timer
 	for _, volume := range globals.volumeMap {

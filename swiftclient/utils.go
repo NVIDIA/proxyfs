@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -56,25 +55,6 @@ func drainConnectionPools() {
 	globals.nonChunkedConnectionPool.Unlock()
 }
 
-func chunkedConnectionPoolInStarvationMode() {
-	var (
-		starvationCallback StarvationCallbackFunc
-	)
-
-	for {
-		select {
-		case _ = <-globals.starvationResolvedChan:
-			return
-		case <-time.After(globals.starvationCallbackFrequency):
-			starvationCallback = globals.starvationCallback
-			if nil != starvationCallback {
-				starvationCallback()
-				stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
-			}
-		}
-	}
-}
-
 func acquireChunkedConnection() (connection *connectionStruct) {
 	var (
 		cv  *sync.Cond
@@ -84,9 +64,9 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 	globals.chunkedConnectionPool.Lock()
 
 	if globals.chunkedConnectionPool.poolInUse >= globals.chunkedConnectionPool.poolCapacity {
-		if !globals.starvationUnderway {
-			globals.starvationUnderway = true
-			go chunkedConnectionPoolInStarvationMode()
+		if nil != globals.starvationCallback {
+			globals.starvationCallback()
+			stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
 		}
 		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolStallOps)
 		cv = sync.NewCond(&globals.chunkedConnectionPool)
@@ -138,10 +118,6 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		cv = waiter.Value.(*sync.Cond)
 		_ = globals.chunkedConnectionPool.waiters.Remove(waiter)
 		cv.Signal()
-		if globals.starvationUnderway && (0 == globals.chunkedConnectionPool.waiters.Len()) {
-			globals.starvationUnderway = false
-			globals.starvationResolvedChan <- true
-		}
 	} else {
 		globals.chunkedConnectionPool.poolInUse--
 	}

@@ -48,8 +48,6 @@ type globalsStruct struct {
 	chunkedConnectionPool           connectionPoolStruct
 	nonChunkedConnectionPool        connectionPoolStruct
 	starvationCallbackFrequency     time.Duration
-	starvationUnderway              bool
-	starvationResolvedChan          chan bool // Signal this chan to halt calls to starvationCallback
 	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
 	chaosSendChunkFailureRate       uint64 // set only during testing
@@ -176,8 +174,6 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	globals.starvationUnderway = false
-	globals.starvationResolvedChan = make(chan bool, 1)
 	globals.starvationCallback = nil
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
