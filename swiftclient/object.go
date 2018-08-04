@@ -879,52 +879,51 @@ func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, e
 
 func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 
-	err = chunkedPutContext.closeHelper()
-	if nil == err {
-		releaseChunkedConnection(chunkedPutContext.connection, chunkedPutContext.stillOpen)
-		chunkedPutContext.connection = nil
-		return
-	}
-
-	// fatal errors cannot be retried because we don't have the data that needs
-	// to be resent available (it could not be stored)
-	if chunkedPutContext.fatal {
-		releaseChunkedConnection(chunkedPutContext.connection, false)
-		chunkedPutContext.connection = nil
-		return chunkedPutContext.err
-	}
-
-	// There was a problem completing the ObjectPut.  Retry the operation.
-	//
 	// request is a function that, through the miracle of closure, calls
-	// Retry() and Close() with the paramaters passed to this function and
+	// retry() and Close() with the paramaters passed to this function and
 	// stashes the return values into the local variables of this function
 	// and then returns the error and whether it is retriable to its caller,
 	// RequestWithRetry()
+	var firstAttempt bool = true
 	request := func() (bool, error) {
 		var err error
 
-		// re-open chunked put connection
-		_ = openConnection("swiftclient.chunkedPutContext.Close()", chunkedPutContext.connection)
-		err = chunkedPutContext.retry()
-		if err != nil {
-			// closeHelper() will shutdown the TCP connection and
-			// clean up, but it needs to know there was an error
-			chunkedPutContext.err = err
+		// if this not the first attempt, retry() will redo all of the
+		// setup and SendChunk()s that were done before the first attempt
+		if !firstAttempt {
+			err = chunkedPutContext.retry()
+			if err != nil {
+				// closeHelper() will clean up the error, but
+				// only if it needs to know there was one
+				chunkedPutContext.err = err
+			}
 		}
+		firstAttempt = false
+
 		err = chunkedPutContext.closeHelper()
-		return true, err
+
+		// fatal errors cannot be retried because we don't have the data
+		// that needs to be resent available (it could not be stored)
+		retriable := !chunkedPutContext.fatal
+		return retriable, err
 	}
 
 	var (
-		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string     = fmt.Sprintf("swiftclient.chunkedPutContext.Close(\"%v/%v/%v\")",
-			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
-		statnm RetryStatNm = RetryStatNm{
+		retryObj *RetryCtrl
+		opname   string
+		statnm   RetryStatNm = RetryStatNm{
 			retryCnt:        &stats.SwiftObjPutCtxtCloseRetryOps,
 			retrySuccessCnt: &stats.SwiftObjPutCtxtCloseRetrySuccessOps}
 	)
+	retryObj = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+	opname = fmt.Sprintf("swiftclient.chunkedPutContext.Close(\"%v/%v/%v\")",
+		chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+
+	// RequestWithRetry() tried the operation one or more times until it
+	// either: succeeded; failed with a non-retriable (fatal) error; or hit
+	// the retry limit. Regardless, its time to release the connection we
+	// got at the very start.
 	if err != nil {
 		releaseChunkedConnection(chunkedPutContext.connection, false)
 	} else {
@@ -948,7 +947,8 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 
 	if !chunkedPutContext.active {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called while inactive")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") called while inactive", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.PanicfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") called while inactive",
+			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 
@@ -1125,12 +1125,13 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	)
 
 	chunkedPutContext.Lock()
-	sendChunkRetryCnt += 1
+	sendChunkRetryCnt += 1 // for chaos simulated errors
 
 	if chunkedPutContext.active {
 		chunkedPutContext.Unlock()
 		err = blunder.NewError(blunder.BadHTTPPutError, "called while active")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") called while active", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.PanicfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") called while active",
+			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 
@@ -1237,7 +1238,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 
 	if !chunkedPutContext.active {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called while inactive")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
+		logger.PanicfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		chunkedPutContext.err = err
 		chunkedPutContext.fatal = true
@@ -1250,7 +1251,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 
 	if 0 == len(buf) {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called with zero-length buf")
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
+		logger.PanicfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") logic error",
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		chunkedPutContext.err = err
 		chunkedPutContext.fatal = true
