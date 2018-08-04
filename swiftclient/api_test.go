@@ -862,7 +862,7 @@ func testChunkedPut(t *testing.T) {
 	// (lack of) headers for putting
 	catDogHeaderMap := make(map[string][]string)
 
-	// (re)create the test account and continer
+	// (re)create the test account and container
 
 	err := AccountPut(accountName, catDogHeaderMap)
 	if nil != err {
