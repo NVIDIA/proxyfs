@@ -59,7 +59,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -67,7 +67,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectHead, accountName, containerName, objectName, uint32(httpStatus))
@@ -76,7 +76,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "HEAD %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -84,7 +84,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectContentLength(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -188,7 +188,7 @@ func objectDeleteOneTime(accountName string, containerName string, objectName st
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -196,7 +196,7 @@ func objectDeleteOneTime(accountName string, containerName string, objectName st
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectDelete, accountName, containerName, objectName, uint32(httpStatus))
@@ -205,7 +205,7 @@ func objectDeleteOneTime(accountName string, containerName string, objectName st
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "DELETE %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectDelete(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -264,7 +264,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -272,7 +272,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectGet, accountName, containerName, objectName, offset, length, uint32(httpStatus))
@@ -281,7 +281,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -292,7 +292,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
 				return
 			}
 
@@ -307,7 +307,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPGetError)
-			logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+			logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
 			return
 		}
 
@@ -318,7 +318,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectGet(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
 				return
 			}
 		}
@@ -371,7 +371,7 @@ func objectHead(accountName string, containerName string, objectName string) (he
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -379,7 +379,7 @@ func objectHead(accountName string, containerName string, objectName string) (he
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectHead, accountName, containerName, objectName, uint32(httpStatus))
@@ -388,7 +388,7 @@ func objectHead(accountName string, containerName string, objectName string) (he
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "HEAD %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectHead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -442,7 +442,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -450,7 +450,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectLoad, accountName, containerName, objectName, uint32(httpStatus))
@@ -459,7 +459,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -470,7 +470,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
 				return
 			}
 
@@ -485,7 +485,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPGetError)
-			logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+			logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
 			return
 		}
 
@@ -496,7 +496,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectLoad(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
 				return
 			}
 		}
@@ -559,7 +559,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -567,7 +567,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectRead, accountName, containerName, objectName, offset, capacity, uint32(httpStatus))
@@ -576,7 +576,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -587,7 +587,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
 				return
 			}
 
@@ -601,7 +601,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPGetError)
-			logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+			logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
 			return
 		}
 
@@ -613,7 +613,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectRead(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
 				return
 			}
 			len = capacity
@@ -675,7 +675,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -683,7 +683,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectTail, accountName, containerName, objectName, length, uint32(httpStatus))
@@ -692,7 +692,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "GET %s/%s/%s returned HTTP StatusCode %d", accountName, containerName, objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
 		return
 	}
 
@@ -703,7 +703,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readHTTPChunk() error", accountName, containerName, objectName)
 				return
 			}
 
@@ -718,7 +718,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPGetError)
-			logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+			logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
 			return
 		}
 
@@ -729,7 +729,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 			if nil != err {
 				releaseNonChunkedConnection(connection, false)
 				err = blunder.AddError(err, blunder.BadHTTPGetError)
-				logger.ErrorfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+				logger.WarnfWithError(err, "swiftclient.objectTail(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
 				return
 			}
 		}
@@ -837,7 +837,7 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 	if nil != err {
 		releaseChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.objectFetchChunkedPutContext(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		logger.WarnfWithError(err, "swiftclient.objectFetchChunkedPutContext(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
 		return
 	}
 
@@ -963,14 +963,14 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, []byte{})
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 
 	httpStatus, headers, err = readHTTPStatusAndHeaders(chunkedPutContext.connection.tcpConn)
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 	evtlog.Record(evtlog.FormatObjectPutChunkedEnd, chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName, chunkedPutContext.bytesPut, uint32(httpStatus))
@@ -978,7 +978,7 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	if isError {
 		err = blunder.NewError(fsErr, "PUT %s/%s/%s returned HTTP StatusCode %d", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 	// even though the PUT succeeded the server may have decided to close
@@ -1150,7 +1150,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	if nil != err {
 		chunkedPutContext.Unlock()
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
 
@@ -1161,7 +1161,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		if nil != err {
 			chunkedPutContext.Unlock()
 			err = blunder.NewError(blunder.BadHTTPPutError, "bytesPutTree.GetByIndex() failed: %v", err)
-			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+			logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 			return
 		}
 
@@ -1176,7 +1176,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		if !ok {
 			chunkedPutContext.Unlock()
 			err = blunder.NewError(blunder.BadHTTPPutError, "bytesPutTree.GetByIndex() returned non-[]byte Value")
-			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex(() malformed Value", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+			logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got bytesPutTree.GetByIndex(() malformed Value", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 			return
 		}
 
@@ -1190,7 +1190,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		if nil != err {
 			chunkedPutContext.Unlock()
 			err = blunder.NewError(blunder.BadHTTPPutError, "writeHTTPPutChunk() failed: %v", err)
-			logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+			logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 			return
 		}
 
@@ -1311,7 +1311,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 	}
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		chunkedPutContext.err = err
 		chunkedPutContext.Unlock()
 		err = nil
