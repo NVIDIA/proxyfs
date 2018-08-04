@@ -57,8 +57,7 @@ func drainConnectionPools() {
 
 func acquireChunkedConnection() (connection *connectionStruct) {
 	var (
-		cv  *sync.Cond
-		err error
+		cv *sync.Cond
 	)
 
 	globals.chunkedConnectionPool.Lock()
@@ -79,10 +78,7 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 
 	if 0 == globals.chunkedConnectionPool.lifoIndex {
 		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
-		connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
-		if nil != err {
-			logger.FatalfWithError(err, "swiftclient.acquireChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
-		}
+		_ = openConnection("swiftclient.acquireChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 	} else {
 		globals.chunkedConnectionPool.lifoIndex--
@@ -125,10 +121,16 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	globals.chunkedConnectionPool.Unlock()
 }
 
+// Get a connection to the noauth server from the non-chunked connection pool.
+//
+// If an error occurs opening the connection, we return the connection anyway
+// (openConnection() will log an error).  The caller will discover the error
+// when it tries to use it.  Its really no different then if the connection
+// failed after we opened it.
+//
 func acquireNonChunkedConnection() (connection *connectionStruct) {
 	var (
-		cv  *sync.Cond
-		err error
+		cv *sync.Cond
 	)
 
 	globals.nonChunkedConnectionPool.Lock()
@@ -145,10 +147,7 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 
 	if 0 == globals.nonChunkedConnectionPool.lifoIndex {
 		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
-		connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
-		if nil != err {
-			logger.FatalfWithError(err, "swiftclient.acquireNonChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
-		}
+		_ = openConnection("swiftclient.acquireNonChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
 	} else {
 		globals.nonChunkedConnectionPool.lifoIndex--
@@ -202,6 +201,23 @@ func nonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
 	globals.nonChunkedConnectionPool.Lock()
 	freeNonChunkedConnections = int64(globals.nonChunkedConnectionPool.poolCapacity) - int64(globals.nonChunkedConnectionPool.poolInUse)
 	globals.nonChunkedConnectionPool.Unlock()
+	return
+}
+
+// (Re)open a connection to the noauth Swift server.
+//
+// The connection is closed first, just in case it was already open.
+//
+func openConnection(caller string, connection *connectionStruct) (err error) {
+
+	if connection.tcpConn != nil {
+		_ = connection.tcpConn.Close()
+	}
+	connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
+	if err != nil {
+		logger.FatalfWithError(err, "%s cannot connect to Swift NoAuth Pipeline at %s",
+			caller, globals.noAuthStringAddr)
+	}
 	return
 }
 
