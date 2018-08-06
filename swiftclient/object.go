@@ -1139,7 +1139,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	chunkedPutContext.err = nil
 
 	// re-open chunked put connection
-	_ = openConnection("swiftclient.chunkedPutContext.Close()", chunkedPutContext.connection)
+	openConnection("swiftclient.chunkedPutContext.Close()", chunkedPutContext.connection)
 
 	chunkedPutContext.active = true
 

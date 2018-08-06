@@ -61,6 +61,9 @@ func TestAPI(t *testing.T) {
 
 		"FSGlobals.VolumeList=",
 
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
+
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
