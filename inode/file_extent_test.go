@@ -551,6 +551,10 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 		t.Fatalf("Overwrite failed: %v", err)
 	}
 
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
+	if nil != err {
+		t.Fatalf("Flush failed: %v", err)
+	}
 }
 
 func TestOverwriteIncludesBeginningOfLastExtent(t *testing.T) {
@@ -579,6 +583,10 @@ func TestOverwriteIncludesBeginningOfLastExtent(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
+	if nil != err {
+		t.Fatalf("Flush failed: %v", err)
+	}
 }
 
 func TestReadYourWrite(t *testing.T) {
@@ -604,5 +612,10 @@ func TestReadYourWrite(t *testing.T) {
 
 	if bytes.Compare(ourBytes, readBuf) != 0 {
 		t.Fatalf("read after write didn't work: expected %v, got %v", ourBytes, readBuf)
+	}
+
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
+	if nil != err {
+		t.Fatalf("Flush failed: %v", err)
 	}
 }
