@@ -59,7 +59,6 @@ func testSetup() (err error) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
 		"FlowControl:TestFlowControl.MaxFlushTime=10s",
 		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",

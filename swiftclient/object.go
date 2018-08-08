@@ -783,7 +783,7 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 	return
 }
 
-func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string) (*chunkedPutContextStruct, error) {
+func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (*chunkedPutContextStruct, error) {
 	// request is a function that, through the miracle of closure, calls
 	// objectFetchChunkedPutContext() with the paramaters passed to this
 	// function, stashes the relevant return values into the local variables of
@@ -794,7 +794,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 	)
 	request := func() (bool, error) {
 		var err error
-		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName)
+		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName, useReserveForVolumeName...)
 		return true, err
 	}
 
@@ -812,7 +812,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 // used during testing for error injection
 var objectFetchChunkedPutContextCnt uint64
 
-func objectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext *chunkedPutContextStruct, err error) {
+func objectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (chunkedPutContext *chunkedPutContextStruct, err error) {
 	var (
 		connection *connectionStruct
 		headers    map[string][]string
@@ -820,9 +820,9 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	evtlog.Record(evtlog.FormatObjectPutChunkedStart, accountName, containerName, objectName)
 
-	objectFetchChunkedPutContextCnt += 1
+	objectFetchChunkedPutContextCnt++
 
-	connection = acquireChunkedConnection()
+	connection = acquireChunkedConnection(useReserveForVolumeName...)
 
 	headers = make(map[string][]string)
 	headers["Transfer-Encoding"] = []string{"chunked"}
@@ -878,7 +878,6 @@ func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, e
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
-
 	// request is a function that, through the miracle of closure, calls
 	// retry() and Close() with the paramaters passed to this function and
 	// stashes the return values into the local variables of this function
@@ -986,6 +985,7 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	chunkedPutContext.stillOpen = parseConnection(headers)
 
 	stats.IncrementOperations(&stats.SwiftObjPutCtxCloseOps)
+
 	return
 }
 

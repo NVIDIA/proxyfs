@@ -37,9 +37,6 @@ type StarvationCallbackFunc func()
 // SetStarvationCallbackFunc sets (or resets, if passed nil) the callback function to be
 // invoked when the Chunked PUT Connection Pool is exhausted and would like the callback
 // function to relieve this exhaustion.
-//
-// Note: The function will be called continually, at a rate determined by [SwiftClient]StarvationCallbackFrequency,
-//       until the exhauted state is relieved.
 func SetStarvationCallbackFunc(starvationCallback StarvationCallbackFunc) {
 	globals.starvationCallback = starvationCallback
 }
@@ -110,8 +107,8 @@ func ObjectDelete(accountName string, containerName string, objectName string, o
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.
-func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext ChunkedPutContext, err error) {
-	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName)
+func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (chunkedPutContext ChunkedPutContext, err error) {
+	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName, useReserveForVolumeName...)
 }
 
 // ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.

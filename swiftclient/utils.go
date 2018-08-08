@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/list"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -15,10 +16,16 @@ import (
 
 const swiftVersion = "v1"
 
-func drainConnectionPools() {
+func drainConnections() {
 	var (
 		connection *connectionStruct
+		volumeName string
 	)
+
+	for volumeName, connection = range globals.reservedChunkedConnection {
+		_ = connection.tcpConn.Close()
+		delete(globals.reservedChunkedConnection, volumeName)
+	}
 
 	globals.chunkedConnectionPool.Lock()
 	// The following should not be necessary so, as such, will remain commented out
@@ -55,13 +62,44 @@ func drainConnectionPools() {
 	globals.nonChunkedConnectionPool.Unlock()
 }
 
-func acquireChunkedConnection() (connection *connectionStruct) {
+func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *connectionStruct) {
 	var (
 		connectionToBeCreated bool
 		cv                    *sync.Cond
+		ok                    bool
 		stalledCount          uint64
 		starvationCallbacks   uint64
 	)
+
+	if nil != useReserveForVolumeName {
+		if 1 != len(useReserveForVolumeName) {
+			log.Fatalf("swiftclient.acquireChunkedConnection() called with bad useReserveForVolumeName")
+		}
+
+		globals.reservedChunkedConnectionMutex.Lock()
+		connection, ok = globals.reservedChunkedConnection[useReserveForVolumeName[0]]
+		if ok {
+			// Reuse connection from globals.reservedChunkedConnection map...removing it from there since it's in use
+
+			delete(globals.reservedChunkedConnection, useReserveForVolumeName[0])
+
+			globals.reservedChunkedConnectionMutex.Unlock()
+
+			stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
+		} else {
+			// No connection available...create a new one
+
+			globals.reservedChunkedConnectionMutex.Unlock()
+
+			connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: useReserveForVolumeName[0]}
+
+			openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")", useReserveForVolumeName[0]), connection)
+
+			stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
+		}
+
+		return
+	}
 
 	connectionToBeCreated = false
 	stalledCount = 0
@@ -79,9 +117,14 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 			_ = globals.chunkedConnectionPool.waiters.PushBack(cv)
 			cv.Wait()
 		} else {
+			// Time to call starvationCallback()
+			//  - must do it without holding chunkedConnectionPool Mutex
+			//  - must also protect against non-reentrant starvationCallback() implementations
 			globals.chunkedConnectionPool.Unlock()
+			globals.starvationCallbackSerializer.Lock()
 			starvationCallbacks++
 			globals.starvationCallback()
+			globals.starvationCallbackSerializer.Unlock()
 			globals.chunkedConnectionPool.Lock()
 		}
 	}
@@ -101,7 +144,7 @@ func acquireChunkedConnection() (connection *connectionStruct) {
 	globals.chunkedConnectionPool.Unlock()
 
 	if connectionToBeCreated {
-		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
+		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
 		openConnection("swiftclient.acquireChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 	} else {
@@ -124,6 +167,23 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		cv                   *sync.Cond
 		waiter               *list.Element
 	)
+
+	if "" != connection.reserveForVolumeName {
+		if keepAlive &&
+			(connection.connectionNonce == globals.connectionNonce) {
+			// Re-insert connection in globals.reservedChunkedConnection map
+
+			globals.reservedChunkedConnectionMutex.Lock()
+			globals.reservedChunkedConnection[connection.reserveForVolumeName] = connection
+			globals.reservedChunkedConnectionMutex.Unlock()
+		} else {
+			// Don't re-insert connection in globals.reservedChunkedConnection map... just Close() it
+
+			_ = connection.tcpConn.Close()
+		}
+
+		return
+	}
 
 	connectionToBeClosed = false
 
@@ -198,7 +258,7 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 	globals.nonChunkedConnectionPool.Unlock()
 
 	if connectionToBeCreated {
-		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
+		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
 		openConnection("swiftclient.acquireNonChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
 	} else {
@@ -264,7 +324,7 @@ func nonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
 	return
 }
 
-// (Re)open a connection to the noauth Swift server.
+// (Re)open a connection to the Swift NoAuth Proxy.
 //
 // The connection is closed first, just in case it was already open.
 //

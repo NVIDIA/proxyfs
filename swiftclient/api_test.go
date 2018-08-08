@@ -53,7 +53,6 @@ func TestAPI(t *testing.T) {
 		// small pool sizes so test hangs if we leak connections
 		"SwiftClient.ChunkedConnectionPoolSize=2",
 		"SwiftClient.NonChunkedConnectionPoolSize=2",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 
 		"Cluster.WhoAmI=Peer0",
 

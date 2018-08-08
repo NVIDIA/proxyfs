@@ -13,8 +13,9 @@ import (
 )
 
 type connectionStruct struct {
-	connectionNonce uint64 // globals.connectionNonce at time connection was established
-	tcpConn         *net.TCPConn
+	connectionNonce      uint64 // globals.connectionNonce at time connection was established
+	tcpConn              *net.TCPConn
+	reserveForVolumeName string
 }
 
 type connectionPoolStruct struct {
@@ -47,8 +48,10 @@ type globalsStruct struct {
 	connectionNonce                 uint64        // incremented each SIGHUP... older connections always closed
 	chunkedConnectionPool           connectionPoolStruct
 	nonChunkedConnectionPool        connectionPoolStruct
-	starvationCallbackFrequency     time.Duration
 	starvationCallback              StarvationCallbackFunc
+	starvationCallbackSerializer    sync.Mutex
+	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
+	reservedChunkedConnectionMutex  sync.Mutex
 	maxIntAsUint64                  uint64
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
@@ -165,16 +168,9 @@ func Up(confMap conf.ConfMap) (err error) {
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
 	}
 
-	globals.starvationCallbackFrequency, err = confMap.FetchOptionValueDuration("SwiftClient", "StarvationCallbackFrequency")
-	if nil != err {
-		// TODO: eventually, just return
-		globals.starvationCallbackFrequency, err = time.ParseDuration("100ms")
-		if nil != err {
-			return
-		}
-	}
-
 	globals.starvationCallback = nil
+
+	globals.reservedChunkedConnection = make(map[string]*connectionStruct)
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
 
@@ -183,7 +179,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 // PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
 func PauseAndContract(confMap conf.ConfMap) (err error) {
-	drainConnectionPools()
+	drainConnections()
 	globals.connectionNonce++
 	err = nil
 	return
@@ -191,7 +187,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 // ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
 func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	drainConnectionPools()
+	drainConnections()
 	globals.connectionNonce++
 	err = nil
 	return
@@ -199,7 +195,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 // Down terminates all outstanding communications as part of process shutdown
 func Down() (err error) {
-	drainConnectionPools()
+	drainConnections()
 	globals.connectionNonce++
 	err = nil
 	return

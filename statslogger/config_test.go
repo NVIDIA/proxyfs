@@ -61,7 +61,6 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 
 		"Cluster.WhoAmI=Peer0",
 
