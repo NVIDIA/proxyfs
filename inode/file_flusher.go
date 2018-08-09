@@ -352,14 +352,21 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 
 func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) (logSegmentNumber uint64, logSegmentOffset uint64, err error) {
 	var (
+		inFlightLogSegment          *inFlightLogSegmentStruct
 		openLogSegmentContainerName string
 		openLogSegmentObjectNumber  uint64
 	)
 
 	fileInode.Lock()
-	defer fileInode.Unlock()
 
 	if nil == fileInode.openLogSegment {
+		// Drop fileInode Lock while preparing an inFlightLogSegment. This is to avoid a deadlock where
+		// starvation for ChunkedPutContext's might need to grab this fileInode's Lock to check a previous
+		// openLogSegment associated with this fileInode (and, hence, when we looked was then on the
+		// openLogSegmentLRU).
+
+		fileInode.Unlock()
+
 		openLogSegmentContainerName, openLogSegmentObjectNumber, err = fileInode.volume.provisionObject()
 		if nil != err {
 			logger.ErrorfWithError(err, "Provisioning LogSegment failed")
@@ -372,45 +379,56 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			return
 		}
 
-		fileInode.openLogSegment = &inFlightLogSegmentStruct{
+		inFlightLogSegment = &inFlightLogSegmentStruct{
 			logSegmentNumber: openLogSegmentObjectNumber,
 			fileInode:        fileInode,
 			accountName:      fileInode.volume.accountName,
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
+			closeInProgress:  false,
 		}
 
-		fileInode.inFlightLogSegmentMap[fileInode.openLogSegment.logSegmentNumber] = fileInode.openLogSegment
-
-		openLogSegmentLRUInsert(fileInode.openLogSegment)
-
-		fileInode.openLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(fileInode.openLogSegment.accountName, fileInode.openLogSegment.containerName, fileInode.openLogSegment.objectName)
+		inFlightLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(inFlightLogSegment.accountName, inFlightLogSegment.containerName, inFlightLogSegment.objectName)
 		if nil != err {
 			logger.ErrorfWithError(err, "Starting Chunked PUT to LogSegment failed")
 			return
 		}
+
+		// Now reestablish the fileInode Lock before continuing
+
+		fileInode.Lock()
+
+		fileInode.inFlightLogSegmentMap[inFlightLogSegment.logSegmentNumber] = inFlightLogSegment
+
+		fileInode.openLogSegment = inFlightLogSegment
+		openLogSegmentLRUInsert(inFlightLogSegment)
 	} else {
-		openLogSegmentLRUTouch(fileInode.openLogSegment)
+		inFlightLogSegment = fileInode.openLogSegment
+		openLogSegmentLRUTouch(inFlightLogSegment)
 	}
 
-	logSegmentNumber = fileInode.openLogSegment.logSegmentNumber
+	// We hold the fileInode Lock from here to the end... so just defer the Unlock() call from here on
 
-	logSegmentOffset, err = fileInode.openLogSegment.BytesPut()
+	defer fileInode.Unlock()
+
+	logSegmentNumber = inFlightLogSegment.logSegmentNumber
+
+	logSegmentOffset, err = inFlightLogSegment.BytesPut()
 	if nil != err {
 		logger.ErrorfWithError(err, "Failed to get current LogSegmentOffset")
 		return
 	}
 
-	err = fileInode.openLogSegment.ChunkedPutContext.SendChunk(buf)
+	err = inFlightLogSegment.ChunkedPutContext.SendChunk(buf)
 	if nil != err {
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return
 	}
 
 	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
-		fileInode.Add(1)
-		go vS.inFlightLogSegmentFlusher(fileInode.openLogSegment)
 		fileInode.openLogSegment = nil
+		fileInode.Add(1)
+		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
 	}
 
 	err = nil
@@ -418,12 +436,17 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 }
 
 func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (err error) {
+	var (
+		inFlightLogSegment *inFlightLogSegmentStruct
+	)
+
 	fileInode.Lock()
 
 	if nil != fileInode.openLogSegment {
-		fileInode.Add(1)
-		go vS.inFlightLogSegmentFlusher(fileInode.openLogSegment)
+		inFlightLogSegment = fileInode.openLogSegment
 		fileInode.openLogSegment = nil
+		fileInode.Add(1)
+		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
 	}
 
 	fileInode.Unlock()
@@ -445,34 +468,49 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
 	var (
-		err error
+		err       error
+		fileInode *inMemoryInodeStruct
 	)
 
-	inFlightLogSegment.fileInode.Lock()
-	defer inFlightLogSegment.fileInode.Unlock()
+	fileInode = inFlightLogSegment.fileInode
+
+	fileInode.Lock()
 
 	// Handle the race between a DLM-serialized Flush triggering this versus the starvatation condition
 	// doing so... Either one will perform the appropriate steps to enable the Flush() to complete.
 
-	if inFlightLogSegment.Active() {
-		// Terminate Chunked PUT
-		err = inFlightLogSegment.Close()
-		if nil != err {
-			err = blunder.AddError(err, blunder.InodeFlushError)
-			inFlightLogSegment.fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
-			delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
-			openLogSegmentLRURemove(inFlightLogSegment)
-			inFlightLogSegment.fileInode.Done()
-			return
-		}
-
-		// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
-		delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
-		openLogSegmentLRURemove(inFlightLogSegment)
-
-		// And we are done
-		inFlightLogSegment.fileInode.Done()
+	if inFlightLogSegment.closeInProgress {
+		fileInode.Unlock()
+		fileInode.Done()
+		return
 	}
+
+	inFlightLogSegment.closeInProgress = true
+
+	// Terminate Chunked PUT while not holding fileInode.Lock
+
+	fileInode.Unlock()
+
+	err = inFlightLogSegment.Close()
+	if nil != err {
+		err = blunder.AddError(err, blunder.InodeFlushError)
+		fileInode.Lock()
+		fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
+		delete(fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+		openLogSegmentLRURemove(inFlightLogSegment)
+		fileInode.Unlock()
+		fileInode.Done()
+		return
+	}
+
+	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
+	fileInode.Lock()
+	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+	openLogSegmentLRURemove(inFlightLogSegment)
+	fileInode.Unlock()
+
+	// And we are done
+	inFlightLogSegment.fileInode.Done()
 }
 
 func chunkedPutConnectionPoolStarvationCallback() {
@@ -495,6 +533,14 @@ func chunkedPutConnectionPoolStarvationCallback() {
 	volume = fileInode.volume
 
 	globals.Unlock()
+
+	// The following fileInode Lock is safe from deadlock since we do not hold it during
+	// the call to swiftclient.ObjectFetchChunkedPutContext() in doSendChunk() above.
+
+	fileInode.Lock()
+	fileInode.openLogSegment = nil
+	fileInode.Add(1)
+	fileInode.Unlock()
 
 	volume.inFlightLogSegmentFlusher(inFlightLogSegment)
 }

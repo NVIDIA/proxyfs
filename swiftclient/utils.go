@@ -68,7 +68,6 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 		cv                    *sync.Cond
 		ok                    bool
 		stalledCount          uint64
-		starvationCallbacks   uint64
 	)
 
 	if nil != useReserveForVolumeName {
@@ -103,7 +102,6 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 
 	connectionToBeCreated = false
 	stalledCount = 0
-	starvationCallbacks = 0
 
 	globals.chunkedConnectionPool.Lock()
 
@@ -111,27 +109,28 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 		if globals.chunkedConnectionPool.poolInUse < globals.chunkedConnectionPool.poolCapacity {
 			break
 		}
+
 		stalledCount++
+
 		if nil == globals.starvationCallback {
+			// Wait for a connection to be released before retrying
 			cv = sync.NewCond(&globals.chunkedConnectionPool)
 			_ = globals.chunkedConnectionPool.waiters.PushBack(cv)
 			cv.Wait()
 		} else {
-			// Time to call starvationCallback()
-			//  - must do it without holding chunkedConnectionPool Mutex
-			//  - must also protect against non-reentrant starvationCallback() implementations
+			// Issue starvationCallback() (synchronously) before retrying
+			globals.starvedWaiters++
 			globals.chunkedConnectionPool.Unlock()
 			globals.starvationCallbackSerializer.Lock()
-			starvationCallbacks++
 			globals.starvationCallback()
 			globals.starvationCallbackSerializer.Unlock()
 			globals.chunkedConnectionPool.Lock()
+			globals.starvedWaiters--
+			stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
 		}
 	}
 
-	if 0 == stalledCount {
-		globals.chunkedConnectionPool.poolInUse++
-	}
+	globals.chunkedConnectionPool.poolInUse++
 
 	if 0 == globals.chunkedConnectionPool.lifoIndex {
 		connectionToBeCreated = true
@@ -155,7 +154,6 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolNonStallOps)
 	} else {
 		stats.IncrementOperationsBy(&stats.SwiftChunkedConnectionPoolStallOps, stalledCount)
-		stats.IncrementOperationsBy(&stats.SwiftChunkedStarvationCallbacks, starvationCallbacks)
 	}
 
 	return
@@ -198,13 +196,14 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		connectionToBeClosed = true
 	}
 
+	globals.chunkedConnectionPool.poolInUse--
+
 	if 0 < globals.chunkedConnectionPool.waiters.Len() {
+		// Note: If starvationCallback is armed, acquirers will be retrying (not cv.Wait()'ing)
 		waiter = globals.chunkedConnectionPool.waiters.Front()
 		cv = waiter.Value.(*sync.Cond)
 		_ = globals.chunkedConnectionPool.waiters.Remove(waiter)
 		cv.Signal()
-	} else {
-		globals.chunkedConnectionPool.poolInUse--
 	}
 
 	globals.chunkedConnectionPool.Unlock()

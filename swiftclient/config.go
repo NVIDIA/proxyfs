@@ -50,6 +50,7 @@ type globalsStruct struct {
 	nonChunkedConnectionPool        connectionPoolStruct
 	starvationCallback              StarvationCallbackFunc
 	starvationCallbackSerializer    sync.Mutex
+	starvedWaiters                  uint64
 	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
 	reservedChunkedConnectionMutex  sync.Mutex
 	maxIntAsUint64                  uint64
@@ -169,6 +170,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.starvationCallback = nil
+	globals.starvedWaiters = 0
 
 	globals.reservedChunkedConnection = make(map[string]*connectionStruct)
 
