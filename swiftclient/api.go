@@ -29,6 +29,26 @@ type ChunkedPutContext interface {
 	SendChunk(buf []byte) (err error)                          // Send the supplied "chunk" via this ChunkedPutContext
 }
 
+// StarvationParameters is used to report the current details pertaining to both
+// the chunkedConnectionPool and nonChunkedConnectionPool. As this is a snapshot of
+// a typically rapidly evolving state, it should only be use in well controlled test
+// and debugging situations.
+type StarvationParameters struct {
+	ChunkedConnectionPoolCapacity      uint16
+	ChunkedConnectionPoolInUse         uint16
+	ChunkedConnectionPoolNumWaiters    uint64
+	NonChunkedConnectionPoolCapacity   uint16
+	NonChunkedConnectionPoolInUse      uint16
+	NonChunkedConnectionPoolNumWaiters uint64
+}
+
+// GetStarvationParameters returns the the current details pertaining to both
+// the chunkedConnectionPool and nonChunkedConnectionPool.
+func GetStarvationParameters() (starvationParameters *StarvationParameters) {
+	starvationParameters = getStarvationParameters()
+	return
+}
+
 // StarvationCallbackFunc specifies the signature of a callback function to be invoked when
 // the Chunked PUT Connection Pool is exhausted and would like the callback function to
 // relieve this exhaustion.
