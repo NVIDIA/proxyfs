@@ -22,7 +22,6 @@ type ChunkedCopyContext interface {
 // returns an error, or else we will leak open connections (although SendChunk()
 // does its best).
 type ChunkedPutContext interface {
-	Active() (active bool)                                     // Report if currently active
 	BytesPut() (bytesPut uint64, err error)                    // Report how many bytes have been sent via SendChunk() for this ChunkedPutContext
 	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
 	Read(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk()
