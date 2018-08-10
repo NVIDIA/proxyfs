@@ -68,7 +68,6 @@ type inFlightLogSegmentStruct struct { //               Used as (by reference) V
 	containerName             string
 	objectName                string
 	openLogSegmentListElement list.Element
-	closeInProgress           bool
 	swiftclient.ChunkedPutContext
 }
 

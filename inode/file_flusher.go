@@ -385,7 +385,6 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			accountName:      fileInode.volume.accountName,
 			containerName:    openLogSegmentContainerName,
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
-			closeInProgress:  false,
 		}
 
 		inFlightLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(inFlightLogSegment.accountName, inFlightLogSegment.containerName, inFlightLogSegment.objectName)
@@ -407,29 +406,29 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		openLogSegmentLRUTouch(inFlightLogSegment)
 	}
 
-	// We hold the fileInode Lock from here to the end... so just defer the Unlock() call from here on
-
-	defer fileInode.Unlock()
-
 	logSegmentNumber = inFlightLogSegment.logSegmentNumber
 
 	logSegmentOffset, err = inFlightLogSegment.BytesPut()
 	if nil != err {
+		fileInode.Unlock()
 		logger.ErrorfWithError(err, "Failed to get current LogSegmentOffset")
 		return
 	}
 
 	err = inFlightLogSegment.ChunkedPutContext.SendChunk(buf)
 	if nil != err {
+		fileInode.Unlock()
 		logger.ErrorfWithError(err, "Sending Chunked PUT chunk to LogSegment failed")
 		return
 	}
 
 	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
-		fileInode.openLogSegment = nil
 		fileInode.Add(1)
 		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
+		// No need to wait for it to complete now... that's only in doFileInodeDataFlush()
 	}
+
+	fileInode.Unlock()
 
 	err = nil
 	return
@@ -444,12 +443,13 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 
 	if nil != fileInode.openLogSegment {
 		inFlightLogSegment = fileInode.openLogSegment
-		fileInode.openLogSegment = nil
 		fileInode.Add(1)
 		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
 	}
 
 	fileInode.Unlock()
+
+	// Wait for all invocations of inFlightLogSegmentFlusher() for this fileInode have completed
 
 	fileInode.Wait()
 
@@ -472,44 +472,45 @@ func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLo
 		fileInode *inMemoryInodeStruct
 	)
 
+	// Handle the race between a DLM-serialized Flush triggering this versus the starvatation condition
+	// doing so... Either one will perform the appropriate steps to enable the Flush() to complete.
+
 	fileInode = inFlightLogSegment.fileInode
 
 	fileInode.Lock()
 
-	// Handle the race between a DLM-serialized Flush triggering this versus the starvatation condition
-	// doing so... Either one will perform the appropriate steps to enable the Flush() to complete.
+	if inFlightLogSegment != fileInode.openLogSegment {
+		// Either a Close() is already in progress or has already completed
 
-	if inFlightLogSegment.closeInProgress {
 		fileInode.Unlock()
 		fileInode.Done()
 		return
 	}
 
-	inFlightLogSegment.closeInProgress = true
+	// This, and inFlightLogSegment still being in fileInode.inFlightLogSegmentMap,
+	// means "a Close() is already in progress"
+
+	fileInode.openLogSegment = nil
 
 	// Terminate Chunked PUT while not holding fileInode.Lock
 
 	fileInode.Unlock()
-
 	err = inFlightLogSegment.Close()
+	fileInode.Lock()
+
+	// Finish up... recording error (if any) in the process
+
 	if nil != err {
 		err = blunder.AddError(err, blunder.InodeFlushError)
-		fileInode.Lock()
 		fileInode.inFlightLogSegmentErrors[inFlightLogSegment.logSegmentNumber] = err
-		delete(fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
-		openLogSegmentLRURemove(inFlightLogSegment)
-		fileInode.Unlock()
-		fileInode.Done()
-		return
 	}
 
-	// Remove us from inFlightLogSegments.logSegmentsMap and let Go's Garbage Collector collect us as soon as we return/exit
-	fileInode.Lock()
 	delete(inFlightLogSegment.fileInode.inFlightLogSegmentMap, inFlightLogSegment.logSegmentNumber)
+
 	openLogSegmentLRURemove(inFlightLogSegment)
+
 	fileInode.Unlock()
 
-	// And we are done
 	inFlightLogSegment.fileInode.Done()
 }
 
@@ -534,13 +535,11 @@ func chunkedPutConnectionPoolStarvationCallback() {
 
 	globals.Unlock()
 
-	// The following fileInode Lock is safe from deadlock since we do not hold it during
-	// the call to swiftclient.ObjectFetchChunkedPutContext() in doSendChunk() above.
-
-	fileInode.Lock()
-	fileInode.openLogSegment = nil
 	fileInode.Add(1)
-	fileInode.Unlock()
+
+	// Call inFlightLogSegmentFlusher() synchronously because we only want to return when it completes
+	// and we don't want to call fileInode.Wait() as this would wait until all invocations of
+	// inFlightLogSegmentFlusher() for the fileInode have completed.
 
 	volume.inFlightLogSegmentFlusher(inFlightLogSegment)
 }
