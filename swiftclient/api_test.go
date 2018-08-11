@@ -49,8 +49,10 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.RetryDelayObject=250ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=2.0",
-		"SwiftClient.ChunkedConnectionPoolSize=64",
-		"SwiftClient.NonChunkedConnectionPoolSize=32",
+
+		// small pool sizes so test hangs if we leak connections
+		"SwiftClient.ChunkedConnectionPoolSize=2",
+		"SwiftClient.NonChunkedConnectionPoolSize=2",
 		"SwiftClient.StarvationCallbackFrequency=100ms",
 
 		"Cluster.WhoAmI=Peer0",
@@ -58,6 +60,9 @@ func TestAPI(t *testing.T) {
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
 		"FSGlobals.VolumeList=",
+
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
@@ -860,7 +865,7 @@ func testChunkedPut(t *testing.T) {
 	// (lack of) headers for putting
 	catDogHeaderMap := make(map[string][]string)
 
-	// (re)create the test account and continer
+	// (re)create the test account and container
 
 	err := AccountPut(accountName, catDogHeaderMap)
 	if nil != err {

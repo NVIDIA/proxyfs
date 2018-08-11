@@ -1,7 +1,6 @@
 package swiftclient
 
 import (
-	"container/list"
 	"fmt"
 	"net"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/stats"
 )
 
 type connectionStruct struct {
@@ -18,20 +18,20 @@ type connectionStruct struct {
 }
 
 type connectionPoolStruct struct {
-	sync.Mutex
-	poolCapacity            uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
-	poolInUse               uint16              // Active (i.e. not in LIFO) *connectionStruct's
-	lifoIndex               uint16              // Indicates where next released *connectionStruct will go
-	lifoOfActiveConnections []*connectionStruct // LIFO of available active connections
-	waiters                 *list.List          // Contains sync.Cond's of waiters
-	//                                             At time of connection release:
-	//                                               If poolInUse < poolCapacity,
-	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
-	//                                               If poolInUse == poolCapacity,
-	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
-	//                                                 sync.Cond at front of waitors is awakened
-	//                                               If poolInUse > poolCapacity,
-	//                                                 poolInUse is decremented and connection is discarded
+	sync.Mutex                                           // lock for fields and condition variable
+	waitHere                      *sync.Cond             // wait here for more connections
+	nWaiter                       int                    // goroutines processes waiting
+	poolName                      string                 // name of this pool
+	poolCapacity                  uint16                 // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
+	poolInUse                     uint16                 // Active (i.e. not in LIFO) *connectionStruct's
+	lifoIndex                     uint16                 // Indicates where next released *connectionStruct will go
+	lifoOfActiveConnections       []*connectionStruct    // LIFO of available active connections
+	starvationCallback            StarvationCallbackFunc // called if no more connections
+	StatConnsCreateOps            *string                // statistics
+	StatConnsReuseOps             *string
+	StatConnectionPoolNonStallOps *string
+	StatConnectionPoolStallOps    *string
+	StatStarvationCallbacks       *string
 }
 
 type globalsStruct struct {
@@ -47,10 +47,6 @@ type globalsStruct struct {
 	connectionNonce                 uint64        // incremented each SIGHUP... older connections always closed
 	chunkedConnectionPool           connectionPoolStruct
 	nonChunkedConnectionPool        connectionPoolStruct
-	starvationCallbackFrequency     time.Duration
-	starvationUnderway              bool
-	stavationResolvedChan           chan bool // Signal this chan to halt calls to starvationCallback
-	starvationCallback              StarvationCallbackFunc
 	maxIntAsUint64                  uint64
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
@@ -138,11 +134,19 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	globals.chunkedConnectionPool.poolName = "ChunkedConnectionPool"
 	globals.chunkedConnectionPool.poolCapacity = chunkedConnectionPoolSize
 	globals.chunkedConnectionPool.poolInUse = 0
 	globals.chunkedConnectionPool.lifoIndex = 0
+	globals.chunkedConnectionPool.waitHere = sync.NewCond(&globals.chunkedConnectionPool)
+	globals.chunkedConnectionPool.starvationCallback = nil
 	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, chunkedConnectionPoolSize)
-	globals.chunkedConnectionPool.waiters = list.New()
+
+	globals.chunkedConnectionPool.StatConnsCreateOps = &stats.SwiftChunkedConnsCreateOps
+	globals.chunkedConnectionPool.StatConnsReuseOps = &stats.SwiftChunkedConnsReuseOps
+	globals.chunkedConnectionPool.StatConnectionPoolNonStallOps = &stats.SwiftChunkedConnectionPoolNonStallOps
+	globals.chunkedConnectionPool.StatConnectionPoolStallOps = &stats.SwiftChunkedConnectionPoolStallOps
+	globals.chunkedConnectionPool.StatStarvationCallbacks = &stats.SwiftChunkedStarvationCallbacks
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < chunkedConnectionPoolSize; freeConnectionIndex++ {
 		globals.chunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
@@ -157,28 +161,22 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	globals.nonChunkedConnectionPool.poolName = "NonChunkedConnectionPool"
 	globals.nonChunkedConnectionPool.poolCapacity = nonChunkedConnectionPoolSize
 	globals.nonChunkedConnectionPool.poolInUse = 0
 	globals.nonChunkedConnectionPool.lifoIndex = 0
+	globals.nonChunkedConnectionPool.waitHere = sync.NewCond(&globals.nonChunkedConnectionPool)
+	globals.nonChunkedConnectionPool.starvationCallback = nil
 	globals.nonChunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, nonChunkedConnectionPoolSize)
-	globals.nonChunkedConnectionPool.waiters = list.New()
+	globals.nonChunkedConnectionPool.StatConnsCreateOps = &stats.SwiftNonChunkedConnsCreateOps
+	globals.nonChunkedConnectionPool.StatConnsReuseOps = &stats.SwiftNonChunkedConnsReuseOps
+	globals.nonChunkedConnectionPool.StatConnectionPoolNonStallOps = &stats.SwiftNonChunkedConnectionPoolNonStallOps
+	globals.nonChunkedConnectionPool.StatConnectionPoolStallOps = &stats.SwiftNonChunkedConnectionPoolStallOps
+	globals.nonChunkedConnectionPool.StatStarvationCallbacks = nil
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < nonChunkedConnectionPoolSize; freeConnectionIndex++ {
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
 	}
-
-	globals.starvationCallbackFrequency, err = confMap.FetchOptionValueDuration("SwiftClient", "StarvationCallbackFrequency")
-	if nil != err {
-		// TODO: eventually, just return
-		globals.starvationCallbackFrequency, err = time.ParseDuration("100ms")
-		if nil != err {
-			return
-		}
-	}
-
-	globals.starvationUnderway = false
-	globals.stavationResolvedChan = make(chan bool, 1)
-	globals.starvationCallback = nil
 
 	globals.maxIntAsUint64 = uint64(^uint(0) >> 1)
 

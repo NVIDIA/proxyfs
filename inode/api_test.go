@@ -56,7 +56,8 @@ func testSetup() (err error) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
-		"Logging.LogFilePath=proxyfsd.log",
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
@@ -67,8 +68,10 @@ func testSetup() (err error) {
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=1.0",
 		"SwiftClient.StarvationCallbackFrequency=100ms",
-		"SwiftClient.ChunkedConnectionPoolSize=64",
-		"SwiftClient.NonChunkedConnectionPoolSize=32",
+
+		"SwiftClient.ChunkedConnectionPoolSize=1",
+		"SwiftClient.NonChunkedConnectionPoolSize=1",
+
 		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
 		"FlowControl:TestFlowControl.MaxFlushTime=10s",
 		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",

@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
+	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -99,6 +100,10 @@ type globalsStruct struct {
 	versionV1Buf                       []byte                        // holds serialized Version            == V1
 	inodeRecDefaultPreambleBuf         []byte                        // holds concatenated corruptionDetectedFalseBuf & versionV1Buf
 	inodeSize                          uint64                        // size of in-memory inode struct
+	openLogSegmentCache                map[InodeNumber]*inFlightLogSegmentStruct
+	openLogSegmentLRUHead              *inFlightLogSegmentStruct
+	openLogSegmentLRUTail              *inFlightLogSegmentStruct
+	openLogSegmentLRUItems             uint64
 }
 
 var globals globalsStruct
@@ -114,11 +119,11 @@ func stopInodeCacheDiscard(volume *volumeStruct) {
 }
 
 func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSectionName string) (err error) {
-
 	var (
 		LRUCacheMaxBytes       uint64
 		LRUDiscardTimeInterval time.Duration
 	)
+
 	LRUCacheMaxBytes, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxBytesInodeCache")
 	if nil != err {
 		LRUCacheMaxBytes = 10485760 // TODO - Remove setting a default value
@@ -184,6 +189,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		physicalContainerLayoutSectionName             string
 		prevVolume                                     *volumeStruct
 		primaryPeerNameList                            []string
+		tempInode                                      inMemoryInodeStruct
 		versionV1                                      = Version(V1)
 		volume                                         *volumeStruct
 		volumeList                                     []string
@@ -249,8 +255,12 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.accountMap = make(map[string]*volumeStruct)
 	globals.flowControlMap = make(map[string]*flowControlStruct)
 
-	var tmpInode inMemoryInodeStruct
-	globals.inodeSize = uint64(unsafe.Sizeof(tmpInode))
+	globals.inodeSize = uint64(unsafe.Sizeof(tempInode))
+
+	globals.openLogSegmentCache = make(map[InodeNumber]*inFlightLogSegmentStruct)
+	globals.openLogSegmentLRUHead = nil
+	globals.openLogSegmentLRUTail = nil
+	globals.openLogSegmentLRUItems = 0
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
 	if nil != err {
@@ -488,6 +498,8 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.corruptionDetectedFalseBuf...)
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.versionV1Buf...)
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
@@ -509,6 +521,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volumesNewlyInactiveSet map[string]bool
 		whoAmI                  string
 	)
+
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	peerPrivateIPAddrMap = make(map[string]string)
 
@@ -971,11 +985,14 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	adoptFlowControlReadCacheParameters(confMap, true)
 
+	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
 	err = nil
 	return
 }
 
 func Down() (err error) {
+	swiftclient.SetStarvationCallbackFunc(nil)
 
 	// Stop the inode discard timer
 	for _, volume := range globals.volumeMap {

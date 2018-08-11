@@ -58,12 +58,15 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 	LogSegmentMap       map[uint64]uint64 // FileInode:    Key == LogSegment#, Value = file user data byte count
 }
 
-type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
-	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
-	fileInode        *inMemoryInodeStruct
-	accountName      string
-	containerName    string
-	objectName       string
+type inFlightLogSegmentStruct struct { //               Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
+	logSegmentNumber      uint64 //                 Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
+	openLogSegmentLRUNext *inFlightLogSegmentStruct
+	openLogSegmentLRUPrev *inFlightLogSegmentStruct
+	fileInode             *inMemoryInodeStruct
+	accountName           string
+	containerName         string
+	objectName            string
+	err                   error // err != nil if chunked put failed
 	swiftclient.ChunkedPutContext
 }
 
@@ -77,10 +80,8 @@ type inMemoryInodeStruct struct {
 	snapShotID        uint64
 	payload           interface{} //                                 DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
 	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
-	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
-	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
-	inFlightLogSegmentErrors map[uint64]error                     // FileInode: key == logSegmentNumber; value == err (if non nil)
-	onDiskInodeV1Struct                                           // Real on-disk inode information embedded here
+	inFlightLogSegmentMap map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
+	onDiskInodeV1Struct                                        // Real on-disk inode information embedded here
 }
 
 func (vS *volumeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
@@ -197,15 +198,13 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	}
 
 	inMemoryInode = &inMemoryInodeStruct{
-		inodeCacheLRUNext:        nil,
-		inodeCacheLRUPrev:        nil,
-		dirty:                    false,
-		volume:                   vS,
-		snapShotID:               snapShotID,
-		openLogSegment:           nil,
-		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
-		inFlightLogSegmentErrors: make(map[uint64]error),
-		onDiskInodeV1Struct:      *onDiskInodeV1,
+		inodeCacheLRUNext:     nil,
+		inodeCacheLRUPrev:     nil,
+		dirty:                 false,
+		volume:                vS,
+		snapShotID:            snapShotID,
+		inFlightLogSegmentMap: make(map[uint64]*inFlightLogSegmentStruct),
+		onDiskInodeV1Struct:   *onDiskInodeV1,
 	}
 
 	inMemoryInode.onDiskInodeV1Struct.InodeNumber = inodeNumber
@@ -544,14 +543,12 @@ func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType
 	birthTime = time.Now()
 
 	inMemoryInode = &inMemoryInodeStruct{
-		inodeCacheLRUNext:        nil,
-		inodeCacheLRUPrev:        nil,
-		dirty:                    true,
-		volume:                   vS,
-		snapShotID:               snapShotID,
-		openLogSegment:           nil,
-		inFlightLogSegmentMap:    make(map[uint64]*inFlightLogSegmentStruct),
-		inFlightLogSegmentErrors: make(map[uint64]error),
+		inodeCacheLRUNext:     nil,
+		inodeCacheLRUPrev:     nil,
+		dirty:                 true,
+		volume:                vS,
+		snapShotID:            snapShotID,
+		inFlightLogSegmentMap: make(map[uint64]*inFlightLogSegmentStruct),
 		onDiskInodeV1Struct: onDiskInodeV1Struct{
 			InodeNumber:      InodeNumber(nonce),
 			InodeType:        inodeType,
