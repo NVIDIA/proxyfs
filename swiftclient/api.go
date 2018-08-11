@@ -40,7 +40,7 @@ type StarvationCallbackFunc func()
 // Note: The function will be called continually, at a rate determined by [SwiftClient]StarvationCallbackFrequency,
 //       until the exhauted state is relieved.
 func SetStarvationCallbackFunc(starvationCallback StarvationCallbackFunc) {
-	globals.starvationCallback = starvationCallback
+	globals.chunkedConnectionPool.starvationCallback = starvationCallback
 }
 
 // AccountDelete invokes HTTP DELETE on the named Swift Account.

@@ -489,7 +489,7 @@ func (vS *volumeStruct) inFlightLogSegmentFlush(inFlightLogSegment *inFlightLogS
 		inFlightLogSegment.err = err
 	}
 
-	// And we are done (its OK to touch the WaitGroup with the inode lock)
+	// And we are done (its OK to touch the WaitGroup without the inode lock)
 	inFlightLogSegment.fileInode.Done()
 }
 
@@ -502,5 +502,5 @@ func chunkedPutConnectionPoolStarvationCallback() {
 	}
 
 	volume := inFlightLogSegment.fileInode.volume
-	volume.inFlightLogSegmentFlush(inFlightLogSegment)
+	go volume.inFlightLogSegmentFlush(inFlightLogSegment)
 }
