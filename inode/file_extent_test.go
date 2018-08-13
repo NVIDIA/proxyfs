@@ -447,6 +447,8 @@ func testVerifyFileInodeContents(t *testing.T, testVolumeHandle VolumeHandle, fi
 }
 
 func TestFileExtents(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
@@ -491,9 +493,13 @@ func TestFileExtents(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Destroy(fileInodeNumber) failed: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 func TestWriteFileExtentAtExtantOffset(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
@@ -551,13 +557,17 @@ func TestWriteFileExtentAtExtantOffset(t *testing.T) {
 		t.Fatalf("Overwrite failed: %v", err)
 	}
 
-	//err = testVolumeHandle.Flush(fileInodeNumber, false)
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
 	if nil != err {
 		t.Fatalf("Flush failed: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 func TestOverwriteIncludesBeginningOfLastExtent(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
@@ -583,13 +593,17 @@ func TestOverwriteIncludesBeginningOfLastExtent(t *testing.T) {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	//err = testVolumeHandle.Flush(fileInodeNumber, false)
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
 	if nil != err {
 		t.Fatalf("Flush failed: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 func TestReadYourWrite(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
@@ -614,8 +628,10 @@ func TestReadYourWrite(t *testing.T) {
 		t.Fatalf("read after write didn't work: expected %v, got %v", ourBytes, readBuf)
 	}
 
-	//err = testVolumeHandle.Flush(fileInodeNumber, false)
+	err = testVolumeHandle.Flush(fileInodeNumber, false)
 	if nil != err {
 		t.Fatalf("Flush failed: %v", err)
 	}
+
+	testTeardown(t)
 }

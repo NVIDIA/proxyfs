@@ -38,6 +38,8 @@ func TestDirStress(t *testing.T) {
 		threadIndex            uint64
 	)
 
+	testSetup(t, false)
+
 	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(testDirStressVolumeName)
 	if nil != err {
 		t.Fatalf("headhunter.FetchVolumeHandle(\"%s\") failed: %v", testDirStressVolumeName, err)
@@ -65,6 +67,8 @@ func TestDirStress(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
+	testTeardown(t)
 }
 
 func testDirStressThread(threadIndex uint64) {
