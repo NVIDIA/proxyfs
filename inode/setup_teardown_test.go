@@ -20,12 +20,13 @@ import (
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		doneChan             chan bool
-		err                  error
-		signalHandlerIsArmed bool
-		testDir              string
-		testConfMap          conf.ConfMap
-		testConfStrings      []string
+		doneChan              chan bool
+		err                   error
+		signalHandlerIsArmed  bool
+		testDir               string
+		testConfMap           conf.ConfMap
+		testConfStrings       []string
+		testConfUpdateStrings []string
 	)
 
 	testDir, err = ioutil.TempDir(os.TempDir(), "ProxyFS_test_inode_")
@@ -54,8 +55,6 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"SwiftClient.RetryDelayObject=10ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=1.0",
-		"SwiftClient.ChunkedConnectionPoolSize=1",
-		"SwiftClient.NonChunkedConnectionPoolSize=1",
 		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
 		"FlowControl:TestFlowControl.MaxFlushTime=10s",
 		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",
@@ -105,6 +104,23 @@ func testSetup(t *testing.T, starvationMode bool) {
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)
 	if nil != err {
 		t.Fatalf("conf.MakeConfMapFromStrings() failed: %v", err)
+	}
+
+	if starvationMode {
+		testConfUpdateStrings = []string{
+			"SwiftClient.ChunkedConnectionPoolSize=1",
+			"SwiftClient.NonChunkedConnectionPoolSize=1",
+		}
+	} else {
+		testConfUpdateStrings = []string{
+			"SwiftClient.ChunkedConnectionPoolSize=512",
+			"SwiftClient.NonChunkedConnectionPoolSize=128",
+		}
+	}
+
+	err = testConfMap.UpdateFromStrings(testConfUpdateStrings)
+	if nil != err {
+		t.Fatalf("testConfMap.UpdateFromStrings(testConfUpdateStrings) failed: %v", err)
 	}
 
 	signalHandlerIsArmed = false

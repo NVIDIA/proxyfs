@@ -14,8 +14,16 @@ import (
 // Code related to multiple test threads.
 //
 
-func TestStress(t *testing.T) {
-	testSetup(t, false)
+func TestStressMetaDataOpsWhileStarved(t *testing.T) {
+	testStressMetaDataOps(t, true)
+}
+
+func TestStressMetaDataOpsWhileNotStarved(t *testing.T) {
+	testStressMetaDataOps(t, false)
+}
+
+func testStressMetaDataOps(t *testing.T, starvationMode bool) {
+	testSetup(t, starvationMode)
 
 	globalSyncPt = make(chan testRequest)
 
