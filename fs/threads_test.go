@@ -15,6 +15,8 @@ import (
 //
 
 func TestStress(t *testing.T) {
+	testSetup(t, false)
+
 	globalSyncPt = make(chan testRequest)
 
 	if testing.Short() {
@@ -25,6 +27,8 @@ func TestStress(t *testing.T) {
 	testMultiThreadCreate(t)
 	testMultiThreadCreateAndLookup(t)
 	testMultiThreadCreateAndReaddir(t)
+
+	testTeardown(t)
 }
 
 type testOpTyp int

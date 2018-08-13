@@ -14,6 +14,8 @@ type testObjectLocationStruct struct {
 }
 
 func TestEmptySegmentDeletion(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
@@ -105,4 +107,6 @@ func TestEmptySegmentDeletion(t *testing.T) {
 		}
 	}
 	// the underlying log segment objects got deleted!! Yaaay~! ☆✦❤
+
+	testTeardown(t)
 }

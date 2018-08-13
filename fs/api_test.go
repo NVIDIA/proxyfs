@@ -2,233 +2,15 @@ package fs
 
 import (
 	"bytes"
-	"flag"
-	"fmt"
-	"io/ioutil"
 	"math"
-	"os"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/swiftstack/ProxyFS/blunder"
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
 )
-
-// our global mountStruct to be used in tests
-var mS *mountStruct
-
-func testSetup() (err error) {
-	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_fs_")
-	if nil != err {
-		return
-	}
-
-	err = os.Chdir(testDir)
-	if nil != err {
-		return
-	}
-
-	err = os.Mkdir("TestVolume", os.ModePerm)
-
-	testConfMapStrings := []string{
-		"Stats.IPAddr=localhost",
-		"Stats.UDPPort=52184",
-		"Stats.BufferLength=100",
-		"Stats.MaxLatency=1s",
-		"Logging.LogFilePath=/dev/null",
-		"Logging.LogToConsole=false",
-		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=45262",
-		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryLimit=5",
-		"SwiftClient.RetryLimitObject=5",
-		"SwiftClient.RetryDelay=1s",
-		"SwiftClient.RetryDelayObject=1s",
-		"SwiftClient.RetryExpBackoff=1.2",
-		"SwiftClient.RetryExpBackoffObject=2.0",
-		"SwiftClient.ChunkedConnectionPoolSize=1",
-		"SwiftClient.NonChunkedConnectionPoolSize=1",
-		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
-		"FlowControl:TestFlowControl.MaxFlushTime=10s",
-		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",
-		"FlowControl:TestFlowControl.ReadCacheWeight=100",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
-		"Peer:Peer0.PrivateIPAddr=localhost",
-		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
-		"Cluster.Peers=Peer0",
-		"Cluster.WhoAmI=Peer0",
-		"Volume:TestVolume.FSID=1",
-		"Volume:TestVolume.PrimaryPeer=Peer0",
-		"Volume:TestVolume.AccountName=CommonAccount",
-		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
-		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
-		"Volume:TestVolume.CheckpointInterval=10s",
-		"Volume:TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"Volume:TestVolume.FlowControl=TestFlowControl",
-		"Volume:TestVolume.NonceValuesToReserve=100",
-		"Volume:TestVolume.MaxEntriesPerDirNode=32",
-		"Volume:TestVolume.MaxExtentsPerFileNode=32",
-		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
-		"Volume:TestVolume.MaxLogSegmentsPerMetadataNode=64",
-		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
-		"Volume:TestVolume.MaxBytesInodeCache=100000",
-		"Volume:TestVolume.InodeCacheEvictInterval=1s",
-		"FSGlobals.VolumeList=TestVolume",
-		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
-		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
-		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
-		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
-		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
-		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
-		"FSGlobals.DirEntryCacheEvictLowLimit=10000",
-		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
-		"FSGlobals.FileExtentMapEvictLowLimit=10000",
-		"FSGlobals.FileExtentMapEvictHighLimit=10010",
-		"RamSwiftInfo.MaxAccountNameLength=256",
-		"RamSwiftInfo.MaxContainerNameLength=256",
-		"RamSwiftInfo.MaxObjectNameLength=1024",
-		"RamSwiftInfo.AccountListingLimit=10000",
-		"RamSwiftInfo.ContainerListingLimit=10000",
-	}
-
-	testConfMap, err := conf.MakeConfMapFromStrings(testConfMapStrings)
-	if nil != err {
-		return
-	}
-
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
-
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	err = logger.Up(testConfMap)
-	if nil != err {
-		return
-	}
-
-	err = evtlog.Up(testConfMap)
-	if nil != err {
-		logger.Down()
-		return
-	}
-
-	err = stats.Up(testConfMap)
-	if nil != err {
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if err != nil {
-		dlm.Down()
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return err
-	}
-
-	err = headhunter.Format(testConfMap, "TestVolume")
-	if nil != err {
-		swiftclient.Down()
-		dlm.Down()
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = headhunter.Up(testConfMap)
-	if nil != err {
-		swiftclient.Down()
-		dlm.Down()
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = inode.Up(testConfMap)
-	if nil != err {
-		headhunter.Down()
-		swiftclient.Down()
-		dlm.Down()
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = Up(testConfMap)
-	if nil != err {
-		inode.Down()
-		headhunter.Down()
-		swiftclient.Down()
-		dlm.Down()
-		stats.Down()
-		evtlog.Down()
-		logger.Down()
-		return
-	}
-
-	err = nil
-	return
-}
-
-func testTeardown() (err error) {
-	Down()
-	inode.Down()
-	headhunter.Down()
-	swiftclient.Down()
-	dlm.Down()
-	stats.Down()
-	evtlog.Down()
-	logger.Down()
-
-	testDir, err := os.Getwd()
-	if nil != err {
-		return
-	}
-
-	err = os.Chdir("..")
-	if nil != err {
-		return
-	}
-
-	err = os.RemoveAll(testDir)
-	if nil != err {
-		return
-	}
-
-	err = nil
-	return
-}
 
 // TODO: Enhance this to do a stat() as well and check number of files
 func expectDirectory(t *testing.T, userID inode.InodeUserID, groupID inode.InodeGroupID, inodeNum inode.InodeNumber, expectedEntries []string) {
@@ -271,37 +53,12 @@ func createTestDirectory(t *testing.T, dirname string) (dirInode inode.InodeNumb
 	return dirInode
 }
 
-func TestMain(m *testing.M) {
-	flag.Parse()
-
-	err := testSetup()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs test setup failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	mountHandle, err := Mount("TestVolume", MountOptions(0))
-	if err != nil {
-		logger.ErrorfWithError(err, "Expected to successfully mount TestVolume")
-		os.Exit(1)
-	}
-	mS = mountHandle.(*mountStruct)
-
-	testResults := m.Run()
-
-	err = testTeardown()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs test teardown failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	os.Exit(testResults)
-}
-
 // TODO:  Ultimately, each of these tests should at least run in their own directory
 //        a la createTestDirectory(), or preferably some stronger effort should be
 //        made to insulate them from each other.
 func TestCreateAndLookup(t *testing.T) {
+	testSetup(t, false)
+
 	rootDirInodeNumber := inode.RootDirInodeNumber
 	basename := "create_lookup.test"
 
@@ -323,9 +80,13 @@ func TestCreateAndLookup(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Unlink() returned error: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 func TestGetstat(t *testing.T) {
+	testSetup(t, false)
+
 	rootDirInodeNumber := inode.RootDirInodeNumber
 	basename := "getstat.test"
 	timeBeforeCreation := uint64(time.Now().UnixNano())
@@ -360,6 +121,8 @@ func TestGetstat(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Unlink() returned error: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 // TestAllAPIPositiveCases() follows the following "positive" test steps:
@@ -394,7 +157,11 @@ func TestGetstat(t *testing.T) {
 var tempVolumeName string // TODO: This is currently the local file system full path
 
 func TestAllAPIPositiveCases(t *testing.T) {
-	var err error
+	var (
+		err error
+	)
+
+	testSetup(t, false)
 
 	// Get root dir inode number
 	rootDirInodeNumber := inode.RootDirInodeNumber
@@ -584,10 +351,14 @@ func TestAllAPIPositiveCases(t *testing.T) {
 
 	entriesExpected = []string{".", ".."}
 	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), rootDirInodeNumber, entriesExpected)
+
+	testTeardown(t)
 }
 
 // TODO: flesh this out with other boundary condition testing for Link
 func TestBadLinks(t *testing.T) {
+	testSetup(t, false)
+
 	testDirInode := createTestDirectory(t, "BadLinks")
 
 	validFile := "PerfectlyValidFile"
@@ -608,9 +379,13 @@ func TestBadLinks(t *testing.T) {
 
 	entriesExpected := []string{".", "..", validFile}
 	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
+
+	testTeardown(t)
 }
 
 func TestMkdir(t *testing.T) {
+	testSetup(t, false)
+
 	testDirInode := createTestDirectory(t, "Mkdir")
 	longButLegalFilename := strings.Repeat("x", FileNameMax)
 	nameTooLong := strings.Repeat("x", FileNameMax+1)
@@ -642,10 +417,14 @@ func TestMkdir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStat() returned error: %v", err)
 	}
+
+	testTeardown(t)
 }
 
 // TODO: flesh this out with other boundary condition testing for Rename
 func TestBadRename(t *testing.T) {
+	testSetup(t, false)
+
 	testDirInode := createTestDirectory(t, "BadRename")
 	nameTooLong := strings.Repeat("x", FileNameMax+1)
 
@@ -680,10 +459,16 @@ func TestBadRename(t *testing.T) {
 
 	entriesExpected = []string{".", "..", validFile}
 	expectDirectory(t, inode.InodeRootUserID, inode.InodeGroupID(0), testDirInode, entriesExpected)
+
+	testTeardown(t)
 }
 
 func TestBadChownChmod(t *testing.T) {
-	var err error
+	var (
+		err error
+	)
+
+	testSetup(t, false)
 
 	// Get root dir inode number
 	rootDirInodeNumber := inode.RootDirInodeNumber
@@ -723,10 +508,16 @@ func TestBadChownChmod(t *testing.T) {
 		t.Fatalf("Setstat() %v returned error %v, expected %v(%d).", basename, blunder.Errno(err), blunder.InvalidFileModeError, blunder.InvalidFileModeError.Value())
 	}
 	delete(stat, StatGroupID)
+
+	testTeardown(t)
 }
 
 func TestFlock(t *testing.T) {
-	var err error
+	var (
+		err error
+	)
+
+	testSetup(t, false)
 
 	rootDirInodeNumber := inode.RootDirInodeNumber
 
@@ -989,6 +780,8 @@ func TestFlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unlink() %v returned error: %v", basename, err)
 	}
+
+	testTeardown(t)
 }
 
 // Verify that the file system API works correctly with stale inode numbers,
@@ -1007,6 +800,8 @@ func TestStaleInodes(t *testing.T) {
 		staleFileInodeNumber inode.InodeNumber
 		err                  error
 	)
+
+	testSetup(t, false)
 
 	// scratchpad directory for testing
 	testDirInodeNumber, err = mS.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
@@ -1225,4 +1020,6 @@ func TestStaleInodes(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Rmdir() of '%s' returned error: %v", testDirname, err)
 	}
+
+	testTeardown(t)
 }
