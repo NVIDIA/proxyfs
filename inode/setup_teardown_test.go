@@ -3,6 +3,7 @@ package inode
 import (
 	"io/ioutil"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -20,13 +21,16 @@ import (
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		doneChan              chan bool
-		err                   error
-		signalHandlerIsArmed  bool
-		testDir               string
-		testConfMap           conf.ConfMap
-		testConfStrings       []string
-		testConfUpdateStrings []string
+		doneChan                      chan bool
+		err                           error
+		rLimit                        syscall.Rlimit
+		rLimitMinimum                 uint64
+		signalHandlerIsArmed          bool
+		testChunkedConnectionPoolSize uint64
+		testConfMap                   conf.ConfMap
+		testConfStrings               []string
+		testConfUpdateStrings         []string
+		testDir                       string
 	)
 
 	testDir, err = ioutil.TempDir(os.TempDir(), "ProxyFS_test_inode_")
@@ -113,14 +117,41 @@ func testSetup(t *testing.T, starvationMode bool) {
 		}
 	} else {
 		testConfUpdateStrings = []string{
-			"SwiftClient.ChunkedConnectionPoolSize=512",
-			"SwiftClient.NonChunkedConnectionPoolSize=128",
+			"SwiftClient.ChunkedConnectionPoolSize=256",
+			"SwiftClient.NonChunkedConnectionPoolSize=64",
 		}
 	}
 
 	err = testConfMap.UpdateFromStrings(testConfUpdateStrings)
 	if nil != err {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfUpdateStrings) failed: %v", err)
+	}
+
+	testChunkedConnectionPoolSize, err = testConfMap.FetchOptionValueUint64("SwiftClient", "ChunkedConnectionPoolSize")
+	if nil != err {
+		t.Fatalf("testConfMap.FetchOptionValueUint64(\"SwiftClient\", \"ChunkedConnectionPoolSize\") failed: %v", err)
+	}
+
+	err = syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if nil != err {
+		t.Fatalf("syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)() failed: %v", err)
+	}
+	rLimitMinimum = 3 * testChunkedConnectionPoolSize
+	if rLimitMinimum > rLimit.Cur {
+		t.Errorf("RLIMIT too low... must be at least %v (was %v)", rLimitMinimum, rLimit.Cur)
+		t.Errorf("On Mac:")
+		t.Errorf("  <CHECK CURRENT KERNEL LIMITS>")
+		t.Errorf("    sysctl -a | grep ^kern.maxfiles")
+		t.Errorf("  <ADJUST KERNEL LIMITS IF NECESSARY>")
+		t.Errorf("    sudo /usr/libexec/PlistBuddy /Library/LaunchAgents/com.kern.maxfiles.plist -c \"add Label string com.kern.maxfiles\" -c \"add ProgramArguments array\" -c \"add ProgramArguments: string sysctl\" -c \"add ProgramArguments: string -w\" -c \"add ProgramArguments: string kern.maxfiles=20480\" -c \"add RunAtLoad bool true\"")
+		t.Errorf("    sudo /usr/libexec/PlistBuddy /Library/LaunchAgents/com.kern.maxfilesperproc.plist -c \"add Label string com.kern.maxfilesperproc\" -c \"add ProgramArguments array\" -c \"add ProgramArguments: string sysctl\" -c \"add ProgramArguments: string -w\" -c \"add ProgramArguments: string kern.perprocmaxfiles=10240\" -c \"add RunAtLoad bool true\"")
+		t.Errorf("  <ADJUST PROCESS HARD LIMITS IF NECESSARY>")
+		t.Errorf("    sudo /usr/libexec/PlistBuddy /Library/LaunchAgents/com.launchd.maxfiles.plist -c \"add Label string com.launchd.maxfiles\" -c \"add ProgramArguments array\" -c \"add ProgramArguments: string launchctl\" -c \"add ProgramArguments: string limit\" -c \"add ProgramArguments: string maxfiles\" -c \"add ProgramArguments: string 5120\" -c \"add ProgramArguments: string unlimited\" -c \"add RunAtLoad bool true\"")
+		t.Errorf("  <RESTART>")
+		t.Errorf("  <ADJUST PROCESS SOFT LIMITS IF NECESSARY>")
+		t.Errorf("    ulimit -n 2560")
+		t.Errorf("On Linux:")
+		t.Fatalf("  ulimit -n 2560")
 	}
 
 	signalHandlerIsArmed = false
