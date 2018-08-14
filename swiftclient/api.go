@@ -127,8 +127,10 @@ func ObjectDelete(accountName string, containerName string, objectName string, o
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.
-func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (chunkedPutContext ChunkedPutContext, err error) {
-	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName, useReserveForVolumeName...)
+// The useReserveForVolumeName string argument should be set to "" if normal chunked connection pool is to be used.
+// If a reserved connection is to be used, note that there is only one per useReserveForVolumeName allowed at a time.
+func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName string) (chunkedPutContext ChunkedPutContext, err error) {
+	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName, useReserveForVolumeName)
 }
 
 // ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.

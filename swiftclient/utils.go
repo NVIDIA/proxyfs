@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"container/list"
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -81,7 +80,7 @@ func getStarvationParameters() (starvationParameters *StarvationParameters) {
 	return
 }
 
-func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *connectionStruct) {
+func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct) {
 	var (
 		connectionToBeCreated bool
 		cv                    *sync.Cond
@@ -89,17 +88,13 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 		wasStalled            bool
 	)
 
-	if nil != useReserveForVolumeName {
-		if 1 != len(useReserveForVolumeName) {
-			log.Fatalf("swiftclient.acquireChunkedConnection() called with bad useReserveForVolumeName")
-		}
-
+	if "" != useReserveForVolumeName {
 		globals.reservedChunkedConnectionMutex.Lock()
-		connection, ok = globals.reservedChunkedConnection[useReserveForVolumeName[0]]
+		connection, ok = globals.reservedChunkedConnection[useReserveForVolumeName]
 		if ok {
 			// Reuse connection from globals.reservedChunkedConnection map...removing it from there since it's in use
 
-			delete(globals.reservedChunkedConnection, useReserveForVolumeName[0])
+			delete(globals.reservedChunkedConnection, useReserveForVolumeName)
 
 			globals.reservedChunkedConnectionMutex.Unlock()
 
@@ -109,9 +104,9 @@ func acquireChunkedConnection(useReserveForVolumeName ...string) (connection *co
 
 			globals.reservedChunkedConnectionMutex.Unlock()
 
-			connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: useReserveForVolumeName[0]}
+			connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: useReserveForVolumeName}
 
-			openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")", useReserveForVolumeName[0]), connection)
+			openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")", useReserveForVolumeName), connection)
 
 			stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 		}

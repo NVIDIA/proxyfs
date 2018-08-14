@@ -111,7 +111,7 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		return
 	}
 
-	dstChunkedPutContext, err = objectFetchChunkedPutContextWithRetry(dstAccountName, dstContainerName, dstObjectName)
+	dstChunkedPutContext, err = objectFetchChunkedPutContextWithRetry(dstAccountName, dstContainerName, dstObjectName, "")
 	if nil != err {
 		return
 	}
@@ -783,7 +783,7 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 	return
 }
 
-func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (*chunkedPutContextStruct, error) {
+func objectFetchChunkedPutContextWithRetry(accountName string, containerName string, objectName string, useReserveForVolumeName string) (*chunkedPutContextStruct, error) {
 	// request is a function that, through the miracle of closure, calls
 	// objectFetchChunkedPutContext() with the paramaters passed to this
 	// function, stashes the relevant return values into the local variables of
@@ -794,7 +794,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 	)
 	request := func() (bool, error) {
 		var err error
-		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName, useReserveForVolumeName...)
+		chunkedPutContext, err = objectFetchChunkedPutContext(accountName, containerName, objectName, useReserveForVolumeName)
 		return true, err
 	}
 
@@ -812,7 +812,7 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 // used during testing for error injection
 var objectFetchChunkedPutContextCnt uint64
 
-func objectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName ...string) (chunkedPutContext *chunkedPutContextStruct, err error) {
+func objectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName string) (chunkedPutContext *chunkedPutContextStruct, err error) {
 	var (
 		connection *connectionStruct
 		headers    map[string][]string
@@ -822,7 +822,7 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	objectFetchChunkedPutContextCnt++
 
-	connection = acquireChunkedConnection(useReserveForVolumeName...)
+	connection = acquireChunkedConnection(useReserveForVolumeName)
 
 	headers = make(map[string][]string)
 	headers["Transfer-Encoding"] = []string{"chunked"}

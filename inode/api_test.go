@@ -1018,7 +1018,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("couldn't parse %v as object path", fileInodeObjectPath)
 	}
 
-	putContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName)
+	putContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName, "")
 
 	if err != nil {
 		t.Fatalf("fetching chunked put context failed")
@@ -1173,7 +1173,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("couldn't parse %v as object path", fileInodeObjectPath)
 	}
 
-	putContext, err = swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName)
+	putContext, err = swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName, "")
 	if err != nil {
 		t.Fatalf("fetching chunked put context failed")
 	}
