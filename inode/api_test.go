@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -2376,4 +2377,42 @@ func TestAPI(t *testing.T) {
 	// TODO: Need to test GetFragmentationReport()
 
 	// TODO: Once implemented, need to test Optimize()
+}
+
+func TestInodeDiscard(t *testing.T) {
+	assert := assert.New(t)
+	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
+	if nil != err {
+		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
+	}
+
+	// Calculate how many inodes we must create to make sure the inode cache discard
+	// routine will find something to discard.   We double the number needed.
+	vS := testVolumeHandle.(*volumeStruct)
+	maxBytes := vS.inodeCacheLRUMaxBytes
+	iSize := globals.inodeSize
+	entriesNeeded := maxBytes / iSize
+	entriesNeeded += entriesNeeded
+	for i := uint64(0); i < entriesNeeded; i++ {
+		fileInodeNumber, err := testVolumeHandle.CreateFile(InodeMode(0000), InodeRootUserID, InodeGroupID(0))
+		if nil != err {
+			t.Fatalf("CreateFile() failed: %v", err)
+		}
+
+		fName := fmt.Sprintf("file-%v i: %v", fileInodeNumber, i)
+		err = testVolumeHandle.Link(RootDirInodeNumber, fName, fileInodeNumber, false)
+		if nil != err {
+			t.Fatalf("Link(RootDirInodeNumber, \"%v\", file1Inode, false) failed: %v", fName, err)
+		}
+
+		err = testVolumeHandle.Flush(fileInodeNumber, false)
+		if nil != err {
+			t.Fatalf("Flush(fileInodeNumber, false) failed: %v", err)
+		}
+	}
+
+	discarded, dirty, locked := vS.inodeCacheDiscard()
+	assert.NotEqual(discarded, uint64(0), "Number of inodes discarded should be non-zero")
+	assert.Equal(dirty, uint64(0), "Number of inodes dirty should zero")
+	assert.Equal(locked, uint64(0), "Number of inodes locked should zero")
 }

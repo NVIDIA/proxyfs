@@ -142,8 +142,7 @@ func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSe
 		// Start ticker for inode cache discard thread
 		go func() {
 			for range volume.inodeCacheLRUTicker.C {
-
-				volume.inodeCacheDiscard()
+				_, _, _ = volume.inodeCacheDiscard()
 			}
 		}()
 	} else {
