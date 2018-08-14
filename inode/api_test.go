@@ -2387,12 +2387,12 @@ func TestInodeDiscard(t *testing.T) {
 	}
 
 	// Calculate how many inodes we must create to make sure the inode cache discard
-	// routine will find something to discard.   We double the number needed.
+	// routine will find something to discard.
 	vS := testVolumeHandle.(*volumeStruct)
 	maxBytes := vS.inodeCacheLRUMaxBytes
 	iSize := globals.inodeSize
 	entriesNeeded := maxBytes / iSize
-	entriesNeeded += entriesNeeded
+	entriesNeeded = entriesNeeded * 6
 	for i := uint64(0); i < entriesNeeded; i++ {
 		fileInodeNumber, err := testVolumeHandle.CreateFile(InodeMode(0000), InodeRootUserID, InodeGroupID(0))
 		if nil != err {
@@ -2405,14 +2405,17 @@ func TestInodeDiscard(t *testing.T) {
 			t.Fatalf("Link(RootDirInodeNumber, \"%v\", file1Inode, false) failed: %v", fName, err)
 		}
 
-		err = testVolumeHandle.Flush(fileInodeNumber, false)
-		if nil != err {
-			t.Fatalf("Flush(fileInodeNumber, false) failed: %v", err)
-		}
+		fileInode, ok, err := vS.fetchInode(fileInodeNumber)
+		assert.Nil(err, nil, "Unable to fetchInode due to err - even though just created")
+		assert.True(ok, "fetchInode returned !ok - even though just created")
+		assert.False(fileInode.dirty, "fetchInode.dirty == true - even though just linked")
 	}
 
 	discarded, dirty, locked := vS.inodeCacheDiscard()
+
 	assert.NotEqual(discarded, uint64(0), "Number of inodes discarded should be non-zero")
 	assert.Equal(dirty, uint64(0), "Number of inodes dirty should zero")
 	assert.Equal(locked, uint64(0), "Number of inodes locked should zero")
+	assert.Equal((vS.inodeCacheLRUItems * iSize), (maxBytes/iSize)*iSize,
+		"Number of inodes in cache not same as max")
 }
