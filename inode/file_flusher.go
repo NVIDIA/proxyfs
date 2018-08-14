@@ -387,7 +387,7 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 			objectName:       utils.Uint64ToHexStr(openLogSegmentObjectNumber),
 		}
 
-		inFlightLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(inFlightLogSegment.accountName, inFlightLogSegment.containerName, inFlightLogSegment.objectName)
+		inFlightLogSegment.ChunkedPutContext, err = swiftclient.ObjectFetchChunkedPutContext(inFlightLogSegment.accountName, inFlightLogSegment.containerName, inFlightLogSegment.objectName, "")
 		if nil != err {
 			logger.ErrorfWithError(err, "Starting Chunked PUT to LogSegment failed")
 			return

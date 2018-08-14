@@ -537,7 +537,7 @@ func testOps(t *testing.T) {
 
 	// Start a chunked PUT for object "FooBar"
 
-	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext("TestAccount", "TestContainer", "FooBar")
+	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext("TestAccount", "TestContainer", "FooBar", "")
 	if nil != err {
 		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext(\"TestAccount\", \"TestContainer\") failed: %v", err)
 		t.Fatalf(tErr)
@@ -919,7 +919,7 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 	}
 
 	// Start a chunked PUT for the object
-	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objName)
+	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objName, "")
 	if nil != err {
 		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext('%s', '%s', '%s') failed: %v",
 			accountName, containerName, objName, err)

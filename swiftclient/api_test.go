@@ -43,16 +43,16 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryLimit=5",
-		"SwiftClient.RetryLimitObject=5",
-		"SwiftClient.RetryDelay=250ms",
-		"SwiftClient.RetryDelayObject=250ms",
+		"SwiftClient.RetryLimit=3",
+		"SwiftClient.RetryLimitObject=3",
+		"SwiftClient.RetryDelay=25ms",
+		"SwiftClient.RetryDelayObject=25ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=2.0",
 
 		// small pool sizes so test hangs if we leak connections
-		"SwiftClient.ChunkedConnectionPoolSize=2",
-		"SwiftClient.NonChunkedConnectionPoolSize=2",
+		"SwiftClient.ChunkedConnectionPoolSize=1",
+		"SwiftClient.NonChunkedConnectionPoolSize=1",
 
 		"Cluster.WhoAmI=Peer0",
 
@@ -522,7 +522,7 @@ func testOps(t *testing.T) {
 
 	// Start a chunked PUT for object "FooBar"
 
-	chunkedPutContext, err := ObjectFetchChunkedPutContext("TestAccount", "TestContainer", "FooBar")
+	chunkedPutContext, err := ObjectFetchChunkedPutContext("TestAccount", "TestContainer", "FooBar", "")
 	if nil != err {
 		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext(\"TestAccount\", \"TestContainer\") failed: %v", err)
 		t.Fatalf(tErr)
@@ -943,7 +943,7 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 	}
 
 	// Start a chunked PUT for the object
-	chunkedPutContext, err := ObjectFetchChunkedPutContext(accountName, containerName, objName)
+	chunkedPutContext, err := ObjectFetchChunkedPutContext(accountName, containerName, objName, "")
 	if nil != err {
 		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext('%s', '%s', '%s') failed: %v",
 			accountName, containerName, objName, err)
