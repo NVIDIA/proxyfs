@@ -14,7 +14,17 @@ import (
 // Code related to multiple test threads.
 //
 
-func TestStress(t *testing.T) {
+func TestStressMetaDataOpsWhileStarved(t *testing.T) {
+	testStressMetaDataOps(t, true)
+}
+
+func TestStressMetaDataOpsWhileNotStarved(t *testing.T) {
+	testStressMetaDataOps(t, false)
+}
+
+func testStressMetaDataOps(t *testing.T, starvationMode bool) {
+	testSetup(t, starvationMode)
+
 	globalSyncPt = make(chan testRequest)
 
 	if testing.Short() {
@@ -26,6 +36,8 @@ func TestStress(t *testing.T) {
 	testMultiThreadCreateAndLookup(t)
 	testMultiThreadCreateAndReaddir(t)
 	testCreateWriteNoFlush(t)
+
+	testTeardown(t)
 }
 
 type testOpTyp int

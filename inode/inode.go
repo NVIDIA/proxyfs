@@ -1,6 +1,7 @@
 package inode
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -58,12 +59,15 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 	LogSegmentMap       map[uint64]uint64 // FileInode:    Key == LogSegment#, Value = file user data byte count
 }
 
-type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
-	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
-	fileInode        *inMemoryInodeStruct
-	accountName      string
-	containerName    string
-	objectName       string
+type inFlightLogSegmentStruct struct { //               Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
+	logSegmentNumber          uint64 //                 Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
+	openLogSegmentLRUNext     *inFlightLogSegmentStruct
+	openLogSegmentLRUPrev     *inFlightLogSegmentStruct
+	fileInode                 *inMemoryInodeStruct
+	accountName               string
+	containerName             string
+	objectName                string
+	openLogSegmentListElement list.Element
 	swiftclient.ChunkedPutContext
 }
 

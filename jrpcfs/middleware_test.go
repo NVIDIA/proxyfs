@@ -65,7 +65,6 @@ func testSetup() []func() {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=256",
@@ -1265,7 +1264,7 @@ func putFileInSwift(server *Server, virtPath string, objData []byte, objMetadata
 	// pathParts[0] is empty, pathParts[1] is "v1"
 	pAccount, pContainer, pObject := pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		return err
 	}
@@ -1539,7 +1538,7 @@ func TestPutObjectCompound(t *testing.T) {
 	// pathParts[0] is empty, pathParts[1] is "v1"
 	pAccount, pContainer, pObject := pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		panic(err)
 	}
@@ -1570,7 +1569,7 @@ func TestPutObjectCompound(t *testing.T) {
 	pathParts = strings.SplitN(putLocationResp.PhysPath, "/", 5)
 	pAccount, pContainer, pObject = pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err = swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err = swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		panic(err)
 	}

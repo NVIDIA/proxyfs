@@ -2802,7 +2802,8 @@ func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err er
 		volume.checkpointChunkedPutContext, err =
 			swiftclient.ObjectFetchChunkedPutContext(volume.accountName,
 				volume.checkpointContainerName,
-				utils.Uint64ToHexStr(volume.checkpointChunkedPutContextObjectNumber))
+				utils.Uint64ToHexStr(volume.checkpointChunkedPutContextObjectNumber),
+				volume.volumeName)
 		if nil != err {
 			return
 		}

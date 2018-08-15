@@ -8,8 +8,14 @@ import (
 )
 
 func TestLockerStuff(t *testing.T) {
+	var (
+		inodeNumber InodeNumber
+	)
 
-	var inodeNumber = InodeNumber(2)
+	testSetup(t, false)
+
+	inodeNumber = InodeNumber(2)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
@@ -78,4 +84,6 @@ retryLock:
 
 	dstDirLock.Unlock()
 	srcDirLock.Unlock()
+
+	testTeardown(t)
 }

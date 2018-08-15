@@ -22,13 +22,34 @@ type ChunkedCopyContext interface {
 // returns an error, or else we will leak open connections (although SendChunk()
 // does its best).
 type ChunkedPutContext interface {
+	Active() (active bool)                                     // Report if currently active
 	BytesPut() (bytesPut uint64, err error)                    // Report how many bytes have been sent via SendChunk() for this ChunkedPutContext
 	Close() (err error)                                        // Finish the "chunked" HTTP PUT for this ChunkedPutContext (with possible retry)
 	Read(offset uint64, length uint64) (buf []byte, err error) // Read back bytes previously sent via SendChunk()
 	SendChunk(buf []byte) (err error)                          // Send the supplied "chunk" via this ChunkedPutContext
 }
 
-// StavationCallbackFunc specifies the signature of a callback function to be invoked when
+// StarvationParameters is used to report the current details pertaining to both
+// the chunkedConnectionPool and nonChunkedConnectionPool. As this is a snapshot of
+// a typically rapidly evolving state, it should only be use in well controlled test
+// and debugging situations.
+type StarvationParameters struct {
+	ChunkedConnectionPoolCapacity      uint16
+	ChunkedConnectionPoolInUse         uint16
+	ChunkedConnectionPoolNumWaiters    uint64
+	NonChunkedConnectionPoolCapacity   uint16
+	NonChunkedConnectionPoolInUse      uint16
+	NonChunkedConnectionPoolNumWaiters uint64
+}
+
+// GetStarvationParameters returns the the current details pertaining to both
+// the chunkedConnectionPool and nonChunkedConnectionPool.
+func GetStarvationParameters() (starvationParameters *StarvationParameters) {
+	starvationParameters = getStarvationParameters()
+	return
+}
+
+// StarvationCallbackFunc specifies the signature of a callback function to be invoked when
 // the Chunked PUT Connection Pool is exhausted and would like the callback function to
 // relieve this exhaustion.
 type StarvationCallbackFunc func()
@@ -36,9 +57,6 @@ type StarvationCallbackFunc func()
 // SetStarvationCallbackFunc sets (or resets, if passed nil) the callback function to be
 // invoked when the Chunked PUT Connection Pool is exhausted and would like the callback
 // function to relieve this exhaustion.
-//
-// Note: The function will be called continually, at a rate determined by [SwiftClient]StarvationCallbackFrequency,
-//       until the exhauted state is relieved.
 func SetStarvationCallbackFunc(starvationCallback StarvationCallbackFunc) {
 	globals.starvationCallback = starvationCallback
 }
@@ -109,8 +127,10 @@ func ObjectDelete(accountName string, containerName string, objectName string, o
 }
 
 // ObjectFetchChunkedPutContext provisions a context to use for an HTTP PUT using "chunked" Transfer-Encoding on the named Swift Object.
-func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string) (chunkedPutContext ChunkedPutContext, err error) {
-	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName)
+// The useReserveForVolumeName string argument should be set to "" if normal chunked connection pool is to be used.
+// If a reserved connection is to be used, note that there is only one per useReserveForVolumeName allowed at a time.
+func ObjectFetchChunkedPutContext(accountName string, containerName string, objectName string, useReserveForVolumeName string) (chunkedPutContext ChunkedPutContext, err error) {
+	return objectFetchChunkedPutContextWithRetry(accountName, containerName, objectName, useReserveForVolumeName)
 }
 
 // ObjectGet invokes HTTP GET on the named Swift Object for the specified byte range.

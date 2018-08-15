@@ -10,6 +10,8 @@ import (
 // NB: test setup and such is in api_test.go (look for TestMain function)
 
 func TestCoalesce(t *testing.T) {
+	testSetup(t, false)
+
 	// We're going to take some files:
 	//
 	// d1/file1a   (contents "abcd")
@@ -169,9 +171,13 @@ func TestCoalesce(t *testing.T) {
 		return
 	}
 	assert.Equal(combinedInodeNumber, foundInodeNumber)
+
+	testTeardown(t)
 }
 
 func TestCoalesceDir(t *testing.T) {
+	testSetup(t, false)
+
 	assert := assert.New(t)
 	vh, err := FetchVolumeHandle("TestVolume")
 	if !assert.Nil(err) {
@@ -214,9 +220,13 @@ func TestCoalesceDir(t *testing.T) {
 	_, _, _, err = vh.Coalesce(d1InodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.IsDirError))
+
+	testTeardown(t)
 }
 
 func TestCoalesceMultipleLinks(t *testing.T) {
+	testSetup(t, false)
+
 	// You can't coalesce a file with a link count > 1, or else two inodes end up referring to the same log segment, and
 	// that's an illegal state (deleting one inode breaks the other).
 	assert := assert.New(t)
@@ -276,9 +286,13 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 	_, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.TooManyLinksError))
+
+	testTeardown(t)
 }
 
 func TestCoalesceDuplicates(t *testing.T) {
+	testSetup(t, false)
+
 	// You can't coalesce the same file twice
 	assert := assert.New(t)
 	vh, err := FetchVolumeHandle("TestVolume")
@@ -337,4 +351,6 @@ func TestCoalesceDuplicates(t *testing.T) {
 	_, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.InvalidArgError))
+
+	testTeardown(t)
 }
