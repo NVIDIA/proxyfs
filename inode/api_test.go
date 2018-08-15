@@ -2411,11 +2411,10 @@ func TestInodeDiscard(t *testing.T) {
 		assert.False(fileInode.dirty, "fetchInode.dirty == true - even though just linked")
 	}
 
-	discarded, dirty, locked := vS.inodeCacheDiscard()
+	discarded, dirty, locked, lruItems := vS.inodeCacheDiscard()
 
 	assert.NotEqual(discarded, uint64(0), "Number of inodes discarded should be non-zero")
 	assert.Equal(dirty, uint64(0), "Number of inodes dirty should zero")
 	assert.Equal(locked, uint64(0), "Number of inodes locked should zero")
-	assert.Equal((vS.inodeCacheLRUItems * iSize), (maxBytes/iSize)*iSize,
-		"Number of inodes in cache not same as max")
+	assert.Equal((lruItems * iSize), (maxBytes/iSize)*iSize, "Number of inodes in cache not same as max")
 }

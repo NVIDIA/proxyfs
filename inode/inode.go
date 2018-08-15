@@ -363,7 +363,7 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 }
 
 // The inode cache discard thread calls this routine when the ticker goes off.
-func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, locked uint64) {
+func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, locked uint64, lruItems uint64) {
 	inodesToDrop := uint64(0)
 
 	vS.Lock()
@@ -414,7 +414,9 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 			// the head is now different
 		}
 	}
+	lruItems = vS.inodeCacheLRUItems
 	vS.Unlock()
+	//logger.Infof("discard: %v dirty: %v locked: %v LRUitems: %v", discarded, dirty, locked, lruItems)
 	return
 }
 
