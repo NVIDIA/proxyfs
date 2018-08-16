@@ -2,10 +2,12 @@ package inode
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -2189,6 +2191,50 @@ func TestAPI(t *testing.T) {
 	// TODO: Need to test GetFragmentationReport()
 
 	// TODO: Once implemented, need to test Optimize()
+
+	testTeardown(t)
+}
+
+func TestInodeDiscard(t *testing.T) {
+	testSetup(t, false)
+
+	assert := assert.New(t)
+	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
+	if nil != err {
+		t.Fatalf("FetchVolumeHandle(\"TestVolume\") should have worked - got error: %v", err)
+	}
+
+	// Calculate how many inodes we must create to make sure the inode cache discard
+	// routine will find something to discard.
+	vS := testVolumeHandle.(*volumeStruct)
+	maxBytes := vS.inodeCacheLRUMaxBytes
+	iSize := globals.inodeSize
+	entriesNeeded := maxBytes / iSize
+	entriesNeeded = entriesNeeded * 6
+	for i := uint64(0); i < entriesNeeded; i++ {
+		fileInodeNumber, err := testVolumeHandle.CreateFile(InodeMode(0000), InodeRootUserID, InodeGroupID(0))
+		if nil != err {
+			t.Fatalf("CreateFile() failed: %v", err)
+		}
+
+		fName := fmt.Sprintf("file-%v i: %v", fileInodeNumber, i)
+		err = testVolumeHandle.Link(RootDirInodeNumber, fName, fileInodeNumber, false)
+		if nil != err {
+			t.Fatalf("Link(RootDirInodeNumber, \"%v\", file1Inode, false) failed: %v", fName, err)
+		}
+
+		fileInode, ok, err := vS.fetchInode(fileInodeNumber)
+		assert.Nil(err, nil, "Unable to fetchInode due to err - even though just created")
+		assert.True(ok, "fetchInode returned !ok - even though just created")
+		assert.False(fileInode.dirty, "fetchInode.dirty == true - even though just linked")
+	}
+
+	discarded, dirty, locked, lruItems := vS.inodeCacheDiscard()
+
+	assert.NotEqual(discarded, uint64(0), "Number of inodes discarded should be non-zero")
+	assert.Equal(dirty, uint64(0), "Number of inodes dirty should zero")
+	assert.Equal(locked, uint64(0), "Number of inodes locked should zero")
+	assert.Equal((lruItems * iSize), (maxBytes/iSize)*iSize, "Number of inodes in cache not same as max")
 
 	testTeardown(t)
 }
