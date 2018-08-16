@@ -35,7 +35,14 @@ func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 	testMultiThreadCreate(t)
 	testMultiThreadCreateAndLookup(t)
 	testMultiThreadCreateAndReaddir(t)
-	testCreateWriteNoFlush(t)
+
+	// Only run if we are not starved
+	//
+	// If we are starved, the test is killed because it uses too much memory
+	// since we do not drain the memory fast enough.
+	if !starvationMode {
+		testCreateWriteNoFlush(t)
+	}
 
 	testTeardown(t)
 }
@@ -115,17 +122,9 @@ func stopThreads(t *testing.T) {
 }
 
 func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumber) (err error) {
-	var (
-		bufToWrite []byte
-	)
 	name1 := fileRequest.name1
 	loopCount := fileRequest.loopCount
 	minimumLoopCount := fileRequest.minimumLoopCount
-
-	// Setup data structures as needed
-	if fileRequest.opType == writeNoFlushLoopTestOp {
-		bufToWrite = make([]byte, fileRequest.length, fileRequest.length)
-	}
 
 	// Loop doing operation loopCount times.  If it is an infinite loop we loop until signaled to stop.
 	//
@@ -447,9 +446,13 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	stopThreads(t)
 }
 
+var bufToWrite []byte
+
 // Test numThreads doing create(), write() and no flush
 func testCreateWriteNoFlush(t *testing.T) {
-	var numThreads = 1000
+	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
+	// increasing numThreads, size of write buffer and number of overwrites.
+	var numThreads = 150
 	fileInodes := make([]inode.InodeNumber, numThreads) // Map to store each inode created
 	nameOfTest := utils.GetFnName()
 
@@ -470,10 +473,17 @@ func testCreateWriteNoFlush(t *testing.T) {
 		fileInodes[i] = response.inodeNumber
 	}
 
+	var bufLen uint64 = 11 * 1024 * 1024
+	bufToWrite = make([]byte, bufLen, bufLen)
+
 	// Write to files without doing a flush.  We write 11MB starting from offset 0.
-	// We rewrite the same location 100 times.
+	// We rewrite the same location numOverWrites times.
+	numOverWrites := 1
+	minNumberOfLoops := 1
+	writeOffset := uint64(0)
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, writeNoFlushLoopTestOp, fileInodes[i], nameOfTest+"-"+strconv.Itoa(i), 100, 1, 0, 11*1024*1024)
+		sendRequestToThread(i, t, writeNoFlushLoopTestOp, fileInodes[i], nameOfTest+"-"+strconv.Itoa(i), numOverWrites,
+			minNumberOfLoops, writeOffset, bufLen)
 	}
 
 	// Wait until threads complete
