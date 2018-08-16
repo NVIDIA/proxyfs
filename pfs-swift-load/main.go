@@ -781,7 +781,7 @@ func (worker *workerStruct) workerThreadLauncher() {
 				case fileDelete:
 					doSwiftMethod = false
 					err = os.Remove(path)
-					if nil == err {
+					if nil != err {
 						abandonedIteration = true
 					}
 				case http.MethodPut:
