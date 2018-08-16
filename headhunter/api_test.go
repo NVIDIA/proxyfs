@@ -106,7 +106,6 @@ func TestHeadHunterAPI(t *testing.T) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"Cluster.WhoAmI=Peer0",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"FlowControl:TestFlowControl.MaxFlushSize=10000000",

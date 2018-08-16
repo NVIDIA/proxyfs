@@ -1,6 +1,7 @@
 package inode
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -58,12 +59,15 @@ type onDiskInodeV1Struct struct { // Preceded "on disk" by CorruptionDetected th
 	LogSegmentMap       map[uint64]uint64 // FileInode:    Key == LogSegment#, Value = file user data byte count
 }
 
-type inFlightLogSegmentStruct struct { // Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
-	logSegmentNumber uint64 //            Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
-	fileInode        *inMemoryInodeStruct
-	accountName      string
-	containerName    string
-	objectName       string
+type inFlightLogSegmentStruct struct { //               Used as (by reference) Value for inMemoryInodeStruct.inFlightLogSegmentMap
+	logSegmentNumber          uint64 //                 Used as (by value)     Key   for inMemoryInodeStruct.inFlightLogSegmentMap
+	openLogSegmentLRUNext     *inFlightLogSegmentStruct
+	openLogSegmentLRUPrev     *inFlightLogSegmentStruct
+	fileInode                 *inMemoryInodeStruct
+	accountName               string
+	containerName             string
+	objectName                string
+	openLogSegmentListElement list.Element
 	swiftclient.ChunkedPutContext
 }
 
@@ -363,7 +367,7 @@ func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
 }
 
 // The inode cache discard thread calls this routine when the ticker goes off.
-func (vS *volumeStruct) inodeCacheDiscard() {
+func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, locked uint64, lruItems uint64) {
 	inodesToDrop := uint64(0)
 
 	vS.Lock()
@@ -373,7 +377,7 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
 		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
-		for inodesToDrop > 0 {
+		for (inodesToDrop > 0) && ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) {
 			inodesToDrop--
 
 			ic := vS.inodeCacheLRUHead
@@ -387,39 +391,37 @@ func (vS *volumeStruct) inodeCacheDiscard() {
 			if err != nil {
 				// Move inode to tail of LRU
 				vS.inodeCacheTouchWhileLocked(ic)
+				locked++
 				continue
 			}
 
 			if ic.dirty {
 				// The inode is busy - drop the DLM lock and move to tail
 				inodeRWLock.Unlock()
+				dirty++
 				vS.inodeCacheTouchWhileLocked(ic)
 				continue
 			}
 
 			var ok bool
 
+			discarded++
 			ok, err = vS.inodeCacheDropWhileLocked(ic)
 			if err != nil || !ok {
 				pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
 				panic(pStr)
 			}
 
-			// NOTE: Releasing the locks out of order here.
-			//
-			// We acquire the locks in this order:
-			// 1. Volume lock
-			// 2. DLM lock for inode
-			//
-			// We then release the volume lock before deleting the inode from the cache and
-			// then releasing the DLM lock.
 			inodeRWLock.Unlock()
 
 			// NOTE: vS.inodeCacheDropWhileLocked() removed the inode from the LRU list so
 			// the head is now different
 		}
 	}
+	lruItems = vS.inodeCacheLRUItems
 	vS.Unlock()
+	//logger.Infof("discard: %v dirty: %v locked: %v LRUitems: %v", discarded, dirty, locked, lruItems)
+	return
 }
 
 func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (ok bool, err error) {

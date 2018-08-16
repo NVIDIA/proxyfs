@@ -1,7 +1,6 @@
 package inode
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -15,6 +14,8 @@ type testObjectLocationStruct struct {
 }
 
 func TestEmptySegmentDeletion(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, err := FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") failed: %v", err)
@@ -95,7 +96,7 @@ func TestEmptySegmentDeletion(t *testing.T) {
 		// wait for up to 20 sec for the object to be (async) deleted
 		for try := 0; try < 20; try++ {
 			_, objectContentLengthErr = swiftclient.ObjectContentLength(segmentObjectLocation.accountName, segmentObjectLocation.containerName, segmentObjectLocation.objectName)
-			fmt.Printf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectContentLengthErr)
+			//t.Logf("verifying object delete for %v/%v try %d err '%v'\n", segmentObjectLocation.containerName, segmentObjectLocation.objectName, try, objectContentLengthErr)
 			if objectContentLengthErr != nil {
 				break
 			}
@@ -106,4 +107,6 @@ func TestEmptySegmentDeletion(t *testing.T) {
 		}
 	}
 	// the underlying log segment objects got deleted!! Yaaay~! ☆✦❤
+
+	testTeardown(t)
 }

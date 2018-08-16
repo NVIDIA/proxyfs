@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -16,10 +15,16 @@ import (
 
 const swiftVersion = "v1"
 
-func drainConnectionPools() {
+func drainConnections() {
 	var (
 		connection *connectionStruct
+		volumeName string
 	)
+
+	for volumeName, connection = range globals.reservedChunkedConnection {
+		_ = connection.tcpConn.Close()
+		delete(globals.reservedChunkedConnection, volumeName)
+	}
 
 	globals.chunkedConnectionPool.Lock()
 	// The following should not be necessary so, as such, will remain commented out
@@ -56,151 +61,250 @@ func drainConnectionPools() {
 	globals.nonChunkedConnectionPool.Unlock()
 }
 
-func chunkedConnectionPoolInStarvationMode() {
-	var (
-		starvationCallback StarvationCallbackFunc
-	)
-
-	for {
-		select {
-		case _ = <-globals.stavationResolvedChan:
-			return
-		case <-time.After(globals.starvationCallbackFrequency):
-			starvationCallback = globals.starvationCallback
-			if nil != starvationCallback {
-				starvationCallback()
-				stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
-			}
-		}
+func getStarvationParameters() (starvationParameters *StarvationParameters) {
+	starvationParameters = &StarvationParameters{
+		ChunkedConnectionPoolCapacity:    globals.chunkedConnectionPool.poolCapacity,
+		NonChunkedConnectionPoolCapacity: globals.nonChunkedConnectionPool.poolCapacity,
 	}
+
+	globals.chunkedConnectionPool.Lock()
+	starvationParameters.ChunkedConnectionPoolInUse = globals.chunkedConnectionPool.poolInUse
+	starvationParameters.ChunkedConnectionPoolNumWaiters = globals.chunkedConnectionPool.numWaiters
+	globals.chunkedConnectionPool.Unlock()
+
+	globals.nonChunkedConnectionPool.Lock()
+	starvationParameters.NonChunkedConnectionPoolInUse = globals.nonChunkedConnectionPool.poolInUse
+	starvationParameters.NonChunkedConnectionPoolNumWaiters = globals.nonChunkedConnectionPool.numWaiters
+	globals.nonChunkedConnectionPool.Unlock()
+
+	return
 }
 
-func acquireChunkedConnection() (connection *connectionStruct) {
+func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct) {
 	var (
-		cv  *sync.Cond
-		err error
+		connectionToBeCreated bool
+		cv                    *sync.Cond
+		ok                    bool
+		wasStalled            bool
 	)
+
+	if "" != useReserveForVolumeName {
+		globals.reservedChunkedConnectionMutex.Lock()
+		connection, ok = globals.reservedChunkedConnection[useReserveForVolumeName]
+		if ok {
+			// Reuse connection from globals.reservedChunkedConnection map...removing it from there since it's in use
+
+			delete(globals.reservedChunkedConnection, useReserveForVolumeName)
+
+			globals.reservedChunkedConnectionMutex.Unlock()
+
+			stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
+		} else {
+			// No connection available...create a new one
+
+			globals.reservedChunkedConnectionMutex.Unlock()
+
+			connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: useReserveForVolumeName}
+
+			openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")", useReserveForVolumeName), connection)
+
+			stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
+		}
+
+		return
+	}
+
+	connectionToBeCreated = false
+	wasStalled = false
 
 	globals.chunkedConnectionPool.Lock()
 
-	if globals.chunkedConnectionPool.poolInUse >= globals.chunkedConnectionPool.poolCapacity {
-		if !globals.starvationUnderway {
-			globals.starvationUnderway = true
-			go chunkedConnectionPoolInStarvationMode()
+	for {
+		if globals.chunkedConnectionPool.poolInUse < globals.chunkedConnectionPool.poolCapacity {
+			break
 		}
-		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolStallOps)
-		cv = sync.NewCond(&globals.chunkedConnectionPool)
-		_ = globals.chunkedConnectionPool.waiters.PushBack(cv)
-		cv.Wait()
-	} else {
-		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolNonStallOps)
-		globals.chunkedConnectionPool.poolInUse++
+
+		wasStalled = true
+
+		globals.chunkedConnectionPool.numWaiters++
+
+		if nil == globals.starvationCallback {
+			// Wait for a connection to be released before retrying
+			cv = sync.NewCond(&globals.chunkedConnectionPool)
+			_ = globals.chunkedConnectionPool.waiters.PushBack(cv)
+			cv.Wait()
+		} else {
+			// Issue starvationCallback() (synchronously) before retrying
+			globals.chunkedConnectionPool.Unlock()
+			globals.starvationCallbackSerializer.Lock()
+			globals.starvationCallback()
+			globals.starvationCallbackSerializer.Unlock()
+			globals.chunkedConnectionPool.Lock()
+			stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
+		}
+
+		globals.chunkedConnectionPool.numWaiters--
 	}
 
+	globals.chunkedConnectionPool.poolInUse++
+
 	if 0 == globals.chunkedConnectionPool.lifoIndex {
-		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
-		connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
-		if nil != err {
-			logger.FatalfWithError(err, "swiftclient.acquireChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
-		}
-		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
+		connectionToBeCreated = true
 	} else {
 		globals.chunkedConnectionPool.lifoIndex--
 		connection = globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex]
 		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = nil
-		stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
 	}
 
 	globals.chunkedConnectionPool.Unlock()
+
+	if connectionToBeCreated {
+		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
+		openConnection("swiftclient.acquireChunkedConnection()", connection)
+		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
+	} else {
+		stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
+	}
+
+	if wasStalled {
+		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolStallOps)
+	} else {
+		stats.IncrementOperations(&stats.SwiftChunkedConnectionPoolNonStallOps)
+	}
 
 	return
 }
 
 func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	var (
-		waiter *list.Element
-		cv     *sync.Cond
+		connectionToBeClosed bool
+		cv                   *sync.Cond
+		waiter               *list.Element
 	)
+
+	if "" != connection.reserveForVolumeName {
+		if keepAlive &&
+			(connection.connectionNonce == globals.connectionNonce) {
+			// Re-insert connection in globals.reservedChunkedConnection map
+
+			globals.reservedChunkedConnectionMutex.Lock()
+			globals.reservedChunkedConnection[connection.reserveForVolumeName] = connection
+			globals.reservedChunkedConnectionMutex.Unlock()
+		} else {
+			// Don't re-insert connection in globals.reservedChunkedConnection map... just Close() it
+
+			_ = connection.tcpConn.Close()
+		}
+
+		return
+	}
+
+	connectionToBeClosed = false
 
 	globals.chunkedConnectionPool.Lock()
 
-	if keepAlive &&
-		(connection.connectionNonce == globals.connectionNonce) &&
-		(globals.chunkedConnectionPool.poolInUse <= globals.chunkedConnectionPool.poolCapacity) {
+	globals.chunkedConnectionPool.poolInUse--
+
+	if keepAlive && (connection.connectionNonce == globals.connectionNonce) {
 		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = connection
 		globals.chunkedConnectionPool.lifoIndex++
 	} else {
-		_ = connection.tcpConn.Close()
+		connectionToBeClosed = true
 	}
 
 	if 0 < globals.chunkedConnectionPool.waiters.Len() {
+		// Note: If starvationCallback is armed, acquirers will be retrying (not cv.Wait()'ing)
 		waiter = globals.chunkedConnectionPool.waiters.Front()
 		cv = waiter.Value.(*sync.Cond)
 		_ = globals.chunkedConnectionPool.waiters.Remove(waiter)
 		cv.Signal()
-		if globals.starvationUnderway && (0 == globals.chunkedConnectionPool.waiters.Len()) {
-			globals.starvationUnderway = false
-			globals.stavationResolvedChan <- true
-		}
-	} else {
-		globals.chunkedConnectionPool.poolInUse--
 	}
 
 	globals.chunkedConnectionPool.Unlock()
+
+	if connectionToBeClosed {
+		_ = connection.tcpConn.Close()
+	}
 }
+
+// Get a connection to the noauth server from the non-chunked connection pool.
+//
+// If an error occurs opening the connection, we return the connection anyway
+// (openConnection() will log an error).  The caller will discover the error
+// when it tries to use it.  Its really no different then if the connection
+// failed after we opened it.
 
 func acquireNonChunkedConnection() (connection *connectionStruct) {
 	var (
-		cv  *sync.Cond
-		err error
+		connectionToBeCreated bool
+		cv                    *sync.Cond
+		wasStalled            bool
 	)
+
+	connectionToBeCreated = false
+	wasStalled = false
 
 	globals.nonChunkedConnectionPool.Lock()
 
-	if globals.nonChunkedConnectionPool.poolInUse >= globals.nonChunkedConnectionPool.poolCapacity {
-		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolStallOps)
+	for {
+		if globals.nonChunkedConnectionPool.poolInUse < globals.nonChunkedConnectionPool.poolCapacity {
+			break
+		}
+		wasStalled = true
+		globals.nonChunkedConnectionPool.numWaiters++
 		cv = sync.NewCond(&globals.nonChunkedConnectionPool)
 		_ = globals.nonChunkedConnectionPool.waiters.PushBack(cv)
 		cv.Wait()
-	} else {
-		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolNonStallOps)
-		globals.nonChunkedConnectionPool.poolInUse++
+		globals.nonChunkedConnectionPool.numWaiters--
 	}
 
+	globals.nonChunkedConnectionPool.poolInUse++
+
 	if 0 == globals.nonChunkedConnectionPool.lifoIndex {
-		connection = &connectionStruct{connectionNonce: globals.connectionNonce}
-		connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
-		if nil != err {
-			logger.FatalfWithError(err, "swiftclient.acquireNonChunkedConnection() cannot connect to Swift NoAuth Pipeline @ %s", globals.noAuthStringAddr)
-		}
-		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
+		connectionToBeCreated = true
 	} else {
 		globals.nonChunkedConnectionPool.lifoIndex--
 		connection = globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex]
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
-		stats.IncrementOperations(&stats.SwiftNonChunkedConnsReuseOps)
 	}
 
 	globals.nonChunkedConnectionPool.Unlock()
+
+	if connectionToBeCreated {
+		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
+		openConnection("swiftclient.acquireNonChunkedConnection()", connection)
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
+	} else {
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnsReuseOps)
+	}
+
+	if wasStalled {
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolStallOps)
+	} else {
+		stats.IncrementOperations(&stats.SwiftNonChunkedConnectionPoolNonStallOps)
+	}
 
 	return
 }
 
 func releaseNonChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	var (
-		waiter *list.Element
-		cv     *sync.Cond
+		connectionToBeClosed bool
+		cv                   *sync.Cond
+		waiter               *list.Element
 	)
+
+	connectionToBeClosed = false
 
 	globals.nonChunkedConnectionPool.Lock()
 
-	if keepAlive &&
-		(connection.connectionNonce == globals.connectionNonce) &&
-		(globals.nonChunkedConnectionPool.poolInUse <= globals.nonChunkedConnectionPool.poolCapacity) {
+	globals.nonChunkedConnectionPool.poolInUse--
+
+	if keepAlive && (connection.connectionNonce == globals.connectionNonce) {
 		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = connection
 		globals.nonChunkedConnectionPool.lifoIndex++
 	} else {
-		_ = connection.tcpConn.Close()
+		connectionToBeClosed = true
 	}
 
 	if 0 < globals.nonChunkedConnectionPool.waiters.Len() {
@@ -208,11 +312,13 @@ func releaseNonChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		cv = waiter.Value.(*sync.Cond)
 		_ = globals.nonChunkedConnectionPool.waiters.Remove(waiter)
 		cv.Signal()
-	} else {
-		globals.nonChunkedConnectionPool.poolInUse--
 	}
 
 	globals.nonChunkedConnectionPool.Unlock()
+
+	if connectionToBeClosed {
+		_ = connection.tcpConn.Close()
+	}
 }
 
 func chunkedConnectionFreeCnt() (freeChunkedConnections int64) {
@@ -227,6 +333,29 @@ func nonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
 	freeNonChunkedConnections = int64(globals.nonChunkedConnectionPool.poolCapacity) - int64(globals.nonChunkedConnectionPool.poolInUse)
 	globals.nonChunkedConnectionPool.Unlock()
 	return
+}
+
+// (Re)open a connection to the Swift NoAuth Proxy.
+//
+// The connection is closed first, just in case it was already open.
+//
+func openConnection(caller string, connection *connectionStruct) {
+	var (
+		err error
+	)
+
+	if connection.tcpConn != nil {
+		_ = connection.tcpConn.Close()
+	}
+
+	connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
+	if nil != err {
+		logger.FatalfWithError(
+			err,
+			"%s cannot connect to Swift NoAuth Pipeline at %s",
+			caller,
+			globals.noAuthStringAddr)
+	}
 }
 
 func writeBytesToTCPConn(tcpConn *net.TCPConn, buf []byte) (err error) {

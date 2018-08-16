@@ -1284,7 +1284,7 @@ func swiftclientWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSame
 	stepErrChan <- nil
 	_ = <-doNextStepChan
 
-	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName)
+	chunkedPutContext, err := swiftclient.ObjectFetchChunkedPutContext(accountName, containerName, objectName, "")
 	if nil != err {
 		stepErrChan <- fmt.Errorf("swiftclient.ObjectFetchChunkedPutContext(\"%v\", \"%v\", \"%v\") failed: %v\n", accountName, containerName, objectName, err)
 		return

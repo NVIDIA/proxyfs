@@ -20,12 +20,13 @@ var bs = []byte{}
 
 func main() {
 	var (
-		gitDescribeCmd    *exec.Cmd
-		gitDescribeOutput []byte
-		dstFile           *os.File
-		dstFileName       string
-		err               error
-		packageName       string
+		gitDescribeCmd       *exec.Cmd
+		gitDescribeOutput    []byte
+		dstFile              *os.File
+		dstFileName          string
+		err                  error
+		packageName          string
+		proxyfsVersionString string
 	)
 
 	if (2 == len(os.Args)) && ("-?" == os.Args[1]) {
@@ -55,14 +56,20 @@ func main() {
 		panic(err.Error())
 	}
 
-	gitDescribeCmd = exec.Command("git", "describe")
+	proxyfsVersionString = os.Getenv("PROXYFS_VERSION")
 
-	gitDescribeOutput, err = gitDescribeCmd.Output()
-	if nil != err {
-		panic(err.Error())
+	if "" == proxyfsVersionString {
+		gitDescribeCmd = exec.Command("git", "describe")
+
+		gitDescribeOutput, err = gitDescribeCmd.Output()
+		if nil != err {
+			panic(err.Error())
+		}
+
+		proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
 	}
 
-	_, err = dstFile.Write([]byte(fmt.Sprintf("const gitDescribeOutput = `%v`\n", string(gitDescribeOutput[:len(gitDescribeOutput)-1]))))
+	_, err = dstFile.Write([]byte(fmt.Sprintf("const proxyfsVersion = `%v`\n", proxyfsVersionString)))
 	if nil != err {
 		panic(err.Error())
 	}
