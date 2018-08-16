@@ -452,7 +452,7 @@ var bufToWrite []byte
 func testCreateWriteNoFlush(t *testing.T) {
 	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
 	// increasing numThreads, size of write buffer and number of overwrites.
-	var numThreads = 150
+	var numThreads = 125
 	fileInodes := make([]inode.InodeNumber, numThreads) // Map to store each inode created
 	nameOfTest := utils.GetFnName()
 
