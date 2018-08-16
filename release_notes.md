@@ -1,5 +1,12 @@
 # ProxyFS Release Notes
 
+## 1.7 (September 6, 2018)
+
+### Bug Fixes:
+
+* Fix panic in inode cache discard thread.
+* Rework flush logic to fix deadlocks when connections are exhausted.
+
 ## 1.6.4 (July 24, 2018)
 
 ### Features:
