@@ -69,6 +69,7 @@ type testRequest struct {
 	loopCount        int // Number of times to do operation. 0 = infinite
 	minimumLoopCount int // Minimum number of times to do infinite operation.
 	inodeNumber      inode.InodeNumber
+	bufPtr           *[]byte
 	offset           uint64
 	length           uint64
 	t                *testing.T
@@ -155,7 +156,7 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		case unlinkLoopTestOp:
 			err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
 		case writeNoFlushLoopTestOp:
-			_, _ = mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fileRequest.offset, bufToWrite, nil)
+			_, _ = mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fileRequest.offset, *fileRequest.bufPtr, nil)
 		}
 		localLoopCount++
 		infiniteLoopCount++
@@ -477,8 +478,6 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	stopThreads(t)
 }
 
-var bufToWrite []byte
-
 // Test numThreads doing create(), write() and no flush
 func testCreateWriteNoFlush(t *testing.T) {
 	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
@@ -509,7 +508,7 @@ func testCreateWriteNoFlush(t *testing.T) {
 	}
 
 	var bufLen uint64 = 11 * 1024 * 1024
-	bufToWrite = make([]byte, bufLen, bufLen)
+	bufToWrite := make([]byte, bufLen, bufLen)
 
 	// Write to files without doing a flush.  We write 11MB starting from offset 0.
 	// We rewrite the same location numOverWrites times.
@@ -519,7 +518,7 @@ func testCreateWriteNoFlush(t *testing.T) {
 	for i := 0; i < numThreads; i++ {
 		request6 := &testRequest{opType: writeNoFlushLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
 			inodeNumber: fileInodes[i], loopCount: numOverWrites, minimumLoopCount: minNumberOfLoops,
-			offset: writeOffset, length: bufLen}
+			offset: writeOffset, length: bufLen, bufPtr: &bufToWrite}
 		sendRequestToThread(i, t, request6)
 	}
 
