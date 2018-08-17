@@ -41,7 +41,8 @@ func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 	// If we are starved, the test is killed because it uses too much memory
 	// since we do not drain the memory fast enough.
 	if !starvationMode {
-		testCreateWriteNoFlush(t)
+		testCreateReWriteNoFlush(t)
+		testCreateSeqWriteNoFlush(t)
 	}
 
 	testTeardown(t)
@@ -60,7 +61,8 @@ const (
 	stopThreadTestOp
 	unlinkTestOp
 	unlinkLoopTestOp
-	writeNoFlushLoopTestOp
+	reWriteNoFlushLoopTestOp
+	seqWriteNoFlushLoopTestOp
 )
 
 type testRequest struct {
@@ -155,8 +157,11 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 			}
 		case unlinkLoopTestOp:
 			err = mS.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
-		case writeNoFlushLoopTestOp:
+		case reWriteNoFlushLoopTestOp:
 			_, _ = mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fileRequest.offset, *fileRequest.bufPtr, nil)
+		case seqWriteNoFlushLoopTestOp:
+			offset := fileRequest.length * uint64(localLoopCount)
+			_, _ = mS.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, offset, *fileRequest.bufPtr, nil)
 		}
 		localLoopCount++
 		infiniteLoopCount++
@@ -242,7 +247,13 @@ func threadNode(threadID int) {
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
-		case writeNoFlushLoopTestOp:
+		case reWriteNoFlushLoopTestOp:
+			// Loop writing and rewriting a file loopCount times.
+			err := loopOp(fileRequest, threadID, inodeNumber)
+			response := &testResponse{err: err}
+			threadMap[threadID].operationStatus <- response
+
+		case seqWriteNoFlushLoopTestOp:
 			// Loop writing and rewriting a file loopCount times.
 			err := loopOp(fileRequest, threadID, inodeNumber)
 			response := &testResponse{err: err}
@@ -478,8 +489,8 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	stopThreads(t)
 }
 
-// Test numThreads doing create(), write() and no flush
-func testCreateWriteNoFlush(t *testing.T) {
+// Test numThreads doing create(), loop doing rewrites() of same offset and location and no flush
+func testCreateReWriteNoFlush(t *testing.T) {
 	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
 	// increasing numThreads, size of write buffer and number of overwrites.
 	var numThreads = 125
@@ -516,8 +527,63 @@ func testCreateWriteNoFlush(t *testing.T) {
 	minNumberOfLoops := 1
 	writeOffset := uint64(0)
 	for i := 0; i < numThreads; i++ {
-		request6 := &testRequest{opType: writeNoFlushLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+		request6 := &testRequest{opType: reWriteNoFlushLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
 			inodeNumber: fileInodes[i], loopCount: numOverWrites, minimumLoopCount: minNumberOfLoops,
+			offset: writeOffset, length: bufLen, bufPtr: &bufToWrite}
+		sendRequestToThread(i, t, request6)
+	}
+
+	// Wait until threads complete
+	for i := 0; i < numThreads; i++ {
+		_ = <-threadMap[i].operationStatus
+	}
+
+	// Stop worker threads
+	stopThreads(t)
+}
+
+// Test numThreads doing create, loop doing sequential 1MB writes and no flush.
+// NOTE: The writes are not ordered - they may not actually happen sequentially.
+func testCreateSeqWriteNoFlush(t *testing.T) {
+	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
+	// increasing numThreads, size of write buffer and number of overwrites.
+	var numThreads = 50
+	fileInodes := make([]inode.InodeNumber, numThreads) // Map to store each inode created
+	nameOfTest := utils.GetFnName()
+
+	// Initialize worker threads
+	setupThreads(numThreads)
+
+	// Create a subdirectory to use
+	request4 := &testRequest{opType: mkdirTestOp, t: t, name1: nameOfTest + "-subdir",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request4)
+	mkdirResponse := <-threadMap[0].operationStatus
+
+	// Create files used for writes
+	for i := 0; i < numThreads; i++ {
+		request5 := &testRequest{opType: createTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: mkdirResponse.inodeNumber, loopCount: 11}
+		sendRequestToThread(i, t, request5)
+	}
+	// Wait for createTestOp to complete and store inode number created
+	for i := 0; i < numThreads; i++ {
+		response := <-threadMap[i].operationStatus
+		fileInodes[i] = response.inodeNumber
+	}
+
+	// Each write will be 1MB
+	var bufLen uint64 = 1 * 1024 * 1024
+	bufToWrite := make([]byte, bufLen, bufLen)
+
+	// Write to files without doing a flush.  We issue 1MB writes sequentially
+	// although they can finish in any order.
+	numOfWrites := 11
+	minNumberOfLoops := 11
+	writeOffset := uint64(0)
+	for i := 0; i < numThreads; i++ {
+		request6 := &testRequest{opType: seqWriteNoFlushLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: fileInodes[i], loopCount: numOfWrites, minimumLoopCount: minNumberOfLoops,
 			offset: writeOffset, length: bufLen, bufPtr: &bufToWrite}
 		sendRequestToThread(i, t, request6)
 	}
