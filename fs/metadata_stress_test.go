@@ -117,7 +117,8 @@ func stopThreads(t *testing.T) {
 	for i := range threadMap {
 
 		// Tell thread to exit
-		sendRequestToThread(i, t, stopThreadTestOp, inode.RootDirInodeNumber, "", 0, 0, 0, 0)
+		request := &testRequest{opType: stopThreadTestOp, t: t, inodeNumber: inode.RootDirInodeNumber}
+		sendRequestToThread(i, t, request)
 	}
 }
 
@@ -256,16 +257,12 @@ func setEndLoopFlag(threadID int) {
 	threadMap[threadID].Unlock()
 }
 
-func sendRequestToThread(threadID int, t *testing.T, operation testOpTyp, inodeNumber inode.InodeNumber, name1 string, loopCount int,
-	minimumLoopCount int, offset uint64, length uint64) {
-
+func sendRequestToThread(threadID int, t *testing.T, request *testRequest) {
 	// Clear endLoop flag before sending request
 	threadMap[threadID].Lock()
 	threadMap[threadID].endLoop = false
 	threadMap[threadID].Unlock()
 
-	request := &testRequest{opType: operation, t: t, name1: name1, loopCount: loopCount,
-		minimumLoopCount: minimumLoopCount, inodeNumber: inodeNumber, offset: offset, length: length}
 	threadMap[threadID].requestForThread <- request
 
 	// We do not wait until the operation completes before returning.
@@ -280,14 +277,20 @@ func testTwoThreadsCreateUnlink(t *testing.T) {
 	setupThreads(numThreads)
 
 	// Tell thread 0 to loop creating files of the pattern "testfile*"
-	sendRequestToThread(0, t, createLoopTestOp, inode.RootDirInodeNumber, "testfile", 0, 0, 0, 0)
+	request := &testRequest{opType: createLoopTestOp, t: t, name1: "testfile",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request)
 
 	// Create the file from thread 1
-	sendRequestToThread(1, t, createTestOp, inode.RootDirInodeNumber, "TestNormalFile", 0, 0, 0, 0)
+	request = &testRequest{opType: createTestOp, t: t, name1: "TestNormalFile",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(1, t, request)
 	_ = <-threadMap[1].operationStatus
 
 	// Unlink the file from thread 1
-	sendRequestToThread(1, t, unlinkTestOp, inode.RootDirInodeNumber, "TestNormalFile", 0, 0, 0, 0)
+	request = &testRequest{opType: unlinkTestOp, t: t, name1: "TestNormalFile",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(1, t, request)
 	_ = <-threadMap[1].operationStatus
 
 	// Tell thread 0 to stop creating files
@@ -308,7 +311,9 @@ func testTwoThreadsCreateCreate(t *testing.T) {
 
 	for i := 0; i < numThreads; i++ {
 		// Tell thread 0 to loop creating files of the pattern "testfile*"
-		sendRequestToThread(i, t, createLoopTestOp, inode.RootDirInodeNumber, "testfile-"+strconv.Itoa(i), 0, 0, 0, 0)
+		request := &testRequest{opType: createLoopTestOp, t: t, name1: "testfile-" + strconv.Itoa(i),
+			inodeNumber: inode.RootDirInodeNumber}
+		sendRequestToThread(i, t, request)
 	}
 
 	time.Sleep(100 * time.Millisecond)
@@ -334,7 +339,9 @@ func testMultiThreadCreate(t *testing.T) {
 
 	// Unlink existing files
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, unlinkLoopTestOp, inode.RootDirInodeNumber, nameOfTest+"-"+strconv.Itoa(i), 5, 0, 0, 0)
+		request := &testRequest{opType: unlinkLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: inode.RootDirInodeNumber, loopCount: 5}
+		sendRequestToThread(i, t, request)
 	}
 	// Wait for unlinkLoopTestOp to complete
 	for i := 0; i < numThreads; i++ {
@@ -343,7 +350,9 @@ func testMultiThreadCreate(t *testing.T) {
 
 	// Create files
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, createLoopTestOp, inode.RootDirInodeNumber, nameOfTest+"-"+strconv.Itoa(i), 5, 0, 0, 0)
+		request := &testRequest{opType: createLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: inode.RootDirInodeNumber, loopCount: 5}
+		sendRequestToThread(i, t, request)
 	}
 	// Wait for createLoopTestOp to complete
 	for i := 0; i < numThreads; i++ {
@@ -352,7 +361,9 @@ func testMultiThreadCreate(t *testing.T) {
 
 	// Now unlink the files
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, unlinkLoopTestOp, inode.RootDirInodeNumber, nameOfTest+"-"+strconv.Itoa(i), 5, 0, 0, 0)
+		request := &testRequest{opType: unlinkLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: inode.RootDirInodeNumber, loopCount: 5}
+		sendRequestToThread(i, t, request)
 	}
 	// Wait for unlinkLoopTestOp to complete
 	for i := 0; i < numThreads; i++ {
@@ -373,17 +384,25 @@ func testMultiThreadCreateAndLookup(t *testing.T) {
 	setupThreads(numThreads)
 
 	// Create a subdirectory to use
-	sendRequestToThread(0, t, mkdirTestOp, inode.RootDirInodeNumber, nameOfTest+"-subdir", 0, 0, 0, 0)
+	request1 := &testRequest{opType: mkdirTestOp, t: t, name1: nameOfTest + "-subdir",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request1)
 	mkdirResponse := <-threadMap[0].operationStatus
 
 	// Tell thread 0 to loop creating files of the pattern nameOfTest
-	sendRequestToThread(0, t, createLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 10, 0, 0, 0)
+	request2 := &testRequest{opType: createLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, loopCount: 10}
+	sendRequestToThread(0, t, request2)
 
 	// Tell thread 1 to loop doing 35 Lookups
-	sendRequestToThread(1, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0, 0, 0)
+	request3 := &testRequest{opType: lookupPathLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, loopCount: 35}
+	sendRequestToThread(1, t, request3)
 
 	// Tell thread 2 to loop doing 35 Lookups
-	sendRequestToThread(2, t, lookupPathLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0, 0, 0)
+	request4 := &testRequest{opType: lookupPathLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, loopCount: 35}
+	sendRequestToThread(2, t, request4)
 
 	// Wait for threads to complete
 	for i := 0; i < numThreads; i++ {
@@ -392,11 +411,15 @@ func testMultiThreadCreateAndLookup(t *testing.T) {
 
 	// Tell thread 0 to loop unlinking test files created during test
 	// and wait for it to complete
-	sendRequestToThread(0, t, unlinkLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 10, 0, 0, 0)
+	request5 := &testRequest{opType: unlinkLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, loopCount: 10}
+	sendRequestToThread(0, t, request5)
 	_ = <-threadMap[0].operationStatus
 
 	// Remove subdirectory
-	sendRequestToThread(0, t, rmdirTestOp, inode.RootDirInodeNumber, nameOfTest+"-subdir", 0, 0, 0, 0)
+	request6 := &testRequest{opType: rmdirTestOp, t: t, name1: nameOfTest + "-subdir",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request6)
 	_ = <-threadMap[0].operationStatus
 
 	// Stop worker threads
@@ -412,19 +435,25 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	setupThreads(numThreads)
 
 	// Create a subdirectory to use
-	sendRequestToThread(0, t, mkdirTestOp, inode.RootDirInodeNumber, nameOfTest+"-subdir", 0, 0, 0, 0)
+	request1 := &testRequest{opType: mkdirTestOp, t: t, name1: nameOfTest + "-subdir",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request1)
 	mkdirResponse := <-threadMap[0].operationStatus
 
 	// Tell thread 0 to loop creating files of the pattern nameOfTest in the subdirectory.
 	// Create a minimum of at least 1000 before stopping.
-	sendRequestToThread(0, t, createLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 0, 1000, 0, 0)
+	request2 := &testRequest{opType: createLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, minimumLoopCount: 1000}
+	sendRequestToThread(0, t, request2)
 
 	// Pause a few milliseconds between operations
 	time.Sleep(10 * time.Millisecond)
 
 	// Tell threads 1 to numThreads to loop doing 35 readdirs
 	for i := 1; i < numThreads; i++ {
-		sendRequestToThread(i, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 35, 0, 0, 0)
+		request3 := &testRequest{opType: readdirLoopTestOp, t: t, name1: nameOfTest,
+			inodeNumber: mkdirResponse.inodeNumber, loopCount: 35}
+		sendRequestToThread(i, t, request3)
 	}
 
 	// Wait until threads 1 to numThreads complete
@@ -439,7 +468,9 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 	_ = <-threadMap[0].operationStatus
 
 	// Now tell thread 1 to do one more readdirLoopTestOp to make sure we can read 1000 entries
-	sendRequestToThread(1, t, readdirLoopTestOp, mkdirResponse.inodeNumber, nameOfTest, 1, 0, 0, 0)
+	request4 := &testRequest{opType: readdirLoopTestOp, t: t, name1: nameOfTest,
+		inodeNumber: mkdirResponse.inodeNumber, loopCount: 1}
+	sendRequestToThread(1, t, request4)
 	_ = <-threadMap[1].operationStatus
 
 	// Stop worker threads
@@ -460,12 +491,16 @@ func testCreateWriteNoFlush(t *testing.T) {
 	setupThreads(numThreads)
 
 	// Create a subdirectory to use
-	sendRequestToThread(0, t, mkdirTestOp, inode.RootDirInodeNumber, nameOfTest+"-subdir", 0, 0, 0, 0)
+	request4 := &testRequest{opType: mkdirTestOp, t: t, name1: nameOfTest + "-subdir",
+		inodeNumber: inode.RootDirInodeNumber}
+	sendRequestToThread(0, t, request4)
 	mkdirResponse := <-threadMap[0].operationStatus
 
 	// Create files used for writes
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, createTestOp, mkdirResponse.inodeNumber, nameOfTest+"-"+strconv.Itoa(i), 5, 0, 0, 0)
+		request5 := &testRequest{opType: createTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: mkdirResponse.inodeNumber, loopCount: 5}
+		sendRequestToThread(i, t, request5)
 	}
 	// Wait for createTestOp to complete and store inode number created
 	for i := 0; i < numThreads; i++ {
@@ -482,8 +517,10 @@ func testCreateWriteNoFlush(t *testing.T) {
 	minNumberOfLoops := 1
 	writeOffset := uint64(0)
 	for i := 0; i < numThreads; i++ {
-		sendRequestToThread(i, t, writeNoFlushLoopTestOp, fileInodes[i], nameOfTest+"-"+strconv.Itoa(i), numOverWrites,
-			minNumberOfLoops, writeOffset, bufLen)
+		request6 := &testRequest{opType: writeNoFlushLoopTestOp, t: t, name1: nameOfTest + "-" + strconv.Itoa(i),
+			inodeNumber: fileInodes[i], loopCount: numOverWrites, minimumLoopCount: minNumberOfLoops,
+			offset: writeOffset, length: bufLen}
+		sendRequestToThread(i, t, request6)
 	}
 
 	// Wait until threads complete
