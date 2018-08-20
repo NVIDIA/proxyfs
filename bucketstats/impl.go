@@ -53,7 +53,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 
 		// ignore fields that are not a BucketStats type
 		var (
-			countStat          Count
+			countStat          Total
 			averageStat        Average
 			bucketLog2Stat     BucketLog2Round
 			bucketLogRoot2Stat BucketLogRoot2Round
@@ -92,7 +92,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 
 		// initialize the statistic (all fields are already zero)
 		switch v := (fieldAsValue.Addr().Interface()).(type) {
-		case *Count:
+		case *Total:
 		case *Average:
 		case *BucketLog2Round:
 			if v.NBucket == 0 || v.NBucket > uint(len(v.statBuckets)) {
@@ -217,7 +217,7 @@ func sprintStatsStruct(stringFmt StatStringFormat, pkgName string, statsGroupNam
 
 		// ignore fields that are not a BucketStats type
 		var (
-			countStat          Count
+			countStat          Total
 			averageStat        Average
 			bucketLog2Stat     BucketLog2Round
 			bucketLogRoot2Stat BucketLogRoot2Round
@@ -230,7 +230,7 @@ func sprintStatsStruct(stringFmt StatStringFormat, pkgName string, statsGroupNam
 		}
 
 		switch v := (fieldAsValue.Addr().Interface()).(type) {
-		case *Count:
+		case *Total:
 			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
 		case *Average:
 			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
@@ -305,13 +305,13 @@ func bucketNameLogRoot2(value uint64) string {
 
 // Return a string with the statistic's value in the specified format.
 //
-func (this *Count) sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
+func (this *Total) sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 
 	statName := statisticName(stringFmt, pkgName, statsGroupName, this.Name)
 
 	switch stringFmt {
 	case StatsFormatHumanReadable:
-		return fmt.Sprintf("%s count:%d\n", statName, this.count)
+		return fmt.Sprintf("%s total:%d\n", statName, this.total)
 	}
 
 	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, stringFmt)
@@ -324,13 +324,13 @@ func (this *Average) sprint(stringFmt StatStringFormat, pkgName string, statsGro
 	statName := statisticName(stringFmt, pkgName, statsGroupName, this.Name)
 	var avg uint64
 	if this.count > 0 {
-		avg = this.sum / this.count
+		avg = this.total / this.count
 	}
 
 	switch stringFmt {
 	case StatsFormatHumanReadable:
-		return fmt.Sprintf("%s count:%d total:%d avg:%d\n",
-			statName, this.count, this.sum, avg)
+		return fmt.Sprintf("%s total:%d count:%d avg:%d\n",
+			statName, this.total, this.count, avg)
 	}
 
 	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, stringFmt)

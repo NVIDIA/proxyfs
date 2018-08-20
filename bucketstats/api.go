@@ -2,7 +2,7 @@
 // reporting, including bucketized statistics.  Statistics start at zero and
 // grow as they are added to.
 //
-// The statistics provided include counter (with the Counter interface), average
+// The statistics provided include totaler (with the Totaler interface), average
 // (with the Averager interface), and distributions (with the Bucketer
 // interface).
 //
@@ -24,27 +24,26 @@ const (
 	StatsFormatHumanReadable StatStringFormat = iota
 )
 
-// A Counter can be incremented, or added to, and tracks the total number of
-// values incremented/added.
+// A Totaler can be incremented, or added to, and tracks the total value of all
+// values added.
 //
 // Adding a negative value is not supported.
 //
-type Counter interface {
+type Totaler interface {
 	Increment()
 	Add(value uint64)
-	CountGet() (count uint64)
+	TotalGet() (total uint64)
 	Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) (values string)
 }
 
-// An Averager is a Counter with a average (mean) function added.
+// An Averager is a Totaler with a average (mean) function added.
 //
-// This changes the meaning of the CountGet() function from the total number of
-// values added to the number of times the Increment() and/or Add() methods are
-// called.
+// This adds a CountGet() function that returns the number of values added as
+// well as an AverageGet() method that returns the average.
 //
 type Averager interface {
-	Counter
-	SumGet() (sum uint64)
+	Totaler
+	CountGet() (count uint64)
 	AverageGet() (avg uint64)
 }
 
@@ -71,7 +70,7 @@ type BucketInfo struct {
 // A Bucketer is a Averager which also tracks the distribution of values.
 //
 // The number of buckets and the range of values mapped to a bucket depends on
-// the bucket type chosen.
+// the bucket type used.
 //
 // DistGet() returns the distribution of values across the buckets as an array
 // of BucketInfo.
@@ -118,31 +117,31 @@ func SprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 	return sprintStats(stringFmt, pkgName, statsGroupName)
 }
 
-// Count is a simple counter. It supports the Counter interface.
+// Total is a simple totaler. It supports the Totaler interface.
 //
 // Name must be unique within statistics in the structure.  If it is "" then
 // Register() will assign a name based on the name of the field.
 //
-type Count struct {
+type Total struct {
 	Name  string
-	count uint64
+	total uint64
 }
 
-func (this *Count) Add(value uint64) {
-	atomic.AddUint64(&this.count, value)
+func (this *Total) Add(value uint64) {
+	atomic.AddUint64(&this.total, value)
 }
 
-func (this *Count) Increment() {
-	atomic.AddUint64(&this.count, 1)
+func (this *Total) Increment() {
+	atomic.AddUint64(&this.total, 1)
 }
 
-func (this *Count) CountGet() uint64 {
-	return this.count
+func (this *Total) TotalGet() uint64 {
+	return this.total
 }
 
 // Return a string with the statistic's value in the specified format.
 //
-func (this *Count) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
+func (this *Total) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
 	return this.sprint(stringFmt, pkgName, statsGroupName)
 }
 
@@ -155,13 +154,13 @@ func (this *Count) Sprint(stringFmt StatStringFormat, pkgName string, statsGroup
 type Average struct {
 	Name  string
 	count uint64
-	sum   uint64
+	total uint64
 }
 
 // Add a value to the mean statistics.
 //
 func (this *Average) Add(value uint64) {
-	atomic.AddUint64(&this.sum, value)
+	atomic.AddUint64(&this.total, value)
 	atomic.AddUint64(&this.count, 1)
 }
 
@@ -175,12 +174,12 @@ func (this *Average) CountGet() uint64 {
 	return this.count
 }
 
-func (this *Average) SumGet() uint64 {
-	return this.sum
+func (this *Average) TotalGet() uint64 {
+	return this.total
 }
 
 func (this *Average) AverageGet() uint64 {
-	return this.sum / this.count
+	return this.total / this.count
 }
 
 // Return a string with the statistic's value in the specified format.
@@ -251,9 +250,9 @@ func (this *BucketLog2Round) CountGet() uint64 {
 	return count
 }
 
-func (this *BucketLog2Round) SumGet() uint64 {
-	_, _, sum, _ := bucketCalcStat(this.DistGet())
-	return sum
+func (this *BucketLog2Round) TotalGet() uint64 {
+	_, _, total, _ := bucketCalcStat(this.DistGet())
+	return total
 }
 
 func (this *BucketLog2Round) AverageGet() uint64 {
@@ -340,9 +339,9 @@ func (this *BucketLogRoot2Round) CountGet() uint64 {
 	return count
 }
 
-func (this *BucketLogRoot2Round) SumGet() uint64 {
-	_, _, sum, _ := bucketCalcStat(this.DistGet())
-	return sum
+func (this *BucketLogRoot2Round) TotalGet() uint64 {
+	_, _, total, _ := bucketCalcStat(this.DistGet())
+	return total
 }
 
 func (this *BucketLogRoot2Round) AverageGet() uint64 {

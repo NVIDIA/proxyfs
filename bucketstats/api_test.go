@@ -9,8 +9,8 @@ import (
 // fields; useful for testing
 type allStatTypes struct {
 	MyName   string // not a statistic
-	counter  int    // also not a statistic
-	Count1   Count
+	bar      int    // also not a statistic
+	Total1   Total
 	Average1 Average
 	Bucket1  BucketLog2Round
 	Bucket2  BucketLogRoot2Round
@@ -52,20 +52,20 @@ func TestTables(t *testing.T) {
 // interface (this is really a compile time test; it fails if they don't)
 func TestBucketStatsInterfaces(t *testing.T) {
 	var (
-		Count1       Count
+		Total1       Total
 		Average1     Average
 		Bucket2      BucketLog2Round
 		BucketRoot2  BucketLogRoot2Round
-		CountIface   Counter
+		TotalIface   Totaler
 		AverageIface Averager
 		BucketIface  Bucketer
 	)
 
-	// all the types are Counter(s)
-	CountIface = &Count1
-	CountIface = &Average1
-	CountIface = &Bucket2
-	CountIface = &BucketRoot2
+	// all the types are Totaler(s)
+	TotalIface = &Total1
+	TotalIface = &Average1
+	TotalIface = &Bucket2
+	TotalIface = &BucketRoot2
 
 	// most of the types are also Averager(s)
 	AverageIface = &Average1
@@ -78,8 +78,8 @@ func TestBucketStatsInterfaces(t *testing.T) {
 
 	// keep the compiler happy by doing something with the local variables
 	AverageIface = BucketIface
-	CountIface = AverageIface
-	_ = CountIface
+	TotalIface = AverageIface
+	_ = TotalIface
 }
 
 func TestRegister(t *testing.T) {
@@ -91,7 +91,7 @@ func TestRegister(t *testing.T) {
 
 	// registering a struct with all of the statist types should not panic
 	var myStats allStatTypes = allStatTypes{
-		Count1:   Count{Name: "mycounter"},
+		Total1:   Total{Name: "mytotaler"},
 		Average1: Average{Name: "First_Average"},
 		Bucket1:  BucketLog2Round{Name: "bucket_log2"},
 		Bucket2:  BucketLogRoot2Round{Name: "bucket_logroot2"},
@@ -151,9 +151,9 @@ func TestRegister(t *testing.T) {
 	// them, but not change the name if one is already assigned
 	var myStats2 allStatTypes = allStatTypes{}
 	Register("main", "myStats2", &myStats2)
-	if myStats2.Count1.Name != "Count1" || myStats.Count1.Name != "mycounter" {
-		t.Errorf("After Register() a Count name is incorrect '%s' or '%s'",
-			myStats2.Count1.Name, myStats.Count1.Name)
+	if myStats2.Total1.Name != "Total1" || myStats.Total1.Name != "mytotaler" {
+		t.Errorf("After Register() a Totaler name is incorrect '%s' or '%s'",
+			myStats2.Total1.Name, myStats.Total1.Name)
 	}
 	if myStats2.Average1.Name != "Average1" || myStats.Average1.Name != "First_Average" {
 		t.Errorf("After Register() an Average name is incorrect '%s' or '%s'",
@@ -189,7 +189,7 @@ func TestRegister(t *testing.T) {
 
 	// two fields with the same name ("Average1") will panic
 	var myStats4 allStatTypes = allStatTypes{
-		Count1:   Count{Name: "mycounter"},
+		Total1:   Total{Name: "mytotaler"},
 		Average1: Average{},
 		Bucket1:  BucketLog2Round{Name: "Average1"},
 	}
@@ -203,15 +203,15 @@ func TestRegister(t *testing.T) {
 
 	// verify illegal characters in names are replaced with underscore ('_')
 	var myStats5 allStatTypes = allStatTypes{
-		Count1:   Count{Name: "my bogus counter name"},
+		Total1:   Total{Name: "my bogus totaler name"},
 		Average1: Average{Name: "you*can't*put*splat*in*a*name"},
 		Bucket1:  BucketLog2Round{Name: "and you can't use spaces either"},
 		Bucket2:  BucketLogRoot2Round{Name: ":colon #sharp \nNewline \tTab \bBackspace!bad"},
 	}
 	Register("m*a:i#n", "m y s t a t s 5", &myStats5)
 
-	if myStats5.Count1.Name != "my_bogus_counter_name" {
-		t.Errorf("Register() did not replace illegal characters in Count1")
+	if myStats5.Total1.Name != "my_bogus_totaler_name" {
+		t.Errorf("Register() did not replace illegal characters in Total1")
 	}
 	if myStats5.Average1.Name != "you_can't_put_splat_in_a_name" {
 		t.Errorf("Register() did not replace illegal characters in Average1")
@@ -234,6 +234,87 @@ func TestRegister(t *testing.T) {
 	statsString = SprintStats(StatsFormatHumanReadable, "m*a:i#n", "m y s t a t s 5")
 	if statsString == "" {
 		t.Errorf("SprintStats() of '%s' '%s' did not find mystats5", "m*a:i#n", "m y s t a t s 5")
+	}
+	UnRegister("m*a:i#n", "m y s t a t s 5")
+}
+
+// All of the bucketstats statistics are Totaler(s); test them
+func TestTotaler(t *testing.T) {
+	/*
+		var (
+			testFunc func()
+			panicStr string
+		)
+	*/
+	var (
+		totalerGroup    allStatTypes = allStatTypes{}
+		totalerGroupMap map[string]Totaler
+		name            string
+		totaler         Totaler
+	)
+
+	totalerGroupMap = map[string]Totaler{
+		"Total":          &totalerGroup.Total1,
+		"Average":        &totalerGroup.Average1,
+		"BucketLog2":     &totalerGroup.Bucket1,
+		"BucketLogRoot2": &totalerGroup.Bucket2,
+	}
+
+	// must be registered (inited) before use
+	Register("main", "TotalerStat", &totalerGroup)
+
+	// all totalers should start out at 0
+	for name, totaler = range totalerGroupMap {
+		if totaler.TotalGet() != 0 {
+			t.Errorf("%s started at total %d instead of 0", name, totaler.TotalGet())
+		}
+	}
+
+	// after incrementing twice they be at 2
+	for _, totaler = range totalerGroupMap {
+		totaler.Increment()
+		totaler.Increment()
+	}
+	for name, totaler = range totalerGroupMap {
+		if totaler.TotalGet() != 2 {
+			t.Errorf("%s at total %d instead of 2 after 2 increments", name, totaler.TotalGet())
+		}
+	}
+
+	// after adding 0 total should still be 2
+	for _, totaler = range totalerGroupMap {
+		totaler.Add(0)
+		totaler.Add(0)
+	}
+	for name, totaler = range totalerGroupMap {
+		if totaler.TotalGet() != 2 {
+			t.Errorf("%s got total %d instead of 2 after adding 0", name, totaler.TotalGet())
+		}
+	}
+
+	// after adding 4 and 8 they must all total to 14
+	//
+	// (this does not work for adding values larger than 8 where the mean
+	// value of buckets for bucketized statistics diverges from the nominal
+	// value, i.e. adding 64 will produce totals of 70 for BucketLog2 and 67
+	// for BucketLogRoot2 because the meanVal for the bucket 64 is put in is
+	// 68 and 65, respectively)
+	for _, totaler = range totalerGroupMap {
+		totaler.Add(4)
+		totaler.Add(8)
+	}
+	for name, totaler = range totalerGroupMap {
+		if totaler.TotalGet() != 14 {
+			t.Errorf("%s at total %d instead of 6 after adding 4 and 8", name, totaler.TotalGet())
+		}
+	}
+
+	for name, totaler = range totalerGroupMap {
+		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "fu", "bar")
+		if prettyPrint == "" {
+			t.Errorf("%s returned an empty string for its Sprint() method", name)
+		}
+		fmt.Printf("%s: %s", name, prettyPrint)
 	}
 }
 
@@ -258,20 +339,20 @@ func TestSprintStats(t *testing.T) {
 // interface (this is really a compile time test)
 func testBucketStatsInterfaces(t *testing.T) {
 	var (
-		Count1       Count
+		Total1       Total
 		Average1     Average
 		Bucket2      BucketLog2Round
 		BucketRoot2  BucketLogRoot2Round
-		CountIface   Counter
+		TotalIface   Totaler
 		AverageIface Averager
 		BucketIface  Bucketer
 	)
 
-	// all the types are Counter(s)
-	CountIface = &Count1
-	CountIface = &Average1
-	CountIface = &Bucket2
-	CountIface = &BucketRoot2
+	// all the types are Totaler(s)
+	TotalIface = &Total1
+	TotalIface = &Average1
+	TotalIface = &Bucket2
+	TotalIface = &BucketRoot2
 
 	// most of the types are also Averager(s)
 	AverageIface = &Average1
@@ -284,6 +365,6 @@ func testBucketStatsInterfaces(t *testing.T) {
 
 	// keep the compiler happy by doing something with the local variables
 	AverageIface = BucketIface
-	CountIface = AverageIface
-	_ = CountIface
+	TotalIface = AverageIface
+	_ = TotalIface
 }
