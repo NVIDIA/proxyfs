@@ -19,9 +19,11 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
+// our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
+var ramswiftDoneChan chan bool
+
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		doneChan                      chan bool
 		err                           error
 		rLimit                        syscall.Rlimit
 		rLimitMinimum                 uint64
@@ -155,8 +157,8 @@ func testSetup(t *testing.T, starvationMode bool) {
 	}
 
 	signalHandlerIsArmed = false
-	doneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	ramswiftDoneChan = make(chan bool, 1)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, ramswiftDoneChan, unix.SIGTERM)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
@@ -243,6 +245,9 @@ func testTeardown(t *testing.T) {
 	if nil != err {
 		t.Fatalf("logger.Down() failed: %v", err)
 	}
+
+	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)
+	_ = <-ramswiftDoneChan
 
 	testDir, err = os.Getwd()
 	if nil != err {
