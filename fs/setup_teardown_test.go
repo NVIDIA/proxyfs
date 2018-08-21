@@ -3,6 +3,7 @@ package fs
 import (
 	"io/ioutil"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,12 +20,14 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
+// our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
+var ramswiftDoneChan chan bool
+
 // our global mountStruct to be used in tests
 var mS *mountStruct
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		doneChan              chan bool
 		err                   error
 		mountHandle           MountHandle
 		ok                    bool
@@ -132,8 +135,8 @@ func testSetup(t *testing.T, starvationMode bool) {
 	}
 
 	signalHandlerIsArmed = false
-	doneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	ramswiftDoneChan = make(chan bool, 1)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, ramswiftDoneChan, unix.SIGTERM)
 
 	for !signalHandlerIsArmed {
 		time.Sleep(100 * time.Millisecond)
@@ -239,6 +242,9 @@ func testTeardown(t *testing.T) {
 	if nil != err {
 		t.Fatalf("logger.Down() failed: %v", err)
 	}
+
+	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)
+	_ = <-ramswiftDoneChan
 
 	testDir, err = os.Getwd()
 	if nil != err {
