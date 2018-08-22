@@ -22,6 +22,11 @@ func TestStressMetaDataOpsWhileNotStarved(t *testing.T) {
 	testStressMetaDataOps(t, false)
 }
 
+func testTearDownSetup(t *testing.T, starvationMode bool) {
+	testTeardown(t)
+	testSetup(t, starvationMode)
+}
+
 func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 	testSetup(t, starvationMode)
 
@@ -31,10 +36,15 @@ func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 		t.Skip("skipping stress test.")
 	}
 	testTwoThreadsCreateUnlink(t)
+	testTearDownSetup(t, starvationMode)
 	testTwoThreadsCreateCreate(t)
+	testTearDownSetup(t, starvationMode)
 	testMultiThreadCreate(t)
+	testTearDownSetup(t, starvationMode)
 	testMultiThreadCreateAndLookup(t)
+	testTearDownSetup(t, starvationMode)
 	testMultiThreadCreateAndReaddir(t)
+	testTearDownSetup(t, starvationMode)
 
 	// Only run if we are not starved
 	//
@@ -42,7 +52,9 @@ func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 	// since we do not drain the memory fast enough.
 	if !starvationMode {
 		testCreateReWriteNoFlush(t)
+		testTearDownSetup(t, starvationMode)
 		testCreateSeqWriteNoFlush(t)
+		testTearDownSetup(t, starvationMode)
 	}
 
 	testTeardown(t)
