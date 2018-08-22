@@ -83,7 +83,7 @@ type globalsStruct struct {
 	containerListingLimit           uint64
 }
 
-var globals globalsStruct
+var globals *globalsStruct
 
 type httpRequestHandler struct{}
 
@@ -1444,6 +1444,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 
 	// Initialization
 
+	globals = &globalsStruct{}
+
 	globals.swiftAccountMap = make(map[string]*swiftAccountStruct)
 
 	// Compute confMap
@@ -1537,6 +1539,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 			updateConf(confMap)
 		} else {
 			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			globals = nil
 
 			doneChan <- true
 
