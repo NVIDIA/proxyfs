@@ -3,6 +3,7 @@ package inode
 import (
 	"io/ioutil"
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
 	"time"
@@ -248,6 +249,9 @@ func testTeardown(t *testing.T) {
 
 	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)
 	_ = <-ramswiftDoneChan
+
+	// Run GC to reclaim memory before we proceed to next test
+	runtime.GC()
 
 	testDir, err = os.Getwd()
 	if nil != err {
