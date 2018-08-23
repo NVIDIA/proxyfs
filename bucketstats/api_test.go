@@ -2,7 +2,6 @@ package bucketstats
 
 import (
 	"fmt"
-	// "math"
 	"math/rand"
 	"testing"
 )
@@ -300,17 +299,17 @@ func TestTotaler(t *testing.T) {
 	// the actual numbers used can can be off by more then 33% (Log2) or
 	// 17.2% (LogRoot2) in the worst case, and less in the average case.
 	//
-	// Empirically for 25 million runs using 1024 numbers each the maximum
-	// error is no less than 14.0% (Log2) and 9.5% (LogRoot2).
+	// Empirically for 25 million runs using 1024 numbers each the error is
+	// no more than 10.0% (Log2 buckets) and 5.0% (LogRoot2 buckets).
 	//
 	// Run the test 1000 times -- note that go produces the same sequence of
 	// "random" numbers each time for the same seed, so statistical variation
 	// is not going to cause random test failures.
 	var (
 		log2RoundErrorPctMax        float64 = 33.3333333333333
-		log2RoundErrorPctLikely     float64 = 14.0
-		logRoot2RoundErrorPctMax    float64 = 17.202268
-		logRoot2RoundErrorPctLikely float64 = 9.5
+		log2RoundErrorPctLikely     float64 = 10
+		logRoot2RoundErrorPctMax    float64 = 17.241379310
+		logRoot2RoundErrorPctLikely float64 = 5.0
 	)
 
 	rand.Seed(2)
@@ -329,23 +328,21 @@ func TestTotaler(t *testing.T) {
 		}
 
 		// newTotalerGroup must be registered (inited) before use
+
 		UnRegister("main", "TotalerStat")
 		Register("main", "TotalerStat", &newTotalerGroup)
 
-		// add 1,0240 random numbers distributed from [1, 2^54)
-		// (i.e. [1, sqrt(2)^108) ); 54 is chosen to avoid overflowing
-		// the total since 2^54 * 1024 == 2^54 * 2^10 == 2^64
-		// (the largest possible value is actually 2^53 + 2^54 - 1
-		// but we should be fine ...)
+		// add 1,0240 random numbers uniformly distributed [0, 6106906623)
 		//
-		// the distribution attempts to be uniform within a bucket but
-		// in a gross sense its actually an exponential distribution
+		// 6106906623 is RangeHigh for bucket 33 of BucketLog2Round and
+		// 5133828095 is RangeHigh for bucket 64 of BucketLogRoot2Round;
+		// using 5133828095 makes BucketLogRoot2Round look better and
+		// BucketLog2Round look worse.
 		total = 0
 		for i := 0; i < 1024; i++ {
-			randPow := rand.Int31n(54)
-			randOffset := int64(1) << uint(randPow)
-			randVal := uint64(randOffset + rand.Int63n(randOffset*2))
-			// fmt.Printf("randPow is %2.3f  randVal %d\n", randPow, randVal)
+			randVal := uint64(rand.Int63n(6106906623))
+			//randVal := uint64(rand.Int63n(5133828095))
+
 			total += randVal
 			for _, totaler = range totalerGroupMap {
 				totaler.Add(randVal)
