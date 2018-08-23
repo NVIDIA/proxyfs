@@ -1,0 +1,25 @@
+This Vagrantfile will create a 3 node etcd cluster
+
+The nodes are named etcd0, etcd1 and etcd2 and use the private network to
+communicate etcd traffic.
+
+The IP address/ports used are:
+    etcd0 - http://192.168.60.10:2379
+    etcd1 - http://192.168.60.11:2379
+    etcd2 - http://192.168.60.12:2379
+
+To verify the state of the cluster do:
+
+    [root@etcd0 vagrant]# etcdctl --endpoints "http://192.168.60.10:2379" member list
+    6b2642544c5506a8: name=etcd2 peerURLs=http://192.168.60.12:2380 clientURLs=http://192.168.60.12:2379 isLeader=true
+    c3911197772abde4: name=etcd1 peerURLs=http://192.168.60.11:2380 clientURLs=http://192.168.60.11:2379 isLeader=false
+    df250120953efe33: name=etcd0 peerURLs=http://192.168.60.10:2380 clientURLs=http://192.168.60.10:2379 isLeader=false
+
+    [root@etcd0 vagrant]# etcdctl --endpoints "http://192.168.60.11:2379" cluster-health
+    member 6b2642544c5506a8 is healthy: got healthy result from http://192.168.60.12:2379
+    member c3911197772abde4 is healthy: got healthy result from http://192.168.60.11:2379
+    member df250120953efe33 is healthy: got healthy result from http://192.168.60.10:2379
+    cluster is healthy
+
+NOTE: This vagrant file creates a static configuration file in /etc/etcd/etcd.conf.  We
+should review this to see if we want something different.
