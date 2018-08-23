@@ -1,0 +1,20 @@
+---
+- name: Configure properly etcd
+  hosts: all
+  tasks:
+    - name: Ensure that etcd is present
+      yum:
+        name: etcd
+        state: present
+      become: True
+    - name: Ensure that etcd is properly configured
+      template:
+        src: etcd.conf
+        dest: /etc/etcd/etcd.conf
+      become: True
+    - name: Ensure etcd is running
+      service:
+        name: etcd
+        state: started
+        enabled: True
+      become: True
