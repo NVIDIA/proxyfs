@@ -2,6 +2,8 @@ package bucketstats
 
 import (
 	"fmt"
+	// "math"
+	"math/rand"
 	"testing"
 )
 
@@ -14,26 +16,6 @@ type allStatTypes struct {
 	Average1 Average
 	Bucket1  BucketLog2Round
 	Bucket2  BucketLogRoot2Round
-}
-
-// Invoke function aFunc, which is expected to panic.  If it does, return the
-// value returned by recover() as a string, otherwise return the empty string.
-//
-// If panic() is called with a nil argument then this function also returns the
-// empty string.
-//
-func catchAPanic(aFunc func()) (panicStr string) {
-
-	defer func() {
-		// if recover() returns !nil then return it as a string
-		panicVal := recover()
-		if panicVal != nil {
-			panicStr = fmt.Sprintf("%v", panicVal)
-		}
-	}()
-
-	aFunc()
-	return
 }
 
 func TestTables(t *testing.T) {
@@ -240,17 +222,12 @@ func TestRegister(t *testing.T) {
 
 // All of the bucketstats statistics are Totaler(s); test them
 func TestTotaler(t *testing.T) {
-	/*
-		var (
-			testFunc func()
-			panicStr string
-		)
-	*/
 	var (
+		totaler         Totaler
 		totalerGroup    allStatTypes = allStatTypes{}
 		totalerGroupMap map[string]Totaler
 		name            string
-		totaler         Totaler
+		total           uint64
 	)
 
 	totalerGroupMap = map[string]Totaler{
@@ -270,7 +247,7 @@ func TestTotaler(t *testing.T) {
 		}
 	}
 
-	// after incrementing twice they be at 2
+	// after incrementing twice they should be 2
 	for _, totaler = range totalerGroupMap {
 		totaler.Increment()
 		totaler.Increment()
@@ -294,11 +271,11 @@ func TestTotaler(t *testing.T) {
 
 	// after adding 4 and 8 they must all total to 14
 	//
-	// (this does not work for adding values larger than 8 where the mean
+	// (this does not work when adding values larger than 8 where the mean
 	// value of buckets for bucketized statistics diverges from the nominal
 	// value, i.e. adding 64 will produce totals of 70 for BucketLog2 and 67
-	// for BucketLogRoot2 because the meanVal for the bucket 64 is put in is
-	// 68 and 65, respectively)
+	// for BucketLogRoot2 because the meanVal for the bucket 64 is put in
+	// are 68 and 65, respectively)
 	for _, totaler = range totalerGroupMap {
 		totaler.Add(4)
 		totaler.Add(8)
@@ -309,6 +286,8 @@ func TestTotaler(t *testing.T) {
 		}
 	}
 
+	// Sprint for each should do something for all stats types
+	// (not really making the effort to parse the string)
 	for name, totaler = range totalerGroupMap {
 		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "fu", "bar")
 		if prettyPrint == "" {
@@ -316,6 +295,100 @@ func TestTotaler(t *testing.T) {
 		}
 		fmt.Printf("%s: %s", name, prettyPrint)
 	}
+
+	// The Total returned for bucketized statistics will vary depending on
+	// the actual numbers used can can be off by more then 33% (Log2) or
+	// 17.2% (LogRoot2) in the worst case, and less in the average case.
+	//
+	// Empirically for 25 million runs using 1024 numbers each the maximum
+	// error is no less than 14.0% (Log2) and 9.5% (LogRoot2).
+	//
+	// Run the test 1000 times -- note that go produces the same sequence of
+	// "random" numbers each time for the same seed, so statistical variation
+	// is not going to cause random test failures.
+	var (
+		log2RoundErrorPctMax        float64 = 33.3333333333333
+		log2RoundErrorPctLikely     float64 = 14.0
+		logRoot2RoundErrorPctMax    float64 = 17.202268
+		logRoot2RoundErrorPctLikely float64 = 9.5
+	)
+
+	rand.Seed(2)
+	for loop := 0; loop < 1000; loop++ {
+
+		var (
+			newTotalerGroup allStatTypes
+			errPct          float64
+		)
+
+		totalerGroupMap = map[string]Totaler{
+			"Total":          &newTotalerGroup.Total1,
+			"Average":        &newTotalerGroup.Average1,
+			"BucketLog2":     &newTotalerGroup.Bucket1,
+			"BucketLogRoot2": &newTotalerGroup.Bucket2,
+		}
+
+		// newTotalerGroup must be registered (inited) before use
+		UnRegister("main", "TotalerStat")
+		Register("main", "TotalerStat", &newTotalerGroup)
+
+		// add 1,0240 random numbers distributed from [1, 2^54)
+		// (i.e. [1, sqrt(2)^108) ); 54 is chosen to avoid overflowing
+		// the total since 2^54 * 1024 == 2^54 * 2^10 == 2^64
+		// (the largest possible value is actually 2^53 + 2^54 - 1
+		// but we should be fine ...)
+		//
+		// the distribution attempts to be uniform within a bucket but
+		// in a gross sense its actually an exponential distribution
+		total = 0
+		for i := 0; i < 1024; i++ {
+			randPow := rand.Int31n(54)
+			randOffset := int64(1) << uint(randPow)
+			randVal := uint64(randOffset + rand.Int63n(randOffset*2))
+			// fmt.Printf("randPow is %2.3f  randVal %d\n", randPow, randVal)
+			total += randVal
+			for _, totaler = range totalerGroupMap {
+				totaler.Add(randVal)
+			}
+		}
+
+		// validate total for each statistic; barring a run of extremely
+		// bad luck we expect the bucket stats will be less then
+		// log2RoundErrorPctLikely and logRoot2RoundErrorPctLikely,
+		// respectively
+		if newTotalerGroup.Total1.TotalGet() != total {
+			t.Errorf("Total1 total is %d instead of %d", newTotalerGroup.Total1.TotalGet(), total)
+		}
+		if newTotalerGroup.Average1.TotalGet() != total {
+			t.Errorf("Average1 total is %d instead of %d", newTotalerGroup.Average1.TotalGet(), total)
+		}
+
+		errPct = (float64(newTotalerGroup.Bucket1.TotalGet())/float64(total) - 1) * 100
+		if errPct > log2RoundErrorPctMax || errPct < -log2RoundErrorPctMax {
+			t.Fatalf("BucketLog2Round total exceeds maximum possible error 33%%: "+
+				"%d instead of %d  error %1.3f%%",
+				newTotalerGroup.Bucket1.TotalGet(), total, errPct)
+
+		}
+		if errPct > log2RoundErrorPctLikely || errPct < -log2RoundErrorPctLikely {
+			t.Errorf("BucketLog2Round total exceeds maximum likely error: %d instead of %d  error %1.3f%%",
+				newTotalerGroup.Bucket1.TotalGet(), total, errPct)
+		}
+
+		errPct = (float64(newTotalerGroup.Bucket2.TotalGet())/float64(total) - 1) * 100
+		if errPct > logRoot2RoundErrorPctMax || errPct < -logRoot2RoundErrorPctMax {
+			t.Fatalf("BucketLogRoot2Round total exceeds maximum possible error 17.2%%: "+
+				"%d instead of %d  error %1.3f%%",
+				newTotalerGroup.Bucket2.TotalGet(), total, errPct)
+		}
+		if errPct > logRoot2RoundErrorPctLikely || errPct < -logRoot2RoundErrorPctLikely {
+			t.Errorf("BucketLogRoot2Round total exceeds maximum likely error: "+
+				"%d instead of %d  error %1.3f%%",
+				newTotalerGroup.Bucket2.TotalGet(), total, errPct)
+		}
+
+	}
+
 }
 
 func TestSprintStats(t *testing.T) {
@@ -367,4 +440,24 @@ func testBucketStatsInterfaces(t *testing.T) {
 	AverageIface = BucketIface
 	TotalIface = AverageIface
 	_ = TotalIface
+}
+
+// Invoke function aFunc, which is expected to panic.  If it does, return the
+// value returned by recover() as a string, otherwise return the empty string.
+//
+// If panic() is called with a nil argument then this function also returns the
+// empty string.
+//
+func catchAPanic(aFunc func()) (panicStr string) {
+
+	defer func() {
+		// if recover() returns !nil then return it as a string
+		panicVal := recover()
+		if panicVal != nil {
+			panicStr = fmt.Sprintf("%v", panicVal)
+		}
+	}()
+
+	aFunc()
+	return
 }
