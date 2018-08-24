@@ -9,12 +9,12 @@ import (
 // a structure containing all of the bucketstats statistics types and other
 // fields; useful for testing
 type allStatTypes struct {
-	MyName   string // not a statistic
-	bar      int    // also not a statistic
-	Total1   Total
-	Average1 Average
-	Bucket1  BucketLog2Round
-	Bucket2  BucketLogRoot2Round
+	MyName         string // not a statistic
+	bar            int    // also not a statistic
+	Total1         Total
+	Average1       Average
+	BucketLog2     BucketLog2Round
+	BucketLogRoot2 BucketLogRoot2Round
 }
 
 func TestTables(t *testing.T) {
@@ -33,28 +33,28 @@ func TestTables(t *testing.T) {
 // interface (this is really a compile time test; it fails if they don't)
 func TestBucketStatsInterfaces(t *testing.T) {
 	var (
-		Total1       Total
-		Average1     Average
-		Bucket2      BucketLog2Round
-		BucketRoot2  BucketLogRoot2Round
-		TotalIface   Totaler
-		AverageIface Averager
-		BucketIface  Bucketer
+		Total1         Total
+		Average1       Average
+		BucketLogRoot2 BucketLog2Round
+		BucketRoot2    BucketLogRoot2Round
+		TotalIface     Totaler
+		AverageIface   Averager
+		BucketIface    Bucketer
 	)
 
 	// all the types are Totaler(s)
 	TotalIface = &Total1
 	TotalIface = &Average1
-	TotalIface = &Bucket2
+	TotalIface = &BucketLogRoot2
 	TotalIface = &BucketRoot2
 
 	// most of the types are also Averager(s)
 	AverageIface = &Average1
-	AverageIface = &Bucket2
+	AverageIface = &BucketLogRoot2
 	AverageIface = &BucketRoot2
 
 	// and the bucket types are Bucketer(s)
-	BucketIface = &Bucket2
+	BucketIface = &BucketLogRoot2
 	BucketIface = &BucketRoot2
 
 	// keep the compiler happy by doing something with the local variables
@@ -72,10 +72,10 @@ func TestRegister(t *testing.T) {
 
 	// registering a struct with all of the statist types should not panic
 	var myStats allStatTypes = allStatTypes{
-		Total1:   Total{Name: "mytotaler"},
-		Average1: Average{Name: "First_Average"},
-		Bucket1:  BucketLog2Round{Name: "bucket_log2"},
-		Bucket2:  BucketLogRoot2Round{Name: "bucket_logroot2"},
+		Total1:         Total{Name: "mytotaler"},
+		Average1:       Average{Name: "First_Average"},
+		BucketLog2:     BucketLog2Round{Name: "bucket_log2"},
+		BucketLogRoot2: BucketLogRoot2Round{Name: "bucket_logroot2"},
 	}
 	Register("main", "myStats", &myStats)
 
@@ -140,39 +140,39 @@ func TestRegister(t *testing.T) {
 		t.Errorf("After Register() an Average name is incorrect '%s' or '%s'",
 			myStats2.Average1.Name, myStats.Average1.Name)
 	}
-	if myStats2.Bucket1.Name != "Bucket1" || myStats.Bucket1.Name != "bucket_log2" {
+	if myStats2.BucketLog2.Name != "BucketLog2" || myStats.BucketLog2.Name != "bucket_log2" {
 		t.Errorf("After Register() an Average name is incorrect '%s' or '%s'",
-			myStats2.Bucket1.Name, myStats.Bucket1.Name)
+			myStats2.BucketLog2.Name, myStats.BucketLog2.Name)
 	}
-	if myStats2.Bucket2.Name != "Bucket2" || myStats.Bucket2.Name != "bucket_logroot2" {
+	if myStats2.BucketLogRoot2.Name != "BucketLogRoot2" || myStats.BucketLogRoot2.Name != "bucket_logroot2" {
 		t.Errorf("After Register() an Average name is incorrect '%s' or '%s'",
-			myStats2.Bucket2.Name, myStats.Bucket2.Name)
+			myStats2.BucketLogRoot2.Name, myStats.BucketLogRoot2.Name)
 	}
 	// (values are somewhat arbitrary and can change)
-	if myStats2.Bucket1.NBucket != 65 || myStats2.Bucket2.NBucket != 128 {
+	if myStats2.BucketLog2.NBucket != 65 || myStats2.BucketLogRoot2.NBucket != 128 {
 		t.Errorf("After Register() NBucket was not initialized got %d and %d",
-			myStats2.Bucket1.NBucket, myStats2.Bucket2.NBucket)
+			myStats2.BucketLog2.NBucket, myStats2.BucketLogRoot2.NBucket)
 	}
 	UnRegister("main", "myStats2")
 
 	// try with minimal number of buckets
 	var myStats3 allStatTypes = allStatTypes{
-		Bucket1: BucketLog2Round{NBucket: 1},
-		Bucket2: BucketLogRoot2Round{NBucket: 1},
+		BucketLog2:     BucketLog2Round{NBucket: 1},
+		BucketLogRoot2: BucketLogRoot2Round{NBucket: 1},
 	}
 	Register("main", "myStats3", &myStats3)
 	// (minimum number of buckets is somewhat arbitrary and may change)
-	if myStats3.Bucket1.NBucket != 10 || myStats3.Bucket2.NBucket != 17 {
+	if myStats3.BucketLog2.NBucket != 10 || myStats3.BucketLogRoot2.NBucket != 17 {
 		t.Errorf("After Register() NBucket was not initialized got %d and %d",
-			myStats3.Bucket1.NBucket, myStats3.Bucket2.NBucket)
+			myStats3.BucketLog2.NBucket, myStats3.BucketLogRoot2.NBucket)
 	}
 	UnRegister("main", "myStats3")
 
 	// two fields with the same name ("Average1") will panic
 	var myStats4 allStatTypes = allStatTypes{
-		Total1:   Total{Name: "mytotaler"},
-		Average1: Average{},
-		Bucket1:  BucketLog2Round{Name: "Average1"},
+		Total1:     Total{Name: "mytotaler"},
+		Average1:   Average{},
+		BucketLog2: BucketLog2Round{Name: "Average1"},
 	}
 	testFunc = func() {
 		Register("main", "myStats4", &myStats4)
@@ -184,10 +184,10 @@ func TestRegister(t *testing.T) {
 
 	// verify illegal characters in names are replaced with underscore ('_')
 	var myStats5 allStatTypes = allStatTypes{
-		Total1:   Total{Name: "my bogus totaler name"},
-		Average1: Average{Name: "you*can't*put*splat*in*a*name"},
-		Bucket1:  BucketLog2Round{Name: "and you can't use spaces either"},
-		Bucket2:  BucketLogRoot2Round{Name: ":colon #sharp \nNewline \tTab \bBackspace!bad"},
+		Total1:         Total{Name: "my bogus totaler name"},
+		Average1:       Average{Name: "you*can't*put*splat*in*a*name"},
+		BucketLog2:     BucketLog2Round{Name: "and you can't use spaces either"},
+		BucketLogRoot2: BucketLogRoot2Round{Name: ":colon #sharp \nNewline \tTab \bBackspace!bad"},
 	}
 	Register("m*a:i#n", "m y s t a t s 5", &myStats5)
 
@@ -197,11 +197,11 @@ func TestRegister(t *testing.T) {
 	if myStats5.Average1.Name != "you_can't_put_splat_in_a_name" {
 		t.Errorf("Register() did not replace illegal characters in Average1")
 	}
-	if myStats5.Bucket1.Name != "and_you_can't_use_spaces_either" {
-		t.Errorf("Register() did not replace illegal characters in Bucket1")
+	if myStats5.BucketLog2.Name != "and_you_can't_use_spaces_either" {
+		t.Errorf("Register() did not replace illegal characters in BucketLog2")
 	}
-	if myStats5.Bucket2.Name != "_colon__sharp__Newline__Tab__Backspace!bad" {
-		t.Errorf("Register() did not replace illegal characters in Bucket2")
+	if myStats5.BucketLogRoot2.Name != "_colon__sharp__Newline__Tab__Backspace!bad" {
+		t.Errorf("Register() did not replace illegal characters in BucketLogRoot2")
 	}
 
 	// verify it was registered with scrubbed name
@@ -232,8 +232,8 @@ func TestTotaler(t *testing.T) {
 	totalerGroupMap = map[string]Totaler{
 		"Total":          &totalerGroup.Total1,
 		"Average":        &totalerGroup.Average1,
-		"BucketLog2":     &totalerGroup.Bucket1,
-		"BucketLogRoot2": &totalerGroup.Bucket2,
+		"BucketLog2":     &totalerGroup.BucketLog2,
+		"BucketLogRoot2": &totalerGroup.BucketLogRoot2,
 	}
 
 	// must be registered (inited) before use
@@ -323,8 +323,8 @@ func TestTotaler(t *testing.T) {
 		totalerGroupMap = map[string]Totaler{
 			"Total":          &newTotalerGroup.Total1,
 			"Average":        &newTotalerGroup.Average1,
-			"BucketLog2":     &newTotalerGroup.Bucket1,
-			"BucketLogRoot2": &newTotalerGroup.Bucket2,
+			"BucketLog2":     &newTotalerGroup.BucketLog2,
+			"BucketLogRoot2": &newTotalerGroup.BucketLogRoot2,
 		}
 
 		// newTotalerGroup must be registered (inited) before use
@@ -360,28 +360,28 @@ func TestTotaler(t *testing.T) {
 			t.Errorf("Average1 total is %d instead of %d", newTotalerGroup.Average1.TotalGet(), total)
 		}
 
-		errPct = (float64(newTotalerGroup.Bucket1.TotalGet())/float64(total) - 1) * 100
+		errPct = (float64(newTotalerGroup.BucketLog2.TotalGet())/float64(total) - 1) * 100
 		if errPct > log2RoundErrorPctMax || errPct < -log2RoundErrorPctMax {
 			t.Fatalf("BucketLog2Round total exceeds maximum possible error 33%%: "+
 				"%d instead of %d  error %1.3f%%",
-				newTotalerGroup.Bucket1.TotalGet(), total, errPct)
+				newTotalerGroup.BucketLog2.TotalGet(), total, errPct)
 
 		}
 		if errPct > log2RoundErrorPctLikely || errPct < -log2RoundErrorPctLikely {
 			t.Errorf("BucketLog2Round total exceeds maximum likely error: %d instead of %d  error %1.3f%%",
-				newTotalerGroup.Bucket1.TotalGet(), total, errPct)
+				newTotalerGroup.BucketLog2.TotalGet(), total, errPct)
 		}
 
-		errPct = (float64(newTotalerGroup.Bucket2.TotalGet())/float64(total) - 1) * 100
+		errPct = (float64(newTotalerGroup.BucketLogRoot2.TotalGet())/float64(total) - 1) * 100
 		if errPct > logRoot2RoundErrorPctMax || errPct < -logRoot2RoundErrorPctMax {
 			t.Fatalf("BucketLogRoot2Round total exceeds maximum possible error 17.2%%: "+
 				"%d instead of %d  error %1.3f%%",
-				newTotalerGroup.Bucket2.TotalGet(), total, errPct)
+				newTotalerGroup.BucketLogRoot2.TotalGet(), total, errPct)
 		}
 		if errPct > logRoot2RoundErrorPctLikely || errPct < -logRoot2RoundErrorPctLikely {
 			t.Errorf("BucketLogRoot2Round total exceeds maximum likely error: "+
 				"%d instead of %d  error %1.3f%%",
-				newTotalerGroup.Bucket2.TotalGet(), total, errPct)
+				newTotalerGroup.BucketLogRoot2.TotalGet(), total, errPct)
 		}
 
 	}
@@ -409,28 +409,28 @@ func TestSprintStats(t *testing.T) {
 // interface (this is really a compile time test)
 func testBucketStatsInterfaces(t *testing.T) {
 	var (
-		Total1       Total
-		Average1     Average
-		Bucket2      BucketLog2Round
-		BucketRoot2  BucketLogRoot2Round
-		TotalIface   Totaler
-		AverageIface Averager
-		BucketIface  Bucketer
+		Total1         Total
+		Average1       Average
+		BucketLogRoot2 BucketLog2Round
+		BucketRoot2    BucketLogRoot2Round
+		TotalIface     Totaler
+		AverageIface   Averager
+		BucketIface    Bucketer
 	)
 
 	// all the types are Totaler(s)
 	TotalIface = &Total1
 	TotalIface = &Average1
-	TotalIface = &Bucket2
+	TotalIface = &BucketLogRoot2
 	TotalIface = &BucketRoot2
 
 	// most of the types are also Averager(s)
 	AverageIface = &Average1
-	AverageIface = &Bucket2
+	AverageIface = &BucketLogRoot2
 	AverageIface = &BucketRoot2
 
 	// and the bucket types are Bucketer(s)
-	BucketIface = &Bucket2
+	BucketIface = &BucketLogRoot2
 	BucketIface = &BucketRoot2
 
 	// keep the compiler happy by doing something with the local variables
