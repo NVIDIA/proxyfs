@@ -288,11 +288,10 @@ func TestTotaler(t *testing.T) {
 	// Sprint for each should do something for all stats types
 	// (not really making the effort to parse the string)
 	for name, totaler = range totalerGroupMap {
-		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "fu", "bar")
+		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "main", "TestTotaler")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
-		fmt.Printf("%s: %s", name, prettyPrint)
 	}
 
 	// The Total returned for bucketized statistics will vary depending on
@@ -384,6 +383,115 @@ func TestTotaler(t *testing.T) {
 				newTotalerGroup.BucketLogRoot2.TotalGet(), total, errPct)
 		}
 
+	}
+
+	// Sprint for each should do something for all statistic types
+	// (without trying to validate the string)
+	for name, totaler = range totalerGroupMap {
+		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "main", "TestTotaler")
+		if prettyPrint == "" {
+			t.Errorf("%s returned an empty string for its Sprint() method", name)
+		}
+	}
+}
+
+// Test Bucketer specific functionality (which is mostly buckets)
+//
+func TestBucketer(t *testing.T) {
+
+	var (
+		bucketerGroup    allStatTypes = allStatTypes{}
+		bucketerGroupMap map[string]Bucketer
+		bucketInfoTmp    []BucketInfo
+		bucketer         Bucketer
+		name             string
+		//total              uint64
+	)
+
+	// describe the buckets for testing
+	bucketerGroupMap = map[string]Bucketer{
+		"BucketLog2":     &bucketerGroup.BucketLog2,
+		"BucketLogRoot2": &bucketerGroup.BucketLogRoot2,
+	}
+
+	// buckets must be registered (inited) before use
+	Register("main", "BucketerStat", &bucketerGroup)
+
+	// verify that each type has the right number of buckets, where "right"
+	// is implementation defined
+	if len(bucketerGroup.BucketLog2.DistGet()) != 65 {
+		t.Errorf("BucketLog2 has %d buckets should be 65", bucketerGroup.BucketLog2.DistGet())
+	}
+	if len(bucketerGroup.BucketLogRoot2.DistGet()) != 128 {
+		t.Errorf("BucketLog2 has %d buckets should be 128", bucketerGroup.BucketLog2.DistGet())
+	}
+
+	// all buckets should start out at 0
+	for name, bucketer = range bucketerGroupMap {
+
+		if bucketer.TotalGet() != 0 {
+			t.Errorf("%s started at total %d instead of 0", name, bucketer.TotalGet())
+		}
+		if bucketer.AverageGet() != 0 {
+			t.Errorf("%s started at average %d instead of 0", name, bucketer.AverageGet())
+		}
+
+		bucketInfoTmp = bucketer.DistGet()
+		for bucketIdx := 0; bucketIdx < len(bucketInfoTmp); bucketIdx++ {
+			if bucketInfoTmp[bucketIdx].Count != 0 {
+				t.Errorf("%s started out with bucket[%d].Count is %d instead of 0",
+					name, bucketIdx, bucketInfoTmp[bucketIdx].Count)
+			}
+		}
+	}
+
+	// verify that RangeLow, RangeHigh, NominalVal, and MeanVal are all
+	// placed in the the bucket that they should be
+	for name, bucketer = range bucketerGroupMap {
+
+		bucketInfoTmp = bucketer.DistGet()
+		for bucketIdx := 0; bucketIdx < len(bucketInfoTmp); bucketIdx++ {
+			bucketer.Add(bucketInfoTmp[bucketIdx].RangeLow)
+			bucketer.Add(bucketInfoTmp[bucketIdx].RangeHigh)
+			bucketer.Add(bucketInfoTmp[bucketIdx].NominalVal)
+			bucketer.Add(bucketInfoTmp[bucketIdx].MeanVal)
+
+			if bucketer.DistGet()[bucketIdx].Count != 4 {
+				t.Errorf("%s added 4 values to index %d but got %d",
+					name, bucketIdx, bucketer.DistGet()[bucketIdx].Count)
+			}
+		}
+	}
+
+	// verify RangeLow and RangeHigh are contiguous
+	for name, bucketer = range bucketerGroupMap {
+
+		// at least for these buckets, the first bucket always maps only 0
+		if bucketInfoTmp[0].RangeLow != 0 && bucketInfoTmp[0].RangeHigh != 0 {
+			t.Errorf("%s bucket 0 RangeLow %d or RangeHigh %d does not match 0",
+				name, bucketInfoTmp[0].RangeLow, bucketInfoTmp[0].RangeHigh)
+		}
+
+		lastRangeHigh := uint64(0)
+		bucketInfoTmp = bucketer.DistGet()
+		for bucketIdx := 1; bucketIdx < len(bucketInfoTmp); bucketIdx++ {
+			if bucketInfoTmp[bucketIdx].RangeLow != lastRangeHigh+1 {
+				t.Errorf("%s bucket %d RangeLow %d does not match last RangeHigh %d",
+					name, bucketIdx, bucketInfoTmp[bucketIdx].RangeLow, lastRangeHigh+1)
+			}
+			lastRangeHigh = bucketInfoTmp[bucketIdx].RangeHigh
+		}
+
+		if lastRangeHigh != (1<<64)-1 {
+			t.Errorf("%s last bucket RangeHigh is %d instead of %d", name, lastRangeHigh, uint64((1<<64)-1))
+		}
+	}
+
+	for name, bucketer = range bucketerGroupMap {
+		prettyPrint := bucketer.Sprint(StatsFormatHumanReadable, "main", "BucketGroup")
+		if prettyPrint == "" {
+			t.Errorf("%s returned an empty string for its Sprint() method", name)
+		}
 	}
 
 }
