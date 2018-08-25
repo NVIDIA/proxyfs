@@ -21,7 +21,7 @@ import (
 type StatStringFormat int
 
 const (
-	StatsFormatHumanReadable StatStringFormat = iota
+	StatFormatHumanReadable StatStringFormat = iota
 )
 
 // A Totaler can be incremented, or added to, and tracks the total value of all

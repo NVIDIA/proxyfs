@@ -81,7 +81,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 		if statNameValue.String() == "" {
 			statNameValue.SetString(fieldName)
 		} else {
-			statNameValue.SetString(scrubName(statNameValue.String()))
+			statNameValue.SetString(statNameValue.String())
 		}
 		_, ok = names[statNameValue.String()]
 		if ok {
@@ -113,10 +113,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 
 	}
 
-	// add statsGroupName to the list of statistics (after scrubbing)
-	statsGroupName = scrubName(statsGroupName)
-	pkgName = scrubName(pkgName)
-
+	// add statsGroupName to the list of statistics
 	statsNameMapLock.Lock()
 	defer statsNameMapLock.Unlock()
 
@@ -156,7 +153,7 @@ func unRegister(pkgName string, statsGroupName string) {
 
 // Return the selected group(s) of statistics as a string.
 //
-func sprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName string) (statValues string) {
+func sprintStats(statFmt StatStringFormat, pkgName string, statsGroupName string) (statValues string) {
 
 	statsNameMapLock.Lock()
 	defer statsNameMapLock.Unlock()
@@ -168,8 +165,7 @@ func sprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 	if pkgName == "*" {
 		pkgNameMap = pkgNameToGroupName
 	} else {
-		// make a map with a single entry for the (scrubbed) pkgName
-		pkgName = scrubName(pkgName)
+		// make a map with a single entry for the pkgName
 		pkgNameMap = map[string]map[string]interface{}{pkgName: nil}
 	}
 
@@ -177,8 +173,7 @@ func sprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 		if statsGroupName == "*" {
 			groupNameMap = pkgNameToGroupName[pkg]
 		} else {
-			// make a map with a single entry for the (scrubbed) statsGroupName
-			statsGroupName = scrubName(statsGroupName)
+			// make a map with a single entry for the statsGroupName
 			groupNameMap = map[string]interface{}{statsGroupName: nil}
 		}
 
@@ -189,13 +184,13 @@ func sprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 					"bucketstats.sprintStats(): statistics group '%s.%s' is not registered",
 					pkg, group))
 			}
-			statValues += sprintStatsStruct(stringFmt, pkg, group, pkgNameToGroupName[pkg][group])
+			statValues += sprintStatsStruct(statFmt, pkg, group, pkgNameToGroupName[pkg][group])
 		}
 	}
 	return
 }
 
-func sprintStatsStruct(stringFmt StatStringFormat, pkgName string, statsGroupName string,
+func sprintStatsStruct(statFmt StatStringFormat, pkgName string, statsGroupName string,
 	statsStruct interface{}) (statValues string) {
 
 	// let us reflect upon any statistic fields in statsStruct ...
@@ -231,13 +226,13 @@ func sprintStatsStruct(stringFmt StatStringFormat, pkgName string, statsGroupNam
 
 		switch v := (fieldAsValue.Addr().Interface()).(type) {
 		case *Total:
-			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
+			statValues += v.Sprint(statFmt, pkgName, statsGroupName)
 		case *Average:
-			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
+			statValues += v.Sprint(statFmt, pkgName, statsGroupName)
 		case *BucketLog2Round:
-			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
+			statValues += v.Sprint(statFmt, pkgName, statsGroupName)
 		case *BucketLogRoot2Round:
-			statValues += v.Sprint(stringFmt, pkgName, statsGroupName)
+			statValues += v.Sprint(statFmt, pkgName, statsGroupName)
 		default:
 			panic(fmt.Sprintf("Unknown type in struct: %s", fieldAsType.Name()))
 		}
@@ -247,26 +242,29 @@ func sprintStatsStruct(stringFmt StatStringFormat, pkgName string, statsGroupNam
 
 // Construct and return a statistics name (fully qualified field name) in the specified format.
 //
-func statisticName(stringFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string) string {
-	var statName string
+func statisticName(statFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string) string {
 
-	switch stringFmt {
-	case StatsFormatHumanReadable:
+	switch statFmt {
 
-		switch {
-		case pkgName == "":
-			statName = statsGroupName + "." + fieldName
-		case statsGroupName == "":
-			statName = pkgName + "." + fieldName
-		default:
-			statName = pkgName + "." + statsGroupName + "." + fieldName
+	default:
+		panic(fmt.Sprintf("Unknown StatStringFormat '%v'", statFmt))
+
+	case StatFormatHumanReadable:
+		pkgName = scrubName(pkgName)
+		statsGroupName = scrubName(statsGroupName)
+		fieldName = scrubName(fieldName)
+
+		if pkgName == "" && statsGroupName == "" {
+			return fieldName
 		}
-		return statName
-
+		if pkgName == "" {
+			return statsGroupName + "." + fieldName
+		}
+		if statsGroupName == "" {
+			return pkgName + "." + fieldName
+		}
+		return pkgName + "." + statsGroupName + "." + fieldName
 	}
-
-	return fmt.Sprintf("pkg: '%s' Stats Group '%s' field '%s': Unknown StatStringFormat: '%v'\n",
-		pkgName, statsGroupName, fieldName, stringFmt)
 }
 
 // Return the "name" of the bucket that would hold 'n' as the string "2^x".
@@ -305,35 +303,35 @@ func bucketNameLogRoot2(value uint64) string {
 
 // Return a string with the statistic's value in the specified format.
 //
-func (this *Total) sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
+func (this *Total) sprint(statFmt StatStringFormat, pkgName string, statsGroupName string) string {
 
-	statName := statisticName(stringFmt, pkgName, statsGroupName, this.Name)
+	statName := statisticName(statFmt, pkgName, statsGroupName, this.Name)
 
-	switch stringFmt {
-	case StatsFormatHumanReadable:
+	switch statFmt {
+	case StatFormatHumanReadable:
 		return fmt.Sprintf("%s total:%d\n", statName, this.total)
 	}
 
-	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, stringFmt)
+	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, statFmt)
 }
 
 // Return a string with the statistic's value in the specified format.
 //
-func (this *Average) sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
+func (this *Average) sprint(statFmt StatStringFormat, pkgName string, statsGroupName string) string {
 
-	statName := statisticName(stringFmt, pkgName, statsGroupName, this.Name)
+	statName := statisticName(statFmt, pkgName, statsGroupName, this.Name)
 	var avg uint64
 	if this.count > 0 {
 		avg = this.total / this.count
 	}
 
-	switch stringFmt {
-	case StatsFormatHumanReadable:
+	switch statFmt {
+	case StatFormatHumanReadable:
 		return fmt.Sprintf("%s total:%d count:%d avg:%d\n",
 			statName, this.total, this.count, avg)
 	}
 
-	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, stringFmt)
+	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, statFmt)
 }
 
 // The canonical distribution for a bucketized statistic is an array of BucketInfo.
@@ -410,7 +408,7 @@ func bucketCalcStat(bucketInfo []BucketInfo) (lastIdx int, count uint64, sum uin
 
 // Return a string with the bucketized statistic content in the specified format.
 //
-func bucketSprint(stringFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string,
+func bucketSprint(statFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string,
 	bucketInfo []BucketInfo) string {
 
 	var (
@@ -423,11 +421,11 @@ func bucketSprint(stringFmt StatStringFormat, pkgName string, statsGroupName str
 		bucketName string
 	)
 	lastIdx, count, sum, mean = bucketCalcStat(bucketInfo)
-	statName = statisticName(stringFmt, pkgName, statsGroupName, fieldName)
+	statName = statisticName(statFmt, pkgName, statsGroupName, fieldName)
 
-	switch stringFmt {
+	switch statFmt {
 
-	case StatsFormatHumanReadable:
+	case StatFormatHumanReadable:
 		line := fmt.Sprintf("%s total:%d count:%d avg:%d", statName, sum, count, mean)
 
 		// bucket names are printed as a number upto 3 digits long
@@ -446,7 +444,7 @@ func bucketSprint(stringFmt StatStringFormat, pkgName string, statsGroupName str
 		return line + "\n"
 	}
 
-	return fmt.Sprintf("StatisticName '%s': Unknown StatStringFormat: '%v'\n", statName, stringFmt)
+	return fmt.Sprintf("StatisticName '%s': Unknown StatStringFormat: '%v'\n", statName, statFmt)
 }
 
 // Replace illegal characters in names with underbar (`_`)

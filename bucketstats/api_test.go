@@ -3,6 +3,7 @@ package bucketstats
 import (
 	"fmt"
 	"math/rand"
+	"regexp"
 	"testing"
 )
 
@@ -181,42 +182,6 @@ func TestRegister(t *testing.T) {
 	if panicStr == "" {
 		t.Errorf("Register() of struct with duplicate field names should panic")
 	}
-
-	// verify illegal characters in names are replaced with underscore ('_')
-	var myStats5 allStatTypes = allStatTypes{
-		Total1:         Total{Name: "my bogus totaler name"},
-		Average1:       Average{Name: "you*can't*put*splat*in*a*name"},
-		BucketLog2:     BucketLog2Round{Name: "and you can't use spaces either"},
-		BucketLogRoot2: BucketLogRoot2Round{Name: ":colon #sharp \nNewline \tTab \bBackspace!bad"},
-	}
-	Register("m*a:i#n", "m y s t a t s 5", &myStats5)
-
-	if myStats5.Total1.Name != "my_bogus_totaler_name" {
-		t.Errorf("Register() did not replace illegal characters in Total1")
-	}
-	if myStats5.Average1.Name != "you_can't_put_splat_in_a_name" {
-		t.Errorf("Register() did not replace illegal characters in Average1")
-	}
-	if myStats5.BucketLog2.Name != "and_you_can't_use_spaces_either" {
-		t.Errorf("Register() did not replace illegal characters in BucketLog2")
-	}
-	if myStats5.BucketLogRoot2.Name != "_colon__sharp__Newline__Tab__Backspace!bad" {
-		t.Errorf("Register() did not replace illegal characters in BucketLogRoot2")
-	}
-
-	// verify it was registered with scrubbed name
-	var statsString string
-	statsString = SprintStats(StatsFormatHumanReadable, "m_a_i_n", "m_y_s_t_a_t_s_5")
-	if statsString == "" {
-		t.Errorf("SprintStats() of '%s' '%s' did not find mystats5", "m_a_i_n", "m_y_s_t_a_t_s_5")
-	}
-
-	// but it can also be printed with the bogus name
-	statsString = SprintStats(StatsFormatHumanReadable, "m*a:i#n", "m y s t a t s 5")
-	if statsString == "" {
-		t.Errorf("SprintStats() of '%s' '%s' did not find mystats5", "m*a:i#n", "m y s t a t s 5")
-	}
-	UnRegister("m*a:i#n", "m y s t a t s 5")
 }
 
 // All of the bucketstats statistics are Totaler(s); test them
@@ -288,7 +253,7 @@ func TestTotaler(t *testing.T) {
 	// Sprint for each should do something for all stats types
 	// (not really making the effort to parse the string)
 	for name, totaler = range totalerGroupMap {
-		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "main", "TestTotaler")
+		prettyPrint := totaler.Sprint(StatFormatHumanReadable, "main", "TestTotaler")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -388,7 +353,7 @@ func TestTotaler(t *testing.T) {
 	// Sprint for each should do something for all statistic types
 	// (without trying to validate the string)
 	for name, totaler = range totalerGroupMap {
-		prettyPrint := totaler.Sprint(StatsFormatHumanReadable, "main", "TestTotaler")
+		prettyPrint := totaler.Sprint(StatFormatHumanReadable, "main", "TestTotaler")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -488,7 +453,7 @@ func TestBucketer(t *testing.T) {
 	}
 
 	for name, bucketer = range bucketerGroupMap {
-		prettyPrint := bucketer.Sprint(StatsFormatHumanReadable, "main", "BucketGroup")
+		prettyPrint := bucketer.Sprint(StatFormatHumanReadable, "main", "BucketGroup")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -498,53 +463,86 @@ func TestBucketer(t *testing.T) {
 
 func TestSprintStats(t *testing.T) {
 
+	// array of all valid StatStringFormat
+	statFmtList := []StatStringFormat{StatFormatHumanReadable}
+
 	var (
 		testFunc func()
 		panicStr string
+		statFmt  StatStringFormat
 	)
 
-	// sprinting unregistered stats group should panic
+	// sprint'ing unregistered stats group should panic
 	testFunc = func() {
-		fmt.Print(SprintStats(StatsFormatHumanReadable, "main", "no-such-stats"))
+		fmt.Print(SprintStats(statFmt, "main", "no-such-stats"))
 	}
 	panicStr = catchAPanic(testFunc)
 	if panicStr == "" {
 		t.Errorf("SprintStats() of unregistered statistic group did not panic")
 	}
-}
 
-// verify that all of the bucketstats statistics types satisfy the appropriate
-// interface (this is really a compile time test)
-func testBucketStatsInterfaces(t *testing.T) {
-	var (
-		Total1         Total
-		Average1       Average
-		BucketLogRoot2 BucketLog2Round
-		BucketRoot2    BucketLogRoot2Round
-		TotalIface     Totaler
-		AverageIface   Averager
-		BucketIface    Bucketer
-	)
+	// verify StatFormatHumanReadable, and other formats, handle illegal
+	// characters in names (StatFormatHumanReadable replaces them with
+	// underscore ('_'))
+	for _, statFmt = range statFmtList {
 
-	// all the types are Totaler(s)
-	TotalIface = &Total1
-	TotalIface = &Average1
-	TotalIface = &BucketLogRoot2
-	TotalIface = &BucketRoot2
+		var myStats5 allStatTypes = allStatTypes{
+			Total1:         Total{Name: ":colon #sharp \nNewline \tTab \bBackspace-are-changed"},
+			Average1:       Average{Name: "and*splat*is*also*changed"},
+			BucketLog2:     BucketLog2Round{Name: "spaces get replaced as well"},
+			BucketLogRoot2: BucketLogRoot2Round{Name: "but !@$%^&()[]` are OK"},
+		}
+		statisticNamesScrubbed := []string{
+			"_colon__sharp__Newline__Tab__Backspace-are-changed",
+			"and_splat_is_also_changed",
+			"spaces_get_replaced_as_well",
+			"but_!@$%^&()[]`_are_OK",
+		}
 
-	// most of the types are also Averager(s)
-	AverageIface = &Average1
-	AverageIface = &BucketLogRoot2
-	AverageIface = &BucketRoot2
+		pkgName := "m*a:i#n"
+		pkgNameScrubbed := "m_a_i_n"
+		statsGroupName := "m y s t a t s 5"
+		statsGroupNameScrubbed := "m_y_s_t_a_t_s_5"
 
-	// and the bucket types are Bucketer(s)
-	BucketIface = &BucketLogRoot2
-	BucketIface = &BucketRoot2
+		Register(pkgName, statsGroupName, &myStats5)
 
-	// keep the compiler happy by doing something with the local variables
-	AverageIface = BucketIface
-	TotalIface = AverageIface
-	_ = TotalIface
+		switch statFmt {
+
+		default:
+			t.Fatalf("SprintStats(): unknown StatStringFormat %v\n", statFmt)
+
+		case StatFormatHumanReadable:
+			statsString := SprintStats(StatFormatHumanReadable, pkgName, statsGroupName)
+			if statsString == "" {
+				t.Fatalf("SprintStats(%s, %s,) did not find the statsgroup", pkgName, statsGroupName)
+			}
+
+			rowDelimiterRE := regexp.MustCompile("\n")
+			fieldDelimiterRe := regexp.MustCompile(" +")
+
+			for _, row := range rowDelimiterRE.Split(statsString, -1) {
+				if row == "" {
+					continue
+				}
+
+				statisticName := fieldDelimiterRe.Split(row, 2)[0]
+				matched := false
+				for _, scrubbedName := range statisticNamesScrubbed {
+					fu := pkgNameScrubbed + "." + statsGroupNameScrubbed + "." + scrubbedName
+					if statisticName == fu {
+						matched = true
+						break
+					}
+				}
+
+				if !matched {
+					t.Errorf("TestSprintStats: statisticName '%s' did not match any statistic name",
+						statisticName)
+				}
+			}
+		}
+		UnRegister("m*a:i#n", "m y s t a t s 5")
+	}
 }
 
 // Invoke function aFunc, which is expected to panic.  If it does, return the
