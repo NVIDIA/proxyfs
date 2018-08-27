@@ -56,7 +56,7 @@ const rightBracket = "(\\])"
 const sectionName = "([0-9A-Za-z_\\-/:\\.]+)"
 const separator = "([ \t]+|([ \t]*,[ \t]*))"
 
-const token = "(([0-9A-Za-z_\\-/:\\.\\[\\]]+)\\$?)"
+const token = "(([0-9A-Za-z_\\*\\-/:\\.\\[\\]]+)\\$?)"
 const whiteSpace = "([ \t]+)"
 
 // A string to load looks like:
