@@ -189,16 +189,24 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 // thisTime is presumably the snapShotSchedule.policy.location-local parsed snapShotStruct.name
 func (snapShotSchedule *snapShotScheduleStruct) compare(thisTime time.Time) (matches bool) {
 	var (
-		dayOfMonth int
-		dayOfWeek  time.Weekday
-		hour       int
-		minute     int
-		month      time.Month
+		dayOfMonth    int
+		dayOfWeek     time.Weekday
+		hour          int
+		minute        int
+		month         time.Month
+		truncatedTime time.Time
+		year          int
 	)
 
 	hour, minute, _ = thisTime.Clock()
-	_, month, dayOfMonth = thisTime.Date()
+	year, month, dayOfMonth = thisTime.Date()
 	dayOfWeek = thisTime.Weekday()
+
+	truncatedTime = time.Date(year, month, dayOfMonth, hour, minute, 0, 0, snapShotSchedule.policy.location)
+	if !truncatedTime.Equal(thisTime) {
+		matches = false
+		return
+	}
 
 	if snapShotSchedule.minuteSpecified {
 		if snapShotSchedule.minute != minute {
