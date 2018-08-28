@@ -147,17 +147,17 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 	// Case 5 - SnapShotPolicy with exhaustive ScheduleList and a specific TimeZone
 
 	testConfMapStrings = []string{
-		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *",
+		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *", // ==> snapShotPolicy.schedule[0]
 		"SnapShotSchedule:MinutelySnapShotSchedule.Keep=59",
-		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *",
+		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *", //   ==> snapShotPolicy.schedule[1]
 		"SnapShotSchedule:HourlySnapShotSchedule.Keep=23",
-		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *",
+		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *", //    ==> snapShotPolicy.schedule[2]
 		"SnapShotSchedule:DailySnapShotSchedule.Keep=6",
-		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0",
+		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0", //   ==> snapShotPolicy.schedule[3]
 		"SnapShotSchedule:WeeklySnapShotSchedule.Keep=8",
-		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *",
+		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *", //  ==> snapShotPolicy.schedule[4]
 		"SnapShotSchedule:MonthlySnapShotSchedule.Keep=11",
-		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *",
+		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *", //   ==> snapShotPolicy.schedule[5]
 		"SnapShotSchedule:YearlySnapShotSchedule.Keep=4",
 		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=MinutelySnapShotSchedule,HourlySnapShotSchedule,DailySnapShotSchedule,WeeklySnapShotSchedule,MonthlySnapShotSchedule,YearlySnapShotSchedule",
 		"SnapShotPolicy:CommonSnapShotPolicy.TimeZone=America/Los_Angeles",
@@ -370,17 +370,17 @@ func TestSnapShotScheduleCompare(t *testing.T) {
 	)
 
 	testConfMapStrings = []string{
-		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *",
+		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *", // ==> snapShotPolicy.schedule[0]
 		"SnapShotSchedule:MinutelySnapShotSchedule.Keep=59",
-		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *",
+		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *", //   ==> snapShotPolicy.schedule[1]
 		"SnapShotSchedule:HourlySnapShotSchedule.Keep=23",
-		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *",
+		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *", //    ==> snapShotPolicy.schedule[2]
 		"SnapShotSchedule:DailySnapShotSchedule.Keep=6",
-		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0",
+		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0", //   ==> snapShotPolicy.schedule[3]
 		"SnapShotSchedule:WeeklySnapShotSchedule.Keep=8",
-		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *",
+		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *", //  ==> snapShotPolicy.schedule[4]
 		"SnapShotSchedule:MonthlySnapShotSchedule.Keep=11",
-		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *",
+		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *", //   ==> snapShotPolicy.schedule[5]
 		"SnapShotSchedule:YearlySnapShotSchedule.Keep=4",
 		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=MinutelySnapShotSchedule,HourlySnapShotSchedule,DailySnapShotSchedule,WeeklySnapShotSchedule,MonthlySnapShotSchedule,YearlySnapShotSchedule",
 		"SnapShotPolicy:CommonSnapShotPolicy.TimeZone=America/Los_Angeles",
@@ -463,23 +463,25 @@ func TestSnapShotScheduleCompare(t *testing.T) {
 func TestSnapShotScheduleNext(t *testing.T) {
 	var (
 		err                error
+		nextTime           time.Time
 		snapShotPolicy     *snapShotPolicyStruct
 		testConfMap        conf.ConfMap
 		testConfMapStrings []string
+		timeNow            time.Time
 	)
 
 	testConfMapStrings = []string{
-		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *",
+		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *", // ==> snapShotPolicy.schedule[0]
 		"SnapShotSchedule:MinutelySnapShotSchedule.Keep=59",
-		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *",
+		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *", //   ==> snapShotPolicy.schedule[1]
 		"SnapShotSchedule:HourlySnapShotSchedule.Keep=23",
-		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *",
+		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *", //    ==> snapShotPolicy.schedule[2]
 		"SnapShotSchedule:DailySnapShotSchedule.Keep=6",
-		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0",
+		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0", //   ==> snapShotPolicy.schedule[3]
 		"SnapShotSchedule:WeeklySnapShotSchedule.Keep=8",
-		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *",
+		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *", //  ==> snapShotPolicy.schedule[4]
 		"SnapShotSchedule:MonthlySnapShotSchedule.Keep=11",
-		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *",
+		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *", //   ==> snapShotPolicy.schedule[5]
 		"SnapShotSchedule:YearlySnapShotSchedule.Keep=4",
 		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=MinutelySnapShotSchedule,HourlySnapShotSchedule,DailySnapShotSchedule,WeeklySnapShotSchedule,MonthlySnapShotSchedule,YearlySnapShotSchedule",
 		"SnapShotPolicy:CommonSnapShotPolicy.TimeZone=America/Los_Angeles",
@@ -496,8 +498,37 @@ func TestSnapShotScheduleNext(t *testing.T) {
 		t.Fatalf("loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	if nil == snapShotPolicy {
-	} // TODO
+	timeNow = time.Date(2017, time.January, 1, 0, 0, 0, 0, snapShotPolicy.location) // A Sunday
+
+	nextTime = snapShotPolicy.schedule[0].next(timeNow)
+	if !nextTime.Equal(time.Date(2017, time.January, 1, 0, 1, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[0].next(timeNow) returned unexpected time: %v", nextTime)
+	}
+
+	nextTime = snapShotPolicy.schedule[1].next(timeNow)
+	if !nextTime.Equal(time.Date(2017, time.January, 1, 1, 0, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[1].next(timeNow) returned unexpected time: %v", nextTime)
+	}
+
+	nextTime = snapShotPolicy.schedule[2].next(timeNow)
+	if !nextTime.Equal(time.Date(2017, time.January, 2, 0, 0, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[2].next(timeNow) returned unexpected time: %v", nextTime)
+	}
+
+	nextTime = snapShotPolicy.schedule[3].next(timeNow)
+	if !nextTime.Equal(time.Date(2017, time.January, 8, 0, 0, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[3].next(timeNow) returned unexpected time: %v", nextTime)
+	}
+
+	nextTime = snapShotPolicy.schedule[4].next(timeNow)
+	if !nextTime.Equal(time.Date(2017, time.February, 1, 0, 0, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[4].next(timeNow) returned unexpected time: %v", nextTime)
+	}
+
+	nextTime = snapShotPolicy.schedule[5].next(timeNow)
+	if !nextTime.Equal(time.Date(2018, time.January, 1, 0, 0, 0, 0, snapShotPolicy.location)) {
+		t.Fatalf("snapShotPolicy.schedule[5].next(timeNow) returned unexpected time: %v", nextTime)
+	}
 }
 
 func TestSnapShotPolicyNext(t *testing.T) {
@@ -509,17 +540,17 @@ func TestSnapShotPolicyNext(t *testing.T) {
 	)
 
 	testConfMapStrings = []string{
-		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *",
+		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *", // ==> snapShotPolicy.schedule[0]
 		"SnapShotSchedule:MinutelySnapShotSchedule.Keep=59",
-		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *",
+		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *", //   ==> snapShotPolicy.schedule[1]
 		"SnapShotSchedule:HourlySnapShotSchedule.Keep=23",
-		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *",
+		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *", //    ==> snapShotPolicy.schedule[2]
 		"SnapShotSchedule:DailySnapShotSchedule.Keep=6",
-		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0",
+		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0", //   ==> snapShotPolicy.schedule[3]
 		"SnapShotSchedule:WeeklySnapShotSchedule.Keep=8",
-		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *",
+		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *", //  ==> snapShotPolicy.schedule[4]
 		"SnapShotSchedule:MonthlySnapShotSchedule.Keep=11",
-		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *",
+		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *", //   ==> snapShotPolicy.schedule[5]
 		"SnapShotSchedule:YearlySnapShotSchedule.Keep=4",
 		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=MinutelySnapShotSchedule,HourlySnapShotSchedule,DailySnapShotSchedule,WeeklySnapShotSchedule,MonthlySnapShotSchedule,YearlySnapShotSchedule",
 		"SnapShotPolicy:CommonSnapShotPolicy.TimeZone=America/Los_Angeles",
