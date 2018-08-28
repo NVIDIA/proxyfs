@@ -12,6 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -61,6 +62,7 @@ type volumeStruct struct {
 	sync.Mutex
 	name                   string
 	fsMountHandle          fs.MountHandle
+	inodeVolumeHandle      inode.VolumeHandle
 	headhunterVolumeHandle headhunter.VolumeHandle
 	fsckActiveJob          *jobStruct
 	fsckJobs               sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
@@ -139,6 +141,11 @@ func Up(confMap conf.ConfMap) (err error) {
 				}
 
 				volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+				if nil != err {
+					return
+				}
+
+				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
 				if nil != err {
 					return
 				}
@@ -373,6 +380,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					}
 
 					volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+					if nil != err {
+						return
+					}
+
+					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
 					if nil != err {
 						return
 					}

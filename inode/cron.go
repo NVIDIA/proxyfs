@@ -1,4 +1,4 @@
-package fs
+package inode
 
 import (
 	"fmt"
@@ -485,15 +485,21 @@ func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTim
 func (snapShotPolicy *snapShotPolicyStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
 		nextTimeForSnapShotSchedule time.Time
+		nextTimeHasBeenSet          bool
 		snapShotSchedule            *snapShotScheduleStruct
 	)
 
-	nextTime = timeNow
+	nextTimeHasBeenSet = false
 
 	for _, snapShotSchedule = range snapShotPolicy.schedule {
 		nextTimeForSnapShotSchedule = snapShotSchedule.next(timeNow)
-		if nextTimeForSnapShotSchedule.Before(nextTime) {
+		if nextTimeHasBeenSet {
+			if nextTimeForSnapShotSchedule.Before(nextTime) {
+				nextTime = nextTimeForSnapShotSchedule
+			}
+		} else {
 			nextTime = nextTimeForSnapShotSchedule
+			nextTimeHasBeenSet = true
 		}
 	}
 

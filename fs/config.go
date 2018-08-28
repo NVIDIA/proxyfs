@@ -31,12 +31,6 @@ type mountStruct struct {
 	volStruct *volumeStruct
 }
 
-type snapShotStruct struct {
-	id   uint64
-	time time.Time
-	name string
-}
-
 type volumeStruct struct {
 	dataMutex                sync.Mutex
 	volumeName               string
@@ -46,7 +40,6 @@ type volumeStruct struct {
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
 	jobRWMutex               sync.RWMutex
-	snapShotMap              map[uint64]*snapShotStruct
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle
 }
@@ -135,10 +128,6 @@ func Up(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-
-				// Load existing SnapShots
-
-				volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 				globals.volumeMap[volumeName] = volume
 			}
@@ -306,10 +295,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					if nil != err {
 						return
 					}
-
-					// Load existing SnapShots
-
-					volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 					globals.volumeMap[volumeName] = volume
 				}
