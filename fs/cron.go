@@ -93,6 +93,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 			}
 			if 59 < minuteAsU64 {
 				err = fmt.Errorf("%v.CronTab[0] must be valid minute (0-59)", snapShotScheduleSectionName)
+				return
 			}
 
 			snapShotSchedule.minute = int(minuteAsU64)
@@ -109,6 +110,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 			}
 			if 23 < hourAsU64 {
 				err = fmt.Errorf("%v.CronTab[1] must be valid hour (0-23)", snapShotScheduleSectionName)
+				return
 			}
 
 			snapShotSchedule.hour = int(hourAsU64)
@@ -125,6 +127,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 			}
 			if (0 == dayOfMonthAsU64) || (31 < dayOfMonthAsU64) {
 				err = fmt.Errorf("%v.CronTab[2] must be valid dayOfMonth (1-31)", snapShotScheduleSectionName)
+				return
 			}
 
 			snapShotSchedule.dayOfMonth = int(dayOfMonthAsU64)
@@ -141,6 +144,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 			}
 			if (0 == monthAsU64) || (12 < monthAsU64) {
 				err = fmt.Errorf("%v.CronTab[3] must be valid month (1-12)", snapShotScheduleSectionName)
+				return
 			}
 
 			snapShotSchedule.month = time.Month(monthAsU64)
@@ -157,6 +161,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 			}
 			if 6 < dayOfWeekAsU64 {
 				err = fmt.Errorf("%v.CronTab[4] must be valid dayOfWeek (0-6)", snapShotScheduleSectionName)
+				return
 			}
 
 			snapShotSchedule.dayOfWeek = time.Weekday(dayOfWeekAsU64)
@@ -164,6 +169,11 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 
 		snapShotSchedule.keep, err = confMap.FetchOptionValueUint64(snapShotScheduleSectionName, "Keep")
 		if nil != err {
+			return
+		}
+
+		if snapShotSchedule.dayOfWeekSpecified && (snapShotSchedule.dayOfMonthSpecified || snapShotSchedule.monthSpecified) {
+			err = fmt.Errorf("%v.CronTab must not specify DayOfWeek if DayOfMonth and/or Month are specified", snapShotScheduleSectionName)
 			return
 		}
 
@@ -243,9 +253,71 @@ func (snapShotSchedule *snapShotScheduleStruct) compare(thisTime time.Time) (mat
 		}
 	}
 
-	// If we make it this far, t matches snapShotSchedule
+	// If we make it this far, thisTime matches snapShotSchedule
 
 	matches = true
+	return
+}
+
+// Since time.Truncate() only truncates with respect to UTC, it is unsafe
+
+func truncateToStartOfMinute(untruncatedTime time.Time, loc *time.Location) (truncatedTime time.Time) {
+	var (
+		day   int
+		hour  int
+		min   int
+		month time.Month
+		year  int
+	)
+
+	hour, min, _ = untruncatedTime.Clock()
+	year, month, day = untruncatedTime.Date()
+
+	truncatedTime = time.Date(year, month, day, hour, min, 0, 0, loc)
+
+	return
+}
+
+func truncateToStartOfHour(untruncatedTime time.Time, loc *time.Location) (truncatedTime time.Time) {
+	var (
+		day   int
+		hour  int
+		month time.Month
+		year  int
+	)
+
+	hour, _, _ = untruncatedTime.Clock()
+	year, month, day = untruncatedTime.Date()
+
+	truncatedTime = time.Date(year, month, day, hour, 0, 0, 0, loc)
+
+	return
+}
+
+func truncateToStartOfDay(untruncatedTime time.Time, loc *time.Location) (truncatedTime time.Time) {
+	var (
+		day   int
+		month time.Month
+		year  int
+	)
+
+	year, month, day = untruncatedTime.Date()
+
+	truncatedTime = time.Date(year, month, day, 0, 0, 0, 0, loc)
+
+	return
+}
+
+func truncateToStartOfMonth(untruncatedTime time.Time, loc *time.Location) (truncatedTime time.Time) {
+	var (
+		month time.Month
+		year  int
+	)
+
+	year, month, _ = untruncatedTime.Date()
+
+	truncatedTime = time.Date(year, month, 1, 0, 0, 0, 0, loc)
+
 	return
 }
 
@@ -253,46 +325,54 @@ func (snapShotSchedule *snapShotScheduleStruct) compare(thisTime time.Time) (mat
 // per snapShotSchedule (within a snapShotPolicy) can use the same time.Now()
 func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
-		dayOfMonth int
-		dayOfWeek  time.Weekday
-		hour       int
-		minute     int
-		month      time.Month
-		year       int
+		dayOfMonth      int
+		dayOfWeek       time.Weekday
+		hour            int
+		minute          int
+		month           time.Month
+		numDaysToAdd    int
+		numHoursToAdd   int
+		numMinutesToAdd int
+		year            int
 	)
 
 	// Ensure nextTime is at least at the start of the next minute
-	nextTime = timeNow.Truncate(time.Minute).Add(time.Minute)
+	nextTime = truncateToStartOfMinute(timeNow, snapShotSchedule.policy.location).Add(time.Minute)
 
-	if snapShotSchedule.dayOfWeekSpecified {
-		dayOfWeek = nextTime.Weekday()
-		if time.Weekday(snapShotSchedule.dayOfWeek) == dayOfWeek {
+	if snapShotSchedule.minuteSpecified {
+		minute = nextTime.Minute()
+		if snapShotSchedule.minute == minute {
 			// We don't need to advance nextTime
 		} else {
-			// First truncate nextTime back to the start of the day
-			nextTime = nextTime.Truncate(24 * time.Hour)
-			// Now advance nextTime to align with dayOfWeek
-			if time.Weekday(snapShotSchedule.dayOfWeek) > dayOfWeek {
-				nextTime = nextTime.Add((time.Duration((int(snapShotSchedule.dayOfWeek)-int(dayOfWeek))*24) * time.Hour))
-			} else { // time.Weekday(snapShotSchedule.dayOfWeek) < dayOfWeek
-				nextTime = nextTime.Add((time.Duration((int(snapShotSchedule.dayOfWeek)+int(7)-int(dayOfWeek))*24) * time.Hour))
+			// No need to (again) truncate nextTime back to the start of the minute
+			// Now advance nextTime to align with minute
+			if snapShotSchedule.minute > minute {
+				numMinutesToAdd = snapShotSchedule.minute - minute
+			} else { // snapShotSchedule.minute < minute
+				numMinutesToAdd = snapShotSchedule.minute + 60 - minute
 			}
+			nextTime = nextTime.Add(time.Duration(numMinutesToAdd) * time.Minute)
 		}
 	}
 
-	if snapShotSchedule.monthSpecified {
-		year, month, _ = nextTime.Date()
-		if time.Month(snapShotSchedule.month) == month {
+	if snapShotSchedule.hourSpecified {
+		hour = nextTime.Hour()
+		if snapShotSchedule.hour == hour {
 			// We don't need to advance nextTime
 		} else {
-			// First truncate nextTime back to the start of the month
-			nextTime = time.Date(year, month, 1, 0, 0, 0, 0, snapShotSchedule.policy.location)
-			// Now advance nextTime to align with month
-			if time.Month(snapShotSchedule.month) > month {
-				nextTime = nextTime.Add((time.Duration((int(snapShotSchedule.month)-int(month))*24) * time.Hour))
-			} else {
-				nextTime = nextTime.Add((time.Duration((int(snapShotSchedule.month)+int(12)-int(month))*24) * time.Hour))
+			// First truncate nextTime back to the start of the hour
+			nextTime = truncateToStartOfHour(nextTime, snapShotSchedule.policy.location)
+			// Restore minuteSpecified if necessary
+			if snapShotSchedule.minuteSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute) * time.Minute)
 			}
+			// Now advance nextTime to align with hour
+			if snapShotSchedule.hour > hour {
+				numHoursToAdd = snapShotSchedule.hour - hour
+			} else { // snapShotSchedule.hour < hour
+				numHoursToAdd = snapShotSchedule.hour + 24 - hour
+			}
+			nextTime = nextTime.Add(time.Duration(numHoursToAdd) * time.Hour)
 		}
 	}
 
@@ -302,7 +382,14 @@ func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTim
 			// We don't need to advance nextTime
 		} else {
 			// First truncate nextTime back to the start of the day
-			nextTime = nextTime.Truncate(24 * time.Hour)
+			nextTime = truncateToStartOfDay(nextTime, snapShotSchedule.policy.location)
+			// Restore minuteSpecified and/or hourSpecified if necessary
+			if snapShotSchedule.minuteSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute) * time.Minute)
+			}
+			if snapShotSchedule.hourSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.hour) * time.Hour)
+			}
 			// Now advance nextTime to align with dayOfMonth
 			// Note: This unfortunately iterative approach avoids complicated
 			//       adjustments for the non-fixed number of days in a month
@@ -316,34 +403,78 @@ func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTim
 		}
 	}
 
-	if snapShotSchedule.hourSpecified {
-		hour = nextTime.Hour()
-		if snapShotSchedule.hour == hour {
+	if snapShotSchedule.monthSpecified {
+		month = nextTime.Month()
+		if snapShotSchedule.month == month {
 			// We don't need to advance nextTime
 		} else {
-			// First truncate nextTime back to the start of the hour
-			nextTime = nextTime.Truncate(time.Hour)
-			// Now advance nextTime to align with hour
-			if snapShotSchedule.hour > hour {
-				nextTime = nextTime.Add(time.Duration(snapShotSchedule.hour-hour) * time.Hour)
-			} else { // snapShotSchedule.hour < hour
-				nextTime = nextTime.Add(time.Duration(snapShotSchedule.hour+int(24)-hour) * time.Hour)
+			// First truncate nextTime back to the start of the month
+			nextTime = truncateToStartOfMonth(nextTime, snapShotSchedule.policy.location)
+			// Restore minuteSpecified, hourSpecified, and/or dayOfMonthSpecified if necessary
+			if snapShotSchedule.minuteSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute) * time.Minute)
+			}
+			if snapShotSchedule.hourSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.hour) * time.Hour)
+			}
+			if snapShotSchedule.dayOfMonthSpecified {
+				nextTime = nextTime.Add(time.Duration((snapShotSchedule.dayOfMonth-1)*24) * time.Hour)
+			}
+			// Now advance nextTime to align with month
+			// Note: This unfortunately iterative approach avoids complicated
+			//       adjustments for the non-fixed number of days in a month
+			hour, minute, _ = nextTime.Clock()
+			year, month, dayOfMonth = nextTime.Date()
+			if !snapShotSchedule.dayOfMonthSpecified {
+				dayOfMonth = 1
+			}
+			for {
+				if time.December == month {
+					month = time.January
+					year++
+				} else {
+					month++
+				}
+				nextTime = time.Date(year, month, dayOfMonth, hour, minute, 0, 0, snapShotSchedule.policy.location)
+				year, month, dayOfMonth = nextTime.Date()
+				if snapShotSchedule.dayOfMonthSpecified {
+					if (snapShotSchedule.month == month) && (snapShotSchedule.dayOfMonth == dayOfMonth) {
+						break
+					} else {
+						dayOfMonth = snapShotSchedule.dayOfMonth
+					}
+				} else {
+					if (snapShotSchedule.month == month) && (1 == dayOfMonth) {
+						break
+					} else {
+						dayOfMonth = 1
+					}
+				}
 			}
 		}
 	}
 
-	if snapShotSchedule.minuteSpecified {
-		minute = nextTime.Minute()
-		if snapShotSchedule.minute == minute {
+	if snapShotSchedule.dayOfWeekSpecified {
+		dayOfWeek = nextTime.Weekday()
+		if time.Weekday(snapShotSchedule.dayOfWeek) == dayOfWeek {
 			// We don't need to advance nextTime
 		} else {
-			// No need to (again) truncate nextTime back to the start of the minute
-			// Now advance nextTime to align with minute
-			if snapShotSchedule.minute > minute {
-				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute-minute) * time.Minute)
-			} else { // snapShotSchedule.minute < minute
-				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute+int(60)-minute) * time.Minute)
+			// First truncate nextTime back to the start of the day
+			nextTime = truncateToStartOfDay(nextTime, snapShotSchedule.policy.location)
+			// Restore minuteSpecified and/or hourSpecified if necessary
+			if snapShotSchedule.minuteSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.minute) * time.Minute)
 			}
+			if snapShotSchedule.hourSpecified {
+				nextTime = nextTime.Add(time.Duration(snapShotSchedule.hour) * time.Hour)
+			}
+			// Now advance nextTime to align with dayOfWeek
+			if time.Weekday(snapShotSchedule.dayOfWeek) > dayOfWeek {
+				numDaysToAdd = int(snapShotSchedule.dayOfWeek) - int(dayOfWeek)
+			} else { // time.Weekday(snapShotSchedule.dayOfWeek) < dayOfWeek
+				numDaysToAdd = int(snapShotSchedule.dayOfWeek) + 7 - int(dayOfWeek)
+			}
+			nextTime = nextTime.Add(time.Duration(24*numDaysToAdd) * time.Hour)
 		}
 	}
 
