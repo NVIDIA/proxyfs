@@ -186,7 +186,8 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 	return
 }
 
-func (snapShotSchedule *snapShotScheduleStruct) compare(t time.Time) (matches bool) {
+// thisTime is presumably the snapShotSchedule.policy.location-local parsed snapShotStruct.name
+func (snapShotSchedule *snapShotScheduleStruct) compare(thisTime time.Time) (matches bool) {
 	var (
 		dayOfMonth int
 		dayOfWeek  time.Weekday
@@ -195,9 +196,9 @@ func (snapShotSchedule *snapShotScheduleStruct) compare(t time.Time) (matches bo
 		month      time.Month
 	)
 
-	hour, minute, _ = t.Clock()
-	_, month, dayOfMonth = t.Date()
-	dayOfWeek = t.Weekday()
+	hour, minute, _ = thisTime.Clock()
+	_, month, dayOfMonth = thisTime.Date()
+	dayOfWeek = thisTime.Weekday()
 
 	if snapShotSchedule.minuteSpecified {
 		if snapShotSchedule.minute != minute {
@@ -240,7 +241,9 @@ func (snapShotSchedule *snapShotScheduleStruct) compare(t time.Time) (matches bo
 	return
 }
 
-func (snapShotSchedule *snapShotScheduleStruct) next(lastTime time.Time) (nextTime time.Time) {
+// timeNow is presumably time.Now()...but provided here so that each invocation of the
+// per snapShotSchedule (within a snapShotPolicy) can use the same time.Now()
+func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
 		dayOfMonth int
 		dayOfWeek  time.Weekday
@@ -251,7 +254,7 @@ func (snapShotSchedule *snapShotScheduleStruct) next(lastTime time.Time) (nextTi
 	)
 
 	// Ensure nextTime is at least at the start of the next minute
-	nextTime = lastTime.Truncate(time.Minute).Add(time.Minute)
+	nextTime = timeNow.Truncate(time.Minute).Add(time.Minute)
 
 	if snapShotSchedule.dayOfWeekSpecified {
 		dayOfWeek = nextTime.Weekday()
@@ -339,23 +342,19 @@ func (snapShotSchedule *snapShotScheduleStruct) next(lastTime time.Time) (nextTi
 	return
 }
 
-func (snapShotPolicy *snapShotPolicyStruct) next(lastTime time.Time) (nextTime time.Time, nextTimeHasBeenSet bool) {
+// timeNow is presumably time.Now()...but provided here primarily to enable easy testing
+func (snapShotPolicy *snapShotPolicyStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
 		nextTimeForSnapShotSchedule time.Time
 		snapShotSchedule            *snapShotScheduleStruct
 	)
 
-	nextTimeHasBeenSet = false
+	nextTime = timeNow
 
 	for _, snapShotSchedule = range snapShotPolicy.schedule {
-		nextTimeForSnapShotSchedule = snapShotSchedule.next(lastTime)
-		if nextTimeHasBeenSet {
-			if nextTimeForSnapShotSchedule.Before(nextTime) {
-				nextTime = nextTimeForSnapShotSchedule
-			}
-		} else {
+		nextTimeForSnapShotSchedule = snapShotSchedule.next(timeNow)
+		if nextTimeForSnapShotSchedule.Before(nextTime) {
 			nextTime = nextTimeForSnapShotSchedule
-			nextTimeHasBeenSet = true
 		}
 	}
 
