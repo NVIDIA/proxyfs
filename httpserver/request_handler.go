@@ -108,7 +108,7 @@ func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	err = volume.fsMountHandle.SnapShotDelete(snapShotID)
+	err = volume.inodeVolumeHandle.SnapShotDelete(snapShotID)
 	if nil == err {
 		responseWriter.WriteHeader(http.StatusNoContent)
 	} else {
@@ -1645,7 +1645,7 @@ func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request,
 		snapShotID uint64
 	)
 
-	snapShotID, err = volume.fsMountHandle.SnapShotCreate(request.FormValue("name"))
+	snapShotID, err = volume.inodeVolumeHandle.SnapShotCreate(request.FormValue("name"))
 	if nil == err {
 		responseWriter.Header().Set("Location", fmt.Sprintf("/volume/%v/snapshot/%v", volume.name, snapShotID))
 

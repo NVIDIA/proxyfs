@@ -136,8 +136,8 @@ type VolumeHandle interface {
 	// Generic methods, implemented volume.go
 
 	GetFSID() (fsid uint64)
-	SnapShotCreateByFSLayer(name string) (id uint64, err error)
-	SnapShotDeleteByFSLayer(id uint64) (err error)
+	SnapShotCreate(name string) (id uint64, err error)
+	SnapShotDelete(id uint64) (err error)
 
 	// Wrapper methods around DLM locks.  Implemented in locker.go
 	MakeLockID(inodeNumber InodeNumber) (lockID string, err error)

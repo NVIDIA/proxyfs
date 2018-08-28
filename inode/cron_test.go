@@ -1,4 +1,4 @@
-package fs
+package inode
 
 import (
 	"testing"
@@ -533,26 +533,24 @@ func TestSnapShotScheduleNext(t *testing.T) {
 
 func TestSnapShotPolicyNext(t *testing.T) {
 	var (
-		err                error
-		snapShotPolicy     *snapShotPolicyStruct
-		testConfMap        conf.ConfMap
-		testConfMapStrings []string
+		err                    error
+		snapShotPolicy         *snapShotPolicyStruct
+		testConfMap            conf.ConfMap
+		testConfMapStrings     []string
+		timeMidnight           time.Time
+		timeMidnightNext       time.Time
+		timeOhThirtyAM         time.Time
+		timeOneFortyFiveAM     time.Time
+		timeOneFortyFiveAMNext time.Time
+		timeTwoAM              time.Time
 	)
 
 	testConfMapStrings = []string{
-		"SnapShotSchedule:MinutelySnapShotSchedule.CronTab=* * * * *", // ==> snapShotPolicy.schedule[0]
-		"SnapShotSchedule:MinutelySnapShotSchedule.Keep=59",
-		"SnapShotSchedule:HourlySnapShotSchedule.CronTab=0 * * * *", //   ==> snapShotPolicy.schedule[1]
-		"SnapShotSchedule:HourlySnapShotSchedule.Keep=23",
-		"SnapShotSchedule:DailySnapShotSchedule.CronTab=0 0 * * *", //    ==> snapShotPolicy.schedule[2]
-		"SnapShotSchedule:DailySnapShotSchedule.Keep=6",
-		"SnapShotSchedule:WeeklySnapShotSchedule.CronTab=0 0 * * 0", //   ==> snapShotPolicy.schedule[3]
-		"SnapShotSchedule:WeeklySnapShotSchedule.Keep=8",
-		"SnapShotSchedule:MonthlySnapShotSchedule.CronTab=0 0 1 * *", //  ==> snapShotPolicy.schedule[4]
-		"SnapShotSchedule:MonthlySnapShotSchedule.Keep=11",
-		"SnapShotSchedule:YearlySnapShotSchedule.CronTab=0 0 1 1 *", //   ==> snapShotPolicy.schedule[5]
-		"SnapShotSchedule:YearlySnapShotSchedule.Keep=4",
-		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=MinutelySnapShotSchedule,HourlySnapShotSchedule,DailySnapShotSchedule,WeeklySnapShotSchedule,MonthlySnapShotSchedule,YearlySnapShotSchedule",
+		"SnapShotSchedule:HalfPastTheHourSnapShotSchedule.CronTab=30 * * * *", // ==> snapShotPolicy.schedule[0]
+		"SnapShotSchedule:HalfPastTheHourSnapShotSchedule.Keep=99",
+		"SnapShotSchedule:TwoAMSnapShotSchedule.CronTab=0 2 * * *", //            ==> snapShotPolicy.schedule[1]
+		"SnapShotSchedule:TwoAMSnapShotSchedule.Keep=99",
+		"SnapShotPolicy:CommonSnapShotPolicy.ScheduleList=HalfPastTheHourSnapShotSchedule,TwoAMSnapShotSchedule",
 		"SnapShotPolicy:CommonSnapShotPolicy.TimeZone=America/Los_Angeles",
 		"Volume:TestVolume.SnapShotPolicy=CommonSnapShotPolicy",
 	}
@@ -567,6 +565,28 @@ func TestSnapShotPolicyNext(t *testing.T) {
 		t.Fatalf("loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	if nil == snapShotPolicy {
-	} // TODO
+	timeMidnight = time.Date(2017, time.January, 1, 0, 0, 0, 0, snapShotPolicy.location)
+	timeOhThirtyAM = time.Date(2017, time.January, 1, 0, 30, 0, 0, snapShotPolicy.location)
+	timeOneFortyFiveAM = time.Date(2017, time.January, 1, 1, 45, 0, 0, snapShotPolicy.location)
+	timeTwoAM = time.Date(2017, time.January, 1, 2, 0, 0, 0, snapShotPolicy.location)
+
+	timeMidnightNext = snapShotPolicy.schedule[0].next(timeMidnight)
+	timeOneFortyFiveAMNext = snapShotPolicy.schedule[1].next(timeOneFortyFiveAM)
+
+	if timeMidnightNext != timeOhThirtyAM {
+		t.Fatalf("snapShotPolicy.schedule[0].next(timeMidnight) returned unexpected time: %v", timeMidnightNext)
+	}
+	if timeOneFortyFiveAMNext != timeTwoAM {
+		t.Fatalf("snapShotPolicy.schedule[1].next(timeOneFortyFiveAM) returned unexpected time: %v", timeOneFortyFiveAMNext)
+	}
+
+	timeMidnightNext = snapShotPolicy.next(timeMidnight)
+	timeOneFortyFiveAMNext = snapShotPolicy.next(timeOneFortyFiveAM)
+
+	if timeMidnightNext != timeOhThirtyAM {
+		t.Fatalf("snapShotPolicy.next(timeMidnight) returned unexpected time: %v", timeMidnightNext)
+	}
+	if timeOneFortyFiveAMNext != timeTwoAM {
+		t.Fatalf("snapShotPolicy.next(timeOneFortyFiveAM) returned unexpected time: %v", timeOneFortyFiveAMNext)
+	}
 }

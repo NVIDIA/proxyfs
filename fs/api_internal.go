@@ -3048,18 +3048,6 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 	return
 }
 
-func (mS *mountStruct) SnapShotCreate(name string) (id uint64, err error) {
-	id, err = mS.volStruct.inodeVolumeHandle.SnapShotCreateByFSLayer(name)
-	// TODO: Does FS Layer need to do anything here?
-	return
-}
-
-func (mS *mountStruct) SnapShotDelete(id uint64) (err error) {
-	// TODO: Does FS Layer need to do anything here?
-	err = mS.volStruct.inodeVolumeHandle.SnapShotDeleteByFSLayer(id)
-	return
-}
-
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
