@@ -70,7 +70,15 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 		t.Fatalf("Case 1: loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	// TODO
+	if "CommonSnapShotPolicy" != snapShotPolicy.name {
+		t.Fatalf("Case 1: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .name")
+	}
+	if 0 != len(snapShotPolicy.schedule) {
+		t.Fatalf("Case 1: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .schedule")
+	}
+	if "UTC" != snapShotPolicy.location.String() {
+		t.Fatalf("Case 1: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .location")
+	}
 
 	// Case 2 - SnapShotPolicy with empty ScheduleList and empty TimeZone
 
@@ -90,7 +98,15 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 		t.Fatalf("Case 2: loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	// TODO
+	if "CommonSnapShotPolicy" != snapShotPolicy.name {
+		t.Fatalf("Case 2: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .name")
+	}
+	if 0 != len(snapShotPolicy.schedule) {
+		t.Fatalf("Case 2: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .schedule")
+	}
+	if "UTC" != snapShotPolicy.location.String() {
+		t.Fatalf("Case 2: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .location")
+	}
 
 	// Case 3 - SnapShotPolicy with empty ScheduleList and TimeZone of "UTC"
 
@@ -110,7 +126,15 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 		t.Fatalf("Case 3: loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	// TODO
+	if "CommonSnapShotPolicy" != snapShotPolicy.name {
+		t.Fatalf("Case 3: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .name")
+	}
+	if 0 != len(snapShotPolicy.schedule) {
+		t.Fatalf("Case 3: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .schedule")
+	}
+	if "UTC" != snapShotPolicy.location.String() {
+		t.Fatalf("Case 3: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .location")
+	}
 
 	// Case 4 - SnapShotPolicy with empty ScheduleList and TimeZone of "Local"
 
@@ -130,7 +154,15 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 		t.Fatalf("Case 4: loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	// TODO
+	if "CommonSnapShotPolicy" != snapShotPolicy.name {
+		t.Fatalf("Case 4: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .name")
+	}
+	if 0 != len(snapShotPolicy.schedule) {
+		t.Fatalf("Case 4: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .schedule")
+	}
+	if "Local" != snapShotPolicy.location.String() {
+		t.Fatalf("Case 4: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .location")
+	}
 
 	// Case 5 - SnapShotPolicy with exhaustive ScheduleList and a specific TimeZone
 
@@ -162,5 +194,186 @@ func TestLoadSnapShotPolicy(t *testing.T) {
 		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") failed: %v", err)
 	}
 
-	// TODO
+	if "CommonSnapShotPolicy" != snapShotPolicy.name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .name")
+	}
+
+	if 6 != len(snapShotPolicy.schedule) {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .schedule")
+	}
+
+	if "MinutelySnapShotSchedule" != snapShotPolicy.schedule[0].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .name")
+	}
+	if snapShotPolicy.schedule[0].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .minuteSpecified")
+	}
+	if snapShotPolicy.schedule[0].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .hourSpecified")
+	}
+	if snapShotPolicy.schedule[0].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .dayOfMonthSpecified")
+	}
+	if snapShotPolicy.schedule[0].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .monthSpecified")
+	}
+	if snapShotPolicy.schedule[0].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .dayOfWeekSpecified")
+	}
+	if 59 != snapShotPolicy.schedule[0].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[0] with unexpected .keep")
+	}
+
+	if "HourlySnapShotSchedule" != snapShotPolicy.schedule[1].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .name")
+	}
+	if !snapShotPolicy.schedule[1].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .minuteSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[1].minute {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .minute")
+	}
+	if snapShotPolicy.schedule[1].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .hourSpecified")
+	}
+	if snapShotPolicy.schedule[1].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .dayOfMonthSpecified")
+	}
+	if snapShotPolicy.schedule[1].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .monthSpecified")
+	}
+	if snapShotPolicy.schedule[1].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .dayOfWeekSpecified")
+	}
+	if 23 != snapShotPolicy.schedule[1].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[1] with unexpected .keep")
+	}
+
+	if "DailySnapShotSchedule" != snapShotPolicy.schedule[2].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .name")
+	}
+	if !snapShotPolicy.schedule[2].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .minuteSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[2].minute {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .minute")
+	}
+	if !snapShotPolicy.schedule[2].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .hourSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[2].hour {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .hour")
+	}
+	if snapShotPolicy.schedule[2].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .dayOfMonthSpecified")
+	}
+	if snapShotPolicy.schedule[2].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .monthSpecified")
+	}
+	if snapShotPolicy.schedule[2].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .dayOfWeekSpecified")
+	}
+	if 6 != snapShotPolicy.schedule[2].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[2] with unexpected .keep")
+	}
+
+	if "WeeklySnapShotSchedule" != snapShotPolicy.schedule[3].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .name")
+	}
+	if !snapShotPolicy.schedule[3].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .minuteSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[3].minute {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .minute")
+	}
+	if !snapShotPolicy.schedule[3].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .hourSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[3].hour {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .hour")
+	}
+	if snapShotPolicy.schedule[3].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .dayOfMonthSpecified")
+	}
+	if snapShotPolicy.schedule[3].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .monthSpecified")
+	}
+	if !snapShotPolicy.schedule[3].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .dayOfWeekSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[3].dayOfWeek {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .dayOfWeek")
+	}
+	if 8 != snapShotPolicy.schedule[3].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[3] with unexpected .keep")
+	}
+
+	if "MonthlySnapShotSchedule" != snapShotPolicy.schedule[4].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .name")
+	}
+	if !snapShotPolicy.schedule[4].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .minuteSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[4].minute {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .minute")
+	}
+	if !snapShotPolicy.schedule[4].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .hourSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[4].hour {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .hour")
+	}
+	if !snapShotPolicy.schedule[4].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .dayOfMonthSpecified")
+	}
+	if 1 != snapShotPolicy.schedule[4].dayOfMonth {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .dayOfMonth")
+	}
+	if snapShotPolicy.schedule[4].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .monthSpecified")
+	}
+	if snapShotPolicy.schedule[4].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .dayOfWeekSpecified")
+	}
+	if 11 != snapShotPolicy.schedule[4].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[4] with unexpected .keep")
+	}
+
+	if "YearlySnapShotSchedule" != snapShotPolicy.schedule[5].name {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .name")
+	}
+	if !snapShotPolicy.schedule[5].minuteSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .minuteSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[5].minute {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .minute")
+	}
+	if !snapShotPolicy.schedule[5].hourSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .hourSpecified")
+	}
+	if 0 != snapShotPolicy.schedule[5].hour {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .hour")
+	}
+	if !snapShotPolicy.schedule[5].dayOfMonthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .dayOfMonthSpecified")
+	}
+	if 1 != snapShotPolicy.schedule[5].dayOfMonth {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .dayOfMonth")
+	}
+	if !snapShotPolicy.schedule[5].monthSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .monthSpecified")
+	}
+	if 1 != snapShotPolicy.schedule[5].month {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .month")
+	}
+	if snapShotPolicy.schedule[5].dayOfWeekSpecified {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .dayOfWeekSpecified")
+	}
+	if 4 != snapShotPolicy.schedule[5].keep {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy.schedule[5] with unexpected .keep")
+	}
+
+	if "America/Los_Angeles" != snapShotPolicy.location.String() {
+		t.Fatalf("Case 5: loadSnapShotPolicy(testConfMap, \"TestVolume\") returned snapShotPolicy with unexpected .location")
+	}
 }
