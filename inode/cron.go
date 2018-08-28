@@ -3,6 +3,7 @@ package inode
 import (
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -26,12 +27,15 @@ type snapShotScheduleStruct struct {
 }
 
 type snapShotPolicyStruct struct {
-	name     string
-	schedule []*snapShotScheduleStruct
-	location *time.Location
+	name          string
+	volume        *volumeStruct
+	schedule      []*snapShotScheduleStruct
+	location      *time.Location
+	stopChan      chan struct{}
+	doneWaitGroup sync.WaitGroup
 }
 
-func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy *snapShotPolicyStruct, err error) {
+func (vS *volumeStruct) loadSnapShotPolicy(confMap conf.ConfMap) (err error) {
 	var (
 		cronTabStringSlice          []string
 		dayOfMonthAsU64             uint64
@@ -39,6 +43,7 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 		hourAsU64                   uint64
 		minuteAsU64                 uint64
 		monthAsU64                  uint64
+		snapShotPolicy              *snapShotPolicyStruct
 		snapShotPolicyName          string
 		snapShotPolicySectionName   string
 		snapShotSchedule            *snapShotScheduleStruct
@@ -49,22 +54,29 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 		volumeSectionName           string
 	)
 
-	volumeSectionName = utils.VolumeNameConfSection(volumeName)
+	// Default to no snapShotPolicy found
+	vS.snapShotPolicy = nil
+
+	volumeSectionName = utils.VolumeNameConfSection(vS.volumeName)
 
 	snapShotPolicyName, err = confMap.FetchOptionValueString(volumeSectionName, "SnapShotPolicy")
 	if nil != err {
-		// For now, we will default to returning nil (and success)
-		snapShotPolicy = nil
+		// For now, we will default to setting snapShotPolicy to nil and returning success
 		err = nil
 		return
 	}
 
-	snapShotPolicy = &snapShotPolicyStruct{name: snapShotPolicyName}
+	snapShotPolicy = &snapShotPolicyStruct{name: snapShotPolicyName, volume: vS}
 
 	snapShotPolicySectionName = "SnapShotPolicy:" + snapShotPolicyName
 
 	snapShotScheduleList, err = confMap.FetchOptionValueStringSlice(snapShotPolicySectionName, "ScheduleList")
 	if nil != err {
+		return
+	}
+	if 0 == len(snapShotScheduleList) {
+		// If ScheduleList is empty, set snapShotPolicy to nil and return success
+		err = nil
 		return
 	}
 	snapShotPolicy.schedule = make([]*snapShotScheduleStruct, 0, len(snapShotScheduleList))
@@ -192,8 +204,40 @@ func loadSnapShotPolicy(confMap conf.ConfMap, volumeName string) (snapShotPolicy
 		snapShotPolicy.location = time.UTC
 	}
 
+	// If we reach here, we've successfully loaded the snapShotPolicy
+
+	vS.snapShotPolicy = snapShotPolicy
 	err = nil
 	return
+}
+
+func (snapShotPolicy *snapShotPolicyStruct) up() {
+	snapShotPolicy.stopChan = make(chan struct{}, 1)
+	snapShotPolicy.doneWaitGroup.Add(1)
+}
+
+func (snapShotPolicy *snapShotPolicyStruct) down() {
+	snapShotPolicy.stopChan <- struct{}{}
+	snapShotPolicy.doneWaitGroup.Wait()
+}
+
+func (snapShotPolicy *snapShotPolicyStruct) daemon() {
+	var (
+		nextDuration time.Duration
+		nextTime     time.Time
+	)
+
+	for {
+		nextTime = snapShotPolicy.next(time.Now())
+		nextDuration = nextTime.Sub(time.Now())
+		select {
+		case _ = <-snapShotPolicy.stopChan:
+			snapShotPolicy.doneWaitGroup.Done()
+			return
+		case <-time.After(nextDuration):
+			fmt.Println("UNDO: take a snapshot at", nextTime)
+		}
+	}
 }
 
 // thisTime is presumably the snapShotSchedule.policy.location-local parsed snapShotStruct.name

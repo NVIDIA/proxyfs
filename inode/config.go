@@ -78,6 +78,7 @@ type volumeStruct struct {
 	inodeCacheLRUMaxBytes          uint64
 	inodeCacheLRUTicker            *time.Ticker
 	inodeCacheLRUTickerInterval    time.Duration
+	snapShotPolicy                 *snapShotPolicyStruct
 }
 
 type globalsStruct struct {
