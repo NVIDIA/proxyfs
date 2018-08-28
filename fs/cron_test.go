@@ -1,31 +1,10 @@
 package fs
 
 import (
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 )
-
-func TestTimeParsing(t *testing.T) {
-	tp, _ := time.Parse("09:30", "11:57")
-	fmt.Println(tp)
-	tn := time.Now()
-	tz, off := tn.Zone()
-	fmt.Println("tn  ==", tn)
-	fmt.Println("tz  ==", tz)
-	fmt.Println("off ==", off)
-	loc := time.FixedZone("UTC-8", -8*60*60)
-	td := time.Date(2009, time.November, 10, 23, 0, 0, 0, loc)
-	fmt.Println("td in RFC822                format is:", td.Format(time.RFC822))
-	fmt.Println("td in RFC3339               format is:", td.Format(time.RFC3339))
-	fmt.Println("tn in RFC822                format is:", tn.Format(time.RFC822))
-	fmt.Println("tn in RFC3339               format is:", tn.Format(time.RFC3339))
-	fmt.Println("tn in \"2006-01-02T15:04:05\" format is:", tn.Format("2006-01-02T15:04:05"))
-	ll, _ := time.LoadLocation("America/New_York")
-	fmt.Println("time.LoadLocation(\"America/New_York\") ==", ll)
-}
 
 func TestLoadSnapShotPolicy(t *testing.T) {
 	var (
