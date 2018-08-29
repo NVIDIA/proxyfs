@@ -249,7 +249,7 @@ func statisticName(statFmt StatStringFormat, pkgName string, statsGroupName stri
 	default:
 		panic(fmt.Sprintf("Unknown StatStringFormat '%v'", statFmt))
 
-	case StatFormatHumanReadable:
+	case StatFormatParsable1:
 		pkgName = scrubName(pkgName)
 		statsGroupName = scrubName(statsGroupName)
 		fieldName = scrubName(fieldName)
@@ -308,7 +308,7 @@ func (this *Total) sprint(statFmt StatStringFormat, pkgName string, statsGroupNa
 	statName := statisticName(statFmt, pkgName, statsGroupName, this.Name)
 
 	switch statFmt {
-	case StatFormatHumanReadable:
+	case StatFormatParsable1:
 		return fmt.Sprintf("%s total:%d\n", statName, this.total)
 	}
 
@@ -326,9 +326,9 @@ func (this *Average) sprint(statFmt StatStringFormat, pkgName string, statsGroup
 	}
 
 	switch statFmt {
-	case StatFormatHumanReadable:
-		return fmt.Sprintf("%s total:%d count:%d avg:%d\n",
-			statName, this.total, this.count, avg)
+	case StatFormatParsable1:
+		return fmt.Sprintf("%s avg:%d count:%d total:%d\n",
+			statName, avg, this.count, this.total)
 	}
 
 	return fmt.Sprintf("statName '%s': Unknown StatStringFormat: '%v'\n", statName, statFmt)
@@ -364,12 +364,14 @@ func bucketDistMake(nBucket uint, statBuckets []uint32, bucketInfoBase []BucketI
 
 // Given the distribution ([]BucketInfo) for a bucketized statistic, calculate:
 //
-// o the index of the last entry with a non-zero count
+// o the index of the first entry with a non-zero count
+// o the index + 1 of the last entry with a non-zero count, or zero if no such
+//   bucket exists
 // o the count (number things in buckets)
 // o sum of counts * count_meanVal, and
 // o mean (average)
 //
-func bucketCalcStat(bucketInfo []BucketInfo) (lastIdx int, count uint64, sum uint64, mean uint64) {
+func bucketCalcStat(bucketInfo []BucketInfo) (firstIdx int, maxIdx int, count uint64, sum uint64, mean uint64) {
 
 	var (
 		bigSum     big.Int
@@ -378,11 +380,18 @@ func bucketCalcStat(bucketInfo []BucketInfo) (lastIdx int, count uint64, sum uin
 		bigProduct big.Int
 	)
 
-	// lastIdx is the index of the last bucket with a non-zero count;
+	// firstIdx is the index of the first bucket with a non-zero count
+	// maxIdx is the index + 1 of the last bucket with a non-zero count, or zero
 	// bigSum is the running total of count * bucket_meanval
-	lastIdx = 0
-	count = bucketInfo[0].Count
-	for i := 1; i < len(bucketInfo); i += 1 {
+	firstIdx = 0
+	maxIdx = 0
+	for i := 0; i < len(bucketInfo); i += 1 {
+		if bucketInfo[i].Count > 0 {
+			firstIdx = i
+			break
+		}
+	}
+	for i := firstIdx; i < len(bucketInfo); i += 1 {
 		count += bucketInfo[i].Count
 
 		bigTmp.SetUint64(bucketInfo[i].Count)
@@ -391,7 +400,7 @@ func bucketCalcStat(bucketInfo []BucketInfo) (lastIdx int, count uint64, sum uin
 		bigSum.Add(&bigSum, &bigProduct)
 
 		if bucketInfo[i].Count > 0 {
-			lastIdx = i
+			maxIdx = i + 1
 		}
 	}
 	if count > 0 {
@@ -412,28 +421,25 @@ func bucketSprint(statFmt StatStringFormat, pkgName string, statsGroupName strin
 	bucketInfo []BucketInfo) string {
 
 	var (
-		lastIdx    int
 		idx        int
-		count      uint64
-		sum        uint64
-		mean       uint64
 		statName   string
 		bucketName string
 	)
-	lastIdx, count, sum, mean = bucketCalcStat(bucketInfo)
+	firstIdx, maxIdx, count, sum, mean := bucketCalcStat(bucketInfo)
 	statName = statisticName(statFmt, pkgName, statsGroupName, fieldName)
 
 	switch statFmt {
 
-	case StatFormatHumanReadable:
-		line := fmt.Sprintf("%s total:%d count:%d avg:%d", statName, sum, count, mean)
+	case StatFormatParsable1:
+		line := fmt.Sprintf("%s avg:%d count:%d total:%d", statName, mean, count, sum)
 
-		// bucket names are printed as a number upto 3 digits long
-		for idx = 0; idx < lastIdx+1 && bucketInfo[idx].NominalVal < 1024; idx += 1 {
+		// bucket names are printed as a number upto 3 digits long and
+		// as a power of 2 after that
+		for idx = firstIdx; idx < maxIdx && bucketInfo[idx].NominalVal < 1024; idx += 1 {
 			line += fmt.Sprintf(" %d:%d", bucketInfo[idx].NominalVal, bucketInfo[idx].Count)
 		}
-		for ; idx < lastIdx+1; idx += 1 {
-			// bucketInfo[3] must exist and is different, depending on the base
+		for ; idx < maxIdx; idx += 1 {
+			// bucketInfo[3] must exist and its value depends on the base
 			if bucketInfo[3].NominalVal == 3 {
 				bucketName = bucketNameLogRoot2(bucketInfo[idx].NominalVal)
 			} else {

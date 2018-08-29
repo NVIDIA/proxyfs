@@ -21,7 +21,7 @@ import (
 type StatStringFormat int
 
 const (
-	StatFormatHumanReadable StatStringFormat = iota
+	StatFormatParsable1 StatStringFormat = iota
 )
 
 // A Totaler can be incremented, or added to, and tracks the total value of all
@@ -246,17 +246,17 @@ func (this *BucketLog2Round) Increment() {
 }
 
 func (this *BucketLog2Round) CountGet() uint64 {
-	_, count, _, _ := bucketCalcStat(this.DistGet())
+	_, _, count, _, _ := bucketCalcStat(this.DistGet())
 	return count
 }
 
 func (this *BucketLog2Round) TotalGet() uint64 {
-	_, _, total, _ := bucketCalcStat(this.DistGet())
+	_, _, _, total, _ := bucketCalcStat(this.DistGet())
 	return total
 }
 
 func (this *BucketLog2Round) AverageGet() uint64 {
-	_, _, _, mean := bucketCalcStat(this.DistGet())
+	_, _, _, _, mean := bucketCalcStat(this.DistGet())
 	return mean
 }
 
@@ -335,17 +335,17 @@ func (this *BucketLogRoot2Round) Increment() {
 }
 
 func (this *BucketLogRoot2Round) CountGet() uint64 {
-	_, count, _, _ := bucketCalcStat(this.DistGet())
+	_, _, count, _, _ := bucketCalcStat(this.DistGet())
 	return count
 }
 
 func (this *BucketLogRoot2Round) TotalGet() uint64 {
-	_, _, total, _ := bucketCalcStat(this.DistGet())
+	_, _, _, total, _ := bucketCalcStat(this.DistGet())
 	return total
 }
 
 func (this *BucketLogRoot2Round) AverageGet() uint64 {
-	_, _, _, mean := bucketCalcStat(this.DistGet())
+	_, _, _, _, mean := bucketCalcStat(this.DistGet())
 	return mean
 }
 

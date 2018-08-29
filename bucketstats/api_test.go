@@ -253,7 +253,7 @@ func TestTotaler(t *testing.T) {
 	// Sprint for each should do something for all stats types
 	// (not really making the effort to parse the string)
 	for name, totaler = range totalerGroupMap {
-		prettyPrint := totaler.Sprint(StatFormatHumanReadable, "main", "TestTotaler")
+		prettyPrint := totaler.Sprint(StatFormatParsable1, "main", "TestTotaler")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -353,7 +353,7 @@ func TestTotaler(t *testing.T) {
 	// Sprint for each should do something for all statistic types
 	// (without trying to validate the string)
 	for name, totaler = range totalerGroupMap {
-		prettyPrint := totaler.Sprint(StatFormatHumanReadable, "main", "TestTotaler")
+		prettyPrint := totaler.Sprint(StatFormatParsable1, "main", "TestTotaler")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -453,7 +453,7 @@ func TestBucketer(t *testing.T) {
 	}
 
 	for name, bucketer = range bucketerGroupMap {
-		prettyPrint := bucketer.Sprint(StatFormatHumanReadable, "main", "BucketGroup")
+		prettyPrint := bucketer.Sprint(StatFormatParsable1, "main", "BucketGroup")
 		if prettyPrint == "" {
 			t.Errorf("%s returned an empty string for its Sprint() method", name)
 		}
@@ -464,7 +464,7 @@ func TestBucketer(t *testing.T) {
 func TestSprintStats(t *testing.T) {
 
 	// array of all valid StatStringFormat
-	statFmtList := []StatStringFormat{StatFormatHumanReadable}
+	statFmtList := []StatStringFormat{StatFormatParsable1}
 
 	var (
 		testFunc func()
@@ -481,8 +481,8 @@ func TestSprintStats(t *testing.T) {
 		t.Errorf("SprintStats() of unregistered statistic group did not panic")
 	}
 
-	// verify StatFormatHumanReadable, and other formats, handle illegal
-	// characters in names (StatFormatHumanReadable replaces them with
+	// verify StatFormatParsable1, and other formats, handle illegal
+	// characters in names (StatFormatParsable1 replaces them with
 	// underscore ('_'))
 	for _, statFmt = range statFmtList {
 
@@ -511,8 +511,8 @@ func TestSprintStats(t *testing.T) {
 		default:
 			t.Fatalf("SprintStats(): unknown StatStringFormat %v\n", statFmt)
 
-		case StatFormatHumanReadable:
-			statsString := SprintStats(StatFormatHumanReadable, pkgName, statsGroupName)
+		case StatFormatParsable1:
+			statsString := SprintStats(StatFormatParsable1, pkgName, statsGroupName)
 			if statsString == "" {
 				t.Fatalf("SprintStats(%s, %s,) did not find the statsgroup", pkgName, statsGroupName)
 			}
