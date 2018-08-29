@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -24,6 +26,7 @@ type snapShotScheduleStruct struct {
 	dayOfWeekSpecified  bool
 	dayOfWeek           time.Weekday // 0-6 (0 == Sunday)
 	keep                uint64
+	count               uint64 // computed by scanning each time daemon() awakes
 }
 
 type snapShotPolicyStruct struct {
@@ -214,6 +217,7 @@ func (vS *volumeStruct) loadSnapShotPolicy(confMap conf.ConfMap) (err error) {
 func (snapShotPolicy *snapShotPolicyStruct) up() {
 	snapShotPolicy.stopChan = make(chan struct{}, 1)
 	snapShotPolicy.doneWaitGroup.Add(1)
+	go snapShotPolicy.daemon()
 }
 
 func (snapShotPolicy *snapShotPolicyStruct) down() {
@@ -223,19 +227,104 @@ func (snapShotPolicy *snapShotPolicyStruct) down() {
 
 func (snapShotPolicy *snapShotPolicyStruct) daemon() {
 	var (
-		nextDuration time.Duration
-		nextTime     time.Time
+		err                error
+		nextDuration       time.Duration
+		nextTime           time.Time
+		nextTimePreviously time.Time
+		snapShotName       string
+		timeNow            time.Time
 	)
 
+	nextTimePreviously = time.Date(2000, time.January, 1, 0, 0, 0, 0, snapShotPolicy.location)
+
 	for {
-		nextTime = snapShotPolicy.next(time.Now())
-		nextDuration = nextTime.Sub(time.Now())
+		timeNow = time.Now()
+		nextTime = snapShotPolicy.next(timeNow)
+		for {
+			if !nextTime.Equal(nextTimePreviously) {
+				break
+			}
+			// We took the last snapshot so quickly, next() returned the same nextTime
+			time.Sleep(time.Second)
+			timeNow = time.Now()
+			nextTime = snapShotPolicy.next(timeNow)
+		}
+		nextDuration = nextTime.Sub(timeNow)
 		select {
 		case _ = <-snapShotPolicy.stopChan:
 			snapShotPolicy.doneWaitGroup.Done()
 			return
 		case <-time.After(nextDuration):
-			fmt.Println("UNDO: take a snapshot at", nextTime)
+			for time.Now().Before(nextTime) {
+				// time.After() returned a bit too soon, so loop until it is our time
+				time.Sleep(100 * time.Millisecond)
+			}
+			snapShotName = nextTime.Format(time.RFC3339)
+			_, err = snapShotPolicy.volume.SnapShotCreate(snapShotName)
+			if nil != err {
+				logger.WarnWithError(err)
+			}
+			snapShotPolicy.prune()
+		}
+		nextTimePreviously = nextTime
+	}
+}
+
+func (snapShotPolicy *snapShotPolicyStruct) prune() {
+	var (
+		err               error
+		keep              bool
+		matches           bool
+		matchesAtLeastOne bool
+		snapShot          headhunter.SnapShotStruct
+		snapShotList      []headhunter.SnapShotStruct
+		snapShotSchedule  *snapShotScheduleStruct
+		snapShotTime      time.Time
+	)
+
+	// First, zero each snapShotSchedule.count
+
+	for _, snapShotSchedule = range snapShotPolicy.schedule {
+		snapShotSchedule.count = 0
+	}
+
+	// Now fetch the reverse time-ordered list of snapshots
+
+	snapShotList = snapShotPolicy.volume.headhunterVolumeHandle.SnapShotListByTime(true)
+
+	// Now walk snapShotList looking for snapshots to prune
+
+	for _, snapShot = range snapShotList {
+		snapShotTime, err = time.Parse(time.RFC3339, snapShot.Name)
+		if nil != err {
+			// SnapShot was not formatted to match a potential SnapShotPolicy/Schedule...skip it
+			continue
+		}
+
+		// Compare against each snapShotSchedule
+
+		keep = false
+		matchesAtLeastOne = false
+
+		for _, snapShotSchedule = range snapShotPolicy.schedule {
+			matches = snapShotSchedule.compare(snapShotTime)
+			if matches {
+				matchesAtLeastOne = true
+				snapShotSchedule.count++
+				if snapShotSchedule.count <= snapShotSchedule.keep {
+					keep = true
+				}
+			}
+		}
+
+		if matchesAtLeastOne && !keep {
+			// Although this snapshot "matchesAtLeastOne",
+			//   no snapShotSchedule said "keep" it
+
+			err = snapShotPolicy.volume.SnapShotDelete(snapShot.ID)
+			if nil != err {
+				logger.WarnWithError(err)
+			}
 		}
 	}
 }

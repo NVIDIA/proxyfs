@@ -273,7 +273,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 						if "" == currentSectionName {
 							// Options only allowed within a Section
 
-							err = fmt.Errorf("file %v did not start/resume with a Section Name", confFilePath)
+							err = fmt.Errorf("file %v did not start with a Section Name", confFilePath)
 							return
 						}
 

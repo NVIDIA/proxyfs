@@ -276,6 +276,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			inodeCacheLRUHead:              nil,
 			inodeCacheLRUTail:              nil,
 			inodeCacheLRUItems:             0,
+			snapShotPolicy:                 nil,
 		}
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
@@ -451,6 +452,11 @@ func Up(confMap conf.ConfMap) (err error) {
 			volume.flowControl = globals.flowControlMap[flowControlName]
 			volume.flowControl.refCount++
 
+			err = volume.loadSnapShotPolicy(confMap)
+			if nil != err {
+				return
+			}
+
 			volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
 			if nil != err {
 				return
@@ -498,6 +504,12 @@ func Up(confMap conf.ConfMap) (err error) {
 
 	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
 
+	for _, volume = range globals.volumeMap {
+		if nil != volume.snapShotPolicy {
+			volume.snapShotPolicy.up()
+		}
+	}
+
 	err = nil
 	return
 }
@@ -519,6 +531,13 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volumesNewlyInactiveSet map[string]bool
 		whoAmI                  string
 	)
+
+	for _, volume = range globals.volumeMap {
+		if nil != volume.snapShotPolicy {
+			volume.snapShotPolicy.down()
+			volume.snapShotPolicy = nil
+		}
+	}
 
 	swiftclient.SetStarvationCallbackFunc(nil)
 
@@ -803,6 +822,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					volume.active = true
 					newlyActiveVolumeSet[volumeName] = volume
 				}
+
+				err = volume.loadSnapShotPolicy(confMap)
+				if nil != err {
+					return
+				}
 			}
 		} else { // previously unknown volumeName
 			for _, prevVolume = range globals.volumeMap {
@@ -830,6 +854,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				inodeCacheLRUHead:              nil,
 				inodeCacheLRUTail:              nil,
 				inodeCacheLRUItems:             0,
+				snapShotPolicy:                 nil,
 			}
 
 			volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
@@ -971,6 +996,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				return
 			}
 
+			err = volume.loadSnapShotPolicy(confMap)
+			if nil != err {
+				return
+			}
+
 			volume.headhunterVolumeHandle.RegisterForEvents(volume)
 
 			// Start inode discard timer on newly active volumes
@@ -985,6 +1015,12 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
 
+	for _, volume = range globals.volumeMap {
+		if nil != volume.snapShotPolicy {
+			volume.snapShotPolicy.up()
+		}
+	}
+
 	err = nil
 	return
 }
@@ -992,12 +1028,15 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 func Down() (err error) {
 	swiftclient.SetStarvationCallbackFunc(nil)
 
-	// Stop the inode discard timer
 	for _, volume := range globals.volumeMap {
 		stopInodeCacheDiscard(volume)
+		if nil != volume.snapShotPolicy {
+			volume.snapShotPolicy.down()
+			volume.snapShotPolicy = nil
+		}
 	}
 
-	err = nil // Nothing to do
+	err = nil
 
 	return
 }
