@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/headhunter"
@@ -144,6 +145,8 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		_, _ = responseWriter.Write([]byte(jsontreeDotJSContent))
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
+	case "/stats" == path:
+		doGetOfStats(responseWriter, request)
 	case "/debug/pprof" == path:
 		pprof.Index(responseWriter, request)
 	case "/debug/pprof/cmdline" == path:
@@ -433,6 +436,15 @@ func doGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request) {
 
 		sortedTwoColumnResponseWriter(metricsLLRB, responseWriter)
 	}
+}
+
+func doGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	_, _ = responseWriter.Write(utils.StringToByteSlice(
+		bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*")))
 }
 
 func doGetOfArmDisarmTrigger(responseWriter http.ResponseWriter, request *http.Request) {
