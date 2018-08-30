@@ -226,7 +226,7 @@ func testTxnWatcher(t *testing.T) {
 
 	// Update multiple keys at once and guarantee get watch event for
 	// all key updates.
-	finishWG.Add(2)
+	finishWG.Add(len(m))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_, err = kvc.Txn(ctx).
 
