@@ -238,7 +238,7 @@ func (snapShotPolicy *snapShotPolicyStruct) daemon() {
 	nextTimePreviously = time.Date(2000, time.January, 1, 0, 0, 0, 0, snapShotPolicy.location)
 
 	for {
-		timeNow = time.Now()
+		timeNow = time.Now().In(snapShotPolicy.location)
 		nextTime = snapShotPolicy.next(timeNow)
 		for {
 			if !nextTime.Equal(nextTimePreviously) {
@@ -246,7 +246,7 @@ func (snapShotPolicy *snapShotPolicyStruct) daemon() {
 			}
 			// We took the last snapshot so quickly, next() returned the same nextTime
 			time.Sleep(time.Second)
-			timeNow = time.Now()
+			timeNow = time.Now().In(snapShotPolicy.location)
 			nextTime = snapShotPolicy.next(timeNow)
 		}
 		nextDuration = nextTime.Sub(timeNow)
@@ -255,8 +255,8 @@ func (snapShotPolicy *snapShotPolicyStruct) daemon() {
 			snapShotPolicy.doneWaitGroup.Done()
 			return
 		case <-time.After(nextDuration):
-			for time.Now().Before(nextTime) {
-				// time.After() returned a bit too soon, so loop until it is our time
+			for time.Now().In(snapShotPolicy.location).Before(nextTime) {
+				// If time.After() returned a bit too soon, loop until it is our time
 				time.Sleep(100 * time.Millisecond)
 			}
 			snapShotName = nextTime.Format(time.RFC3339)
@@ -454,8 +454,9 @@ func truncateToStartOfMonth(untruncatedTime time.Time, loc *time.Location) (trun
 	return
 }
 
-// timeNow is presumably time.Now()...but provided here so that each invocation of the
-// per snapShotSchedule (within a snapShotPolicy) can use the same time.Now()
+// timeNow is presumably time.Now() localized to snapShotSchedule.policy.location...
+//   ...but provided here so that each invocation of the per snapShotSchedule
+//      within a snapShotPolicy can use the same value
 func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
 		dayOfMonth      int
@@ -614,7 +615,8 @@ func (snapShotSchedule *snapShotScheduleStruct) next(timeNow time.Time) (nextTim
 	return
 }
 
-// timeNow is presumably time.Now()...but provided here primarily to enable easy testing
+// timeNow is presumably time.Now() localized to snapShotPolicy.location...
+//   ...but provided here primarily to enable easy testing
 func (snapShotPolicy *snapShotPolicyStruct) next(timeNow time.Time) (nextTime time.Time) {
 	var (
 		nextTimeForSnapShotSchedule time.Time
