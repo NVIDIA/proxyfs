@@ -6,6 +6,7 @@ import (
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/namespace"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ func TestEtcdAPI(t *testing.T) {
 
 	testBasicPutGet(t)
 	testBasicTxn(t)
+	testTxnWatcher(t)
 }
 
 // Test basic etcd API based on this link:
@@ -61,7 +63,7 @@ func testBasicPutGet(t *testing.T) {
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
 	//
 	// TODO - store cli in inode volume struct.  Any issue with storing
-	// context() - comments on webpage seem to discourage it
+	// context() - comments on webpage seems to discourage it?
 	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"192.168.60.10:2379",
 		"192.168.60.11:2379", "192.168.60.12:2379"}, DialTimeout: 2 * time.Second})
 	if err != nil {
@@ -88,19 +90,12 @@ func testBasicPutGet(t *testing.T) {
 }
 
 // Test transactions
-//
-// TODO - watcher, transaction... simulate 2 different volumes
-// each with our conf settings for VIP, etc...
-//
-// simulate online, offline, failover....
+// TODO - change to use namespace
 func testBasicTxn(t *testing.T) {
 	assert := assert.New(t)
 
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
-	//
-	// TODO - store cli in inode volume struct.  Any issue with storing
-	// context() - comments on webpage seem to discourage it
 	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"192.168.60.10:2379",
 		"192.168.60.11:2379", "192.168.60.12:2379"}, DialTimeout: 2 * time.Second})
 	if err != nil {
@@ -115,10 +110,6 @@ func testBasicTxn(t *testing.T) {
 	if err != nil {
 		assert.Nil(err, "kvc.Put() returned err")
 	}
-
-	// TODO - TODO - change to use namespace....
-	// also change multiple keys at once and prove that we get multiple
-	// watch events as expected...
 
 	// NOTE: cancel() function and call after transaction!
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -146,4 +137,119 @@ func testBasicTxn(t *testing.T) {
 	for _, ev := range gresp.Kvs {
 		assert.Equal("XYZ", string(ev.Value), "Get() returned different key than Put()")
 	}
+}
+
+// TODO - must wrap with WithRequiredLeader
+func watcher(t *testing.T, cli *clientv3.Client, key string, expectedValue string,
+	swg *sync.WaitGroup, fwg *sync.WaitGroup) {
+
+	swg.Done() // The watcher is running!
+
+	assert := assert.New(t)
+	wch1 := cli.Watch(context.Background(), key)
+	for wresp1 := range wch1 {
+		for _, ev := range wresp1.Events {
+			assert.Equal(expectedValue, string(ev.Kv.Value),
+				"watcher saw different value than expected")
+		}
+
+		// The watcher has received it's event and will now return
+		fwg.Done()
+		return
+	}
+}
+
+// Delete test keys and recreate them
+func resetKeys(t *testing.T, cli *clientv3.Client, km map[string]string) {
+	assert := assert.New(t)
+	kvc := clientv3.NewKV(cli)
+	for k := range km {
+		_, _ = cli.Delete(context.TODO(), k)
+		_, err := kvc.Put(context.TODO(), k, "")
+		assert.Nil(err, "kvc.Put() returned err")
+	}
+}
+
+// Start a different watcher for each key
+func startWatchers(t *testing.T, cli *clientv3.Client, km map[string]string, swg *sync.WaitGroup,
+	fwg *sync.WaitGroup) {
+	for k, v := range km {
+		swg.Add(1)
+		go watcher(t, cli, k, v, swg, fwg)
+	}
+
+	// Wait for watchers to start
+	swg.Wait()
+}
+
+// Test multiple updates of two keys in same transaction and a watcher
+// per key updated.
+//
+// TODO - simulate online, offline, failover/fencing, all nodes start from scratch....
+func testTxnWatcher(t *testing.T) {
+	var (
+		testKey1  = "TESTKEY1"
+		testData1 = "testdata1"
+		testKey2  = "TESTKEY2"
+		testData2 = "testdata2"
+		startWG   sync.WaitGroup // Used to sync start of watcher
+		finishWG  sync.WaitGroup // Used to block until watcher sees event
+	)
+	assert := assert.New(t)
+
+	// Create an etcd client - our current etcd setup does not listen on
+	// localhost.  Therefore, we pass the IP addresses used by etcd.
+	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"192.168.60.10:2379",
+		"192.168.60.11:2379", "192.168.60.12:2379"}, DialTimeout: 2 * time.Second})
+	if err != nil {
+		assert.Nil(err, "clientv3.New() returned err")
+		// handle error!
+	}
+	defer cli.Close()
+
+	kvc := clientv3.NewKV(cli)
+
+	// Reset the test keys to be used
+	m := make(map[string]string)
+	m[testKey1] = testData1
+	m[testKey2] = testData2
+	resetKeys(t, cli, m)
+
+	// Create watchers for each key
+	startWatchers(t, cli, m, &startWG, &finishWG)
+
+	// NOTE: "etcd does not ensure linearizability for watch operations. Users are
+	// expected to verify the revision of watch responses to ensure correct ordering."
+	// TODO - figure out what this means
+	// TODO - review use of WithRequireLeader.  Seems important for a subcluster to
+	//     recognize partitioned out of cluster.
+
+	// Update multiple keys at once and guarantee get watch event for
+	// all key updates.
+	finishWG.Add(2)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = kvc.Txn(ctx).
+
+		// txn value comparisons are lexical
+		If(
+			clientv3.Compare(clientv3.Value(testKey1), "=", ""),
+			clientv3.Compare(clientv3.Value(testKey2), "=", ""),
+
+		// the "Then" runs, since "" = "" for both keys
+		).Then(
+		clientv3.OpPut(testKey1, testData1),
+		clientv3.OpPut(testKey2, testData2),
+
+	// the "Else" does not run
+	).Else(
+		clientv3.OpPut(testKey1, "FailedTestKey1"),
+		clientv3.OpPut(testKey2, "FailedTestKey2"),
+	).Commit()
+	cancel()
+	if err != nil {
+		assert.Nil(err, "kvc.Txn() returned err")
+	}
+
+	// Wait for watchers to get events before exiting test
+	finishWG.Wait()
 }
