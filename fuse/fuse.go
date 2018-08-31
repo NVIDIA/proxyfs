@@ -29,6 +29,9 @@ func (pfs *ProxyFUSE) Root() (fusefslib.Node, error) {
 }
 
 func (pfs *ProxyFUSE) Statfs(ctx context.Context, req *fuselib.StatfsRequest, resp *fuselib.StatfsResponse) error {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	statvfs, err := pfs.mountHandle.StatVfs()
 	if err != nil {
 		return newFuseError(err)
