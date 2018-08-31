@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,6 +31,9 @@ type mountPointStruct struct {
 }
 
 type globalsStruct struct {
+	gate sync.RWMutex // SIGHUP triggered confMap change control
+	//                   API Requests RLock()/RUnlock
+	//                   SIGHUP confMap changes Lock()/Unlock()
 	whoAmI        string
 	mountPointMap map[string]*mountPointStruct // key == mountPointStruct.mountPointName
 }
@@ -134,6 +138,8 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	globals.gate.Lock()
+
 	removedVolumeMap = make(map[string]*mountPointStruct)
 
 	for _, mountPoint = range globals.mountPointMap {
@@ -235,6 +241,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			return
 		}
 	}
+
+	globals.gate.Unlock()
 
 	err = nil
 	return
