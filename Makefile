@@ -1,5 +1,6 @@
 gopkgsubdirs = \
 	blunder \
+	bucketstats \
 	conf \
 	dlm \
 	evtlog \

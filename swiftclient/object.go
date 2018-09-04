@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/swiftstack/sortedmap"
 
@@ -32,12 +33,19 @@ func objectContentLengthWithRetry(accountName string, containerName string, obje
 	}
 
 	var (
-		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string     = fmt.Sprintf("swiftclient.objectContentLength(\"%v/%v/%v\")",
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf("swiftclient.objectContentLength(\"%v/%v/%v\")",
 			accountName, containerName, objectName)
-		statnm RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjContentLengthRetryOps,
-			retrySuccessCnt: &stats.SwiftObjContentLengthRetrySuccessOps}
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjContentLengthRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjContentLengthRetrySuccessOps,
+			clientRequestTime: &globals.ObjectContentLengthUsec,
+			clientFailureCnt:  &globals.ObjectContentLengthFailure,
+			swiftRequestTime:  &globals.SwiftObjectContentLengthUsec,
+			swiftRetryOps:     &globals.SwiftObjectContentLengthRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return length, err
@@ -104,7 +112,14 @@ func objectCopy(srcAccountName string, srcContainerName string, srcObjectName st
 		dstChunkedPutContext ChunkedPutContext
 		srcObjectPosition    = uint64(0)
 		srcObjectSize        uint64
+		clientReqTime        time.Time
 	)
+
+	clientReqTime = time.Now()
+	defer func() {
+		elapsedUsec := time.Since(clientReqTime).Nanoseconds() / time.Microsecond.Nanoseconds()
+		globals.ObjectCopyUsec.Add(uint64(elapsedUsec))
+	}()
 
 	srcObjectSize, err = objectContentLengthWithRetry(srcAccountName, srcContainerName, srcObjectName)
 	if nil != err {
@@ -161,11 +176,19 @@ func objectDelete(accountName string, containerName string, objectName string, o
 		}
 
 		var (
-			retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-			opname   string      = fmt.Sprintf("swiftclient.objectDeleteOneTime(\"%v/%v/%v\")", accountName, containerName, objectName)
-			statnm   RetryStatNm = RetryStatNm{
-				retryCnt:        &stats.SwiftObjDeleteRetryOps,
-				retrySuccessCnt: &stats.SwiftObjDeleteRetrySuccessOps}
+			retryObj *RetryCtrl = NewRetryCtrl(
+				globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+			opname string = fmt.Sprintf(
+				"swiftclient.objectDeleteOneTime(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+			statnm requestStatistics = requestStatistics{
+				retryCnt:          &stats.SwiftObjDeleteRetryOps,
+				retrySuccessCnt:   &stats.SwiftObjDeleteRetrySuccessOps,
+				clientRequestTime: &globals.ObjectDeleteUsec,
+				clientFailureCnt:  &globals.ObjectDeleteFailure,
+				swiftRequestTime:  &globals.SwiftObjectDeleteUsec,
+				swiftRetryOps:     &globals.SwiftObjectDeleteRetryOps,
+			}
 		)
 		err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	}
@@ -234,11 +257,19 @@ func objectGetWithRetry(accountName string, containerName string, objectName str
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjGetRetryOps,
-			retrySuccessCnt: &stats.SwiftObjGetRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectGet(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjGetRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjGetRetrySuccessOps,
+			clientRequestTime: &globals.ObjectGetUsec,
+			clientFailureCnt:  &globals.ObjectGetFailure,
+			swiftRequestTime:  &globals.SwiftObjectGetUsec,
+			swiftRetryOps:     &globals.SwiftObjectGetRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return buf, err
@@ -327,7 +358,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	releaseNonChunkedConnection(connection, parseConnection(headers))
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjGet, uint64(len(buf)))
-
+	globals.ObjectGetBytes.Add(uint64(len(buf)))
 	return
 }
 
@@ -347,11 +378,19 @@ func objectHeadWithRetry(accountName string, containerName string, objectName st
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectHead(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjHeadRetryOps,
-			retrySuccessCnt: &stats.SwiftObjHeadRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectHead(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjHeadRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjHeadRetrySuccessOps,
+			clientRequestTime: &globals.ObjectHeadUsec,
+			clientFailureCnt:  &globals.ObjectHeadFailure,
+			swiftRequestTime:  &globals.SwiftObjectHeadUsec,
+			swiftRetryOps:     &globals.SwiftObjectHeadRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return headers, err
@@ -415,11 +454,19 @@ func objectLoadWithRetry(accountName string, containerName string, objectName st
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectLoad(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjLoadRetryOps,
-			retrySuccessCnt: &stats.SwiftObjLoadRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectLoad(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjLoadRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjLoadRetrySuccessOps,
+			clientRequestTime: &globals.ObjectLoadUsec,
+			clientFailureCnt:  &globals.ObjectLoadFailure,
+			swiftRequestTime:  &globals.SwiftObjectLoadUsec,
+			swiftRetryOps:     &globals.SwiftObjectLoadRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return buf, err
@@ -505,7 +552,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	releaseNonChunkedConnection(connection, parseConnection(headers))
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjLoad, uint64(len(buf)))
-
+	globals.ObjectLoadBytes.Add(uint64(len(buf)))
 	return
 }
 
@@ -525,11 +572,19 @@ func objectReadWithRetry(accountName string, containerName string, objectName st
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectRead(\"%v/%v/%v\", offset=0x%016X, len(buf)=0x%016X)", accountName, containerName, objectName, offset, cap(buf))
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjReadRetryOps,
-			retrySuccessCnt: &stats.SwiftObjReadRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectRead(\"%v/%v/%v\", offset=0x%016X, len(buf)=0x%016X)", accountName, containerName, objectName, offset, cap(buf))
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjReadRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjReadRetrySuccessOps,
+			clientRequestTime: &globals.ObjectReadUsec,
+			clientFailureCnt:  &globals.ObjectReadFailure,
+			swiftRequestTime:  &globals.SwiftObjectReadUsec,
+			swiftRetryOps:     &globals.SwiftObjectReadRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return len, err
@@ -623,7 +678,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 	releaseNonChunkedConnection(connection, parseConnection(headers))
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjRead, len)
-
+	globals.ObjectReadBytes.Add(len)
 	return
 }
 
@@ -645,11 +700,19 @@ func objectTailWithRetry(accountName string, containerName string, objectName st
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectTail(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjTailRetryOps,
-			retrySuccessCnt: &stats.SwiftObjTailRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectTail(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjTailRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjTailRetrySuccessOps,
+			clientRequestTime: &globals.ObjectTailUsec,
+			clientFailureCnt:  &globals.ObjectTailFailure,
+			swiftRequestTime:  &globals.SwiftObjectTailUsec,
+			swiftRetryOps:     &globals.SwiftObjectTailRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return buf, err
@@ -738,7 +801,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 	releaseNonChunkedConnection(connection, parseConnection(headers))
 
 	stats.IncrementOperationsAndBytes(stats.SwiftObjTail, uint64(len(buf)))
-
+	globals.ObjectTailBytes.Add(uint64(len(buf)))
 	return
 }
 
@@ -799,11 +862,19 @@ func objectFetchChunkedPutContextWithRetry(accountName string, containerName str
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
-		opname   string      = fmt.Sprintf("swiftclient.objectFetchChunkedPutContext(\"%v/%v/%v\")", accountName, containerName, objectName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjFetchPutCtxtRetryOps,
-			retrySuccessCnt: &stats.SwiftObjFetchPutCtxtRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(
+			globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
+		opname string = fmt.Sprintf(
+			"swiftclient.objectFetchChunkedPutContext(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjFetchPutCtxtRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjFetchPutCtxtRetrySuccessOps,
+			clientRequestTime: &globals.ObjectPutCtxtFetchUsec,
+			clientFailureCnt:  &globals.ObjectPutCtxtFetchFailure,
+			swiftRequestTime:  &globals.SwiftObjectPutCtxtFetchUsec,
+			swiftRetryOps:     &globals.SwiftObjectPutCtxtFetchRetryOps,
+		}
 	)
 	err := retryObj.RequestWithRetry(request, &opname, &statnm)
 	return chunkedPutContext, err
@@ -872,6 +943,7 @@ func (chunkedPutContext *chunkedPutContextStruct) BytesPut() (bytesPut uint64, e
 	chunkedPutContext.Unlock()
 
 	stats.IncrementOperations(&stats.SwiftObjPutCtxBytesPutOps)
+	globals.ObjectPutCtxtBytesPut.Add(1)
 
 	err = nil
 	return
@@ -910,9 +982,14 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 	var (
 		retryObj *RetryCtrl
 		opname   string
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftObjPutCtxtCloseRetryOps,
-			retrySuccessCnt: &stats.SwiftObjPutCtxtCloseRetrySuccessOps}
+		statnm   requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjPutCtxtCloseRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjPutCtxtCloseRetrySuccessOps,
+			clientRequestTime: &globals.ObjectPutCtxtCloseUsec,
+			clientFailureCnt:  &globals.ObjectPutCtxtCloseFailure,
+			swiftRequestTime:  &globals.SwiftObjectPutCtxtCloseUsec,
+			swiftRetryOps:     &globals.SwiftObjectPutCtxtCloseRetryOps,
+		}
 	)
 	retryObj = NewRetryCtrl(globals.retryLimitObject, globals.retryDelayObject, globals.retryExpBackoffObject)
 	opname = fmt.Sprintf("swiftclient.chunkedPutContext.Close(\"%v/%v/%v\")",
@@ -985,6 +1062,7 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	chunkedPutContext.stillOpen = parseConnection(headers)
 
 	stats.IncrementOperations(&stats.SwiftObjPutCtxCloseOps)
+	globals.ObjectPutCtxtBytes.Add(chunkedPutContext.bytesPut)
 
 	return
 }
@@ -1110,6 +1188,7 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(offset uint64, length uin
 	chunkedPutContext.Unlock()
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxRead, length)
+	globals.ObjectPutCtxtReadBytes.Add(length)
 
 	err = nil
 	return
@@ -1233,6 +1312,8 @@ var (
 //
 func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err error) {
 
+	clientReqTime := time.Now()
+
 	chunkedPutContext.Lock()
 	sendChunkCnt += 1
 
@@ -1321,6 +1402,9 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 	chunkedPutContext.Unlock()
 
 	stats.IncrementOperationsAndBucketedBytes(stats.SwiftObjPutCtxSendChunk, uint64(len(buf)))
+	elapsedUsec := time.Since(clientReqTime).Nanoseconds() / time.Microsecond.Nanoseconds()
+	globals.ObjectPutCtxtSendChunkUsec.Add(uint64(elapsedUsec))
+	globals.ObjectPutCtxtSendChunkBytes.Add(uint64(len(buf)))
 
 	return
 }

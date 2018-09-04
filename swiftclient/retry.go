@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 )
@@ -18,23 +19,27 @@ import (
 // is 10 sec, we don't want 40 sec between requests).
 //
 type RetryCtrl struct {
-	attemptMax uint          // maximum attempts
-	attemptCnt uint          // number of attempts
-	delay      time.Duration // backoff amount (grows each attempt)
-	expBackoff float64       // factor to increase delay by
-	firstReq   time.Time     // first request start time
-	lastReq    time.Time     // most recent request start time
+	attemptMax    uint          // maximum attempts
+	attemptCnt    uint          // number of attempts
+	delay         time.Duration // backoff amount (grows each attempt)
+	expBackoff    float64       // factor to increase delay by
+	clientReqTime time.Time     // client (of swiftclient) request start time
+	swiftReqTime  time.Time     // most recent Swift request start time
 }
 
-type RetryStatNm struct {
-	retryCnt        *string // increment stat for each operation that is retried (not each retry)
-	retrySuccessCnt *string // increment this for each operation where retry fixed the problem
+type requestStatistics struct {
+	retryCnt          *string // increment stat for each operation that is retried (not each retry)
+	retrySuccessCnt   *string // increment this for each operation where retry fixed the problem
+	clientRequestTime *bucketstats.BucketLog2Round
+	clientFailureCnt  *bucketstats.Total
+	swiftRequestTime  *bucketstats.BucketLog2Round
+	swiftRetryOps     *bucketstats.Average
 }
 
 func NewRetryCtrl(maxAttempt uint16, delay time.Duration, expBackoff float64) *RetryCtrl {
 	var ctrl = RetryCtrl{attemptCnt: 0, attemptMax: uint(maxAttempt), delay: delay, expBackoff: expBackoff}
-	ctrl.firstReq = time.Now()
-	ctrl.lastReq = ctrl.firstReq
+	ctrl.clientReqTime = time.Now()
+	ctrl.swiftReqTime = ctrl.clientReqTime
 
 	return &ctrl
 }
@@ -44,13 +49,13 @@ func NewRetryCtrl(maxAttempt uint16, delay time.Duration, expBackoff float64) *R
 // request was started
 //
 func (this *RetryCtrl) RetryWait() {
-	var delay time.Duration = time.Now().Sub(this.lastReq)
+	var delay time.Duration = time.Now().Sub(this.swiftReqTime)
 
 	if this.delay > delay {
 		time.Sleep(this.delay - delay)
 	}
 	this.delay = time.Duration(float64(this.delay) * this.expBackoff)
-	this.lastReq = time.Now()
+	this.swiftReqTime = time.Now()
 	return
 }
 
@@ -63,15 +68,23 @@ func (this *RetryCtrl) RetryWait() {
 // still log an Error message indicating RequestWithRetry() failed along with
 // the operation identifier (name and paramaters)
 //
-func (this *RetryCtrl) RequestWithRetry(doRequest func() (bool, error), opid *string, statnm *RetryStatNm) (err error) {
+func (this *RetryCtrl) RequestWithRetry(doRequest func() (bool, error), opid *string, reqstat *requestStatistics) (err error) {
 	var (
 		lastErr   error
 		retriable bool
+		elapsed   time.Duration
 	)
 
+	// start performing the request now
 	this.attemptCnt = 1
 	retriable, lastErr = doRequest()
+
+	elapsed = time.Since(this.clientReqTime)
+	reqstat.swiftRequestTime.Add(uint64(elapsed.Nanoseconds() / time.Microsecond.Nanoseconds()))
+
 	if lastErr == nil {
+		reqstat.clientRequestTime.Add(uint64(elapsed.Nanoseconds() / time.Microsecond.Nanoseconds()))
+
 		return nil
 	}
 
@@ -81,41 +94,52 @@ func (this *RetryCtrl) RequestWithRetry(doRequest func() (bool, error), opid *st
 	// cases).
 	//
 	// if retries are enabled but the first failure is not retriable then
-	// increment statnm.retryCnt even though no retry is preformed because
+	// increment reqstat.retryCnt even though no retry is performed because
 	// users are likely to assume that:
-	//     statnm.retryCnt - statnm.retrySuccess == count_of_failures
+	//     reqstat.retryCnt - reqstat.retrySuccess == count_of_failures
 	if this.attemptMax != 0 {
-		stats.IncrementOperations(statnm.retryCnt)
+		stats.IncrementOperations(reqstat.retryCnt)
 	}
 	for retriable && this.attemptCnt <= this.attemptMax {
 		this.RetryWait()
-
 		this.attemptCnt++
 		retriable, lastErr = doRequest()
-		if lastErr == nil {
-			stats.IncrementOperations(statnm.retrySuccessCnt)
 
-			elapsed := float64(time.Since(this.firstReq)) / float64(time.Second)
+		// RetryWait() set this.swiftReqTime to Now()
+		elapsed = time.Since(this.swiftReqTime)
+		reqstat.swiftRequestTime.Add(uint64(elapsed.Nanoseconds() / time.Microsecond.Nanoseconds()))
+
+		if lastErr == nil {
+			elapsed = time.Since(this.clientReqTime)
+			reqstat.clientRequestTime.Add(uint64(elapsed.Nanoseconds() / time.Microsecond.Nanoseconds()))
+			reqstat.swiftRetryOps.Add(1)
+			stats.IncrementOperations(reqstat.retrySuccessCnt)
+
 			logger.Infof("retry.RequestWithRetry(): %s succeeded after %d attempts in %4.3f sec",
-				*opid, this.attemptCnt, elapsed)
+				*opid, this.attemptCnt, elapsed.Seconds())
 			return nil
 		}
+
+		// bump retry count (as failure)
+		reqstat.swiftRetryOps.Add(0)
 	}
 	// lasterr != nil
 
-	if !retriable {
-		elapsed := float64(time.Since(this.firstReq)) / float64(time.Second)
-		errstring := fmt.Sprintf(
-			"retry.RequestWithRetry(): %s failed after %d attempts in %4.3f sec with unretriable error",
-			*opid, this.attemptCnt, elapsed)
-		logger.ErrorWithError(lastErr, errstring)
-		return lastErr
-	}
+	// the client request failed (and is finished)
+	elapsed = time.Since(this.clientReqTime)
+	reqstat.clientRequestTime.Add(uint64(elapsed.Nanoseconds() / time.Microsecond.Nanoseconds()))
+	reqstat.clientFailureCnt.Add(1)
 
-	elapsed := float64(time.Since(this.firstReq)) / float64(time.Second)
-	errstring := fmt.Sprintf(
-		"retry.RequestWithRetry(): %s failed after %d attempts in %4.3f sec with retriable error",
-		*opid, this.attemptCnt, elapsed)
+	var errstring string
+	if !retriable {
+		errstring = fmt.Sprintf(
+			"retry.RequestWithRetry(): %s failed after %d attempts in %4.3f sec with unretriable error",
+			*opid, this.attemptCnt, elapsed.Seconds())
+	} else {
+		errstring = fmt.Sprintf(
+			"retry.RequestWithRetry(): %s failed after %d attempts in %4.3f sec with retriable error",
+			*opid, this.attemptCnt, elapsed.Seconds())
+	}
 	logger.ErrorWithError(lastErr, errstring)
 	return lastErr
 }

@@ -90,6 +90,11 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 
 	if "" != useReserveForVolumeName {
 		globals.reservedChunkedConnectionMutex.Lock()
+
+		// track this statistic once per call to acquireChunkedConnection()
+		freeConnections := globals.chunkedConnectionPool.poolCapacity - globals.chunkedConnectionPool.poolInUse
+		globals.ObjectPutCtxtFreeConnection.Add(uint64(freeConnections))
+
 		connection, ok = globals.reservedChunkedConnection[useReserveForVolumeName]
 		if ok {
 			// Reuse connection from globals.reservedChunkedConnection map...removing it from there since it's in use
@@ -118,6 +123,10 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 	wasStalled = false
 
 	globals.chunkedConnectionPool.Lock()
+
+	// track this statistic once per call to acquireChunkedConnection()
+	freeConnections := globals.chunkedConnectionPool.poolCapacity - globals.chunkedConnectionPool.poolInUse
+	globals.ObjectPutCtxtFreeConnection.Add(uint64(freeConnections))
 
 	for {
 		if globals.chunkedConnectionPool.poolInUse < globals.chunkedConnectionPool.poolCapacity {
@@ -245,6 +254,10 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 	wasStalled = false
 
 	globals.nonChunkedConnectionPool.Lock()
+
+	// track this statistic once per call to acquireNonChunkedConnection()
+	freeConnections := globals.nonChunkedConnectionPool.poolCapacity - globals.nonChunkedConnectionPool.poolInUse
+	globals.ObjectNonChunkedFreeConnection.Add(uint64(freeConnections))
 
 	for {
 		if globals.nonChunkedConnectionPool.poolInUse < globals.nonChunkedConnectionPool.poolCapacity {

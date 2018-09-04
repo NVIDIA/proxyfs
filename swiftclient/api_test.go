@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -1060,13 +1061,36 @@ func testRetry(t *testing.T) {
 		return true, errors.New("Simulate a retriable errror")
 	}
 
+	type requestStatisticsIncarnate struct {
+		RetryOps          string
+		RetrySuccessCnt   string
+		ClientRequestTime bucketstats.BucketLog2Round
+		ClientFailureCnt  bucketstats.Total
+		SwiftRequestTime  bucketstats.BucketLog2Round
+		SwiftRetryOps     bucketstats.Average
+	}
+
 	var (
-		retryOps                    = "proxyfs.switclient.test.operations"
-		retrySuccessOps             = "proxyfs.switclient.test.success.operations"
-		statNm          RetryStatNm = RetryStatNm{retryCnt: &retryOps, retrySuccessCnt: &retrySuccessOps}
-		opname          string
-		retryObj        *RetryCtrl
+		opname   string
+		retryObj *RetryCtrl
+
+		reqStat = requestStatisticsIncarnate{
+			RetryOps:        "proxyfs.switclient.test.operations",
+			RetrySuccessCnt: "proxyfs.switclient.test.success.operations",
+		}
+		statNm = requestStatistics{
+			retryCnt:          &reqStat.RetryOps,
+			retrySuccessCnt:   &reqStat.RetrySuccessCnt,
+			clientRequestTime: &reqStat.ClientRequestTime,
+			clientFailureCnt:  &reqStat.ClientFailureCnt,
+			swiftRequestTime:  &reqStat.SwiftRequestTime,
+			swiftRetryOps:     &reqStat.SwiftRetryOps,
+		}
 	)
+
+	// the statistics should be registered before use
+	bucketstats.Register("swiftclient", "api_test", &reqStat)
+	defer bucketstats.UnRegister("swiftclient", "api_test")
 
 	// requests succeeds on first try (no log entry, stats not updated)
 	//
@@ -1143,7 +1167,7 @@ func testRetry(t *testing.T) {
 // properly formatted log messages and updated retry counters.
 //
 func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
-	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	opname string, retryObj *RetryCtrl, reqStat requestStatistics,
 	request func() (bool, error), successOn int, minSec float32, maxSec float32) {
 
 	var (
@@ -1158,10 +1182,10 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 		err                 error
 	)
 	statMap = stats.Dump()
-	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
-	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+	retryCntPre, _ = statMap[*reqStat.retryCnt]
+	retrySuccessCntPre, _ = statMap[*reqStat.retrySuccessCnt]
 
-	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	err = retryObj.RequestWithRetry(request, &opname, &reqStat)
 	if err != nil {
 		t.Errorf("%s: should have succeeded, error: %s", opname, err)
 	}
@@ -1222,8 +1246,8 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 	// get the right answer on the first try
 	for try := 0; try < 10; try++ {
 		statMap = stats.Dump()
-		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
-		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+		retryCntPost, _ = statMap[*reqStat.retryCnt]
+		retrySuccessCntPost, _ = statMap[*reqStat.retrySuccessCnt]
 
 		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
 			break
@@ -1245,7 +1269,7 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 // minSec of delay...but less than maxSec of delay.
 //
 func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
-	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	opname string, retryObj *RetryCtrl, reqStat requestStatistics,
 	request func() (bool, error), failOn int, minSec float32, maxSec float32, retryStr string) {
 
 	var (
@@ -1260,10 +1284,10 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 		err                 error
 	)
 	statMap = stats.Dump()
-	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
-	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+	retryCntPre, _ = statMap[*reqStat.retryCnt]
+	retrySuccessCntPre, _ = statMap[*reqStat.retrySuccessCnt]
 
-	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	err = retryObj.RequestWithRetry(request, &opname, &reqStat)
 	if err == nil {
 		t.Errorf("%s: should have failed, error: %s", opname, err)
 	}
@@ -1319,8 +1343,8 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 	// get the right answer on the first try
 	for try := 0; try < 10; try++ {
 		statMap = stats.Dump()
-		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
-		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+		retryCntPost, _ = statMap[*reqStat.retryCnt]
+		retrySuccessCntPost, _ = statMap[*reqStat.retrySuccessCnt]
 
 		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
 			break
