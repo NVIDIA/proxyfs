@@ -20,6 +20,9 @@ type File struct {
 }
 
 func (f File) Access(ctx context.Context, req *fuselib.AccessRequest) error {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	if f.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, f.inodeNumber, inode.InodeMode(req.Mask)) {
 		return nil
 	} else {
@@ -31,6 +34,9 @@ func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 	var (
 		stat fs.Stat
 	)
+
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
 
 	stat, err = f.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, f.inodeNumber)
 	if nil != err {
@@ -65,6 +71,9 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 		stat        fs.Stat
 		statUpdates fs.Stat
 	)
+
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
 
 	stat, err = f.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
@@ -123,6 +132,9 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 }
 
 func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
@@ -131,6 +143,9 @@ func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 }
 
 func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
 		f.inodeNumber)
 	if nil != err {
@@ -140,6 +155,9 @@ func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 }
 
 func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.ReadResponse) (err error) {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	buf, err := f.mountHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
 	if err != nil && err != io.EOF {
 		err = newFuseError(err)
@@ -150,6 +168,9 @@ func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.
 }
 
 func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuselib.WriteResponse) error {
+	globals.gate.RLock()
+	defer globals.gate.RUnlock()
+
 	size, err := f.mountHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), req.Data, nil)
 	if nil == err {
 		resp.Size = int(size)
