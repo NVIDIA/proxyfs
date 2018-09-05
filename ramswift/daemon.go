@@ -1175,7 +1175,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	}
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
@@ -1267,7 +1267,7 @@ func updateConf(confMap conf.ConfMap) {
 	swiftAccountNameListUpdate = make(map[string]bool)
 
 	for _, volumeName = range volumeListUpdate {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
@@ -1460,12 +1460,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != err {
-		log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
-	}
-
 	// Find out who "we" are
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -1528,12 +1522,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
 				log.Fatalf("failed to reapply config overrides: %v", err)
-			}
-
-			// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-			err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-			if nil != err {
-				log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
 			}
 
 			updateConf(confMap)

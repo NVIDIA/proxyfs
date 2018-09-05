@@ -49,13 +49,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	confErr = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != confErr {
-		fmt.Fprintf(os.Stderr, "utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", confErr)
-		os.Exit(1)
-	}
-
 	// Fetch WhoAmI (qualifies which VolumeList elements are applicable)
 	whoAmI, confErr := confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != confErr {
@@ -73,7 +66,7 @@ func main() {
 	// Prune VolumeList per PrimaryPeer attribute
 	volumeListPruned := []string{}
 	for _, volumeName := range volumeList {
-		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != confErr {
 			fmt.Fprintf(os.Stderr, "confMap did not contain %v.PrimaryPeer\n", volumeName)
 			os.Exit(1)
@@ -103,7 +96,7 @@ func main() {
 	urlPrefix := "http://127.0.0.1:" + noAuthTCPPort + "/v1/"
 
 	for _, volumeName := range volumeListPruned {
-		accountName, confErr := confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeName), "AccountName")
+		accountName, confErr := confMap.FetchOptionValueString("Volume:"+volumeName, "AccountName")
 		if nil != confErr {
 			fmt.Fprintf(os.Stderr, "confMap did not contain %v.AccountName\n", volumeName)
 			os.Exit(1)
@@ -221,7 +214,7 @@ func main() {
 					os.Exit(1)
 				}
 
-				replayLogFileName, confErr := confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeName), "ReplayLogFileName")
+				replayLogFileName, confErr := confMap.FetchOptionValueString("Volume:"+volumeName, "ReplayLogFileName")
 				if nil == confErr {
 					if "" != replayLogFileName {
 						removeReplayLogFileErr := os.Remove(replayLogFileName)

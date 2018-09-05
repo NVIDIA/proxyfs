@@ -25,7 +25,6 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/httpserver"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -181,7 +180,7 @@ func main() {
 		log.Fatalf("volumeName (%s) not found in volumeList (%v)", volumeName, volumeList)
 	}
 
-	volumeSectionName = utils.VolumeNameConfSection(volumeName)
+	volumeSectionName = "Volume:" + volumeName
 
 	primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
 	if nil != err {
@@ -191,7 +190,7 @@ func main() {
 		log.Fatalf("Cluster.WhoAmI (%s) does not match %s.PrimaryPeer (%s)", whoAmI, volumeSectionName, primaryPeer)
 	}
 
-	peerSectionName = utils.PeerNameConfSection(primaryPeer)
+	peerSectionName = "Peer:" + primaryPeer
 
 	privateIPAddr, err = confMap.FetchOptionValueString(peerSectionName, "PrivateIPAddr")
 	if nil != err {

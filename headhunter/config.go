@@ -13,7 +13,6 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -196,7 +195,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -246,7 +245,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -297,7 +296,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -468,7 +467,7 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 		volumeSectionName      string
 	)
 
-	volumeSectionName = utils.VolumeNameConfSection(volumeName)
+	volumeSectionName = "Volume:" + volumeName
 
 	volume = &volumeStruct{
 		volumeName:                           volumeName,
@@ -489,7 +488,7 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	if nil != err {
 		return
 	}
-	flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+	flowControlSectionName = "FlowControl:" + flowControlName
 
 	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
 	if nil != err {

@@ -14,7 +14,6 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type Mode int
@@ -62,16 +61,9 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		return
 	}
 
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != err {
-		err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
-		return
-	}
-
 	// Fetch confMap particulars needed below
 
-	accountName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "AccountName")
+	accountName, err = confMap.FetchOptionValueString("Volume:"+volumeNameToFormat, "AccountName")
 	if nil != err {
 		return
 	}
@@ -195,7 +187,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 				isEmpty = (0 == len(containerList))
 			}
 
-			replayLogFileName, err = confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeNameToFormat), "ReplayLogFileName")
+			replayLogFileName, err = confMap.FetchOptionValueString("Volume:"+volumeNameToFormat, "ReplayLogFileName")
 			if nil == err {
 				if "" != replayLogFileName {
 					removeReplayLogFileErr := os.Remove(replayLogFileName)

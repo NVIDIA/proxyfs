@@ -25,7 +25,6 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 // if signals is empty it means "catch all signals" its possible to catch
@@ -48,16 +47,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 
 	err = confMap.UpdateFromStrings(confStrings)
 	if nil != err {
-		errChan <- err
-
-		return
-	}
-
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != err {
-		err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
-
 		errChan <- err
 
 		return
@@ -356,13 +345,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
 				err = fmt.Errorf("failed to reapply config overrides: %v", err)
-				break
-			}
-
-			// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-			err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-			if nil != err {
-				err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
 				break
 			}
 

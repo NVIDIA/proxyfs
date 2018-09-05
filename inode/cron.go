@@ -9,7 +9,6 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type snapShotScheduleStruct struct {
@@ -60,7 +59,7 @@ func (vS *volumeStruct) loadSnapShotPolicy(confMap conf.ConfMap) (err error) {
 	// Default to no snapShotPolicy found
 	vS.snapShotPolicy = nil
 
-	volumeSectionName = utils.VolumeNameConfSection(vS.volumeName)
+	volumeSectionName = "Volume:" + vS.volumeName
 
 	snapShotPolicyName, err = confMap.FetchOptionValueString(volumeSectionName, "SnapShotPolicy")
 	if nil != err {
