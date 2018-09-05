@@ -14,7 +14,6 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type physicalContainerLayoutStruct struct {
@@ -204,7 +203,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString("Peer:"+peerName, "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -266,7 +265,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		volume = &volumeStruct{
 			volumeName:                     volumeName,
@@ -365,7 +364,7 @@ func Up(confMap conf.ConfMap) (err error) {
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
-				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
+				physicalContainerLayoutSectionName = "PhysicalContainerLayout:" + physicalContainerLayoutName
 
 				physicalContainerLayout.physicalContainerStoragePolicy, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerStoragePolicy")
 				if nil != err {
@@ -413,7 +412,7 @@ func Up(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
-			flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+			flowControlSectionName = "FlowControl:" + flowControlName
 
 			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlName]
 
@@ -549,7 +548,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString("Peer:"+peerName, "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -596,7 +595,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 		_, ok = newVolumeSet[volumeName]
 		if ok {
-			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+			primaryPeerNameList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 			if nil != err {
 				return
 			}
@@ -633,7 +632,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		volume = globals.volumeMap[volumeName]
 		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
 		volume.active = false
-		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerNameList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
@@ -710,7 +709,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, peerName = range peerNames {
-		peerPrivateIPAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(peerName), "PrivateIPAddr")
+		peerPrivateIPAddr, err = confMap.FetchOptionValueString("Peer:"+peerName, "PrivateIPAddr")
 		if nil != err {
 			return
 		}
@@ -724,7 +723,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		fsid, err = confMap.FetchOptionValueUint64(volumeSectionName, "FSID")
 		if nil != err {
@@ -778,7 +777,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					if nil != err {
 						return
 					}
-					flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+					flowControlSectionName = "FlowControl:" + flowControlName
 
 					flowControl = volume.flowControl
 
@@ -874,7 +873,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			// a set of policies used to determine which one to apply. At such time, the following code will
 			// ensure that the container layouts don't conflict (obviously not a problem when there is only one).
 
-			volumeSectionName = utils.VolumeNameConfSection(volume.volumeName)
+			volumeSectionName = "Volume:" + volume.volumeName
 
 			volume.maxEntriesPerDirNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxEntriesPerDirNode")
 			if nil != err {
@@ -904,7 +903,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 
 				physicalContainerLayout.physicalContainerLayoutName = physicalContainerLayoutName
 
-				physicalContainerLayoutSectionName = utils.PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName)
+				physicalContainerLayoutSectionName = "PhysicalContainerLayout:" + physicalContainerLayoutName
 
 				physicalContainerLayout.physicalContainerStoragePolicy, err = confMap.FetchOptionValueString(physicalContainerLayoutSectionName, "ContainerStoragePolicy")
 				if nil != err {
@@ -952,7 +951,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 			if nil != err {
 				return
 			}
-			flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+			flowControlSectionName = "FlowControl:" + flowControlName
 
 			_, alreadyInFlowControlMap = globals.flowControlMap[flowControlName]
 
@@ -1056,7 +1055,7 @@ func adoptFlowControlReadCacheParameters(confMap conf.ConfMap, capExistingReadCa
 		flowControlWeightSum += flowControl.readCacheWeight
 	}
 
-	readCacheQuotaFraction, err = confMap.FetchOptionValueFloat64(utils.PeerNameConfSection(globals.whoAmI), "ReadCacheQuotaFraction")
+	readCacheQuotaFraction, err = confMap.FetchOptionValueFloat64("Peer:"+globals.whoAmI, "ReadCacheQuotaFraction")
 	if nil != err {
 		return
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -82,7 +81,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
@@ -113,7 +112,7 @@ func Up(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-				flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+				flowControlSectionName = "FlowControl:" + flowControlName
 
 				volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 				if nil != err {
@@ -176,7 +175,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -247,7 +246,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
@@ -280,7 +279,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					if nil != err {
 						return
 					}
-					flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+					flowControlSectionName = "FlowControl:" + flowControlName
 
 					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 					if nil != err {

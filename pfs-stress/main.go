@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 var (
@@ -77,12 +76,6 @@ func main() {
 	err = confMap.UpdateFromStrings(args[1:])
 	if nil != err {
 		log.Fatalf("failed to load config overrides: %v", err)
-	}
-
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != err {
-		log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
 	}
 
 	// Process resultant confMap
