@@ -88,17 +88,24 @@ func makeNodeStateKey(n string) string {
 // For example, all node events have a key as returned by NodeKeyPrefix().
 func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
-	swg.Done() // The watcher is running!
-
 	// TODO - probably switch based on keyPrefix for appropriate key
 	// type!!!
 
 	wch1 := cs.cli.Watch(context.Background(), keyPrefix, clientv3.WithPrefix())
+	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
-		fmt.Printf("watcher() wresp1: %v\n", wresp1)
+		fmt.Printf("watcher() wresp1: %+v\n", wresp1)
 		for _, ev := range wresp1.Events {
-			// TODO - what key???
-			fmt.Printf("Watcher for key: %v saw value: %v\n", ev.Kv.Key, string(ev.Kv.Value))
+			fmt.Printf("Watcher for key: %v saw value: %v\n", string(ev.Kv.Key),
+				string(ev.Kv.Value))
+			if string(ev.Kv.Key) == makeNodeStateKey(cs.hostName) {
+				fmt.Printf("Received own watch event for node\n")
+				if string(ev.Kv.Value) == STARTING.String() {
+					fmt.Printf("Received own watch event for node - now STARTING\n")
+					cs.SetNodeState(cs.hostName, ONLINE)
+					// TODO - start HB
+				}
+			}
 		}
 
 		// TODO - node watcher only shutdown when local node is OFFLINE, then
@@ -106,8 +113,6 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 		// TODO - node watchers only shutdown when state is OFFLINING, then decrement WaitGroup()
 		// ....
 		// TODO - how notified when shutting down?
-		cs.watcherWG.Done() // TODO - only do this when we are shutting down
-		return
 	}
 }
 
@@ -147,21 +152,55 @@ func (cs *Struct) SetNodeState(nodeName string, state NodeState) (err error) {
 	//     recognize partitioned out of cluster.
 	// TODO - figure out correct timeout value.  Pass as arg???
 
+	// TODO ====>>>> figure out case where multiple states to update from...
+	// STARTING, etc +++> STARTING....
+
 	nodeKey := makeNodeStateKey(nodeName)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_, err = cs.kvc.Txn(ctx).
 
 		// txn value comparisons are lexical
 		If(
-			clientv3.Compare(clientv3.Value(nodeKey), "=", ""),
+			clientv3.Compare(clientv3.Value(nodeKey), "!=", state.String()),
 
 		// the "Then" runs, since "" = "" for both keys
 		).Then(
 		clientv3.OpPut(nodeKey, state.String()),
 
 	// the "Else" does not run
-	).Else().Commit()
+	).Else(
+	// TODO - figure out what this should be
+	//		clientv3.OpPut(nodeKey, state.String()),
+	).Commit()
 	cancel()
+
+	return
+}
+
+// SetInitalNodeState ignores the existing node state value and
+// sets it to the new state.   Generally, this is only needed for
+// the STARTING and DEAD states.
+// TODO - is there a better name for this???
+func (cs *Struct) SetInitalNodeState(nodeName string, state NodeState) (err error) {
+	fmt.Printf("SetInitialNodeState(%v, %v)\n", nodeName, state.String())
+	if (state <= nilNodeState) || (state >= maxNodeState) {
+		err = errors.New("Invalid node state")
+		return
+	}
+
+	nodeKey := makeNodeStateKey(nodeName)
+	fmt.Printf("nodeKey: %v\n", nodeKey)
+
+	if state == STARTING {
+		// TODO - do I still need this or will I get an event regardless??
+		// We will not get a watch event if the initial state is
+		// already STARTING based on a previous run.  Therefore,
+		// set state to "" and then to STARTING to guarantee we
+		// get a watch event.
+		_, err = cs.cli.Put(context.TODO(), nodeKey, "")
+	}
+
+	_, err = cs.cli.Put(context.TODO(), nodeKey, state.String())
 
 	return
 }

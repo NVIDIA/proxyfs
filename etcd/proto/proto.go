@@ -13,8 +13,6 @@ func main() {
 	endpoints := []string{"192.168.60.10:2379", "192.168.60.11:2379", "192.168.60.12:2379"}
 	hostName, _ := os.Hostname()
 
-	fmt.Printf("LOCAL HOST: %v\n", hostName)
-
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
 	cs, err := consensus.Register(endpoints, 2*time.Second)
@@ -26,12 +24,17 @@ func main() {
 	// Start a watcher to watch for node state changes
 	cs.StartAWatcher(consensus.NodeKeyStatePrefix())
 
+	// TODO - add cs.SetInitalNodeState() or something
+	// like that which ignores existing value using the
+	// PUT semantics...
+	// GET - first dump key/value...
+
 	// Set state of local node to STARTING
-	err = cs.SetNodeState(hostName, consensus.STARTING)
+	err = cs.SetInitalNodeState(hostName, consensus.STARTING)
 	if err != nil {
 		// TODO - assume this means txn timed out, could not
 		// get majority, etc....
-		fmt.Printf("SetNodeState(STARTING) returned err: %v\n", err)
+		fmt.Printf("SetInitialNodeState(STARTING) returned err: %v\n", err)
 		os.Exit(-1)
 	}
 
