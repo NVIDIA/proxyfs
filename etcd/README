@@ -23,3 +23,11 @@ To verify the state of the cluster do:
 
 NOTE: This vagrant file creates a static configuration file in /etc/etcd/etcd.conf.  We
 should review this to see if we want something different.
+
+Dump all keys in etcd:
+
+	# ETCDCTL_API=3 etcdctl --endpoints "http://192.168.60.11:2379" get --prefix ""
+
+Delete a key named TESTKEY1 in etcd:
+
+	# ETCDCTL_API=3 etcdctl --endpoints "http://192.168.60.11:2379" del TESTKEY1
