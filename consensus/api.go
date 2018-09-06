@@ -81,17 +81,12 @@ func makeNodeStateKey(n string) string {
 	return NodeKeyStatePrefix() + n
 }
 
-// TODO - must wrap with WithRequiredLeader
-// TODO - review how compaction works with watchers,
-//
-// watcher is a goroutine which watches for events with the key prefix.
-// For example, all node events have a key as returned by NodeKeyPrefix().
-func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
+// nodeStateWatchEvents creates a watcher based on node state
+// changes.
+func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 
-	// TODO - probably switch based on keyPrefix for appropriate key
-	// type!!!
-
-	wch1 := cs.cli.Watch(context.Background(), keyPrefix, clientv3.WithPrefix())
+	wch1 := cs.cli.Watch(context.Background(), NodeKeyStatePrefix(),
+		clientv3.WithPrefix())
 	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
 		fmt.Printf("watcher() wresp1: %+v\n", wresp1)
@@ -104,6 +99,7 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 					fmt.Printf("Received own watch event for node - now STARTING\n")
 					cs.SetNodeState(cs.hostName, ONLINE)
 					// TODO - start HB
+					// TODO - detect if local node has been ejected from cluster
 				}
 			}
 		}
@@ -113,6 +109,21 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 		// TODO - node watchers only shutdown when state is OFFLINING, then decrement WaitGroup()
 		// ....
 		// TODO - how notified when shutting down?
+	}
+}
+
+// TODO - must wrap with WithRequiredLeader
+// TODO - review how compaction works with watchers,
+//
+// watcher is a goroutine which watches for events with the key prefix.
+// For example, all node events have a key as returned by NodeKeyPrefix().
+func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
+
+	// TODO - probably switch based on keyPrefix for appropriate key
+	// type!!!
+	switch keyPrefix {
+	case NodeKeyStatePrefix():
+		cs.nodeStateWatchEvents(swg)
 	}
 }
 
