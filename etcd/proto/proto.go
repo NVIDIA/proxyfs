@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"github.com/swiftstack/ProxyFS/consensus"
 	"os"
-	//"github.com/coreos/etcd/clientv3/namespace"
-	//"sync"
 	"time"
 )
 
@@ -30,7 +28,7 @@ func main() {
 	// GET - first dump key/value...
 
 	// Set state of local node to STARTING
-	err = cs.SetInitalNodeState(hostName, consensus.STARTING)
+	err = cs.SetNodeStateForced(hostName, consensus.STARTING)
 	if err != nil {
 		// TODO - assume this means txn timed out, could not
 		// get majority, etc....
