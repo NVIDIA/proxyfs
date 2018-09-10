@@ -22,7 +22,7 @@ func (volume *volumeStruct) RegisterForEvents(listener VolumeEventListener) {
 
 	_, ok = volume.eventListeners[listener]
 	if ok {
-		logger.Fatalf("headhunter.RegisterForEvents() called for volume %v listener %v already active", volume.volumeName)
+		logger.Fatalf("headhunter.RegisterForEvents() called for volume %v listener %p already active", volume.volumeName, listener)
 	}
 
 	volume.eventListeners[listener] = struct{}{}
@@ -39,7 +39,7 @@ func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
 
 	_, ok = volume.eventListeners[listener]
 	if !ok {
-		logger.Fatalf("headhunter.UnregisterForEvents() called for volume %v listener %v not active", volume.volumeName)
+		logger.Fatalf("headhunter.UnregisterForEvents() called for volume %v listener %p not active", volume.volumeName, listener)
 	}
 
 	delete(volume.eventListeners, listener)

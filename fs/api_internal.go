@@ -1968,7 +1968,7 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 	for i := 0; i < len(dirs); i++ {
 		newDirInodeNumber, err1 := mS.volStruct.inodeVolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
 		if err1 != nil {
-			logger.DebugfIDWithError(internalDebug, err1, "mount.CreateDir(): %v failed!")
+			logger.DebugfIDWithError(internalDebug, err1, "mount.CreateDir(): failed!")
 			err = err1
 			return
 		}
@@ -2971,7 +2971,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	ctime, ok := stat[StatCTime]
 	if ok {
 		newAccessTime := time.Unix(0, int64(ctime))
-		logger.Info("%s: ignoring attempt to change ctime to %v on volume '%s' inode %v",
+		logger.Infof("%s: ignoring attempt to change ctime to %v on volume '%s' inode %v",
 			utils.GetFnName(), newAccessTime, mS.volStruct.volumeName, inodeNumber)
 	}
 
