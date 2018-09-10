@@ -1147,7 +1147,7 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 		// the inode is locked so this should never happen (unless the inode
 		// was evicted from the cache and it was corrupt when read from disk)
 		// (err includes volume name and inode number)
-		logger.ErrorWithError(err, "%s: fetch of inode failed", utils.GetFnName())
+		logger.ErrorfWithError(err, "%s: fetch of inode failed", utils.GetFnName())
 		return
 	}
 	if !ok {
@@ -1161,11 +1161,11 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 
 	ok, err = vS.inodeCacheDrop(ourInode)
 	if nil != err {
-		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode failed: %v", utils.GetFnName(), err)
+		logger.ErrorfWithError(err, "%s: inodeCacheDrop() of inode failed: %v", utils.GetFnName(), err)
 		return
 	}
 	if !ok {
-		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode returned !ok", utils.GetFnName())
+		logger.ErrorfWithError(err, "%s: inodeCacheDrop() of inode returned !ok", utils.GetFnName())
 		return
 	}
 
