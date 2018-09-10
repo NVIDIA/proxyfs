@@ -212,7 +212,7 @@ func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseVa
 	).Else(
 		clientv3.OpPut(key, elseValue),
 	).Commit()
-	cancel()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	return
 }
