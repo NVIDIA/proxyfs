@@ -1,5 +1,17 @@
 # ProxyFS Release Notes
 
+## 1.8 (TBD)
+
+### Notes
+
+* With the advent of Golang v1.11, new support for WebAssembly has arrived. To build for a
+WebAssembly target, setting GOOS=js and GOARCH=wasm is required. Unfortunately, the arrival
+of these two new values ("js" and "wasm"), Go source files ending with _js.go, in particular,
+will only be compiled if GOOS=js has been set. Previously (Golang v1.10 and prior), a file
+ending in _js.go would always be included. This release captures a name change to various
+static files generated in package httpserver by adding an underscore ("_") just before ".go"
+to avoid this new Golang behavior.
+
 ## 1.7 (September 6, 2018)
 
 ### Bug Fixes:
