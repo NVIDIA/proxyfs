@@ -76,11 +76,36 @@ func (cs *Struct) Unregister() {
 
 // NodeKeyStatePrefix returns a string containing the node prefix
 func NodeKeyStatePrefix() string {
-	return "NODE"
+	return "NODESTATE"
+}
+
+// NodeKeyHbPrefix returns a unique string for heartbeat key prefix
+func NodeKeyHbPrefix() string {
+	return "NODEHB"
 }
 
 func makeNodeStateKey(n string) string {
 	return NodeKeyStatePrefix() + n
+}
+
+func makeNodeHbKey(n string) string {
+	return NodeKeyHbPrefix() + n
+}
+
+func (cs *Struct) sendHb() {
+
+	nodeKey := makeNodeHbKey(cs.hostName)
+	currentTime, err := time.Now().UTC().MarshalText()
+	if err != nil {
+		fmt.Printf("time.Now() returned err: %v\n", err)
+		os.Exit(-1)
+	}
+
+	// TODO - update timeout of txn() to be multiple of leader election
+	// time and/or heartbeat time...
+	err = cs.oneKeyTxn(nodeKey, string(currentTime), string(currentTime),
+		string(currentTime), 5*time.Second)
+	return
 }
 
 // startHBandMonitor() will start the HB timer to
@@ -92,14 +117,14 @@ func (cs *Struct) startHBandMonitor() {
 	cs.HBTicker = time.NewTicker(1 * time.Second)
 	go func() {
 		for range cs.HBTicker.C {
-			fmt.Printf("Send a HB now\n")
+			cs.sendHb()
 		}
 	}()
 }
 
 // TODO - decide whom should failover VGs
 // in otherNodeEvents() when see went DEAD
-func (cs *Struct) otherNodeEvents(ev *clientv3.Event) {
+func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
 	case STARTING.String():
@@ -116,7 +141,7 @@ func (cs *Struct) otherNodeEvents(ev *clientv3.Event) {
 
 // TODO - move watchers to own file(s) and hide behind
 // interface{}
-func (cs *Struct) myNodeEvents(ev *clientv3.Event) {
+func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
 	case STARTING.String():
@@ -124,7 +149,8 @@ func (cs *Struct) myNodeEvents(ev *clientv3.Event) {
 		cs.SetNodeState(cs.hostName, ONLINE)
 	case DEAD.String():
 		fmt.Printf("Received - now DEAD\n")
-		fmt.Printf("Exiting proxyfsd\n")
+		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
+		// TODO - Drop VIP here!!!
 		os.Exit(-1)
 	case ONLINE.String():
 		fmt.Printf("Received - now ONLINE\n")
@@ -138,6 +164,7 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 
 	wch1 := cs.cli.Watch(context.Background(), NodeKeyStatePrefix(),
 		clientv3.WithPrefix())
+
 	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
 		fmt.Printf("watcher() wresp1: %+v\n", wresp1)
@@ -145,9 +172,49 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 			fmt.Printf("Watcher for key: %v saw value: %v\n", string(ev.Kv.Key),
 				string(ev.Kv.Value))
 			if string(ev.Kv.Key) == makeNodeStateKey(cs.hostName) {
-				cs.myNodeEvents(ev)
+				cs.myNodeStateEvents(ev)
 			} else {
-				cs.otherNodeEvents(ev)
+				cs.otherNodeStateEvents(ev)
+			}
+		}
+
+		// TODO - node watcher only shutdown when local node is OFFLINE, then
+		// decrement WaitGroup() and call cs.DONE()????
+		// TODO - how notified when shutting down?
+	}
+}
+
+// nodeHbWatchEvents creates a watcher based on node heartbeats.
+// TODO - figure out if node is dead
+func (cs *Struct) nodeHbWatchEvents(swg *sync.WaitGroup) {
+
+	wch1 := cs.cli.Watch(context.Background(), NodeKeyHbPrefix(),
+		clientv3.WithPrefix())
+
+	swg.Done() // The watcher is running!
+	for wresp1 := range wch1 {
+		for _, e := range wresp1.Events {
+			// Heartbeat is for the local node.
+			if string(e.Kv.Key) == makeNodeHbKey(cs.hostName) {
+				// TODO - need to do anything in this case?
+			} else {
+				// TODO - probably not needed....
+				var sentTime time.Time
+				err := sentTime.UnmarshalText(e.Kv.Value)
+				if err != nil {
+					fmt.Printf("UnmarshalTest failed with err: %v", err)
+					os.Exit(-1)
+				}
+
+				fmt.Printf("nodeHbWatchEvents() - key: %v value: %v\n",
+					string(e.Kv.Key), sentTime)
+				/* TODO - TODO -
+				Do we even do anything with heartbeats?  Do we only care
+				about a timer thread looking for nodes which missed correct
+				number of heartbeats? should we have a separate thread for
+				checking if expired hb?  should we overload sending thread
+				or is that a hack?
+				*/
 			}
 		}
 
@@ -171,6 +238,8 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 	switch keyPrefix {
 	case NodeKeyStatePrefix():
 		cs.nodeStateWatchEvents(swg)
+	case NodeKeyHbPrefix():
+		cs.nodeHbWatchEvents(swg)
 	}
 }
 
@@ -199,6 +268,10 @@ func (cs *Struct) WaitWatchers() {
 func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseValue string, timeout time.Duration) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	_, err = cs.kvc.Txn(ctx).
+
+		// TODO - should only allow transaction if local node state is
+		// !DEAD.  What about other node states like STARTED?
+		// If local is DEAD won't we die?  How guarantee that?
 
 		// txn value comparisons are lexical
 		If(
@@ -244,6 +317,9 @@ func (cs *Struct) SetNodeState(nodeName string, state NodeState) (err error) {
 // the STARTING and DEAD states.
 func (cs *Struct) SetNodeStateForced(nodeName string, state NodeState) (err error) {
 	fmt.Printf("SetInitialNodeState(%v, %v)\n", nodeName, state.String())
+
+	// TODO - probaly should verify that node state transitions
+	// are correct.
 	if (state <= INITIAL) || (state >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return

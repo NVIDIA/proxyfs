@@ -19,8 +19,14 @@ func main() {
 		os.Exit(-1)
 	}
 
+	// TODO - probably move to Node related changes
+	// function or something like that....
+
 	// Start a watcher to watch for node state changes
 	cs.StartAWatcher(consensus.NodeKeyStatePrefix())
+
+	// Start a watcher to watch for node heartbeats
+	cs.StartAWatcher(consensus.NodeKeyHbPrefix())
 
 	// TODO - add cs.SetInitalNodeState() or something
 	// like that which ignores existing value using the
@@ -35,6 +41,11 @@ func main() {
 		fmt.Printf("SetInitialNodeState(STARTING) returned err: %v\n", err)
 		os.Exit(-1)
 	}
+
+	// TODO - start another goroutine which waits
+	// some multiple of heartbeat interval before
+	// starting thread to see if nodes are no longer
+	// heartbeating and then marking them DEAD.
 
 	// Watcher will start HB after getting STARTING state
 	// Watcher also decides the state changes, etc....
