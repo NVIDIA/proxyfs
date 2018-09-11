@@ -92,8 +92,18 @@ func makeNodeHbKey(n string) string {
 	return NodeKeyHbPrefix() + n
 }
 
-func (cs *Struct) sendHb() {
+// checkForDeadNodes() looks for nodes no longer
+// heartbeating and sets their state to DEAD.
+//
+// It then initiates failover of any VGs.
+func (cs *Struct) checkForDeadNodes() {
+	// TODO - implement this
 
+}
+
+// sendHB sends a heartbeat by doing a txn() to update
+// the local node's last heartbeat.
+func (cs *Struct) sendHb() {
 	nodeKey := makeNodeHbKey(cs.hostName)
 	currentTime, err := time.Now().UTC().MarshalText()
 	if err != nil {
@@ -118,6 +128,7 @@ func (cs *Struct) startHBandMonitor() {
 	go func() {
 		for range cs.HBTicker.C {
 			cs.sendHb()
+			cs.checkForDeadNodes()
 		}
 	}()
 }
@@ -206,8 +217,6 @@ func (cs *Struct) nodeHbWatchEvents(swg *sync.WaitGroup) {
 					os.Exit(-1)
 				}
 
-				fmt.Printf("nodeHbWatchEvents() - key: %v value: %v\n",
-					string(e.Kv.Key), sentTime)
 				/* TODO - TODO -
 				Do we even do anything with heartbeats?  Do we only care
 				about a timer thread looking for nodes which missed correct
