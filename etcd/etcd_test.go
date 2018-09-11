@@ -51,6 +51,7 @@ func TestEtcdAPI(t *testing.T) {
 	testBasicTxn(t)
 	testTxnWatcher(t)
 	testTxnHb(t)
+	testGetMultipleKeys(t)
 }
 
 // Test basic etcd API based on this link:
@@ -336,4 +337,72 @@ func testTxnHb(t *testing.T) {
 
 	// Wait for watchers to get events before exiting test
 	finishWG.Wait()
+}
+
+// Test getting multiple different keys in one txn()
+func testGetMultipleKeys(t *testing.T) {
+	var (
+		testStr   = "TEST"
+		testKey   = "KEY"
+		testKey1  = testStr + testKey + "1"
+		testData1 = testStr + "DATA1"
+		testKey2  = testStr + testKey + "2"
+		testData2 = testStr + "DATA2"
+		startWG   sync.WaitGroup // Used to sync start of watcher
+		finishWG  sync.WaitGroup // Used to block until watcher sees event
+	)
+	assert := assert.New(t)
+
+	// Create an etcd client - our current etcd setup does not listen on
+	// localhost.  Therefore, we pass the IP addresses used by etcd.
+	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"192.168.60.10:2379",
+		"192.168.60.11:2379", "192.168.60.12:2379"}, DialTimeout: 2 * time.Second})
+	if err != nil {
+		assert.Nil(err, "clientv3.New() returned err")
+		// handle error!
+	}
+	defer cli.Close()
+
+	kvc := clientv3.NewKV(cli)
+
+	// Reset the test keys to be used
+	m := make(map[string]string)
+	m[testKey1] = string(testData1)
+	m[testKey2] = string(testData2)
+	resetKeys(t, cli, m)
+
+	// Create watchers for each key
+	startWatchers(t, cli, m, &startWG, &finishWG)
+
+	// Create the keys with our data so that we can retrieve them
+	finishWG.Add(len(m))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = kvc.Txn(ctx).
+
+		// txn value comparisons are lexical
+		If(
+			clientv3.Compare(clientv3.Value(testKey1), "=", ""),
+			clientv3.Compare(clientv3.Value(testKey2), "=", ""),
+
+		// the "Then" runs, since "" = "" for both keys
+		).Then(
+		clientv3.OpPut(testKey1, string(testData1)),
+		clientv3.OpPut(testKey2, string(testData2)),
+
+	// the "Else" does not run
+	).Else(
+		clientv3.OpPut(testKey1, "FailedPutMultipleKeys"),
+		clientv3.OpPut(testKey2, "FailedPutMultipleKeys"),
+	).Commit()
+	cancel()
+	if err != nil {
+		assert.Nil(err, "kvc.Txn() returned err")
+	}
+
+	// Wait for watchers to see keys
+	finishWG.Wait()
+
+	// Now get multiple keys
+	resp, err := cli.Get(context.TODO(), testStr+testKey, clientv3.WithPrefix())
+	assert.Equal(int64(2), resp.Count, "Get() returned wrong length for number of keys")
 }
