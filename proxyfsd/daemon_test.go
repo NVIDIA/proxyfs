@@ -38,7 +38,6 @@ func TestDaemon(t *testing.T) {
 		err                            error
 		errChan                        chan error
 		mountHandle                    fs.MountHandle
-		proxyfsdSignalHandlerIsArmed   bool
 		ramswiftDoneChan               chan bool
 		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
 		readData                       []byte
@@ -236,25 +235,16 @@ func TestDaemon(t *testing.T) {
 
 	// Launch an instance of proxyfsd using that same config
 
-	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
 	var execArgs []string
 	execArgs = append([]string{"daemon_test", "/dev/null"}, confMapStrings...)
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+	go Daemon("/dev/null", confMapStrings, errChan, &wg,
 		execArgs, unix.SIGTERM, unix.SIGHUP)
 
-	for !proxyfsdSignalHandlerIsArmed {
-		select {
-		case err = <-errChan:
-			if nil == err {
-				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 1]")
-			} else {
-				t.Fatalf("Daemon() exited with error [case 1a]: %v", err)
-			}
-		default:
-			time.Sleep(100 * time.Millisecond)
-		}
+	err = <-errChan
+	if nil != err {
+		t.Fatalf("Daemon() startup failed [case 1a]: %v", err)
 	}
 
 	// Write to the volume (with no flush so that only time-based/restart flush is performed)
@@ -335,24 +325,15 @@ func TestDaemon(t *testing.T) {
 
 	// Relaunch an instance of proxyfsd
 
-	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
 	execArgs = append([]string{"daemon_test", testVersionConfFileName}, confMapStrings...)
-	go Daemon(testVersionConfFileName, confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+	go Daemon(testVersionConfFileName, confMapStrings, errChan, &wg,
 		execArgs, unix.SIGTERM, unix.SIGHUP)
 
-	for !proxyfsdSignalHandlerIsArmed {
-		select {
-		case err = <-errChan:
-			if nil == err {
-				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 2]")
-			} else {
-				t.Fatalf("Daemon() exited with error [case 2a]: %v", err)
-			}
-		default:
-			time.Sleep(100 * time.Millisecond)
-		}
+	err = <-errChan
+	if nil != err {
+		t.Fatalf("Daemon() startup failed [case 2a]: %v", err)
 	}
 
 	// Verify written data after restart
