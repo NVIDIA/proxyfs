@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -74,14 +75,19 @@ func (cs *Struct) Unregister() {
 	cs.cli = nil
 }
 
-// NodeKeyStatePrefix returns a string containing the node prefix
+// NodePrefix returns a string containing the node prefix
+func NodePrefix() string {
+	return "NODE"
+}
+
+// NodeKeyStatePrefix returns a string containing the node state prefix
 func NodeKeyStatePrefix() string {
-	return "NODESTATE"
+	return NodePrefix() + "STATE"
 }
 
 // NodeKeyHbPrefix returns a unique string for heartbeat key prefix
 func NodeKeyHbPrefix() string {
-	return "NODEHB"
+	return NodePrefix() + "HB"
 }
 
 func makeNodeStateKey(n string) string {
@@ -92,13 +98,71 @@ func makeNodeHbKey(n string) string {
 	return NodeKeyHbPrefix() + n
 }
 
+// makeNodeLists is a helper method to break the GET of node data into
+// the lists we need.
+func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string, nodesOnline []string, nodesHb map[string]time.Time) {
+	nodesAlreadyDead = make([]string, 0)
+	nodesOnline = make([]string, 0)
+	nodesHb = make(map[string]time.Time)
+	for _, e := range resp.Kvs {
+		if strings.HasPrefix(string(e.Key), NodeKeyStatePrefix()) {
+			if string(e.Value) == DEAD.String() {
+				node := strings.TrimPrefix(string(e.Key), NodeKeyStatePrefix())
+				nodesAlreadyDead = append(nodesAlreadyDead, node)
+			} else {
+				if string(e.Value) == ONLINE.String() {
+					node := strings.TrimPrefix(string(e.Key), NodeKeyStatePrefix())
+					nodesOnline = append(nodesOnline, node)
+				}
+			}
+		} else if strings.HasPrefix(string(e.Key), NodeKeyHbPrefix()) {
+			node := strings.TrimPrefix(string(e.Key), NodeKeyHbPrefix())
+			var sentTime time.Time
+			err := sentTime.UnmarshalText(e.Value)
+			if err != nil {
+				fmt.Printf("UnmarshalTest failed with err: %v", err)
+				os.Exit(-1)
+			}
+			nodesHb[node] = sentTime
+		}
+	}
+	return
+}
+
 // checkForDeadNodes() looks for nodes no longer
 // heartbeating and sets their state to DEAD.
 //
 // It then initiates failover of any VGs.
 func (cs *Struct) checkForDeadNodes() {
-	// TODO - implement this
+	// First grab all node state information in one operation
+	resp, err := cs.cli.Get(context.TODO(), NodePrefix(), clientv3.WithPrefix())
+	if err != nil {
+		fmt.Printf("GET node state failed with: %v\n", err)
+		os.Exit(-1)
+	}
 
+	// Break the response out into list of already DEAD nodes and
+	// nodes which are still marked ONLINE.
+	//
+	// Also retrieve the last HB values for each node.
+	_, nodesOnline, nodesHb := makeNodeLists(resp)
+
+	// Go thru list of nodeNotDeadState and verify HB is not past
+	// interval.  If so, put on list nodesNewlyDead and then
+	// do txn to mark them DEAD all in one transaction.
+	nodesNewlyDead := make([]string, 0)
+	timeNow := time.Now()
+	for _, n := range nodesOnline {
+		nodeTime := nodesHb[n].Add(5 * time.Second)
+		if nodeTime.Before(timeNow) {
+			nodesNewlyDead = append(nodesNewlyDead, n)
+		}
+	}
+
+	fmt.Printf("nodesNewlyDead: %+v\n", nodesNewlyDead)
+
+	// TODO - use nodesAlreadyDead and nodes marked DEAD
+	// to decide failover???? OR create nodesNewlyDead
 }
 
 // sendHB sends a heartbeat by doing a txn() to update
