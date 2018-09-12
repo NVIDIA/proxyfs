@@ -1433,7 +1433,7 @@ func fetchSwiftInfo(confMap conf.ConfMap) {
 	}
 }
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool, signals ...os.Signal) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.WaitGroup, doneChan chan bool, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -1502,8 +1502,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 
 	signal.Notify(signalChan, signals...)
 
-	if nil != signalHandlerIsArmed {
-		*signalHandlerIsArmed = true
+	if nil != signalHandlerIsArmedWG {
+		signalHandlerIsArmedWG.Done()
 	}
 
 	// Await a signal - reloading confFile each SIGHUP - exiting otherwise

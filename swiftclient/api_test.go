@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,7 +36,15 @@ func (tOCCS *testObjectCopyCallbackStruct) BytesRemaining(bytesRemaining uint64)
 }
 
 func TestAPI(t *testing.T) {
-	confStrings := []string{
+	var (
+		confMap                conf.ConfMap
+		confStrings            []string
+		doneChan               chan bool
+		err                    error
+		signalHandlerIsArmedWG sync.WaitGroup
+	)
+
+	confStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -89,42 +98,36 @@ func TestAPI(t *testing.T) {
 		"RamSwiftChaos.ObjectPutFailureRate=2",
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
 	err = logger.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Up(confMap) failed: %v", err)
 	}
 
 	err = evtlog.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Up(confMap) failed: %v", err)
 	}
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool, 1) // Must be buffered to avoid race
+	signalHandlerIsArmedWG.Add(1)
+	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = stats.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Up(confMap) failed: %v", err)
 	}
 
 	err = Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Up(confMap) failed: %v", err)
 	}
 
 	// additional error injection settings
@@ -142,14 +145,12 @@ func TestAPI(t *testing.T) {
 
 	err = Down()
 	if nil != err {
-		tErr := fmt.Sprintf("Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Down() failed: %v", err)
 	}
 
 	err = stats.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Down() failed: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
@@ -160,14 +161,12 @@ func TestAPI(t *testing.T) {
 
 	err = evtlog.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Down() failed: %v", err)
 	}
 
 	err = logger.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Down() failed: %v", err)
 	}
 }
 

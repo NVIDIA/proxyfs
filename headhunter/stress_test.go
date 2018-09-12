@@ -5,8 +5,8 @@ import (
 	cryptoRand "crypto/rand"
 	"math/big"
 	mathRand "math/rand"
+	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -143,7 +143,7 @@ func TestHeadHunterStress(t *testing.T) {
 		putKey                                   uint64
 		putKeys                                  []uint64
 		putValues                                [][]byte
-		signalHandlerIsArmed                     bool
+		signalHandlerIsArmedWG                   sync.WaitGroup
 		slice                                    []byte
 		volumeHandle                             VolumeHandle
 	)
@@ -194,14 +194,12 @@ func TestHeadHunterStress(t *testing.T) {
 
 	// Launch a ramswift instance
 
-	signalHandlerIsArmed = false
+	signalHandlerIsArmedWG.Add(1)
 	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if nil != err {

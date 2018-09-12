@@ -4,9 +4,9 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
+	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -28,7 +28,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		err                           error
 		rLimit                        syscall.Rlimit
 		rLimitMinimum                 uint64
-		signalHandlerIsArmed          bool
+		signalHandlerIsArmedWG        sync.WaitGroup
 		testChunkedConnectionPoolSize uint64
 		testConfMap                   conf.ConfMap
 		testConfStrings               []string
@@ -157,13 +157,11 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("  ulimit -n 2560")
 	}
 
-	signalHandlerIsArmed = false
+	signalHandlerIsArmedWG.Add(1)
 	ramswiftDoneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, ramswiftDoneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = logger.Up(testConfMap)
 	if nil != err {

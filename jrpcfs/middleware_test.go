@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,11 +35,20 @@ const testVerAccountContainerName = testVerAccountName + "/" + testContainerName
 const testAccountName2 = "AN_account2"
 
 func testSetup() []func() {
-	var err error
+	var (
+		cleanupFuncs           []func()
+		cleanupTempDir         func()
+		confStrings            []string
+		doneChan               chan bool
+		err                    error
+		signalHandlerIsArmedWG sync.WaitGroup
+		tempDir                string
+		testConfMap            conf.ConfMap
+	)
 
-	cleanupFuncs := make([]func(), 0)
+	cleanupFuncs = make([]func(), 0)
 
-	confStrings := []string{
+	confStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -123,27 +133,25 @@ func testSetup() []func() {
 		"JSONRPCServer.DataPathLogging=false",
 	}
 
-	tempDir, err := ioutil.TempDir("", "jrpcfs_test")
+	tempDir, err = ioutil.TempDir("", "jrpcfs_test")
 	if nil != err {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
-	cleanupTempDir := func() {
+	cleanupTempDir = func() {
 		_ = os.RemoveAll(tempDir)
 	}
 	cleanupFuncs = append(cleanupFuncs, cleanupTempDir)
 
-	testConfMap, err := conf.MakeConfMapFromStrings(confStrings)
+	testConfMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if nil != err {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool)
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	signalHandlerIsArmedWG.Add(1)
+	doneChan = make(chan bool)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = stats.Up(testConfMap)
 	if nil != err {

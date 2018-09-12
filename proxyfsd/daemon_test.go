@@ -32,28 +32,25 @@ func TestMain(m *testing.M) {
 
 func TestDaemon(t *testing.T) {
 	var (
-		bytesWritten                 uint64
-		confMapStrings               []string
-		createdFileInodeNumber       inode.InodeNumber
-		err                          error
-		errChan                      chan error
-		mountHandle                  fs.MountHandle
-		proxyfsdSignalHandlerIsArmed bool
-		ramswiftDoneChan             chan bool
-		ramswiftSignalHandlerIsArmed bool
-		readData                     []byte
-		testConfMap                  conf.ConfMap
-		testVersion                  uint64
-		testVersionConfFile          *os.File
-		testVersionConfFileName      string
-		toReadFileInodeNumber        inode.InodeNumber
-		wg                           sync.WaitGroup
+		bytesWritten                   uint64
+		confMapStrings                 []string
+		createdFileInodeNumber         inode.InodeNumber
+		err                            error
+		errChan                        chan error
+		mountHandle                    fs.MountHandle
+		proxyfsdSignalHandlerIsArmed   bool
+		ramswiftDoneChan               chan bool
+		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
+		readData                       []byte
+		testConfMap                    conf.ConfMap
+		testVersion                    uint64
+		testVersionConfFile            *os.File
+		testVersionConfFileName        string
+		toReadFileInodeNumber          inode.InodeNumber
+		wg                             sync.WaitGroup
 	)
 
 	// Setup a ramswift instance leveraging test config
-
-	ramswiftSignalHandlerIsArmed = false
-	ramswiftDoneChan = make(chan bool, 1)
 
 	confMapStrings = []string{
 		"Stats.IPAddr=localhost",
@@ -168,11 +165,12 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("testVersionConfFile.Close() [case 1] failed: %v", err)
 	}
 
-	go ramswift.Daemon(testVersionConfFileName, confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan, unix.SIGINT)
+	ramswiftSignalHandlerIsArmedWG.Add(1)
+	ramswiftDoneChan = make(chan bool, 1)
 
-	for !ramswiftSignalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	go ramswift.Daemon(testVersionConfFileName, confMapStrings, &ramswiftSignalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGINT)
+
+	ramswiftSignalHandlerIsArmedWG.Wait()
 
 	// Format CommonVolume
 
