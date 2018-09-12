@@ -4,9 +4,9 @@ import (
 	"io/ioutil"
 	"os"
 	"runtime"
+	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -29,14 +29,14 @@ var mS *mountStruct
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		err                   error
-		mountHandle           MountHandle
-		ok                    bool
-		signalHandlerIsArmed  bool
-		testConfMap           conf.ConfMap
-		testConfMapStrings    []string
-		testConfUpdateStrings []string
-		testDir               string
+		err                    error
+		mountHandle            MountHandle
+		ok                     bool
+		signalHandlerIsArmedWG sync.WaitGroup
+		testConfMap            conf.ConfMap
+		testConfMapStrings     []string
+		testConfUpdateStrings  []string
+		testDir                string
 	)
 
 	testDir, err = ioutil.TempDir(os.TempDir(), "ProxyFS_test_fs_")
@@ -135,13 +135,11 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfUpdateStrings) failed: %v", err)
 	}
 
-	signalHandlerIsArmed = false
+	signalHandlerIsArmedWG.Add(1)
 	ramswiftDoneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmed, ramswiftDoneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = logger.Up(testConfMap)
 	if nil != err {

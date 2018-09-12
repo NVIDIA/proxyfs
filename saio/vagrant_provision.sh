@@ -84,6 +84,7 @@ yum -y install fuse
 echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
 echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
 echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
+echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
