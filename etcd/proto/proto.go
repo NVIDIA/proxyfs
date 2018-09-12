@@ -42,11 +42,6 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// TODO - start another goroutine which waits
-	// some multiple of heartbeat interval before
-	// starting thread to see if nodes are no longer
-	// heartbeating and then marking them DEAD.
-
 	// Watcher will start HB after getting STARTING state
 	// Watcher also decides the state changes, etc....
 	cs.WaitWatchers()
