@@ -1,1 +1,11 @@
 Need unit tests!
+
+User Register() interface to create multiple nodes and force the
+state transitions.  Here are test cases:
+
+1. 1 up and 2 join
+2. 1 of 3 only up and transaction fails
+3. 3 of 3 and transaction works
+4. split brain scenarios
+5. fail transaction because in subcluster
+6. find out that local node is dead and panic and catch it
