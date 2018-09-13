@@ -182,8 +182,9 @@ func (cs *Struct) startHBandMonitor() {
 
 // TODO - decide whom should failover VGs
 // in otherNodeEvents() when see went DEAD
+// TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
-	fmt.Printf("Received own watch event for node\n")
+	fmt.Printf("Received other node watch event for node: %v\n", string(ev.Kv.Key))
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		// TODO - strip out NODE from name
@@ -199,6 +200,7 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 
 // TODO - move watchers to own file(s) and hide behind
 // interface{}
+// TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
@@ -211,8 +213,12 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - Drop VIP here!!!
 		os.Exit(-1)
 	case ONLINENS.String():
-		fmt.Printf("Received - now ONLINE\n")
+		// TODO - implement ONLINE - how know to start VGs vs
+		// avoid failback.  Probably only initiate online of
+		// VGs which are not already started.....
+		fmt.Printf("Received local node - now ONLINE\n")
 		cs.startHBandMonitor()
+		cs.startVgs()
 	}
 }
 
