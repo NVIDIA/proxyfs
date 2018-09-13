@@ -144,7 +144,8 @@ func (cs *Struct) checkForDeadNodes() {
 	// transactions.
 	cs.markNodesDead(nodesNewlyDead, nodesHb)
 
-	// TODO - initiate failover of VGs.
+	// Initiate failover of VGs.
+	cs.failoverVgs(nodesNewlyDead)
 }
 
 // sendHB sends a heartbeat by doing a txn() to update
