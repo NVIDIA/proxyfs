@@ -73,6 +73,25 @@ func (cs *Struct) failoverVgs(nodesNewlyDead []string) {
 // TODO - be sure that txn() asserts that node is online
 // before onlining the VG!!!!
 // TODO - start webserver on different port - fork off script to start VIP
-func (cs *Struct) startVgs(nodeStarted []string) {
+func (cs *Struct) startVgs() {
+	// TODO - implement this
+	/*
+		1. make list of VGs which need to be brought online since nodes asserts
+		   dead or which have not been started
+		2. score VGs and decide transitions?
+		3. set VGs ONLINING and which node with a transaction and verify not
+		   already ONLINE somewhere.   Mark failed first???
+	*/
+
+}
+
+func (cs *Struct) addVg() (err error) {
+	// TODO - implement this
+	return
+}
+
+func (cs *Struct) rmVg() (err error) {
+	// TODO - implement this
+	return
 
 }
