@@ -59,3 +59,20 @@ func (cs *Struct) vgStateWatchEvents(swg *sync.WaitGroup) {
 		// TODO - how notified when shutting down?
 	}
 }
+
+// failoverVgs is called when nodes have died.  The remaining nodes
+// are scored and VGs from the failed nodes are started if possible.
+// TODO - how avoid overloading a node? need weight for a VG?  what
+// about priority for a VG and high priority first?
+// TODO - start webserver on different port - fork off script to start VIP
+func (cs *Struct) failoverVgs(nodesNewlyDead []string) {
+	// TODO - implement this
+}
+
+// startVgs is called when a node has come ONLINE.
+// TODO - be sure that txn() asserts that node is online
+// before onlining the VG!!!!
+// TODO - start webserver on different port - fork off script to start VIP
+func (cs *Struct) startVgs(nodeStarted []string) {
+
+}
