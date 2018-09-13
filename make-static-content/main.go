@@ -9,16 +9,16 @@ import (
 const bytesPerLine = 16
 
 func usage() {
-	fmt.Println("go run make_static_content.go -?")
+	fmt.Println("make-static-content -?")
 	fmt.Println("   Prints this help text")
-	fmt.Println("go run make_static_content.go <packageName> <contentName> <contentType> <contentFormat> <srcFile> <dstFile.go>")
+	fmt.Println("make-static-content <packageName> <contentName> <contentType> <contentFormat> <srcFile> <dstFile.go>")
 	fmt.Println("   <packageName>   is the name of the ultimate package for <dstFile.go>")
 	fmt.Println("   <contentName>   is the basename of the desired content resource")
 	fmt.Println("   <contentType>   is the string to record as the static content's Content-Type")
 	fmt.Println("   <contentFormat> indicates whether the static content is a string (\"s\") or a []byte (\"b\")")
 	fmt.Println("   <srcFile>       is the path to the static content to be embedded")
 	fmt.Println("   <dstFile.go>    is the name of the generated .go source file containing:")
-	fmt.Println("                     <contentName>ContentType string holding value    of <contentType>")
+	fmt.Println("                     <contentName>ContentType string holding value of <contentType>")
 	fmt.Println("                     <contentName>Content     string or []byte holding contents of <srcFile>")
 }
 

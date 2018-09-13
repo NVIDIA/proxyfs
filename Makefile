@@ -1,3 +1,6 @@
+gopregeneratesubdirs = \
+	make-static-content
+
 gopkgsubdirs = \
 	blunder \
 	bucketstats \
@@ -28,6 +31,7 @@ gobinsubdirs = \
 	pfs-crash \
 	pfs-stress \
 	pfs-swift-load \
+	pfsalived \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	pfsworkout \
@@ -41,14 +45,14 @@ uname := $(shell uname)
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: version fmt stringer generate install test python-test c-clean c-build c-install c-test
+    all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
 
-    all-deb-builder: version fmt stringer generate install c-clean c-build c-install-deb-builder
+    all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
 else
-    all: version fmt stringer generate install test
+    all: version fmt pre-generate generate install test
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate get install python-test stringer test version
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install pre-generate python-test test version
 
 bench:
 	@set -e; \
@@ -91,6 +95,9 @@ c-test:
 clean:
 	@set -e; \
 	rm -f $(GOPATH)/bin/stringer; \
+	for gosubdir in $(gopregeneratesubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir clean; \
+	done; \
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir clean; \
 	done; \
@@ -109,6 +116,7 @@ cover:
 
 fmt:
 	@set -e; \
+	$(MAKE) --no-print-directory -C make-static-content fmt; \
 	for gosubdir in $(gopkgsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir fmt; \
 	done; \
@@ -125,15 +133,6 @@ generate:
 		$(MAKE) --no-print-directory -C $$gosubdir generate; \
 	done
 
-get:
-	@set -e; \
-	for gosubdir in $(gopkgsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir get; \
-	done; \
-	for gosubdir in $(gobinsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir get; \
-	done
-
 install:
 	@set -e; \
 	for gosubdir in $(gopkgsubdirs); do \
@@ -143,11 +142,15 @@ install:
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
 
+pre-generate:
+	@set -e; \
+	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer; \
+	for gosubdir in $(gopregeneratesubdirs); do \
+		$(MAKE) --no-print-directory -C $$gosubdir install; \
+	done
+
 python-test:
 	cd pfs_middleware && tox -e py27,py27-old-swift,lint
-
-stringer:
-	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer
 
 test:
 	@set -e; \

@@ -69,7 +69,7 @@ func main() {
 		proxyfsVersionString = string(gitDescribeOutput[:len(gitDescribeOutput)-1])
 	}
 
-	_, err = dstFile.Write([]byte(fmt.Sprintf("const proxyfsVersion = `%v`\n", proxyfsVersionString)))
+	_, err = dstFile.Write([]byte(fmt.Sprintf("const ProxyFSVersion = `%v`\n", proxyfsVersionString)))
 	if nil != err {
 		panic(err.Error())
 	}

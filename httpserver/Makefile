@@ -12,7 +12,6 @@ generatedfiles := \
 	open_iconic_dot_ttf_.go \
 	open_iconic_dot_woff_.go \
 	popper_dot_min_dot_js_.go \
-	proxyfs_version.go \
 	styles_dot_css_.go
 
 include ../GoMakefile
