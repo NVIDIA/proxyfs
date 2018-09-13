@@ -61,17 +61,15 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	// Start a watcher to watch for node heartbeats
 	cs.startAWatcher(nodeKeyHbPrefix())
 
-	// TODO - add cs.SetInitalNodeState() or something
-	// like that which ignores existing value using the
-	// PUT semantics...
-	// GET - first dump key/value...
+	// Start a watcher to watch for volume group changes
+	cs.startAWatcher(vgKeyStatePrefix())
 
 	// Set state of local node to STARTING
-	err = cs.setNodeStateForced(hostName, STARTING)
+	err = cs.setNodeStateForced(hostName, STARTINGNS)
 	if err != nil {
 		// TODO - assume this means txn timed out, could not
-		// get majority, etc....
-		fmt.Printf("SetInitialNodeState(STARTING) returned err: %v\n", err)
+		// get majority, etc.... what do we do?
+		fmt.Printf("setInitialNodeState(STARTING) returned err: %v\n", err)
 		os.Exit(-1)
 	}
 
@@ -100,6 +98,8 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 		cs.nodeStateWatchEvents(swg)
 	case nodeKeyHbPrefix():
 		cs.nodeHbWatchEvents(swg)
+	case vgKeyStatePrefix():
+		cs.vgStateWatchEvents(swg)
 	}
 }
 
@@ -120,6 +120,7 @@ func (cs *Struct) startAWatcher(prefixKey string) {
 }
 
 // WaitWatchers waits for all watchers to return
+// TODO - is this fully implemented?????
 func (cs *Struct) waitWatchers() {
 	cs.watcherWG.Wait()
 }
