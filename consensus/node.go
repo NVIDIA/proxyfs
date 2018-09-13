@@ -16,11 +16,11 @@ type NodeState int
 
 // NOTE: When updating NodeState be sure to also update String() below.
 const (
-	INITIAL      NodeState = iota
-	STARTING               // STARTING means node has just booted
-	ONLINE                 // ONLINE means the node is available to online VGs
-	OFFLINE                // OFFLINE means the node gracefully shut down
-	DEAD                   // DEAD means node appears to have left the cluster
+	INITIALNS    NodeState = iota
+	STARTINGNS             // STARTINGNS means node has just booted
+	ONLINENS               // ONLINENS means the node is available to online VGs
+	OFFLINENS              // OFFLINENS means the node gracefully shut down
+	DEADNS                 // DEADNS means node appears to have left the cluster
 	maxNodeState           // Must be last field!
 )
 
@@ -59,11 +59,11 @@ func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string, nodes
 	nodesHb = make(map[string]time.Time)
 	for _, e := range resp.Kvs {
 		if strings.HasPrefix(string(e.Key), nodeKeyStatePrefix()) {
-			if string(e.Value) == DEAD.String() {
+			if string(e.Value) == DEADNS.String() {
 				node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
 				nodesAlreadyDead = append(nodesAlreadyDead, node)
 			} else {
-				if string(e.Value) == ONLINE.String() {
+				if string(e.Value) == ONLINENS.String() {
 					node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
 					nodesOnline = append(nodesOnline, node)
 				}
@@ -92,7 +92,7 @@ func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string, nodes
 // assume this is okay but want to revisit this.
 func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time.Time) {
 	for _, n := range nodesNewlyDead {
-		err := cs.setNodeStateIfSame(n, DEAD, ONLINE, nodesHb[n])
+		err := cs.setNodeStateIfSame(n, DEADNS, ONLINENS, nodesHb[n])
 
 		// If this errors out it probably just means another node already
 		// beat us to the punch.  However, during early development we want
@@ -184,14 +184,14 @@ func (cs *Struct) startHBandMonitor() {
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
-	case STARTING.String():
+	case STARTINGNS.String():
 		// TODO - strip out NODE from name
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
-	case DEAD.String():
+	case DEADNS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 		// TODO - figure out what VGs I should online if
 		// any.... how prevent autofailback????
-	case ONLINE.String():
+	case ONLINENS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 	}
 }
@@ -201,15 +201,15 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
-	case STARTING.String():
+	case STARTINGNS.String():
 		fmt.Printf("Received - now STARTING\n")
-		cs.setMyNodeState(cs.hostName, ONLINE)
-	case DEAD.String():
+		cs.setMyNodeState(cs.hostName, ONLINENS)
+	case DEADNS.String():
 		fmt.Printf("Received - now DEAD\n")
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
 		// TODO - Drop VIP here!!!
 		os.Exit(-1)
-	case ONLINE.String():
+	case ONLINENS.String():
 		fmt.Printf("Received - now ONLINE\n")
 		cs.startHBandMonitor()
 	}
@@ -313,7 +313,7 @@ func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseVa
 func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existingState NodeState,
 	hb time.Time) (err error) {
 	fmt.Printf("setNodeStateIfSame(%v, %v)\n", nodeName, newState.String())
-	if (newState <= INITIAL) || (newState >= maxNodeState) {
+	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return
 	}
@@ -350,7 +350,7 @@ func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existi
 // TODO - review for cleanup
 func (cs *Struct) setMyNodeState(nodeName string, newState NodeState) (err error) {
 	fmt.Printf("setNodeState(%v, %v)\n", nodeName, newState.String())
-	if (newState <= INITIAL) || (newState >= maxNodeState) {
+	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return
 	}
@@ -370,7 +370,7 @@ func (cs *Struct) setMyNodeState(nodeName string, newState NodeState) (err error
 
 		// txn value comparisons are lexical
 		If(
-			clientv3.Compare(clientv3.Value(nodeStateKey), "=", INITIAL.String()),
+			clientv3.Compare(clientv3.Value(nodeStateKey), "=", INITIALNS.String()),
 
 		// the "Then" runs, since "" = "" for both keys
 		).Then(
@@ -395,7 +395,7 @@ func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err erro
 
 	// TODO - probaly should verify that node state transitions
 	// are correct.
-	if (state <= INITIAL) || (state >= maxNodeState) {
+	if (state <= INITIALNS) || (state >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return
 	}
@@ -403,7 +403,7 @@ func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err erro
 	nodeKey := makeNodeStateKey(nodeName)
 	fmt.Printf("nodeKey: %v\n", nodeKey)
 
-	if state == STARTING {
+	if state == STARTINGNS {
 		// We will not get a watch event if the current state stored
 		// in etcd is already STARTING.  (This could happen if lose power
 		// to whole cluster while in STARTING state).
@@ -412,11 +412,11 @@ func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err erro
 		// guarantee we get a watch event.
 		//
 		// Regardless of existing state, reset it to INITIAL
-		_ = cs.oneKeyTxn(nodeKey, INITIAL.String(), INITIAL.String(), INITIAL.String(), 5*time.Second)
+		_ = cs.oneKeyTxn(nodeKey, INITIALNS.String(), INITIALNS.String(), INITIALNS.String(), 5*time.Second)
 	}
 
 	// Regardless of existing state - set to new state
-	_ = cs.oneKeyTxn(nodeKey, INITIAL.String(), state.String(), state.String(), 5*time.Second)
+	_ = cs.oneKeyTxn(nodeKey, INITIALNS.String(), state.String(), state.String(), 5*time.Second)
 
 	return
 }
