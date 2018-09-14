@@ -78,8 +78,9 @@ type globalsStruct struct {
 	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
 	reservedChunkedConnectionMutex  sync.Mutex
 	maxIntAsUint64                  uint64
-	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
+	chaosSendChunkFailureRate       uint64 // set only during testing
+	chaosCloseChunkFailureRate      uint64 // set only during testing
 
 	// statistics for requests to swiftclient
 	AccountDeleteUsec              bucketstats.BucketLog2Round     // bucketized by time

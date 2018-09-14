@@ -1044,12 +1044,21 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 	}
 
 	httpStatus, headers, err = readHTTPStatusAndHeaders(chunkedPutContext.connection.tcpConn)
+
+	chunkedPutCloseCnt++
+	if globals.chaosCloseChunkFailureRate > 0 &&
+		chunkedPutCloseCnt%globals.chaosCloseChunkFailureRate == 0 {
+		err = fmt.Errorf("chunkedPutContextStruct.closeHelper(): readHTTPStatusAndHeaders() simulated error")
+	}
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
 		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.closeHelper(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
-	evtlog.Record(evtlog.FormatObjectPutChunkedEnd, chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName, chunkedPutContext.bytesPut, uint32(httpStatus))
+	evtlog.Record(evtlog.FormatObjectPutChunkedEnd, chunkedPutContext.accountName,
+		chunkedPutContext.containerName, chunkedPutContext.objectName,
+		chunkedPutContext.bytesPut, uint32(httpStatus))
+
 	isError, fsErr = httpStatusIsError(httpStatus)
 	if isError {
 		err = blunder.NewError(fsErr, "PUT %s/%s/%s returned HTTP StatusCode %d", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName, httpStatus)
@@ -1204,7 +1213,6 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	)
 
 	chunkedPutContext.Lock()
-	sendChunkRetryCnt += 1 // for chaos simulated errors
 
 	if chunkedPutContext.active {
 		chunkedPutContext.Unlock()
@@ -1218,7 +1226,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	chunkedPutContext.err = nil
 
 	// re-open chunked put connection
-	openConnection("swiftclient.chunkedPutContext.Close()", chunkedPutContext.connection)
+	openConnection("swiftclient.chunkedPutContext.retry()", chunkedPutContext.connection)
 
 	chunkedPutContext.active = true
 
@@ -1260,9 +1268,13 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		}
 
 		// check for chaos error generation (testing only)
+		chunkedPutSendRetryCnt++
 		if globals.chaosSendChunkFailureRate > 0 &&
-			sendChunkRetryCnt%globals.chaosSendChunkFailureRate == 0 {
-			err = fmt.Errorf("writeHTTPPutChunk() simulated error")
+			chunkedPutSendRetryCnt%globals.chaosSendChunkFailureRate == 0 {
+
+			nChunk, _ := chunkedPutContext.bytesPutTree.Len()
+			err = fmt.Errorf("chunkedPutContextStruct.retry(): "+
+				"writeHTTPPutChunk() simulated error with %d chunks", nChunk)
 		} else {
 			err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, chunkBufAsByteSlice)
 		}
@@ -1287,8 +1299,9 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 
 // used during testing for error injection
 var (
-	sendChunkCnt      uint64
-	sendChunkRetryCnt uint64
+	chunkedPutSendCnt      uint64
+	chunkedPutSendRetryCnt uint64
+	chunkedPutCloseCnt     uint64
 )
 
 // SendChunk() tries to send the chunk of data to the Swift server and deal with
@@ -1315,7 +1328,6 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 	clientReqTime := time.Now()
 
 	chunkedPutContext.Lock()
-	sendChunkCnt += 1
 
 	if !chunkedPutContext.active {
 		err = blunder.NewError(blunder.BadHTTPPutError, "called while inactive")
@@ -1368,7 +1380,7 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 
 	// The prior errors are logical/programmatic errors that cannot be fixed
 	// by a retry so let them return with the error and let the caller abort
-	// (Close() not called, so retry will not be tried).
+	// (Close() will not be called, so retry() will not be called).
 	//
 	// However, if writeHTTPPutChunk() fails that is probably due to a
 	// problem with the TCP connection or storage which may be cured by a
@@ -1384,15 +1396,18 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 	}
 
 	// check for chaos error generation (testing only)
+	chunkedPutSendCnt++
 	if globals.chaosSendChunkFailureRate > 0 &&
-		sendChunkCnt%globals.chaosSendChunkFailureRate == 0 {
-		err = fmt.Errorf("writeHTTPPutChunk() simulated error")
+		chunkedPutSendCnt%globals.chaosSendChunkFailureRate == 0 {
+		err = fmt.Errorf("chunkedPutContextStruct.SendChunk(): writeHTTPPutChunk() simulated error")
 	} else {
 		err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, buf)
 	}
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got writeHTTPPutChunk() error", chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		logger.WarnfWithError(err,
+			"swiftclient.chunkedPutContext.SendChunk(\"%v/%v/%v\") got writeHTTPPutChunk() error",
+			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		chunkedPutContext.err = err
 		chunkedPutContext.Unlock()
 		err = nil
