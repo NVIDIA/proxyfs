@@ -10,7 +10,6 @@ import (
 // TODO - review how compaction works with watchers,
 //
 // watcher is a goroutine which watches for events with the key prefix.
-// For example, all node events have a key as returned by NodeKeyPrefix().
 func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
 	switch keyPrefix {
