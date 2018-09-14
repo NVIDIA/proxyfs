@@ -53,7 +53,8 @@ func makeNodeHbKey(n string) string {
 
 // makeNodeLists is a helper method to break the GET of node data into
 // the lists we need.
-func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string, nodesOnline []string, nodesHb map[string]time.Time) {
+func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
+	nodesOnline []string, nodesHb map[string]time.Time) {
 	nodesAlreadyDead = make([]string, 0)
 	nodesOnline = make([]string, 0)
 	nodesHb = make(map[string]time.Time)
@@ -86,8 +87,6 @@ func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string, nodes
 // to DEAD IFF they are still in state ONLINE && hb time has not
 // changed.
 //
-// TODO - is this correct???
-//
 // NOTE: We are updating the node states in multiple transactions.  I
 // assume this is okay but want to revisit this.
 func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time.Time) {
@@ -99,6 +98,8 @@ func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time
 		// to know about the error.
 		if err != nil {
 			fmt.Printf("Marking node: %v DEAD failed with err: %v\n", n, err)
+			// TODO - Must remove node from nodesNewlyDead since other
+			// routines will use this list to decide failover!!!
 		}
 	}
 
@@ -167,7 +168,8 @@ func (cs *Struct) sendHb() {
 
 // startHBandMonitor() will start the HB timer to
 // do txn(myNodeID, aliveTimeUTC) and will also look
-// if any nodes are DEAD and we should do a failover
+// if any nodes are DEAD and we should do a failover.
+//
 // TODO - also need stopHB function....
 func (cs *Struct) startHBandMonitor() {
 	// TODO - interval should be tunable
@@ -180,8 +182,8 @@ func (cs *Struct) startHBandMonitor() {
 	}()
 }
 
-// TODO - decide whom should failover VGs
-// in otherNodeEvents() when see went DEAD
+// We received a watch event for a node other than ourselves
+//
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 	switch string(ev.Kv.Value) {
@@ -197,8 +199,9 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 	}
 }
 
-// TODO - move watchers to own file(s) and hide behind
-// interface{}
+// We received a watch event for the local node.
+//
+// TODO - hide watchers behind interface{}?
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	switch string(ev.Kv.Value) {
@@ -242,7 +245,6 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 }
 
 // nodeHbWatchEvents creates a watcher based on node heartbeats.
-// TODO - figure out if node is dead
 func (cs *Struct) nodeHbWatchEvents(swg *sync.WaitGroup) {
 
 	wch1 := cs.cli.Watch(context.Background(), nodeKeyHbPrefix(),

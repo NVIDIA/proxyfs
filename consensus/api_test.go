@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -88,11 +87,8 @@ func vgKeysToReset(name string) (keys map[string]string) {
 }
 
 func testBasicAPI(t *testing.T) {
-	fmt.Printf("testBasicAPI - START\n")
 	cs := registerEtcd(t)
-	fmt.Printf("testBasicAPI - 2\n")
 	unregisterEtcd(t, cs)
-	fmt.Printf("testBasicAPI - 3\n")
 }
 
 func testAddVolumeGroup(t *testing.T) {
@@ -108,7 +104,7 @@ func testAddVolumeGroup(t *testing.T) {
 
 	cs := registerEtcd(t)
 
-	// TODO - // add VG routines to grab these...
+	// TODO - add VG routines to grab these...
 	// should we just delete all keys of VG* ???
 	keys := vgKeysToReset(name)
 	resetKeys(t, cs.cli, keys)
