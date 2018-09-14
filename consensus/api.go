@@ -92,6 +92,23 @@ func (cs *Struct) RmVolumeGroup(name string) (err error) {
 	return
 }
 
+// AddVolumeToVG adds a volume to an existing volume group
+// TODO - implement this
+func (cs *Struct) AddVolumeToVG(vgName string, newVolume string) (err error) {
+	// TODO - can you add volume to FAILED VG, need checks in other layers,
+	// liveliness? does VG state change if volume is offline?
+	return
+}
+
+// RmVolumeFromVG removes the volume from the VG
+// TODO - implement this
+func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
+	// TODO - can you you remove volume only if unmounted?  assume so since
+	// VIP will change.   Will it also remove the volume?  Do we need a move
+	// API to move from one VG to another VG?
+	return
+}
+
 // Unregister from the consensus protocol
 // TODO - this should probably set state OFFLINING
 // to initiate OFFLINE and use waitgroup to see
