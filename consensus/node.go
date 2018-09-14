@@ -35,12 +35,12 @@ func nodePrefix() string {
 
 // NodeKeyStatePrefix returns a string containing the node state prefix
 func nodeKeyStatePrefix() string {
-	return nodePrefix() + "STATE"
+	return nodePrefix() + "STATE:"
 }
 
 // NodeKeyHbPrefix returns a unique string for heartbeat key prefix
 func nodeKeyHbPrefix() string {
-	return nodePrefix() + "HB"
+	return nodePrefix() + "HB:"
 }
 
 func makeNodeStateKey(n string) string {
@@ -184,7 +184,6 @@ func (cs *Struct) startHBandMonitor() {
 // in otherNodeEvents() when see went DEAD
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
-	fmt.Printf("Received other node watch event for node: %v\n", string(ev.Kv.Key))
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		// TODO - strip out NODE from name
@@ -202,13 +201,12 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 // interface{}
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
-	fmt.Printf("Received own watch event for node\n")
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
-		fmt.Printf("Received - now STARTING\n")
+		fmt.Printf("Received local - now STARTING\n")
 		cs.setMyNodeState(cs.hostName, ONLINENS)
 	case DEADNS.String():
-		fmt.Printf("Received - now DEAD\n")
+		fmt.Printf("Received local - now DEAD\n")
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
 		// TODO - Drop VIP here!!!
 		os.Exit(-1)
@@ -216,7 +214,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - implement ONLINE - how know to start VGs vs
 		// avoid failback.  Probably only initiate online of
 		// VGs which are not already started.....
-		fmt.Printf("Received local node - now ONLINE\n")
+		fmt.Printf("Received local - now ONLINE\n")
 		cs.startHBandMonitor()
 		cs.startVgs()
 	}
@@ -231,10 +229,7 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 
 	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
-		fmt.Printf("watcher() wresp1: %+v\n", wresp1)
 		for _, ev := range wresp1.Events {
-			fmt.Printf("Watcher for key: %v saw value: %v\n", string(ev.Kv.Key),
-				string(ev.Kv.Value))
 			if string(ev.Kv.Key) == makeNodeStateKey(cs.hostName) {
 				cs.myNodeStateEvents(ev)
 			} else {
@@ -242,9 +237,7 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 			}
 		}
 
-		// TODO - node watcher only shutdown when local node is OFFLINE, then
-		// decrement WaitGroup() and call cs.DONE()????
-		// TODO - how notified when shutting down?
+		// TODO - node watcher only shutdown when local node is OFFLINE
 	}
 }
 
@@ -276,15 +269,12 @@ func (cs *Struct) nodeHbWatchEvents(swg *sync.WaitGroup) {
 				number of heartbeats? should we have a separate thread for
 				checking if expired hb?  should we overload sending thread
 				or is that a hack?
+				Should this be where we do a liveliness check?
 				*/
 			}
 		}
 
-		// TODO - node watcher only shutdown when local node is OFFLINE, then
-		// decrement WaitGroup() and call cs.DONE()????
-		// TODO - node watchers only shutdown when state is OFFLINING, then decrement WaitGroup()
-		// ....
-		// TODO - how notified when shutting down?
+		// TODO - node watcher only shutdown when local node is OFFLINE
 	}
 }
 
@@ -408,7 +398,6 @@ func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err erro
 	}
 
 	nodeKey := makeNodeStateKey(nodeName)
-	fmt.Printf("nodeKey: %v\n", nodeKey)
 
 	if state == STARTINGNS {
 		// We will not get a watch event if the current state stored

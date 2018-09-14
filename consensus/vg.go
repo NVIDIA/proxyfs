@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
+	"strconv"
 	"sync"
+	"time"
 )
 
 // VgState represents the state of a volume group at a given point in time
@@ -30,19 +32,52 @@ func vgPrefix() string {
 }
 
 // NodeKeyStatePrefix returns a string containing the node state prefix
-func vgKeyStatePrefix() string {
-	return vgPrefix() + "STATE"
+func vgKeyPrefix(v string) string {
+	return vgPrefix() + v + ":"
+}
+
+func makeVgNameKey(n string) string {
+	return vgKeyPrefix("NAME") + n
 }
 
 func makeVgStateKey(n string) string {
-	return vgKeyStatePrefix() + n
+	return vgKeyPrefix("STATE") + n
+}
+
+func makeVgNodeKey(n string) string {
+	return vgKeyPrefix("NODE") + n
+}
+
+func makeVgIpaddrKey(n string) string {
+	return vgKeyPrefix("IPADDR") + n
+}
+
+func makeVgNetmaskKey(n string) string {
+	return vgKeyPrefix("NETMASK") + n
+}
+
+func makeVgNicKey(n string) string {
+	return vgKeyPrefix("NIC") + n
+}
+
+func makeVgAutoFailoverKey(n string) string {
+	return vgKeyPrefix("AUTOFAILOVER") + n
+}
+
+func makeVgEnabledKey(n string) string {
+	return vgKeyPrefix("ENABLED") + n
+}
+
+func makeVgVolumeListKey(n string) string {
+	return vgKeyPrefix("VOLUMELIST") + n
 }
 
 // vgStateWatchEvents creates a watcher based on node state
 // changes.
-func (cs *Struct) vgStateWatchEvents(swg *sync.WaitGroup) {
+func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 
-	wch1 := cs.cli.Watch(context.Background(), vgKeyStatePrefix(),
+	// TODO - TODO - figure out what keys we watch!!!
+	wch1 := cs.cli.Watch(context.Background(), vgPrefix(),
 		clientv3.WithPrefix())
 
 	swg.Done() // The watcher is running!
@@ -85,13 +120,70 @@ func (cs *Struct) startVgs() {
 
 }
 
-func (cs *Struct) addVg() (err error) {
+func (cs *Struct) addVg(name string, ipAddr string, netMask string,
+	nic string, autoFailover bool, enabled bool) (err error) {
+
 	// TODO - implement this
+	/*
+		1. make sure not a duplicate name - will txn fail if this is the case?
+		2. verify all attributes
+		3. verify that set to correct state
+	*/
+	nameKey := makeVgNameKey(name)
+	stateKey := makeVgStateKey(name)
+	nodeKey := makeVgNodeKey(name)
+	ipaddrKey := makeVgIpaddrKey(name)
+	netmaskKey := makeVgNetmaskKey(name)
+	nicKey := makeVgNicKey(name)
+	autofailKey := makeVgAutoFailoverKey(name)
+	enabledKey := makeVgEnabledKey(name)
+	volumeListKey := makeVgVolumeListKey(name)
+
+	// TODO - should we add create time, failover time, etc?
+
+	// Verify that VG does not already exist which means check all
+	// keys.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = cs.kvc.Txn(ctx).
+
+		// Verify that VG attributes are not there.....
+		If(
+			clientv3.Compare(clientv3.Version(nameKey), "=", 0),
+			clientv3.Compare(clientv3.Version(stateKey), "=", 0),
+			clientv3.Compare(clientv3.Version(nodeKey), "=", 0),
+			clientv3.Compare(clientv3.Version(ipaddrKey), "=", 0),
+			clientv3.Compare(clientv3.Version(netmaskKey), "=", 0),
+			clientv3.Compare(clientv3.Version(nicKey), "=", 0),
+			clientv3.Compare(clientv3.Version(autofailKey), "=", 0),
+			clientv3.Compare(clientv3.Version(enabledKey), "=", 0),
+			clientv3.Compare(clientv3.Version(volumeListKey), "0", 0),
+
+		// "Then" create the keys with initial strings
+		).Then(
+		clientv3.OpPut(nameKey, name),
+		clientv3.OpPut(stateKey, INITIALVS.String()),
+		clientv3.OpPut(nodeKey, ""),
+		clientv3.OpPut(ipaddrKey, ipAddr),
+		clientv3.OpPut(netmaskKey, netMask),
+		clientv3.OpPut(nicKey, nic),
+		clientv3.OpPut(autofailKey, strconv.FormatBool(autoFailover)),
+		clientv3.OpPut(enabledKey, strconv.FormatBool(enabled)),
+		clientv3.OpPut(volumeListKey, ""),
+
+	// If failed - just return error
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
 	return
 }
 
-func (cs *Struct) rmVg() (err error) {
+func (cs *Struct) rmVg(name string) (err error) {
 	// TODO - implement this
+	/*
+		1. make sure OFFLINE or FAILED...client
+		2. make sure in one txn can remove all VG - function to
+		   remove all attributes at once and to init all at once?
+	*/
 	return
 
 }
