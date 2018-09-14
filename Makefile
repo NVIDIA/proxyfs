@@ -22,7 +22,8 @@ gopkgsubdirs = \
 	stats \
 	statslogger \
 	swiftclient \
-	utils
+	utils \
+	version
 
 gobinsubdirs = \
 	cleanproxyfs \
