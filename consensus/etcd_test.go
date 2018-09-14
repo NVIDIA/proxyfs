@@ -2,47 +2,14 @@ package consensus
 
 import (
 	"context"
-	"flag"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/namespace"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/swiftstack/ProxyFS/logger"
 )
-
-// Largely stolen from fs/api_test.go
-func testSetup() (err error) {
-	return
-}
-
-// Largely stolen from fs/api_test.go
-func testTeardown() (err error) {
-	return
-}
-
-// Largely stolen from fs/api_test.go
-func TestMain(m *testing.M) {
-	flag.Parse()
-
-	err := testSetup()
-	if nil != err {
-		logger.ErrorWithError(err)
-	}
-
-	testResults := m.Run()
-
-	err = testTeardown()
-	if nil != err {
-		logger.ErrorWithError(err)
-	}
-
-	os.Exit(testResults)
-}
 
 // Test basic etcd primitives
 func TestEtcdAPI(t *testing.T) {
@@ -52,6 +19,19 @@ func TestEtcdAPI(t *testing.T) {
 	testTxnWatcher(t)
 	testTxnHb(t)
 	testGetMultipleKeys(t)
+
+	testCleanupTestKeys(t) // NOTE: Leave this test last!
+}
+
+// Delete test keys and recreate them using the etcd API
+func resetKeys(t *testing.T, cli *clientv3.Client, km map[string]string) {
+	assert := assert.New(t)
+	kvc := clientv3.NewKV(cli)
+	for k := range km {
+		_, _ = cli.Delete(context.TODO(), k)
+		_, err := kvc.Put(context.TODO(), k, "")
+		assert.Nil(err, "kvc.Put() returned err")
+	}
 }
 
 // Test basic etcd API based on this link:
@@ -76,15 +56,15 @@ func testBasicPutGet(t *testing.T) {
 
 	// Override the client interfaces using a namespace.  This
 	// allows volumes to only get relevant messages.
-	cli.KV = namespace.NewKV(cli.KV, "myVolume/")
-	cli.Watcher = namespace.NewWatcher(cli.Watcher, "myVolume/")
-	cli.Lease = namespace.NewLease(cli.Lease, "myVolume/")
+	cli.KV = namespace.NewKV(cli.KV, "TESTmyVolume/")
+	cli.Watcher = namespace.NewWatcher(cli.Watcher, "TESTmyVolume/")
+	cli.Lease = namespace.NewLease(cli.Lease, "TESTmyVolume/")
 
 	// All Put() and Get() requests on this cli will automatically
 	// include the prefix (namespace).
-	cli.Put(context.TODO(), "abc", "123")
+	cli.Put(context.TODO(), "TESTabc", "123")
 
-	resp, err := cli.Get(context.TODO(), "abc")
+	resp, err := cli.Get(context.TODO(), "TESTabc")
 	assert.Equal("123", string(resp.Kvs[0].Value), "Get() returned different key than Put()")
 
 	// To retrieve the key from the command line you must do:
@@ -108,7 +88,7 @@ func testBasicTxn(t *testing.T) {
 
 	kvc := clientv3.NewKV(cli)
 
-	_, err = kvc.Put(context.TODO(), "key", "xyz")
+	_, err = kvc.Put(context.TODO(), "TESTkey", "xyz")
 	if err != nil {
 		assert.Nil(err, "kvc.Put() returned err")
 	}
@@ -118,20 +98,20 @@ func testBasicTxn(t *testing.T) {
 	_, err = kvc.Txn(ctx).
 
 		// txn value comparisons are lexical
-		If(clientv3.Compare(clientv3.Value("key"), ">", "abc")).
+		If(clientv3.Compare(clientv3.Value("TESTkey"), ">", "abc")).
 
 		// the "Then" runs, since "xyz" > "abc"
-		Then(clientv3.OpPut("key", "XYZ")).
+		Then(clientv3.OpPut("TESTkey", "XYZ")).
 
 		// the "Else" does not run
-		Else(clientv3.OpPut("key", "ABC")).
+		Else(clientv3.OpPut("TESTkey", "ABC")).
 		Commit()
 	cancel()
 	if err != nil {
 		assert.Nil(err, "kvc.Txn() returned err")
 	}
 
-	gresp, err := kvc.Get(context.TODO(), "key")
+	gresp, err := kvc.Get(context.TODO(), "TESTkey")
 	cancel()
 	if err != nil {
 		assert.Nil(err, "kvc.Get() returned err")
@@ -175,17 +155,6 @@ func watcher(t *testing.T, cli *clientv3.Client, key string, expectedValue strin
 		// The watcher has received it's event and will now return
 		fwg.Done()
 		return
-	}
-}
-
-// Delete test keys and recreate them
-func resetKeys(t *testing.T, cli *clientv3.Client, km map[string]string) {
-	assert := assert.New(t)
-	kvc := clientv3.NewKV(cli)
-	for k := range km {
-		_, _ = cli.Delete(context.TODO(), k)
-		_, err := kvc.Put(context.TODO(), k, "")
-		assert.Nil(err, "kvc.Put() returned err")
 	}
 }
 
@@ -405,4 +374,21 @@ func testGetMultipleKeys(t *testing.T) {
 	// Now get multiple keys
 	resp, err := cli.Get(context.TODO(), testStr+testKey, clientv3.WithPrefix())
 	assert.Equal(int64(2), resp.Count, "Get() returned wrong length for number of keys")
+}
+
+// Cleanup all the test keys created by these tests
+func testCleanupTestKeys(t *testing.T) {
+	assert := assert.New(t)
+
+	// Create an etcd client - our current etcd setup does not listen on
+	// localhost.  Therefore, we pass the IP addresses used by etcd.
+	cli, err := clientv3.New(clientv3.Config{Endpoints: []string{"192.168.60.10:2379",
+		"192.168.60.11:2379", "192.168.60.12:2379"}, DialTimeout: 2 * time.Second})
+	if err != nil {
+		assert.Nil(err, "clientv3.New() returned err")
+		// handle error!
+	}
+	defer cli.Close()
+
+	_, _ = cli.Delete(context.TODO(), "TEST", clientv3.WithPrefix())
 }

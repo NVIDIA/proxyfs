@@ -18,9 +18,10 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 		cs.nodeStateWatchEvents(swg)
 	case nodeKeyHbPrefix():
 		cs.nodeHbWatchEvents(swg)
-	case vgKeyStatePrefix():
-		cs.vgStateWatchEvents(swg)
+	case vgPrefix():
+		cs.vgWatchEvents(swg)
 	}
+	cs.watcherWG.Done()
 }
 
 // StartAWatcher starts a goroutine to watch for changes
@@ -40,7 +41,6 @@ func (cs *Struct) startAWatcher(prefixKey string) {
 }
 
 // WaitWatchers waits for all watchers to return
-// TODO - is this fully implemented?????
 func (cs *Struct) waitWatchers() {
 	cs.watcherWG.Wait()
 }

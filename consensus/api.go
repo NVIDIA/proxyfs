@@ -62,7 +62,7 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	cs.startAWatcher(nodeKeyHbPrefix())
 
 	// Start a watcher to watch for volume group changes
-	cs.startAWatcher(vgKeyStatePrefix())
+	cs.startAWatcher(vgPrefix())
 
 	// Set state of local node to STARTING
 	err = cs.setNodeStateForced(hostName, STARTINGNS)
@@ -74,26 +74,33 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	}
 
 	// Watcher will start HB after getting STARTING state
-	// Watcher also decides the state changes, etc....
-	cs.waitWatchers()
 
 	return
 }
 
 // AddVolumeGroup creates a new volume group.
-func (cs *Struct) AddVolumeGroup() (err error) {
-	err = cs.addVg()
+// TODO - verify valid input
+func (cs *Struct) AddVolumeGroup(name string, ipAddr string, netMask string,
+	nic string, autoFailover bool, enabled bool) (err error) {
+	err = cs.addVg(name, ipAddr, netMask, nic, autoFailover, enabled)
 	return
 }
 
 // RmVolumeGroup removes a volume group if it is OFFLINE
-func (cs *Struct) RmVolumeGroup() (err error) {
-	err = cs.rmVg()
+func (cs *Struct) RmVolumeGroup(name string) (err error) {
+	err = cs.rmVg(name)
 	return
 }
 
 // Unregister from the consensus protocol
+// TODO - this should probably set state OFFLINING
+// to initiate OFFLINE and use waitgroup to see
+// own OFFLINE before calling Close()
 func (cs *Struct) Unregister() {
+
 	cs.cli.Close()
+
+	cs.waitWatchers()
+
 	cs.cli = nil
 }
