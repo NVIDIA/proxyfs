@@ -13,8 +13,24 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/version"
 )
+
+type pingReqStruct struct {
+	JSONrpc string            `json:"jsonrpc"`
+	Method  string            `json:"method"`
+	Params  [1]jrpcfs.PingReq `json:"params"`
+	ID      uint64            `json:"id"`
+}
+
+type pingReplyStruct struct {
+	ID     uint64           `json:"id"`
+	Result jrpcfs.PingReply `json:"result"`
+	Error  string           `json:"error"`
+}
+
+const maxRPCReplySize = 4096
 
 type httpRequestHandler struct{}
 
@@ -36,6 +52,7 @@ type peerStruct struct {
 	Name           string
 	PublicIPAddr   string
 	PrivateIPAddr  string
+	ipAddrTCPPort  string
 	VolumesToWatch map[string]*volumeStruct // key == volumeStruct.name
 }
 
@@ -46,9 +63,6 @@ type globalsStruct struct {
 	volumesToWatch    *volumeStruct          // links to next volumeStruct to examine
 	volumesToWatchLen time.Duration          // using this type makes pollingInterval computation avoid casting
 	pollingInterval   time.Duration          // volumesToWatchLen / AliveDaemon.WatchInterval
-	tcpPort           uint16
-	ipAddr            string
-	ipAddrTCPPort     string
 	netListener       net.Listener
 	childrenWG        sync.WaitGroup
 }
@@ -59,10 +73,13 @@ func main() {
 	var (
 		args          []string
 		err           error
+		ipAddr        string
+		ipAddrTCPPort string
 		ok            bool
 		peer          *peerStruct
 		peerName      string
 		peersToWatch  []string
+		tcpPort       uint16
 		volume        *volumeStruct
 		volumeList    []string
 		volumeName    string
@@ -101,6 +118,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	tcpPort, err = globals.confMap.FetchOptionValueUint16("JSONRPCServer", "TCPPort")
+	if nil != err {
+		log.Fatal(err)
+	}
+
 	globals.peersToWatch = make(map[string]*peerStruct)
 
 	for _, peerName = range peersToWatch {
@@ -116,6 +138,7 @@ func main() {
 		if nil != err {
 			log.Fatal(err)
 		}
+		peer.ipAddrTCPPort = net.JoinHostPort(peer.PrivateIPAddr, strconv.Itoa(int(tcpPort)))
 		globals.peersToWatch[peer.Name] = peer
 	}
 
@@ -163,24 +186,24 @@ func main() {
 
 	globals.pollingInterval = watchInterval / globals.volumesToWatchLen
 
-	globals.tcpPort, err = globals.confMap.FetchOptionValueUint16("AliveDaemon", "TCPPort")
+	tcpPort, err = globals.confMap.FetchOptionValueUint16("AliveDaemon", "TCPPort")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	globals.ipAddr, err = globals.confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
+	ipAddr, err = globals.confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	globals.ipAddrTCPPort = net.JoinHostPort(globals.ipAddr, strconv.Itoa(int(globals.tcpPort)))
+	ipAddrTCPPort = net.JoinHostPort(ipAddr, strconv.Itoa(int(tcpPort)))
 
-	globals.netListener, err = net.Listen("tcp", globals.ipAddrTCPPort)
+	globals.netListener, err = net.Listen("tcp", ipAddrTCPPort)
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	globals.childrenWG.Add(1)
+	globals.childrenWG.Add(2)
 
 	go doPolling()
 	go serveHTTP()
@@ -190,18 +213,75 @@ func main() {
 
 func doPolling() {
 	var (
-		volume *volumeStruct
+		err          error
+		nextID       uint64
+		pingReply    pingReplyStruct
+		pingReplyBuf []byte
+		pingReplyLen int
+		pingReq      pingReqStruct
+		pingReqBuf   []byte
+		tcpAddr      *net.TCPAddr
+		tcpConn      *net.TCPConn
+		timeNow      time.Time
+		volume       *volumeStruct
 	)
+
+	defer globals.childrenWG.Done()
+
+	nextID = 0
 
 	for {
 		time.Sleep(globals.pollingInterval)
 		volume = globals.volumesToWatch
-		// TODO
-		volume.LastCheckTime = time.Now()
+		timeNow = time.Now()
+		pingReq.JSONrpc = "2.0"
+		pingReq.Method = "Server.RpcPing"
+		pingReq.Params[0].Message = "Ping at " + timeNow.Format(time.RFC3339)
+		pingReq.ID = nextID
+		pingReqBuf, err = json.Marshal(pingReq)
+		if nil == err {
+			tcpAddr, err = net.ResolveTCPAddr("tcp", volume.peer.ipAddrTCPPort)
+			if nil == err {
+				tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
+				if nil == err {
+					_, err = tcpConn.Write(pingReqBuf)
+					if nil == err {
+						pingReplyBuf = make([]byte, maxRPCReplySize)
+						pingReplyLen, err = tcpConn.Read(pingReplyBuf)
+						if nil == err {
+							err = tcpConn.Close()
+							if nil == err {
+								pingReplyBuf = pingReplyBuf[:pingReplyLen]
+								err = json.Unmarshal(pingReplyBuf, &pingReply)
+								if nil == err {
+									volume.State = volumeStateAlive
+								} else {
+									volume.State = volumeStateDead
+								}
+							} else {
+								volume.State = volumeStateDead
+							}
+						} else {
+							_ = tcpConn.Close()
+							volume.State = volumeStateDead
+						}
+					} else {
+						_ = tcpConn.Close()
+						volume.State = volumeStateDead
+					}
+				} else {
+					volume.State = volumeStateDead
+				}
+			} else {
+				volume.State = volumeStateDead
+			}
+		} else {
+			volume.State = volumeStateDead
+		}
+		volume.LastCheckTime = timeNow
 		globals.volumesToWatch = volume.next
+		nextID++
 	}
-
-	// globals.childrenWG.Done()
 }
 
 func serveHTTP() {
@@ -209,12 +289,12 @@ func serveHTTP() {
 		err error
 	)
 
+	defer globals.childrenWG.Done()
+
 	err = http.Serve(globals.netListener, httpRequestHandler{})
 	if nil != err {
 		log.Fatal(err)
 	}
-
-	globals.childrenWG.Done()
 }
 
 func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
