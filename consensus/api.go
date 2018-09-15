@@ -78,6 +78,11 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	return
 }
 
+//
+// TODO - add methods to OFFLINE a volume group and retreive
+// state of volume group
+//
+
 // AddVolumeGroup creates a new volume group.
 // TODO - verify valid input
 func (cs *Struct) AddVolumeGroup(name string, ipAddr string, netMask string,

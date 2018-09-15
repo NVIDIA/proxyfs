@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"context"
 	"flag"
 	"os"
 	"testing"
@@ -44,10 +45,10 @@ func TestMain(m *testing.M) {
 func TestAPI(t *testing.T) {
 
 	testBasicAPI(t)
-	testAddVolumeGroup(t)
+	testAddRmVolumeGroup(t)
 
 	// To add:
-	// - online, failover, add, rm, verify bad input
+	// - online, failover, verify bad input such as bad IP address?
 }
 
 // registerEtcd sets up a connection to etcd
@@ -72,17 +73,17 @@ func unregisterEtcd(t *testing.T, cs *Struct) {
 	cs.Unregister()
 }
 
-func vgKeysToReset(name string) (keys map[string]string) {
+func vgKeysToReset(vgTestName string) (keys map[string]string) {
 	keys = make(map[string]string)
-	keys[makeVgNameKey(name)] = ""
-	keys[makeVgStateKey(name)] = ""
-	keys[makeVgNodeKey(name)] = ""
-	keys[makeVgIpaddrKey(name)] = ""
-	keys[makeVgNetmaskKey(name)] = ""
-	keys[makeVgNicKey(name)] = ""
-	keys[makeVgAutoFailoverKey(name)] = ""
-	keys[makeVgEnabledKey(name)] = ""
-	keys[makeVgVolumeListKey(name)] = ""
+	keys[makeVgNameKey(vgTestName)] = ""
+	keys[makeVgStateKey(vgTestName)] = ""
+	keys[makeVgNodeKey(vgTestName)] = ""
+	keys[makeVgIpaddrKey(vgTestName)] = ""
+	keys[makeVgNetmaskKey(vgTestName)] = ""
+	keys[makeVgNicKey(vgTestName)] = ""
+	keys[makeVgAutoFailoverKey(vgTestName)] = ""
+	keys[makeVgEnabledKey(vgTestName)] = ""
+	keys[makeVgVolumeListKey(vgTestName)] = ""
 	return
 }
 
@@ -91,9 +92,16 @@ func testBasicAPI(t *testing.T) {
 	unregisterEtcd(t, cs)
 }
 
-func testAddVolumeGroup(t *testing.T) {
+// Delete test keys
+func resetVgKeys(t *testing.T, cs *Struct, km map[string]string) {
+	for k := range km {
+		_, _ = cs.cli.Delete(context.TODO(), k)
+	}
+}
+
+func testAddRmVolumeGroup(t *testing.T) {
 	var (
-		name         = "myTestVg"
+		vgTestName   = "myTestVg"
 		ipAddr       = "192.168.20.20"
 		netMask      = "1.1.1.1"
 		nic          = "eth0"
@@ -104,22 +112,25 @@ func testAddVolumeGroup(t *testing.T) {
 
 	cs := registerEtcd(t)
 
-	// TODO - add VG routines to grab these...
-	// should we just delete all keys of VG* ???
-	keys := vgKeysToReset(name)
-	resetKeys(t, cs.cli, keys)
+	keys := vgKeysToReset(vgTestName)
+	resetVgKeys(t, cs, keys)
 
 	// TODO - how add volume list to a volume group?
 	// assume volumes are unique across VGs???
-	err := cs.AddVolumeGroup(name, ipAddr, netMask, nic, autoFailover, enabled)
+	err := cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
 	assert.Nil(err, "AddVolumeGroup() returned err")
 
-	// TODO - add a volume to a volume group!!!!
+	// If recreate the VG again it should fail
+	err = cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
+	assert.NotNil(err, "AddVolumeGroup() twice should err")
 
-	// TODO - remove volume group
-	err = cs.RmVolumeGroup(name)
-	assert.Nil(cs, "RmVolumeGroup() returned err")
+	// Now remove the volume group
+	err = cs.RmVolumeGroup(vgTestName)
+	assert.Nil(err, "RmVolumeGroup() returned err")
 
-	resetKeys(t, cs.cli, keys)
+	// Trying to removing a volume group a second time should fail
+	err = cs.RmVolumeGroup(vgTestName)
+	assert.NotNil(err, "RmVolumeGroup() twice should err")
+
 	unregisterEtcd(t, cs)
 }

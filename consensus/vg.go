@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	"strconv"
@@ -15,15 +16,16 @@ type VgState int
 // NOTE: When updating NodeState be sure to also update String() below.
 const (
 	INITIALVS   VgState = iota
-	ONLININGVS          // STARTING means node has just booted
-	ONLINEVS            // ONLINE means the node is available to online VGs
-	OFFLININGVS         // OFFLINE means the node gracefully shut down
-	OFFLINEVS           // OFFLINE means the node gracefully shut down
+	ONLININGVS          // ONLINING means VG is starting to come online on the node in the volume list
+	ONLINEVS            // ONLINE means VG is online on the node in the volume list
+	OFFLININGVS         // OFFLINING means the VG is gracefully going offline
+	OFFLINEVS           // OFFLINE means the VG is offline and volume list is empty
+	FAILEDVS            // FAILED means the VG failed on the node in the volume list
 	maxVgState          // Must be last field!
 )
 
 func (state VgState) String() string {
-	return [...]string{"INITIAL", "ONLINING", "ONLINE", "OFFLINING", "OFFLINE"}[state]
+	return [...]string{"INITIAL", "ONLINING", "ONLINE", "OFFLINING", "OFFLINE", "FAILED"}[state]
 }
 
 // NodePrefix returns a string containing the node prefix
@@ -76,22 +78,19 @@ func makeVgVolumeListKey(n string) string {
 // changes.
 func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 
-	// TODO - TODO - figure out what keys we watch!!!
+	// TODO - figure out what keys we watch!!!
 	wch1 := cs.cli.Watch(context.Background(), vgPrefix(),
 		clientv3.WithPrefix())
 
 	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
-		fmt.Printf("vgStateWatchEvents() wresp1: %+v\n", wresp1)
 		for _, ev := range wresp1.Events {
 			fmt.Printf("vgStateWatchEvents for key: %v saw value: %v\n", string(ev.Kv.Key),
 				string(ev.Kv.Value))
-			// TODO
-			fmt.Printf("HAVE VG EVENT - now what???")
+			// TODO - what do with the VG watch events
 		}
 
-		// TODO - how shut this watcher down?
-		// TODO - how notified when shutting down?
+		// TODO - watcher only shutdown when local node is OFFLINE
 	}
 }
 
@@ -120,33 +119,89 @@ func (cs *Struct) startVgs() {
 
 }
 
+// getVgState returns the state of a VG
+func (cs *Struct) getVgState(name string) (state VgState) {
+	stateKey := makeVgStateKey(name)
+	resp, _ := cs.cli.Get(context.TODO(), stateKey)
+
+	stateStr := string(resp.OpResponse().Get().Kvs[0].Value)
+
+	switch stateStr {
+	case INITIALVS.String():
+		return INITIALVS
+	case ONLININGVS.String():
+		return ONLININGVS
+	case ONLINEVS.String():
+		return ONLINEVS
+	case OFFLININGVS.String():
+		return OFFLININGVS
+	case OFFLINEVS.String():
+		return OFFLINEVS
+	case FAILEDVS.String():
+		return FAILEDVS
+	}
+
+	return
+}
+
+func (cs *Struct) checkVgExist(vgKeys []string) (err error) {
+	for _, v := range vgKeys {
+		resp, _ := cs.cli.Get(context.TODO(), v)
+		if resp.OpResponse().Get().Count > int64(0) {
+			err = errors.New("VG already exists")
+			return
+		}
+	}
+	return
+}
+
+func calcVgKeys(name string) (nameKey string, ipaddrKey string, netmaskKey string,
+	nicKey string, autofailKey string, enabledKey string, stateKey string,
+	nodeKey string, volumeListKey string, vgKeys []string) {
+
+	vgKeys = make([]string, 0)
+	nameKey = makeVgNameKey(name)
+	vgKeys = append(vgKeys, nameKey)
+	stateKey = makeVgStateKey(name)
+	vgKeys = append(vgKeys, stateKey)
+	nodeKey = makeVgNodeKey(name)
+	vgKeys = append(vgKeys, nodeKey)
+	ipaddrKey = makeVgIpaddrKey(name)
+	vgKeys = append(vgKeys, ipaddrKey)
+	netmaskKey = makeVgNetmaskKey(name)
+	vgKeys = append(vgKeys, netmaskKey)
+	nicKey = makeVgNicKey(name)
+	vgKeys = append(vgKeys, nicKey)
+	autofailKey = makeVgAutoFailoverKey(name)
+	vgKeys = append(vgKeys, autofailKey)
+	enabledKey = makeVgEnabledKey(name)
+	vgKeys = append(vgKeys, enabledKey)
+	volumeListKey = makeVgVolumeListKey(name)
+	vgKeys = append(vgKeys, volumeListKey)
+
+	return
+}
+
+// addVg adds a volume group
+// TODO - should we add create time, failover time, etc?
 func (cs *Struct) addVg(name string, ipAddr string, netMask string,
 	nic string, autoFailover bool, enabled bool) (err error) {
 
-	// TODO - implement this
-	/*
-		1. make sure not a duplicate name - will txn fail if this is the case?
-		2. verify all attributes
-		3. verify that set to correct state
-	*/
-	nameKey := makeVgNameKey(name)
-	stateKey := makeVgStateKey(name)
-	nodeKey := makeVgNodeKey(name)
-	ipaddrKey := makeVgIpaddrKey(name)
-	netmaskKey := makeVgNetmaskKey(name)
-	nicKey := makeVgNicKey(name)
-	autofailKey := makeVgAutoFailoverKey(name)
-	enabledKey := makeVgEnabledKey(name)
-	volumeListKey := makeVgVolumeListKey(name)
+	nameKey, ipaddrKey, netmaskKey, nicKey, autofailKey, enabledKey, stateKey,
+		nodeKey, volumeListKey, vgKeys := calcVgKeys(name)
 
-	// TODO - should we add create time, failover time, etc?
+	err = cs.checkVgExist(vgKeys)
+	if err != nil {
+		return
+	}
 
 	// Verify that VG does not already exist which means check all
 	// keys.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_, err = cs.kvc.Txn(ctx).
 
-		// Verify that VG attributes are not there.....
+		// Verify that the VG and it's attributes are not there.  If they are
+		// the transaction will silently return.
 		If(
 			clientv3.Compare(clientv3.Version(nameKey), "=", 0),
 			clientv3.Compare(clientv3.Version(stateKey), "=", 0),
@@ -156,9 +211,9 @@ func (cs *Struct) addVg(name string, ipAddr string, netMask string,
 			clientv3.Compare(clientv3.Version(nicKey), "=", 0),
 			clientv3.Compare(clientv3.Version(autofailKey), "=", 0),
 			clientv3.Compare(clientv3.Version(enabledKey), "=", 0),
-			clientv3.Compare(clientv3.Version(volumeListKey), "0", 0),
+			clientv3.Compare(clientv3.Version(volumeListKey), "=", 0),
 
-		// "Then" create the keys with initial strings
+		// "Then" create the keys with initial values
 		).Then(
 		clientv3.OpPut(nameKey, name),
 		clientv3.OpPut(stateKey, INITIALVS.String()),
@@ -170,7 +225,7 @@ func (cs *Struct) addVg(name string, ipAddr string, netMask string,
 		clientv3.OpPut(enabledKey, strconv.FormatBool(enabled)),
 		clientv3.OpPut(volumeListKey, ""),
 
-	// If failed - just return error
+	// If failed - silently return
 	).Else().Commit()
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
@@ -178,12 +233,59 @@ func (cs *Struct) addVg(name string, ipAddr string, netMask string,
 }
 
 func (cs *Struct) rmVg(name string) (err error) {
-	// TODO - implement this
-	/*
-		1. make sure OFFLINE or FAILED...client
-		2. make sure in one txn can remove all VG - function to
-		   remove all attributes at once and to init all at once?
-	*/
+
+	nameKey, ipaddrKey, netmaskKey, nicKey, autofailKey, enabledKey, stateKey,
+		nodeKey, volumeListKey, vgKeys := calcVgKeys(name)
+
+	err = cs.checkVgExist(vgKeys)
+	if err == nil {
+		err = errors.New("VG does not exist")
+		return
+	}
+
+	// Don't allow a remove of a VG if ONLINING or ONLINE
+	state := cs.getVgState(name)
+	if (state == ONLININGVS) || (state == ONLINEVS) {
+		err = errors.New("VG is in ONLINING or ONLINE state")
+		return
+	}
+
+	// Verify that VG does not already exist which means check all
+	// keys.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG and it's attributes are not there.  If they are
+		// the transaction will silently return.
+		If(
+			clientv3.Compare(clientv3.Version(nameKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(stateKey), "!=", 0),
+			clientv3.Compare(clientv3.Value(stateKey), "!=", ONLINEVS.String()),
+			clientv3.Compare(clientv3.Value(stateKey), "!=", ONLININGVS.String()),
+			clientv3.Compare(clientv3.Version(nodeKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(ipaddrKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(netmaskKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(nicKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(autofailKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(enabledKey), "!=", 0),
+			clientv3.Compare(clientv3.Version(volumeListKey), "!=", 0),
+
+		// "Then" create the keys with initial values
+		).Then(
+		clientv3.OpDelete(nameKey),
+		clientv3.OpDelete(stateKey),
+		clientv3.OpDelete(nodeKey),
+		clientv3.OpDelete(ipaddrKey),
+		clientv3.OpDelete(netmaskKey),
+		clientv3.OpDelete(nicKey),
+		clientv3.OpDelete(autofailKey),
+		clientv3.OpDelete(enabledKey),
+		clientv3.OpDelete(volumeListKey),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
 	return
 
 }
