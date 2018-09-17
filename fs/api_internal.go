@@ -158,7 +158,9 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 		inode.NoOverride)
 	if stillExists {
 		err = vS.inodeVolumeHandle.Flush(inodeNumber, false)
-		if nil != err {
+		if nil == err {
+			vS.untrackInFlightFileInodeData(inodeNumber, false)
+		} else {
 			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d", vS.volumeName, inodeNumber)
 		}
 	}
