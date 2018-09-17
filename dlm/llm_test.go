@@ -46,8 +46,6 @@ type threadInfo struct {
 	requestForThread chan *testReq
 }
 
-var globalSyncPt chan testReq // Channel used to synchronize test threads to simulate multiple threads
-
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
@@ -63,9 +61,6 @@ func testSetup() (err error) {
 	err = os.Mkdir("TestVolume", os.ModePerm)
 
 	testConfMap := conf.MakeConfMap()
-
-	// Setup channel used to synchronize multiple test thread operations
-	globalSyncPt = make(chan testReq)
 
 	err = Up(testConfMap)
 	if nil != err {
