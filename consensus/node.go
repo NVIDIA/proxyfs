@@ -51,9 +51,12 @@ func makeNodeHbKey(n string) string {
 	return nodeKeyHbPrefix() + n
 }
 
-// makeNodeLists is a helper method to break the GET of node data into
+// parseNodeResp is a helper method to break the GET of node data into
 // the lists we need.
-func makeNodeLists(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
+//
+// NOTE: The resp given could have retrieved many objects including VGs
+// so do not assume it only contains VGs.
+func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
 	nodesOnline []string, nodesHb map[string]time.Time) {
 	nodesAlreadyDead = make([]string, 0)
 	nodesOnline = make([]string, 0)
@@ -105,6 +108,21 @@ func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time
 
 }
 
+// getRevNodeState retrieves node state as of given revision
+func (cs *Struct) getRevNodeState(revNeeded int64) (nodesAlreadyDead []string,
+	nodesOnline []string, nodesHb map[string]time.Time) {
+
+	// First grab all node state information in one operation
+	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(), clientv3.WithRev(revNeeded))
+	if err != nil {
+		fmt.Printf("GET node state failed with: %v\n", err)
+		os.Exit(-1)
+	}
+
+	nodesAlreadyDead, nodesOnline, nodesHb = parseNodeResp(resp)
+	return
+}
+
 // checkForDeadNodes() looks for nodes no longer
 // heartbeating and sets their state to DEAD.
 //
@@ -121,7 +139,7 @@ func (cs *Struct) checkForDeadNodes() {
 	// nodes which are still marked ONLINE.
 	//
 	// Also retrieve the last HB values for each node.
-	_, nodesOnline, nodesHb := makeNodeLists(resp)
+	_, nodesOnline, nodesHb := parseNodeResp(resp)
 
 	// Go thru list of nodeNotDeadState and verify HB is not past
 	// interval.  If so, put on list nodesNewlyDead and then

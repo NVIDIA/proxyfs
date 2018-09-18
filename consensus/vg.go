@@ -1,11 +1,16 @@
 package consensus
 
 import (
+	"bytes"
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
+	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,50 +33,120 @@ func (state VgState) String() string {
 	return [...]string{"INITIAL", "ONLINING", "ONLINE", "OFFLINING", "OFFLINE", "FAILED"}[state]
 }
 
-// NodePrefix returns a string containing the node prefix
+const (
+	vgStr             = "VG"
+	vgNameStr         = "NAME"
+	vgStateStr        = "STATE"
+	vgNodeStr         = "NODE"
+	vgIpaddrStr       = "IPADDR"
+	vgNetmaskStr      = "NETMASK"
+	vgNicStr          = "NIC"
+	vgEnabledStr      = "ENABLED"
+	vgAutofailoverStr = "AUTOFAILOVER"
+	vgVolumelistStr   = "VOLUMELIST"
+)
+
+// vgPrefix returns a string containing the vg prefix
+// used for all VG keys.
 func vgPrefix() string {
-	return "VG"
+	return vgStr
 }
 
-// NodeKeyStatePrefix returns a string containing the node state prefix
+// vgKeyPrefix returns a string containing the VG prefix
+// with the the individual key string appended.
 func vgKeyPrefix(v string) string {
 	return vgPrefix() + v + ":"
 }
 
 func makeVgNameKey(n string) string {
-	return vgKeyPrefix("NAME") + n
+	return vgKeyPrefix(vgNameStr) + n
 }
 
 func makeVgStateKey(n string) string {
-	return vgKeyPrefix("STATE") + n
+	return vgKeyPrefix(vgStateStr) + n
 }
 
 func makeVgNodeKey(n string) string {
-	return vgKeyPrefix("NODE") + n
+	return vgKeyPrefix(vgNodeStr) + n
 }
 
 func makeVgIpaddrKey(n string) string {
-	return vgKeyPrefix("IPADDR") + n
+	return vgKeyPrefix(vgIpaddrStr) + n
 }
 
 func makeVgNetmaskKey(n string) string {
-	return vgKeyPrefix("NETMASK") + n
+	return vgKeyPrefix(vgNetmaskStr) + n
 }
 
 func makeVgNicKey(n string) string {
-	return vgKeyPrefix("NIC") + n
+	return vgKeyPrefix(vgNicStr) + n
 }
 
 func makeVgAutoFailoverKey(n string) string {
-	return vgKeyPrefix("AUTOFAILOVER") + n
+	return vgKeyPrefix(vgAutofailoverStr) + n
 }
 
 func makeVgEnabledKey(n string) string {
-	return vgKeyPrefix("ENABLED") + n
+	return vgKeyPrefix(vgEnabledStr) + n
 }
 
 func makeVgVolumeListKey(n string) string {
-	return vgKeyPrefix("VOLUMELIST") + n
+	return vgKeyPrefix(vgVolumelistStr) + n
+}
+
+// onlineVg attempts to online the VG locallly.  Once
+// done it will do a txn() to set the state either ONLINE
+// or FAILED
+func (cs *Struct) onlineVg(vgName string) {
+
+	// TODO - attempt online of VG and then set
+	// state via txn() to either ONLINE or FAILED.
+	// TODO - how long to timeout?
+	fmt.Printf("onlineVg() - vgName: %v\n", vgName)
+
+	// Run a simple command to touch a file then do txn()
+	// to set VG to ONLINE
+	cmd := exec.Command("/usr/bin/touch", "/tmp/vgfile")
+	cmd.Stdin = strings.NewReader("some input")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("onlineVg() returned err: %v\n", err)
+		cs.setVgFailed(vgName)
+	}
+	cs.setVgOnline(vgName)
+}
+
+// vgLocalHostEvents gets called when an event for keys with the
+// prefix "VGNODE" occurs.
+func (cs *Struct) vgLocalHostEvents(ev *clientv3.Event) {
+
+	// Retrieve the VG name from the key
+	vgName := strings.TrimPrefix(string(ev.Kv.Key), vgKeyPrefix(vgNodeStr))
+	fmt.Printf("vgLocalHostEvents() - vg to online on local host is: %v\n", vgName)
+
+	// Retrieve the state of the VG, if it is ONLINING then we
+	// have a go routine bring the VG online.
+	vgStateKey := makeVgStateKey(vgName)
+	fmt.Printf("vgLocalHostEvents() - vgStateKey %v\n", vgStateKey)
+	resp, _ := cs.cli.Get(context.TODO(), vgStateKey, clientv3.WithRev(ev.Kv.ModRevision))
+
+	// TODO - what do with error in above case - vg deleted while
+	// pending events? Should not happen since cannot delete ONLINE
+	// objects....
+	// What other state changes must we handle?
+
+	vgState := string(resp.Kvs[0].Value)
+	fmt.Printf("vgState %v\n", vgState)
+	switch vgState {
+	// VG transitioned to ONLINING and local node is listed as the
+	// location where the node will go ONLINE.  ONLINE the VG.
+	// Go routine will do ONLINING and txn() to either set state
+	// to ONLINE or FAILED when done.
+	case ONLININGVS.String():
+		go cs.onlineVg(vgName)
+	}
 }
 
 // vgStateWatchEvents creates a watcher based on node state
@@ -87,11 +162,110 @@ func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 		for _, ev := range wresp1.Events {
 			fmt.Printf("vgStateWatchEvents for key: %v saw value: %v\n", string(ev.Kv.Key),
 				string(ev.Kv.Value))
+
+			// The node for a VG has changed
+			if strings.HasPrefix(string(ev.Kv.Key), vgKeyPrefix(vgNodeStr)) {
+
+				// The local node has the change
+				if string(ev.Kv.Value) == cs.hostName {
+					// Saw a VG event for local host.  Now extract the VG and
+					cs.vgLocalHostEvents(ev)
+				}
+			} else if strings.HasPrefix(string(ev.Kv.Key), vgKeyPrefix(vgStateStr)) {
+				vgName := strings.TrimPrefix(string(ev.Kv.Key), vgKeyPrefix(vgStateStr))
+				fmt.Printf("vgState now: %v for vgName: %v\n", string(ev.Kv.Value),
+					vgName)
+			}
+
 			// TODO - what do with the VG watch events
 		}
 
 		// TODO - watcher only shutdown when local node is OFFLINE
 	}
+}
+
+func (cs *Struct) parseVgResp(resp *clientv3.GetResponse) (vgName map[string]string,
+	vgState map[string]string, vgNode map[string]string, vgIpaddr map[string]string,
+	vgNetmask map[string]string, vgNic map[string]string, vgAutofail map[string]bool,
+	vgEnabled map[string]bool, vgVolumelist map[string]string) {
+
+	vgName = make(map[string]string)
+	vgState = make(map[string]string)
+	vgNode = make(map[string]string)
+	vgIpaddr = make(map[string]string)
+	vgNetmask = make(map[string]string)
+	vgNic = make(map[string]string)
+	vgAutofail = make(map[string]bool)
+	vgEnabled = make(map[string]bool)
+	vgVolumelist = make(map[string]string)
+
+	for _, e := range resp.Kvs {
+		if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNameStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNameStr))
+			vgName[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgStateStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgStateStr))
+			vgState[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNodeStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNodeStr))
+			vgNode[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgIpaddrStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgIpaddrStr))
+			vgIpaddr[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNetmaskStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNetmaskStr))
+			vgNetmask[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNicStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNicStr))
+			vgNic[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgEnabledStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgEnabledStr))
+			vgEnabled[n], _ = strconv.ParseBool(string(e.Value))
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgAutofailoverStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgAutofailoverStr))
+			vgAutofail[n], _ = strconv.ParseBool(string(e.Value))
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgVolumelistStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgVolumelistStr))
+			vgVolumelist[n] = string(e.Value)
+		}
+	}
+
+	return
+}
+
+// gatherVgInfo() gathers all VG information and node informaiton
+// returns it broken out into maps.
+//
+// All data is taken from the same etcd global revision number.
+//
+// TODO - add node information too.... must be in same transacation!
+// can we do WithRev(vg revision #) instead of doing a txn()?
+func (cs *Struct) gatherVgInfo() (vgName map[string]string, vgState map[string]string,
+	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
+	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
+	vgVolumelist map[string]string, nodesAlreadyDead []string, nodesOnline []string,
+	nodesHb map[string]time.Time) {
+
+	// First grab all VG state information in one operation
+	// TODO - grab node information at same REV
+	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix())
+	if err != nil {
+		fmt.Printf("GET VG state failed with: %v\n", err)
+		os.Exit(-1)
+	}
+
+	// Break the response out into list of already DEAD nodes and
+	// nodes which are still marked ONLINE.
+	//
+	// Also retrieve the last HB values for each node.
+	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist = cs.parseVgResp(resp)
+	respRev := resp.Header.GetRevision()
+
+	// Get the node state as of the same revision number
+	nodesAlreadyDead, nodesOnline, nodesHb = cs.getRevNodeState(respRev)
+
+	return
 }
 
 // failoverVgs is called when nodes have died.  The remaining nodes
@@ -101,22 +275,204 @@ func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 // TODO - start webserver on different port - fork off script to start VIP
 func (cs *Struct) failoverVgs(nodesNewlyDead []string) {
 	// TODO - implement this
+	// 0. gather state of all VGs and all nodes
+	// 1. for all nodes in DEAD state, convert their VGs to OFFLINE
+	// 2. decide in round robin fashion what VGs go where
+	// ..... similar to how startVgs() works?????
+}
+
+// parseVgOnlineInit returns a map of all VGs in either the
+// ONLINE or INITIAL states
+//
+// This routine only adds the VG to the map if "autofailover==true" and
+// "enabled=true"
+func parseVgOfflineInit(vgState map[string]string, vgEnabled map[string]bool,
+	vgAutofailover map[string]bool) (vgOfflineInit *list.List) {
+
+	vgOfflineInit = list.New()
+	for k, v := range vgState {
+		if (vgEnabled[k] == false) || (vgAutofailover[k] == false) {
+			continue
+		}
+		switch v {
+		case INITIALVS.String():
+			vgOfflineInit.PushBack(k)
+		case OFFLINEVS.String():
+			vgOfflineInit.PushBack(k)
+		}
+
+	}
+	return
+}
+
+// setVgFailed sets the vg VGSTATE to FAILINGVS and leaves VGNODE as the
+// node where it failed.
+func (cs *Struct) setVgFailed(vg string) (err error) {
+	var txnResp *clientv3.TxnResponse
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is still in ONLINING state
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", ONLININGVS.String()),
+
+		// "Then" create the keys with initial values
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), FAILEDVS.String()),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
+	// TODO - how handle error cases????
+	fmt.Printf("txnResp: %+v\n", txnResp)
+
+	return
+}
+
+// setVgOnline sets the vg VGSTATE to ONLINEVS and leaves VGNODE as the
+// node where it is online.
+func (cs *Struct) setVgOnline(vg string) (err error) {
+	var txnResp *clientv3.TxnResponse
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is still ONLINING
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", ONLININGVS.String()),
+
+		// "Then" create the keys with initial values
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), ONLINEVS.String()),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
+	// TODO - how handle error cases????
+	fmt.Printf("txnResp: %+v\n", txnResp)
+
+	return
+}
+
+// setVgOnlining sets the vg VGSTATE to ONLININGVS and the VGNODE to the node.
+//
+// This transaction can fail if the node is no longer in the ONLINENS state
+// or the VG is no longer in the OFFLINEVS state.
+func (cs *Struct) setVgOnlining(node string, vg string) (err error) {
+	var txnResp *clientv3.TxnResponse
+
+	// Assuming that current state is INITIALVS - transition to ONLINING
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is in INITIALVS and node name is ""
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", INITIALVS.String()),
+			clientv3.Compare(clientv3.Value(makeVgNodeKey(vg)), "=", ""),
+
+		// "Then" set the values...
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), ONLININGVS.String()),
+		clientv3.OpPut(makeVgNodeKey(vg), node),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
+	// If the VG was in INITIALVS and the txn succeeded then return now
+	// TODO - review all txn() code - should I be checking this at other
+	// places? Probably missing some locations...
+	if txnResp.Succeeded {
+		return
+	}
+
+	// Earlier transaction failed - do next transaction assuming that state
+	// was OFFLINE
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is in OFFLINEVS and node name is ""
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", OFFLINEVS.String()),
+			clientv3.Compare(clientv3.Value(makeVgNodeKey(vg)), "=", ""),
+
+		// "Then" set the values...
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), ONLININGVS.String()),
+		clientv3.OpPut(makeVgNodeKey(vg), node),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
+	fmt.Printf("setVgOnlining() OFFLINE - txnResp: %+v\n", txnResp)
+	if !txnResp.Succeeded {
+		err = errors.New("VG no longer in INITIALVS or OFFLINEVS - possibly in ONLINING?")
+		return
+	}
+
+	return
 }
 
 // startVgs is called when a node has come ONLINE.
-// TODO - be sure that txn() asserts that node is online
-// before onlining the VG!!!!
-// TODO - start webserver on different port - fork off script to start VIP
+// TODO - implement algorithm to spread the VGs more evenly and
+// in a predictable manner.
 func (cs *Struct) startVgs() {
-	// TODO - implement this
-	/*
-		1. make list of VGs which need to be brought online since nodes asserts
-		   dead or which have not been started
-		2. score VGs and decide transitions?
-		3. set VGs ONLINING and which node with a transaction and verify not
-		   already ONLINE somewhere.   Mark failed first???
-	*/
 
+	// Retrieve VG and node state
+	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.gatherVgInfo()
+
+	fmt.Printf("startVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
+		vgName, vgState, vgNode, vgIpaddr, vgNetmask)
+	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
+		vgNic, vgAutofail, vgEnabled, vgVolumelist)
+	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
+		nodesAlreadyDead, nodesOnline, nodesHb)
+
+	// Find VGs which are in the INITIAL or OFFLINE state
+	vgsToStart := parseVgOfflineInit(vgState, vgEnabled, vgAutofail)
+
+	cntVgsToStart := vgsToStart.Len()
+	if cntVgsToStart == 0 {
+		return
+	}
+
+	cntNodesOnline := len(nodesOnline)
+	fmt.Printf("cntVgsToStart: %v online nodes: %v\n", cntVgsToStart, cntNodesOnline)
+
+	// Set state to ONLINING to initiate the ONLINE
+	for vgsToStart.Len() > 0 {
+		for _, node := range nodesOnline {
+			e := vgsToStart.Front()
+			if e == nil {
+				// No more VGs to online
+				break
+			}
+
+			// Set the VG to online.  If the txn
+			// fails then leave it on the list for
+			// the next loop.
+			// TODO - could this be an infinite loop
+			// if all nodes are offlining?
+			err := cs.setVgOnlining(node, e.Value.(string))
+			if err == nil {
+				vgsToStart.Remove(e)
+			}
+		}
+
+	}
+
+	// TODO - start webserver on different port - fork off script to start VIP
+
+	// TODO - figure out which is least loaded node and start spreading the load
+	// around...
+	// For the initial prototype we just do round robin which does not take into
+	// consideration the load of an node.  Could be case that one node is already
+	// overloaded.
 }
 
 // getVgState returns the state of a VG

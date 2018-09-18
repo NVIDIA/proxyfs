@@ -46,6 +46,7 @@ func TestAPI(t *testing.T) {
 
 	testBasicAPI(t)
 	testAddRmVolumeGroup(t)
+	testStartVolumeGroup(t)
 
 	// To add:
 	// - online, failover, verify bad input such as bad IP address?
@@ -131,6 +132,38 @@ func testAddRmVolumeGroup(t *testing.T) {
 	// Trying to removing a volume group a second time should fail
 	err = cs.RmVolumeGroup(vgTestName)
 	assert.NotNil(err, "RmVolumeGroup() twice should err")
+
+	unregisterEtcd(t, cs)
+}
+
+func testStartVolumeGroup(t *testing.T) {
+	var (
+		vgTestName   = "myTestVg"
+		ipAddr       = "192.168.20.20"
+		netMask      = "1.1.1.1"
+		nic          = "eth0"
+		autoFailover = true
+		enabled      = true
+	)
+	assert := assert.New(t)
+
+	cs := registerEtcd(t)
+
+	keys := vgKeysToReset(vgTestName)
+	resetVgKeys(t, cs, keys)
+
+	// TODO - how add volume list to a volume group?
+	// assume volumes are unique across VGs???
+	err := cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
+	assert.Nil(err, "AddVolumeGroup() returned err")
+
+	// Start the VG -
+	cs.startVgs()
+
+	// Now remove the volume group - should fail since VG is in ONLINE
+	// or ONLINING state.  Only VGs which are OFFLINE can be removed.
+	err = cs.RmVolumeGroup(vgTestName)
+	assert.NotNil(err, "RmVolumeGroup() returned err")
 
 	unregisterEtcd(t, cs)
 }
