@@ -887,9 +887,7 @@ func fetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error)
 }
 
 func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *physicalContainerLayoutStruct) (err error) {
-	existingObjectCount := physicalContainerLayout.physicalContainerNameSliceLoopCount % (physicalContainerLayout.physicalContainerCountMax + 1)
-
-	if 0 == existingObjectCount {
+	if 0 == (physicalContainerLayout.physicalContainerNameSliceLoopCount % physicalContainerLayout.physicalObjectCountMax) {
 		// We need to provision a new PhysicalContainer in this PhysicalContainerLayout
 
 		physicalContainerNameSuffix, nonShadowingErr := vS.headhunterVolumeHandle.FetchNonce()
