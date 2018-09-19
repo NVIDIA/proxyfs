@@ -1,12 +1,11 @@
 @startuml
 
-[*] -> INIT
-INIT --> OFFLINE
-OFFLINE --> ONLINING : Start bringing VG ONLINE on a node
-ONLINING --> ONLINE : VG finished coming ONLINE
-ONLINE --> FAILED : For some reason the VG failed on a node
-ONLINE --> OFFLINING : Start bringing the VG OFFLINE
-OFFLINING --> OFFLINE : VG finished being brought OFFLINE
-ONLINING --> FAILED : The VG failed to be brought ONLINE
+[*] -> INITIAL
+INITIAL --> STARTING : Node first txn when starting
+STARTING --> ONLINE : Node saw own STARTING now go ONLINE
+STARTING --> OFFLINE : Node was shut down while starting
+ONLINE --> OFFLINE : Node gracefully shutting down
+ONLINE --> DEAD : Node no longer heartbeating and marked DEAD
+OFFLINE --> DEAD : Node left cluster
 
 @enduml
