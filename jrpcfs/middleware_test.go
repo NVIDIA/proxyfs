@@ -122,12 +122,12 @@ func testSetup() []func() {
 		"FlowControl:JrpcfsTestFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayout:SomeContainerLayout.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:SomeContainerLayout.ContainerNamePrefix=kittens",
-		"PhysicalContainerLayout:SomeContainerLayout.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:SomeContainerLayout.ContainersPerPeer=10",
 		"PhysicalContainerLayout:SomeContainerLayout.MaxObjectsPerContainer=1000000",
 		"PhysicalContainerLayout:SomeContainerLayout2.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:SomeContainerLayout2.ContainerNamePrefix=puppies",
-		"PhysicalContainerLayout:SomeContainerLayout2.ContainersPerPeer=1234",
-		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1234567",
+		"PhysicalContainerLayout:SomeContainerLayout2.ContainersPerPeer=10",
+		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1000000",
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",

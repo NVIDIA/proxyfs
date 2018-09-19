@@ -73,7 +73,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"FlowControl:TestFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
 		"Peer:Peer0.PrivateIPAddr=localhost",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
