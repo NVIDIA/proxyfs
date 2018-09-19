@@ -35,6 +35,7 @@ func main() {
 	}
 
 	// NOTE: Currently this code is never hit
+	//
 	// Unregister from the etcd cluster
 	cs.Unregister()
 }
