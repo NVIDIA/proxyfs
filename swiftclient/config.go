@@ -78,6 +78,7 @@ type globalsStruct struct {
 	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
 	reservedChunkedConnectionMutex  sync.Mutex
 	maxIntAsUint64                  uint64
+	checksumChunkedPutChunks        bool   // compute and verify checksums (for testing)
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosCloseChunkFailureRate      uint64 // set only during testing
@@ -114,6 +115,7 @@ type globalsStruct struct {
 	ObjectPutCtxtSendChunkUsec     bucketstats.BucketLog2Round     // bucketized by time
 	ObjectPutCtxtSendChunkBytes    bucketstats.BucketLog2Round     // bucketized by byte count
 	ObjectPutCtxtBytes             bucketstats.BucketLog2Round     // bucketized by total bytes put
+	ObjectPutCtxtFetchToCloseUsec  bucketstats.BucketLog2Round     // Fetch returns to Close called time
 
 	// client request failures
 	AccountDeleteFailure       bucketstats.Total
@@ -247,12 +249,22 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
+	globals.checksumChunkedPutChunks, err = confMap.FetchOptionValueBool("SwiftClient", "ChecksumChunkedPutChunks")
+	if nil != err {
+		globals.checksumChunkedPutChunks = false
+	}
 
 	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
 		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
 	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
 		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
 		globals.retryExpBackoffObject)
+
+	checksums := "disabled"
+	if globals.checksumChunkedPutChunks {
+		checksums = "enabled"
+	}
+	logger.Infof("SwiftClient.ChecksumChunkedPutChunks %s\n", checksums)
 
 	globals.connectionNonce = 0
 

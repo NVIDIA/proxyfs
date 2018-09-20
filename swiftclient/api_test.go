@@ -65,6 +65,9 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.ChunkedConnectionPoolSize=1",
 		"SwiftClient.NonChunkedConnectionPoolSize=1",
 
+		// checksum chunked put buffers
+		"SwiftClient.ChecksumChunkedPutChunks=true",
+
 		"Cluster.WhoAmI=Peer0",
 
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
