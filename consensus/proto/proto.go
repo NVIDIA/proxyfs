@@ -11,9 +11,9 @@ var (
 	dummyBool    = false
 	vgCreated    = false
 	vgTestName   = "myTestVg"
-	ipAddr       = "192.168.20.20"
+	ipAddr       = "192.168.60.20"
 	netMask      = "1.1.1.1"
-	nic          = "eth0"
+	nic          = "enp0s8"
 	autoFailover = true
 	enabled      = true
 )
