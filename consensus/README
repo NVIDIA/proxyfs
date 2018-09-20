@@ -9,3 +9,10 @@ state transitions.  Here are test cases:
 4. split brain scenarios
 5. fail transaction because in subcluster
 6. find out that local node is dead and panic and catch it
+
+- check failover, offline, whole state diagram
+
+
+VIP Centos
+
+https://www.upcloud.com/support/how-to-configure-floating-ip-on-centos/

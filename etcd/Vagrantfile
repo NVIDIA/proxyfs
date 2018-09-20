@@ -8,7 +8,8 @@ Vagrant::configure("2") do |config|
         config.vm.synced_folder "../../../../../", "/vagrant", type: "virtualbox"
         config.vm.define "etcd#{machine_id}" do |machine|
             machine.vm.hostname = "etcd#{machine_id}"
-            machine.vm.network "private_network", ip: "192.168.60.#{10+machine_id}", :name => "vboxnet0", :adapter => 2
+            machine.vm.network "private_network", ip: "192.168.60.#{10+machine_id}", :name => "vboxnet5", :adapter => 2
+            machine.vm.network "public_network", ip: "192.168.81.#{10+machine_id}", :name => "vxboxnet0", :adapter => 3
             config.vm.provision "shell", env: {'DISTRO' => ENV['DISTRO']}, path: "vagrant_bootstrap.sh"
             if machine_id == N-1
                 # Bootstrapping
