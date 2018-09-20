@@ -31,3 +31,6 @@ Dump all keys in etcd:
 Delete a key named TESTKEY1 in etcd:
 
 	# ETCDCTL_API=3 etcdctl --endpoints "http://192.168.60.11:2379" del TESTKEY1
+
+NOTE: When running PROTO you must run as "root" since the ifconfig needs root to be able bring
+up VIP!!!!!!!

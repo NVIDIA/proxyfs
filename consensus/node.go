@@ -232,6 +232,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	case DEADNS.String():
 		fmt.Printf("Received local - now DEAD\n")
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
+		cs.offlineVgs(true, ev.Kv.ModRevision)
 		// TODO - Drop VIP here!!!
 		os.Exit(-1)
 	case ONLINENS.String():
@@ -246,7 +247,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - implement OFFLINING - txn(OFFLINEVS)
 		// when done
 		fmt.Printf("Received local - now OFFLINING\n")
-		cs.offlineVgs()
+		cs.offlineVgs(false, 0)
 	}
 }
 

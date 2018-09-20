@@ -139,12 +139,7 @@ func (cs *Struct) onlineVg(vgName string, rev int64) {
 
 	// Run a simple command to touch a file then do txn()
 	// to set VG to ONLINE
-	cmd := exec.Command(upDownScript, up, vgName, ipAddr, netMask, nic)
-	cmd.Stdin = strings.NewReader("some input")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	fmt.Printf("CMD returned: %v\n", out.String())
+	err := callUpDownScript(up, vgName, ipAddr, netMask, nic)
 	if err != nil {
 		fmt.Printf("onlineVg() returned err: %v\n", err)
 		cs.setVgFailed(vgName)
@@ -511,12 +506,85 @@ func (cs *Struct) setVgOnlining(node string, vg string) (err error) {
 	return
 }
 
-// offlineVgs is called when the local node has transitioned to OFFLINING.
+func callUpDownScript(operation string, vgName string, ipAddr string,
+	netMask string, nic string) (err error) {
+
+	fmt.Printf("callUpDownScript() operation: %v name: %v ipaddr: %v nic: %v\n",
+		operation, vgName, ipAddr, nic)
+
+	cmd := exec.Command(upDownScript, operation, vgName, ipAddr, netMask, nic)
+	cmd.Stdin = strings.NewReader("some input")
+	var stderr bytes.Buffer
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	fmt.Printf("CMD returned: out: %v stderr: %v\n", out.String(), stderr.String())
+
+	return
+}
+
+func (cs *Struct) getRevVgState(rev int64) (vgName map[string]string,
+	vgState map[string]string, vgNode map[string]string, vgIpaddr map[string]string,
+	vgNetmask map[string]string, vgNic map[string]string) {
+
+	// First grab all VG state information at the given revision
+	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix(),
+		clientv3.WithRev(rev))
+	if err != nil {
+		fmt.Printf("GET VG state failed with: %v\n", err)
+		os.Exit(-1)
+	}
+
+	// Break the response out into list of already DEAD nodes and
+	// nodes which are still marked ONLINE.
+	//
+	// Also retrieve the last HB values for each node.
+	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, _, _,
+		_ = cs.parseVgResp(resp)
+
+	return
+}
+
+// offlineVgs is called when the local node has transitioned to OFFLINING
+// or when the local node realizes it has been marked DEAD.
+//
+// In the node has been marked DEAD then just drop the VIPs and return to
+// the node code so the daemon can die.
+//
+// Otherwise, initiate the offlining of VGs on this node.
 // TODO - implement algorithm to offline the VG and then do figure out how
 // to signal that local node should txn(OFFLINE)... need waitgroup from
 // node side to signal that all VGs are offline???
-func (cs *Struct) offlineVgs() {
-	// TODO - implement this
+func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
+
+	// Retrieve VG and node state
+	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.gatherVgInfo()
+
+	fmt.Printf("offlineVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
+		vgName, vgState, vgNode, vgIpaddr, vgNetmask)
+	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
+		vgNic, vgAutofail, vgEnabled, vgVolumelist)
+	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
+		nodesAlreadyDead, nodesOnline, nodesHb)
+
+	// TODO
+	// Find VGs which are ONLINE on the local node
+
+	if nodeDying {
+		// Get VG info at the same revision as the node DEAD state.
+		_, _, vgNode, vgIpaddr, vgNetmask,
+			vgNic := cs.getRevVgState(deadRev)
+		for name, node := range vgNode {
+			if node == cs.hostName {
+				_ = callUpDownScript(down, name, vgIpaddr[name], vgNetmask[name],
+					vgNic[name])
+			}
+		}
+	} else {
+		// TODO - implement OFFLINING code
+	}
 }
 
 // startVgs is called when a node has come ONLINE.
