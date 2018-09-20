@@ -8,7 +8,14 @@ import (
 )
 
 var (
-	dummyBool = false
+	dummyBool    = false
+	vgCreated    = false
+	vgTestName   = "myTestVg"
+	ipAddr       = "192.168.20.20"
+	netMask      = "1.1.1.1"
+	nic          = "eth0"
+	autoFailover = true
+	enabled      = true
 )
 
 func main() {
@@ -27,10 +34,20 @@ func main() {
 	for {
 		time.Sleep(5 * time.Second)
 
-		// This code is never hit in this prototype.
-		// Just eliminates a VS warning.
-		if dummyBool {
-			break
+		// Create the VG if it does not exist but only do it
+		// the first time.
+		if !vgCreated {
+
+			// TODO - Add a volume group.  If this fails it probably means
+			// it already exists.
+			// assume volumes are unique across VGs???
+			_ = cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
+
+			// This code is never hit in this prototype.
+			// Just eliminates a VS warning.
+			if dummyBool {
+				break
+			}
 		}
 	}
 
