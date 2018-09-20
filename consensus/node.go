@@ -212,6 +212,9 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 		// TODO - figure out what VGs I should online if
 		// any.... how prevent autofailback????
+		nodesNewlyDead := make([]string, 1)
+		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
+		cs.failoverVgs(nodesNewlyDead)
 	case ONLINENS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 	}
@@ -235,9 +238,15 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - implement ONLINE - how know to start VGs vs
 		// avoid failback.  Probably only initiate online of
 		// VGs which are not already started.....
+		// TODO - should I pass the REVISION to the start*() functions?
 		fmt.Printf("Received local - now ONLINE\n")
 		cs.startHBandMonitor()
 		cs.startVgs()
+	case OFFLININGVS.String():
+		// TODO - implement OFFLINING - txn(OFFLINEVS)
+		// when done
+		fmt.Printf("Received local - now OFFLINING\n")
+		cs.offlineVgs()
 	}
 }
 
