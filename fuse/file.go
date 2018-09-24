@@ -171,7 +171,14 @@ func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuseli
 	globals.gate.RLock()
 	defer globals.gate.RUnlock()
 
-	size, err := f.mountHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), req.Data, nil)
+	// We need to buffer contents of req.Data because fs.Write() will likely retain a reference to it
+	// (down in the Chunked PUT retry buffer) and Bazil FUSE will be reusing this WriteRequest (including
+	// its .Data buf) for the next request.
+
+	bufferedData := make([]byte, len(req.Data), len(req.Data))
+	copy(bufferedData, req.Data)
+
+	size, err := f.mountHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), bufferedData, nil)
 	if nil == err {
 		resp.Size = int(size)
 	} else {
