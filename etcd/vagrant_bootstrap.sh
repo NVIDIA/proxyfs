@@ -97,7 +97,8 @@ usermod -aG wireshark vagrant
 
 # Install benchmark support tools
 
-##yum -y install atop-2.3.0-8.el7 bc fio gawk
+yum -y install atop bc
+##yum -y install fio
 
 # Install ssh helper
 
@@ -106,3 +107,6 @@ yum -y install sshpass-1.06-2.el7
 # Install dstat
 
 yum -y install dstat
+
+# Install Samba
+yum -y install samba samba-client samba-common
