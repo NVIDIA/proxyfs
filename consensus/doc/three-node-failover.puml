@@ -1,0 +1,27 @@
+@startuml
+
+title
+Three node failover
+end title
+
+participant Node0
+participant Node1
+participant Node2
+
+Node0 -> Node0 : All nodes raft index 20, VG0State is ONLINE, VG0Node is Node0
+Node1 -> Node1 : All nodes raft index 20, VG0State is ONLINE, VG0Node is Node0
+Node2 -> Node2 : All nodes raft index 20, VG0State is ONLINE, VG0Node is Node0
+
+Node1 -> Node1 : Node1 notices lack of HB from Node0, does\ntxn(Node0, old state: ONLINE, new state: DEAD),\nNode1's txn is <b>successful</b>
+Node2 -> Node2 : Node2 notices lack of HB from Node0, does\ntxn(Node0, old state: ONLINE, new state: DEAD),\nNode2's txn <b>fails</b> (since old state is no longer ONLINE)
+    
+Node2 -> Node2 : Watcher sees change - "Node0 DEAD"\nexecutes code to failover VGs. Does\ntxn(VG0, old state ONLINE, old node Node0,\nnew state ONLINING, new node Node1). txn() is successful
+Node1 -> Node1 : Watcher sees change - "Node0 DEAD"\nexecutes code to failover VGs. Does\ntxn(VG0, old state ONLINE, old node Node0,\nnew state ONLINING, new node Node1). txn() <b>fails</b>
+    
+Node2 -> Node2 : Watcher sees change - "VG0 OFFLINING on Node1"\nSees NOT for local node so no local action.
+Node1 -> Node1 : Watcher sees change - "VG0 OFFLINING on Node1"\nSees for local node and runs failover script.\nOnce know online does txn(VG0, old state ONLINING,\nnew state ONLINE).  txn is <b>successful</b>.
+    
+Node2 -> Node2 : Watcher sees change - "VG0 ONLINE"\nNo local action
+Node1 -> Node1 : Watcher sees change - "VG0 ONLINE"\nNo local action
+
+@enduml
