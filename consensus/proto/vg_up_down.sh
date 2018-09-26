@@ -15,7 +15,12 @@ if [ "X$CMD" == "Xup" ]
 then
     /usr/sbin/ifconfig $NIC:0 $IPADDR
     ERR="$?"
+    if [ "X$ERR" != "X0" ]
+    then
+	exit $ERR
+    fi
     /sbin/smbd -s /etc/samba/smb.conf
+    ERR="$?"
 else
     if [ "X$CMD" == "Xdown" ]
     then
@@ -24,6 +29,7 @@ else
 
         # TODO - Use extended regular expression with pkill.
         pkill "smbd"
+	ERR="$?"
     fi
 fi
 
