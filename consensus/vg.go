@@ -587,6 +587,28 @@ func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
 	}
 }
 
+// clearMyVgs is called when the local node enters the
+// STARTING state.
+//
+// The node must clear the VIPs of any VGs presently ONLINE or
+// ONLINING on the local node and mark those VGs OFFLINE.  This
+// can happen if the local node is the first node up after all
+// proxyfsd processes were killed.
+func (cs *Struct) clearMyVgs() {
+
+	// Retrieve VG and node state
+	_, _, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _, _, _, _ := cs.gatherVgInfo()
+
+	for name, node := range vgNode {
+		if node == cs.hostName {
+			_ = callUpDownScript(down, name, vgIpaddr[name], vgNetmask[name],
+				vgNic[name])
+			cs.setVgOffline(name)
+		}
+	}
+
+}
+
 // startVgs is called when a node has come ONLINE.
 // TODO - implement algorithm to spread the VGs more evenly and
 // in a predictable manner.
