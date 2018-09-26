@@ -228,6 +228,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		fmt.Printf("Received local - now STARTING\n")
+		cs.clearMyVgs()
 		cs.setMyNodeState(cs.hostName, ONLINENS)
 	case DEADNS.String():
 		fmt.Printf("Received local - now DEAD\n")
