@@ -1107,6 +1107,10 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 					if (0 != globals.objectMethodChaosFailureRate.put) && (0 == globals.objectMethodCount.put%globals.objectMethodChaosFailureRate.put) {
 						globals.Unlock()
 						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+
+						// consume the PUT so the sender can finish sending
+						// and read the response
+						_, _ = ioutil.ReadAll(request.Body)
 					} else {
 						globals.Unlock()
 						swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)

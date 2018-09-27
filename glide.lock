@@ -1,11 +1,13 @@
 hash: 565112ca28f95158dd4aff4448303b64ee7bccc9b5d496722885524c8676b644
-updated: 2018-07-19T11:27:26.1059-07:00
+updated: 2018-09-26T05:02:52.114529594Z
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
   - fs
   - fuseutil
+- name: bitbucket.org/creachadair/cityhash
+  version: 0d1506f40c89df1b983c65d94162627c41a330a4
 - name: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
 - name: github.com/droundy/goopt
