@@ -40,6 +40,8 @@ import:
   version: 9b61fcc4c548d69663d915801fc4b42a43b6cd9c
   subpackages:
   - cmd/stringer
+- package: bitbucket.org/creachadair/cityhash
+  version: 0d1506f40c89df1b983c65d94162627c41a330a4
 testImport:
 - package: github.com/davecgh/go-spew
   version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
