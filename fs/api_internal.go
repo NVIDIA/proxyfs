@@ -16,7 +16,6 @@ import (
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -237,6 +236,11 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 
 func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool) {
 
+	startTime := time.Now()
+	defer func() {
+		globals.AccessUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -246,15 +250,31 @@ func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.CallInodeToProvisionObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.CallInodeToProvisionObjectErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	pPath, err = mS.volStruct.inodeVolumeHandle.ProvisionObject()
-	stats.IncrementOperations(&stats.FsProvisionObjOps)
 	return
 }
 
 func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.CreateUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.CreateErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -298,7 +318,6 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 		return 0, err
 	}
 
-	stats.IncrementOperations(&stats.FsCreateOps)
 	return fileInodeNumber, nil
 }
 
@@ -309,6 +328,14 @@ func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.Ino
 		localLength uint64
 		localOffset uint64
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.FetchReadPlanUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FetchReadPlanErrors.Add(1)
+		}
+	}()
 
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
@@ -351,9 +378,13 @@ func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.Ino
 	localLength = length
 
 	readPlan, err = mS.volStruct.inodeVolumeHandle.GetReadPlan(inodeNumber, &localOffset, &localLength)
+	if err != nil {
+		return
+	}
 
 	if localOffset != offset {
 		err = blunder.NewError(blunder.BadSeekError, "supplied offset (0x%016X) could not be honored", offset)
+		return
 	}
 
 	return
@@ -375,10 +406,17 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.FlushUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FlushErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	defer mS.doInlineCheckpointIfEnabled()
 
 	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
 	if err != nil {
@@ -402,7 +440,8 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 	err = mS.volStruct.inodeVolumeHandle.Flush(inodeNumber, false)
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
-	stats.IncrementOperations(&stats.FsFlushOps)
+	mS.doInlineCheckpointIfEnabled()
+
 	return
 }
 
@@ -640,6 +679,39 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 // Implements file locking conforming to fcntl(2) locking description. F_SETLKW is not implemented. Supports F_SETLW and F_GETLW.
 // whence: FS supports only SEEK_SET - starting from 0, since it does not manage file handles, caller is expected to supply the start and length relative to offset ZERO.
 func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlock *FlockStruct) (outFlock *FlockStruct, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		switch lockCmd {
+
+		case syscall.F_GETLK:
+			globals.FlockGetUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+			if err != nil {
+				globals.FlockGetErrors.Add(1)
+			}
+
+		case syscall.F_SETLK:
+			if inFlock.Type == syscall.F_UNLCK {
+				globals.FlockUnlockUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+				if err != nil {
+					globals.FlockUnlockErrors.Add(1)
+				}
+
+			} else if inFlock.Type == syscall.F_WRLCK || inFlock.Type == syscall.F_RDLCK {
+				globals.FlockLockUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+				if err != nil {
+					globals.FlockLockErrors.Add(1)
+				}
+			} else {
+				globals.FlockOtherErrors.Add(1)
+			}
+
+		default:
+			globals.FlockOtherErrors.Add(1)
+		}
+
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -689,13 +761,14 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 	case syscall.F_SETLK:
 		if inFlock.Type == syscall.F_UNLCK {
 			err = mS.fileUnlock(inodeNumber, inFlock)
+
 		} else if inFlock.Type == syscall.F_WRLCK || inFlock.Type == syscall.F_RDLCK {
 			err = mS.fileLockInsert(inodeNumber, inFlock)
+
 		} else {
 			err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
 			return
 		}
-
 		break
 
 	default:
@@ -703,11 +776,11 @@ func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 
-	stats.IncrementOperations(&stats.FsFlockOps)
 	return
 }
 
 func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (stat Stat, err error) {
+
 	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
 	if err != nil {
 		return
@@ -742,6 +815,15 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.GetstatErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -755,13 +837,12 @@ func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 	defer inodeLock.Unlock()
 
-	stats.IncrementOperations(&stats.FsGetstatOps)
-
 	// Call getstat helper function to do the work
 	return mS.getstatHelper(inodeNumber, inodeLock.GetCallerID())
 }
 
 func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm.CallerID) (inodeType inode.InodeType, err error) {
+
 	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
 	if err != nil {
 		return
@@ -781,6 +862,15 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeType inode.InodeType, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetTypeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.GetTypeErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -794,11 +884,19 @@ func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGrou
 	}
 	defer inodeLock.Unlock()
 
-	stats.IncrementOperations(&stats.FsGetTypeOps)
 	return mS.getTypeHelper(inodeNumber, inodeLock.GetCallerID())
 }
 
 func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (value []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.GetXAttrErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -830,11 +928,19 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 		logger.TracefWithError(err, "Failed to get XAttr %v of inode %v", streamName, inodeNumber)
 	}
 
-	stats.IncrementOperations(&stats.FsGetXattrOps)
 	return
 }
 
 func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsDir bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IsDirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IsDirErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -847,8 +953,6 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 	defer inodeLock.Unlock()
-
-	stats.IncrementOperations(&stats.FsIsdirOps)
 
 	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
 	if err != nil {
@@ -867,6 +971,15 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsFile bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IsFileUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IsFileErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -884,11 +997,20 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 	if err != nil {
 		return false, err
 	}
-	stats.IncrementOperations(&stats.FsIsfileOps)
+
 	return inodeType == inode.FileType, nil
 }
 
 func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsSymlink bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IsSymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IsSymlinkErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -906,11 +1028,20 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 	if err != nil {
 		return false, err
 	}
-	stats.IncrementOperations(&stats.FsIssymlinkOps)
+
 	return inodeType == inode.SymlinkType, nil
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.LinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.LinkErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -998,11 +1129,19 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 		mS.volStruct.untrackInFlightFileInodeData(targetInodeNumber, false)
 	}
 
-	stats.IncrementOperations(&stats.FsLinkOps)
 	return err
 }
 
 func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ListXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ListXAttrErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1037,11 +1176,19 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 
 	streamNames = make([]string, len(metadata.InodeStreamNameSlice))
 	copy(streamNames, metadata.InodeStreamNameSlice)
-	stats.IncrementOperations(&stats.FsListXattrOps)
 	return
 }
 
 func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.LookupUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.LookupErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1064,15 +1211,21 @@ func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 
 	inodeNumber, err = mS.volStruct.inodeVolumeHandle.Lookup(dirInodeNumber, basename)
-	stats.IncrementOperations(&stats.FsLookupOps)
 	return inodeNumber, err
 }
 
 func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.LookupPathUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.LookupPathErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	stats.IncrementOperations(&stats.FsPathLookupOps)
 
 	// In the special case of a fullpath starting with "/", the path segment splitting above
 	// results in a first segment that still begins with "/". Because this is not recognized
@@ -1116,6 +1269,15 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 }
 
 func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareCoalesceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareCoalesceErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1329,6 +1491,15 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 }
 
 func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareDeleteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareDeleteErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1401,11 +1572,19 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 		mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 	}
 
-	stats.IncrementOperations(&stats.FsMwDeleteOps)
 	return
 }
 
 func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareGetAccountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareGetAccountErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1471,11 +1650,19 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 			lastBasename = dirEnts[len(dirEnts)-1].Basename
 		}
 	}
-	stats.IncrementOperations(&stats.FsMwGetAccountOps)
 	return
 }
 
 func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareGetContainerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareGetContainerErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1693,11 +1880,19 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 		// already logged
 		return
 	}
-	stats.IncrementOperations(&stats.FsMwGetContainerOps)
 	return
 }
 
 func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareGetObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareGetObjectErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1773,11 +1968,19 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 	} else {
 		err = nil
 	}
-	stats.IncrementOperations(&stats.FsMwGetObjOps)
 	return
 }
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareHeadResponseUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareHeadResponseErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1810,11 +2013,19 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 		}
 		return
 	}
-	stats.IncrementOperations(&stats.FsMwHeadResponseOps)
 	return
 }
 
 func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewarePostUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewarePostErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -1844,7 +2055,6 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	err = mS.volStruct.inodeVolumeHandle.PutStream(baseNameInodeNumber, MiddlewareStream, newMetaData)
 	mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 
-	stats.IncrementOperations(&stats.FsMwPostOps)
 	return err
 }
 
@@ -2063,8 +2273,6 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 		return
 	}
 
-	stats.IncrementOperations(&stats.FsMwPutCompleteOps)
-
 	mtime = uint64(metadata.ModificationTime.UnixNano())
 	ctime = uint64(metadata.AttrChangeTime.UnixNano())
 	// fileInodeNumber set above
@@ -2073,6 +2281,15 @@ func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string,
 }
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewarePutCompleteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewarePutCompleteErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2113,6 +2330,15 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 }
 
 func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareMkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareMkdirErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2145,6 +2371,14 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 		newDirInodeLock      *dlm.RWLockStruct
 		newDirInodeNumber    inode.InodeNumber
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewarePutContainerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewarePutContainerErrors.Add(1)
+		}
+	}()
 
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
@@ -2211,11 +2445,19 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 	}
 	err = mS.volStruct.inodeVolumeHandle.PutStream(containerInodeNumber, MiddlewareStream, newMetadata)
 
-	stats.IncrementOperations(&stats.FsMwPutContainerOps)
 	return
 }
 
 func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.MkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MkdirErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2270,11 +2512,20 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		}
 		return 0, err
 	}
-	stats.IncrementOperations(&stats.FsMkdirOps)
+
 	return newDirInodeNumber, nil
 }
 
 func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.RemoveXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.RemoveXAttrErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2306,11 +2557,19 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
-	stats.IncrementOperations(&stats.FsRemoveXattrOps)
 	return
 }
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.RenameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.RenameErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2406,11 +2665,20 @@ retryLock:
 
 	// TODO: Where is the lock on the potentially removed fileInode overwritten by the Move() call?
 
-	stats.IncrementOperations(&stats.FsRenameOps)
 	return err
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReadUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.ReadBytes.Add(uint64(len(buf)))
+		if err != nil {
+			globals.ReadErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2456,11 +2724,20 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 		return buf, blunder.AddError(err, blunder.IOError)
 	}
 
-	stats.IncrementOperations(&stats.FsReadOps)
 	return buf, err
 }
 
 func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReaddirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.ReaddirEntries.Add(uint64(len(entries)))
+		if err != nil {
+			globals.ReaddirErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2485,13 +2762,20 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 		return
 	}
 
-	stats.IncrementOperations(&stats.FsReaddirOps)
-
 	// Call readdir helper function to do the work
 	return mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
 }
 
 func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReaddirOneUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ReaddirOneErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2527,11 +2811,20 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 			logger.ErrorWithError(err)
 		}
 	}
-	stats.IncrementOperations(&stats.FsReaddirOneOps)
 	return entries, err
 }
 
 func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReaddirPlusUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.ReaddirPlusBytes.Add(uint64(len(dirEntries)))
+		if err != nil {
+			globals.ReaddirPlusErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2588,11 +2881,19 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 		}
 	}
 
-	stats.IncrementOperations(&stats.FsReaddirPlusOps)
 	return dirEntries, statEntries, numEntries, areMoreEntries, err
 }
 
 func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReaddirOnePlusUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ReaddirOnePlusErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2656,11 +2957,19 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 		}
 	}
 
-	stats.IncrementOperations(&stats.FsReaddirOnePlusOps)
 	return dirEntries, statEntries, err
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ReadsymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ReadsymlinkErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2688,11 +2997,20 @@ func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.Inode
 	}
 
 	target, err = mS.volStruct.inodeVolumeHandle.GetSymlink(inodeNumber)
-	stats.IncrementOperations(&stats.FsSymlinkReadOps)
+
 	return target, err
 }
 
 func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, newSize uint64) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.ResizeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ResizeErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2721,11 +3039,20 @@ func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroup
 
 	err = mS.volStruct.inodeVolumeHandle.SetSize(inodeNumber, newSize)
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
-	stats.IncrementOperations(&stats.FsSetsizeOps)
+
 	return err
 }
 
 func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.RmdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.RmdirErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2800,11 +3127,19 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return
 	}
 
-	stats.IncrementOperations(&stats.FsRmdirOps)
 	return
 }
 
 func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SetstatErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -2987,7 +3322,6 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 		}
 	}
 
-	stats.IncrementOperations(&stats.FsSetstatOps)
 	return
 }
 
@@ -2998,6 +3332,15 @@ const (
 )
 
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SetXAttrErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -3046,11 +3389,19 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
-	stats.IncrementOperations(&stats.FsSetXattrOps)
 	return
 }
 
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.StatVfsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.StatVfsErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -3068,11 +3419,19 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 	statVFS[StatVFSMountFlags] = 0
 	statVFS[StatVFSMaxFilenameLen] = FileNameMax
 
-	stats.IncrementOperations(&stats.FsStatvfsOps)
 	return statVFS, nil
 }
 
 func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SymlinkErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -3132,11 +3491,19 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 		return
 	}
 
-	stats.IncrementOperations(&stats.FsSymlinkOps)
 	return
 }
 
 func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.UnlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.UnlinkErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -3206,16 +3573,29 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 		}
 	}
 
-	stats.IncrementOperations(&stats.FsUnlinkOps)
 	return
 }
 
 func (mS *mountStruct) VolumeName() (volumeName string) {
+
+	startTime := time.Now()
+
 	volumeName = mS.volStruct.volumeName
+	globals.VolumeNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 	return
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.WriteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.WriteBytes.Add(size)
+		if err != nil {
+			globals.WriteErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -3254,7 +3634,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
-	stats.IncrementOperations(&stats.FsWriteOps)
+
 	return
 }
 
@@ -3266,7 +3646,6 @@ func validateBaseName(baseName string) (err error) {
 		logger.ErrorWithError(err)
 		return blunder.AddError(err, blunder.NameTooLongError)
 	}
-	stats.IncrementOperations(&stats.FsBasenameValidateOps)
 	return
 }
 
@@ -3277,7 +3656,6 @@ func validateFullPath(fullPath string) (err error) {
 		logger.ErrorWithError(err)
 		return blunder.AddError(err, blunder.NameTooLongError)
 	}
-	stats.IncrementOperations(&stats.FsFullpathValidateOps)
 	return
 }
 

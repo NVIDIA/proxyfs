@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
@@ -162,6 +163,54 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 	volumeMap                                  map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+
+	FetchNonceUsec                            bucketstats.BucketLog2Round
+	GetInodeRecUsec                           bucketstats.BucketLog2Round
+	PutInodeRecUsec                           bucketstats.BucketLog2Round
+	PutInodeRecsUsec                          bucketstats.BucketLog2Round
+	DeleteInodeRecUsec                        bucketstats.BucketLog2Round
+	IndexedInodeNumberUsec                    bucketstats.BucketLog2Round
+	GetLogSegmentRecUsec                      bucketstats.BucketLog2Round
+	PutLogSegmentRecUsec                      bucketstats.BucketLog2Round
+	DeleteLogSegmentRecUsec                   bucketstats.BucketLog2Round
+	IndexedLogSegmentNumberUsec               bucketstats.BucketLog2Round
+	GetBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
+	PutBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
+	DeleteBPlusTreeObjectUsec                 bucketstats.BucketLog2Round
+	IndexedBPlusTreeObjectNumberUsec          bucketstats.BucketLog2Round
+	DoCheckpointUsec                          bucketstats.BucketLog2Round
+	FetchLayoutReportUsec                     bucketstats.BucketLog2Round
+	SnapShotCreateByInodeLayerUsec            bucketstats.BucketLog2Round
+	SnapShotDeleteByInodeLayerUsec            bucketstats.BucketLog2Round
+	SnapShotCountUsec                         bucketstats.BucketLog2Round
+	SnapShotLookupByNameUsec                  bucketstats.BucketLog2Round
+	SnapShotListByIDUsec                      bucketstats.BucketLog2Round
+	SnapShotListByTimeUsec                    bucketstats.BucketLog2Round
+	SnapShotListByNameUsec                    bucketstats.BucketLog2Round
+	SnapShotU64DecodeUsec                     bucketstats.BucketLog2Round
+	SnapShotIDAndNonceEncodeUsec              bucketstats.BucketLog2Round
+	SnapShotTypeDotSnapShotAndNonceEncodeUsec bucketstats.BucketLog2Round
+
+	FetchNonceErrors                   bucketstats.BucketLog2Round
+	GetInodeRecErrors                  bucketstats.BucketLog2Round
+	PutInodeRecErrors                  bucketstats.BucketLog2Round
+	PutInodeRecsErrors                 bucketstats.BucketLog2Round
+	DeleteInodeRecErrors               bucketstats.BucketLog2Round
+	IndexedInodeNumberErrors           bucketstats.BucketLog2Round
+	GetLogSegmentRecErrors             bucketstats.BucketLog2Round
+	PutLogSegmentRecErrors             bucketstats.BucketLog2Round
+	DeleteLogSegmentRecErrors          bucketstats.BucketLog2Round
+	IndexedLogSegmentNumberErrors      bucketstats.BucketLog2Round
+	GetBPlusTreeObjectErrors           bucketstats.BucketLog2Round
+	PutBPlusTreeObjectErrors           bucketstats.BucketLog2Round
+	DeleteBPlusTreeObjectErrors        bucketstats.BucketLog2Round
+	IndexedBPlusTreeObjectNumberErrors bucketstats.BucketLog2Round
+	DoCheckpointErrors                 bucketstats.BucketLog2Round
+	FetchLayoutReportErrors            bucketstats.BucketLog2Round
+	SnapShotCreateByInodeLayerErrors   bucketstats.BucketLog2Round
+	SnapShotDeleteByInodeLayerErrors   bucketstats.BucketLog2Round
+	SnapShotCountErrors                bucketstats.BucketLog2Round
+	SnapShotLookupByNameErrors         bucketstats.BucketLog2Round
 }
 
 var globals globalsStruct
@@ -174,6 +223,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		volumeList      []string
 		whoAmI          string
 	)
+
+	bucketstats.Register("proxyfs.headhunter", "", &globals)
 
 	err = commonInitialization(confMap)
 	if nil != err {
@@ -335,6 +386,8 @@ func Down() (err error) {
 			return
 		}
 	}
+
+	bucketstats.UnRegister("proxyfs.headhunter", "")
 
 	err = nil
 	return
