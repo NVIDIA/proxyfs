@@ -141,10 +141,11 @@ func TestCoalesce(t *testing.T) {
 		ElementName:                    "file2c"})
 
 	// Coalesce the above 4 files into d1/combined
-	combinedInodeNumber, _, _, err := vh.Coalesce(d1InodeNumber, "combined", elements)
+	combinedInodeNumber, _, _, fileSize, err := vh.Coalesce(d1InodeNumber, "combined", elements)
 	if !assert.Nil(err) {
 		return
 	}
+	assert.Equal(fileSize, uint64(22))
 
 	// The new file has the contents of the old files combined
 	contents, err := vh.Read(combinedInodeNumber, 0, 22, nil)
@@ -217,7 +218,7 @@ func TestCoalesceDir(t *testing.T) {
 		ElementInodeNumber:             fileInodeNumber,
 		ElementName:                    "file"})
 
-	_, _, _, err = vh.Coalesce(d1InodeNumber, "combined", elements)
+	_, _, _, _, err = vh.Coalesce(d1InodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.IsDirError))
 
@@ -283,7 +284,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 		ElementInodeNumber:             file2InodeNumber,
 		ElementName:                    "file2"})
 
-	_, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
+	_, _, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.TooManyLinksError))
 
@@ -348,7 +349,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 		ElementInodeNumber:             file1InodeNumber,
 		ElementName:                    "file1"})
 
-	_, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
+	_, _, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.InvalidArgError))
 

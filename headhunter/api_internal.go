@@ -109,9 +109,19 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 }
 
 func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.FetchNonceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FetchNonceErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	nonce, err = volume.fetchNonceWhileLocked()
 	volume.Unlock()
+
 	return
 }
 
@@ -147,6 +157,16 @@ func (volume *volumeStruct) findVolumeViewAndNonceWhileLocked(key uint64) (volum
 }
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetInodeRecBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.GetInodeRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(inodeNumber)
@@ -183,6 +203,16 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 }
 
 func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.PutInodeRecErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -210,6 +240,21 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 }
 
 func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		var totalBytes int
+		for _, inodeValue := range values {
+			totalBytes += len(inodeValue)
+		}
+
+		globals.PutInodeRecsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecsBytes.Add(uint64(totalBytes))
+		if err != nil {
+			globals.PutInodeRecsErrors.Add(1)
+		}
+	}()
+
 	if len(inodeNumbers) != len(values) {
 		err = fmt.Errorf("InodeNumber and Values array don't match")
 		return
@@ -249,6 +294,15 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 }
 
 func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteInodeRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
@@ -261,6 +315,15 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 }
 
 func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedInodeNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedInodeNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -279,6 +342,15 @@ func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64
 }
 
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.GetLogSegmentRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(logSegmentNumber)
@@ -315,6 +387,15 @@ func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []b
 }
 
 func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.PutLogSegmentRecErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -354,6 +435,14 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 		containerNameAsValue sortedmap.Value
 		ok                   bool
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteLogSegmentRecErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 	defer volume.Unlock()
@@ -401,6 +490,15 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 }
 
 func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedLogSegmentNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedLogSegmentNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -419,6 +517,16 @@ func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNum
 }
 
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetBPlusTreeObjectBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.GetBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(objectNumber)
@@ -455,6 +563,16 @@ func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byt
 }
 
 func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutBPlusTreeObjectBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.PutBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -482,6 +600,15 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 }
 
 func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
@@ -494,6 +621,15 @@ func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err erro
 }
 
 func (volume *volumeStruct) IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedBPlusTreeObjectNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedBPlusTreeObjectNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -515,6 +651,14 @@ func (volume *volumeStruct) DoCheckpoint() (err error) {
 	var (
 		checkpointRequest checkpointRequestStruct
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.DoCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DoCheckpointErrors.Add(1)
+		}
+	}()
 
 	checkpointRequest.exitOnCompletion = false
 
@@ -622,6 +766,14 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		perTreeObjectBytes     uint64
 	)
 
+	startTime := time.Now()
+	defer func() {
+		globals.FetchLayoutReportUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FetchLayoutReportErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	defer volume.Unlock()
 
@@ -719,6 +871,14 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		snapShotTime                             time.Time
 		volumeView                               *volumeViewStruct
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotCreateByInodeLayerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotCreateByInodeLayerErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 
@@ -952,6 +1112,14 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		remainingSnapShotCount         int
 		value                          sortedmap.Value
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotDeleteByInodeLayerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotDeleteByInodeLayerErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 
@@ -1196,6 +1364,14 @@ func (volume *volumeStruct) SnapShotCount() (snapShotCount uint64) {
 		len int
 	)
 
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotCountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotCountErrors.Add(1)
+		}
+	}()
+
 	len, err = volume.viewTreeByID.Len()
 	if nil != err {
 		logger.Fatalf("headhunter.SnapShotCount() for volume %v hit viewTreeByID.Len() error: %v", volume.volumeName, err)
@@ -1210,6 +1386,14 @@ func (volume *volumeStruct) SnapShotLookupByName(name string) (snapShot SnapShot
 		value      sortedmap.Value
 		volumeView *volumeViewStruct
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotLookupByNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotLookupByNameErrors.Add(1)
+		}
+	}()
 
 	value, ok, err = volume.viewTreeByName.GetByKey(name)
 	if nil != err {
@@ -1280,6 +1464,12 @@ func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed b
 }
 
 func (volume *volumeStruct) SnapShotListByID(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByIDUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByID, reversed)
 	volume.Unlock()
@@ -1288,6 +1478,12 @@ func (volume *volumeStruct) SnapShotListByID(reversed bool) (list []SnapShotStru
 }
 
 func (volume *volumeStruct) SnapShotListByTime(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByTimeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByTime, reversed)
 	volume.Unlock()
@@ -1296,6 +1492,12 @@ func (volume *volumeStruct) SnapShotListByTime(reversed bool) (list []SnapShotSt
 }
 
 func (volume *volumeStruct) SnapShotListByName(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByName, reversed)
 	volume.Unlock()
@@ -1304,6 +1506,12 @@ func (volume *volumeStruct) SnapShotListByName(reversed bool) (list []SnapShotSt
 }
 
 func (volume *volumeStruct) SnapShotU64Decode(snapShotU64 uint64) (snapShotIDType SnapShotIDType, snapShotID uint64, nonce uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotU64DecodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	snapShotID = snapShotU64 >> volume.snapShotIDShift
 	if 0 == snapShotID {
 		snapShotIDType = SnapShotIDTypeLive
@@ -1319,6 +1527,12 @@ func (volume *volumeStruct) SnapShotU64Decode(snapShotU64 uint64) (snapShotIDTyp
 }
 
 func (volume *volumeStruct) SnapShotIDAndNonceEncode(snapShotID uint64, nonce uint64) (snapShotU64 uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotIDAndNonceEncodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	snapShotU64 = snapShotID
 	snapShotU64 = snapShotU64 << volume.snapShotIDShift
 	snapShotU64 = snapShotU64 | nonce
@@ -1327,6 +1541,12 @@ func (volume *volumeStruct) SnapShotIDAndNonceEncode(snapShotID uint64, nonce ui
 }
 
 func (volume *volumeStruct) SnapShotTypeDotSnapShotAndNonceEncode(nonce uint64) (snapShotU64 uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotTypeDotSnapShotAndNonceEncodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	snapShotU64 = volume.dotSnapShotDirSnapShotID
 	snapShotU64 = snapShotU64 << volume.snapShotIDShift
 	snapShotU64 = snapShotU64 | nonce
