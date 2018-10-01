@@ -9,22 +9,23 @@ echo "args cmd:$CMD vgname:$VGNAME ipaddr:$IPADDR netmask:$NETMASK nic:$NIC"
 
 ERR=""
 
-# TODO - should use ip command and not ifconfig
-# How store new virtual network interface and make it unique?
+# TODO - what other processes must be started/stopped?  Such
+# as noauth-proxy, nmbd, smbd, winbindd, rpcbind, rpc.mountd,
+# and rpc.statd?
 if [ "X$CMD" == "Xup" ]
 then
-    /usr/sbin/ifconfig $NIC:0 $IPADDR
+    /usr/sbin/ip addr add $IPADDR dev $NIC
     ERR="$?"
     if [ "X$ERR" != "X0" ]
     then
-	exit $ERR
+        exit $ERR
     fi
-    /sbin/smbd -s /etc/samba/smb.conf
+    /sbin/smbd -s /etc/samba/smb-$VGNAME.conf
     ERR="$?"
 else
     if [ "X$CMD" == "Xdown" ]
     then
-        /usr/sbin/ifconfig $NIC:0 down
+        /usr/sbin/ip addr del $IPADDR dev $NIC
         ERR="$?"
 
         # TODO - Use extended regular expression with pkill.
