@@ -10,8 +10,10 @@ import (
 var (
 	dummyBool    = false
 	vgCreated    = false
-	vgTestName   = "myTestVg"
-	ipAddr       = "192.168.60.20"
+	vgTestName1  = "myTestVg1"
+	ipAddr1      = "192.168.60.20"
+	vgTestName2  = "myTestVg2"
+	ipAddr2      = "192.168.60.21"
 	netMask      = "1.1.1.1"
 	nic          = "enp0s8"
 	autoFailover = true
@@ -41,7 +43,8 @@ func main() {
 			// TODO - Add a volume group.  If this fails it probably means
 			// it already exists.
 			// assume volumes are unique across VGs???
-			_ = cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
+			_ = cs.AddVolumeGroup(vgTestName1, ipAddr1, netMask, nic, autoFailover, enabled)
+			_ = cs.AddVolumeGroup(vgTestName2, ipAddr2, netMask, nic, autoFailover, enabled)
 
 			// This code is never hit in this prototype.
 			// Just eliminates a VS warning.
