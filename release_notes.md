@@ -1,6 +1,71 @@
 # ProxyFS Release Notes
 
-## 1.8 (TBD)
+## 1.8.0 (September 30, 2018)
+
+### Features:
+
+Add filesystem snapshots which are created and destroyed based on policies
+that are applied to each file system.  Snapshots are accessible via the
+newly created "/.snapshot/<snapshot_name>" directory in the root of each
+filesystem.
+
+Add bucketized statistics for package swiftclient, fs, and headhunter.
+The statistics can be queried via the built-in web server, using
+the URL "//localhost:15346:/stats" in runway environments and
+"//<private_IPaddr>:1534:/stats" in stand alone environments, where
+<private_IPaddr> is the private IP address used for the backend network.
+
+Note: the bucketized statistics API, output format, and URL is unstable
+and changing quickly.  It will be different in the next release.
+
+Change config file format (for the *.conf files) so that user defined
+names for:
+    Volume
+    PhysicalContainerLayout
+    FlowControl
+    Peer
+are now preceeded by one of the strings "Volume:",
+"PhysicalContainerLayout:", "FlowControl:", or "Peer:", as appropriate,
+to insure that names are unique.
+
+Initial work on a "liveness detector" to determine whether
+ProxyFS/Samba/NFS are currently up and serving file requests.  This is
+part of an HA solution that we are developing.
+
+### Bug Fixes:
+
+Fix a bug that could cause data corruption if a file write sent via
+the FUSE or NFS interface failed on the first PUT attempt and had to be
+retried, in which case the PUT could be retried with incorrect data for
+the file.  This bug was exacerbated by the next bug, which could cause
+PUT requests to exceed the 60 sec server timeout deadline.
+
+Fix a bug where "log segments" containing data written to files
+were not closed and flushed after the 10 sec deadline (a bug in
+inFlightFileInodeDataFlusher() that could extend the PUT request beyond
+the Swift server's timeout deadline of 60 sec).
+
+Fix a bug where ProxyFS would either move to a new container for file
+log segments too quickly ("MaxObjectsPerContainer" was not being checked
+against correctly).
+
+Insure that ProxyFS will not accept requests via the FUSE interface
+while its re-reading its configuration (could lead to corruption).
+
+Add additional units tests for sequential writes.
+
+Improvements to the mock Swift testing environment, ramswift, to free
+memory when ramswift is restarted within a test.
+
+Update generatedfiles Makefile target to make files that are now
+necessary.
+
+Reworked proxyfsd daemon startup logic to avoid possible race conditions
+during startup.
+
+Reworked ramswift daemon startup logic to avoid race conditions sometimes
+hit when running tests.
+
 
 ### Notes
 
@@ -11,6 +76,13 @@ will only be compiled if GOOS=js has been set. Previously (Golang v1.10 and prio
 ending in _js.go would always be included. This release captures a name change to various
 static files generated in package httpserver by adding an underscore ("_") just before ".go"
 to avoid this new Golang behavior.
+
+* Enhance the swiftclient chunked put unit tests to try and cover
+concurrency and many more failure/retry scenarios.  Add a new config file
+variable in the `SwiftClient` section, `ChecksumChunkedPutChunks`` which
+defaults to 'false'.  If set to `true` then data cached in a chunked put
+connection has a checksum computed when it is Sent and checked frequently
+on subsequent operations.
 
 ## 1.7 (September 6, 2018)
 
