@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"math/rand"
 	"regexp"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -34,7 +37,15 @@ func (tOCCS *testObjectCopyCallbackStruct) BytesRemaining(bytesRemaining uint64)
 }
 
 func TestAPI(t *testing.T) {
-	confStrings := []string{
+	var (
+		confMap                conf.ConfMap
+		confStrings            []string
+		doneChan               chan bool
+		err                    error
+		signalHandlerIsArmedWG sync.WaitGroup
+	)
+
+	confStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -54,6 +65,9 @@ func TestAPI(t *testing.T) {
 		"SwiftClient.ChunkedConnectionPoolSize=1",
 		"SwiftClient.NonChunkedConnectionPoolSize=1",
 
+		// checksum chunked put buffers
+		"SwiftClient.ChecksumChunkedPutChunks=true",
+
 		"Cluster.WhoAmI=Peer0",
 
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
@@ -62,6 +76,7 @@ func TestAPI(t *testing.T) {
 
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
+		//"Logging.LogToConsole=true",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
@@ -81,49 +96,45 @@ func TestAPI(t *testing.T) {
 		"RamSwiftChaos.ContainerPostFailureRate=2",
 		"RamSwiftChaos.ContainerPutFailureRate=2",
 
-		"RamSwiftChaos.ObjectDeleteFailureRate=2",
+		"RamSwiftChaos.ObjectDeleteFailureRate=3",
 		"RamSwiftChaos.ObjectGetFailureRate=2",
 		"RamSwiftChaos.ObjectHeadFailureRate=2",
 		"RamSwiftChaos.ObjectPostFailureRate=2",
-		"RamSwiftChaos.ObjectPutFailureRate=2",
+		"RamSwiftChaos.ObjectPutFailureRate=3",
+
+		"RamSwiftChaos.FailureHTTPStatus=599",
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
 	err = logger.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Up(confMap) failed: %v", err)
 	}
 
 	err = evtlog.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Up(confMap) failed: %v", err)
 	}
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool, 1) // Must be buffered to avoid race
+	signalHandlerIsArmedWG.Add(1)
+	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = stats.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Up(confMap) failed: %v", err)
 	}
 
 	err = Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Up(confMap) failed: %v", err)
 	}
 
 	// additional error injection settings
@@ -141,14 +152,12 @@ func TestAPI(t *testing.T) {
 
 	err = Down()
 	if nil != err {
-		tErr := fmt.Sprintf("Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Down() failed: %v", err)
 	}
 
 	err = stats.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Down() failed: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
@@ -159,14 +168,12 @@ func TestAPI(t *testing.T) {
 
 	err = evtlog.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Down() failed: %v", err)
 	}
 
 	err = logger.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Down() failed: %v", err)
 	}
 }
 
@@ -844,22 +851,39 @@ func testOps(t *testing.T) {
 //
 func testChunkedPut(t *testing.T) {
 
-	// preserve the original settings
+	// preserve the original settings of these globals that we change
 	var (
-		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
 		chaosFetchChunkedPutFailureRate = globals.chaosFetchChunkedPutFailureRate
-		cleanup                         = func() {
-			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
+		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
+		chaosCloseChunkFailureRate      = globals.chaosCloseChunkFailureRate
+		retryLimitObject                = globals.retryLimitObject
+		chunkedConnectionPoolSize       = globals.chunkedConnectionPool.poolCapacity
+
+		cleanup = func() {
 			globals.chaosFetchChunkedPutFailureRate = chaosFetchChunkedPutFailureRate
+			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
+			globals.chaosCloseChunkFailureRate = chaosCloseChunkFailureRate
+			globals.retryLimitObject = retryLimitObject
+			globals.chunkedConnectionPool.poolCapacity = chunkedConnectionPoolSize
 		}
 	)
 	defer cleanup()
+
 	var (
 		accountName   = "TestAccount"
 		containerName = "TestContainer"
 		objNameFmt    = "chunkObj%d"
 		objName       string
 	)
+
+	// increase the pool sizes to get some concurrency (non-chunked isn't tested here)
+	poolSize := 12
+	globals.chunkedConnectionPool.poolCapacity = uint16(poolSize)
+	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, poolSize)
+	for i := 0; i < poolSize; i++ {
+		globals.chunkedConnectionPool.lifoOfActiveConnections[i] = nil
+	}
+	globals.chunkedConnectionPool.lifoIndex = 0
 
 	// (lack of) headers for putting
 	catDogHeaderMap := make(map[string][]string)
@@ -879,107 +903,249 @@ func testChunkedPut(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
-	// create an object and write 4 Kbyte to it in 4 chunks with a SendChunk
-	// failure every 7th
-	globals.chaosSendChunkFailureRate = 7
+	// Create an object and perform a sequence of randomly sized writes that
+	// total upto 11 Mibyte (maximum).  Inject errors every 23rd
+	// SendChunk(), every 3rd FetchContext(), and every 5th Close().
+	// Because ramwswift is also injecting an error every 3rd chunked put
+	// increase globals.retryLimitObject for this test because a series of
+	// failures at different levels pushes us over the base limit.
+	//
+	// Since the size of the writes is random it could require more than 23
+	// writes to reach 11 Mibyte, it which case the test would fail.
+	// However, the sequence of "random" numbers from randGen is the same
+	// every time so this test always passes (unless the seed is changed).
 	globals.chaosFetchChunkedPutFailureRate = 3
+	globals.chaosSendChunkFailureRate = 20
+	globals.chaosCloseChunkFailureRate = 5
+	globals.retryLimitObject = 6
 
-	for i := 0; i < 5; i++ {
+	randGen := rand.New(rand.NewSource(2))
+	doneChan := make(chan error, 1)
+	for i := 0; i < 6; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
+		objSize := ((i % 11) + 1) * 1024 * 1024
 
-		err = testObjectWriteVerify(t, accountName, containerName, objName, 4096, 4)
-		if nil != err {
-			tErr := fmt.Sprintf("testChunkedPut.testObjectWriteVerify('%s/%s/%s', %d, %d ) failed: %v",
-				accountName, containerName, objName, 4096, 4, err)
-			t.Fatalf(tErr)
+		// start an ObjectWriteVerify and wait for it to complete
+		testObjectWriteVerifyThreaded(t, accountName, containerName, objName, objSize,
+			randGen, doneChan)
+		err = <-doneChan
+		if err != nil {
+			fmt.Printf("testChunkedPut: FATAL ERROR: %v\n", err)
+			t.Error(err)
+		}
+	}
+
+	// Now do the same thing with concurrent threads.  Because the threads
+	// are running non-deterministically there is no real bound on the
+	// number of simulated errors a thread might see, so crank up the
+	// failure rates (less failures) and increase allowed retries
+	// significantly.  Even so, its possible that a spurious error might
+	// occur (in which case the failure rates could be made even higher).
+	globals.chaosSendChunkFailureRate = globals.chaosSendChunkFailureRate * 3
+	globals.chaosCloseChunkFailureRate = 11
+	globals.retryLimitObject = 10
+
+	maxThread := 6
+	doneChan = make(chan error, maxThread)
+	threads := 0
+	for i := 0; i < 18; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+		randGen = rand.New(rand.NewSource(int64(i) + 3))
+
+		objSize := randGen.Intn(12 * 1024 * 1024)
+
+		// fire off a go routine to do the work and count it
+		threads++
+		go testObjectWriteVerifyThreaded(t, accountName, containerName, objName, objSize,
+			randGen, doneChan)
+
+		// if we've hit the maximum number of concurrent threads
+		// (requests) wait for 1 to finish
+		for threads >= maxThread {
+
+			// trigger garbage collection
+			runtime.GC()
+
+			err = <-doneChan
+			threads--
+			if err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	for threads > 0 {
+		err = <-doneChan
+		threads--
+		if err != nil {
+			t.Error(err)
 		}
 	}
 
 	// cleanup the mess we made (objects, container, and account)
-	for i := 0; i < 5; i++ {
-		objName = fmt.Sprintf(objNameFmt, i)
-
-		err = ObjectDelete(accountName, containerName, objName, 0)
-		if nil != err {
-			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
-				accountName, containerName, objName, err)
-			t.Fatalf(tErr)
-		}
-	}
-
 	err = ContainerDelete(accountName, containerName)
 	if nil != err {
 		tErr := fmt.Sprintf("ContainerDelete('%s', '%s') failed: %v", accountName, containerName, err)
-		t.Fatalf(tErr)
+		t.Error(tErr)
 	}
 
 	err = AccountDelete(accountName)
 	if nil != err {
 		tErr := fmt.Sprintf("AccountDelete('%s') failed: %v", accountName, err)
-		t.Fatalf(tErr)
+		t.Error(tErr)
 	}
+}
+
+// Only the "top" testing goroutine can call t.Fatal() or t.Error() and be
+// heard; others are ignored.  Since this is called by a child, it can't call
+// one of those routines and all errors must be returned for handling.
+//
+func testObjectWriteVerifyThreaded(t *testing.T, accountName string, containerName string, objName string,
+	objSize int, randGen *rand.Rand, doneChan chan error) {
+
+	// write the object and delete it (even if the verify failed)
+	verifyErr := testObjectWriteVerify(t, accountName, containerName, objName, objSize, randGen)
+	deleteErr := ObjectDelete(accountName, containerName, objName, 0)
+
+	// if the write failed report it
+	if verifyErr != nil {
+		tErr := fmt.Errorf("testChunkedPut.testObjectWriteVerify('%s/%s/%s', %d) failed: %v",
+			accountName, containerName, objName, objSize, verifyErr)
+		doneChan <- tErr
+		return
+	}
+
+	// if the write succeeded but the verify failed, report it
+	if deleteErr != nil {
+		tErr := fmt.Errorf("ObjectDelete('%s/%s/%s', %d) failed: %v",
+			accountName, containerName, objName, objSize, deleteErr)
+		doneChan <- tErr
+		return
+	}
+
+	doneChan <- nil
+	return
 }
 
 // write objSize worth of random bytes to the object using nWrite calls to
 // SendChunk() and then read it back to verify.
 //
+// Only the "top" testing goroutine can call t.Fatal() or t.Error() and be
+// heard; others are ignored.  Since this is called by a child, it can't call
+// one of those routines and all errors must be returned for handling.
+//
 func testObjectWriteVerify(t *testing.T, accountName string, containerName string, objName string,
-	objSize int, nwrite int) (err error) {
+	objSize int, randGen *rand.Rand) (err error) {
 
 	writeBuf := make([]byte, objSize)
 	readBuf := make([]byte, 0)
 
 	for i := 0; i < objSize; i++ {
-		writeBuf[i] = byte(rand.Uint32())
+		writeBuf[i] = byte(randGen.Uint32())
 	}
 	if writeBuf[0] == 0 && writeBuf[1] == 0 && writeBuf[2] == 0 && writeBuf[3] == 0 {
-		tErr := "unix.GetRandom() is not very random"
-		t.Fatalf(tErr)
+		err = fmt.Errorf("testObjectWriteVerify(): randGen is not very random")
+		return
 	}
 	if writeBuf[objSize-1] == 0 && writeBuf[objSize-2] == 0 && writeBuf[objSize-3] == 0 &&
 		writeBuf[objSize-4] == 0 {
-		tErr := "unix.GetRandom() is not very radnom at end of buffer"
-		t.Fatalf(tErr)
+		err = fmt.Errorf("testObjectWriteVerify(): randGen is not very random at end of buffer")
+		return
 	}
 
 	// Start a chunked PUT for the object
 	chunkedPutContext, err := ObjectFetchChunkedPutContext(accountName, containerName, objName, "")
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectFetchChunkedPutContext('%s', '%s', '%s') failed: %v",
+		err = fmt.Errorf("testObjectWriteVerify(): ObjectFetchChunkedPutContext('%s/%s/%s') failed: %v",
 			accountName, containerName, objName, err)
-		return errors.New(tErr)
+		return
 	}
 
-	wsz := len(writeBuf) / nwrite
-	for off := 0; off < len(writeBuf); off += wsz {
-		if off+wsz < objSize {
-			err = chunkedPutContext.SendChunk(writeBuf[off : off+wsz])
-		} else {
-			err = chunkedPutContext.SendChunk(writeBuf[off:])
+	var (
+		off int
+		sz  int
+		nio int
+	)
+
+	for off = 0; off < objSize; off += sz {
+		// write a random number of bytes, but at least 32
+		sz = randGen.Intn(objSize-off) + 1
+		if sz < 32 {
+			sz = 32
+			if off+sz > objSize {
+				sz = objSize - off
+			}
 		}
+
+		err = chunkedPutContext.SendChunk(writeBuf[off : off+sz])
 		if nil != err {
-			tErr := fmt.Sprintf("chunkedPutContext.SendChunk(writeBuf[%d:%d]) failed: %v",
-				off, off+wsz, err)
-			return errors.New(tErr)
+			tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
+				"chunkedPutContext.SendChunk(writeBuf[%d:%d]) failed: %v",
+				accountName, containerName, objName, off, off+sz, err)
+			return tErr
+		}
+		nio++
+
+		// every 16 i/o requests, or so, wait upto 30 sec
+		// if randGen.Intn(16) == 0 {
+		// 	waitSec := randGen.Intn(31)
+		// 	fmt.Printf("object %10s sleeping %d sec after send\n", objName, waitSec)
+		// 	time.Sleep(time.Duration(waitSec) * time.Second)
+		// }
+	}
+
+	// every 8 i/o requests, or so, wait upto 60 sec before Close()
+	// if randGen.Intn(4) == 0 {
+	// 	waitSec := randGen.Intn(61)
+	// 	fmt.Printf("object %10s sleeping %d sec before close\n", objName, waitSec)
+	// 	time.Sleep(time.Duration(waitSec) * time.Second)
+	// }
+
+	// verify bytes using Read() at 16 random ranges
+	for nio = 0; nio < 16; nio++ {
+		off = randGen.Intn(objSize)
+		sz = randGen.Intn(objSize-off) + 1
+
+		readBuf, err = chunkedPutContext.Read(uint64(off), uint64(sz))
+		if err != nil {
+			tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
+				"chunkedPutContext.Read(%d, %d) failed: %v",
+				accountName, containerName, objName, off, sz, err)
+			// panic because this should *never* happen
+			panic(tErr)
+			// return tErr
+		}
+
+		if !bytes.Equal(readBuf, writeBuf[off:off+sz]) {
+			tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
+				"chunkedPutContext.Read(%d, %d) dat does not match SendChunk()",
+				accountName, containerName, objName, off, sz)
+			// panic because this should *never* happen
+			panic(tErr)
+			// return tErr
 		}
 	}
+
 	err = chunkedPutContext.Close()
 	if nil != err {
-		tErr := fmt.Sprintf("chunkedPutContext.Close('%s/%s/%s') failed: %v",
+		tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): chunkedPutContext.Close() failed: %v",
 			accountName, containerName, objName, err)
-		return errors.New(tErr)
+		return tErr
 	}
 
 	// read and compare
 	readBuf, err = ObjectLoad(accountName, containerName, objName)
 	if nil != err {
-		tErr := fmt.Sprintf("ObjectLoad('%s/%s/%s') failed: %v", accountName, containerName, objName, err)
-		return errors.New(tErr)
+		tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): ObjectLoad() failed: %v",
+			accountName, containerName, objName, err)
+		return tErr
 	}
 	if !bytes.Equal(readBuf, writeBuf) {
-		tErr := fmt.Sprintf("Object('%s/%s/%s') read back something different then written",
+		tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
+			"Object() read back something different then written",
 			accountName, containerName, objName)
-		return errors.New(tErr)
+		// panic because this should *never* happen
+		panic(tErr)
+		// return tErr
 	}
 
 	return nil
@@ -1060,13 +1226,36 @@ func testRetry(t *testing.T) {
 		return true, errors.New("Simulate a retriable errror")
 	}
 
+	type requestStatisticsIncarnate struct {
+		RetryOps          string
+		RetrySuccessCnt   string
+		ClientRequestTime bucketstats.BucketLog2Round
+		ClientFailureCnt  bucketstats.Total
+		SwiftRequestTime  bucketstats.BucketLog2Round
+		SwiftRetryOps     bucketstats.Average
+	}
+
 	var (
-		retryOps                    = "proxyfs.switclient.test.operations"
-		retrySuccessOps             = "proxyfs.switclient.test.success.operations"
-		statNm          RetryStatNm = RetryStatNm{retryCnt: &retryOps, retrySuccessCnt: &retrySuccessOps}
-		opname          string
-		retryObj        *RetryCtrl
+		opname   string
+		retryObj *RetryCtrl
+
+		reqStat = requestStatisticsIncarnate{
+			RetryOps:        "proxyfs.switclient.test.operations",
+			RetrySuccessCnt: "proxyfs.switclient.test.success.operations",
+		}
+		statNm = requestStatistics{
+			retryCnt:          &reqStat.RetryOps,
+			retrySuccessCnt:   &reqStat.RetrySuccessCnt,
+			clientRequestTime: &reqStat.ClientRequestTime,
+			clientFailureCnt:  &reqStat.ClientFailureCnt,
+			swiftRequestTime:  &reqStat.SwiftRequestTime,
+			swiftRetryOps:     &reqStat.SwiftRetryOps,
+		}
 	)
+
+	// the statistics should be registered before use
+	bucketstats.Register("swiftclient", "api_test", &reqStat)
+	defer bucketstats.UnRegister("swiftclient", "api_test")
 
 	// requests succeeds on first try (no log entry, stats not updated)
 	//
@@ -1143,7 +1332,7 @@ func testRetry(t *testing.T) {
 // properly formatted log messages and updated retry counters.
 //
 func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
-	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	opname string, retryObj *RetryCtrl, reqStat requestStatistics,
 	request func() (bool, error), successOn int, minSec float32, maxSec float32) {
 
 	var (
@@ -1158,10 +1347,10 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 		err                 error
 	)
 	statMap = stats.Dump()
-	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
-	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+	retryCntPre, _ = statMap[*reqStat.retryCnt]
+	retrySuccessCntPre, _ = statMap[*reqStat.retrySuccessCnt]
 
-	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	err = retryObj.RequestWithRetry(request, &opname, &reqStat)
 	if err != nil {
 		t.Errorf("%s: should have succeeded, error: %s", opname, err)
 	}
@@ -1220,15 +1409,15 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 
 	// stats sometimes take a little while to update, so wait a bit if we don't
 	// get the right answer on the first try
-	for try := 0; try < 10; try++ {
+	for try := 0; try < 500; try++ {
 		statMap = stats.Dump()
-		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
-		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+		retryCntPost, _ = statMap[*reqStat.retryCnt]
+		retrySuccessCntPost, _ = statMap[*reqStat.retrySuccessCnt]
 
 		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(20 * time.Millisecond)
 	}
 	if retryCntPost != retryCntPre {
 		t.Errorf("%s: stats updated incorrectly: retryOps is %d should be %d",
@@ -1245,7 +1434,7 @@ func testRetrySucceeds(t *testing.T, logcopy *logger.LogTarget,
 // minSec of delay...but less than maxSec of delay.
 //
 func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
-	opname string, retryObj *RetryCtrl, retryStatNm RetryStatNm,
+	opname string, retryObj *RetryCtrl, reqStat requestStatistics,
 	request func() (bool, error), failOn int, minSec float32, maxSec float32, retryStr string) {
 
 	var (
@@ -1260,10 +1449,10 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 		err                 error
 	)
 	statMap = stats.Dump()
-	retryCntPre, _ = statMap[*retryStatNm.retryCnt]
-	retrySuccessCntPre, _ = statMap[*retryStatNm.retrySuccessCnt]
+	retryCntPre, _ = statMap[*reqStat.retryCnt]
+	retrySuccessCntPre, _ = statMap[*reqStat.retrySuccessCnt]
 
-	err = retryObj.RequestWithRetry(request, &opname, &retryStatNm)
+	err = retryObj.RequestWithRetry(request, &opname, &reqStat)
 	if err == nil {
 		t.Errorf("%s: should have failed, error: %s", opname, err)
 	}
@@ -1319,8 +1508,8 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 	// get the right answer on the first try
 	for try := 0; try < 10; try++ {
 		statMap = stats.Dump()
-		retryCntPost, _ = statMap[*retryStatNm.retryCnt]
-		retrySuccessCntPost, _ = statMap[*retryStatNm.retrySuccessCnt]
+		retryCntPost, _ = statMap[*reqStat.retryCnt]
+		retrySuccessCntPost, _ = statMap[*reqStat.retrySuccessCnt]
 
 		if retryCntPost == retryCntPost && retrySuccessCntPost == retrySuccessCntPre {
 			break

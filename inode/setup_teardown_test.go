@@ -3,9 +3,10 @@ package inode
 import (
 	"io/ioutil"
 	"os"
+	"runtime"
+	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -19,13 +20,15 @@ import (
 	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
+// our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
+var ramswiftDoneChan chan bool
+
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
-		doneChan                      chan bool
 		err                           error
 		rLimit                        syscall.Rlimit
 		rLimitMinimum                 uint64
-		signalHandlerIsArmed          bool
+		signalHandlerIsArmedWG        sync.WaitGroup
 		testChunkedConnectionPoolSize uint64
 		testConfMap                   conf.ConfMap
 		testConfStrings               []string
@@ -65,7 +68,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"FlowControl:TestFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
 		"Peer:Peer0.PrivateIPAddr=localhost",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
@@ -154,13 +157,11 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("  ulimit -n 2560")
 	}
 
-	signalHandlerIsArmed = false
-	doneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	signalHandlerIsArmedWG.Add(1)
+	ramswiftDoneChan = make(chan bool, 1)
+	go ramswift.Daemon("/dev/null", testConfStrings, &signalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = logger.Up(testConfMap)
 	if nil != err {
@@ -243,6 +244,12 @@ func testTeardown(t *testing.T) {
 	if nil != err {
 		t.Fatalf("logger.Down() failed: %v", err)
 	}
+
+	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)
+	_ = <-ramswiftDoneChan
+
+	// Run GC to reclaim memory before we proceed to next test
+	runtime.GC()
 
 	testDir, err = os.Getwd()
 	if nil != err {

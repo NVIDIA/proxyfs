@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,7 +43,14 @@ type testObjectCopyCallbackStruct struct {
 }
 
 func TestAPI(t *testing.T) {
-	confStrings := []string{
+	var (
+		confMap                conf.ConfMap
+		confStrings            []string
+		err                    error
+		signalHandlerIsArmedWG sync.WaitGroup
+	)
+
+	confStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
@@ -75,49 +83,42 @@ func TestAPI(t *testing.T) {
 		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
 	err = logger.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Up(confMap) failed: %v", err)
 	}
 
 	err = evtlog.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Up(confMap) failed: %v", err)
 	}
 
-	signalHandlerIsArmed := false
+	signalHandlerIsArmedWG.Add(1)
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	err = stats.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Up(confMap) failed: %v", err)
 	}
 
 	err = swiftclient.Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("swiftclient.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("swiftclient.Up(confMap) failed: %v", err)
 	}
 
 	// first test -- start with statsLogger disabled, then bring up enabled
 	err = Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("statslogger.Up('StatsLogger.Period=0s') failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("statslogger.Up('StatsLogger.Period=0s') failed: %v", err)
 	}
 	if globals.statsLogPeriod != 0 {
 		t.Fatalf("after Up('StatsLogger.Period=0s') globals.statsLogPeriod != 0")
@@ -125,19 +126,16 @@ func TestAPI(t *testing.T) {
 
 	err = Down()
 	if nil != err {
-		tErr := fmt.Sprintf("Down() 'StatsLogger.Period=0s' failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Down() 'StatsLogger.Period=0s' failed: %v", err)
 	}
 
 	err = confMap.UpdateFromString("StatsLogger.Period=1s")
 	if nil != err {
-		tErr := fmt.Sprintf("UpdateFromString('StatsLogger.Period=1s') failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("UpdateFromString('StatsLogger.Period=1s') failed: %v", err)
 	}
 	err = Up(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("statslogger.Up(StatsLogger.Period=1s) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("statslogger.Up(StatsLogger.Period=1s) failed: %v", err)
 	}
 	if globals.statsLogPeriod != 1*time.Second {
 		t.Fatalf("after Up('StatsLogger.Period=1s') globals.statsLogPeriod != 1 sec")
@@ -157,20 +155,17 @@ func TestAPI(t *testing.T) {
 
 	err = Down()
 	if nil != err {
-		tErr := fmt.Sprintf("Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Down() failed: %v", err)
 	}
 
 	err = swiftclient.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("swiftclient.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("Down() failed: %v", err)
 	}
 
 	err = stats.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("stats.Down() failed: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
@@ -181,14 +176,12 @@ func TestAPI(t *testing.T) {
 
 	err = evtlog.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("evtlog.Down() failed: %v", err)
 	}
 
 	err = logger.Down()
 	if nil != err {
-		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("logger.Down() failed: %v", err)
 	}
 }
 

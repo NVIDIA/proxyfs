@@ -25,12 +25,12 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
-// if signals is empty it means "catch all signals" its possible to catch
-//
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, errChan chan error, wg *sync.WaitGroup, execArgs []string, signals ...os.Signal) {
+// Daemon is launched as a GoRoutine that launches ProxyFS. During startup, the parent should read errChan
+// to await Daemon getting to the point where it is ready to handle the specified signal set. Any errors
+// encountered before or after this point will be sent to errChan (and be non-nil of course).
+func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.WaitGroup, execArgs []string, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
@@ -48,16 +48,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 
 	err = confMap.UpdateFromStrings(confStrings)
 	if nil != err {
-		errChan <- err
-
-		return
-	}
-
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-	if nil != err {
-		err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
-
 		errChan <- err
 
 		return
@@ -298,9 +288,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 	// if signals is empty it means "catch all signals" its possible to catch
 	signal.Notify(signalChan, signals...)
 
-	if nil != signalHandlerIsArmed {
-		*signalHandlerIsArmed = true
-	}
+	// indicate signal handlers have been armed successfully
+	errChan <- nil
 
 	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
 	for {
@@ -356,13 +345,6 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, e
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
 				err = fmt.Errorf("failed to reapply config overrides: %v", err)
-				break
-			}
-
-			// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-			err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
-			if nil != err {
-				err = fmt.Errorf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v", err)
 				break
 			}
 

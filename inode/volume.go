@@ -13,7 +13,7 @@ func (vS *volumeStruct) GetFSID() (fsid uint64) {
 	return
 }
 
-func (vS *volumeStruct) SnapShotCreateByFSLayer(name string) (id uint64, err error) {
+func (vS *volumeStruct) SnapShotCreate(name string) (id uint64, err error) {
 	if ("." == name) || (".." == name) {
 		err = fmt.Errorf("SnapShot cannot be named either '.' or '..'")
 		return
@@ -25,7 +25,7 @@ func (vS *volumeStruct) SnapShotCreateByFSLayer(name string) (id uint64, err err
 	return
 }
 
-func (vS *volumeStruct) SnapShotDeleteByFSLayer(id uint64) (err error) {
+func (vS *volumeStruct) SnapShotDelete(id uint64) (err error) {
 	var (
 		found                               bool
 		keyAsInodeNumber                    InodeNumber

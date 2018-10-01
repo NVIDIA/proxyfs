@@ -9,7 +9,6 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type globalsStruct struct {
@@ -67,7 +66,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		logger.ErrorfWithError(err, "failed to get Cluster.WhoAmI from config file")
 		return
 	}
-	globals.ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(globals.whoAmI), "PrivateIPAddr")
+	globals.ipAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get %s.PrivateIPAddr from config file", globals.whoAmI)
 		return
@@ -107,7 +106,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -165,7 +164,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(whoAmI), "PrivateIPAddr")
+	ipAddr, err = confMap.FetchOptionValueString("Peer:"+whoAmI, "PrivateIPAddr")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
 		return
@@ -216,7 +215,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -282,7 +281,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return

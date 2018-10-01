@@ -12,7 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/swiftstack/ProxyFS/inode"
 )
 
 type ExtentMapElementStruct struct {
@@ -61,6 +61,7 @@ type volumeStruct struct {
 	sync.Mutex
 	name                   string
 	fsMountHandle          fs.MountHandle
+	inodeVolumeHandle      inode.VolumeHandle
 	headhunterVolumeHandle headhunter.VolumeHandle
 	fsckActiveJob          *jobStruct
 	fsckJobs               sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
@@ -120,7 +121,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -139,6 +140,11 @@ func Up(confMap conf.ConfMap) (err error) {
 				}
 
 				volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+				if nil != err {
+					return
+				}
+
+				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
 				if nil != err {
 					return
 				}
@@ -163,7 +169,7 @@ func Up(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	globals.ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(globals.whoAmI), "PrivateIPAddr")
+	globals.ipAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
 		return
@@ -216,7 +222,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	ipAddr, err = confMap.FetchOptionValueString(utils.PeerNameConfSection(whoAmI), "PrivateIPAddr")
+	ipAddr, err = confMap.FetchOptionValueString("Peer:"+whoAmI, "PrivateIPAddr")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
 		return
@@ -256,7 +262,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	volumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -350,7 +356,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -373,6 +379,11 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					}
 
 					volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+					if nil != err {
+						return
+					}
+
+					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
 					if nil != err {
 						return
 					}

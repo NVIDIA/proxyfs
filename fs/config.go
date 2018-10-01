@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -31,12 +31,6 @@ type mountStruct struct {
 	volStruct *volumeStruct
 }
 
-type snapShotStruct struct {
-	id   uint64
-	time time.Time
-	name string
-}
-
 type volumeStruct struct {
 	dataMutex                sync.Mutex
 	volumeName               string
@@ -46,7 +40,6 @@ type volumeStruct struct {
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
 	jobRWMutex               sync.RWMutex
-	snapShotMap              map[uint64]*snapShotStruct
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle
 }
@@ -58,6 +51,121 @@ type globalsStruct struct {
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
+
+	AccessUsec         bucketstats.BucketLog2Round
+	CreateUsec         bucketstats.BucketLog2Round
+	FlushUsec          bucketstats.BucketLog2Round
+	FlockGetUsec       bucketstats.BucketLog2Round
+	FlockLockUsec      bucketstats.BucketLog2Round
+	FlockUnlockUsec    bucketstats.BucketLog2Round
+	GetstatUsec        bucketstats.BucketLog2Round
+	GetTypeUsec        bucketstats.BucketLog2Round
+	GetXAttrUsec       bucketstats.BucketLog2Round
+	IsDirUsec          bucketstats.BucketLog2Round
+	IsFileUsec         bucketstats.BucketLog2Round
+	IsSymlinkUsec      bucketstats.BucketLog2Round
+	LinkUsec           bucketstats.BucketLog2Round
+	ListXAttrUsec      bucketstats.BucketLog2Round
+	LookupUsec         bucketstats.BucketLog2Round
+	LookupPathUsec     bucketstats.BucketLog2Round
+	MkdirUsec          bucketstats.BucketLog2Round
+	RemoveXAttrUsec    bucketstats.BucketLog2Round
+	RenameUsec         bucketstats.BucketLog2Round
+	ReadUsec           bucketstats.BucketLog2Round
+	ReadBytes          bucketstats.BucketLog2Round
+	ReaddirUsec        bucketstats.BucketLog2Round
+	ReaddirEntries     bucketstats.BucketLog2Round
+	ReaddirOneUsec     bucketstats.BucketLog2Round
+	ReaddirOnePlusUsec bucketstats.BucketLog2Round
+	ReaddirPlusUsec    bucketstats.BucketLog2Round
+	ReaddirPlusBytes   bucketstats.BucketLog2Round
+	ReadsymlinkUsec    bucketstats.BucketLog2Round
+	ResizeUsec         bucketstats.BucketLog2Round
+	RmdirUsec          bucketstats.BucketLog2Round
+	SetstatUsec        bucketstats.BucketLog2Round
+	SetXAttrUsec       bucketstats.BucketLog2Round
+	StatVfsUsec        bucketstats.BucketLog2Round
+	SymlinkUsec        bucketstats.BucketLog2Round
+	UnlinkUsec         bucketstats.BucketLog2Round
+	VolumeNameUsec     bucketstats.BucketLog2Round
+	WriteUsec          bucketstats.BucketLog2Round
+	WriteBytes         bucketstats.BucketLog2Round
+
+	CreateErrors         bucketstats.Total
+	FetchReadPlanErrors  bucketstats.Total
+	FlushErrors          bucketstats.Total
+	FlockOtherErrors     bucketstats.Total
+	FlockGetErrors       bucketstats.Total
+	FlockLockErrors      bucketstats.Total
+	FlockUnlockErrors    bucketstats.Total
+	GetstatErrors        bucketstats.Total
+	GetTypeErrors        bucketstats.Total
+	GetXAttrErrors       bucketstats.Total
+	IsDirErrors          bucketstats.Total
+	IsFileErrors         bucketstats.Total
+	IsSymlinkErrors      bucketstats.Total
+	LinkErrors           bucketstats.Total
+	ListXAttrErrors      bucketstats.Total
+	LookupErrors         bucketstats.Total
+	LookupPathErrors     bucketstats.Total
+	MkdirErrors          bucketstats.Total
+	RemoveXAttrErrors    bucketstats.Total
+	RenameErrors         bucketstats.Total
+	ReadErrors           bucketstats.Total
+	ReaddirErrors        bucketstats.Total
+	ReaddirOneErrors     bucketstats.Total
+	ReaddirOnePlusErrors bucketstats.Total
+	ReaddirPlusErrors    bucketstats.Total
+	ReadsymlinkErrors    bucketstats.Total
+	ResizeErrors         bucketstats.Total
+	RmdirErrors          bucketstats.Total
+	SetstatErrors        bucketstats.Total
+	SetXAttrErrors       bucketstats.Total
+	StatVfsErrors        bucketstats.Total
+	SymlinkErrors        bucketstats.Total
+	UnlinkErrors         bucketstats.Total
+	WriteErrors          bucketstats.Total
+
+	FetchReadPlanUsec              bucketstats.BucketLog2Round
+	CallInodeToProvisionObjectUsec bucketstats.BucketLog2Round
+	MiddlewareCoalesceUsec         bucketstats.BucketLog2Round
+	MiddlewareCoalesceBytes        bucketstats.BucketLog2Round
+	MiddlewareDeleteUsec           bucketstats.BucketLog2Round
+	MiddlewareGetAccountUsec       bucketstats.BucketLog2Round
+	MiddlewareGetContainerUsec     bucketstats.BucketLog2Round
+	MiddlewareGetObjectUsec        bucketstats.BucketLog2Round
+	MiddlewareGetObjectBytes       bucketstats.BucketLog2Round
+	MiddlewareHeadResponseUsec     bucketstats.BucketLog2Round
+	MiddlewareMkdirUsec            bucketstats.BucketLog2Round
+	MiddlewarePostUsec             bucketstats.BucketLog2Round
+	MiddlewarePostBytes            bucketstats.BucketLog2Round
+	MiddlewarePutCompleteUsec      bucketstats.BucketLog2Round
+	MiddlewarePutCompleteBytes     bucketstats.BucketLog2Round
+	MiddlewarePutContainerUsec     bucketstats.BucketLog2Round
+	MiddlewarePutContainerBytes    bucketstats.BucketLog2Round
+
+	CallInodeToProvisionObjectErrors bucketstats.Total
+	MiddlewareCoalesceErrors         bucketstats.Total
+	MiddlewareDeleteErrors           bucketstats.Total
+	MiddlewareGetAccountErrors       bucketstats.Total
+	MiddlewareGetContainerErrors     bucketstats.Total
+	MiddlewareGetObjectErrors        bucketstats.Total
+	MiddlewareHeadResponseErrors     bucketstats.Total
+	MiddlewareMkdirErrors            bucketstats.Total
+	MiddlewarePostErrors             bucketstats.Total
+	MiddlewarePutCompleteErrors      bucketstats.Total
+	MiddlewarePutContainerErrors     bucketstats.Total
+
+	MountUsec                               bucketstats.BucketLog2Round
+	MountErrors                             bucketstats.BucketLog2Round
+	ValidateVolumeUsec                      bucketstats.BucketLog2Round
+	ScrubVolumeUsec                         bucketstats.BucketLog2Round
+	ValidateBaseNameUsec                    bucketstats.BucketLog2Round
+	ValidateBaseNameErrors                  bucketstats.Total
+	ValidateFullPathUsec                    bucketstats.BucketLog2Round
+	ValidateFullPathErrors                  bucketstats.Total
+	AccountNameToVolumeNameUsec             bucketstats.BucketLog2Round
+	VolumeNameToActivePeerPrivateIPAddrUsec bucketstats.BucketLog2Round
 }
 
 var globals globalsStruct
@@ -74,6 +182,9 @@ func Up(confMap conf.ConfMap) (err error) {
 		volumeSectionName      string
 	)
 
+	// register statistics
+	bucketstats.Register("proxyfs.fs", "", &globals)
+
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
@@ -89,7 +200,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
@@ -120,7 +231,7 @@ func Up(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-				flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+				flowControlSectionName = "FlowControl:" + flowControlName
 
 				volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 				if nil != err {
@@ -135,10 +246,6 @@ func Up(confMap conf.ConfMap) (err error) {
 				if nil != err {
 					return
 				}
-
-				// Load existing SnapShots
-
-				volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 				globals.volumeMap[volumeName] = volume
 			}
@@ -187,7 +294,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 	updatedVolumeMap = make(map[string]bool)
 
 	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
 		if nil != err {
 			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
 			return
@@ -258,7 +365,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	}
 
 	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
+		volumeSectionName = "Volume:" + volumeName
 
 		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
 		if nil != err {
@@ -291,7 +398,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					if nil != err {
 						return
 					}
-					flowControlSectionName = utils.FlowControlNameConfSection(flowControlName)
+					flowControlSectionName = "FlowControl:" + flowControlName
 
 					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 					if nil != err {
@@ -306,10 +413,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					if nil != err {
 						return
 					}
-
-					// Load existing SnapShots
-
-					volume.snapShotMap = make(map[uint64]*snapShotStruct) // TODO
 
 					globals.volumeMap[volumeName] = volume
 				}
@@ -336,6 +439,9 @@ func Down() (err error) {
 	if 0 < globals.inFlightFileInodeDataList.Len() {
 		logger.Fatalf("fs.Down() has completed all un-mount's... but found non-empty globals.inFlightFileInodeDataList")
 	}
+
+	// unregister statistics
+	bucketstats.UnRegister("proxyfs.fs", "")
 
 	err = nil
 	return

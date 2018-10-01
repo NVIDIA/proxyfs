@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -89,7 +89,22 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 }
 
 func TestHeadHunterAPI(t *testing.T) {
-	confStrings := []string{
+	var (
+		confMap                conf.ConfMap
+		confStrings            []string
+		doneChan               chan bool
+		err                    error
+		firstUpNonce           uint64
+		key                    uint64
+		replayLogFile          *os.File
+		replayLogFileName      string
+		secondUpNonce          uint64
+		signalHandlerIsArmedWG sync.WaitGroup
+		value                  []byte
+		volume                 VolumeHandle
+	)
+
+	confStrings = []string{
 		"Logging.LogFilePath=/dev/null",
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
@@ -135,12 +150,12 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	// Construct replayLogFileName to use as Volume:TestVolume.ReplayLogFileName
 
-	replayLogFile, err := ioutil.TempFile("", "TestVolume_Replay_Log_")
+	replayLogFile, err = ioutil.TempFile("", "TestVolume_Replay_Log_")
 	if nil != err {
 		t.Fatalf("ioutil.TempFile() returned error: %v", err)
 	}
 
-	replayLogFileName := replayLogFile.Name()
+	replayLogFileName = replayLogFile.Name()
 
 	err = replayLogFile.Close()
 	if nil != err {
@@ -156,16 +171,14 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	// Launch a ramswift instance
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool, 1) // Must be buffered to avoid race
+	signalHandlerIsArmedWG.Add(1)
+	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if nil != err {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
 	}
@@ -207,7 +220,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("headhunter.Up() [case 1] returned error: %v", err)
 	}
 
-	volume, err := FetchVolumeHandle("TestVolume")
+	volume, err = FetchVolumeHandle("TestVolume")
 	if nil != err {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") [case 1] returned error: %v", err)
 	}
@@ -215,7 +228,7 @@ func TestHeadHunterAPI(t *testing.T) {
 	volume.RegisterForEvents(nil)
 	volume.UnregisterForEvents(nil)
 
-	firstUpNonce, err := volume.FetchNonce()
+	firstUpNonce, err = volume.FetchNonce()
 	if nil != err {
 		t.Fatalf("FetchNonce() [case 1] returned error: %v", err)
 	}
@@ -285,7 +298,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") [case 2] returned error: %v", err)
 	}
 
-	secondUpNonce, err := volume.FetchNonce()
+	secondUpNonce, err = volume.FetchNonce()
 	if nil != err {
 		t.Fatalf("FetchNonce() [case 2] returned error: %v", err)
 	}
@@ -293,9 +306,8 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("FetchNonce() [case 2] returned unexpected nonce: %v (should have been > %v)", secondUpNonce, firstUpNonce)
 	}
 
-	var key uint64
 	key = 1234
-	value := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	value = []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
 	inodeRecPutGet(t, volume, key, value)
 

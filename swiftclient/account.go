@@ -23,11 +23,17 @@ func accountDeleteWithRetry(accountName string) (err error) {
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountDelete(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountDeleteRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountDeleteRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountDelete(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountDeleteRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountDeleteRetrySuccessOps,
+			clientRequestTime: &globals.AccountDeleteUsec,
+			clientFailureCnt:  &globals.AccountDeleteFailure,
+			swiftRequestTime:  &globals.SwiftAccountDeleteUsec,
+			swiftRetryOps:     &globals.SwiftAccountDeleteRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err
@@ -86,15 +92,20 @@ func accountGetWithRetry(accountName string) (headers map[string][]string, conta
 		marker             string
 		opname             string
 		retryObj           *RetryCtrl
-		statnm             RetryStatNm
+		statnm             requestStatistics
 		toAddContainerList []string
 		toAddHeaders       map[string][]string
 	)
 
 	retryObj = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-	statnm = RetryStatNm{
-		retryCnt:        &stats.SwiftAccountGetRetryOps,
-		retrySuccessCnt: &stats.SwiftAccountGetRetrySuccessOps}
+	statnm = requestStatistics{
+		retryCnt:          &stats.SwiftAccountGetRetryOps,
+		retrySuccessCnt:   &stats.SwiftAccountGetRetrySuccessOps,
+		clientRequestTime: &globals.AccountGetUsec,
+		clientFailureCnt:  &globals.AccountGetFailure,
+		swiftRequestTime:  &globals.SwiftAccountGetUsec,
+		swiftRetryOps:     &globals.SwiftAccountGetRetryOps,
+	}
 
 	request := func() (bool, error) {
 		var err error
@@ -190,11 +201,17 @@ func accountHeadWithRetry(accountName string) (map[string][]string, error) {
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountHead(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountHeadRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountHeadRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountHead(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountHeadRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountHeadRetrySuccessOps,
+			clientRequestTime: &globals.AccountHeadUsec,
+			clientFailureCnt:  &globals.AccountHeadFailure,
+			swiftRequestTime:  &globals.SwiftAccountHeadUsec,
+			swiftRetryOps:     &globals.SwiftAccountHeadRetryOps,
+		}
 	)
 	err := retryObj.RequestWithRetry(request, &opname, &statnm)
 	return headers, err
@@ -254,11 +271,17 @@ func accountPostWithRetry(accountName string, requestHeaders map[string][]string
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountPost(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountPostRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountPostRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+
+		opname string            = fmt.Sprintf("swiftclient.accountPost(\"%v\")", accountName)
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountPostRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountPostRetrySuccessOps,
+			clientRequestTime: &globals.AccountPostUsec,
+			clientFailureCnt:  &globals.AccountPostFailure,
+			swiftRequestTime:  &globals.SwiftAccountPostUsec,
+			swiftRetryOps:     &globals.SwiftAccountPostRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err
@@ -338,11 +361,17 @@ func accountPutWithRetry(accountName string, requestHeaders map[string][]string)
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountPut(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountPutRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountPutRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountPut(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountPutRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountPutRetrySuccessOps,
+			clientRequestTime: &globals.AccountPutUsec,
+			clientFailureCnt:  &globals.AccountPutFailure,
+			swiftRequestTime:  &globals.SwiftAccountPutUsec,
+			swiftRetryOps:     &globals.SwiftAccountPutRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err

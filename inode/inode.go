@@ -887,9 +887,7 @@ func fetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error)
 }
 
 func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *physicalContainerLayoutStruct) (err error) {
-	existingObjectCount := physicalContainerLayout.physicalContainerNameSliceLoopCount % (physicalContainerLayout.physicalContainerCountMax + 1)
-
-	if 0 == existingObjectCount {
+	if 0 == (physicalContainerLayout.physicalContainerNameSliceLoopCount % physicalContainerLayout.physicalObjectCountMax) {
 		// We need to provision a new PhysicalContainer in this PhysicalContainerLayout
 
 		physicalContainerNameSuffix, nonShadowingErr := vS.headhunterVolumeHandle.FetchNonce()
@@ -1147,7 +1145,7 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 		// the inode is locked so this should never happen (unless the inode
 		// was evicted from the cache and it was corrupt when read from disk)
 		// (err includes volume name and inode number)
-		logger.ErrorWithError(err, "%s: fetch of inode failed", utils.GetFnName())
+		logger.ErrorfWithError(err, "%s: fetch of inode failed", utils.GetFnName())
 		return
 	}
 	if !ok {
@@ -1161,11 +1159,11 @@ func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 
 	ok, err = vS.inodeCacheDrop(ourInode)
 	if nil != err {
-		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode failed: %v", utils.GetFnName(), err)
+		logger.ErrorfWithError(err, "%s: inodeCacheDrop() of inode failed: %v", utils.GetFnName(), err)
 		return
 	}
 	if !ok {
-		logger.ErrorWithError(err, "%s: inodeCacheDrop() of inode returned !ok", utils.GetFnName())
+		logger.ErrorfWithError(err, "%s: inodeCacheDrop() of inode returned !ok", utils.GetFnName())
 		return
 	}
 

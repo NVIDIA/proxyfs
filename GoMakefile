@@ -23,9 +23,6 @@ fmt:
 generate:
 	go generate $(gosubdir)
 
-get:
-	go get $(gosubdir)
-
 install:
 	go install -gcflags "-N -l" $(gosubdir)
 

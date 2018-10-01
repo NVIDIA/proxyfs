@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -39,6 +40,26 @@ type connectionPoolStruct struct {
 	//                                                   has been provided
 }
 
+// Used to track client request times (client's of swiftclient) and Swift server
+// request times using bucketized statistics
+//
+type requestTimeStatistic struct {
+	bucketstats.BucketLog2Round
+}
+
+// Used to track retries using an average, where the count increases by 1 for
+// each retry and the total increases by 1 for each successful retry
+//
+type requestRetryStatistic struct {
+	bucketstats.Average
+}
+
+// Used to track client request failures
+//
+type requestFailureStatistic struct {
+	bucketstats.Total
+}
+
 type globalsStruct struct {
 	noAuthStringAddr                string
 	noAuthTCPAddr                   *net.TCPAddr
@@ -57,8 +78,108 @@ type globalsStruct struct {
 	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
 	reservedChunkedConnectionMutex  sync.Mutex
 	maxIntAsUint64                  uint64
-	chaosSendChunkFailureRate       uint64 // set only during testing
+	checksumChunkedPutChunks        bool   // compute and verify checksums (for testing)
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
+	chaosSendChunkFailureRate       uint64 // set only during testing
+	chaosCloseChunkFailureRate      uint64 // set only during testing
+
+	// statistics for requests to swiftclient
+	AccountDeleteUsec              bucketstats.BucketLog2Round     // bucketized by time
+	AccountGetUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	AccountHeadUsec                bucketstats.BucketLog2Round     // bucketized by time
+	AccountPostUsec                bucketstats.BucketLog2Round     // bucketized by time
+	AccountPutUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ContainerDeleteUsec            bucketstats.BucketLog2Round     // bucketized by time
+	ContainerGetUsec               bucketstats.BucketLog2Round     // bucketized by time
+	ContainerHeadUsec              bucketstats.BucketLog2Round     // bucketized by time
+	ContainerPostUsec              bucketstats.BucketLog2Round     // bucketized by time
+	ContainerPutUsec               bucketstats.BucketLog2Round     // bucketized by time
+	ObjectContentLengthUsec        bucketstats.BucketLog2Round     // bucketized by time
+	ObjectCopyUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ObjectDeleteUsec               bucketstats.BucketLog2Round     // bucketized by time
+	ObjectGetUsec                  bucketstats.BucketLog2Round     // bucketized by time
+	ObjectGetBytes                 bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectHeadUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ObjectLoadUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ObjectLoadBytes                bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectReadUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ObjectReadBytes                bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectTailUsec                 bucketstats.BucketLog2Round     // bucketized by time
+	ObjectTailBytes                bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectNonChunkedFreeConnection bucketstats.BucketLogRoot2Round // free non-chunked connections (at acquire time)
+	ObjectPutCtxtFetchUsec         bucketstats.BucketLog2Round     // bucketized by time
+	ObjectPutCtxtFreeConnection    bucketstats.BucketLogRoot2Round // free chunked put connections (at acquite time)
+	ObjectPutCtxtBytesPut          bucketstats.Total               // number of calls to BytesPut() query
+	ObjectPutCtxtCloseUsec         bucketstats.BucketLog2Round     // bucketized by time
+	ObjectPutCtxtReadBytes         bucketstats.BucketLog2Round     // bucketized by bytes read
+	ObjectPutCtxtSendChunkUsec     bucketstats.BucketLog2Round     // bucketized by time
+	ObjectPutCtxtSendChunkBytes    bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectPutCtxtBytes             bucketstats.BucketLog2Round     // bucketized by total bytes put
+	ObjectPutCtxtFetchToCloseUsec  bucketstats.BucketLog2Round     // Fetch returns to Close called time
+
+	// client request failures
+	AccountDeleteFailure       bucketstats.Total
+	AccountGetFailure          bucketstats.Total
+	AccountHeadFailure         bucketstats.Total
+	AccountPostFailure         bucketstats.Total
+	AccountPutFailure          bucketstats.Total
+	ContainerDeleteFailure     bucketstats.Total
+	ContainerGetFailure        bucketstats.Total
+	ContainerHeadFailure       bucketstats.Total
+	ContainerPostFailure       bucketstats.Total
+	ContainerPutFailure        bucketstats.Total
+	ObjectContentLengthFailure bucketstats.Total
+	ObjectDeleteFailure        bucketstats.Total
+	ObjectGetFailure           bucketstats.Total
+	ObjectHeadFailure          bucketstats.Total
+	ObjectLoadFailure          bucketstats.Total
+	ObjectReadFailure          bucketstats.Total
+	ObjectTailFailure          bucketstats.Total
+	ObjectPutCtxtFetchFailure  bucketstats.Total
+	ObjectPutCtxtCloseFailure  bucketstats.Total
+
+	// statistics for swiftclient requests to Swift
+	SwiftAccountDeleteUsec       bucketstats.BucketLog2Round // bucketized by time
+	SwiftAccountGetUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftAccountHeadUsec         bucketstats.BucketLog2Round // bucketized by time
+	SwiftAccountPostUsec         bucketstats.BucketLog2Round // bucketized by time
+	SwiftAccountPutUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftContainerDeleteUsec     bucketstats.BucketLog2Round // bucketized by time
+	SwiftContainerGetUsec        bucketstats.BucketLog2Round // bucketized by time
+	SwiftContainerHeadUsec       bucketstats.BucketLog2Round // bucketized by time
+	SwiftContainerPostUsec       bucketstats.BucketLog2Round // bucketized by time
+	SwiftContainerPutUsec        bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectContentLengthUsec bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectDeleteUsec        bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectGetUsec           bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectHeadUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectLoadUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectReadUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectTailUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectPutCtxtFetchUsec  bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectPutCtxtCloseUsec  bucketstats.BucketLog2Round // bucketized by time
+
+	// statistics for retries to Swift, Count() is the number of retries and
+	// Total() is the number successful
+	SwiftAccountDeleteRetryOps       bucketstats.Average
+	SwiftAccountGetRetryOps          bucketstats.Average
+	SwiftAccountHeadRetryOps         bucketstats.Average
+	SwiftAccountPostRetryOps         bucketstats.Average
+	SwiftAccountPutRetryOps          bucketstats.Average
+	SwiftContainerDeleteRetryOps     bucketstats.Average
+	SwiftContainerGetRetryOps        bucketstats.Average
+	SwiftContainerHeadRetryOps       bucketstats.Average
+	SwiftContainerPostRetryOps       bucketstats.Average
+	SwiftContainerPutRetryOps        bucketstats.Average
+	SwiftObjectContentLengthRetryOps bucketstats.Average
+	SwiftObjectDeleteRetryOps        bucketstats.Average
+	SwiftObjectGetRetryOps           bucketstats.Average
+	SwiftObjectHeadRetryOps          bucketstats.Average
+	SwiftObjectLoadRetryOps          bucketstats.Average
+	SwiftObjectReadRetryOps          bucketstats.Average
+	SwiftObjectTailRetryOps          bucketstats.Average
+	SwiftObjectPutCtxtFetchRetryOps  bucketstats.Average
+	SwiftObjectPutCtxtCloseRetryOps  bucketstats.Average
 }
 
 var globals globalsStruct
@@ -72,6 +193,9 @@ func Up(confMap conf.ConfMap) (err error) {
 		noAuthTCPPort                uint16
 		nonChunkedConnectionPoolSize uint16
 	)
+
+	// register the bucketstats statistics tracked here
+	bucketstats.Register("proxyfs.swiftclient", "", &globals)
 
 	noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
 	if nil != err {
@@ -125,12 +249,22 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
+	globals.checksumChunkedPutChunks, err = confMap.FetchOptionValueBool("SwiftClient", "ChecksumChunkedPutChunks")
+	if nil != err {
+		globals.checksumChunkedPutChunks = false
+	}
 
 	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
 		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
 	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
 		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
 		globals.retryExpBackoffObject)
+
+	checksums := "disabled"
+	if globals.checksumChunkedPutChunks {
+		checksums = "enabled"
+	}
+	logger.Infof("SwiftClient.ChecksumChunkedPutChunks %s\n", checksums)
 
 	globals.connectionNonce = 0
 
@@ -203,6 +337,8 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 func Down() (err error) {
 	drainConnections()
 	globals.connectionNonce++
+	bucketstats.UnRegister("proxyfs.swiftclient", "")
+
 	err = nil
 	return
 }

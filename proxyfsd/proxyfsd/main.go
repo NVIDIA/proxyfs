@@ -28,19 +28,33 @@ func main() {
 	}
 
 	// empty signal list (final argument) means "catch all signals" its possible to catch
-	go proxyfsd.Daemon(os.Args[1], os.Args[2:], nil, errChan, &wg, os.Args)
+	go proxyfsd.Daemon(os.Args[1], os.Args[2:], errChan, &wg, os.Args)
+
+	// read errChan to indicate when proxyfsd.Daemon() is up and running... or
+	// that an error during startup has been encountered
 
 	err = <-errChan
-
-	if syslogger != nil {
-		if err == nil {
-			syslogger.Info(fmt.Sprintf("shutting down: Daemon() finished"))
-		} else {
-			syslogger.Err(fmt.Sprintf("shutting down: Daemon() returned error: %v", err))
+	if nil != err {
+		if nil != syslogger {
+			syslogger.Err(fmt.Sprintf("shutting down: Daemon startup error: %v", err))
 		}
+	} else {
+		// startup worked... now just wait for proxyfsd.Daemon() to exit
+
+		err = <-errChan
+
+		if nil != syslogger {
+			if nil == err {
+				syslogger.Info(fmt.Sprintf("shutting down: Daemon() finished"))
+			} else {
+				syslogger.Err(fmt.Sprintf("shutting down: Daemon() returned error: %v", err))
+			}
+		}
+
+		wg.Wait() // wait for services to go Down()
 	}
 
-	wg.Wait() // wait for services to go Down()
+	// how ever we get to here, exit abnormally if nil != err
 
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "proxyfsd: Daemon(): returned error: %v\n", err) // Can't use logger.*() as it's not currently "up"

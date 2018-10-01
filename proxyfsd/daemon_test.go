@@ -32,28 +32,24 @@ func TestMain(m *testing.M) {
 
 func TestDaemon(t *testing.T) {
 	var (
-		bytesWritten                 uint64
-		confMapStrings               []string
-		createdFileInodeNumber       inode.InodeNumber
-		err                          error
-		errChan                      chan error
-		mountHandle                  fs.MountHandle
-		proxyfsdSignalHandlerIsArmed bool
-		ramswiftDoneChan             chan bool
-		ramswiftSignalHandlerIsArmed bool
-		readData                     []byte
-		testConfMap                  conf.ConfMap
-		testVersion                  uint64
-		testVersionConfFile          *os.File
-		testVersionConfFileName      string
-		toReadFileInodeNumber        inode.InodeNumber
-		wg                           sync.WaitGroup
+		bytesWritten                   uint64
+		confMapStrings                 []string
+		createdFileInodeNumber         inode.InodeNumber
+		err                            error
+		errChan                        chan error
+		mountHandle                    fs.MountHandle
+		ramswiftDoneChan               chan bool
+		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
+		readData                       []byte
+		testConfMap                    conf.ConfMap
+		testVersion                    uint64
+		testVersionConfFile            *os.File
+		testVersionConfFileName        string
+		toReadFileInodeNumber          inode.InodeNumber
+		wg                             sync.WaitGroup
 	)
 
 	// Setup a ramswift instance leveraging test config
-
-	ramswiftSignalHandlerIsArmed = false
-	ramswiftDoneChan = make(chan bool, 1)
 
 	confMapStrings = []string{
 		"Stats.IPAddr=localhost",
@@ -102,7 +98,7 @@ func TestDaemon(t *testing.T) {
 
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
-		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
 
 		"Volume:CommonVolume.FSID=1",
@@ -168,11 +164,12 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("testVersionConfFile.Close() [case 1] failed: %v", err)
 	}
 
-	go ramswift.Daemon(testVersionConfFileName, confMapStrings, &ramswiftSignalHandlerIsArmed, ramswiftDoneChan, unix.SIGINT)
+	ramswiftSignalHandlerIsArmedWG.Add(1)
+	ramswiftDoneChan = make(chan bool, 1)
 
-	for !ramswiftSignalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	go ramswift.Daemon(testVersionConfFileName, confMapStrings, &ramswiftSignalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGINT)
+
+	ramswiftSignalHandlerIsArmedWG.Wait()
 
 	// Format CommonVolume
 
@@ -238,25 +235,16 @@ func TestDaemon(t *testing.T) {
 
 	// Launch an instance of proxyfsd using that same config
 
-	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
 	var execArgs []string
 	execArgs = append([]string{"daemon_test", "/dev/null"}, confMapStrings...)
-	go Daemon("/dev/null", confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+	go Daemon("/dev/null", confMapStrings, errChan, &wg,
 		execArgs, unix.SIGTERM, unix.SIGHUP)
 
-	for !proxyfsdSignalHandlerIsArmed {
-		select {
-		case err = <-errChan:
-			if nil == err {
-				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 1]")
-			} else {
-				t.Fatalf("Daemon() exited with error [case 1a]: %v", err)
-			}
-		default:
-			time.Sleep(100 * time.Millisecond)
-		}
+	err = <-errChan
+	if nil != err {
+		t.Fatalf("Daemon() startup failed [case 1a]: %v", err)
 	}
 
 	// Write to the volume (with no flush so that only time-based/restart flush is performed)
@@ -337,24 +325,15 @@ func TestDaemon(t *testing.T) {
 
 	// Relaunch an instance of proxyfsd
 
-	proxyfsdSignalHandlerIsArmed = false
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
 	execArgs = append([]string{"daemon_test", testVersionConfFileName}, confMapStrings...)
-	go Daemon(testVersionConfFileName, confMapStrings, &proxyfsdSignalHandlerIsArmed, errChan, &wg,
+	go Daemon(testVersionConfFileName, confMapStrings, errChan, &wg,
 		execArgs, unix.SIGTERM, unix.SIGHUP)
 
-	for !proxyfsdSignalHandlerIsArmed {
-		select {
-		case err = <-errChan:
-			if nil == err {
-				t.Fatalf("Daemon() exited successfully despite not being told to do so [case 2]")
-			} else {
-				t.Fatalf("Daemon() exited with error [case 2a]: %v", err)
-			}
-		default:
-			time.Sleep(100 * time.Millisecond)
-		}
+	err = <-errChan
+	if nil != err {
+		t.Fatalf("Daemon() startup failed [case 2a]: %v", err)
 	}
 
 	// Verify written data after restart

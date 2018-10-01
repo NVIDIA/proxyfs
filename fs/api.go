@@ -5,8 +5,9 @@ package fs
 import "C"
 
 import (
+	"time"
+
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -201,8 +202,6 @@ type MountHandle interface {
 	Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
 	Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error)
 	SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error)
-	SnapShotCreate(name string) (id uint64, err error)
-	SnapShotDelete(id uint64) (err error)
 	StatVfs() (statVFS StatVFS, err error)
 	Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error)
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
@@ -215,6 +214,10 @@ func ValidateVolume(volumeName string) (validateVolumeHandle JobHandle) {
 	var (
 		vVS *validateVolumeStruct
 	)
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateVolumeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	vVS = &validateVolumeStruct{}
 
@@ -238,6 +241,10 @@ func ScrubVolume(volumeName string) (scrubVolumeHandle JobHandle) {
 	var (
 		sVS *scrubVolumeStruct
 	)
+	startTime := time.Now()
+	defer func() {
+		globals.ScrubVolumeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	sVS = &scrubVolumeStruct{}
 
@@ -259,23 +266,47 @@ func ScrubVolume(volumeName string) (scrubVolumeHandle JobHandle) {
 // Utility functions
 
 func ValidateBaseName(baseName string) (err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateBaseNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ValidateBaseNameErrors.Add(1)
+		}
+	}()
+
 	err = validateBaseName(baseName)
 	return
 }
 
 func ValidateFullPath(fullPath string) (err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateFullPathUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ValidateFullPathErrors.Add(1)
+		}
+	}()
+
 	err = validateFullPath(fullPath)
 	return
 }
 
 func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {
+	startTime := time.Now()
+	defer func() {
+		globals.AccountNameToVolumeNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volumeName, ok = inode.AccountNameToVolumeName(accountName)
-	stats.IncrementOperations(&stats.FsAcctToVolumeOps)
 	return
 }
 
 func VolumeNameToActivePeerPrivateIPAddr(volumeName string) (activePeerPrivateIPAddr string, ok bool) {
+	startTime := time.Now()
+	defer func() {
+		globals.VolumeNameToActivePeerPrivateIPAddrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	activePeerPrivateIPAddr, ok = inode.VolumeNameToActivePeerPrivateIPAddr(volumeName)
-	stats.IncrementOperations(&stats.FsVolumeToActivePeerOps)
 	return
 }
