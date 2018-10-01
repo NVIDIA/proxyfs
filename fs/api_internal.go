@@ -202,6 +202,14 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 		volStruct *volumeStruct
 	)
 
+	startTime := time.Now()
+	defer func() {
+		globals.MountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MountErrors.Add(1)
+		}
+	}()
+
 	globals.Lock()
 
 	volStruct, ok = globals.volumeMap[volumeName]
@@ -1270,9 +1278,11 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 
 func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
 
+	var coalesceSize uint64
 	startTime := time.Now()
 	defer func() {
 		globals.MiddlewareCoalesceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewareCoalesceBytes.Add(coalesceSize)
 		if err != nil {
 			globals.MiddlewareCoalesceErrors.Add(1)
 		}
@@ -1484,7 +1494,8 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
 	// do something useful
-	destInodeNumber, mtime, numWrites, err := mS.volStruct.inodeVolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
+	destInodeNumber, mtime, numWrites, coalesceSize, err :=
+		mS.volStruct.inodeVolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
 	ino = uint64(destInodeNumber)
 	modificationTime = uint64(mtime.UnixNano())
 	return
@@ -1885,9 +1896,11 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
 
+	var totalReadBytes uint64
 	startTime := time.Now()
 	defer func() {
 		globals.MiddlewareGetObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewareGetObjectBytes.Add(totalReadBytes)
 		if err != nil {
 			globals.MiddlewareGetObjectErrors.Add(1)
 		}
@@ -1938,6 +1951,7 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 			return
 		}
 		appendReadPlanEntries(tmpReadEnt, readRangeOut)
+		totalReadBytes += metadata.Size
 	} else {
 		volumeHandle, err1 := inode.FetchVolumeHandle(volumeName)
 		if err1 != nil {
@@ -1955,6 +1969,7 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 				return
 			}
 			appendReadPlanEntries(tmpReadEnt, readRangeOut)
+			totalReadBytes += *readRangeIn[i].Len
 		}
 	}
 
@@ -2021,6 +2036,7 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 	startTime := time.Now()
 	defer func() {
 		globals.MiddlewarePostUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewarePostBytes.Add(uint64(len(newMetaData)))
 		if err != nil {
 			globals.MiddlewarePostErrors.Add(1)
 		}
@@ -2284,7 +2300,13 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 
 	startTime := time.Now()
 	defer func() {
+		var totalPutBytes uint64
+		for _, length := range pObjectLengths {
+			totalPutBytes += length
+		}
+
 		globals.MiddlewarePutCompleteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewarePutCompleteBytes.Add(uint64(totalPutBytes))
 		if err != nil {
 			globals.MiddlewarePutCompleteErrors.Add(1)
 		}
@@ -2375,6 +2397,7 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 	startTime := time.Now()
 	defer func() {
 		globals.MiddlewarePutContainerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewarePutContainerBytes.Add(uint64(len(newMetadata)))
 		if err != nil {
 			globals.MiddlewarePutContainerErrors.Add(1)
 		}

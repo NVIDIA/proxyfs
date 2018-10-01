@@ -166,8 +166,11 @@ type globalsStruct struct {
 
 	FetchNonceUsec                            bucketstats.BucketLog2Round
 	GetInodeRecUsec                           bucketstats.BucketLog2Round
+	GetInodeRecBytes                          bucketstats.BucketLog2Round
 	PutInodeRecUsec                           bucketstats.BucketLog2Round
+	PutInodeRecBytes                          bucketstats.BucketLog2Round
 	PutInodeRecsUsec                          bucketstats.BucketLog2Round
+	PutInodeRecsBytes                         bucketstats.BucketLog2Round
 	DeleteInodeRecUsec                        bucketstats.BucketLog2Round
 	IndexedInodeNumberUsec                    bucketstats.BucketLog2Round
 	GetLogSegmentRecUsec                      bucketstats.BucketLog2Round
@@ -175,7 +178,9 @@ type globalsStruct struct {
 	DeleteLogSegmentRecUsec                   bucketstats.BucketLog2Round
 	IndexedLogSegmentNumberUsec               bucketstats.BucketLog2Round
 	GetBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
+	GetBPlusTreeObjectBytes                   bucketstats.BucketLog2Round
 	PutBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
+	PutBPlusTreeObjectBytes                   bucketstats.BucketLog2Round
 	DeleteBPlusTreeObjectUsec                 bucketstats.BucketLog2Round
 	IndexedBPlusTreeObjectNumberUsec          bucketstats.BucketLog2Round
 	DoCheckpointUsec                          bucketstats.BucketLog2Round

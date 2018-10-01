@@ -54,7 +54,6 @@ type globalsStruct struct {
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
-	FetchReadPlanUsec  bucketstats.BucketLog2Round
 	FlushUsec          bucketstats.BucketLog2Round
 	FlockGetUsec       bucketstats.BucketLog2Round
 	FlockLockUsec      bucketstats.BucketLog2Round
@@ -127,17 +126,23 @@ type globalsStruct struct {
 	UnlinkErrors         bucketstats.Total
 	WriteErrors          bucketstats.Total
 
+	FetchReadPlanUsec              bucketstats.BucketLog2Round
 	CallInodeToProvisionObjectUsec bucketstats.BucketLog2Round
 	MiddlewareCoalesceUsec         bucketstats.BucketLog2Round
+	MiddlewareCoalesceBytes        bucketstats.BucketLog2Round
 	MiddlewareDeleteUsec           bucketstats.BucketLog2Round
 	MiddlewareGetAccountUsec       bucketstats.BucketLog2Round
 	MiddlewareGetContainerUsec     bucketstats.BucketLog2Round
 	MiddlewareGetObjectUsec        bucketstats.BucketLog2Round
+	MiddlewareGetObjectBytes       bucketstats.BucketLog2Round
 	MiddlewareHeadResponseUsec     bucketstats.BucketLog2Round
 	MiddlewareMkdirUsec            bucketstats.BucketLog2Round
 	MiddlewarePostUsec             bucketstats.BucketLog2Round
+	MiddlewarePostBytes            bucketstats.BucketLog2Round
 	MiddlewarePutCompleteUsec      bucketstats.BucketLog2Round
+	MiddlewarePutCompleteBytes     bucketstats.BucketLog2Round
 	MiddlewarePutContainerUsec     bucketstats.BucketLog2Round
+	MiddlewarePutContainerBytes    bucketstats.BucketLog2Round
 
 	CallInodeToProvisionObjectErrors bucketstats.Total
 	MiddlewareCoalesceErrors         bucketstats.Total
@@ -151,6 +156,8 @@ type globalsStruct struct {
 	MiddlewarePutCompleteErrors      bucketstats.Total
 	MiddlewarePutContainerErrors     bucketstats.Total
 
+	MountUsec                               bucketstats.BucketLog2Round
+	MountErrors                             bucketstats.BucketLog2Round
 	ValidateVolumeUsec                      bucketstats.BucketLog2Round
 	ScrubVolumeUsec                         bucketstats.BucketLog2Round
 	ValidateBaseNameUsec                    bucketstats.BucketLog2Round

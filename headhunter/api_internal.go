@@ -161,6 +161,7 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 	startTime := time.Now()
 	defer func() {
 		globals.GetInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetInodeRecBytes.Add(uint64(len(value)))
 		if err != nil {
 			globals.GetInodeRecErrors.Add(1)
 		}
@@ -206,6 +207,7 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 	startTime := time.Now()
 	defer func() {
 		globals.PutInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecBytes.Add(uint64(len(value)))
 		if err != nil {
 			globals.PutInodeRecErrors.Add(1)
 		}
@@ -241,7 +243,13 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 
 	startTime := time.Now()
 	defer func() {
+		var totalBytes int
+		for _, inodeValue := range values {
+			totalBytes += len(inodeValue)
+		}
+
 		globals.PutInodeRecsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecsBytes.Add(uint64(totalBytes))
 		if err != nil {
 			globals.PutInodeRecsErrors.Add(1)
 		}
@@ -513,6 +521,7 @@ func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byt
 	startTime := time.Now()
 	defer func() {
 		globals.GetBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetBPlusTreeObjectBytes.Add(uint64(len(value)))
 		if err != nil {
 			globals.GetBPlusTreeObjectErrors.Add(1)
 		}
@@ -558,6 +567,7 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 	startTime := time.Now()
 	defer func() {
 		globals.PutBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutBPlusTreeObjectBytes.Add(uint64(len(value)))
 		if err != nil {
 			globals.PutBPlusTreeObjectErrors.Add(1)
 		}
