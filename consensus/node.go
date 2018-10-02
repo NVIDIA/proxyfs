@@ -19,7 +19,7 @@ const (
 	INITIALNS    NodeState = iota
 	STARTINGNS             // STARTINGNS means node has just booted
 	ONLINENS               // ONLINENS means the node is available to online VGs
-	OFFLINENS              // OFFLINENS means the node gracefully shut down
+	OFFLININGNS            // OFFLININGNS means the node gracefully shut down
 	DEADNS                 // DEADNS means node appears to have left the cluster
 	maxNodeState           // Must be last field!
 )
@@ -210,12 +210,13 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 	case DEADNS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
-		// TODO - figure out what VGs I should online if
-		// any.... how prevent autofailback????
+
 		nodesNewlyDead := make([]string, 1)
 		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
 		cs.failoverVgs(nodesNewlyDead)
 	case ONLINENS.String():
+		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
+	case OFFLININGNS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 	}
 }
@@ -244,7 +245,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		fmt.Printf("Received local - now ONLINE\n")
 		cs.startHBandMonitor()
 		cs.startVgs()
-	case OFFLININGVS.String():
+	case OFFLININGNS.String():
 		// TODO - implement OFFLINING - txn(OFFLINEVS)
 		// when done
 		fmt.Printf("Received local - now OFFLINING\n")
