@@ -4,6 +4,7 @@
 INIT --> OFFLINE
 OFFLINE --> ONLINING : Start bringing VG ONLINE on a node
 ONLINING --> ONLINE : VG finished coming ONLINE
+ONLINING --> OFFLINING : Node shutting down while VG ONLINING
 ONLINE --> FAILED : For some reason the VG failed on a node
 ONLINE --> OFFLINING : Start bringing the VG OFFLINE
 OFFLINING --> OFFLINE : VG finished being brought OFFLINE

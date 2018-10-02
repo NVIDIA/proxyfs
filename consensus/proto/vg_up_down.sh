@@ -25,12 +25,11 @@ then
 else
     if [ "X$CMD" == "Xdown" ]
     then
-        /usr/sbin/ip addr del $IPADDR dev $NIC
-        ERR="$?"
 
-        # TODO - Use extended regular expression with pkill.
-        pkill "smbd"
-	ERR="$?"
+        pkill -f "/sbin/smbd -s /etc/samba/smb-$VGNAME.conf"
+
+        /usr/sbin/ip addr del ${IPADDR}/${NETMASK} dev $NIC
+        ERR="$?"
     fi
 fi
 

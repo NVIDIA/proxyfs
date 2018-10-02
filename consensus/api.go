@@ -20,6 +20,7 @@ type Struct struct {
 	watcherWG sync.WaitGroup // WaitGroup to keep track of watchers outstanding
 	HBTicker  *time.Ticker   // HB ticker for sending HB
 	// and processing DEAD nodes.
+	offlineWG sync.WaitGroup // Wait group used to wait until VGs offline
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
