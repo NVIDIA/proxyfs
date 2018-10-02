@@ -3,9 +3,9 @@
 [*] -> INITIAL
 INITIAL --> STARTING : Node first txn when starting
 STARTING --> ONLINE : Node saw own STARTING now go ONLINE
-STARTING --> OFFLINE : Node was shut down while starting
-ONLINE --> OFFLINE : Node gracefully shutting down
+STARTING --> OFFLINING : Node was shut down while starting
+ONLINE --> OFFLINING : Node gracefully shutting down
 ONLINE --> DEAD : Node no longer heartbeating and marked DEAD
-OFFLINE --> DEAD : Node left cluster
+OFFLINING --> DEAD : Node left cluster
 
 @enduml
