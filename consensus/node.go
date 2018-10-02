@@ -25,7 +25,7 @@ const (
 )
 
 func (state NodeState) String() string {
-	return [...]string{"INITIAL", "STARTING", "ONLINE", "OFFLINE", "DEAD"}[state]
+	return [...]string{"INITIAL", "STARTING", "ONLINE", "OFFLINING", "DEAD"}[state]
 }
 
 // NodePrefix returns a string containing the node prefix
@@ -246,10 +246,12 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		cs.startHBandMonitor()
 		cs.startVgs()
 	case OFFLININGNS.String():
-		// TODO - implement OFFLINING - txn(OFFLINEVS)
-		// when done
 		fmt.Printf("Received local - now OFFLINING\n")
+
+		// offlineVgs() blocks until all VGs are offline
 		cs.offlineVgs(false, 0)
+
+		cs.setMyNodeState(cs.hostName, DEADNS)
 	}
 }
 
