@@ -157,7 +157,6 @@ func (cs *Struct) checkForDeadNodes() {
 	if len(nodesNewlyDead) == 0 {
 		return
 	}
-	fmt.Printf("nodesNewlyDead: %+v\n", nodesNewlyDead)
 
 	// Set newly dead nodes to DEAD in a series of separate
 	// transactions.
@@ -226,13 +225,12 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 // TODO - hide watchers behind interface{}?
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
+	fmt.Printf("Local Node - went: %v\n", string(ev.Kv.Value))
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
-		fmt.Printf("Received local - now STARTING\n")
 		cs.clearMyVgs()
 		cs.setMyNodeState(cs.hostName, ONLINENS)
 	case DEADNS.String():
-		fmt.Printf("Received local - now DEAD\n")
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
 		cs.offlineVgs(true, ev.Kv.ModRevision)
 		// TODO - Drop VIP here!!!
@@ -241,13 +239,11 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - implement ONLINE - how know to start VGs vs
 		// avoid failback.  Probably only initiate online of
 		// VGs which are not already started.....
+		//
 		// TODO - should I pass the REVISION to the start*() functions?
-		fmt.Printf("Received local - now ONLINE\n")
 		cs.startHBandMonitor()
 		cs.startVgs()
 	case OFFLININGNS.String():
-		fmt.Printf("Received local - now OFFLINING\n")
-
 		// offlineVgs() blocks until all VGs are offline
 		cs.offlineVgs(false, 0)
 
@@ -343,7 +339,7 @@ func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseVa
 // TODO - consolidate with existing functions if possible
 func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existingState NodeState,
 	hb time.Time) (err error) {
-	fmt.Printf("setNodeStateIfSame(%v, %v)\n", nodeName, newState.String())
+
 	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return
@@ -380,7 +376,7 @@ func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existi
 // state transition and panic if not.
 // TODO - review for cleanup
 func (cs *Struct) setMyNodeState(nodeName string, newState NodeState) (err error) {
-	fmt.Printf("setNodeState(%v, %v)\n", nodeName, newState.String())
+
 	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")
 		return
@@ -422,7 +418,6 @@ func (cs *Struct) setMyNodeState(nodeName string, newState NodeState) (err error
 // sets it to the new state.   Generally, this is only needed for
 // the STARTING state.
 func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err error) {
-	fmt.Printf("setInitialNodeState(%v, %v)\n", nodeName, state.String())
 
 	// TODO - probaly should verify that node state transitions
 	// are correct.
