@@ -132,11 +132,7 @@ func (cs *Struct) onlineVg(vgName string, rev int64) {
 	// Retrieve the VG attributes
 	_, _, ipAddr, netMask, nic := cs.getVgAttrs(vgName, rev)
 
-	// TODO - attempt online of VG and then set
-	// state via txn() to either ONLINE or FAILED.
 	// TODO - how long to timeout?
-	fmt.Printf("onlineVg() - vgName: %v\n", vgName)
-
 	// Execute up/down script and record state
 	err := callUpDownScript(up, vgName, ipAddr, netMask, nic)
 	if err != nil {
@@ -209,8 +205,6 @@ func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 	swg.Done() // The watcher is running!
 	for wresp1 := range wch1 {
 		for _, ev := range wresp1.Events {
-			fmt.Printf("vgStateWatchEvents for key: %v saw value: %v\n", string(ev.Kv.Key),
-				string(ev.Kv.Value))
 
 			// The node for a VG has changed
 			if strings.HasPrefix(string(ev.Kv.Key), vgKeyPrefix(vgNodeStr)) {
@@ -378,10 +372,8 @@ func parseVgOfflineInit(vgState map[string]string, vgEnabled map[string]bool,
 // setVgFailed sets the vg VGSTATE to FAILINGVS and leaves VGNODE as the
 // node where it failed.
 func (cs *Struct) setVgFailed(vg string) (err error) {
-	var txnResp *clientv3.TxnResponse
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	txnResp, err = cs.kvc.Txn(ctx).
+	_, err = cs.kvc.Txn(ctx).
 
 		// Verify that the VG is still in ONLINING state
 		If(
@@ -396,14 +388,12 @@ func (cs *Struct) setVgFailed(vg string) (err error) {
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	// TODO - how handle error cases????
-	fmt.Printf("txnResp: %+v\n", txnResp)
 
 	return
 }
 
 // setVgOffline sets the vg VGSTATE to OFFLINEVS and clears VGNODE.
 func (cs *Struct) setVgOffline(vg string) (err error) {
-	fmt.Printf("setVgOffline: name: %v\n", vg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_, err = cs.kvc.Txn(ctx).
@@ -442,8 +432,6 @@ func (cs *Struct) incVgOfflineWgCnt() {
 // caller will do a WG.Done().  The watcher will decrement the count.
 func (cs *Struct) setVgOfflining(vg string) (err error) {
 	var txnResp *clientv3.TxnResponse
-
-	fmt.Printf("setVgOfflining: name: %v\n", vg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	txnResp, err = cs.kvc.Txn(ctx).
@@ -500,10 +488,9 @@ func (cs *Struct) setVgOfflining(vg string) (err error) {
 // setVgOnline sets the vg VGSTATE to ONLINEVS and leaves VGNODE as the
 // node where it is online.
 func (cs *Struct) setVgOnline(vg string) (err error) {
-	var txnResp *clientv3.TxnResponse
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	txnResp, err = cs.kvc.Txn(ctx).
+	_, err = cs.kvc.Txn(ctx).
 
 		// Verify that the VG is still ONLINING
 		If(
@@ -518,7 +505,6 @@ func (cs *Struct) setVgOnline(vg string) (err error) {
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	// TODO - how handle error cases????
-	fmt.Printf("txnResp: %+v\n", txnResp)
 
 	return
 }
@@ -585,9 +571,6 @@ func (cs *Struct) setVgOnlining(node string, vg string) (err error) {
 func callUpDownScript(operation string, vgName string, ipAddr string,
 	netMask string, nic string) (err error) {
 
-	fmt.Printf("callUpDownScript() START - operation: %v name: %v ipaddr: %v nic: %v\n",
-		operation, vgName, ipAddr, nic)
-
 	cmd := exec.Command(upDownScript, operation, vgName, ipAddr, netMask, nic)
 	cmd.Stdin = strings.NewReader("some input")
 	var stderr bytes.Buffer
@@ -595,7 +578,8 @@ func callUpDownScript(operation string, vgName string, ipAddr string,
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	fmt.Printf("callUpDownScript() END - returned: out: %v stderr: %v\n", out.String(), stderr.String())
+	fmt.Printf("callUpDownScript() - operation: %v name: %v ipaddr: %v nic: %v OUT: %v STDERR: %v\n",
+		operation, vgName, ipAddr, nic, out.String(), stderr.String())
 
 	return
 }
@@ -662,6 +646,9 @@ func (cs *Struct) offlineVg(name string, rev int64) {
 func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
 
 	// Retrieve VG and node state
+	_, _, vgNode, _, _, _, _, _, _, _, _, _ := cs.gatherVgInfo()
+
+	/* DEBUG CODE
 	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
 		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.gatherVgInfo()
 
@@ -671,6 +658,7 @@ func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
 		vgNic, vgAutofail, vgEnabled, vgVolumelist)
 	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
 		nodesAlreadyDead, nodesOnline, nodesHb)
+	*/
 
 	if nodeDying {
 
@@ -736,15 +724,17 @@ func (cs *Struct) clearMyVgs() {
 func (cs *Struct) startVgs() {
 
 	// Retrieve VG and node state
-	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.gatherVgInfo()
+	_, vgState, _, _, _, _, vgAutofail, vgEnabled,
+		_, _, nodesOnline, _ := cs.gatherVgInfo()
 
+	/* Debugging code
 	fmt.Printf("startVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
 		vgName, vgState, vgNode, vgIpaddr, vgNetmask)
 	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
 		vgNic, vgAutofail, vgEnabled, vgVolumelist)
 	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
 		nodesAlreadyDead, nodesOnline, nodesHb)
+	*/
 
 	// Find VGs which are in the INITIAL or OFFLINE state
 	vgsToStart := parseVgOfflineInit(vgState, vgEnabled, vgAutofail)
@@ -753,9 +743,6 @@ func (cs *Struct) startVgs() {
 	if cntVgsToStart == 0 {
 		return
 	}
-
-	cntNodesOnline := len(nodesOnline)
-	fmt.Printf("cntVgsToStart: %v online nodes: %v\n", cntVgsToStart, cntNodesOnline)
 
 	// Set state to ONLINING to initiate the ONLINE
 	for vgsToStart.Len() > 0 {
