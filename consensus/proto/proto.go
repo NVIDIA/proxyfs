@@ -31,6 +31,9 @@ func main() {
 		os.Exit(-1)
 	}
 
+	// Become a Server in the cluster
+	cs.Server()
+
 	// Simulate proxyfsd being a long running daemon
 	// by looping here.
 	for {

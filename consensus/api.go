@@ -38,6 +38,12 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 
 	cs.kvc = clientv3.NewKV(cs.cli)
 
+	return
+}
+
+// Server becomes a server in the consensus cluster.
+func (cs *Struct) Server() (err error) {
+
 	// Verify that our hostName is one of the members of the cluster
 	resp, err := cs.cli.MemberList(context.Background())
 	if err != nil {
@@ -66,7 +72,7 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	cs.startAWatcher(vgPrefix())
 
 	// Set state of local node to STARTING
-	err = cs.setNodeStateForced(hostName, STARTINGNS)
+	err = cs.setNodeStateForced(cs.hostName, STARTINGNS)
 	if err != nil {
 		// TODO - assume this means txn timed out, could not
 		// get majority, etc.... what do we do?
@@ -76,6 +82,14 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 
 	// Watcher will start HB after getting STARTING state
 
+	return
+}
+
+// Client becomes a client in the consensus cluster.
+func (cs *Struct) Client() (err error) {
+
+	// TODO - start watcher but do not start HB!!!!
+	// how wait before doing things like list, etc????
 	return
 }
 
@@ -113,6 +127,20 @@ func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 	// VIP will change.   Will it also remove the volume?  Do we need a move
 	// API to move from one VG to another VG?
 	return
+}
+
+// List grabs all VG and node state and returns it.
+func (cs *Struct) List() (vgName map[string]string, vgState map[string]string,
+	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
+	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
+	vgVolumelist map[string]string, nodesAlreadyDead []string, nodesOnline []string,
+	nodesHb map[string]time.Time) {
+
+	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb = cs.gatherVgInfo()
+
+	return
+
 }
 
 // Unregister from the consensus protocol
