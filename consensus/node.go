@@ -66,13 +66,12 @@ func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
 	nodesState = make(map[string]string)
 	for _, e := range resp.Kvs {
 		if strings.HasPrefix(string(e.Key), nodeKeyStatePrefix()) {
-			nodesState[string(e.Key)] = string(e.Value)
+			node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
+			nodesState[node] = string(e.Value)
 			if string(e.Value) == DEADNS.String() {
-				node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
 				nodesAlreadyDead = append(nodesAlreadyDead, node)
 			} else {
 				if string(e.Value) == ONLINENS.String() {
-					node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
 					nodesOnline = append(nodesOnline, node)
 				}
 			}

@@ -141,13 +141,13 @@ func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 }
 
 // List grabs all VG and node state and returns it.
-func (cs *Struct) List() (vgName map[string]string, vgState map[string]string,
-	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
-	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
-	vgVolumelist map[string]string, nodesAlreadyDead []string, nodesOnline []string,
-	nodesHb map[string]time.Time, nodesState map[string]string) {
+func (cs *Struct) List() (vgState map[string]string, vgNode map[string]string,
+	vgIpaddr map[string]string, vgNetmask map[string]string, vgNic map[string]string,
+	vgAutofail map[string]bool, vgEnabled map[string]bool, vgVolumelist map[string]string,
+	nodesAlreadyDead []string, nodesOnline []string, nodesHb map[string]time.Time,
+	nodesState map[string]string) {
 
-	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
 		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState = cs.gatherInfo()
 
 	return
