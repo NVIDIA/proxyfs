@@ -57,12 +57,16 @@ func makeNodeHbKey(n string) string {
 // NOTE: The resp given could have retrieved many objects including VGs
 // so do not assume it only contains VGs.
 func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
-	nodesOnline []string, nodesHb map[string]time.Time) {
+	nodesOnline []string, nodesHb map[string]time.Time,
+	nodesState map[string]string) {
+
 	nodesAlreadyDead = make([]string, 0)
 	nodesOnline = make([]string, 0)
 	nodesHb = make(map[string]time.Time)
+	nodesState = make(map[string]string)
 	for _, e := range resp.Kvs {
 		if strings.HasPrefix(string(e.Key), nodeKeyStatePrefix()) {
+			nodesState[string(e.Key)] = string(e.Value)
 			if string(e.Value) == DEADNS.String() {
 				node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
 				nodesAlreadyDead = append(nodesAlreadyDead, node)
@@ -93,6 +97,10 @@ func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
 // NOTE: We are updating the node states in multiple transactions.  I
 // assume this is okay but want to revisit this.
 func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time.Time) {
+	if !cs.server {
+		return
+	}
+
 	for _, n := range nodesNewlyDead {
 		err := cs.setNodeStateIfSame(n, DEADNS, ONLINENS, nodesHb[n])
 
@@ -110,7 +118,7 @@ func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time
 
 // getRevNodeState retrieves node state as of given revision
 func (cs *Struct) getRevNodeState(revNeeded int64) (nodesAlreadyDead []string,
-	nodesOnline []string, nodesHb map[string]time.Time) {
+	nodesOnline []string, nodesHb map[string]time.Time, nodesState map[string]string) {
 
 	// First grab all node state information in one operation
 	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(), clientv3.WithRev(revNeeded))
@@ -119,7 +127,7 @@ func (cs *Struct) getRevNodeState(revNeeded int64) (nodesAlreadyDead []string,
 		os.Exit(-1)
 	}
 
-	nodesAlreadyDead, nodesOnline, nodesHb = parseNodeResp(resp)
+	nodesAlreadyDead, nodesOnline, nodesHb, nodesState = parseNodeResp(resp)
 	return
 }
 
@@ -128,6 +136,10 @@ func (cs *Struct) getRevNodeState(revNeeded int64) (nodesAlreadyDead []string,
 //
 // It then initiates failover of any VGs.
 func (cs *Struct) checkForDeadNodes() {
+	if !cs.server {
+		return
+	}
+
 	// First grab all node state information in one operation
 	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix())
 	if err != nil {
@@ -139,7 +151,7 @@ func (cs *Struct) checkForDeadNodes() {
 	// nodes which are still marked ONLINE.
 	//
 	// Also retrieve the last HB values for each node.
-	_, nodesOnline, nodesHb := parseNodeResp(resp)
+	_, nodesOnline, nodesHb, _ := parseNodeResp(resp)
 
 	// Go thru list of nodeNotDeadState and verify HB is not past
 	// interval.  If so, put on list nodesNewlyDead and then
@@ -169,6 +181,10 @@ func (cs *Struct) checkForDeadNodes() {
 // sendHB sends a heartbeat by doing a txn() to update
 // the local node's last heartbeat.
 func (cs *Struct) sendHb() {
+	if !cs.server {
+		return
+	}
+
 	nodeKey := makeNodeHbKey(cs.hostName)
 	currentTime, err := time.Now().UTC().MarshalText()
 	if err != nil {
@@ -189,6 +205,10 @@ func (cs *Struct) sendHb() {
 //
 // TODO - also need stopHB function....
 func (cs *Struct) startHBandMonitor() {
+	if !cs.server {
+		return
+	}
+
 	// TODO - interval should be tunable
 	cs.HBTicker = time.NewTicker(1 * time.Second)
 	go func() {
@@ -212,7 +232,9 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 
 		nodesNewlyDead := make([]string, 1)
 		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
-		cs.failoverVgs(nodesNewlyDead)
+		if cs.server {
+			cs.failoverVgs(nodesNewlyDead)
+		}
 	case ONLINENS.String():
 		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
 	case OFFLININGNS.String():
@@ -228,26 +250,34 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Local Node - went: %v\n", string(ev.Kv.Value))
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
-		cs.clearMyVgs()
-		cs.setMyNodeState(cs.hostName, ONLINENS)
+		if cs.server {
+			cs.clearMyVgs()
+			cs.setMyNodeState(cs.hostName, ONLINENS)
+		}
 	case DEADNS.String():
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
-		cs.offlineVgs(true, ev.Kv.ModRevision)
-		// TODO - Drop VIP here!!!
-		os.Exit(-1)
+		if cs.server {
+			cs.offlineVgs(true, ev.Kv.ModRevision)
+			// TODO - Drop VIP here!!!
+			os.Exit(-1)
+		}
 	case ONLINENS.String():
 		// TODO - implement ONLINE - how know to start VGs vs
 		// avoid failback.  Probably only initiate online of
 		// VGs which are not already started.....
 		//
 		// TODO - should I pass the REVISION to the start*() functions?
-		cs.startHBandMonitor()
-		cs.startVgs()
+		if cs.server {
+			cs.startHBandMonitor()
+			cs.startVgs()
+		}
 	case OFFLININGNS.String():
 		// offlineVgs() blocks until all VGs are offline
-		cs.offlineVgs(false, 0)
+		if cs.server {
+			cs.offlineVgs(false, 0)
 
-		cs.setMyNodeState(cs.hostName, DEADNS)
+			cs.setMyNodeState(cs.hostName, DEADNS)
+		}
 	}
 }
 

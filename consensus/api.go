@@ -21,6 +21,7 @@ type Struct struct {
 	HBTicker  *time.Ticker   // HB ticker for sending HB
 	// and processing DEAD nodes.
 	offlineWG sync.WaitGroup // Wait group used to wait until VGs offline
+	server    bool           // Is this instance a server?
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
@@ -39,6 +40,18 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	cs.kvc = clientv3.NewKV(cs.cli)
 
 	return
+}
+
+func (cs *Struct) startWatchers() {
+
+	// Start a watcher to watch for node state changes
+	cs.startAWatcher(nodeKeyStatePrefix())
+
+	// Start a watcher to watch for node heartbeats
+	cs.startAWatcher(nodeKeyHbPrefix())
+
+	// Start a watcher to watch for volume group changes
+	cs.startAWatcher(vgPrefix())
 }
 
 // Server becomes a server in the consensus cluster.
@@ -62,14 +75,9 @@ func (cs *Struct) Server() (err error) {
 		return
 	}
 
-	// Start a watcher to watch for node state changes
-	cs.startAWatcher(nodeKeyStatePrefix())
+	cs.server = true
 
-	// Start a watcher to watch for node heartbeats
-	cs.startAWatcher(nodeKeyHbPrefix())
-
-	// Start a watcher to watch for volume group changes
-	cs.startAWatcher(vgPrefix())
+	cs.startWatchers()
 
 	// Set state of local node to STARTING
 	err = cs.setNodeStateForced(cs.hostName, STARTINGNS)
@@ -88,8 +96,11 @@ func (cs *Struct) Server() (err error) {
 // Client becomes a client in the consensus cluster.
 func (cs *Struct) Client() (err error) {
 
-	// TODO - start watcher but do not start HB!!!!
-	// how wait before doing things like list, etc????
+	// paranoid...
+	cs.server = false
+
+	cs.startWatchers()
+
 	return
 }
 
@@ -134,10 +145,10 @@ func (cs *Struct) List() (vgName map[string]string, vgState map[string]string,
 	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
 	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
 	vgVolumelist map[string]string, nodesAlreadyDead []string, nodesOnline []string,
-	nodesHb map[string]time.Time) {
+	nodesHb map[string]time.Time, nodesState map[string]string) {
 
 	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb = cs.gatherVgInfo()
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState = cs.gatherInfo()
 
 	return
 
