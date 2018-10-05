@@ -39,12 +39,12 @@ func listNode(cs *consensus.Struct, node string, nodeState map[string]string,
 	nodesHb map[string]time.Time) {
 
 	if node != "" {
-		fmt.Printf("NODE: %v State: %v HB: %v\n", node, nodeState[node], nodesHb[node])
+		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeState[node], nodesHb[node])
 		return
 	}
 	fmt.Printf("Node Information\n")
 	for n := range nodeState {
-		fmt.Printf("\tNODE: %v State: %v HB: %v\n", n, nodeState[n], nodesHb[n])
+		fmt.Printf("\tNode: %v State: %v Last HB: %v\n", n, nodeState[n], nodesHb[n])
 	}
 
 }
@@ -55,12 +55,12 @@ func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
 	vgAutofail map[string]bool, vgEnabled map[string]bool,
 	vgVolumelist map[string]string) {
 
-	fmt.Printf("\tVG: %v State: %v Node: %v Ipaddr: %v Netmask: %v Nic: %v\n\tAutofail: %v Enabled: %v\n",
+	fmt.Printf("\tVG: %v State: %v Node: %v Ipaddr: %v Netmask: %v Nic: %v\n\t\tAutofail: %v Enabled: %v\n",
 		vg, vgState[vg], vgNode[vg], vgIpaddr[vg], vgNetmask[vg], vgNic[vg], vgAutofail[vg],
 		vgEnabled[vg])
 	fmt.Printf("\tVolumes:\n")
 	for _, v := range vgVolumelist[vg] {
-		fmt.Printf("\t%v\n", v)
+		fmt.Printf("\t\t%v\n", v)
 	}
 	fmt.Printf("\n")
 }
@@ -69,9 +69,7 @@ func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
 func listOp(node string, vg string) {
 	cs := setupConnection()
 
-	// TODO - why need vgName as a map when k/v both vgName?
-
-	_, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
 		vgVolumelist, _, _, nodesHb, nodesState := cs.List()
 
 	if vg != "" {
