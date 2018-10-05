@@ -29,8 +29,7 @@ func setupConnection() (cs *consensus.Struct) {
 }
 
 func teardownConnection(cs *consensus.Struct) {
-	// NOTE: Currently this code is never hit
-	//
+
 	// Unregister from the etcd cluster
 	cs.Unregister()
 }
@@ -105,8 +104,12 @@ func main() {
 	offlineCommand := flag.NewFlagSet("offline", flag.ExitOnError)
 	onlineCommand := flag.NewFlagSet("online", flag.ExitOnError)
 	/*
-		setCommand := flag.NewFlagSet("set", flag.ExitOnError)
-		watchCommand := flag.NewFlagSet("watch", flag.ExitOnError)
+		  TODO - add watch and set commands to watch for changes for
+		  example a VG, etc or to change the state of a VG in a unit
+		  test.
+
+			setCommand := flag.NewFlagSet("set", flag.ExitOnError)
+			watchCommand := flag.NewFlagSet("watch", flag.ExitOnError)
 	*/
 
 	// List subcommand flag pointers
@@ -125,7 +128,8 @@ func main() {
 	// os.Arg[0] is the main command
 	// os.Arg[1] will be the subcommand
 	if len(os.Args) < 2 {
-		fmt.Println("subcommand is required")
+		fmt.Println("list, offline or online subcommand is required")
+		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
@@ -142,7 +146,7 @@ func main() {
 		onlineCommand.Parse(os.Args[2:])
 	default:
 		// TODO - fix this error message
-		fmt.Println("invalid subcommand")
+		fmt.Println("invalid subcommand - valid subcommands are list, offline or online")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
