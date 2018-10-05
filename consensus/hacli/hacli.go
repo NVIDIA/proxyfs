@@ -22,6 +22,9 @@ func setupConnection() (cs *consensus.Struct) {
 		os.Exit(-1)
 	}
 
+	// Come up as a client
+	cs.Client()
+
 	return cs
 }
 
@@ -32,26 +35,67 @@ func teardownConnection(cs *consensus.Struct) {
 	cs.Unregister()
 }
 
+func listNode(cs *consensus.Struct, node string, nodeState map[string]string,
+	nodesHb map[string]time.Time) {
+
+	if node != "" {
+		fmt.Printf("NODE: %v State: %v HB: %v\n", node, nodeState[node], nodesHb[node])
+		return
+	}
+	fmt.Printf("Node Information\n")
+	for n := range nodeState {
+		fmt.Printf("\tNODE: %v State: %v HB: %v\n", n, nodeState[n], nodesHb[n])
+	}
+
+}
+
+func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
+	vgNode map[string]string, vgIpaddr map[string]string,
+	vgNetmask map[string]string, vgNic map[string]string,
+	vgAutofail map[string]bool, vgEnabled map[string]bool,
+	vgVolumelist map[string]string) {
+
+	fmt.Printf("\tVG: %v State: %v Node: %v Ipaddr: %v Netmask: %v Nic: %v\n\tAutofail: %v Enabled: %v\n",
+		vg, vgState[vg], vgNode[vg], vgIpaddr[vg], vgNetmask[vg], vgNic[vg], vgAutofail[vg],
+		vgEnabled[vg])
+	fmt.Printf("\tVolumes:\n")
+	for _, v := range vgVolumelist[vg] {
+		fmt.Printf("\t%v\n", v)
+	}
+	fmt.Printf("\n")
+}
+
 // listOp handles a listing
 func listOp(node string, vg string) {
 	cs := setupConnection()
 
-	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.List()
+	// TODO - why need vgName as a map when k/v both vgName?
 
-	fmt.Printf("Dump everything for node: %v vg: %v\n", node, vg)
-	fmt.Printf("vgName: %v\n", vgName)
-	fmt.Printf("vgState: %v\n", vgState)
-	fmt.Printf("vgNode: %v\n", vgNode)
-	fmt.Printf("vgIpaddr: %v\n", vgIpaddr)
-	fmt.Printf("vgNetmask: %v\n", vgNetmask)
-	fmt.Printf("vgNic: %v\n", vgNic)
-	fmt.Printf("vgAutofail: %v\n", vgAutofail)
-	fmt.Printf("vgEnabled: %v\n", vgEnabled)
-	fmt.Printf("vgVolumelist: %v\n", vgVolumelist)
-	fmt.Printf("nodesAlreadyDead: %v\n", nodesAlreadyDead)
-	fmt.Printf("nodesOnline: %v\n", nodesOnline)
-	fmt.Printf("nodesHb: %v\n", nodesHb)
+	_, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist, _, _, nodesHb, nodesState := cs.List()
+
+	if vg != "" {
+		if vgState[vg] != "" {
+			listVg(cs, vg, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail,
+				vgEnabled, vgVolumelist)
+		} else {
+			fmt.Printf("vg: %v does not exist\n", vg)
+		}
+	} else if node != "" {
+		if nodesState[node] != "" {
+			listNode(cs, node, nodesState, nodesHb)
+		} else {
+			fmt.Printf("Node: %v does not exist\n", node)
+		}
+	} else {
+		listNode(cs, node, nodesState, nodesHb)
+
+		fmt.Printf("\nVolume Group Information\n")
+		for n := range vgState {
+			listVg(cs, n, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail,
+				vgEnabled, vgVolumelist)
+		}
+	}
 
 	teardownConnection(cs)
 }

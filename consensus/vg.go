@@ -148,6 +148,10 @@ func (cs *Struct) onlineVg(vgName string, rev int64) {
 // At present we do not do anything when we get a notification of a VGNODE
 // change and the node is the local node.
 func (cs *Struct) localHostEvent(ev *clientv3.Event) {
+	// Only do something if we are running in server as opposed to client
+	if cs.server {
+
+	}
 
 }
 
@@ -171,17 +175,19 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 		//
 		// TOOD - should we have a lighter weight version of
 		// startVgs() that just onlines one VG?
-		cs.startVgs()
+		if cs.server {
+			cs.startVgs()
+		}
 
 	case ONLININGVS.String():
 		// If VG onlining on local host then start the online
-		if node == cs.hostName {
+		if (node == cs.hostName) && cs.server {
 			go cs.onlineVg(vgName, ev.Kv.ModRevision)
 		}
 
 	case OFFLININGVS.String():
 		// A VG is offlining.
-		if node == cs.hostName {
+		if (node == cs.hostName) && cs.server {
 			cs.offlineVg(vgName, ev.Kv.ModRevision)
 		}
 
@@ -195,7 +201,7 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 
 }
 
-// vgStateWatchEvents creates a watcher based on volume group
+// vgWatchEvents creates a watcher based on volume group
 // changes.
 func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 
@@ -275,15 +281,15 @@ func (cs *Struct) parseVgResp(resp *clientv3.GetResponse) (vgName map[string]str
 	return
 }
 
-// gatherVgInfo() gathers all VG information and node information and
+// gatherInfo() gathers all VG information and node information and
 // returns it broken out into maps.
 //
 // All data is taken from the same etcd global revision number.
-func (cs *Struct) gatherVgInfo() (vgName map[string]string, vgState map[string]string,
+func (cs *Struct) gatherInfo() (vgName map[string]string, vgState map[string]string,
 	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
 	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
 	vgVolumelist map[string]string, nodesAlreadyDead []string, nodesOnline []string,
-	nodesHb map[string]time.Time) {
+	nodesHb map[string]time.Time, nodesState map[string]string) {
 
 	// First grab all VG state information in one operation
 	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix())
@@ -301,7 +307,7 @@ func (cs *Struct) gatherVgInfo() (vgName map[string]string, vgState map[string]s
 	respRev := resp.Header.GetRevision()
 
 	// Get the node state as of the same revision number
-	nodesAlreadyDead, nodesOnline, nodesHb = cs.getRevNodeState(respRev)
+	nodesAlreadyDead, nodesOnline, nodesHb, nodesState = cs.getRevNodeState(respRev)
 
 	return
 }
@@ -310,8 +316,12 @@ func (cs *Struct) gatherVgInfo() (vgName map[string]string, vgState map[string]s
 // DEAD node and marks the VG as OFFLINE
 func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string) {
 
+	if !cs.server {
+		return
+	}
+
 	// Retrieve VG and node state
-	_, _, vgNode, _, _, _, _, _, _, _, _, _ := cs.gatherVgInfo()
+	_, _, vgNode, _, _, _, _, _, _, _, _, _, _ := cs.gatherInfo()
 
 	for _, deadNode := range newlyDeadNodes {
 		for name, node := range vgNode {
@@ -337,6 +347,10 @@ func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string) {
 // Don't we have to use the same revision of ETCD for all these decisions?
 // TODO - how prevent autofailback from happening? Does it matter?
 func (cs *Struct) failoverVgs(newlyDeadNodes []string) {
+
+	if !cs.server {
+		return
+	}
 
 	// Mark all VGs that were online on newlyDeadNodes as OFFLINE
 	cs.setVgsOfflineDeadNodes(newlyDeadNodes)
@@ -646,18 +660,18 @@ func (cs *Struct) offlineVg(name string, rev int64) {
 func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
 
 	// Retrieve VG and node state
-	_, _, vgNode, _, _, _, _, _, _, _, _, _ := cs.gatherVgInfo()
+	_, _, vgNode, _, _, _, _, _, _, _, _, _, _ := cs.gatherInfo()
 
 	/* DEBUG CODE
 	vgName, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb := cs.gatherVgInfo()
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState := cs.gatherInfo()
 
 	fmt.Printf("offlineVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
 		vgName, vgState, vgNode, vgIpaddr, vgNetmask)
 	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
 		vgNic, vgAutofail, vgEnabled, vgVolumelist)
-	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
-		nodesAlreadyDead, nodesOnline, nodesHb)
+	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v nodesState: %v\n",
+		nodesAlreadyDead, nodesOnline, nodesHb, nodesState)
 	*/
 
 	if nodeDying {
@@ -703,9 +717,12 @@ func (cs *Struct) offlineVgs(nodeDying bool, deadRev int64) {
 // can happen if the local node is the first node up after all
 // proxyfsd processes were killed.
 func (cs *Struct) clearMyVgs() {
+	if !cs.server {
+		return
+	}
 
 	// Retrieve VG and node state
-	_, _, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _, _, _, _ := cs.gatherVgInfo()
+	_, _, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _, _, _, _, _ := cs.gatherInfo()
 
 	for name, node := range vgNode {
 		if node == cs.hostName {
@@ -723,9 +740,13 @@ func (cs *Struct) clearMyVgs() {
 // in a predictable manner.
 func (cs *Struct) startVgs() {
 
+	if !cs.server {
+		return
+	}
+
 	// Retrieve VG and node state
 	_, vgState, _, _, _, _, vgAutofail, vgEnabled,
-		_, _, nodesOnline, _ := cs.gatherVgInfo()
+		_, _, nodesOnline, _, _ := cs.gatherInfo()
 
 	/* Debugging code
 	fmt.Printf("startVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
