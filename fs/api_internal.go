@@ -1896,9 +1896,13 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
 
-	var totalReadBytes uint64
 	startTime := time.Now()
 	defer func() {
+		var totalReadBytes uint64
+		for _, step := range *readRangeOut {
+			totalReadBytes += step.Length
+		}
+
 		globals.MiddlewareGetObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 		globals.MiddlewareGetObjectBytes.Add(totalReadBytes)
 		if err != nil {
@@ -1951,7 +1955,6 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 			return
 		}
 		appendReadPlanEntries(tmpReadEnt, readRangeOut)
-		totalReadBytes += metadata.Size
 	} else {
 		volumeHandle, err1 := inode.FetchVolumeHandle(volumeName)
 		if err1 != nil {
@@ -1969,7 +1972,6 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 				return
 			}
 			appendReadPlanEntries(tmpReadEnt, readRangeOut)
-			totalReadBytes += *readRangeIn[i].Len
 		}
 	}
 
