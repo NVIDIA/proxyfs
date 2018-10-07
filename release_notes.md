@@ -1,5 +1,13 @@
 # ProxyFS Release Notes
 
+## 1.8.0.1 (October 6, 2018)
+
+### Bug Fixes:
+
+Fix a bug introduced in 1.8.0 that triggered a NULL pointer dereference
+if an HTTP GET request specified a byte range without an ending offset.
+
+
 ## 1.8.0 (September 30, 2018)
 
 ### Features:
