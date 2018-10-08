@@ -20,7 +20,7 @@ type testStressFileWritesGlobalsStruct struct {
 var testStressFileWritesGlobals testStressFileWritesGlobalsStruct
 
 func TestStressFileWritesWhileStarved(t *testing.T) {
-	testStressFileWritesGlobals.testStressNumWorkers = 25
+	testStressFileWritesGlobals.testStressNumWorkers = 10
 	testStressFileWritesGlobals.testStressNumFlushesPerFile = 4 // Currently, each triggers a checkpoint as well
 	testStressFileWritesGlobals.testStressNumBlocksPerFlush = 20
 	testStressFileWritesGlobals.testStressNumBytesPerBlock = 1
