@@ -22,6 +22,7 @@ gopkgsubdirs = \
 	stats \
 	statslogger \
 	swiftclient \
+	transitions \
 	utils \
 	version
 
@@ -41,7 +42,7 @@ gobinsubdirs = \
 	proxyfsd/proxyfsd \
 	ramswift/ramswift
 
-uname := $(shell uname)
+uname = $(shell uname)
 
 ifeq ($(uname),Linux)
     distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")

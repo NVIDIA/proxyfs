@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type testGlobalsStruct struct {
@@ -73,6 +74,9 @@ func TestStatsAPIviaUDP(t *testing.T) {
 	go testStatsd()
 
 	confStrings = []string{
+		"Logging.LogFilePath=/dev/null",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=" + portString,
 		"Stats.BufferLength=1000",
@@ -84,17 +88,17 @@ func TestStatsAPIviaUDP(t *testing.T) {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
 	}
 
-	err = Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) returned error: %v", err)
+		t.Fatalf("transitions.Up(confMap) returned error: %v", err)
 	}
 
 	testSendStats()
 	testVerifyStats()
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("stats.Down() returned error: %v", err)
+		t.Fatalf("transitions.Down() returned error: %v", err)
 	}
 
 	testGlobals.stopPending = true
@@ -148,6 +152,9 @@ func TestStatsAPIviaTCP(t *testing.T) {
 	go testStatsd()
 
 	confStrings = []string{
+		"Logging.LogFilePath=/dev/null",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
 		"Stats.IPAddr=localhost",
 		"Stats.TCPPort=" + portString,
 		"Stats.BufferLength=1000",
@@ -159,17 +166,17 @@ func TestStatsAPIviaTCP(t *testing.T) {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
 	}
 
-	err = Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) returned error: %v", err)
+		t.Fatalf("transitions.Up() returned error: %v", err)
 	}
 
 	testSendStats()
 	testVerifyStats()
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("stats.Down() returned error: %v", err)
+		t.Fatalf("transitions.Down() returned error: %v", err)
 	}
 
 	testGlobals.stopPending = true

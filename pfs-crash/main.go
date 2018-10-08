@@ -94,17 +94,12 @@ func main() {
 		mkproxyfsCmd                *exec.Cmd
 		nextHalterTriggerIndex      int
 		peerSectionName             string
-		primaryPeer                 string
 		privateIPAddr               string
 		randomHaltAfterCount        uint64
 		randomKillDelay             time.Duration
 		signalChan                  chan os.Signal
 		signalToSend                os.Signal
 		triggerBoolAndTrafficScript string
-		volumeList                  []string
-		volumeListElement           string
-		volumeNameInVolumeList      bool
-		volumeSectionName           string
 		whoAmI                      string
 	)
 
@@ -165,32 +160,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		return
-	}
-	volumeNameInVolumeList = false
-	for _, volumeListElement = range volumeList {
-		if volumeName == volumeListElement {
-			volumeNameInVolumeList = true
-			break
-		}
-	}
-	if !volumeNameInVolumeList {
-		log.Fatalf("volumeName (%s) not found in volumeList (%v)", volumeName, volumeList)
-	}
-
-	volumeSectionName = "Volume:" + volumeName
-
-	primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
-	if nil != err {
-		log.Fatal(err)
-	}
-	if whoAmI != primaryPeer {
-		log.Fatalf("Cluster.WhoAmI (%s) does not match %s.PrimaryPeer (%s)", whoAmI, volumeSectionName, primaryPeer)
-	}
-
-	peerSectionName = "Peer:" + primaryPeer
+	peerSectionName = "Peer:" + whoAmI
 
 	privateIPAddr, err = confMap.FetchOptionValueString(peerSectionName, "PrivateIPAddr")
 	if nil != err {
@@ -204,7 +174,7 @@ func main() {
 
 	ipAddrTCPPort = net.JoinHostPort(privateIPAddr, strconv.Itoa(int(httpServerTCPPort)))
 
-	fuseMountPointName, err = confMap.FetchOptionValueString(volumeSectionName, "FUSEMountPointName")
+	fuseMountPointName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "FUSEMountPointName")
 	if nil != err {
 		log.Fatal(err)
 	}

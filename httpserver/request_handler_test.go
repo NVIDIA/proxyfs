@@ -2,55 +2,14 @@ package httpserver
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"net/http/httptest"
-	"os"
 	"testing"
-
-	"github.com/swiftstack/ProxyFS/conf"
 )
 
-func testSetup() (err error) {
-	testConfMapStrings := []string{
-		"Stats.IPAddr=localhost",
-		"Stats.UDPPort=52184",
-		"Stats.BufferLength=100",
-	}
-
-	testConfMap, err := conf.MakeConfMapFromStrings(testConfMapStrings)
-	if nil != err {
-		return
-	}
-
-	globals.confMap = testConfMap
-
-	return nil
-}
-
-func testTeardown() (err error) {
-	return
-}
-
-func TestMain(m *testing.M) {
-	err := testSetup()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "test setup failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	testResults := m.Run()
-
-	err = testTeardown()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "test teardown failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	os.Exit(testResults)
-}
-
 func TestConfigExpansion(t *testing.T) {
+	testSetup(t)
+	defer testTeardown(t)
 
 	testConfigExpansion := func(url string, shouldBeExpanded bool) {
 		req := httptest.NewRequest("GET", "http://pfs.com"+url, nil)

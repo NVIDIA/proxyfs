@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type connectionStruct struct {
@@ -184,8 +185,11 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up reads the Swift configuration to enable subsequent communication
-func Up(confMap conf.ConfMap) (err error) {
+func init() {
+	transitions.Register("swiftclient", &globals)
+}
+
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	var (
 		chunkedConnectionPoolSize    uint16
 		freeConnectionIndex          uint16
@@ -317,24 +321,39 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// PauseAndContract pauses the swiftclient package and applies any removals from the supplied confMap
-func PauseAndContract(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
 	drainConnections()
 	globals.connectionNonce++
 	err = nil
 	return
 }
 
-// ExpandAndResume applies any additions from the supplied confMap and resumes the swiftclient package
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	drainConnections()
-	globals.connectionNonce++
-	err = nil
-	return
-}
-
-// Down terminates all outstanding communications as part of process shutdown
-func Down() (err error) {
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	drainConnections()
 	globals.connectionNonce++
 	bucketstats.UnRegister("proxyfs.swiftclient", "")

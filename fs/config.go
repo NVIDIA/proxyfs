@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -46,8 +47,7 @@ type volumeStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	whoAmI                    string
-	volumeMap                 map[string]*volumeStruct
+	volumeMap                 map[string]*volumeStruct // key == volumeStruct.volumeName
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
@@ -170,267 +170,132 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-func Up(confMap conf.ConfMap) (err error) {
-	var (
-		flowControlName        string
-		flowControlSectionName string
-		primaryPeerList        []string
-		replayLogFileName      string
-		volume                 *volumeStruct
-		volumeList             []string
-		volumeName             string
-		volumeSectionName      string
-	)
+func init() {
+	transitions.Register("fs", &globals)
+}
 
-	// register statistics
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	bucketstats.Register("proxyfs.fs", "", &globals)
 
-	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
-		return
-	}
-
 	globals.volumeMap = make(map[string]*volumeStruct)
-
-	for _, volumeName = range volumeList {
-		volumeSectionName = "Volume:" + volumeName
-
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				volume = &volumeStruct{
-					volumeName:               volumeName,
-					FLockMap:                 make(map[inode.InodeNumber]*list.List),
-					inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
-					mountList:                make([]MountID, 0),
-				}
-
-				replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
-				if nil == err {
-					volume.doCheckpointPerFlush = ("" == replayLogFileName)
-				} else {
-					volume.doCheckpointPerFlush = true
-				}
-				logger.Infof("Checkpoint per Flush for volume %v is %v", volume.volumeName, volume.doCheckpointPerFlush)
-
-				flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
-				if nil != err {
-					return
-				}
-				flowControlSectionName = "FlowControl:" + flowControlName
-
-				volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
-				if nil != err {
-					return
-				}
-
-				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
-				if nil != err {
-					return
-				}
-				volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
-				if nil != err {
-					return
-				}
-
-				globals.volumeMap[volumeName] = volume
-			}
-		} else {
-			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
-			return
-		}
-	}
-
 	globals.mountMap = make(map[MountID]*mountStruct)
 	globals.lastMountID = MountID(0)
 	globals.inFlightFileInodeDataList = list.New()
 
+	err = nil
 	return
 }
 
-func PauseAndContract(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		id                MountID
-		ok                bool
-		primaryPeerList   []string
-		removedVolumeList []string
-		updatedVolumeMap  map[string]bool // key == volumeName; value ignored
+		replayLogFileName string
 		volume            *volumeStruct
-		volumeList        []string
-		volumeName        string
-		whoAmI            string
+		volumeSectionName string
 	)
 
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	volume = &volumeStruct{
+		volumeName:               volumeName,
+		FLockMap:                 make(map[inode.InodeNumber]*list.List),
+		inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
+		mountList:                make([]MountID, 0),
+	}
+
+	volumeSectionName = "Volume:" + volumeName
+
+	replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
+	if nil == err {
+		volume.doCheckpointPerFlush = ("" == replayLogFileName)
+	} else {
+		volume.doCheckpointPerFlush = true
+	}
+
+	logger.Infof("Checkpoint per Flush for volume %v is %v", volume.volumeName, volume.doCheckpointPerFlush)
+
+	volume.maxFlushTime, err = confMap.FetchOptionValueDuration(volumeSectionName, "MaxFlushTime")
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
 		return
 	}
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
+		return
+	}
+	volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
+	if nil != err {
 		return
 	}
 
-	updatedVolumeMap = make(map[string]bool)
+	globals.volumeMap[volumeName] = volume
 
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				updatedVolumeMap[volumeName] = true
-			}
-		} else {
-			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
-			return
-		}
-	}
-
-	removedVolumeList = make([]string, 0, len(globals.volumeMap))
-
-	for volumeName = range globals.volumeMap {
-		_, ok = updatedVolumeMap[volumeName]
-		if !ok {
-			removedVolumeList = append(removedVolumeList, volumeName)
-		}
-	}
-
-	for _, volumeName = range removedVolumeList {
-		volume = globals.volumeMap[volumeName]
-		for _, id = range volume.mountList {
-			delete(globals.mountMap, id)
-		}
-		volume.untrackInFlightFileInodeDataAll()
-		delete(globals.volumeMap, volumeName)
-	}
-
-	err = nil
-	return
+	return nil
 }
 
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		flowControlName        string
-		flowControlSectionName string
-		ok                     bool
-		primaryPeerList        []string
-		replayLogFileName      string
-		volume                 *volumeStruct
-		volumeList             []string
-		volumeName             string
-		volumeSectionName      string
-		whoAmI                 string
+		id     MountID
+		ok     bool
+		volume *volumeStruct
 	)
 
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
+	volume, ok = globals.volumeMap[volumeName]
+
+	if !ok {
+		err = nil
 		return
 	}
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
-		return
+	for _, id = range volume.mountList {
+		delete(globals.mountMap, id)
 	}
 
-	for _, volumeName = range volumeList {
-		volumeSectionName = "Volume:" + volumeName
+	volume.untrackInFlightFileInodeDataAll()
 
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				volume, ok = globals.volumeMap[volumeName]
-				if !ok {
-					volume = &volumeStruct{
-						volumeName:               volumeName,
-						FLockMap:                 make(map[inode.InodeNumber]*list.List),
-						inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
-						mountList:                make([]MountID, 0),
-					}
-
-					replayLogFileName, err = confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
-					if nil == err {
-						volume.doCheckpointPerFlush = ("" == replayLogFileName)
-					} else {
-						volume.doCheckpointPerFlush = true
-					}
-					logger.Infof("Checkpoint per Flush for volume %v is %v", volume.volumeName, volume.doCheckpointPerFlush)
-
-					flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
-					if nil != err {
-						return
-					}
-					flowControlSectionName = "FlowControl:" + flowControlName
-
-					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
-					if nil != err {
-						return
-					}
-
-					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
-					if nil != err {
-						return
-					}
-					volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
-					if nil != err {
-						return
-					}
-
-					globals.volumeMap[volumeName] = volume
-				}
-			}
-		} else {
-			err = fmt.Errorf("%v.PrimaryPeer cannot be multi-valued", volumeName)
-			return
-		}
-	}
+	delete(globals.volumeMap, volumeName)
 
 	err = nil
-	return
+	return nil
 }
 
-func Down() (err error) {
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+	return nil
+}
+
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	var (
 		volume *volumeStruct
 	)
+
+	if 0 != len(globals.volumeMap) {
+		err = fmt.Errorf("fs.Down() called with 0 != len(globals.volumeMap")
+		return
+	}
+	if 0 != len(globals.mountMap) {
+		err = fmt.Errorf("fs.Down() called with 0 != len(globals.mountMap")
+		return
+	}
+	if 0 != globals.inFlightFileInodeDataList.Len() {
+		err = fmt.Errorf("fs.Down() called with 0 != globals.inFlightFileInodeDataList.Len()")
+		return
+	}
 
 	for _, volume = range globals.volumeMap {
 		volume.untrackInFlightFileInodeDataAll()
@@ -440,7 +305,6 @@ func Down() (err error) {
 		logger.Fatalf("fs.Down() has completed all un-mount's... but found non-empty globals.inFlightFileInodeDataList")
 	}
 
-	// unregister statistics
 	bucketstats.UnRegister("proxyfs.fs", "")
 
 	err = nil

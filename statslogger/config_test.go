@@ -20,11 +20,9 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 func (tOCCS *testObjectCopyCallbackStruct) BytesRemaining(bytesRemaining uint64) (chunkSize uint64) {
@@ -74,7 +72,7 @@ func TestAPI(t *testing.T) {
 
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
-		"FSGlobals.VolumeList=",
+		"FSGlobals.VolumeGroupList=",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
@@ -88,16 +86,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	err = logger.Up(confMap)
-	if nil != err {
-		t.Fatalf("logger.Up(confMap) failed: %v", err)
-	}
-
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up(confMap) failed: %v", err)
-	}
-
 	signalHandlerIsArmedWG.Add(1)
 	doneChan := make(chan bool, 1) // Must be buffered to avoid race
 
@@ -105,40 +93,27 @@ func TestAPI(t *testing.T) {
 
 	signalHandlerIsArmedWG.Wait()
 
-	err = stats.Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) failed: %v", err)
+		t.Fatalf("transitions.Up(confMap) failed: %v", err)
 	}
 
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up(confMap) failed: %v", err)
-	}
-
-	// first test -- start with statsLogger disabled, then bring up enabled
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("statslogger.Up('StatsLogger.Period=0s') failed: %v", err)
-	}
 	if globals.statsLogPeriod != 0 {
 		t.Fatalf("after Up('StatsLogger.Period=0s') globals.statsLogPeriod != 0")
-	}
-
-	err = Down()
-	if nil != err {
-		t.Fatalf("Down() 'StatsLogger.Period=0s' failed: %v", err)
 	}
 
 	err = confMap.UpdateFromString("StatsLogger.Period=1s")
 	if nil != err {
 		t.Fatalf("UpdateFromString('StatsLogger.Period=1s') failed: %v", err)
 	}
-	err = Up(confMap)
+
+	err = transitions.Signaled(confMap)
 	if nil != err {
-		t.Fatalf("statslogger.Up(StatsLogger.Period=1s) failed: %v", err)
+		t.Fatalf("transitions.Signaled(confMap) failed: %v", err)
 	}
+
 	if globals.statsLogPeriod != 1*time.Second {
-		t.Fatalf("after Up('StatsLogger.Period=1s') globals.statsLogPeriod != 1 sec")
+		t.Fatalf("after Signaled('StatsLogger.Period=1s') globals.statsLogPeriod != 1 sec")
 	}
 
 	// Run the tests
@@ -153,19 +128,9 @@ func TestAPI(t *testing.T) {
 
 	// Shutdown packages
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("Down() failed: %v", err)
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		t.Fatalf("Down() failed: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() failed: %v", err)
+		t.Fatalf("transitions.Down(confMap) failed: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
@@ -173,22 +138,11 @@ func TestAPI(t *testing.T) {
 	unix.Kill(unix.Getpid(), unix.SIGTERM)
 
 	_ = <-doneChan
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() failed: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() failed: %v", err)
-	}
 }
 
 // Test normal Swift client operations so we have something in the log
 //
 func testOps(t *testing.T) {
-
 	// headers for testing
 
 	catDogHeaderMap := make(map[string][]string)
@@ -827,7 +781,6 @@ func testOps(t *testing.T) {
 // Extended testing of chunked put interface to exercise internal retries
 //
 func testChunkedPut(t *testing.T) {
-
 	var (
 		accountName   = "TestAccount"
 		containerName = "TestContainer"
@@ -957,7 +910,6 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 // Make sure we can shutdown and re-enable the statsLogger
 //
 func testReload(t *testing.T, confMap conf.ConfMap) {
-
 	var err error
 
 	// Reload statslogger with logging disabled
@@ -967,15 +919,9 @@ func testReload(t *testing.T, confMap conf.ConfMap) {
 		t.Fatalf(tErr)
 	}
 
-	err = PauseAndContract(confMap)
+	err = transitions.Signaled(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("PauseAndContract('StatsLogger.Period=0s') failed: %v", err)
-		t.Fatalf(tErr)
-	}
-	err = ExpandAndResume(confMap)
-	if nil != err {
-		tErr := fmt.Sprintf("PauseAndContract('StatsLogger.Period=0s') failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("transitions.Signaled(confMap) failed: %v", err)
 	}
 
 	// Enable logging again
@@ -985,14 +931,8 @@ func testReload(t *testing.T, confMap conf.ConfMap) {
 		t.Fatalf(tErr)
 	}
 
-	err = PauseAndContract(confMap)
+	err = transitions.Signaled(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("PauseAndContract('StatsLogger.Period=1s') failed: %v", err)
-		t.Fatalf(tErr)
-	}
-	err = ExpandAndResume(confMap)
-	if nil != err {
-		tErr := fmt.Sprintf("PauseAndContract('StatsLogger.Period=1s') failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("transitions.Signaled(confMap) failed: %v", err)
 	}
 }

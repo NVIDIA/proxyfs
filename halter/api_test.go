@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 var (
@@ -12,13 +13,20 @@ var (
 )
 
 func TestAPI(t *testing.T) {
-	err := evtlog.Up(nil)
-	if nil != err {
-		t.Fatalf("evtlog.Up() unexpeectedly failed: %v", err)
+	testConfMapStrings := []string{
+		"Logging.LogFilePath=/dev/null",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
 	}
-	err = Up(nil)
+
+	testConfMap, err := conf.MakeConfMapFromStrings(testConfMapStrings)
 	if nil != err {
-		t.Fatalf("halter.Up() unexpeectedly failed: %v", err)
+		t.Fatal(err)
+	}
+
+	err = transitions.Up(testConfMap)
+	if nil != err {
+		t.Fatal(err)
 	}
 
 	configureTestModeHaltCB(testHalt)
@@ -161,6 +169,11 @@ func TestAPI(t *testing.T) {
 	}
 	if "halter.TriggerArm(haltLabelString==halter.testHaltLabel2) triggered HALT" != testHaltErr.Error() {
 		t.Fatalf("Trigger(apiTestHaltLabel2) [case 2] unexpectedly set testHaltErr to %v", testHaltErr)
+	}
+
+	err = transitions.Down(testConfMap)
+	if nil != err {
+		t.Fatal(err)
 	}
 }
 

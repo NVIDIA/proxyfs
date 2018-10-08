@@ -1162,27 +1162,31 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
-		err               error
-		errno             syscall.Errno
-		primaryPeerList   []string
-		swiftAccountName  string
-		volumeList        []string
-		volumeName        string
-		volumeSectionName string
+		err                    error
+		errno                  syscall.Errno
+		primaryPeerList        []string
+		swiftAccountName       string
+		volumeGroupNameList    []string
+		volumeGroupName        string
+		volumeGroupSectionName string
+		volumeName             string
+		volumeNameList         []string
+		volumeSectionName      string
 	)
 
 	// Fetch and configure volumes for which "we" are the PrimaryPeer
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
 	}
 
-	for _, volumeName = range volumeList {
-		volumeSectionName = "Volume:" + volumeName
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+	for _, volumeGroupName = range volumeGroupNameList {
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
+
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
 		}
 		if 0 == len(primaryPeerList) {
 			continue
@@ -1191,15 +1195,26 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 				continue
 			}
 		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
-		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+
+		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
 		}
-		_, errno = createSwiftAccount(swiftAccountName)
-		if 0 != errno {
-			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+
+		for _, volumeName = range volumeNameList {
+			volumeSectionName = "Volume:" + volumeName
+
+			swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+			if nil != err {
+				log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			}
+
+			_, errno = createSwiftAccount(swiftAccountName)
+			if 0 != errno {
+				log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+			}
 		}
 	}
 

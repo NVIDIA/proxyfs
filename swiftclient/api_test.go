@@ -15,10 +15,10 @@ import (
 
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type testObjectCopyCallbackStruct struct {
@@ -72,7 +72,7 @@ func TestAPI(t *testing.T) {
 
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
-		"FSGlobals.VolumeList=",
+		"FSGlobals.VolumeGroupList=",
 
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
@@ -110,16 +110,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	err = logger.Up(confMap)
-	if nil != err {
-		t.Fatalf("logger.Up(confMap) failed: %v", err)
-	}
-
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up(confMap) failed: %v", err)
-	}
-
 	signalHandlerIsArmedWG.Add(1)
 	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
@@ -127,14 +117,9 @@ func TestAPI(t *testing.T) {
 
 	signalHandlerIsArmedWG.Wait()
 
-	err = stats.Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("stats.Up(confMap) failed: %v", err)
-	}
-
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("Up(confMap) failed: %v", err)
+		t.Fatalf("transitions.Up(confMap) failed: %v", err)
 	}
 
 	// additional error injection settings
@@ -150,14 +135,9 @@ func TestAPI(t *testing.T) {
 
 	// Shutdown packages
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("Down() failed: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() failed: %v", err)
+		t.Fatalf("logger.transitions() failed: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
@@ -165,16 +145,6 @@ func TestAPI(t *testing.T) {
 	unix.Kill(unix.Getpid(), unix.SIGTERM)
 
 	_ = <-doneChan
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() failed: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() failed: %v", err)
-	}
 }
 
 // Test the use of the API for normal Swift operations

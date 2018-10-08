@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type globalsStruct struct {
@@ -16,8 +17,11 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up initializes the package and must successfully return before any API functions are invoked
-func Up(confMap conf.ConfMap) (err error) {
+func init() {
+	transitions.Register("halter", &globals)
+}
+
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.armedTriggers = make(map[uint32]uint32)
 	globals.triggerNamesToNumbers = make(map[string]uint32)
 	globals.triggerNumbersToNames = make(map[uint32]string)
@@ -30,23 +34,35 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// PauseAndContract pauses the evtlog package and applies any removals from the supplied confMap
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
-	err = nil
-	return
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+	return nil
 }
 
-// ExpandAndResume applies any additions from the supplied confMap and resumes the evtlog package
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
-	err = nil
-	return
-}
-
-// Down terminates the halter package
-func Down() (err error) {
-	// Nothing to do here
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	err = nil
 	return
 }

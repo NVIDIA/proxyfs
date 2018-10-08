@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -44,12 +43,6 @@ func TestAPI(t *testing.T) {
 		t.Fatalf(tErr)
 	}
 
-	err = stats.Up(confMap)
-	if nil != err {
-		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
 	Tracef("hello there!")
 	Tracef("hello again, %s!", "you")
 	Tracef("%v: %v", utils.GetFnName(), err)
@@ -61,15 +54,9 @@ func TestAPI(t *testing.T) {
 
 	testLogTargets(t)
 
-	err = stats.Down()
+	err = Down(confMap)
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
-	}
-
-	err = Down()
-	if nil != err {
-		tErr := fmt.Sprintf("logger.Down() failed: %v", err)
+		tErr := fmt.Sprintf("logger.Down(confMap) failed: %v", err)
 		t.Fatalf(tErr)
 	}
 }

@@ -59,8 +59,32 @@ func addLogTarget(writer io.Writer) {
 	logTargets.addWriter(writer)
 }
 
-func up(confMap conf.ConfMap) (err error) {
+// This is used by LogTarget, which is a logging target that is useful for
+// capturing the output logged by other packages for testing in test cases.
+//
+func (log LogTarget) write(p []byte) (n int, err error) {
+	for i := len(log.LogBuf.LogEntries) - 1; i > 0; i-- {
+		log.LogBuf.LogEntries[i] = log.LogBuf.LogEntries[i-1]
+	}
+	log.LogBuf.LogEntries[0] = strings.TrimRight(string(p), " \t\n")
 
+	log.LogBuf.TotalEntries++
+	return 0, nil
+}
+
+// Call to configure the logger.  This really should be done before using it,
+// but you can log things before calling.  However, they will not appear in
+// the logfile and will not be in the new text format.
+//
+// Config variables that affect logging include:
+//     Logging.LogFilePath        string       if present, pathname to log file
+//     Logging.LogToConsole       bool         if present and true, log to console as well as file
+//     Logging.TraceLevelLogging  stringslice  list of packages where tracing is enabled (name must
+//                                             also appear in packageTraceSettings)
+//     Logging.DebugLevelLogging  stringslice
+//
+
+func Up(confMap conf.ConfMap) (err error) {
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, TimestampFormat: timeFormat})
 
 	// Fetch log file info, if provided
@@ -104,7 +128,7 @@ func up(confMap conf.ConfMap) (err error) {
 	return nil
 }
 
-func down() (err error) {
+func Down(confMap conf.ConfMap) (err error) {
 	// We open and close our own logfile
 	if logFile != nil {
 		// Sync() flushes data cached in the kernel to disk, which is
@@ -113,29 +137,14 @@ func down() (err error) {
 		logFile.Close()
 	}
 	logTargets.Clear()
+	err = nil
 	return
 }
 
-// This is used by LogTarget, which is a logging target that is useful for
-// capturing the output logged by other packages for testing in test cases.
-//
-func (log LogTarget) write(p []byte) (n int, err error) {
-	for i := len(log.LogBuf.LogEntries) - 1; i > 0; i-- {
-		log.LogBuf.LogEntries[i] = log.LogBuf.LogEntries[i-1]
+func Signaled(confMap conf.ConfMap) (err error) {
+	err = Down(confMap)
+	if nil == err {
+		err = Up(confMap)
 	}
-	log.LogBuf.LogEntries[0] = strings.TrimRight(string(p), " \t\n")
-
-	log.LogBuf.TotalEntries++
-	return 0, nil
-}
-
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// defer call to down() until ExpandAndResume() so intervening log
-	// messages are captured
 	return
-}
-
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	down()
-	return up(confMap)
 }

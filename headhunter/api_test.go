@@ -10,12 +10,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 func inodeRecPutGet(t *testing.T, volume VolumeHandle, key uint64, value []byte) {
@@ -123,18 +119,20 @@ func TestHeadHunterAPI(t *testing.T) {
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 		"Cluster.WhoAmI=Peer0",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
-		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
 		"Volume:TestVolume.PrimaryPeer=Peer0",
 		"Volume:TestVolume.AccountName=TestAccount",
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10s",
-		"Volume:TestVolume.FlowControl=TestFlowControl",
+		"Volume:TestVolume.MaxFlushSize=10000000",
 		"Volume:TestVolume.NonceValuesToReserve=100",
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
 		"Volume:TestVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
-		"FSGlobals.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
+		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",
+		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -183,42 +181,28 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
 	}
 
+	// Schedule a Format of TestVolume on first Up()
+
+	err = confMap.UpdateFromString("Volume:TestVolume.AutoFormat=true")
+	if nil != err {
+		t.Fatalf("conf.UpdateFromString(\"Volume:TestVolume.AutoFormat=true\") returned error: %v", err)
+	}
+
+	// Up packages (TestVolume will be formatted)
+
+	err = transitions.Up(confMap)
+	if nil != err {
+		t.Fatalf("transitions.Up() [case 1] returned error: %v", err)
+	}
+
+	// Unset AutoFormat for all subsequent uses of ConfMap
+
+	err = confMap.UpdateFromString("Volume:TestVolume.AutoFormat=false")
+	if nil != err {
+		t.Fatalf("conf.UpdateFromString(\"Volume:TestVolume.AutoFormat=false\") returned error: %v", err)
+	}
+
 	// Perform test
-
-	err = logger.Up(confMap)
-	if nil != err {
-		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
-	}
-
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
-	}
-
-	err = stats.Up(confMap)
-	if nil != err {
-		t.Fatalf("stats.Up() [case 1] returned error: %v", err)
-	}
-
-	err = dlm.Up(confMap)
-	if nil != err {
-		t.Fatalf("dlm.Up() [case 1] returned error: %v", err)
-	}
-
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up() [case 1] returned error: %v", err)
-	}
-
-	err = Format(confMap, "TestVolume")
-	if nil != err {
-		t.Fatalf("headhunter.Format() returned error: %v", err)
-	}
-
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("headhunter.Up() [case 1] returned error: %v", err)
-	}
 
 	volume, err = FetchVolumeHandle("TestVolume")
 	if nil != err {
@@ -233,64 +217,14 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("FetchNonce() [case 1] returned error: %v", err)
 	}
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("headhunter.Down() [case 1] returned error: %v", err)
+		t.Fatalf("transitions.Up() [case 1] returned error: %v", err)
 	}
 
-	err = swiftclient.Down()
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("swiftclient.Down() [case 1] returned error: %v", err)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("dlm.Down() [case 1] returned error: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() [case 1] returned error: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() [case 1] returned error: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() [case 1] returned error: %v", err)
-	}
-
-	err = logger.Up(confMap)
-	if nil != err {
-		t.Fatalf("logger.Up() [case 2] returned error: %v", err)
-	}
-
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up() [case 2] returned error: %v", err)
-	}
-
-	err = stats.Up(confMap)
-	if nil != err {
-		t.Fatalf("stats.Up() [case 2] returned error: %v", err)
-	}
-
-	err = dlm.Up(confMap)
-	if nil != err {
-		t.Fatalf("dlm.Up() [case 2] returned error: %v", err)
-	}
-
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up() [case 2] returned error: %v", err)
-	}
-
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("headhunter.Up() [case 2] returned error: %v", err)
+		t.Fatalf("transitions.Up() [case 2] returned error: %v", err)
 	}
 
 	volume, err = FetchVolumeHandle("TestVolume")
@@ -333,9 +267,9 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	// Shutdown packages
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("headhunter.Down() [case 2] returned error: %v", err)
+		t.Fatalf("transitions.Up() [case 2] returned error: %v", err)
 	}
 
 	err = os.Remove(replayLogFileName)
@@ -347,31 +281,6 @@ func TestHeadHunterAPI(t *testing.T) {
 		} else {
 			t.Fatalf("os.Remove(replayLogFileName) returned unexpected error: %v", err)
 		}
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		t.Fatalf("swiftclient.Down() [case 2] returned error: %v", err)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("dlm.Down() [case 2] returned error: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() [case 2] returned error: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() [case 2] returned error: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() [case 2] returned error: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
