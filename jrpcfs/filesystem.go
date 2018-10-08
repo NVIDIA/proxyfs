@@ -199,18 +199,18 @@ var saveChannelSize int = 1000
 var loggedOutOfStatsRoom map[OpType]bool = make(map[OpType]bool)
 
 func allocateMountID(mountHandle fs.MountHandle) (mountID uint64) {
-	globals.Lock()
+	globals.mapsLock.Lock()
 	globals.lastMountID++
 	mountID = globals.lastMountID
 	globals.mountIDMap[mountID] = mountHandle
-	globals.Unlock()
+	globals.mapsLock.Unlock()
 	return
 }
 
 func lookupMountHandle(mountID uint64) (mountHandle fs.MountHandle, err error) {
-	globals.Lock()
+	globals.mapsLock.Lock()
 	mountHandle, ok := globals.mountIDMap[mountID]
-	globals.Unlock()
+	globals.mapsLock.Unlock()
 	if ok {
 		err = nil
 	} else {

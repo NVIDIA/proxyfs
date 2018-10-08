@@ -35,55 +35,70 @@ const maxRPCReplySize = 4096
 type httpRequestHandler struct{}
 
 const (
-	volumeStateAlive   = "alive"
-	volumeStateDead    = "dead"
-	volumeStateUnknown = "unknown"
+	stateAlive      = "alive"
+	stateFragmented = "fragmented"
+	stateDead       = "dead"
+	stateUnknown    = "unknown"
 )
 
 type volumeStruct struct {
-	peer          *peerStruct
-	next          *volumeStruct // circular linked list currently pointed to by globalsStruct.volumesToWatch
+	next          *volumeStruct
+	volumeGroup   *volumeGroupStruct
 	Name          string
 	State         string
 	LastCheckTime time.Time
 }
 
+type volumeGroupStruct struct {
+	next          *volumeGroupStruct
+	peer          *peerStruct
+	Name          string
+	headVolume    *volumeStruct // links to first volumeStruct; nil-terminated
+	virtualIPAddr string
+}
+
 type peerStruct struct {
-	Name           string
-	PublicIPAddr   string
-	PrivateIPAddr  string
-	ipAddrTCPPort  string
-	VolumesToWatch map[string]*volumeStruct // key == volumeStruct.name
+	Name          string
+	publicIPAddr  string
+	privateIPAddr string
+	ipAddrTCPPort string
 }
 
 type globalsStruct struct {
-	confMap           conf.ConfMap
-	whoAmI            string
-	peersToWatch      map[string]*peerStruct // key == peerStruct.name
-	volumesToWatch    *volumeStruct          // links to next volumeStruct to examine
-	volumesToWatchLen time.Duration          // using this type makes pollingInterval computation avoid casting
-	pollingInterval   time.Duration          // volumesToWatchLen / AliveDaemon.WatchInterval
-	netListener       net.Listener
-	childrenWG        sync.WaitGroup
+	confMap             conf.ConfMap
+	whoAmI              string
+	volumeGroupsToWatch []string
+	watchInterval       time.Duration
+	daemonTCPPort       uint16
+	jrpcTCPPort         uint16
+	headVolumeGroup     *volumeGroupStruct     // links to first volumeGroupStruct; nil-terminated
+	peerMap             map[string]*peerStruct // key == peerStruct.Name
+	nextVolumeToWatch   *volumeStruct
+	numVolumesToWatch   uint64
+	volumesToWatch      []*volumeStruct
+	pollingInterval     time.Duration // watchInterval / numVolumesToWatch
+	netListener         net.Listener
+	childrenWG          sync.WaitGroup
 }
 
 var globals globalsStruct
 
 func main() {
 	var (
-		args          []string
-		err           error
-		ipAddr        string
-		ipAddrTCPPort string
-		ok            bool
-		peer          *peerStruct
-		peerName      string
-		peersToWatch  []string
-		tcpPort       uint16
-		volume        *volumeStruct
-		volumeList    []string
-		volumeName    string
-		watchInterval time.Duration
+		args                   []string
+		err                    error
+		ipAddr                 string
+		ipAddrTCPPort          string
+		ok                     bool
+		peer                   *peerStruct
+		peerSectionName        string
+		primaryPeer            string
+		volume                 *volumeStruct
+		volumeGroup            *volumeGroupStruct
+		volumeGroupName        string
+		volumeGroupSectionName string
+		volumeList             []string
+		volumeName             string
 	)
 
 	// Parse arguments
@@ -113,90 +128,131 @@ func main() {
 		log.Fatal(err)
 	}
 
-	peersToWatch, err = globals.confMap.FetchOptionValueStringSlice("AliveDaemon", "PeersToWatch")
+	globals.volumeGroupsToWatch, err = globals.confMap.FetchOptionValueStringSlice("AliveDaemon", "VolumeGroupsToWatch")
+	if nil != err {
+		log.Fatal(err)
+	}
+	if 0 == len(globals.volumeGroupsToWatch) {
+		log.Fatalf("No VolumeGroups to watch")
+	}
+
+	globals.watchInterval, err = globals.confMap.FetchOptionValueDuration("AliveDaemon", "WatchInterval")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	tcpPort, err = globals.confMap.FetchOptionValueUint16("JSONRPCServer", "TCPPort")
+	globals.daemonTCPPort, err = globals.confMap.FetchOptionValueUint16("AliveDaemon", "TCPPort")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	globals.peersToWatch = make(map[string]*peerStruct)
-
-	for _, peerName = range peersToWatch {
-		peer = &peerStruct{
-			Name:           peerName,
-			VolumesToWatch: make(map[string]*volumeStruct),
-		}
-		peer.PublicIPAddr, err = globals.confMap.FetchOptionValueString("Peer:"+peerName, "PublicIPAddr")
-		if nil != err {
-			log.Fatal(err)
-		}
-		peer.PrivateIPAddr, err = globals.confMap.FetchOptionValueString("Peer:"+peerName, "PrivateIPAddr")
-		if nil != err {
-			log.Fatal(err)
-		}
-		peer.ipAddrTCPPort = net.JoinHostPort(peer.PrivateIPAddr, strconv.Itoa(int(tcpPort)))
-		globals.peersToWatch[peer.Name] = peer
-	}
-
-	volumeList, err = globals.confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	globals.jrpcTCPPort, err = globals.confMap.FetchOptionValueUint16("JSONRPCServer", "TCPPort")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	globals.volumesToWatch = nil
-	globals.volumesToWatchLen = time.Duration(0)
+	globals.headVolumeGroup = nil
+	globals.peerMap = make(map[string]*peerStruct)
+	globals.nextVolumeToWatch = nil
+	globals.numVolumesToWatch = uint64(0)
 
-	for _, volumeName = range volumeList {
-		peerName, err = globals.confMap.FetchOptionValueString("Volume:"+volumeName, "PrimaryPeer")
+	for _, volumeGroupName = range globals.volumeGroupsToWatch {
+		volumeGroup = &volumeGroupStruct{
+			next:       globals.headVolumeGroup,
+			Name:       volumeGroupName,
+			headVolume: nil,
+		}
+
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroup.Name
+
+		volumeList, err = globals.confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
 		if nil != err {
 			log.Fatal(err)
 		}
-		peer, ok = globals.peersToWatch[peerName]
-		if ok {
+		if 0 == len(volumeList) {
+			log.Fatalf("No Volumes in VolumeGroup \"%s\" to watch", volumeGroup.Name)
+		}
+
+		for _, volumeName = range volumeList {
 			volume = &volumeStruct{
-				peer:          peer,
-				next:          globals.volumesToWatch,
+				next:          volumeGroup.headVolume,
+				volumeGroup:   volumeGroup,
 				Name:          volumeName,
-				State:         volumeStateUnknown,
+				State:         stateUnknown,
 				LastCheckTime: time.Now(),
 			}
-			if 0 == globals.volumesToWatchLen {
-				volume.next = volume
-			} else {
-				globals.volumesToWatch.next = volume
-			}
-			globals.volumesToWatch = volume
-			globals.volumesToWatchLen++
-			peer.VolumesToWatch[volume.Name] = volume
+
+			volumeGroup.headVolume = volume
+			globals.nextVolumeToWatch = volume
+			globals.numVolumesToWatch++
 		}
+
+		volumeGroup.virtualIPAddr, err = globals.confMap.FetchOptionValueString(volumeGroupSectionName, "VirtualIPAddr")
+		if nil != err {
+			if nil == globals.confMap.VerifyOptionValueIsEmpty(volumeGroupSectionName, "VirtualIPAddr") {
+				volumeGroup.virtualIPAddr = ""
+			} else {
+				log.Fatal(err)
+			}
+		}
+
+		primaryPeer, err = globals.confMap.FetchOptionValueString(volumeGroupSectionName, "PrimaryPeer")
+		if nil != err {
+			log.Fatal(err)
+		}
+
+		volumeGroup.peer, ok = globals.peerMap[primaryPeer]
+
+		if !ok {
+			peer = &peerStruct{
+				Name: primaryPeer,
+			}
+
+			peerSectionName = "Peer:" + peer.Name
+
+			peer.publicIPAddr, err = globals.confMap.FetchOptionValueString(peerSectionName, "PublicIPAddr")
+			if nil != err {
+				log.Fatal(err)
+			}
+			peer.privateIPAddr, err = globals.confMap.FetchOptionValueString(peerSectionName, "PrivateIPAddr")
+			if nil != err {
+				log.Fatal(err)
+			}
+
+			peer.ipAddrTCPPort = net.JoinHostPort(peer.privateIPAddr, strconv.Itoa(int(globals.jrpcTCPPort)))
+
+			globals.peerMap[peer.Name] = peer
+
+			volumeGroup.peer = peer
+		}
+
+		globals.headVolumeGroup = volumeGroup
 	}
 
-	if 0 == globals.volumesToWatchLen {
-		log.Fatalf("No volumes to watch")
+	globals.volumesToWatch = make([]*volumeStruct, 0, globals.numVolumesToWatch)
+
+	volumeGroup = globals.headVolumeGroup
+
+	for nil != volumeGroup {
+		volume = volumeGroup.headVolume
+
+		for nil != volume {
+			globals.volumesToWatch = append(globals.volumesToWatch, volume)
+
+			volume = volume.next
+		}
+
+		volumeGroup = volumeGroup.next
 	}
 
-	watchInterval, err = globals.confMap.FetchOptionValueDuration("AliveDaemon", "WatchInterval")
-	if nil != err {
-		log.Fatal(err)
-	}
-
-	globals.pollingInterval = watchInterval / globals.volumesToWatchLen
-
-	tcpPort, err = globals.confMap.FetchOptionValueUint16("AliveDaemon", "TCPPort")
-	if nil != err {
-		log.Fatal(err)
-	}
+	globals.pollingInterval = globals.watchInterval / time.Duration(globals.numVolumesToWatch)
 
 	ipAddr, err = globals.confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	ipAddrTCPPort = net.JoinHostPort(ipAddr, strconv.Itoa(int(tcpPort)))
+	ipAddrTCPPort = net.JoinHostPort(ipAddr, strconv.Itoa(int(globals.daemonTCPPort)))
 
 	globals.netListener, err = net.Listen("tcp", ipAddrTCPPort)
 	if nil != err {
@@ -232,7 +288,7 @@ func doPolling() {
 
 	for {
 		time.Sleep(globals.pollingInterval)
-		volume = globals.volumesToWatch
+		volume = globals.nextVolumeToWatch
 		timeNow = time.Now()
 		pingReq.JSONrpc = "2.0"
 		pingReq.Method = "Server.RpcPing"
@@ -240,7 +296,7 @@ func doPolling() {
 		pingReq.ID = nextID
 		pingReqBuf, err = json.Marshal(pingReq)
 		if nil == err {
-			tcpAddr, err = net.ResolveTCPAddr("tcp", volume.peer.ipAddrTCPPort)
+			tcpAddr, err = net.ResolveTCPAddr("tcp", volume.volumeGroup.peer.ipAddrTCPPort)
 			if nil == err {
 				tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
 				if nil == err {
@@ -254,32 +310,40 @@ func doPolling() {
 								pingReplyBuf = pingReplyBuf[:pingReplyLen]
 								err = json.Unmarshal(pingReplyBuf, &pingReply)
 								if nil == err {
-									volume.State = volumeStateAlive
+									volume.State = stateAlive
 								} else {
-									volume.State = volumeStateDead
+									volume.State = stateDead
 								}
 							} else {
-								volume.State = volumeStateDead
+								volume.State = stateDead
 							}
 						} else {
 							_ = tcpConn.Close()
-							volume.State = volumeStateDead
+							volume.State = stateDead
 						}
 					} else {
 						_ = tcpConn.Close()
-						volume.State = volumeStateDead
+						volume.State = stateDead
 					}
 				} else {
-					volume.State = volumeStateDead
+					volume.State = stateDead
 				}
 			} else {
-				volume.State = volumeStateDead
+				volume.State = stateDead
 			}
 		} else {
-			volume.State = volumeStateDead
+			volume.State = stateDead
 		}
 		volume.LastCheckTime = timeNow
-		globals.volumesToWatch = volume.next
+		if nil == volume.next {
+			if nil == volume.volumeGroup.next {
+				globals.nextVolumeToWatch = globals.headVolumeGroup.headVolume
+			} else {
+				globals.nextVolumeToWatch = volume.volumeGroup.next.headVolume
+			}
+		} else {
+			globals.nextVolumeToWatch = volume.next
+		}
 		nextID++
 	}
 }
@@ -389,7 +453,7 @@ func doGetOfStatus(responseWriter http.ResponseWriter, request *http.Request) {
 		sendPackedStatus = false
 	}
 
-	statusJSONPacked, _ = json.Marshal(globals.peersToWatch)
+	statusJSONPacked, _ = json.Marshal(globals.volumesToWatch)
 
 	responseWriter.Header().Set("Content-Type", "application/json")
 	responseWriter.WriteHeader(http.StatusOK)

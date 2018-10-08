@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 // Test string for passing inode 1
@@ -48,6 +49,8 @@ type threadInfo struct {
 
 var globalSyncPt chan testReq // Channel used to synchronize test threads to simulate multiple threads
 
+var testConfMap conf.ConfMap
+
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
@@ -67,7 +70,18 @@ func testSetup() (err error) {
 	// Setup channel used to synchronize multiple test thread operations
 	globalSyncPt = make(chan testReq)
 
-	err = Up(testConfMap)
+	testConfMapStrings := []string{
+		"Logging.LogFilePath=/dev/null",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
+	}
+
+	testConfMap, err = conf.MakeConfMapFromStrings(testConfMapStrings)
+	if nil != err {
+		return
+	}
+
+	err = transitions.Up(testConfMap)
 	if nil != err {
 		return
 	}
@@ -77,7 +91,10 @@ func testSetup() (err error) {
 
 // Largely stolen from fs/api_test.go
 func testTeardown() (err error) {
-	//	Down()
+	err = transitions.Down(testConfMap)
+	if nil != err {
+		return
+	}
 
 	testDir, err := os.Getwd()
 	if nil != err {

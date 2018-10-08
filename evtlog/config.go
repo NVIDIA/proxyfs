@@ -8,6 +8,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 // #include <errno.h>
@@ -57,6 +58,10 @@ type eventLogConfigSettings struct {
 	eventLogLockMaxBackoff time.Duration
 }
 
+func init() {
+	transitions.Register("evtlog", &globals)
+}
+
 // Extract the settings from the confMap and perform minimal sanity checking
 //
 func parseConfMap(confMap conf.ConfMap) (settings eventLogConfigSettings, err error) {
@@ -99,8 +104,7 @@ func parseConfMap(confMap conf.ConfMap) (settings eventLogConfigSettings, err er
 	return
 }
 
-// Up initializes the package and must successfully return before any API functions are invoked
-func Up(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	var settings eventLogConfigSettings
 
 	settings, err = parseConfMap(confMap)
@@ -124,15 +128,32 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// PauseAndContract pauses the evtlog package and applies any removals from the supplied confMap
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-
-	// Nothing to do here
-	return
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
 }
 
-// ExpandAndResume applies any additions from the supplied confMap and resumes the evtlog package
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
 	var settings eventLogConfigSettings
 
 	settings, err = parseConfMap(confMap)
@@ -177,8 +198,7 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 	return
 }
 
-// Down terminates event logging and should only be called once no API functions are active or subsequently invoked
-func Down() (err error) {
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	if globals.eventLogEnabled {
 		err = disableLogging()
 	}

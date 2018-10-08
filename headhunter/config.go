@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -119,6 +120,10 @@ type volumeStruct struct {
 	replayLogFileName                       string   //           if != "", use replay log to reduce RPO to zero
 	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
 	//                                                            closed/deleted on successful checkpoint
+
+	volumeGroup *volumeGroupStruct
+	served      bool
+
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
@@ -144,12 +149,19 @@ type volumeStruct struct {
 	backgroundObjectDeleteWG                sync.WaitGroup
 }
 
+type volumeGroupStruct struct {
+	name      string
+	volumeMap map[string]*volumeStruct // key == volumeStruct.volumeName
+}
+
 type globalsStruct struct {
 	sync.Mutex
-	crc64ECMATable                             *crc64.Table
-	uint64Size                                 uint64
-	elementOfBPlusTreeLayoutStructSize         uint64
-	replayLogTransactionFixedPartStructSize    uint64
+
+	crc64ECMATable                          *crc64.Table
+	uint64Size                              uint64
+	elementOfBPlusTreeLayoutStructSize      uint64
+	replayLogTransactionFixedPartStructSize uint64
+
 	inodeRecCache                              sortedmap.BPlusTreeCache
 	inodeRecCachePriorCacheHits                uint64
 	inodeRecCachePriorCacheMisses              uint64
@@ -162,7 +174,9 @@ type globalsStruct struct {
 	createdDeletedObjectsCache                 sortedmap.BPlusTreeCache
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
-	volumeMap                                  map[string]*volumeStruct // key == ramVolumeStruct.volumeName
+
+	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
+	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
 
 	FetchNonceUsec                            bucketstats.BucketLog2Round
 	GetInodeRecUsec                           bucketstats.BucketLog2Round
@@ -220,208 +234,11 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-// Up starts the headhunter package
-func Up(confMap conf.ConfMap) (err error) {
-	var (
-		primaryPeerList []string
-		volumeName      string
-		volumeList      []string
-		whoAmI          string
-	)
-
-	bucketstats.Register("proxyfs.headhunter", "", &globals)
-
-	err = commonInitialization(confMap)
-	if nil != err {
-		return
-	}
-
-	// Init volume database(s)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		return
-	}
-
-	globals.volumeMap = make(map[string]*volumeStruct)
-
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if whoAmI == primaryPeerList[0] {
-				err = upVolume(confMap, volumeName, false)
-				if nil != err {
-					return
-				}
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-			return
-		}
-	}
-
-	return
+func init() {
+	transitions.Register("headhunter", &globals)
 }
 
-// PauseAndContract pauses the headhunter package and applies any removals from the supplied confMap
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-	var (
-		deletedVolumeNames map[string]bool
-		primaryPeerList    []string
-		volumeName         string
-		volumeList         []string
-		whoAmI             string
-	)
-
-	deletedVolumeNames = make(map[string]bool)
-
-	for volumeName = range globals.volumeMap {
-		deletedVolumeNames[volumeName] = true
-	}
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		return
-	}
-
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if whoAmI == primaryPeerList[0] {
-				delete(deletedVolumeNames, volumeName)
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-			return
-		}
-	}
-
-	for volumeName = range deletedVolumeNames {
-		err = downVolume(volumeName)
-		if nil != err {
-			return
-		}
-
-		delete(globals.volumeMap, volumeName)
-	}
-
-	err = nil
-	return
-}
-
-// ExpandAndResume applies any additions from the supplied confMap and resumes the headhunter package
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
-	var (
-		ok              bool
-		primaryPeerList []string
-		volumeName      string
-		volumeList      []string
-		whoAmI          string
-	)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		return
-	}
-
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if whoAmI == primaryPeerList[0] {
-				_, ok = globals.volumeMap[volumeName]
-				if !ok {
-					err = upVolume(confMap, volumeName, false)
-					if nil != err {
-						return
-					}
-				}
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-			return
-		}
-	}
-
-	err = nil
-	return
-}
-
-// Down terminates the headhunter package
-func Down() (err error) {
-	var (
-		volumeName string
-	)
-
-	for volumeName = range globals.volumeMap {
-		err = downVolume(volumeName)
-		if nil != err {
-			return
-		}
-	}
-
-	bucketstats.UnRegister("proxyfs.headhunter", "")
-
-	err = nil
-	return
-}
-
-// Format runs an instance of the headhunter package for formatting a new volume
-func Format(confMap conf.ConfMap, volumeName string) (err error) {
-	err = commonInitialization(confMap)
-	if nil != err {
-		return
-	}
-
-	// Init volume database...triggering format
-
-	globals.volumeMap = make(map[string]*volumeStruct)
-
-	err = upVolume(confMap, volumeName, true)
-	if nil != err {
-		return
-	}
-
-	// Shutdown and exit
-
-	err = downVolume(volumeName)
-
-	return
-}
-
-func commonInitialization(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	var (
 		bPlusTreeObjectCacheEvictHighLimit       uint64
 		bPlusTreeObjectCacheEvictLowLimit        uint64
@@ -435,6 +252,8 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 		logSegmentRecCacheEvictHighLimit         uint64
 		logSegmentRecCacheEvictLowLimit          uint64
 	)
+
+	bucketstats.Register("proxyfs.headhunter", "", &globals)
 
 	// Pre-compute crc64 ECMA Table & useful cstruct sizes
 
@@ -454,6 +273,11 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		return
 	}
+
+	// Initialize globals.volume{|Group}Map's
+
+	globals.volumeGroupMap = make(map[string]*volumeGroupStruct)
+	globals.volumeMap = make(map[string]*volumeStruct)
 
 	// Initialize B+Tree caches
 
@@ -517,38 +341,228 @@ func commonInitialization(confMap conf.ConfMap) (err error) {
 	return
 }
 
-func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err error) {
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	volumeGroup := &volumeGroupStruct{name: volumeGroupName, volumeMap: make(map[string]*volumeStruct)}
+	globals.Lock()
+	_, ok := globals.volumeGroupMap[volumeGroupName]
+	if ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeGroupCreated() called for preexisting VolumeGroup (%s)", volumeGroupName)
+		return
+	}
+	globals.volumeGroupMap[volumeGroupName] = volumeGroup
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	globals.Lock()
+	_, ok := globals.volumeGroupMap[volumeGroupName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeGroupMoved() called for nonexistent VolumeGroup (%s)", volumeGroupName)
+		return
+	}
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	globals.Lock()
+	volumeGroup, ok := globals.volumeGroupMap[volumeGroupName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeGroupDestroyed() called for nonexistent VolumeGroup (%s)", volumeGroupName)
+		return
+	}
+	if 0 != len(volumeGroup.volumeMap) {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeGroupDestroyed() called for non-empty VolumeGroup (%s)", volumeGroupName)
+		return
+	}
+	delete(globals.volumeGroupMap, volumeGroupName)
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	volume := &volumeStruct{volumeName: volumeName, served: false}
+	globals.Lock()
+	volumeGroup, ok := globals.volumeGroupMap[volumeGroupName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeCreated() called for Volume (%s) to be added to nonexistent VolumeGroup (%s)", volumeName, volumeGroupName)
+		return
+	}
+	_, ok = globals.volumeMap[volumeName]
+	if ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeCreated() called for preexiting Volume (%s)", volumeName)
+		return
+	}
+	_, ok = volumeGroup.volumeMap[volumeName]
+	if ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeCreated() called for preexiting Volume (%s) to be added to VolumeGroup (%s)", volumeName, volumeGroupName)
+		return
+	}
+	volume.volumeGroup = volumeGroup
+	volumeGroup.volumeMap[volumeName] = volume
+	globals.volumeMap[volumeName] = volume
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	globals.Lock()
+	volume, ok := globals.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeMoved() called for nonexistent Volume (%s)", volumeName)
+		return
+	}
+	if volume.served {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeMoved() called for Volume (%s) being actively served", volumeName)
+		return
+	}
+	newVolumeGroup, ok := globals.volumeGroupMap[volumeGroupName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeMoved() called for Volume (%s) to be moved to nonexistent VolumeGroup (%s)", volumeName, volumeGroupName)
+		return
+	}
+	_, ok = newVolumeGroup.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeMoved() called for Volume (%s) to be moved to VolumeGroup (%s) already containing the Volume", volumeName, volumeGroupName)
+		return
+	}
+	oldVolumeGroup := volume.volumeGroup
+	delete(oldVolumeGroup.volumeMap, volumeName)
+	newVolumeGroup.volumeMap[volumeName] = volume
+	volume.volumeGroup = newVolumeGroup
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	globals.Lock()
+	volume, ok := globals.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeDestroyed() called for nonexistent Volume (%s)", volumeName)
+		return
+	}
+	if volume.served {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.VolumeDestroyed() called for Volume (%s) being actively served", volumeName)
+		return
+	}
+	delete(volume.volumeGroup.volumeMap, volumeName)
+	delete(globals.volumeMap, volumeName)
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	globals.Lock()
+	volume, ok := globals.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.ServeVolume() called for nonexistent Volume (%s)", volumeName)
+		return
+	}
+	if volume.served {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.ServeVolume() called for Volume (%s) already being served", volumeName)
+		return
+	}
+	volume.served = true
+	err = volume.up(confMap)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.ServeVolume() failed to \"up\" Volume (%s): %v", volumeName, err)
+		return
+	}
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	globals.Lock()
+	volume, ok := globals.volumeMap[volumeName]
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.UnserveVolume() called for nonexistent Volume (%s)", volumeName)
+		return
+	}
+	if !volume.served {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.UnserveVolume() called for Volume (%s) not being served", volumeName)
+		return
+	}
+	err = volume.down(confMap)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("headhunter.UnserveVolume() failed to \"down\" Volume (%s): %v", volumeName, err)
+		return
+	}
+	volume.served = false
+	globals.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+	return nil
+}
+
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	if 0 != len(globals.volumeGroupMap) {
+		err = fmt.Errorf("headhunter.Down() called with 0 != len(globals.volumeGroupMap")
+		return
+	}
+	if 0 != len(globals.volumeMap) {
+		err = fmt.Errorf("headhunter.Down() called with 0 != len(globals.volumeMap")
+		return
+	}
+
+	bucketstats.UnRegister("proxyfs.headhunter", "")
+
+	err = nil
+	return
+}
+
+func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	var (
-		flowControlName        string
-		flowControlSectionName string
-		volume                 *volumeStruct
-		volumeSectionName      string
+		autoFormat            bool
+		autoFormatStringSlice []string
+		volumeSectionName     string
 	)
 
-	volumeSectionName = "Volume:" + volumeName
+	volumeSectionName = "Volume:" + volume.volumeName
 
-	volume = &volumeStruct{
-		volumeName:                           volumeName,
-		checkpointChunkedPutContext:          nil,
-		checkpointDoneWaitGroup:              nil,
-		eventListeners:                       make(map[VolumeEventListener]struct{}),
-		checkpointRequestChan:                make(chan *checkpointRequestStruct, 1),
-		postponePriorViewCreatedObjectsPuts:  false,
-		postponedPriorViewCreatedObjectsPuts: make(map[uint64]struct{}),
-	}
+	volume.checkpointChunkedPutContext = nil
+	volume.checkpointDoneWaitGroup = nil
+	volume.eventListeners = make(map[VolumeEventListener]struct{})
+	volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
+	volume.postponePriorViewCreatedObjectsPuts = false
+	volume.postponedPriorViewCreatedObjectsPuts = make(map[uint64]struct{})
 
 	volume.accountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 	if nil != err {
 		return
 	}
 
-	flowControlName, err = confMap.FetchOptionValueString(volumeSectionName, "FlowControl")
-	if nil != err {
-		return
-	}
-	flowControlSectionName = "FlowControl:" + flowControlName
-
-	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(flowControlSectionName, "MaxFlushSize")
+	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxFlushSize")
 	if nil != err {
 		return
 	}
@@ -615,12 +629,24 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 		return
 	}
 
+	autoFormatStringSlice, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "AutoFormat")
+	if nil == err {
+		if 1 != len(autoFormatStringSlice) {
+			err = fmt.Errorf("If specified, [%v]AutoFormat must be single-valued and either true or false", volumeSectionName)
+			return
+		}
+		autoFormat, err = confMap.FetchOptionValueBool(volumeSectionName, "AutoFormat")
+		if nil != err {
+			return
+		}
+	} else {
+		autoFormat = false // Default to false if not present
+	}
+
 	err = volume.getCheckpoint(autoFormat)
 	if nil != err {
 		return
 	}
-
-	globals.volumeMap[volumeName] = volume
 
 	go volume.checkpointDaemon()
 
@@ -628,18 +654,10 @@ func upVolume(confMap conf.ConfMap, volumeName string, autoFormat bool) (err err
 	return
 }
 
-func downVolume(volumeName string) (err error) {
+func (volume *volumeStruct) down(confMap conf.ConfMap) (err error) {
 	var (
 		checkpointRequest checkpointRequestStruct
-		ok                bool
-		volume            *volumeStruct
 	)
-
-	volume, ok = globals.volumeMap[volumeName]
-	if !ok {
-		err = fmt.Errorf("\"%v\" not found in volumeMap", volumeName)
-		return
-	}
 
 	checkpointRequest.exitOnCompletion = true
 	checkpointRequest.waitGroup.Add(1)

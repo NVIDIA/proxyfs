@@ -101,40 +101,40 @@ func openLogSegmentLRURemove(inFlightLogSegment *inFlightLogSegmentStruct) {
 	globals.Unlock()
 }
 
-func (flowControl *flowControlStruct) capReadCacheWhileLocked() {
-	for uint64(len(flowControl.readCache)) > flowControl.readCacheLineCount {
-		delete(flowControl.readCache, flowControl.readCacheLRU.readCacheKey)
-		flowControl.readCacheLRU = flowControl.readCacheLRU.prev
-		flowControl.readCacheLRU.next = nil
+func (volumeGroup *volumeGroupStruct) capReadCacheWhileLocked() {
+	for uint64(len(volumeGroup.readCache)) > volumeGroup.readCacheLineCount {
+		delete(volumeGroup.readCache, volumeGroup.readCacheLRU.readCacheKey)
+		volumeGroup.readCacheLRU = volumeGroup.readCacheLRU.prev
+		volumeGroup.readCacheLRU.next = nil
 	}
 }
 
-func (flowControl *flowControlStruct) insertReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
-	flowControl.readCache[readCacheElement.readCacheKey] = readCacheElement
-	if nil == flowControl.readCacheMRU {
-		flowControl.readCacheMRU = readCacheElement
-		flowControl.readCacheLRU = readCacheElement
+func (volumeGroup *volumeGroupStruct) insertReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
+	volumeGroup.readCache[readCacheElement.readCacheKey] = readCacheElement
+	if nil == volumeGroup.readCacheMRU {
+		volumeGroup.readCacheMRU = readCacheElement
+		volumeGroup.readCacheLRU = readCacheElement
 	} else {
-		readCacheElement.next = flowControl.readCacheMRU
+		readCacheElement.next = volumeGroup.readCacheMRU
 		readCacheElement.next.prev = readCacheElement
-		flowControl.readCacheMRU = readCacheElement
+		volumeGroup.readCacheMRU = readCacheElement
 	}
-	flowControl.capReadCacheWhileLocked()
+	volumeGroup.capReadCacheWhileLocked()
 }
 
-func (flowControl *flowControlStruct) touchReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
-	if flowControl.readCacheMRU != readCacheElement {
-		if readCacheElement == flowControl.readCacheLRU {
-			flowControl.readCacheLRU = readCacheElement.prev
-			flowControl.readCacheLRU.next = nil
+func (volumeGroup *volumeGroupStruct) touchReadCacheElementWhileLocked(readCacheElement *readCacheElementStruct) {
+	if volumeGroup.readCacheMRU != readCacheElement {
+		if readCacheElement == volumeGroup.readCacheLRU {
+			volumeGroup.readCacheLRU = readCacheElement.prev
+			volumeGroup.readCacheLRU.next = nil
 		} else {
 			readCacheElement.prev.next = readCacheElement.next
 			readCacheElement.next.prev = readCacheElement.prev
 		}
-		readCacheElement.next = flowControl.readCacheMRU
+		readCacheElement.next = volumeGroup.readCacheMRU
 		readCacheElement.prev = nil
-		flowControl.readCacheMRU.prev = readCacheElement
-		flowControl.readCacheMRU = readCacheElement
+		volumeGroup.readCacheMRU.prev = readCacheElement
+		volumeGroup.readCacheMRU = readCacheElement
 	}
 }
 
@@ -145,7 +145,6 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		cacheLineHitOffset   uint64
 		cacheLineStartOffset uint64
 		chunkOffset          uint64
-		flowControl          *flowControlStruct
 		inFlightHit          bool
 		inFlightHitBuf       []byte
 		inFlightLogSegment   *inFlightLogSegmentStruct
@@ -156,10 +155,11 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 		remainingLength      uint64
 		step                 ReadPlanStep
 		stepIndex            int
+		volumeGroup          *volumeGroupStruct
 	)
 
-	flowControl = vS.flowControl
-	readCacheLineSize = flowControl.readCacheLineSize
+	volumeGroup = vS.volumeGroup
+	readCacheLineSize = volumeGroup.readCacheLineSize
 	readCacheKey.volumeName = vS.volumeName
 
 	if 1 == len(readPlan) {
@@ -208,17 +208,17 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 			readCacheKey.logSegmentNumber = step.LogSegmentNumber
 			readCacheKey.cacheLineTag = step.Offset / readCacheLineSize
 
-			flowControl.Lock()
+			volumeGroup.Lock()
 
-			readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
+			readCacheElement, readCacheHit = volumeGroup.readCache[readCacheKey]
 
 			if readCacheHit {
-				flowControl.touchReadCacheElementWhileLocked(readCacheElement)
+				volumeGroup.touchReadCacheElementWhileLocked(readCacheElement)
 				cacheLine = readCacheElement.cacheLine
-				flowControl.Unlock()
+				volumeGroup.Unlock()
 				stats.IncrementOperations(&stats.FileReadcacheHitOps)
 			} else {
-				flowControl.Unlock()
+				volumeGroup.Unlock()
 				stats.IncrementOperations(&stats.FileReadcacheMissOps)
 				// Make readCacheHit true (at MRU, likely kicking out LRU)
 				cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
@@ -234,9 +234,9 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 					prev:         nil,
 					cacheLine:    cacheLine,
 				}
-				flowControl.Lock()
-				flowControl.insertReadCacheElementWhileLocked(readCacheElement)
-				flowControl.Unlock()
+				volumeGroup.Lock()
+				volumeGroup.insertReadCacheElementWhileLocked(readCacheElement)
+				volumeGroup.Unlock()
 			}
 
 			if (cacheLineHitOffset + step.Length) > uint64(len(cacheLine)) {
@@ -302,15 +302,15 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 						// When we've got a cache hit, all the data is inside the cache line
 						cacheLineHitLength = remainingLength
 					}
-					flowControl.Lock()
-					readCacheElement, readCacheHit = flowControl.readCache[readCacheKey]
+					volumeGroup.Lock()
+					readCacheElement, readCacheHit = volumeGroup.readCache[readCacheKey]
 					if readCacheHit {
-						flowControl.touchReadCacheElementWhileLocked(readCacheElement)
+						volumeGroup.touchReadCacheElementWhileLocked(readCacheElement)
 						cacheLine = readCacheElement.cacheLine
-						flowControl.Unlock()
+						volumeGroup.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheHitOps)
 					} else {
-						flowControl.Unlock()
+						volumeGroup.Unlock()
 						stats.IncrementOperations(&stats.FileReadcacheMissOps)
 						// Make readCacheHit true (at MRU, likely kicking out LRU)
 						cacheLineStartOffset = readCacheKey.cacheLineTag * readCacheLineSize
@@ -326,9 +326,9 @@ func (vS *volumeStruct) doReadPlan(fileInode *inMemoryInodeStruct, readPlan []Re
 							prev:         nil,
 							cacheLine:    cacheLine,
 						}
-						flowControl.Lock()
-						flowControl.insertReadCacheElementWhileLocked(readCacheElement)
-						flowControl.Unlock()
+						volumeGroup.Lock()
+						volumeGroup.insertReadCacheElementWhileLocked(readCacheElement)
+						volumeGroup.Unlock()
 					}
 					if (cacheLineHitOffset + cacheLineHitLength) > uint64(len(cacheLine)) {
 						err = fmt.Errorf("Invalid range for LogSegment object - general case")
@@ -422,9 +422,9 @@ func (vS *volumeStruct) doSendChunk(fileInode *inMemoryInodeStruct, buf []byte) 
 		return
 	}
 
-	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.flowControl.maxFlushSize {
+	if (logSegmentOffset + uint64(len(buf))) >= fileInode.volume.maxFlushSize {
 		fileInode.Add(1)
-		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
+		go vS.inFlightLogSegmentFlusher(inFlightLogSegment, true)
 		// No need to wait for it to complete now... that's only in doFileInodeDataFlush()
 	}
 
@@ -444,7 +444,7 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 	if nil != fileInode.openLogSegment {
 		inFlightLogSegment = fileInode.openLogSegment
 		fileInode.Add(1)
-		go vS.inFlightLogSegmentFlusher(inFlightLogSegment)
+		go vS.inFlightLogSegmentFlusher(inFlightLogSegment, true)
 	}
 
 	fileInode.Unlock()
@@ -466,7 +466,7 @@ func (vS *volumeStruct) doFileInodeDataFlush(fileInode *inMemoryInodeStruct) (er
 	return
 }
 
-func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct) {
+func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLogSegmentStruct, doDone bool) {
 	var (
 		err       error
 		fileInode *inMemoryInodeStruct
@@ -483,7 +483,9 @@ func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLo
 		// Either a Close() is already in progress or has already completed
 
 		fileInode.Unlock()
-		fileInode.Done()
+		if doDone {
+			fileInode.Done()
+		}
 		return
 	}
 
@@ -511,7 +513,9 @@ func (vS *volumeStruct) inFlightLogSegmentFlusher(inFlightLogSegment *inFlightLo
 
 	fileInode.Unlock()
 
-	inFlightLogSegment.fileInode.Done()
+	if doDone {
+		fileInode.Done()
+	}
 }
 
 func chunkedPutConnectionPoolStarvationCallback() {
@@ -535,11 +539,9 @@ func chunkedPutConnectionPoolStarvationCallback() {
 
 	globals.Unlock()
 
-	fileInode.Add(1)
-
 	// Call inFlightLogSegmentFlusher() synchronously because we only want to return when it completes
 	// and we don't want to call fileInode.Wait() as this would wait until all invocations of
 	// inFlightLogSegmentFlusher() for the fileInode have completed.
 
-	volume.inFlightLogSegmentFlusher(inFlightLogSegment)
+	volume.inFlightLogSegmentFlusher(inFlightLogSegment, false)
 }

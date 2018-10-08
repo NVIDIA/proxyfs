@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type ExtentMapElementStruct struct {
@@ -85,16 +86,12 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-func Up(confMap conf.ConfMap) (err error) {
-	var (
-		ok              bool
-		primaryPeerList []string
-		volume          *volumeStruct
-		volumeList      []string
-		volumeName      string
-	)
+func init() {
+	transitions.Register("httpserver", &globals)
+}
 
-	globals.confMap = confMap
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
+	globals.volumeLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
 
 	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
 	if nil != err {
@@ -110,63 +107,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
 		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
-		return
-	}
-
-	globals.volumeLLRB = sortedmap.NewLLRBTree(sortedmap.CompareString, nil)
-
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				volume = &volumeStruct{
-					name:           volumeName,
-					fsckActiveJob:  nil,
-					fsckJobs:       sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
-					scrubActiveJob: nil,
-					scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
-				}
-
-				volume.fsMountHandle, err = fs.Mount(volume.name, 0)
-				if nil != err {
-					return
-				}
-
-				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
-				if nil != err {
-					return
-				}
-
-				volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
-				if nil != err {
-					return
-				}
-
-				ok, err = globals.volumeLLRB.Put(volumeName, volume)
-				if nil != err {
-					err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
-					return
-				}
-				if !ok {
-					err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
-					return
-				}
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-		}
 	}
 
 	globals.ipAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
@@ -189,7 +129,8 @@ func Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.active = true
+	globals.active = false
+
 	globals.wg.Add(1)
 	go serveHTTP()
 
@@ -197,282 +138,160 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-	var (
-		ipAddr          string
-		numVolumes      int
-		ok              bool
-		primaryPeerList []string
-		tcpPort         uint16
-		volumeIndex     int
-		volumeList      []string
-		volumeMap       map[string]bool
-		volumeName      string
-		volumeNameAsKey sortedmap.Key
-		whoAmI          string
-	)
-
-	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v", err)
-		return
-	}
-	if whoAmI != globals.whoAmI {
-		err = fmt.Errorf("confMap change not allowed to alter [Cluster]WhoAmI")
-		return
-	}
-
-	ipAddr, err = confMap.FetchOptionValueString("Peer:"+whoAmI, "PrivateIPAddr")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"<whoAmI>\", \"PrivateIPAddr\") failed: %v", err)
-		return
-	}
-	if ipAddr != globals.ipAddr {
-		err = fmt.Errorf("confMap change not allowed to alter [<whoAmI>]PrivateIPAddr")
-		return
-	}
-
-	tcpPort, err = confMap.FetchOptionValueUint16("HTTPServer", "TCPPort")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"TCPPort\") failed: %v", err)
-		return
-	}
-	if tcpPort != globals.tcpPort {
-		err = fmt.Errorf("confMap change not allowed to alter [HTTPServer]TCPPort")
-		return
-	}
-
-	globals.Lock()
-	defer globals.Unlock()
-
-	globals.active = false
-
-	err = stopRunningJobs()
-	if nil != err {
-		globals.active = true
-		return
-	}
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
-		return
-	}
-
-	volumeMap = make(map[string]bool)
-
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				volumeMap[volumeName] = true
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-		}
-	}
-
-	volumeIndex = 0
-
-	for {
-		numVolumes, err = globals.volumeLLRB.Len()
-		if nil != err {
-			err = fmt.Errorf("globals.volumeLLRB.Len() failed: %v", err)
-			return
-		}
-
-		if volumeIndex == numVolumes {
-			err = nil
-			return
-		}
-
-		volumeNameAsKey, _, ok, err = globals.volumeLLRB.GetByIndex(volumeIndex)
-		if nil != err {
-			err = fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", volumeIndex, err)
-			return
-		}
-		if !ok {
-			err = fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) returned ok == false", volumeIndex)
-			return
-		}
-
-		volumeName, ok = volumeNameAsKey.(string)
-		if !ok {
-			err = fmt.Errorf("volumeNameAsKey.(string) for index %v returned ok == false", volumeIndex)
-			return
-		}
-
-		_, ok = volumeMap[volumeName]
-
-		if ok {
-			volumeIndex++
-		} else {
-			ok, err = globals.volumeLLRB.DeleteByIndex(volumeIndex)
-			if nil != err {
-				err = fmt.Errorf("globals.volumeLLRB.DeleteByIndex(%v) failed: %v", volumeIndex, err)
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("globals.volumeLLRB.DeleteByIndex(%v) returned ok == false", volumeIndex)
-				return
-			}
-		}
-	}
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
 }
 
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		ok              bool
-		primaryPeerList []string
-		volume          *volumeStruct
-		volumeList      []string
-		volumeName      string
+		ok     bool
+		volume *volumeStruct
 	)
 
-	globals.Lock()
-	defer globals.Unlock()
-
-	globals.jobHistoryMaxSize, err = confMap.FetchOptionValueUint32("HTTPServer", "JobHistoryMaxSize")
-	if nil != err {
-		/*
-			TODO: Eventually change this to:
-				err = fmt.Errorf("confMap.FetchOptionValueString(\"HTTPServer\", \"JobHistoryMaxSize\") failed: %v", err)
-				return
-		*/
-		globals.jobHistoryMaxSize = 5
+	volume = &volumeStruct{
+		name:           volumeName,
+		fsckActiveJob:  nil,
+		fsckJobs:       sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+		scrubActiveJob: nil,
+		scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 	}
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volume.fsMountHandle, err = fs.Mount(volume.name, 0)
 	if nil != err {
-		err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v", err)
 		return
 	}
 
-	for _, volumeName = range volumeList {
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice("Volume:"+volumeName, "PrimaryPeer")
-		if nil != err {
-			err = fmt.Errorf("confMap.FetchOptionValueStringSlice(\"%s\", \"PrimaryPeer\") failed: %v", volumeName, err)
-			return
-		}
-
-		if 0 == len(primaryPeerList) {
-			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI == primaryPeerList[0] {
-				_, ok, err = globals.volumeLLRB.GetByKey(volumeName)
-				if nil != err {
-					err = fmt.Errorf("globals.volumeLLRB.GetByKey(%v)) failed: %v", volumeName, err)
-					return
-				}
-				if !ok {
-					volume = &volumeStruct{
-						name:          volumeName,
-						fsckActiveJob: nil,
-						fsckJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
-					}
-
-					volume.fsMountHandle, err = fs.Mount(volume.name, 0)
-					if nil != err {
-						return
-					}
-
-					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
-					if nil != err {
-						return
-					}
-
-					volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
-					if nil != err {
-						return
-					}
-
-					ok, err = globals.volumeLLRB.Put(volumeName, volume)
-					if nil != err {
-						err = fmt.Errorf("statsLLRB.Put(%v,) failed: %v", volumeName, err)
-						return
-					}
-					if !ok {
-						err = fmt.Errorf("statsLLRB.Put(%v,) returned ok == false", volumeName)
-						return
-					}
-				}
-			}
-		} else {
-			err = fmt.Errorf("Volume \"%v\" cannot have multiple PrimaryPeer values", volumeName)
-		}
+	volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volume.name)
+	if nil != err {
+		return
 	}
 
-	globals.active = true
+	volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.name)
+	if nil != err {
+		return
+	}
 
-	globals.confMap = confMap
-
-	err = nil
-	return
-}
-
-func Down() (err error) {
 	globals.Lock()
-	_ = stopRunningJobs()
-	_ = globals.netListener.Close()
+
+	ok, err = globals.volumeLLRB.Put(volumeName, volume)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("globals.volumeLLRB.Put(%s,) failed: %v", volumeName, err)
+		return
+	}
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("globals.volumeLLRB.Put(%s,) returned ok == false", volumeName)
+		return
+	}
+
 	globals.Unlock()
 
-	globals.wg.Wait()
-
-	err = nil
-	return
+	return // return err from globals.volumeLLRB.Put() sufficient
 }
 
-func stopRunningJobs() (err error) {
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		numVolumes    int
 		ok            bool
 		volume        *volumeStruct
 		volumeAsValue sortedmap.Value
-		volumeIndex   int
 	)
+
+	globals.Lock()
+
+	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("globals.volumeLLRB.Get(%v) failed: %v", volumeName, err)
+		return
+	}
+
+	volume, ok = volumeAsValue.(*volumeStruct)
+	if !ok {
+		globals.Unlock()
+		err = fmt.Errorf("volumeAsValue.(*volumeStruct) returned ok == false for volume %s", volumeName)
+		return
+	}
+
+	if !ok {
+		globals.Unlock()
+		return // return err from globals.volumeLLRB.GetByKey() sufficient
+	}
+
+	volume.Lock()
+	if nil != volume.fsckActiveJob {
+		volume.fsckActiveJob.jobHandle.Cancel()
+		volume.fsckActiveJob.state = jobHalted
+		volume.fsckActiveJob.endTime = time.Now()
+		volume.fsckActiveJob = nil
+	}
+	if nil != volume.scrubActiveJob {
+		volume.scrubActiveJob.jobHandle.Cancel()
+		volume.scrubActiveJob.state = jobHalted
+		volume.scrubActiveJob.endTime = time.Now()
+		volume.scrubActiveJob = nil
+	}
+	volume.Unlock()
+
+	ok, err = globals.volumeLLRB.DeleteByKey(volumeName)
+	if nil != err {
+		globals.Unlock()
+		err = fmt.Errorf("globals.volumeLLRB.DeleteByKey(%v) failed: %v", volumeName, err)
+		return
+	}
+
+	globals.Unlock()
+
+	return // return err from globals.volumeLLRB.DeleteByKey sufficient
+}
+
+func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+	globals.confMap = confMap
+	globals.active = true
+	return nil
+}
+
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	var (
+		numVolumes int
+	)
+
+	globals.Lock()
 
 	numVolumes, err = globals.volumeLLRB.Len()
 	if nil != err {
-		err = fmt.Errorf("globals.volumeLLRB.Len() failed: %v", err)
+		globals.Unlock()
+		err = fmt.Errorf("httpserver.Down() couldn't read globals.volumeLLRB: %v", err)
 		return
 	}
-	for volumeIndex = 0; volumeIndex < numVolumes; volumeIndex++ {
-		_, volumeAsValue, ok, err = globals.volumeLLRB.GetByIndex(volumeIndex)
-		if nil != err {
-			err = fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) failed: %v", volumeIndex, err)
-			return
-		}
-		if !ok {
-			err = fmt.Errorf("globals.volumeLLRB.GetByIndex(%v) returned ok == false", volumeIndex)
-			return
-		}
-		volume, ok = volumeAsValue.(*volumeStruct)
-		if !ok {
-			err = fmt.Errorf("volumeAsValue.(*volumeStruct) for index %v returned ok == false", volumeIndex)
-			return
-		}
-		volume.Lock()
-		if nil != volume.fsckActiveJob {
-			volume.fsckActiveJob.jobHandle.Cancel()
-			volume.fsckActiveJob.state = jobHalted
-			volume.fsckActiveJob.endTime = time.Now()
-			volume.fsckActiveJob = nil
-		}
-		if nil != volume.scrubActiveJob {
-			volume.scrubActiveJob.jobHandle.Cancel()
-			volume.scrubActiveJob.state = jobHalted
-			volume.scrubActiveJob.endTime = time.Now()
-			volume.scrubActiveJob = nil
-		}
-		volume.Unlock()
+	if 0 != numVolumes {
+		globals.Unlock()
+		err = fmt.Errorf("httpserver.Down() called with 0 != globals.volumeLLRB.Len()")
+		return
 	}
+
+	globals.active = false
+
+	_ = globals.netListener.Close()
+
+	globals.Unlock()
+
+	globals.wg.Wait()
 
 	err = nil
 	return

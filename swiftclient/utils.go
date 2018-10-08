@@ -82,10 +82,11 @@ func getStarvationParameters() (starvationParameters *StarvationParameters) {
 
 func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct) {
 	var (
-		connectionToBeCreated bool
-		cv                    *sync.Cond
-		ok                    bool
-		wasStalled            bool
+		connectionToBeCreated           bool
+		cv                              *sync.Cond
+		ok                              bool
+		swiftChunkedStarvationCallbacks uint64
+		wasStalled                      bool
 	)
 
 	if "" != useReserveForVolumeName {
@@ -128,6 +129,8 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 	freeConnections := globals.chunkedConnectionPool.poolCapacity - globals.chunkedConnectionPool.poolInUse
 	globals.ObjectPutCtxtFreeConnection.Add(uint64(freeConnections))
 
+	swiftChunkedStarvationCallbacks = 0
+
 	for {
 		if globals.chunkedConnectionPool.poolInUse < globals.chunkedConnectionPool.poolCapacity {
 			break
@@ -149,10 +152,14 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 			globals.starvationCallback()
 			globals.starvationCallbackSerializer.Unlock()
 			globals.chunkedConnectionPool.Lock()
-			stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
+			swiftChunkedStarvationCallbacks++
 		}
 
 		globals.chunkedConnectionPool.numWaiters--
+	}
+
+	if 0 < swiftChunkedStarvationCallbacks {
+		stats.IncrementOperationsBy(&stats.SwiftChunkedStarvationCallbacks, swiftChunkedStarvationCallbacks)
 	}
 
 	globals.chunkedConnectionPool.poolInUse++

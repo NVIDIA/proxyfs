@@ -39,8 +39,8 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 	// However, this results in two different mountHandle's for the different jrpcfs threads supporting middleware.
 	//
 	// Therefore, jrpcfs has to do its own serialization and store the result in globals.bimodalMountMap.
-	globals.Lock()
-	defer globals.Unlock()
+	globals.mapsLock.Lock()
+	defer globals.mapsLock.Unlock()
 
 	// Is volume mounted for this user?  If is, return the results.
 	mountHandle, ok = globals.bimodalMountMap[volumeName]
