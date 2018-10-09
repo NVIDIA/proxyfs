@@ -22,8 +22,8 @@ func setupConnection() (cs *consensus.Struct) {
 		os.Exit(-1)
 	}
 
-	// Come up as a client
-	cs.Client()
+	// Setup to do administrative operations
+	cs.CLI()
 
 	return cs
 }
@@ -163,8 +163,6 @@ func main() {
 	// Check which subcommand was Parsed for offline
 	if offlineCommand.Parsed() {
 
-		fmt.Printf("offlineNodePtr is: %v offlineVgPtr: %v\n", *offlineNodePtr, *offlineVgPtr)
-
 		if (*offlineNodePtr == "") && (*offlineVgPtr == "") {
 			offlineCommand.PrintDefaults()
 			os.Exit(1)
@@ -175,21 +173,27 @@ func main() {
 			os.Exit(1)
 		}
 
+		cs := setupConnection()
+
+		// Offline the VG
+		if *offlineVgPtr != "" {
+			cs.CLIOfflineVg(*offlineVgPtr)
+			os.Exit(1)
+		}
+
+		// Offline all VGs on the node and stop the node
 		if *offlineNodePtr != "" {
 			fmt.Printf("Node ptr: %v\n", *offlineNodePtr)
+			cs.CLIOfflineNode(*offlineNodePtr)
 			os.Exit(1)
 		}
-		if *offlineVgPtr != "" {
-			fmt.Printf("volume group ptr: %v\n", *offlineVgPtr)
-			os.Exit(1)
-		}
-		fmt.Printf("offline everything\n")
 	}
 
 	// Check which subcommand was Parsed for online
 	if onlineCommand.Parsed() {
 
 		fmt.Printf("onlineNodePtr is: %v onlineVgPtr: %v\n", *onlineNodePtr, *onlineVgPtr)
+		// TODO - online the VG
 
 		if (*onlineNodePtr == "") || (*onlineVgPtr == "") {
 			onlineCommand.PrintDefaults()
