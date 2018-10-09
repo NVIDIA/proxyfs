@@ -29,7 +29,10 @@ else
         pkill -f "/sbin/smbd -s /etc/samba/smb-$VGNAME.conf"
 
         /usr/sbin/ip addr del ${IPADDR}/${NETMASK} dev $NIC
-        ERR="$?"
+
+	# We ignore any errors from the above commands.  This is
+	# because the commands could fail because smbd or the VIP
+	# may already be offline.
     fi
 fi
 
