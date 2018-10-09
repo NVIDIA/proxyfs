@@ -222,12 +222,15 @@ func (cs *Struct) startHBandMonitor() {
 //
 // TODO - what about OFFLINE, etc events which are not implemented?
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
+
+	node := strings.TrimPrefix(string(ev.Kv.Key), nodeKeyStatePrefix())
+
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		// TODO - strip out NODE from name
-		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
+		fmt.Printf("Node: %v went: %v\n", node, string(ev.Kv.Value))
 	case DEADNS.String():
-		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
+		fmt.Printf("Node: %v went: %v\n", node, string(ev.Kv.Value))
 
 		nodesNewlyDead := make([]string, 1)
 		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
@@ -235,9 +238,9 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 			cs.failoverVgs(nodesNewlyDead)
 		}
 	case ONLINENS.String():
-		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
+		fmt.Printf("Node: %v went: %v\n", node, string(ev.Kv.Value))
 	case OFFLININGNS.String():
-		fmt.Printf("Node: %v went: %v\n", string(ev.Kv.Key), string(ev.Kv.Value))
+		fmt.Printf("Node: %v went: %v\n", node, string(ev.Kv.Value))
 	}
 }
 
