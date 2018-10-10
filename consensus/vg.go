@@ -590,7 +590,7 @@ func (cs *Struct) setVgOnline(vg string) (err error) {
 //
 // This transaction can fail if the node is no longer in the INITIALVS state
 // or the VG is no longer in the OFFLINEVS state.
-func (cs *Struct) setVgOnlining(node string, vg string) (err error) {
+func (cs *Struct) setVgOnlining(vg string, node string) (err error) {
 	var txnResp *clientv3.TxnResponse
 
 	// Assuming that current state is INITIALVS - transition to ONLINING
@@ -832,7 +832,7 @@ func (cs *Struct) startVgs(rev int64) {
 			// if all nodes are offlining?
 			// TODO - this is executed in parallel on all online nodes and could
 			// fail.  We need to figure out if racing nodes or failure...
-			_ = cs.setVgOnlining(node, e.Value.(string))
+			_ = cs.setVgOnlining(e.Value.(string), node)
 			vgsToStart.Remove(e)
 		}
 

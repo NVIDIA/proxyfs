@@ -128,7 +128,7 @@ func main() {
 	// os.Arg[0] is the main command
 	// os.Arg[1] will be the subcommand
 	if len(os.Args) < 2 {
-		fmt.Println("list, offline or online subcommand is required")
+		fmt.Println("list, offline, online or stop subcommand is required")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
