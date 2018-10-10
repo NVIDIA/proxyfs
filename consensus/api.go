@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-// TODO - use etcd namepspace
+// TODO - use etcd namepspace.  At a mininum we need a proxyfsd
+// namespace in case we coexist with other users.
 
 // Struct is the connection to our consensus protocol
 type Struct struct {
@@ -23,11 +24,12 @@ type Struct struct {
 
 	server bool // Is this instance a server?
 
-	offlineNode     bool           // CLI - are we offlining node?
-	offlineNodeName string         // CLI - name of node offlining
-	offlineVg       bool           // CLI - are we offlining VG?
-	offlineVgName   string         // CLI - name of VG offlining
-	cliWG           sync.WaitGroup // CLI WG to signal when done
+	stopNode  bool           // CLI - are we offlining node?
+	nodeName  string         // CLI - name of node for operation
+	offlineVg bool           // CLI - are we offlining VG?
+	onlineVg  bool           // CLI - are we onlining VG?
+	vgName    string         // CLI - name of VG
+	cliWG     sync.WaitGroup // CLI WG to signal when done
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
@@ -149,12 +151,12 @@ func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 func (cs *Struct) CLIOfflineVg(name string) (err error) {
 
 	if cs.server {
-		fmt.Printf("OfflineVg() can only be called from CLI and not from server")
+		fmt.Printf("CLIOfflineVg() can only be called from CLI and not from server")
 		os.Exit(1)
 	}
 
 	cs.offlineVg = true
-	cs.offlineVgName = name
+	cs.vgName = name
 
 	// TODO - What if VG is already OFFLINE?
 	// need to verify state
@@ -167,27 +169,52 @@ func (cs *Struct) CLIOfflineVg(name string) (err error) {
 	return
 }
 
-// CLIOfflineNode offlines all volume groups on a node and then stops the node.
+// CLIOnlineVg onlines the volume group on the node and waits until it is online
 //
 // This routine can only be called from CLI.
-func (cs *Struct) CLIOfflineNode(name string) (err error) {
+func (cs *Struct) CLIOnlineVg(name string, node string) (err error) {
+
+	if cs.server {
+		fmt.Printf("CLIOnlineVg() can only be called from CLI and not from server")
+		os.Exit(1)
+	}
+
+	cs.onlineVg = true
+	cs.vgName = name
+
+	// TODO - What if VG is already ONLINE?
+	// need to verify state
+	err = cs.setVgOnlining(name, node)
+	if err != nil {
+		return err
+	}
+
+	cs.cliWG.Wait()
+	return
+}
+
+// CLIStopNode offlines all volume groups on a node and then stops the node.
+//
+// This routine can only be called from CLI.
+func (cs *Struct) CLIStopNode(name string) (err error) {
 
 	// TODO - verify that valid node transition...
+	// based on current state to proper transition
+	// i.e. ONLINE->OFFLINING->DEAD
 
 	if cs.server {
 		fmt.Printf("OfflineNode() can only be called from CLI and not from server")
 		os.Exit(1)
 	}
 
-	cs.offlineNode = true
-	cs.offlineNodeName = name
-
+	cs.stopNode = true
+	cs.nodeName = name
 	err = cs.setNodeState(name, OFFLININGNS)
 	if err != nil {
 		return err
 	}
-
 	cs.cliWG.Wait()
+
 	return
 }
 
