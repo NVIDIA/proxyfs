@@ -112,6 +112,11 @@ func main() {
 			watchCommand := flag.NewFlagSet("watch", flag.ExitOnError)
 	*/
 
+	/*
+		TODO - Have node STOP command instead of OFFLINE ???
+		returns when node transitions to DEAD
+	*/
+
 	// List subcommand flag pointers
 	listNodePtr := listCommand.String("node", "", "node to list - list all if empty")
 	listVgPtr := listCommand.String("vg", "", "volume group to list - list all if empty")
@@ -177,15 +182,23 @@ func main() {
 
 		// Offline the VG
 		if *offlineVgPtr != "" {
-			cs.CLIOfflineVg(*offlineVgPtr)
-			os.Exit(1)
+			err := cs.CLIOfflineVg(*offlineVgPtr)
+			if err != nil {
+				fmt.Printf("Offline failed with error: % \n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 
 		// Offline all VGs on the node and stop the node
 		if *offlineNodePtr != "" {
 			fmt.Printf("Node ptr: %v\n", *offlineNodePtr)
-			cs.CLIOfflineNode(*offlineNodePtr)
-			os.Exit(1)
+			err := cs.CLIOfflineNode(*offlineNodePtr)
+			if err != nil {
+				fmt.Printf("Offline failed with error: % \n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 	}
 

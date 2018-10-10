@@ -20,8 +20,14 @@ type Struct struct {
 	watcherWG sync.WaitGroup // WaitGroup to keep track of watchers outstanding
 	HBTicker  *time.Ticker   // HB ticker for sending HB
 	// and processing DEAD nodes.
-	offlineWG sync.WaitGroup // Wait group used to wait until VGs offline
-	server    bool           // Is this instance a server?
+
+	server bool // Is this instance a server?
+
+	offlineNode     bool           // CLI - are we offlining node?
+	offlineNodeName string         // CLI - name of node offlining
+	offlineVg       bool           // CLI - are we offlining VG?
+	offlineVgName   string         // CLI - name of VG offlining
+	cliWG           sync.WaitGroup // CLI WG to signal when done
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
@@ -54,7 +60,9 @@ func (cs *Struct) startWatchers() {
 	cs.startAWatcher(vgPrefix())
 }
 
-// Server becomes a server in the consensus cluster.
+// Server sets up to be a long running process in the consensus cluster
+// driving longer term operations as opposed to CLI which is only doing
+// short term operations before exiting.
 func (cs *Struct) Server() (err error) {
 
 	// Verify that our hostName is one of the members of the cluster
@@ -93,8 +101,8 @@ func (cs *Struct) Server() (err error) {
 	return
 }
 
-// Client becomes a client in the consensus cluster.
-func (cs *Struct) Client() (err error) {
+// CLI sets up to do CLI operations in the cluster.
+func (cs *Struct) CLI() (err error) {
 
 	// paranoid...
 	cs.server = false
@@ -103,11 +111,6 @@ func (cs *Struct) Client() (err error) {
 
 	return
 }
-
-//
-// TODO - add methods to OFFLINE a volume group and retreive
-// state of volume group
-//
 
 // AddVolumeGroup creates a new volume group.
 // TODO - verify valid input
@@ -140,6 +143,54 @@ func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 	return
 }
 
+// CLIOfflineVg offlines the volume group and waits until it is offline
+//
+// This routine can only be called from CLI.
+func (cs *Struct) CLIOfflineVg(name string) (err error) {
+
+	if cs.server {
+		fmt.Printf("OfflineVg() can only be called from CLI and not from server")
+		os.Exit(1)
+	}
+
+	cs.offlineVg = true
+	cs.offlineVgName = name
+
+	// TODO - What if VG is already OFFLINE?
+	// need to verify state
+	err = cs.setVgOfflining(name)
+	if err != nil {
+		return err
+	}
+
+	cs.cliWG.Wait()
+	return
+}
+
+// CLIOfflineNode offlines all volume groups on a node and then stops the node.
+//
+// This routine can only be called from CLI.
+func (cs *Struct) CLIOfflineNode(name string) (err error) {
+
+	// TODO - verify that valid node transition...
+
+	if cs.server {
+		fmt.Printf("OfflineNode() can only be called from CLI and not from server")
+		os.Exit(1)
+	}
+
+	cs.offlineNode = true
+	cs.offlineNodeName = name
+
+	err = cs.setMyNodeState(cs.hostName, OFFLININGNS)
+	if err != nil {
+		return err
+	}
+
+	cs.cliWG.Wait()
+	return
+}
+
 // List grabs all VG and node state and returns it.
 func (cs *Struct) List() (vgState map[string]string, vgNode map[string]string,
 	vgIpaddr map[string]string, vgNetmask map[string]string, vgNic map[string]string,
@@ -148,7 +199,8 @@ func (cs *Struct) List() (vgState map[string]string, vgNode map[string]string,
 	nodesState map[string]string) {
 
 	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState = cs.gatherInfo()
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb,
+		nodesState = cs.gatherInfo(false, 0)
 
 	return
 
