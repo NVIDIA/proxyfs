@@ -146,6 +146,8 @@ func (cs *Struct) checkForDeadNodes() {
 		os.Exit(-1)
 	}
 
+	rev := resp.Header.GetRevision()
+
 	// Break the response out into list of already DEAD nodes and
 	// nodes which are still marked ONLINE.
 	//
@@ -174,7 +176,7 @@ func (cs *Struct) checkForDeadNodes() {
 	cs.markNodesDead(nodesNewlyDead, nodesHb)
 
 	// Initiate failover of VGs.
-	cs.failoverVgs(nodesNewlyDead)
+	cs.failoverVgs(nodesNewlyDead, rev)
 }
 
 // sendHB sends a heartbeat by doing a txn() to update
@@ -224,6 +226,7 @@ func (cs *Struct) startHBandMonitor() {
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 
 	node := strings.TrimPrefix(string(ev.Kv.Key), nodeKeyStatePrefix())
+	rev := ev.Kv.ModRevision
 
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
@@ -235,8 +238,16 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 		nodesNewlyDead := make([]string, 1)
 		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
 		if cs.server {
-			cs.failoverVgs(nodesNewlyDead)
+			cs.failoverVgs(nodesNewlyDead, rev)
+		} else {
+
+			// The CLI shutdown a remote node - now signal CLI
+			// that complete.
+			if cs.offlineNode && (cs.offlineNodeName == node) {
+				cs.cliWG.Done()
+			}
 		}
+
 	case ONLINENS.String():
 		fmt.Printf("Node: %v went: %v\n", node, string(ev.Kv.Value))
 	case OFFLININGNS.String():
@@ -248,20 +259,29 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 //
 // TODO - hide watchers behind interface{}?
 // TODO - what about OFFLINE, etc events which are not implemented?
+// - should we add OFFLINE state here and signal CLI when go to OFFLINE?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Local Node - went: %v\n", string(ev.Kv.Value))
+	rev := ev.Kv.ModRevision
+
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		if cs.server {
-			cs.clearMyVgs()
+			cs.clearMyVgs(rev)
 			cs.setMyNodeState(cs.hostName, ONLINENS)
 		}
 	case DEADNS.String():
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
 		if cs.server {
-			cs.offlineVgs(true, ev.Kv.ModRevision)
-			// TODO - Drop VIP here!!!
+			cs.doAllVgOfflineBeforeDead(rev)
 			os.Exit(-1)
+		} else {
+
+			// The CLI shutdown the local node.  Signal the CLI that
+			// complete.
+			if cs.offlineNode && (cs.offlineNodeName == cs.hostName) {
+				cs.cliWG.Done()
+			}
 		}
 	case ONLINENS.String():
 		// TODO - implement ONLINE - how know to start VGs vs
@@ -271,14 +291,14 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - should I pass the REVISION to the start*() functions?
 		if cs.server {
 			cs.startHBandMonitor()
-			cs.startVgs()
+			cs.startVgs(rev)
 		}
 	case OFFLININGNS.String():
-		// offlineVgs() blocks until all VGs are offline
+		// Initiate offlining of VGs, when last VG goes
+		// offline the watcher will transition the local node to
+		// DEAD.
 		if cs.server {
-			cs.offlineVgs(false, 0)
-
-			cs.setMyNodeState(cs.hostName, DEADNS)
+			cs.doAllVgOfflining(rev)
 		}
 	}
 }
