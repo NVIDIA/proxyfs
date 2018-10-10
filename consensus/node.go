@@ -264,8 +264,6 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 // We received a watch event for the local node.
 //
 // TODO - hide watchers behind interface{}?
-// TODO - what about OFFLINE, etc events which are not implemented?
-// - should we add OFFLINE state here and signal CLI when go to OFFLINE?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("Local Node - went: %v\n", string(ev.Kv.Value))
 	rev := ev.Kv.ModRevision
@@ -304,7 +302,13 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// offline the watcher will transition the local node to
 		// DEAD.
 		if cs.server {
-			cs.doAllVgOfflining(rev)
+			numVgsOffline := cs.doAllVgOfflining(rev)
+
+			// If the node has no VGs to offline then transition
+			// to DEAD.
+			if numVgsOffline == 0 {
+				cs.setNodeState(cs.hostName, DEADNS)
+			}
 		}
 	}
 }
