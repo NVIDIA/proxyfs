@@ -182,7 +182,7 @@ func (cs *Struct) CLIOfflineNode(name string) (err error) {
 	cs.offlineNode = true
 	cs.offlineNodeName = name
 
-	err = cs.setMyNodeState(cs.hostName, OFFLININGNS)
+	err = cs.setNodeState(name, OFFLININGNS)
 	if err != nil {
 		return err
 	}

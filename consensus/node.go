@@ -152,7 +152,7 @@ func (cs *Struct) checkForDeadNodes() {
 	// nodes which are still marked ONLINE.
 	//
 	// Also retrieve the last HB values for each node.
-	_, nodesOnline, nodesHb, _ := parseNodeResp(resp)
+	_, nodesOnline, nodesHb, nodeState := parseNodeResp(resp)
 
 	// Go thru list of nodeNotDeadState and verify HB is not past
 	// interval.  If so, put on list nodesNewlyDead and then
@@ -160,6 +160,13 @@ func (cs *Struct) checkForDeadNodes() {
 	nodesNewlyDead := make([]string, 0)
 	timeNow := time.Now()
 	for _, n := range nodesOnline {
+
+		// HBs are only sent while the node is in ONLINE or OFFLINING
+		if (nodeState[n] != ONLINENS.String()) &&
+			(nodeState[n] != OFFLININGNS.String()) {
+			continue
+		}
+
 		// TODO - this should use heartbeat interval and number of missed heartbeats
 		nodeTime := nodesHb[n].Add(5 * time.Second)
 		if nodeTime.Before(timeNow) {
@@ -268,7 +275,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	case STARTINGNS.String():
 		if cs.server {
 			cs.clearMyVgs(rev)
-			cs.setMyNodeState(cs.hostName, ONLINENS)
+			cs.setNodeState(cs.hostName, ONLINENS)
 		}
 	case DEADNS.String():
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
@@ -423,11 +430,11 @@ func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existi
 	return
 }
 
-// SetMyNodeState updates the state of the node in etcd using a transaction.
+// SetNodeState updates the state of the node in etcd using a transaction.
 // TODO - this correct?  Probably should verify that we are doing a valid
 // state transition and panic if not.
 // TODO - review for cleanup
-func (cs *Struct) setMyNodeState(nodeName string, newState NodeState) (err error) {
+func (cs *Struct) setNodeState(nodeName string, newState NodeState) (err error) {
 
 	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")

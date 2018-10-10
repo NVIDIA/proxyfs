@@ -184,7 +184,7 @@ func main() {
 		if *offlineVgPtr != "" {
 			err := cs.CLIOfflineVg(*offlineVgPtr)
 			if err != nil {
-				fmt.Printf("Offline failed with error: % \n", err)
+				fmt.Printf("Offline failed with error: %v\n", err)
 				os.Exit(1)
 			}
 			os.Exit(0)
@@ -195,7 +195,7 @@ func main() {
 			fmt.Printf("Node ptr: %v\n", *offlineNodePtr)
 			err := cs.CLIOfflineNode(*offlineNodePtr)
 			if err != nil {
-				fmt.Printf("Offline failed with error: % \n", err)
+				fmt.Printf("Offline failed with error: %v\n", err)
 				os.Exit(1)
 			}
 			os.Exit(0)
