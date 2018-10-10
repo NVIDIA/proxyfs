@@ -221,22 +221,20 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 		// transition to DEAD.
 		//
 		// If we are in the CLI then signal that we are done offlining this VG.
-		if node == cs.hostName {
-			if cs.server {
-				if cs.allVgsDownAndNodeOfflining(ev.Kv.ModRevision) {
+		if cs.server {
+			if cs.allVgsDownAndNodeOfflining(ev.Kv.ModRevision) {
 
-					// All VGs are down - now transition the
-					// node to DEAD.
-					cs.setNodeState(cs.hostName, DEADNS)
-				}
+				// All VGs are down - now transition the
+				// node to DEAD.
+				cs.setNodeState(cs.hostName, DEADNS)
+			}
 
-			} else {
-				// TODO - should offlineVg() really be offlineVG()?
+		} else {
+			// TODO - should offlineVg() really be offlineVG()?
 
-				// Wakeup blocked CLI if waiting for this VG
-				if cs.offlineVg && (vgName == cs.offlineVgName) {
-					cs.cliWG.Done()
-				}
+			// Wakeup blocked CLI if waiting for this VG
+			if cs.offlineVg && (vgName == cs.vgName) {
+				cs.cliWG.Done()
 			}
 		}
 	}
@@ -533,8 +531,30 @@ func (cs *Struct) setVgOfflining(vg string) (err error) {
 	).Else().Commit()
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
+	// If the VG was in FAILEDVS and the txn succeeded then return now
+	if txnResp.Succeeded {
+		return
+	}
+
+	// Earlier transaction failed - do next transaction assuming that state
+	// was FAILED
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is in FAILEDVS and node name is ""
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", FAILEDVS.String()),
+
+		// "Then" set the values...
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), OFFLININGVS.String()),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
+
 	if !txnResp.Succeeded {
-		err = errors.New("VG no longer in ONLINEVS or ONLININGVS")
+		err = errors.New("VG no longer in ONLINE, ONLINING or FAILED")
 	}
 
 	// TODO - how handle error cases????

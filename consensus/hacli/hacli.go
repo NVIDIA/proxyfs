@@ -103,18 +103,11 @@ func main() {
 	listCommand := flag.NewFlagSet("list", flag.ExitOnError)
 	offlineCommand := flag.NewFlagSet("offline", flag.ExitOnError)
 	onlineCommand := flag.NewFlagSet("online", flag.ExitOnError)
+	stopCommand := flag.NewFlagSet("stop", flag.ExitOnError)
 	/*
-		  TODO - add watch and set commands to watch for changes for
-		  example a VG, etc or to change the state of a VG in a unit
-		  test.
-
-			setCommand := flag.NewFlagSet("set", flag.ExitOnError)
+		  TODO - add watch commands to watch for changes for
+		  example a VG, etc
 			watchCommand := flag.NewFlagSet("watch", flag.ExitOnError)
-	*/
-
-	/*
-		TODO - Have node STOP command instead of OFFLINE ???
-		returns when node transitions to DEAD
 	*/
 
 	// List subcommand flag pointers
@@ -122,12 +115,14 @@ func main() {
 	listVgPtr := listCommand.String("vg", "", "volume group to list - list all if empty")
 
 	// Offline subcommand flag pointers
-	offlineNodePtr := offlineCommand.String("node", "", "node to offline")
-	offlineVgPtr := offlineCommand.String("vg", "", "volume group to offline")
+	offlineVgPtr := offlineCommand.String("vg", "", "volume group to offline (required)")
 
 	// Online subcommand flag pointers
 	onlineNodePtr := onlineCommand.String("node", "", "node where to online VG (required)")
 	onlineVgPtr := onlineCommand.String("vg", "", "volume group to online (required)")
+
+	// Stop subcommand
+	stopNodePtr := stopCommand.String("node", "", "node to be stopped (required)")
 
 	// Verify that a subcommand has been provided
 	// os.Arg[0] is the main command
@@ -149,9 +144,11 @@ func main() {
 		offlineCommand.Parse(os.Args[2:])
 	case "online":
 		onlineCommand.Parse(os.Args[2:])
+	case "stop":
+		stopCommand.Parse(os.Args[2:])
 	default:
 		// TODO - fix this error message
-		fmt.Println("invalid subcommand - valid subcommands are list, offline or online")
+		fmt.Println("invalid subcommand - valid subcommands are list, offline, online or stop")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -168,12 +165,7 @@ func main() {
 	// Check which subcommand was Parsed for offline
 	if offlineCommand.Parsed() {
 
-		if (*offlineNodePtr == "") && (*offlineVgPtr == "") {
-			offlineCommand.PrintDefaults()
-			os.Exit(1)
-		}
-
-		if (*offlineNodePtr != "") && (*offlineVgPtr != "") {
+		if *offlineVgPtr == "" {
 			offlineCommand.PrintDefaults()
 			os.Exit(1)
 		}
@@ -181,25 +173,12 @@ func main() {
 		cs := setupConnection()
 
 		// Offline the VG
-		if *offlineVgPtr != "" {
-			err := cs.CLIOfflineVg(*offlineVgPtr)
-			if err != nil {
-				fmt.Printf("Offline failed with error: %v\n", err)
-				os.Exit(1)
-			}
-			os.Exit(0)
+		err := cs.CLIOfflineVg(*offlineVgPtr)
+		if err != nil {
+			fmt.Printf("Offline failed with error: %v\n", err)
+			os.Exit(1)
 		}
-
-		// Offline all VGs on the node and stop the node
-		if *offlineNodePtr != "" {
-			fmt.Printf("Node ptr: %v\n", *offlineNodePtr)
-			err := cs.CLIOfflineNode(*offlineNodePtr)
-			if err != nil {
-				fmt.Printf("Offline failed with error: %v\n", err)
-				os.Exit(1)
-			}
-			os.Exit(0)
-		}
+		os.Exit(0)
 	}
 
 	// Check which subcommand was Parsed for online
@@ -211,6 +190,39 @@ func main() {
 		if (*onlineNodePtr == "") || (*onlineVgPtr == "") {
 			onlineCommand.PrintDefaults()
 			os.Exit(1)
+		}
+
+		cs := setupConnection()
+
+		// Online the VG
+		err := cs.CLIOnlineVg(*onlineVgPtr, *onlineNodePtr)
+		if err != nil {
+			fmt.Printf("Offline failed with error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	// Check which subcommand was Parsed for stop
+	if stopCommand.Parsed() {
+
+		if *stopNodePtr == "" {
+			stopCommand.PrintDefaults()
+			os.Exit(1)
+		}
+
+		cs := setupConnection()
+
+		// Stop the node and wait for it to reach DEAD state
+		// Offline all VGs on the node and stop the node
+		if *stopNodePtr != "" {
+			fmt.Printf("Node ptr: %v\n", *stopNodePtr)
+			err := cs.CLIStopNode(*stopNodePtr)
+			if err != nil {
+				fmt.Printf("Stop failed with error: %v\n", err)
+				os.Exit(1)
+			}
+			os.Exit(0)
 		}
 	}
 }
