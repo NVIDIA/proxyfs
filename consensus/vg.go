@@ -732,7 +732,7 @@ func (cs *Struct) doAllVgOfflineBeforeDead(deadRev int64) {
 // OFFLINING.
 //
 // Initiate the offlining of VGs on this node.
-func (cs *Struct) doAllVgOfflining(rev int64) {
+func (cs *Struct) doAllVgOfflining(rev int64) (numVgsOfflinint int) {
 
 	// Retrieve VG and node state
 	_, vgNode, _, _, _, _, _, _, _, _, _, _ := cs.gatherInfo(true, rev)
@@ -755,9 +755,11 @@ func (cs *Struct) doAllVgOfflining(rev int64) {
 	// OFFLINING - at least prevent ONLINING locally.
 	for name, node := range vgNode {
 		if node == cs.hostName {
+			numVgsOfflinint++
 			cs.setVgOfflining(name)
 		}
 	}
+	return
 }
 
 // clearMyVgs is called when the local node enters the
