@@ -227,7 +227,7 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 
 					// All VGs are down - now transition the
 					// node to DEAD.
-					cs.setMyNodeState(cs.hostName, DEADNS)
+					cs.setNodeState(cs.hostName, DEADNS)
 				}
 
 			} else {
