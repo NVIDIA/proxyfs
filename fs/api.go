@@ -182,7 +182,7 @@ type MountHandle interface {
 	ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error)
 	Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error)
 	LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error)
-	MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
+	MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
 	MiddlewareGetAccount(maxEntries uint64, marker string, endmarker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
 	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, endmarker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error)

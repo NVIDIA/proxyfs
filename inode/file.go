@@ -993,7 +993,6 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	)
 
 	fileInode.dirty = true
-
 	fileInodeExtentMap = fileInode.payload.(sortedmap.BPlusTree)
 
 	ok = true
@@ -1013,11 +1012,13 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	return
 }
 
-func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (
-	coalesceTime time.Time, numWrites uint64, fileSize uint64, err error) {
+func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string,
+	metaData []byte, elements []*CoalesceElement) (
+	attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error) {
 
 	var (
 		alreadyInInodeMap                  bool
+		coalesceTime                       time.Time
 		destInode                          *inMemoryInodeStruct
 		destInodeExtentMap                 sortedmap.BPlusTree
 		destInodeOffsetBeforeElementAppend uint64
@@ -1205,6 +1206,8 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 	// collect the NumberOfWrites value while locked (important for Etag)
 	numWrites = destInode.NumWrites
 	fileSize = destInode.Size
+	attrChangeTime = destInode.AttrChangeTime
+	modificationTime = destInode.ModificationTime
 
 	// Now, destInode is fully assembled... need to remove all elements references to currently shared LogSegments
 
