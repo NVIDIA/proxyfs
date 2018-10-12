@@ -29,7 +29,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 		panic(fmt.Sprintf("statistics group must have non-empty pkgName or statsGroupName"))
 	}
 
-	// let us reflect upon any statistics fields in statsStruct ...
+	// let us reflect upon the statistics fields in statsStruct ...
 	//
 	// but first verify this is a pointer to a struct
 	if reflect.TypeOf(statsStruct).Kind() != reflect.Ptr ||
@@ -193,7 +193,7 @@ func sprintStats(statFmt StatStringFormat, pkgName string, statsGroupName string
 func sprintStatsStruct(statFmt StatStringFormat, pkgName string, statsGroupName string,
 	statsStruct interface{}) (statValues string) {
 
-	// let us reflect upon any statistic fields in statsStruct ...
+	// let us reflect upon the statistic fields in statsStruct ...
 	//
 	// but first verify this is a pointer to a struct
 	if reflect.TypeOf(statsStruct).Kind() != reflect.Ptr ||
@@ -207,22 +207,23 @@ func sprintStatsStruct(statFmt StatStringFormat, pkgName string, statsGroupName 
 
 	// find all the statistics fields and sprint them
 	for i := 0; i < structAsType.NumField(); i++ {
-		fieldAsType := structAsType.Field(i).Type
+		//fieldName := structAsType.Field(i).Name
+		//fieldAsType := structAsType.Field(i).Type
 		fieldAsValue := structAsValue.Field(i)
 
 		// ignore fields that are not a BucketStats type
-		var (
-			countStat          Total
-			averageStat        Average
-			bucketLog2Stat     BucketLog2Round
-			bucketLogRoot2Stat BucketLogRoot2Round
-		)
-		if fieldAsType != reflect.TypeOf(countStat) &&
-			fieldAsType != reflect.TypeOf(averageStat) &&
-			fieldAsType != reflect.TypeOf(bucketLog2Stat) &&
-			fieldAsType != reflect.TypeOf(bucketLogRoot2Stat) {
-			continue
-		}
+		// var (
+		// 	countStat          Total
+		// 	averageStat        Average
+		// 	bucketLog2Stat     BucketLog2Round
+		// 	bucketLogRoot2Stat BucketLogRoot2Round
+		// )
+		// if fieldAsType != reflect.TypeOf(countStat) &&
+		// 	fieldAsType != reflect.TypeOf(averageStat) &&
+		// 	fieldAsType != reflect.TypeOf(bucketLog2Stat) &&
+		// 	fieldAsType != reflect.TypeOf(bucketLogRoot2Stat) {
+		// 	continue
+		// }
 
 		switch v := (fieldAsValue.Addr().Interface()).(type) {
 		case *Total:
@@ -234,7 +235,7 @@ func sprintStatsStruct(statFmt StatStringFormat, pkgName string, statsGroupName 
 		case *BucketLogRoot2Round:
 			statValues += v.Sprint(statFmt, pkgName, statsGroupName)
 		default:
-			panic(fmt.Sprintf("Unknown type in struct: %s", fieldAsType.Name()))
+			continue
 		}
 	}
 	return
