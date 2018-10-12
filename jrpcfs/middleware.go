@@ -362,7 +362,8 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 	_, destContainer, destObject, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
 
 	var ino uint64
-	ino, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	ino, reply.NumWrites, reply.AttrChangeTime, reply.ModificationTime, err =
+		mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
 	reply.InodeNumber = int64(ino)
 	return
 }

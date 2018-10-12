@@ -1276,7 +1276,7 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 	return cursorInodeNumber, nil
 }
 
-func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error) {
 
 	var coalesceSize uint64
 	startTime := time.Now()
@@ -1494,9 +1494,10 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
 	// do something useful
-	destInodeNumber, mtime, numWrites, coalesceSize, err :=
+	destInodeNumber, ctime, mtime, numWrites, coalesceSize, err :=
 		mS.volStruct.inodeVolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
 	ino = uint64(destInodeNumber)
+	attrChangeTime = uint64(ctime.UnixNano())
 	modificationTime = uint64(mtime.UnixNano())
 	return
 }

@@ -817,7 +817,7 @@ func flush(fileInode *inMemoryInodeStruct, andPurge bool) (err error) {
 	return
 }
 
-func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinationName string, elements []CoalesceElement) (combinationInodeNumber InodeNumber, modificationTime time.Time, numWrites uint64, size uint64, err error) {
+func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinationName string, elements []CoalesceElement) (combinationInodeNumber InodeNumber, attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, size uint64, err error) {
 	// We steal the log segments from each element by getting a read plan for the whole element, then calling
 	// recordWrite to point the combined inode at them.
 	//
@@ -1011,6 +1011,7 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 
 	combinationInodeNumber = combinationInode.InodeNumber
 	numWrites = combinationInode.NumWrites
+	attrChangeTime = updateTime
 	modificationTime = updateTime
 	size = combinationInode.Size
 	return
