@@ -1,5 +1,10 @@
 This Vagrantfile will create a 3 node etcd cluster
 
+Before starting, you need to create a virtual ethernet hey can use to
+communicate.  Issue the command:
+
+    % sudo ip link add vboxnet5 type veth
+
 The nodes are named etcd0, etcd1 and etcd2 and use the private network to
 communicate etcd traffic.
 
