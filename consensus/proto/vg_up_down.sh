@@ -20,6 +20,8 @@ then
     then
         exit $ERR
     fi
+    /sbin/arping -c 1 -b -U -I $NIC $IPADDR
+
     /sbin/smbd -s /etc/samba/smb-$VGNAME.conf
     /sbin/nmbd -s /etc/samba/smb-$VGNAME.conf
     ERR=$?
