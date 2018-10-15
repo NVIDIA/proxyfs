@@ -1,4 +1,4 @@
-#!/bin/bash -x 
+#!/bin/bash -x
 CMD="$1"
 VGNAME="$2"
 IPADDR="$3"
@@ -7,7 +7,7 @@ NIC="$5"
 
 echo "args cmd:$CMD vgname:$VGNAME ipaddr:$IPADDR netmask:$NETMASK nic:$NIC"
 
-ERR=""
+ERR=0
 
 # TODO - what other processes must be started/stopped?  Such
 # as noauth-proxy, nmbd, smbd, winbindd, rpcbind, rpc.mountd,
@@ -15,14 +15,14 @@ ERR=""
 if [ "X$CMD" == "Xup" ]
 then
     /usr/sbin/ip addr add $IPADDR dev $NIC
-    ERR="$?"
+    ERR=$?
     if [ "X$ERR" != "X0" ]
     then
         exit $ERR
     fi
     /sbin/smbd -s /etc/samba/smb-$VGNAME.conf
     /sbin/nmbd -s /etc/samba/smb-$VGNAME.conf
-    ERR="$?"
+    ERR=$?
 else
     if [ "X$CMD" == "Xdown" ]
     then

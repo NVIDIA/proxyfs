@@ -14,7 +14,7 @@ var (
 	ipAddr1      = "192.168.60.20"
 	vgTestName2  = "myTestVg2"
 	ipAddr2      = "192.168.60.21"
-	netMask      = "32"
+	netMask      = "24"
 	nic          = "enp0s8"
 	autoFailover = true
 	enabled      = true
