@@ -265,7 +265,7 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 //
 // TODO - hide watchers behind interface{}?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
-	fmt.Printf("Local Node - went: %v\n", string(ev.Kv.Value))
+	fmt.Printf("\nLocal Node - went: %v\n", string(ev.Kv.Value))
 	rev := ev.Kv.ModRevision
 
 	switch string(ev.Kv.Value) {

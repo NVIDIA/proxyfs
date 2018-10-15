@@ -166,7 +166,7 @@ func (cs *Struct) allVgsDownAndNodeOfflining(rev int64) bool {
 	}
 
 	// If any VG has the node set to the local node then return false
-	for v := range vgNode {
+	for _, v := range vgNode {
 		if v == cs.hostName {
 			return false
 		}
@@ -370,6 +370,7 @@ func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string, rev int64) {
 
 	for _, deadNode := range newlyDeadNodes {
 		for name, node := range vgNode {
+
 			// If VG was ONLINE on dead node - set to OFFLINE
 			if node == deadNode {
 				err := cs.setVgOffline(name)
@@ -400,9 +401,9 @@ func (cs *Struct) failoverVgs(newlyDeadNodes []string, rev int64) {
 	// Mark all VGs that were online on newlyDeadNodes as OFFLINE
 	cs.setVgsOfflineDeadNodes(newlyDeadNodes, rev)
 
-	// TODO - should startVgs() be triggered from the watcher since
-	// the state will not be updated to OFFLINE until then?
-	// Follow online path to online OFFLINE VGs
+	// TODO - startVgs() should be triggered from the watcher since
+	// the state will not be updated to OFFLINE until then
+	// Do we need a VG state FAILING_OVER to denote this?
 	cs.startVgs(rev)
 }
 
@@ -455,11 +456,12 @@ func (cs *Struct) setVgFailed(vg string) (err error) {
 
 // setVgOffline sets the vg VGSTATE to OFFLINEVS and clears VGNODE.
 func (cs *Struct) setVgOffline(vg string) (err error) {
+	var txnResp *clientv3.TxnResponse
 
 	fmt.Printf("setVgOffline() - vg: %v\n", vg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	_, err = cs.kvc.Txn(ctx).
+	txnResp, err = cs.kvc.Txn(ctx).
 
 		// Verify that the VG is still in OFFLINING state
 		If(
@@ -474,7 +476,26 @@ func (cs *Struct) setVgOffline(vg string) (err error) {
 	).Else().Commit()
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
-	// TODO - how handle error cases????
+	if txnResp.Succeeded {
+		return
+	}
+
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	txnResp, err = cs.kvc.Txn(ctx).
+
+		// Verify that the VG is still in ONLINE state - this can happen
+		// if the node is DEAD.   We need to clear the VG state.
+		If(
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", ONLINEVS.String()),
+
+		// "Then" create the keys with initial values
+		).Then(
+		clientv3.OpPut(makeVgStateKey(vg), OFFLINEVS.String()),
+		clientv3.OpPut(makeVgNodeKey(vg), ""),
+
+	// If failed - silently return
+	).Else().Commit()
+	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	return
 }
@@ -798,12 +819,15 @@ func (cs *Struct) startVgs(rev int64) {
 	}
 
 	// Retrieve VG and node state
-	vgState, _, _, _, _, vgAutofail, vgEnabled, _, _,
-		nodesOnline, _, _ := cs.gatherInfo(true, rev)
+	vgState, _, _, _, _, vgAutofail, vgEnabled, _, _, nodesOnline,
+		_, _ := cs.gatherInfo(true, rev)
 
 	/* Debugging code
-	fmt.Printf("startVgs() ---- vgName: %v vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
-		vgName, vgState, vgNode, vgIpaddr, vgNetmask)
+	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled, vgVolumelist, nodesAlreadyDead,
+		nodesOnline, nodesHb, _ := cs.gatherInfo(true, rev)
+
+	fmt.Printf("startVgs() ---- vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
+		vgState, vgNode, vgIpaddr, vgNetmask)
 	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
 		vgNic, vgAutofail, vgEnabled, vgVolumelist)
 	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
