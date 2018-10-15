@@ -729,6 +729,7 @@ func (cs *Struct) doVgOffline(name string, rev int64) {
 			}
 		} else {
 			fmt.Printf("offlineVg(%v) callUpDownScript() returned err: %v\n", name, err)
+			err = cs.setVgFailed(name)
 		}
 	}()
 }
