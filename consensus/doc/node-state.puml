@@ -4,6 +4,7 @@
 INITIAL --> STARTING : Node first txn when starting
 STARTING --> ONLINE : Node saw own STARTING now go ONLINE
 STARTING --> OFFLINING : Node was shut down while starting
+STARTING --> DEAD : Node died while STARTING and state being cleaned by peer node
 ONLINE --> OFFLINING : Node gracefully shutting down
 ONLINE --> DEAD : Node no longer heartbeating and marked DEAD
 OFFLINING --> DEAD : Node left cluster

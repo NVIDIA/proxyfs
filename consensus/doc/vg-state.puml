@@ -7,6 +7,7 @@ ONLINING --> ONLINE : VG finished coming ONLINE
 ONLINING --> OFFLINING : Node shutting down while VG ONLINING
 ONLINE --> FAILED : For some reason the VG failed on a node
 ONLINE --> OFFLINING : Start bringing the VG OFFLINE
+ONLINE --> OFFLINE : Node died while VGs ONLINE.  Peer node marks VGs OFFLINE.
 OFFLINING --> OFFLINE : VG finished being brought OFFLINE
 ONLINING --> FAILED : The VG failed to be brought ONLINE
 
