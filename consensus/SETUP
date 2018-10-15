@@ -1,0 +1,22 @@
+#
+# build the commands and stuff
+#
+    cd proto
+    go get
+    go build
+    go install		
+
+    cd ../hacli
+    go build
+    go install
+
+#
+# setup the Samba config
+#
+# do this on all 3 nodes, or else setup parallel-ssh
+# and do it once in the host OS
+#
+    sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
+# or 
+	
+    parallel-ssh -h etc-hosts.txt sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.

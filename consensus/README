@@ -1,6 +1,6 @@
 Need unit tests!
 
-User Register() interface to create multiple nodes and force the
+Use Register() interface to create multiple nodes and force the
 state transitions.  Here are test cases:
 
 1. 1 up and 2 join
@@ -16,3 +16,6 @@ state transitions.  Here are test cases:
 VIP Centos
 
 https://www.upcloud.com/support/how-to-configure-floating-ip-on-centos/
+
+
+

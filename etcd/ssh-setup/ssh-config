@@ -1,0 +1,36 @@
+#
+# append this file to your ~/.ssh/config file to make ssh
+# and parallel-ssh access to the etcd* VM easier
+#
+# You will likely need to edit IdentityFile to be the location
+# of your development machine directory.
+#
+# If this is configured correctly then:
+#     % ssh etcd0 hostname
+#
+# will show "etcd0" and
+#    % parallel-ssh -h etcd-hosts.txt hostname
+#
+# will show:
+#    [1] 14:12:02 [SUCCESS] etcd0
+#    [2] 14:12:02 [SUCCESS] etcd1
+#    [3] 14:12:02 [SUCCESS] etcd2
+#
+Host etcd0
+	HostName 127.0.0.1
+	IdentityFile ~/dev/runway/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/etcd/.vagrant/machines/etcd0/virtualbox/private_key
+	User vagrant
+	Port 2200
+
+Host etcd1
+	HostName 127.0.0.1
+	IdentityFile ~/dev/runway/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/etcd/.vagrant/machines/etcd1/virtualbox/private_key
+	User vagrant
+	Port 2201
+
+Host etcd2
+	HostName 127.0.0.1
+	IdentityFile ~/dev/runway/guest_workspaces/swift-runway-001/ProxyFS/src/github.com/swiftstack/ProxyFS/etcd/.vagrant/machines/etcd2/virtualbox/private_key
+	User vagrant
+	Port 2202
+

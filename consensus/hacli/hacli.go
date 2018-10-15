@@ -175,7 +175,7 @@ func main() {
 		// Offline the VG
 		err := cs.CLIOfflineVg(*offlineVgPtr)
 		if err != nil {
-			fmt.Printf("Offline failed with error: %v\n", err)
+			fmt.Printf("offline failed with error: %v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -197,7 +197,7 @@ func main() {
 		// Online the VG
 		err := cs.CLIOnlineVg(*onlineVgPtr, *onlineNodePtr)
 		if err != nil {
-			fmt.Printf("Offline failed with error: %v\n", err)
+			fmt.Printf("online failed with error: %v\n", err)
 			os.Exit(1)
 		}
 		os.Exit(0)

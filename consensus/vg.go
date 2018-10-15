@@ -659,7 +659,8 @@ func (cs *Struct) setVgOnlining(vg string, node string) (err error) {
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	if !txnResp.Succeeded {
-		err = errors.New("VG no longer in INITIALVS or OFFLINEVS - possibly in ONLINING?")
+		err = fmt.Errorf("VG no longer in INITIALVS or OFFLINEVS - state '%s'",
+			clientv3.Value(makeVgStateKey(vg)))
 		return
 	}
 
