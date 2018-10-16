@@ -34,32 +34,29 @@ func teardownConnection(cs *consensus.Struct) {
 	cs.Unregister()
 }
 
-func listNode(cs *consensus.Struct, node string, nodeState map[string]string,
-	nodesHb map[string]time.Time) {
+func listNode(cs *consensus.Struct, node string, nodeInfo consensus.NodeInfo) {
 
 	if node != "" {
-		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeState[node], nodesHb[node])
+		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeInfo.NodesState[node],
+			nodeInfo.NodesHb[node])
 		return
 	}
 	fmt.Printf("Node Information\n")
-	for n := range nodeState {
-		fmt.Printf("\tNode: %v State: %v Last HB: %v\n", n, nodeState[n], nodesHb[n])
+	for n := range nodeInfo.NodesState {
+		fmt.Printf("\tNode: %v State: %v Last HB: %v\n", n, nodeInfo.NodesState[n], nodeInfo.NodesHb[n])
 	}
 
 }
 
-func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
-	vgNode map[string]string, vgIpaddr map[string]string,
-	vgNetmask map[string]string, vgNic map[string]string,
-	vgAutofail map[string]bool, vgEnabled map[string]bool,
-	vgVolumelist map[string]string) {
+func listVg(cs *consensus.Struct, vg string, vgInfo consensus.VgInfo) {
 
 	fmt.Printf("\tVG: %v State: '%v' Node: '%v' Ipaddr: '%v' Netmask: '%v' Nic: '%v'\n",
-		vg, vgState[vg], vgNode[vg], vgIpaddr[vg], vgNetmask[vg], vgNic[vg])
-	fmt.Printf("\t\tAutofail: %v Enabled: %v\n", vgAutofail[vg], vgEnabled[vg])
+		vg, vgInfo.VgState[vg], vgInfo.VgNode[vg], vgInfo.VgIpAddr[vg], vgInfo.VgNetmask[vg],
+		vgInfo.VgNic[vg])
+	fmt.Printf("\t\tAutofail: %v Enabled: %v\n", vgInfo.VgAutofail[vg], vgInfo.VgEnabled[vg])
 
 	fmt.Printf("\tVolumes:\n")
-	for _, v := range vgVolumelist[vg] {
+	for _, v := range vgInfo.VgVolumeList[vg] {
 		fmt.Printf("\t\t%v\n", v)
 	}
 	fmt.Printf("\n")
@@ -76,26 +73,22 @@ func listOp(nodeName string, vgName string) {
 
 	if vgName != "" {
 		if vgInfo.VgState[vgName] != "" {
-			listVg(cs, vgName, vgInfo.VgState, vgInfo.VgNode,
-				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic,
-				vgInfo.VgAutofail, vgInfo.VgEnabled, vgInfo.VgVolumeList)
+			listVg(cs, vgName, vgInfo)
 		} else {
 			fmt.Printf("vg: %v does not exist\n", vgName)
 		}
 	} else if nodeName != "" {
 		if nodeInfo.NodesState[nodeName] != "" {
-			listNode(cs, nodeName, nodeInfo.NodesState, nodeInfo.NodesHb)
+			listNode(cs, nodeName, nodeInfo)
 		} else {
 			fmt.Printf("Node: %v does not exist\n", nodeName)
 		}
 	} else {
-		listNode(cs, nodeName, nodeInfo.NodesState, nodeInfo.NodesHb)
+		listNode(cs, nodeName, nodeInfo)
 
 		fmt.Printf("\nVolume Group Information\n")
 		for n := range vgInfo.VgState {
-			listVg(cs, n, vgInfo.VgState, vgInfo.VgNode,
-				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic,
-				vgInfo.VgAutofail, vgInfo.VgEnabled, vgInfo.VgVolumeList)
+			listVg(cs, n, vgInfo)
 		}
 	}
 
@@ -111,7 +104,10 @@ func main() {
 	stopCommand := flag.NewFlagSet("stop", flag.ExitOnError)
 	/*
 		  TODO - add watch commands to watch for changes for
-		  example a VG, etc
+		  example a VG, etc.   Also, add command to make it easier
+		  for controller to configure, learn keys, etc.  Supportability
+		  requirements?
+
 			watchCommand := flag.NewFlagSet("watch", flag.ExitOnError)
 	*/
 
@@ -189,9 +185,6 @@ func main() {
 	// Check which subcommand was Parsed for online
 	if onlineCommand.Parsed() {
 
-		fmt.Printf("onlineNodePtr is: %v onlineVgPtr: %v\n", *onlineNodePtr, *onlineVgPtr)
-		// TODO - online the VG
-
 		if (*onlineNodePtr == "") || (*onlineVgPtr == "") {
 			onlineCommand.PrintDefaults()
 			os.Exit(1)
@@ -221,7 +214,6 @@ func main() {
 		// Stop the node and wait for it to reach DEAD state
 		// Offline all VGs on the node and stop the node
 		if *stopNodePtr != "" {
-			fmt.Printf("Node ptr: %v\n", *stopNodePtr)
 			err := cs.CLIStopNode(*stopNodePtr)
 			if err != nil {
 				fmt.Printf("Stop failed with error: %v\n", err)
