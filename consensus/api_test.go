@@ -79,7 +79,7 @@ func vgKeysToReset(vgTestName string) (keys map[string]string) {
 	keys[makeVgNameKey(vgTestName)] = ""
 	keys[makeVgStateKey(vgTestName)] = ""
 	keys[makeVgNodeKey(vgTestName)] = ""
-	keys[makeVgIpaddrKey(vgTestName)] = ""
+	keys[makeVgIpAddrKey(vgTestName)] = ""
 	keys[makeVgNetmaskKey(vgTestName)] = ""
 	keys[makeVgNicKey(vgTestName)] = ""
 	keys[makeVgAutoFailoverKey(vgTestName)] = ""
@@ -158,7 +158,7 @@ func testStartVolumeGroup(t *testing.T) {
 	assert.Nil(err, "AddVolumeGroup() returned err")
 
 	// Start the VG -
-	cs.startVgs()
+	cs.startVgs(RevisionNumber(0))
 
 	// Now remove the volume group - should fail since VG is in ONLINE
 	// or ONLINING state.  Only VGs which are OFFLINE can be removed.

@@ -17,6 +17,9 @@
 # and do it once in the host OS
 #
     sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
-# or 
+    sudo mkdir -p /var/cache/samba/vg1 /var/cache/samba/vg2
+
+# or do each command only once:
 	
     parallel-ssh -h etc-hosts.txt sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
+    parallel-ssh -h etc-hosts.txt sudo mkdir -p /var/cache/samba /var/cache/samba

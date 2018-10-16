@@ -55,23 +55,23 @@ func makeNodeHbKey(n string) string {
 //
 // NOTE: The resp given could have retrieved many objects including VGs
 // so do not assume it only contains VGs.
-func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
-	nodesOnline []string, nodesHb map[string]time.Time,
-	nodesState map[string]string) {
+func parseNodeResp(resp *clientv3.GetResponse) (nodeInfo NodeInfo) {
 
-	nodesAlreadyDead = make([]string, 0)
-	nodesOnline = make([]string, 0)
-	nodesHb = make(map[string]time.Time)
-	nodesState = make(map[string]string)
+	nodeInfo.NodesAlreadyDead = make([]string, 0)
+	nodeInfo.NodesOnline = make([]string, 0)
+	nodeInfo.NodesHb = make(map[string]time.Time)
+	nodeInfo.NodesState = make(map[string]string)
+
+	nodeInfo.RevNum = RevisionNumber(resp.Header.GetRevision())
 	for _, e := range resp.Kvs {
 		if strings.HasPrefix(string(e.Key), nodeKeyStatePrefix()) {
 			node := strings.TrimPrefix(string(e.Key), nodeKeyStatePrefix())
-			nodesState[node] = string(e.Value)
+			nodeInfo.NodesState[node] = string(e.Value)
 			if string(e.Value) == DEADNS.String() {
-				nodesAlreadyDead = append(nodesAlreadyDead, node)
+				nodeInfo.NodesAlreadyDead = append(nodeInfo.NodesAlreadyDead, node)
 			} else {
 				if string(e.Value) == ONLINENS.String() {
-					nodesOnline = append(nodesOnline, node)
+					nodeInfo.NodesOnline = append(nodeInfo.NodesOnline, node)
 				}
 			}
 		} else if strings.HasPrefix(string(e.Key), nodeKeyHbPrefix()) {
@@ -82,7 +82,7 @@ func parseNodeResp(resp *clientv3.GetResponse) (nodesAlreadyDead []string,
 				fmt.Printf("UnmarshalTest failed with err: %v", err)
 				os.Exit(-1)
 			}
-			nodesHb[node] = sentTime
+			nodeInfo.NodesHb[node] = sentTime
 		}
 	}
 	return
@@ -115,17 +115,17 @@ func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time
 }
 
 // getRevNodeState retrieves node state as of given revision
-func (cs *Struct) getRevNodeState(revNeeded int64) (nodesAlreadyDead []string,
-	nodesOnline []string, nodesHb map[string]time.Time, nodesState map[string]string) {
+func (cs *Struct) getRevNodeState(revNeeded RevisionNumber) (nodeInfo NodeInfo) {
 
 	// First grab all node state information in one operation
-	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(), clientv3.WithRev(revNeeded))
+	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(),
+		clientv3.WithRev(int64(revNeeded)))
 	if err != nil {
 		fmt.Printf("GET node state failed with: %v\n", err)
-		os.Exit(-1)
+		panic(fmt.Errorf("GET node state rev %d failed with: %v\n", revNeeded, err))
 	}
 
-	nodesAlreadyDead, nodesOnline, nodesHb, nodesState = parseNodeResp(resp)
+	nodeInfo = parseNodeResp(resp)
 	return
 }
 
@@ -145,29 +145,27 @@ func (cs *Struct) checkForDeadNodes() {
 		os.Exit(-1)
 	}
 
-	rev := resp.Header.GetRevision()
-
 	// Break the response out into list of already DEAD nodes and
 	// nodes which are still marked ONLINE.
 	//
 	// Also retrieve the last HB values for each node.
-	_, nodesOnline, nodesHb, nodeState := parseNodeResp(resp)
+	nodeInfo := parseNodeResp(resp)
 
 	// Go thru list of nodeNotDeadState and verify HB is not past
 	// interval.  If so, put on list nodesNewlyDead and then
 	// do txn to mark them DEAD all in one transaction.
 	nodesNewlyDead := make([]string, 0)
 	timeNow := time.Now()
-	for _, n := range nodesOnline {
+	for _, n := range nodeInfo.NodesOnline {
 
 		// HBs are only sent while the node is in ONLINE or OFFLINING
-		if (nodeState[n] != ONLINENS.String()) &&
-			(nodeState[n] != OFFLININGNS.String()) {
+		if (nodeInfo.NodesState[n] != ONLINENS.String()) &&
+			(nodeInfo.NodesState[n] != OFFLININGNS.String()) {
 			continue
 		}
 
 		// TODO - this should use heartbeat interval and number of missed heartbeats
-		nodeTime := nodesHb[n].Add(5 * time.Second)
+		nodeTime := nodeInfo.NodesHb[n].Add(5 * time.Second)
 		if nodeTime.Before(timeNow) {
 			nodesNewlyDead = append(nodesNewlyDead, n)
 		}
@@ -179,10 +177,10 @@ func (cs *Struct) checkForDeadNodes() {
 
 	// Set newly dead nodes to DEAD in a series of separate
 	// transactions.
-	cs.markNodesDead(nodesNewlyDead, nodesHb)
+	cs.markNodesDead(nodesNewlyDead, nodeInfo.NodesHb)
 
 	// Initiate failover of VGs.
-	cs.failoverVgs(nodesNewlyDead, rev)
+	cs.failoverVgs(nodesNewlyDead, nodeInfo.RevNum)
 }
 
 // sendHB sends a heartbeat by doing a txn() to update
@@ -232,7 +230,7 @@ func (cs *Struct) startHBandMonitor() {
 func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 
 	node := strings.TrimPrefix(string(ev.Kv.Key), nodeKeyStatePrefix())
-	rev := ev.Kv.ModRevision
+	revNum := RevisionNumber(ev.Kv.ModRevision)
 
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
@@ -244,7 +242,7 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 		nodesNewlyDead := make([]string, 1)
 		nodesNewlyDead = append(nodesNewlyDead, string(ev.Kv.Key))
 		if cs.server {
-			cs.failoverVgs(nodesNewlyDead, rev)
+			cs.failoverVgs(nodesNewlyDead, revNum)
 		} else {
 
 			// The CLI shutdown a remote node - now signal CLI
@@ -266,18 +264,18 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 // TODO - hide watchers behind interface{}?
 func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("\nLocal Node - went: %v\n", string(ev.Kv.Value))
-	rev := ev.Kv.ModRevision
+	revNum := RevisionNumber(ev.Kv.ModRevision)
 
 	switch string(ev.Kv.Value) {
 	case STARTINGNS.String():
 		if cs.server {
-			cs.clearMyVgs(rev)
+			cs.clearMyVgs(revNum)
 			cs.setNodeState(cs.hostName, ONLINENS)
 		}
 	case DEADNS.String():
 		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
 		if cs.server {
-			cs.doAllVgOfflineBeforeDead(rev)
+			cs.doAllVgOfflineBeforeDead(revNum)
 			os.Exit(-1)
 		} else {
 
@@ -295,14 +293,14 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 		// TODO - should I pass the REVISION to the start*() functions?
 		if cs.server {
 			cs.startHBandMonitor()
-			cs.startVgs(rev)
+			cs.startVgs(revNum)
 		}
 	case OFFLININGNS.String():
 		// Initiate offlining of VGs, when last VG goes
 		// offline the watcher will transition the local node to
 		// DEAD.
 		if cs.server {
-			numVgsOffline := cs.doAllVgOfflining(rev)
+			numVgsOffline := cs.doAllVgOfflining(revNum)
 
 			// If the node has no VGs to offline then transition
 			// to DEAD.
