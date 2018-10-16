@@ -46,12 +46,12 @@ const (
 	vgNameStr         = "NAME"
 	vgStateStr        = "STATE"
 	vgNodeStr         = "NODE"
-	vgIpaddrStr       = "IPADDR"
+	vgIpAddrStr       = "IPADDR"
 	vgNetmaskStr      = "NETMASK"
 	vgNicStr          = "NIC"
 	vgEnabledStr      = "ENABLED"
 	vgAutofailoverStr = "AUTOFAILOVER"
-	vgVolumelistStr   = "VOLUMELIST"
+	vgVolumeListStr   = "VOLUMELIST"
 )
 
 // vgPrefix returns a string containing the vg prefix
@@ -78,8 +78,8 @@ func makeVgNodeKey(n string) string {
 	return vgKeyPrefix(vgNodeStr) + n
 }
 
-func makeVgIpaddrKey(n string) string {
-	return vgKeyPrefix(vgIpaddrStr) + n
+func makeVgIpAddrKey(n string) string {
+	return vgKeyPrefix(vgIpAddrStr) + n
 }
 
 func makeVgNetmaskKey(n string) string {
@@ -99,38 +99,40 @@ func makeVgEnabledKey(n string) string {
 }
 
 func makeVgVolumeListKey(n string) string {
-	return vgKeyPrefix(vgVolumelistStr) + n
+	return vgKeyPrefix(vgVolumeListStr) + n
 }
 
-func (cs *Struct) getVgAttrs(name string, rev int64) (state string, node string,
+func (cs *Struct) getVgAttrs(name string, revNum RevisionNumber) (state string, node string,
 	ipaddr string, netmask string, nic string) {
 
 	// First grab all VG state information in one operation using the revision.
-	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix(), clientv3.WithRev(rev))
+	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix(),
+		clientv3.WithRev(int64(revNum)))
 	if err != nil {
 		fmt.Printf("GET VG state failed with: %v\n", err)
 		os.Exit(-1)
 	}
 
 	// Break the response out into lists.
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _ := cs.parseVgResp(resp)
+	vgInfo := cs.parseVgResp(resp)
 
 	// Find the attributes needed
-	state = vgState[name]
-	node = vgNode[name]
-	ipaddr = vgIpaddr[name]
-	netmask = vgNetmask[name]
-	nic = vgNic[name]
+	state = vgInfo.VgState[name]
+	node = vgInfo.VgNode[name]
+	ipaddr = vgInfo.VgIpAddr[name]
+	netmask = vgInfo.VgNetmask[name]
+	nic = vgInfo.VgNic[name]
+
 	return
 }
 
 // doVgOnline attempts to online the VG locallly.  Once
 // done it will do a txn() to set the state either ONLINE
 // or FAILED
-func (cs *Struct) doVgOnline(name string, rev int64) {
+func (cs *Struct) doVgOnline(name string, revNum RevisionNumber) {
 
 	// Retrieve the VG attributes
-	_, _, ipAddr, netMask, nic := cs.getVgAttrs(name, rev)
+	_, _, ipAddr, netMask, nic := cs.getVgAttrs(name, revNum)
 
 	// TODO - how long to timeout?
 	// Execute up/down script and record state
@@ -157,16 +159,16 @@ func (cs *Struct) localHostEvent(ev *clientv3.Event) {
 
 // allVgsDownAndNodeOfflining is called to test if the local
 // node is OFFLINING and all VGs on the local node are OFFLINE.
-func (cs *Struct) allVgsDownAndNodeOfflining(rev int64) bool {
+func (cs *Struct) allVgsDownAndNodeOfflining(revNum RevisionNumber) bool {
 
-	_, vgNode, _, _, _, _, _, _, _, _, _, nodesState := cs.gatherInfo(true, rev)
+	clusterInfo := cs.gatherInfo(revNum)
 
-	if nodesState[cs.hostName] != OFFLININGNS.String() {
+	if clusterInfo.NodeInfo.NodesState[cs.hostName] != OFFLININGNS.String() {
 		return false
 	}
 
 	// If any VG has the node set to the local node then return false
-	for _, v := range vgNode {
+	for _, v := range clusterInfo.VgInfo.VgNode {
 		if v == cs.hostName {
 			return false
 		}
@@ -182,11 +184,11 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 	// The state of a VG has changed
 	vgName := strings.TrimPrefix(string(ev.Kv.Key), vgKeyPrefix(vgStateStr))
 	vgState := string(ev.Kv.Value)
-	rev := ev.Kv.ModRevision
+	revNum := RevisionNumber(ev.Kv.ModRevision)
 
 	// Find node affected
 	vgNodeKey := makeVgNodeKey(vgName)
-	resp, _ := cs.cli.Get(context.TODO(), vgNodeKey, clientv3.WithRev(rev))
+	resp, _ := cs.cli.Get(context.TODO(), vgNodeKey, clientv3.WithRev(int64(revNum)))
 	node := string(resp.Kvs[0].Value)
 
 	fmt.Printf("vgState now: %v for vgName: %v node: %v\n", vgState, vgName, node)
@@ -198,20 +200,20 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 		// TOOD - should we have a lighter weight version of
 		// startVgs() that just onlines one VG?
 		if cs.server {
-			cs.startVgs(rev)
+			cs.startVgs(revNum)
 		}
 
 	case ONLININGVS.String():
 		// If VG onlining on local host then start the online
 		if (node == cs.hostName) && cs.server {
-			go cs.doVgOnline(vgName, ev.Kv.ModRevision)
+			go cs.doVgOnline(vgName, revNum)
 		}
 
 	case OFFLININGVS.String():
 		// A VG is offlining.
 		if (node == cs.hostName) && cs.server {
 			fmt.Printf("stateChgEvent() - vgName: %v - LOCAL - OFFLINING\n", vgName)
-			cs.doVgOffline(vgName, ev.Kv.ModRevision)
+			cs.doVgOffline(vgName, revNum)
 		}
 
 	case OFFLINEVS.String():
@@ -222,7 +224,7 @@ func (cs *Struct) stateChgEvent(ev *clientv3.Event) {
 		//
 		// If we are in the CLI then signal that we are done offlining this VG.
 		if cs.server {
-			if cs.allVgsDownAndNodeOfflining(ev.Kv.ModRevision) {
+			if cs.allVgsDownAndNodeOfflining(revNum) {
 
 				// All VGs are down - now transition the
 				// node to DEAD.
@@ -271,45 +273,43 @@ func (cs *Struct) vgWatchEvents(swg *sync.WaitGroup) {
 	}
 }
 
-func (cs *Struct) parseVgResp(resp *clientv3.GetResponse) (vgState map[string]string,
-	vgNode map[string]string, vgIpaddr map[string]string, vgNetmask map[string]string,
-	vgNic map[string]string, vgAutofail map[string]bool, vgEnabled map[string]bool,
-	vgVolumelist map[string]string) {
+func (cs *Struct) parseVgResp(resp *clientv3.GetResponse) (vgInfo VgInfo) {
 
-	vgState = make(map[string]string)
-	vgNode = make(map[string]string)
-	vgIpaddr = make(map[string]string)
-	vgNetmask = make(map[string]string)
-	vgNic = make(map[string]string)
-	vgAutofail = make(map[string]bool)
-	vgEnabled = make(map[string]bool)
-	vgVolumelist = make(map[string]string)
+	vgInfo.VgState = make(map[string]string)
+	vgInfo.VgNode = make(map[string]string)
+	vgInfo.VgIpAddr = make(map[string]string)
+	vgInfo.VgNetmask = make(map[string]string)
+	vgInfo.VgNic = make(map[string]string)
+	vgInfo.VgAutofail = make(map[string]bool)
+	vgInfo.VgEnabled = make(map[string]bool)
+	vgInfo.VgVolumeList = make(map[string]string)
 
+	vgInfo.RevNum = RevisionNumber(resp.Header.GetRevision())
 	for _, e := range resp.Kvs {
 		if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgStateStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgStateStr))
-			vgState[n] = string(e.Value)
+			vgInfo.VgState[n] = string(e.Value)
 		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNodeStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNodeStr))
-			vgNode[n] = string(e.Value)
-		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgIpaddrStr)) {
-			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgIpaddrStr))
-			vgIpaddr[n] = string(e.Value)
+			vgInfo.VgNode[n] = string(e.Value)
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgIpAddrStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgIpAddrStr))
+			vgInfo.VgIpAddr[n] = string(e.Value)
 		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNetmaskStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNetmaskStr))
-			vgNetmask[n] = string(e.Value)
+			vgInfo.VgNetmask[n] = string(e.Value)
 		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgNicStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgNicStr))
-			vgNic[n] = string(e.Value)
+			vgInfo.VgNic[n] = string(e.Value)
 		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgEnabledStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgEnabledStr))
-			vgEnabled[n], _ = strconv.ParseBool(string(e.Value))
+			vgInfo.VgEnabled[n], _ = strconv.ParseBool(string(e.Value))
 		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgAutofailoverStr)) {
 			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgAutofailoverStr))
-			vgAutofail[n], _ = strconv.ParseBool(string(e.Value))
-		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgVolumelistStr)) {
-			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgVolumelistStr))
-			vgVolumelist[n] = string(e.Value)
+			vgInfo.VgAutofail[n], _ = strconv.ParseBool(string(e.Value))
+		} else if strings.HasPrefix(string(e.Key), vgKeyPrefix(vgVolumeListStr)) {
+			n := strings.TrimPrefix(string(e.Key), vgKeyPrefix(vgVolumeListStr))
+			vgInfo.VgVolumeList[n] = string(e.Value)
 		}
 	}
 
@@ -320,21 +320,16 @@ func (cs *Struct) parseVgResp(resp *clientv3.GetResponse) (vgState map[string]st
 // returns it broken out into maps.
 //
 // All data is taken from the same etcd global revision number.
-func (cs *Struct) gatherInfo(revProvided bool, rev int64) (vgState map[string]string, vgNode map[string]string,
-	vgIpaddr map[string]string, vgNetmask map[string]string, vgNic map[string]string,
-	vgAutofail map[string]bool, vgEnabled map[string]bool, vgVolumelist map[string]string,
-	nodesAlreadyDead []string, nodesOnline []string, nodesHb map[string]time.Time,
-	nodesState map[string]string) {
-
+func (cs *Struct) gatherInfo(revNum RevisionNumber) (clusterInfo ClusterInfo) {
 	var (
 		err  error
 		resp *clientv3.GetResponse
 	)
 
 	// First grab all VG state information in one operation
-	if revProvided {
+	if revNum != 0 {
 		resp, err = cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix(),
-			clientv3.WithRev(rev))
+			clientv3.WithRev(int64(revNum)))
 	} else {
 		resp, err = cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix())
 	}
@@ -343,33 +338,32 @@ func (cs *Struct) gatherInfo(revProvided bool, rev int64) (vgState map[string]st
 		os.Exit(-1)
 	}
 
-	// Break the response out into list of already DEAD nodes and
-	// nodes which are still marked ONLINE.
-	//
-	// Also retrieve the last HB values for each node.
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist = cs.parseVgResp(resp)
-	respRev := resp.Header.GetRevision()
+	// populate with the revision number first
+	clusterInfo.RevNum = RevisionNumber(resp.Header.GetRevision())
 
-	// Get the node state as of the same revision number
-	nodesAlreadyDead, nodesOnline, nodesHb, nodesState = cs.getRevNodeState(respRev)
+	// get the volume group info
+	clusterInfo.VgInfo = cs.parseVgResp(resp)
 
+	// query for the corresponding node states as of revision number
+	clusterInfo.NodeInfo = cs.getRevNodeState(clusterInfo.RevNum)
+
+	// finished
 	return
 }
 
 // setVgsOfflineDeadNodes finds all VGs ONLINE on the newly
 // DEAD node and marks the VG as OFFLINE
-func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string, rev int64) {
+func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string, revNum RevisionNumber) {
 
 	if !cs.server {
 		return
 	}
 
 	// Retrieve VG and node state
-	_, vgNode, _, _, _, _, _, _, _, _, _, _ := cs.gatherInfo(true, rev)
+	clusterInfo := cs.gatherInfo(revNum)
 
 	for _, deadNode := range newlyDeadNodes {
-		for name, node := range vgNode {
+		for name, node := range clusterInfo.VgInfo.VgNode {
 
 			// If VG was ONLINE on dead node - set to OFFLINE
 			if node == deadNode {
@@ -392,19 +386,19 @@ func (cs *Struct) setVgsOfflineDeadNodes(newlyDeadNodes []string, rev int64) {
 // about priority for a VG and high priority first?
 // Don't we have to use the same revision of ETCD for all these decisions?
 // TODO - how prevent autofailback from happening? Does it matter?
-func (cs *Struct) failoverVgs(newlyDeadNodes []string, rev int64) {
+func (cs *Struct) failoverVgs(newlyDeadNodes []string, revNum RevisionNumber) {
 
 	if !cs.server {
 		return
 	}
 
 	// Mark all VGs that were online on newlyDeadNodes as OFFLINE
-	cs.setVgsOfflineDeadNodes(newlyDeadNodes, rev)
+	cs.setVgsOfflineDeadNodes(newlyDeadNodes, revNum)
 
 	// TODO - startVgs() should be triggered from the watcher since
 	// the state will not be updated to OFFLINE until then
 	// Do we need a VG state FAILING_OVER to denote this?
-	cs.startVgs(rev)
+	cs.startVgs(revNum)
 }
 
 // parseVgOnlineInit returns a map of all VGs in either the
@@ -611,7 +605,7 @@ func (cs *Struct) setVgOnline(vg string) (err error) {
 //
 // This transaction can fail if the node is no longer in the INITIALVS state
 // or the VG is no longer in the OFFLINEVS state.
-func (cs *Struct) setVgOnlining(vg string, node string) (err error) {
+func (cs *Struct) setVgOnlining(vgName string, node string) (err error) {
 	var txnResp *clientv3.TxnResponse
 
 	// Assuming that current state is INITIALVS - transition to ONLINING
@@ -620,19 +614,20 @@ func (cs *Struct) setVgOnlining(vg string, node string) (err error) {
 
 		// Verify that the VG is in INITIALVS and node name is ""
 		If(
-			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", INITIALVS.String()),
-			clientv3.Compare(clientv3.Value(makeVgNodeKey(vg)), "=", ""),
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vgName)), "=", INITIALVS.String()),
+			clientv3.Compare(clientv3.Value(makeVgNodeKey(vgName)), "=", ""),
 
 		// "Then" set the values...
 		).Then(
-		clientv3.OpPut(makeVgStateKey(vg), ONLININGVS.String()),
-		clientv3.OpPut(makeVgNodeKey(vg), node),
+		clientv3.OpPut(makeVgStateKey(vgName), ONLININGVS.String()),
+		clientv3.OpPut(makeVgNodeKey(vgName), node),
 
 	// If failed - silently return
 	).Else().Commit()
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	// If the VG was in INITIALVS and the txn succeeded then return now
+	//
 	// TODO - review all txn() code - should I be checking this at other
 	// places? Probably missing some locations...
 	if txnResp.Succeeded {
@@ -646,21 +641,24 @@ func (cs *Struct) setVgOnlining(vg string, node string) (err error) {
 
 		// Verify that the VG is in OFFLINEVS and node name is ""
 		If(
-			clientv3.Compare(clientv3.Value(makeVgStateKey(vg)), "=", OFFLINEVS.String()),
-			clientv3.Compare(clientv3.Value(makeVgNodeKey(vg)), "=", ""),
+			clientv3.Compare(clientv3.Value(makeVgStateKey(vgName)), "=", OFFLINEVS.String()),
+			clientv3.Compare(clientv3.Value(makeVgNodeKey(vgName)), "=", ""),
 
 		// "Then" set the values...
 		).Then(
-		clientv3.OpPut(makeVgStateKey(vg), ONLININGVS.String()),
-		clientv3.OpPut(makeVgNodeKey(vg), node),
+		clientv3.OpPut(makeVgStateKey(vgName), ONLININGVS.String()),
+		clientv3.OpPut(makeVgNodeKey(vgName), node),
 
 	// If failed - silently return
 	).Else().Commit()
 	cancel() // NOTE: Difficult memory leak if you do not do this!
 
 	if !txnResp.Succeeded {
-		err = fmt.Errorf("VG no longer in INITIALVS or OFFLINEVS - state '%s'",
-			clientv3.Value(makeVgStateKey(vg)))
+		revNum := RevisionNumber(txnResp.Header.GetRevision())
+		vgState, vgNode, _, _, _ := cs.getVgAttrs(vgName, revNum)
+
+		err = fmt.Errorf("VG no longer in state %s or %s - rev %d state '%s' Node '%s'",
+			INITIALVS.String(), OFFLINEVS.String(), revNum, vgState, vgNode)
 		return
 	}
 
@@ -684,23 +682,18 @@ func callUpDownScript(operation string, vgName string, ipAddr string,
 }
 
 // getRevVgAttrs returns all VG attributes at the given etcd revision.
-func (cs *Struct) getRevVgAttrs(rev int64) (vgState map[string]string,
-	vgNode map[string]string, vgIpaddr map[string]string,
-	vgNetmask map[string]string, vgNic map[string]string) {
+func (cs *Struct) getRevVgAttrs(revNum RevisionNumber) (vgInfo VgInfo) {
 
 	// First grab all VG state information at the given revision
 	resp, err := cs.cli.Get(context.TODO(), vgPrefix(), clientv3.WithPrefix(),
-		clientv3.WithRev(rev))
+		clientv3.WithRev(int64(revNum)))
 	if err != nil {
 		fmt.Printf("GET VG state failed with: %v\n", err)
 		os.Exit(-1)
 	}
 
-	// Break the response out into list of already DEAD nodes and
-	// nodes which are still marked ONLINE.
-	//
-	// Also retrieve the last HB values for each node.
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _ = cs.parseVgResp(resp)
+	// get the VG info and return it
+	vgInfo = cs.parseVgResp(resp)
 
 	return
 }
@@ -709,15 +702,16 @@ func (cs *Struct) getRevVgAttrs(rev int64) (vgState map[string]string,
 // set the state to OFFLINE.
 //
 // The actual offline is done in the background.
-func (cs *Struct) doVgOffline(name string, rev int64) {
+func (cs *Struct) doVgOffline(name string, revNum RevisionNumber) {
 
-	_, _, vgIpaddr, vgNetmask, vgNic := cs.getRevVgAttrs(rev)
+	vgInfo := cs.getRevVgAttrs(revNum)
 
 	// TODO - call this goroutine for each volume in the VG.  Need WG
 	// and to handle case where volume added/removed while VG is offlining
 	// and onlining.
 	go func() {
-		err := callUpDownScript(down, name, vgIpaddr[name], vgNetmask[name], vgNic[name])
+		err := callUpDownScript(down, name, vgInfo.VgIpAddr[name], vgInfo.VgNetmask[name],
+			vgInfo.VgNic[name])
 		if err == nil {
 
 			// TODO - unmount the volume from FS layer.
@@ -737,16 +731,16 @@ func (cs *Struct) doVgOffline(name string, rev int64) {
 // doAllVgOfflineBeforeDead is called before the local node dies.  The only
 // thing to do is to drop all the VIPs and kill smbd, etc so that we do
 // not interfer with remaining nodes being able to take over.
-func (cs *Struct) doAllVgOfflineBeforeDead(deadRev int64) {
+func (cs *Struct) doAllVgOfflineBeforeDead(deadRevNum RevisionNumber) {
 
 	// Retrieve VG and node state
-	_, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _, _, _, _, _ := cs.gatherInfo(true, deadRev)
+	vgInfo := cs.getRevVgAttrs(deadRevNum)
 
 	// Drop the VIPs and daemons before we die
-	for name, node := range vgNode {
+	for name, node := range vgInfo.VgNode {
 		if node == cs.hostName {
-			_ = callUpDownScript(down, name, vgIpaddr[name], vgNetmask[name],
-				vgNic[name])
+			_ = callUpDownScript(down, name,
+				vgInfo.VgIpAddr[name], vgInfo.VgNetmask[name], vgInfo.VgNic[name])
 		}
 	}
 }
@@ -755,17 +749,17 @@ func (cs *Struct) doAllVgOfflineBeforeDead(deadRev int64) {
 // OFFLINING.
 //
 // Initiate the offlining of VGs on this node.
-func (cs *Struct) doAllVgOfflining(rev int64) (numVgsOfflinint int) {
+func (cs *Struct) doAllVgOfflining(revNum RevisionNumber) (numVgsOfflinint int) {
 
-	// Retrieve VG and node state
-	_, vgNode, _, _, _, _, _, _, _, _, _, _ := cs.gatherInfo(true, rev)
+	// Retrieve VG state
+	vgInfo := cs.getRevVgAttrs(revNum)
 
 	/* DEBUG CODE
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState := cs.gatherInfo()
+	vgState, vgNode, vgIpAddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
+		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb, nodesState := cs.gatherInfo(revNum)
 
-	fmt.Printf("doAllVgOfflining() ---- vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
-		vgState, vgNode, vgIpaddr, vgNetmask)
+	fmt.Printf("doAllVgOfflining() ---- vgState: %v vgNode: %v vgIpAddr: %v vgNetmask: %v\n",
+		vgState, vgNode, vgIpAddr, vgNetmask)
 	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
 		vgNic, vgAutofail, vgEnabled, vgVolumelist)
 	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v nodesState: %v\n",
@@ -776,7 +770,7 @@ func (cs *Struct) doAllVgOfflining(rev int64) (numVgsOfflinint int) {
 
 	// TODO - Must also reject online of volume locally if local node is
 	// OFFLINING - at least prevent ONLINING locally.
-	for name, node := range vgNode {
+	for name, node := range vgInfo.VgNode {
 		if node == cs.hostName {
 			numVgsOfflinint++
 			cs.setVgOfflining(name)
@@ -792,18 +786,18 @@ func (cs *Struct) doAllVgOfflining(rev int64) (numVgsOfflinint int) {
 // ONLINING on the local node and mark those VGs OFFLINE.  This
 // can happen if the local node is the first node up after all
 // proxyfsd processes were killed.
-func (cs *Struct) clearMyVgs(rev int64) {
+func (cs *Struct) clearMyVgs(revNum RevisionNumber) {
 	if !cs.server {
 		return
 	}
 
-	// Retrieve VG and node state
-	_, vgNode, vgIpaddr, vgNetmask, vgNic, _, _, _, _, _, _, _ := cs.gatherInfo(true, rev)
+	// Retrieve VG state
+	vgInfo := cs.getRevVgAttrs(revNum)
 
-	for name, node := range vgNode {
+	for name, node := range vgInfo.VgNode {
 		if node == cs.hostName {
-			_ = callUpDownScript(down, name, vgIpaddr[name], vgNetmask[name],
-				vgNic[name])
+			_ = callUpDownScript(down, name,
+				vgInfo.VgIpAddr[name], vgInfo.VgNetmask[name], vgInfo.VgNic[name])
 			cs.setVgOffline(name)
 		}
 	}
@@ -814,30 +808,28 @@ func (cs *Struct) clearMyVgs(rev int64) {
 //
 // TODO - implement algorithm to spread the VGs more evenly and
 // in a predictable manner.
-func (cs *Struct) startVgs(rev int64) {
+func (cs *Struct) startVgs(revNum RevisionNumber) {
 
 	if !cs.server {
 		return
 	}
 
 	// Retrieve VG and node state
-	vgState, _, _, _, _, vgAutofail, vgEnabled, _, _, nodesOnline,
-		_, _ := cs.gatherInfo(true, rev)
+	clusterInfo := cs.gatherInfo(revNum)
 
 	/* Debugging code
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled, vgVolumelist, nodesAlreadyDead,
-		nodesOnline, nodesHb, _ := cs.gatherInfo(true, rev)
-
-	fmt.Printf("startVgs() ---- vgState: %v vgNode: %v vgIpaddr: %v vgNetmask: %v\n",
-		vgState, vgNode, vgIpaddr, vgNetmask)
+	fmt.Printf("startVgs() ---- vgState: %v vgNode: %v vgIpAddr: %v vgNetmask: %v\n",
+		clusterInfo.VgInfo.VgState, clusterInfo.VgInfo.VgNode, clusterInfo.VgInfo.VgIpAddr,
+		clusterInfo.VgInfo.VgNetmask)
 	fmt.Printf("vgNic: %v vgAutofail: %v vgEnabled: %v vgVolumelist: %v\n",
-		vgNic, vgAutofail, vgEnabled, vgVolumelist)
+		clusterInfo.VgInfo.VgNic, clusterInfo.VgInfo.VgAutofail, clusterInfo.VgInfo.VgEnabled,
+	        clusterInfo.VgInfo.VgVolumelist)
 	fmt.Printf("nodesAlreadyDead: %v nodesOnline: %v nodesHb: %v\n",
-		nodesAlreadyDead, nodesOnline, nodesHb)
+		clusterInfo.NodeInfo.NodesAlreadyDead, clusterInfo.NodeInfo.NodesOnline, clusterInfo.NodeInfo.NodesHb)
 	*/
 
 	// Find VGs which are in the INITIAL or OFFLINE state
-	vgsToStart := parseVgOfflineInit(vgState, vgEnabled, vgAutofail)
+	vgsToStart := parseVgOfflineInit(clusterInfo.VgInfo.VgState, clusterInfo.VgInfo.VgEnabled, clusterInfo.VgInfo.VgAutofail)
 
 	cntVgsToStart := vgsToStart.Len()
 	if cntVgsToStart == 0 {
@@ -846,7 +838,7 @@ func (cs *Struct) startVgs(rev int64) {
 
 	// Set state to ONLINING to initiate the ONLINE
 	for vgsToStart.Len() > 0 {
-		for _, node := range nodesOnline {
+		for _, node := range clusterInfo.NodeInfo.NodesOnline {
 			e := vgsToStart.Front()
 			if e == nil {
 				// No more VGs to online
@@ -921,7 +913,7 @@ func calcVgKeys(name string) (nameKey string, ipaddrKey string, netmaskKey strin
 	vgKeys = append(vgKeys, stateKey)
 	nodeKey = makeVgNodeKey(name)
 	vgKeys = append(vgKeys, nodeKey)
-	ipaddrKey = makeVgIpaddrKey(name)
+	ipaddrKey = makeVgIpAddrKey(name)
 	vgKeys = append(vgKeys, ipaddrKey)
 	netmaskKey = makeVgNetmaskKey(name)
 	vgKeys = append(vgKeys, netmaskKey)

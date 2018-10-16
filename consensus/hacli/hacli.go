@@ -54,9 +54,10 @@ func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
 	vgAutofail map[string]bool, vgEnabled map[string]bool,
 	vgVolumelist map[string]string) {
 
-	fmt.Printf("\tVG: %v State: %v Node: %v Ipaddr: %v Netmask: %v Nic: %v\n\t\tAutofail: %v Enabled: %v\n",
-		vg, vgState[vg], vgNode[vg], vgIpaddr[vg], vgNetmask[vg], vgNic[vg], vgAutofail[vg],
-		vgEnabled[vg])
+	fmt.Printf("\tVG: %v State: '%v' Node: '%v' Ipaddr: '%v' Netmask: '%v' Nic: '%v'\n",
+		vg, vgState[vg], vgNode[vg], vgIpaddr[vg], vgNetmask[vg], vgNic[vg])
+	fmt.Printf("\t\tAutofail: %v Enabled: %v\n", vgAutofail[vg], vgEnabled[vg])
+
 	fmt.Printf("\tVolumes:\n")
 	for _, v := range vgVolumelist[vg] {
 		fmt.Printf("\t\t%v\n", v)
@@ -65,32 +66,36 @@ func listVg(cs *consensus.Struct, vg string, vgState map[string]string,
 }
 
 // listOp handles a listing
-func listOp(node string, vg string) {
+func listOp(nodeName string, vgName string) {
+
 	cs := setupConnection()
 
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, _, _, nodesHb, nodesState := cs.List()
+	clusterInfo := cs.List()
+	vgInfo := clusterInfo.VgInfo
+	nodeInfo := clusterInfo.NodeInfo
 
-	if vg != "" {
-		if vgState[vg] != "" {
-			listVg(cs, vg, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail,
-				vgEnabled, vgVolumelist)
+	if vgName != "" {
+		if vgInfo.VgState[vgName] != "" {
+			listVg(cs, vgName, vgInfo.VgState, vgInfo.VgNode,
+				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic,
+				vgInfo.VgAutofail, vgInfo.VgEnabled, vgInfo.VgVolumeList)
 		} else {
-			fmt.Printf("vg: %v does not exist\n", vg)
+			fmt.Printf("vg: %v does not exist\n", vgName)
 		}
-	} else if node != "" {
-		if nodesState[node] != "" {
-			listNode(cs, node, nodesState, nodesHb)
+	} else if nodeName != "" {
+		if nodeInfo.NodesState[nodeName] != "" {
+			listNode(cs, nodeName, nodeInfo.NodesState, nodeInfo.NodesHb)
 		} else {
-			fmt.Printf("Node: %v does not exist\n", node)
+			fmt.Printf("Node: %v does not exist\n", nodeName)
 		}
 	} else {
-		listNode(cs, node, nodesState, nodesHb)
+		listNode(cs, nodeName, nodeInfo.NodesState, nodeInfo.NodesHb)
 
 		fmt.Printf("\nVolume Group Information\n")
-		for n := range vgState {
-			listVg(cs, n, vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail,
-				vgEnabled, vgVolumelist)
+		for n := range vgInfo.VgState {
+			listVg(cs, n, vgInfo.VgState, vgInfo.VgNode,
+				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic,
+				vgInfo.VgAutofail, vgInfo.VgEnabled, vgInfo.VgVolumeList)
 		}
 	}
 

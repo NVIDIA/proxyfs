@@ -32,6 +32,48 @@ type Struct struct {
 	cliWG     sync.WaitGroup // CLI WG to signal when done
 }
 
+// A database revision number.  All values in the database with the same
+// revision number appeared in the database with that value at the same point in
+// time.
+//
+type RevisionNumber int64
+
+// VgInfo contains the state of the interesting keys in the shared database
+// relevant to Volume Groups as of a particular revision number (sequence number)
+//
+type VgInfo struct {
+	RevNum       RevisionNumber
+	VgState      map[string]string
+	VgNode       map[string]string
+	VgIpAddr     map[string]string
+	VgNetmask    map[string]string
+	VgNic        map[string]string
+	VgEnabled    map[string]bool
+	VgAutofail   map[string]bool
+	VgVolumeList map[string]string
+}
+
+// NodeInfo contains the state of the interesting keys in the shared database
+// relevant to nodes as of a particular revision number (sequence number)
+//
+type NodeInfo struct {
+	RevNum           RevisionNumber
+	NodesHb          map[string]time.Time
+	NodesState       map[string]string
+	NodesAlreadyDead []string
+	NodesOnline      []string
+}
+
+// ClusterInfo contains the state of the interesting keys in the shared database
+// relevant to the cluster as of a particular revision number (sequence number).
+// (The revision numbers is VgInfo and NodeInfo are the same as RevNum.)
+//
+type ClusterInfo struct {
+	RevNum   RevisionNumber
+	NodeInfo NodeInfo
+	VgInfo   VgInfo
+}
+
 // Register with the consensus protocol.  In our case this is etcd.
 func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error) {
 	// Look for our current node ID and print it
@@ -219,18 +261,11 @@ func (cs *Struct) CLIStopNode(name string) (err error) {
 }
 
 // List grabs all VG and node state and returns it.
-func (cs *Struct) List() (vgState map[string]string, vgNode map[string]string,
-	vgIpaddr map[string]string, vgNetmask map[string]string, vgNic map[string]string,
-	vgAutofail map[string]bool, vgEnabled map[string]bool, vgVolumelist map[string]string,
-	nodesAlreadyDead []string, nodesOnline []string, nodesHb map[string]time.Time,
-	nodesState map[string]string) {
+func (cs *Struct) List() (clusterInfo ClusterInfo) {
 
-	vgState, vgNode, vgIpaddr, vgNetmask, vgNic, vgAutofail, vgEnabled,
-		vgVolumelist, nodesAlreadyDead, nodesOnline, nodesHb,
-		nodesState = cs.gatherInfo(false, 0)
+	clusterInfo = cs.gatherInfo(RevisionNumber(0))
 
 	return
-
 }
 
 // Unregister from the consensus protocol
