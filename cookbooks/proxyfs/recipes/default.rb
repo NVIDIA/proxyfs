@@ -161,6 +161,14 @@ execute "Install PIP" do
   not_if { system("pip --version") }
 end
 
+execute "Install pfs-swift-load-plot requirements" do
+  command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
+end
+
+execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/"
+  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
+end
+
 if is_dev
   ruby_block "fuse_user_allow_other" do
     block do
