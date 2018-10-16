@@ -14,7 +14,7 @@ ERR=0
 # and rpc.statd?
 if [ "X$CMD" == "Xup" ]
 then
-    /usr/sbin/ip addr add $IPADDR dev $NIC
+    /usr/sbin/ip addr add ${IPADDR}/${NETMASK} dev $NIC
     ERR=$?
     if [ "X$ERR" != "X0" ]
     then
