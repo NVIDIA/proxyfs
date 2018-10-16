@@ -6,8 +6,8 @@ n=etcd0
 while :
 do
 	sleep 120
-	./hacli offline -vg $i
-	./hacli online -vg $i -node $n
+	../hacli/hacli offline -vg $i
+	../hacli/hacli online -vg $i -node $n
 
 	if [ X"$i" ==  X"myTestVg1" ]
 	then
