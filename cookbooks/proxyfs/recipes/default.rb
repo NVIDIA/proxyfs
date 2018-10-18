@@ -165,7 +165,7 @@ execute "Install pfs-swift-load-plot requirements" do
   command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
 end
 
-execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/"
+execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
   command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
 end
 
