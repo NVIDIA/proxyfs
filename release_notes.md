@@ -1,5 +1,12 @@
 # ProxyFS Release Notes
 
+## 1.8.0.2 (October 19, 2018)
+
+### Bug Fixes:
+
+Fix a bug in the snapshot code that generated snapshot names that
+contained a colon which Windows SMB clients find hard to cope with.
+
 ## 1.8.0.1 (October 6, 2018)
 
 ### Bug Fixes:
