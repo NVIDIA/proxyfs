@@ -3,6 +3,7 @@ package inode
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -258,7 +259,7 @@ func (snapShotPolicy *snapShotPolicyStruct) daemon() {
 				// If time.After() returned a bit too soon, loop until it is our time
 				time.Sleep(100 * time.Millisecond)
 			}
-			snapShotName = nextTime.Format(time.RFC3339)
+			snapShotName = strings.Replace(nextTime.Format(time.RFC3339), ":", ".", -1)
 			_, err = snapShotPolicy.volume.SnapShotCreate(snapShotName)
 			if nil != err {
 				logger.WarnWithError(err)
@@ -294,7 +295,7 @@ func (snapShotPolicy *snapShotPolicyStruct) prune() {
 	// Now walk snapShotList looking for snapshots to prune
 
 	for _, snapShot = range snapShotList {
-		snapShotTime, err = time.Parse(time.RFC3339, snapShot.Name)
+		snapShotTime, err = time.Parse(time.RFC3339, strings.Replace(snapShot.Name, ".", ":", -1))
 		if nil != err {
 			// SnapShot was not formatted to match a potential SnapShotPolicy/Schedule...skip it
 			continue
