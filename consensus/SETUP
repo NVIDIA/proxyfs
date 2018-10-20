@@ -17,9 +17,13 @@
 # and do it once in the host OS
 #
     sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
-    sudo mkdir -p /var/cache/samba/vg1 /var/cache/samba/vg2
+    sudo mkdir -p /var/cache/samba
+    sudo smbpasswd ...
 
 # or do each command only once:
 	
-    parallel-ssh -h etc-hosts.txt sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
-    parallel-ssh -h etc-hosts.txt sudo mkdir -p /var/cache/samba /var/cache/samba
+    parallel-ssh -h etcd-hosts.txt sudo ln -s /vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/smb-myTestVg?.conf /etc/samba/.
+    parallel-ssh -h etcd-hosts.txt sudo mkdir -p /var/cache/samba 
+
+where etcd-hosts.txt and lines to append to .ssh_config can be found under
+Proxyfs/etcd/ssh-setup
