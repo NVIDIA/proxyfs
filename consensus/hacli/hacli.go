@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func setupConnection() (cs *consensus.Struct) {
+func setupConnection() (cs *consensus.EtcdConn) {
 
 	// TODO - endpoints should be an option or grab from configuration
 	// file of etcd.conf
@@ -28,13 +28,13 @@ func setupConnection() (cs *consensus.Struct) {
 	return cs
 }
 
-func teardownConnection(cs *consensus.Struct) {
+func teardownConnection(cs *consensus.EtcdConn) {
 
 	// Unregister from the etcd cluster
 	cs.Unregister()
 }
 
-func listNode(cs *consensus.Struct, node string, nodeInfo consensus.NodeInfo) {
+func listNode(cs *consensus.EtcdConn, node string, nodeInfo consensus.NodeInfo) {
 
 	if node != "" {
 		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeInfo.NodesState[node],
@@ -48,7 +48,7 @@ func listNode(cs *consensus.Struct, node string, nodeInfo consensus.NodeInfo) {
 
 }
 
-func listVg(cs *consensus.Struct, vg string, vgInfo consensus.VgInfo) {
+func listVg(cs *consensus.EtcdConn, vg string, vgInfo consensus.VgInfo) {
 
 	fmt.Printf("\tVG: %v State: '%v' Node: '%v' Ipaddr: '%v' Netmask: '%v' Nic: '%v'\n",
 		vg, vgInfo.VgState[vg], vgInfo.VgNode[vg], vgInfo.VgIpAddr[vg], vgInfo.VgNetmask[vg],
