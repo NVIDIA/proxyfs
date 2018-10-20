@@ -94,7 +94,7 @@ func parseNodeResp(resp *clientv3.GetResponse) (nodeInfo NodeInfo) {
 //
 // NOTE: We are updating the node states in multiple transactions.  I
 // assume this is okay but want to revisit this.
-func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time.Time) {
+func (cs *EtcdConn) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time.Time) {
 	if !cs.server {
 		return
 	}
@@ -115,7 +115,7 @@ func (cs *Struct) markNodesDead(nodesNewlyDead []string, nodesHb map[string]time
 }
 
 // getRevNodeState retrieves node state as of given revision
-func (cs *Struct) getRevNodeState(revNeeded RevisionNumber) (nodeInfo NodeInfo) {
+func (cs *EtcdConn) getRevNodeState(revNeeded RevisionNumber) (nodeInfo NodeInfo) {
 
 	// First grab all node state information in one operation
 	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(),
@@ -133,7 +133,7 @@ func (cs *Struct) getRevNodeState(revNeeded RevisionNumber) (nodeInfo NodeInfo) 
 // heartbeating and sets their state to DEAD.
 //
 // It then initiates failover of any VGs.
-func (cs *Struct) checkForDeadNodes() {
+func (cs *EtcdConn) checkForDeadNodes() {
 	if !cs.server {
 		return
 	}
@@ -185,7 +185,7 @@ func (cs *Struct) checkForDeadNodes() {
 
 // sendHB sends a heartbeat by doing a txn() to update
 // the local node's last heartbeat.
-func (cs *Struct) sendHb() {
+func (cs *EtcdConn) sendHb() {
 	if !cs.server {
 		return
 	}
@@ -209,7 +209,7 @@ func (cs *Struct) sendHb() {
 // if any nodes are DEAD and we should do a failover.
 //
 // TODO - also need stopHB function....
-func (cs *Struct) startHBandMonitor() {
+func (cs *EtcdConn) startHBandMonitor() {
 	if !cs.server {
 		return
 	}
@@ -227,7 +227,7 @@ func (cs *Struct) startHBandMonitor() {
 // We received a watch event for a node other than ourselves
 //
 // TODO - what about OFFLINE, etc events which are not implemented?
-func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
+func (cs *EtcdConn) otherNodeStateEvents(ev *clientv3.Event) {
 
 	node := strings.TrimPrefix(string(ev.Kv.Key), nodeKeyStatePrefix())
 	revNum := RevisionNumber(ev.Kv.ModRevision)
@@ -262,7 +262,7 @@ func (cs *Struct) otherNodeStateEvents(ev *clientv3.Event) {
 // We received a watch event for the local node.
 //
 // TODO - hide watchers behind interface{}?
-func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
+func (cs *EtcdConn) myNodeStateEvents(ev *clientv3.Event) {
 	fmt.Printf("\nLocal Node - went: %v\n", string(ev.Kv.Value))
 	revNum := RevisionNumber(ev.Kv.ModRevision)
 
@@ -313,7 +313,7 @@ func (cs *Struct) myNodeStateEvents(ev *clientv3.Event) {
 
 // nodeStateWatchEvents creates a watcher based on node state
 // changes.
-func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
+func (cs *EtcdConn) nodeStateWatchEvents(swg *sync.WaitGroup) {
 
 	wch1 := cs.cli.Watch(context.Background(), nodeKeyStatePrefix(),
 		clientv3.WithPrefix())
@@ -333,7 +333,7 @@ func (cs *Struct) nodeStateWatchEvents(swg *sync.WaitGroup) {
 }
 
 // nodeHbWatchEvents creates a watcher based on node heartbeats.
-func (cs *Struct) nodeHbWatchEvents(swg *sync.WaitGroup) {
+func (cs *EtcdConn) nodeHbWatchEvents(swg *sync.WaitGroup) {
 
 	wch1 := cs.cli.Watch(context.Background(), nodeKeyHbPrefix(),
 		clientv3.WithPrefix())

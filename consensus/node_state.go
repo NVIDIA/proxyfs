@@ -10,7 +10,7 @@ import (
 )
 
 // oneKeyTxn is a helper function which creates a context and modifies the value of one key.
-func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseValue string, timeout time.Duration) (err error) {
+func (cs *EtcdConn) oneKeyTxn(key string, ifValue string, thenValue string, elseValue string, timeout time.Duration) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	_, err = cs.kvc.Txn(ctx).
 
@@ -38,7 +38,7 @@ func (cs *Struct) oneKeyTxn(key string, ifValue string, thenValue string, elseVa
 // SetNodeStateIfSame will only change the state of the node if the
 // node state and heartbeat time have not changed.
 // TODO - consolidate with existing functions if possible
-func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existingState NodeState,
+func (cs *EtcdConn) setNodeStateIfSame(nodeName string, newState NodeState, existingState NodeState,
 	hb time.Time) (err error) {
 
 	if (newState <= INITIALNS) || (newState >= maxNodeState) {
@@ -77,7 +77,7 @@ func (cs *Struct) setNodeStateIfSame(nodeName string, newState NodeState, existi
 // state transition and panic if not.
 // TODO - review for cleanup
 // TODO - only update HB time if node is local node!!!!
-func (cs *Struct) setNodeState(nodeName string, newState NodeState) (err error) {
+func (cs *EtcdConn) setNodeState(nodeName string, newState NodeState) (err error) {
 
 	if (newState <= INITIALNS) || (newState >= maxNodeState) {
 		err = errors.New("Invalid node state")
@@ -120,7 +120,7 @@ func (cs *Struct) setNodeState(nodeName string, newState NodeState) (err error) 
 // SetNodeStateForced ignores the existing node state value and
 // sets it to the new state.   Generally, this is only needed for
 // the STARTING state.
-func (cs *Struct) setNodeStateForced(nodeName string, state NodeState) (err error) {
+func (cs *EtcdConn) setNodeStateForced(nodeName string, state NodeState) (err error) {
 
 	// TODO - probaly should verify that node state transitions
 	// are correct.

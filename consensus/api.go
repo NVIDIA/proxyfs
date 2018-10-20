@@ -13,17 +13,15 @@ import (
 // TODO - use etcd namepspace.  At a mininum we need a proxyfsd
 // namespace in case we coexist with other users.
 
-// Struct is the connection to our consensus protocol
-type Struct struct {
+// EtcdConn contains a connection to the etcd server and the status of any
+// operations in progress
+type EtcdConn struct {
 	cli       *clientv3.Client // etcd client pointer
 	kvc       clientv3.KV
 	hostName  string         // hostname of the local host
 	watcherWG sync.WaitGroup // WaitGroup to keep track of watchers outstanding
-	HBTicker  *time.Ticker   // HB ticker for sending HB
-	// and processing DEAD nodes.
-
-	server bool // Is this instance a server?
-
+	HBTicker  *time.Ticker   // HB ticker for sending HB and processing DEAD nodes
+	server    bool           // Is this instance a server?
 	stopNode  bool           // CLI - are we offlining node?
 	nodeName  string         // CLI - name of node for operation
 	offlineVg bool           // CLI - are we offlining VG?
@@ -75,13 +73,13 @@ type ClusterInfo struct {
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
-func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error) {
+func Register(endpoints []string, timeout time.Duration) (cs *EtcdConn, err error) {
 	// Look for our current node ID and print it
 	hostName, err := os.Hostname()
 	if err != nil {
 		return
 	}
-	cs = &Struct{hostName: hostName}
+	cs = &EtcdConn{hostName: hostName}
 
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
@@ -92,7 +90,7 @@ func Register(endpoints []string, timeout time.Duration) (cs *Struct, err error)
 	return
 }
 
-func (cs *Struct) startWatchers() {
+func (cs *EtcdConn) startWatchers() {
 
 	// Start a watcher to watch for node state changes
 	cs.startAWatcher(nodeKeyStatePrefix())
@@ -107,7 +105,7 @@ func (cs *Struct) startWatchers() {
 // Server sets up to be a long running process in the consensus cluster
 // driving longer term operations as opposed to CLI which is only doing
 // short term operations before exiting.
-func (cs *Struct) Server() (err error) {
+func (cs *EtcdConn) Server() (err error) {
 
 	// Verify that our hostName is one of the members of the cluster
 	resp, err := cs.cli.MemberList(context.Background())
@@ -146,7 +144,7 @@ func (cs *Struct) Server() (err error) {
 }
 
 // CLI sets up to do CLI operations in the cluster.
-func (cs *Struct) CLI() (err error) {
+func (cs *EtcdConn) CLI() (err error) {
 
 	// paranoid...
 	cs.server = false
@@ -158,21 +156,22 @@ func (cs *Struct) CLI() (err error) {
 
 // AddVolumeGroup creates a new volume group.
 // TODO - verify valid input
-func (cs *Struct) AddVolumeGroup(name string, ipAddr string, netMask string,
+func (cs *EtcdConn) AddVolumeGroup(name string, ipAddr string, netMask string,
 	nic string, autoFailover bool, enabled bool) (err error) {
+
 	err = cs.addVg(name, ipAddr, netMask, nic, autoFailover, enabled)
 	return
 }
 
 // RmVolumeGroup removes a volume group if it is OFFLINE
-func (cs *Struct) RmVolumeGroup(name string) (err error) {
+func (cs *EtcdConn) RmVolumeGroup(name string) (err error) {
 	err = cs.rmVg(name)
 	return
 }
 
 // AddVolumeToVG adds a volume to an existing volume group
 // TODO - implement this
-func (cs *Struct) AddVolumeToVG(vgName string, newVolume string) (err error) {
+func (cs *EtcdConn) AddVolumeToVG(vgName string, newVolume string) (err error) {
 	// TODO - can you add volume to FAILED VG, need checks in other layers,
 	// liveliness? does VG state change if volume is offline?
 	return
@@ -180,7 +179,7 @@ func (cs *Struct) AddVolumeToVG(vgName string, newVolume string) (err error) {
 
 // RmVolumeFromVG removes the volume from the VG
 // TODO - implement this
-func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
+func (cs *EtcdConn) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 	// TODO - can you you remove volume only if unmounted?  assume so since
 	// VIP will change.   Will it also remove the volume?  Do we need a move
 	// API to move from one VG to another VG?
@@ -190,7 +189,7 @@ func (cs *Struct) RmVolumeFromVG(vgName string, volumeName string) (err error) {
 // CLIOfflineVg offlines the volume group and waits until it is offline
 //
 // This routine can only be called from CLI.
-func (cs *Struct) CLIOfflineVg(name string) (err error) {
+func (cs *EtcdConn) CLIOfflineVg(name string) (err error) {
 
 	if cs.server {
 		fmt.Printf("CLIOfflineVg() can only be called from CLI and not from server")
@@ -214,7 +213,7 @@ func (cs *Struct) CLIOfflineVg(name string) (err error) {
 // CLIOnlineVg onlines the volume group on the node and waits until it is online
 //
 // This routine can only be called from CLI.
-func (cs *Struct) CLIOnlineVg(name string, node string) (err error) {
+func (cs *EtcdConn) CLIOnlineVg(name string, node string) (err error) {
 
 	if cs.server {
 		fmt.Printf("CLIOnlineVg() can only be called from CLI and not from server")
@@ -238,7 +237,7 @@ func (cs *Struct) CLIOnlineVg(name string, node string) (err error) {
 // CLIStopNode offlines all volume groups on a node and then stops the node.
 //
 // This routine can only be called from CLI.
-func (cs *Struct) CLIStopNode(name string) (err error) {
+func (cs *EtcdConn) CLIStopNode(name string) (err error) {
 
 	// TODO - verify that valid node transition...
 	// based on current state to proper transition
@@ -261,7 +260,7 @@ func (cs *Struct) CLIStopNode(name string) (err error) {
 }
 
 // List grabs all VG and node state and returns it.
-func (cs *Struct) List() (clusterInfo ClusterInfo) {
+func (cs *EtcdConn) List() (clusterInfo ClusterInfo) {
 
 	clusterInfo = cs.gatherInfo(RevisionNumber(0))
 
@@ -272,7 +271,7 @@ func (cs *Struct) List() (clusterInfo ClusterInfo) {
 // TODO - this should probably set state OFFLINING
 // to initiate OFFLINE and use waitgroup to see
 // own OFFLINE before calling Close()
-func (cs *Struct) Unregister() {
+func (cs *EtcdConn) Unregister() {
 
 	cs.cli.Close()
 

@@ -53,7 +53,7 @@ func TestAPI(t *testing.T) {
 }
 
 // registerEtcd sets up a connection to etcd
-func registerEtcd(t *testing.T) (cs *Struct) {
+func registerEtcd(t *testing.T) (cs *EtcdConn) {
 	assert := assert.New(t)
 
 	endpoints := []string{"192.168.60.10:2379", "192.168.60.11:2379", "192.168.60.12:2379"}
@@ -68,7 +68,7 @@ func registerEtcd(t *testing.T) (cs *Struct) {
 }
 
 // unregisterEtcd unregisters from etcd
-func unregisterEtcd(t *testing.T, cs *Struct) {
+func unregisterEtcd(t *testing.T, cs *EtcdConn) {
 
 	// Unregister from the etcd cluster
 	cs.Unregister()
@@ -94,7 +94,7 @@ func testBasicAPI(t *testing.T) {
 }
 
 // Delete test keys
-func resetVgKeys(t *testing.T, cs *Struct, km map[string]string) {
+func resetVgKeys(t *testing.T, cs *EtcdConn, km map[string]string) {
 	for k := range km {
 		_, _ = cs.cli.Delete(context.TODO(), k)
 	}

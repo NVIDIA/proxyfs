@@ -10,7 +10,7 @@ import (
 // TODO - review how compaction works with watchers,
 //
 // watcher is a goroutine which watches for events with the key prefix.
-func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
+func (cs *EtcdConn) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
 	switch keyPrefix {
 	case nodeKeyStatePrefix():
@@ -25,7 +25,7 @@ func (cs *Struct) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
 // StartAWatcher starts a goroutine to watch for changes
 // to the given keys
-func (cs *Struct) startAWatcher(prefixKey string) {
+func (cs *EtcdConn) startAWatcher(prefixKey string) {
 	// Keep track of how many watchers we have started so that we
 	// can clean them up as needed.
 	cs.watcherWG.Add(1)
@@ -40,6 +40,6 @@ func (cs *Struct) startAWatcher(prefixKey string) {
 }
 
 // WaitWatchers waits for all watchers to return
-func (cs *Struct) waitWatchers() {
+func (cs *EtcdConn) waitWatchers() {
 	cs.watcherWG.Wait()
 }
