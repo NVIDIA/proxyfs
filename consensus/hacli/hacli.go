@@ -34,7 +34,7 @@ func teardownConnection(cs *consensus.EtcdConn) {
 	cs.Unregister()
 }
 
-func listNode(cs *consensus.EtcdConn, node string, nodeInfo consensus.NodeInfo) {
+func listNode(cs *consensus.EtcdConn, node string, nodeInfo consensus.AllNodeInfo) {
 
 	if node != "" {
 		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeInfo.NodesState[node],
@@ -48,15 +48,14 @@ func listNode(cs *consensus.EtcdConn, node string, nodeInfo consensus.NodeInfo) 
 
 }
 
-func listVg(cs *consensus.EtcdConn, vg string, vgInfo consensus.VgInfo) {
+func listVg(cs *consensus.EtcdConn, vgName string, vgInfo *consensus.VgInfo) {
 
 	fmt.Printf("\tVG: %v State: '%v' Node: '%v' Ipaddr: '%v' Netmask: '%v' Nic: '%v'\n",
-		vg, vgInfo.VgState[vg], vgInfo.VgNode[vg], vgInfo.VgIpAddr[vg], vgInfo.VgNetmask[vg],
-		vgInfo.VgNic[vg])
-	fmt.Printf("\t\tAutofail: %v Enabled: %v\n", vgInfo.VgAutofail[vg], vgInfo.VgEnabled[vg])
+		vgName, vgInfo.VgState, vgInfo.VgNode, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+	fmt.Printf("\t\tAutofail: %v Enabled: %v\n", vgInfo.VgAutofail, vgInfo.VgEnabled)
 
 	fmt.Printf("\tVolumes:\n")
-	for _, v := range vgInfo.VgVolumeList[vg] {
+	for _, v := range vgInfo.VgVolumeList {
 		fmt.Printf("\t\t%v\n", v)
 	}
 	fmt.Printf("\n")
@@ -67,28 +66,27 @@ func listOp(nodeName string, vgName string) {
 
 	cs := setupConnection()
 
-	clusterInfo := cs.List()
-	vgInfo := clusterInfo.VgInfo
-	nodeInfo := clusterInfo.NodeInfo
+	allVgInfo := cs.ListVg()
+	allNodeInfo := cs.ListNode()
 
 	if vgName != "" {
-		if vgInfo.VgState[vgName] != "" {
-			listVg(cs, vgName, vgInfo)
+		if allVgInfo[vgName] != nil {
+			listVg(cs, vgName, allVgInfo[vgName])
 		} else {
 			fmt.Printf("vg: %v does not exist\n", vgName)
 		}
 	} else if nodeName != "" {
-		if nodeInfo.NodesState[nodeName] != "" {
-			listNode(cs, nodeName, nodeInfo)
+		if allNodeInfo.NodesState[nodeName] != "" {
+			listNode(cs, nodeName, allNodeInfo)
 		} else {
 			fmt.Printf("Node: %v does not exist\n", nodeName)
 		}
 	} else {
-		listNode(cs, nodeName, nodeInfo)
+		listNode(cs, "", allNodeInfo)
 
 		fmt.Printf("\nVolume Group Information\n")
-		for n := range vgInfo.VgState {
-			listVg(cs, n, vgInfo)
+		for name, vgInfo := range allVgInfo {
+			listVg(cs, name, vgInfo)
 		}
 	}
 
