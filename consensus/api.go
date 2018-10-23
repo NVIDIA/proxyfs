@@ -36,25 +36,49 @@ type EtcdConn struct {
 //
 type RevisionNumber int64
 
-// VgInfo contains the state of the interesting keys in the shared database
-// relevant to Volume Groups as of a particular revision number (sequence number)
+// VgState represents the state of a volume group at a given point in time
+type VgState string
+
+// NOTE: When updating NodeState be sure to also update String() below.
+const (
+	INITIALVS   VgState = "INITIAL"   // INITIAL means just created
+	ONLININGVS  VgState = "ONLINING"  // ONLINING means VG is starting to come online on the node in the volume list
+	ONLINEVS    VgState = "ONLINE"    // ONLINE means VG is online on the node in the volume list
+	OFFLININGVS VgState = "OFFLINING" // OFFLINING means the VG is gracefully going offline
+	OFFLINEVS   VgState = "OFFLINE"   // OFFLINE means the VG is offline and volume list is empty
+	FAILEDVS    VgState = "FAILED"    // FAILED means the VG failed on the node in the volume list
+	maxVgState                        // Must be last field!
+)
+
+// VgInfoValue is the information associated with a volume group key in the etcd
+// database (except its JSON encoded)
 //
-type VgInfo struct {
-	RevNum       RevisionNumber
-	VgState      map[string]string
-	VgNode       map[string]string
-	VgIpAddr     map[string]string
-	VgNetmask    map[string]string
-	VgNic        map[string]string
-	VgEnabled    map[string]bool
-	VgAutofail   map[string]bool
-	VgVolumeList map[string]string
+type VgInfoValue struct {
+	VgState      VgState
+	VgNode       string
+	VgIpAddr     string
+	VgNetmask    string
+	VgNic        string
+	VgEnabled    bool
+	VgAutofail   bool
+	VgVolumeList string
 }
 
-// NodeInfo contains the state of the interesting keys in the shared database
+// VgInfo is information associated with a volume group as well as the revision
+// number when the info was fetched and the last time the value was modified.
+
+//
+type VgInfo struct {
+	CreateRevNum RevisionNumber
+	ModRevNum    RevisionNumber
+	RevNum       RevisionNumber
+	VgInfoValue
+}
+
+// AllNodeInfo contains the state of the interesting keys in the shared database
 // relevant to nodes as of a particular revision number (sequence number)
 //
-type NodeInfo struct {
+type AllNodeInfo struct {
 	RevNum           RevisionNumber
 	NodesHb          map[string]time.Time
 	NodesState       map[string]string
@@ -66,10 +90,9 @@ type NodeInfo struct {
 // relevant to the cluster as of a particular revision number (sequence number).
 // (The revision numbers is VgInfo and NodeInfo are the same as RevNum.)
 //
-type ClusterInfo struct {
-	RevNum   RevisionNumber
-	NodeInfo NodeInfo
-	VgInfo   VgInfo
+type AllClusterInfo struct {
+	RevNum      RevisionNumber
+	AllNodeInfo AllNodeInfo
 }
 
 // Register with the consensus protocol.  In our case this is etcd.
@@ -99,7 +122,7 @@ func (cs *EtcdConn) startWatchers() {
 	cs.startAWatcher(nodeKeyHbPrefix())
 
 	// Start a watcher to watch for volume group changes
-	cs.startAWatcher(vgPrefix())
+	cs.startAWatcher(getVgKeyPrefix())
 }
 
 // Server sets up to be a long running process in the consensus cluster
@@ -189,7 +212,7 @@ func (cs *EtcdConn) RmVolumeFromVG(vgName string, volumeName string) (err error)
 // CLIOfflineVg offlines the volume group and waits until it is offline
 //
 // This routine can only be called from CLI.
-func (cs *EtcdConn) CLIOfflineVg(name string) (err error) {
+func (cs *EtcdConn) CLIOfflineVg(vgName string) (err error) {
 
 	if cs.server {
 		fmt.Printf("CLIOfflineVg() can only be called from CLI and not from server")
@@ -197,23 +220,25 @@ func (cs *EtcdConn) CLIOfflineVg(name string) (err error) {
 	}
 
 	cs.offlineVg = true
-	cs.vgName = name
+	cs.vgName = vgName
 
 	// TODO - What if VG is already OFFLINE?
 	// need to verify state
-	err = cs.setVgOfflining(name)
+	err = cs.setVgOfflining(vgName)
 	if err != nil {
-		return err
+		fmt.Printf("CLIOfflineVg(): offline of VG %s failed: %s\n", vgName, err)
+		return
 	}
 
 	cs.cliWG.Wait()
+	// TODO: did it succeed?
 	return
 }
 
 // CLIOnlineVg onlines the volume group on the node and waits until it is online
 //
 // This routine can only be called from CLI.
-func (cs *EtcdConn) CLIOnlineVg(name string, node string) (err error) {
+func (cs *EtcdConn) CLIOnlineVg(vgName string, node string) (err error) {
 
 	if cs.server {
 		fmt.Printf("CLIOnlineVg() can only be called from CLI and not from server")
@@ -221,16 +246,16 @@ func (cs *EtcdConn) CLIOnlineVg(name string, node string) (err error) {
 	}
 
 	cs.onlineVg = true
-	cs.vgName = name
+	cs.vgName = vgName
 
-	// TODO - What if VG is already ONLINE?
-	// need to verify state
-	err = cs.setVgOnlining(name, node)
+	err = cs.setVgOnlining(vgName, node)
 	if err != nil {
-		return err
+		fmt.Printf("CLIOnlineVg(): online of VG %s failed: %s\n", vgName, err)
+		return
 	}
 
 	cs.cliWG.Wait()
+	// TODO: did it succeed?
 	return
 }
 
@@ -259,12 +284,25 @@ func (cs *EtcdConn) CLIStopNode(name string) (err error) {
 	return
 }
 
-// List grabs all VG and node state and returns it.
-func (cs *EtcdConn) List() (clusterInfo ClusterInfo) {
+// ListVG grabs info for all volume groups and returns it.
+//
+func (cs *EtcdConn) ListVg() (allVgInfo map[string]*VgInfo) {
 
-	clusterInfo = cs.gatherInfo(RevisionNumber(0))
-
+	var err error
+	allVgInfo, _, err = cs.getAllVgInfo(RevisionNumber(0))
+	if err != nil {
+		fmt.Printf("List() failed with: %s\n", err)
+	}
 	return
+}
+
+// ListVG grabs  for all nodes and returns it.
+//
+// Note that this uses the "old format".
+//
+func (cs *EtcdConn) ListNode() AllNodeInfo {
+
+	return cs.getRevNodeState(RevisionNumber(0))
 }
 
 // Unregister from the consensus protocol

@@ -55,7 +55,7 @@ func makeNodeHbKey(n string) string {
 //
 // NOTE: The resp given could have retrieved many objects including VGs
 // so do not assume it only contains VGs.
-func parseNodeResp(resp *clientv3.GetResponse) (nodeInfo NodeInfo) {
+func parseNodeResp(resp *clientv3.GetResponse) (nodeInfo AllNodeInfo) {
 
 	nodeInfo.NodesAlreadyDead = make([]string, 0)
 	nodeInfo.NodesOnline = make([]string, 0)
@@ -115,7 +115,7 @@ func (cs *EtcdConn) markNodesDead(nodesNewlyDead []string, nodesHb map[string]ti
 }
 
 // getRevNodeState retrieves node state as of given revision
-func (cs *EtcdConn) getRevNodeState(revNeeded RevisionNumber) (nodeInfo NodeInfo) {
+func (cs *EtcdConn) getRevNodeState(revNeeded RevisionNumber) (nodeInfo AllNodeInfo) {
 
 	// First grab all node state information in one operation
 	resp, err := cs.cli.Get(context.TODO(), nodePrefix(), clientv3.WithPrefix(),

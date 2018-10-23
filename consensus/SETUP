@@ -27,3 +27,11 @@
 
 where etcd-hosts.txt and lines to append to .ssh_config can be found under
 Proxyfs/etcd/ssh-setup
+
+etcd3 cheat sheet:
+
+query all the keys in the database:
+    ETCDCTL_API=3 etcdctl --endpoints "http://192.168.60.11:2379" get --prefix ""
+
+delete all the keys:
+    ETCDCTL_API=3 etcdctl --endpoints "http://192.168.60.11:2379" del --prefix ""

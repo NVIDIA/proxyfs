@@ -74,17 +74,9 @@ func unregisterEtcd(t *testing.T, cs *EtcdConn) {
 	cs.Unregister()
 }
 
-func vgKeysToReset(vgTestName string) (keys map[string]string) {
-	keys = make(map[string]string)
-	keys[makeVgNameKey(vgTestName)] = ""
-	keys[makeVgStateKey(vgTestName)] = ""
-	keys[makeVgNodeKey(vgTestName)] = ""
-	keys[makeVgIpAddrKey(vgTestName)] = ""
-	keys[makeVgNetmaskKey(vgTestName)] = ""
-	keys[makeVgNicKey(vgTestName)] = ""
-	keys[makeVgAutoFailoverKey(vgTestName)] = ""
-	keys[makeVgEnabledKey(vgTestName)] = ""
-	keys[makeVgVolumeListKey(vgTestName)] = ""
+func vgKeysToReset(vgTestName string) (keys map[string]struct{}) {
+	keys = make(map[string]struct{})
+	keys[makeVgKey(vgTestName)] = struct{}{}
 	return
 }
 
@@ -94,7 +86,7 @@ func testBasicAPI(t *testing.T) {
 }
 
 // Delete test keys
-func resetVgKeys(t *testing.T, cs *EtcdConn, km map[string]string) {
+func resetVgKeys(t *testing.T, cs *EtcdConn, km map[string]struct{}) {
 	for k := range km {
 		_, _ = cs.cli.Delete(context.TODO(), k)
 	}

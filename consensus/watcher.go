@@ -17,7 +17,7 @@ func (cs *EtcdConn) watcher(keyPrefix string, swg *sync.WaitGroup) {
 		cs.nodeStateWatchEvents(swg)
 	case nodeKeyHbPrefix():
 		cs.nodeHbWatchEvents(swg)
-	case vgPrefix():
+	case getVgKeyPrefix():
 		cs.vgWatchEvents(swg)
 	}
 	cs.watcherWG.Done()
