@@ -25,7 +25,8 @@ func main() {
 
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
-	cs, err := consensus.Register(endpoints, 2*time.Second)
+	hostName, _ := os.Hostname()
+	cs, err := consensus.New(endpoints, hostName, 2*time.Second)
 	if err != nil {
 		fmt.Printf("Register() returned err: %v\n", err)
 		os.Exit(-1)
@@ -60,5 +61,5 @@ func main() {
 	// NOTE: Currently this code is never hit
 	//
 	// Unregister from the etcd cluster
-	cs.Unregister()
+	cs.Close()
 }

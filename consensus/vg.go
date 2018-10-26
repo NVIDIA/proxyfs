@@ -18,9 +18,12 @@ import (
 const (
 	// upDownScript is the location of the script to bring VG up or down
 	// TODO - change location of this script
-	upDownScript = "/vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/vg_up_down.sh"
-	up           = "up"
-	down         = "down"
+	upDownScript         = "/vagrant/src/github.com/swiftstack/ProxyFS/consensus/vg_up_down.sh"
+	upDownUnitTestScript = "./vg_up_down.sh"
+	up                   = "up"
+	down                 = "down"
+	mockUp               = "mockUp"
+	mockDown             = "mockDown"
 )
 
 const (
@@ -84,8 +87,8 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 	fmt.Printf("vgState now: %v for vgName: %v node: %v\n", vgInfo.VgState, vgName, vgInfo.VgNode)
 
 	var (
-		conditionals []clientv3.Cmp = make([]clientv3.Cmp, 0, 1)
-		operations   []clientv3.Op  = make([]clientv3.Op, 0, 1)
+		conditionals = make([]clientv3.Cmp, 0, 1)
+		operations   = make([]clientv3.Op, 0, 1)
 	)
 	conditionals = append(conditionals, vgInfoCmp...)
 
@@ -130,7 +133,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		// for this VG (i.e. if any field changes).
 		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - ONLINING\n", vgName)
 
-		err = callUpDownScript(up, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err = cs.callUpDownScript(up, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript UP for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
 				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
@@ -161,7 +164,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		}
 		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - OFFLINING\n", vgName)
 
-		err = callUpDownScript(down, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err = cs.callUpDownScript(down, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript Down for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
 				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
@@ -393,10 +396,29 @@ func (cs *EtcdConn) setVgOnlining(vgName string, node string) (err error) {
 	return
 }
 
-func callUpDownScript(operation string, vgName string, ipAddr string,
+func (cs *EtcdConn) setOps(operation string) (realOp string, script string) {
+	switch cs.unitTest {
+	case false:
+		script = upDownScript
+		realOp = operation
+	case true:
+		script = upDownUnitTestScript
+		if operation == up {
+			realOp = mockUp
+		} else {
+			realOp = mockDown
+		}
+	}
+
+	return
+}
+
+func (cs *EtcdConn) callUpDownScript(operation string, vgName string, ipAddr string,
 	netMask string, nic string) (err error) {
 
-	cmd := exec.Command(upDownScript, operation, vgName, ipAddr, netMask, nic)
+	realOp, script := cs.setOps(operation)
+
+	cmd := exec.Command(script, realOp, vgName, ipAddr, netMask, nic)
 	cmd.Stdin = strings.NewReader("some input")
 	var stderr bytes.Buffer
 	var out bytes.Buffer
@@ -423,10 +445,9 @@ func (cs *EtcdConn) doAllVgOfflineBeforeDead(deadRevNum RevisionNumber) {
 	}
 
 	// Drop the VIPs and daemons before we die
-	for vgName, vgInfo := range allVgInfo {
-
+	for name, vgInfo := range allVgInfo {
 		if vgInfo.VgNode == cs.hostName {
-			_ = callUpDownScript(down, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+			_ = cs.callUpDownScript(down, name, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		}
 	}
 }
@@ -492,9 +513,16 @@ func (cs *EtcdConn) clearMyVgs(revNum RevisionNumber) {
 
 	for vgName, vgInfo := range allVgInfo {
 		if vgName == cs.hostName {
-			_ = callUpDownScript(down, vgName,
+			_ = cs.callUpDownScript(down, vgName,
 				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 			cs.setVgOfflining(vgName)
+
+			// TODO - this is a race and duplicate effort
+			// When the VG goes offlining we will call the up down script
+			// again.  Also, the node call immediately calls set node state
+			// to ONLINE which is incorrect.
+			// This code should block until see change that VG is offline before
+			// returning...
 		}
 	}
 
@@ -567,8 +595,8 @@ func (cs *EtcdConn) addVg(name string, ipAddr string, netMask string,
 	nic string, autoFailover bool, enabled bool) (err error) {
 
 	var (
-		conditionals []clientv3.Cmp = make([]clientv3.Cmp, 0, 1)
-		operations   []clientv3.Op  = make([]clientv3.Op, 0, 1)
+		conditionals = make([]clientv3.Cmp, 0, 1)
+		operations   = make([]clientv3.Op, 0, 1)
 	)
 
 	vgInfo, cmpVgInfoName, err := cs.getVgInfo(name, RevisionNumber(0))
@@ -612,8 +640,8 @@ func (cs *EtcdConn) addVg(name string, ipAddr string, netMask string,
 // rmVg removes a VG if possible
 func (cs *EtcdConn) rmVg(name string) (err error) {
 	var (
-		conditionals []clientv3.Cmp = make([]clientv3.Cmp, 0, 1)
-		operations   []clientv3.Op  = make([]clientv3.Op, 0, 1)
+		conditionals = make([]clientv3.Cmp, 0, 1)
+		operations   = make([]clientv3.Op, 0, 1)
 	)
 
 	vgInfo, cmpVgInfoName, err := cs.getVgInfo(name, RevisionNumber(0))

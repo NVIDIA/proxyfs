@@ -38,12 +38,12 @@ func TestEtcdAPI(t *testing.T) {
 func testBasicPutGet(t *testing.T) {
 
 	// Start a 3 node etcd cluster
-	clus := tu.CreateCluster(t, 3)
-	defer clus.Terminate(t)
+	tc := tu.NewTC(t, 3)
+	defer tc.Destroy(t)
 
 	// Create a client to send/receive requests from cluster
-	cli := clus.Client(0)
-	defer tu.CleanupClient(cli, 0, clus)
+	cli := tc.Client(0)
+	defer tc.DestroyClient(cli, 0)
 
 	assert := assert.New(t)
 
@@ -66,12 +66,12 @@ func testBasicPutGet(t *testing.T) {
 func testBasicTxn(t *testing.T) {
 
 	// Start a 3 node etcd cluster
-	clus := tu.CreateCluster(t, 3)
-	defer clus.Terminate(t)
+	tc := tu.NewTC(t, 3)
+	defer tc.Destroy(t)
 
 	// Create a client to send/receive requests from cluster
-	cli := clus.Client(0)
-	defer tu.CleanupClient(cli, 0, clus)
+	cli := tc.Client(0)
+	defer tc.DestroyClient(cli, 0)
 
 	kvc := clientv3.NewKV(cli)
 
@@ -124,12 +124,12 @@ func testTxnWatcher(t *testing.T) {
 	)
 
 	// Start a 3 node etcd cluster
-	clus := tu.CreateCluster(t, 3)
-	defer clus.Terminate(t)
+	tc := tu.NewTC(t, 3)
+	defer tc.Destroy(t)
 
 	// Create a client to send/receive requests from cluster
-	cli := clus.Client(0)
-	defer tu.CleanupClient(cli, 0, clus)
+	cli := tc.Client(0)
+	defer tc.DestroyClient(cli, 0)
 
 	assert := assert.New(t)
 
@@ -190,12 +190,12 @@ func testTxnHb(t *testing.T) {
 	)
 
 	// Start a 3 node etcd cluster
-	clus := tu.CreateCluster(t, 3)
-	defer clus.Terminate(t)
+	tc := tu.NewTC(t, 3)
+	defer tc.Destroy(t)
 
 	// Create a client to send/receive requests from cluster
-	cli := clus.Client(0)
-	defer tu.CleanupClient(cli, 0, clus)
+	cli := tc.Client(0)
+	defer tc.DestroyClient(cli, 0)
 
 	assert := assert.New(t)
 
@@ -259,12 +259,12 @@ func testGetMultipleKeys(t *testing.T) {
 	)
 
 	// Start a 3 node etcd cluster
-	clus := tu.CreateCluster(t, 3)
-	defer clus.Terminate(t)
+	tc := tu.NewTC(t, 3)
+	defer tc.Destroy(t)
 
 	// Create a client to send/receive requests from cluster
-	cli := clus.Client(0)
-	defer tu.CleanupClient(cli, 0, clus)
+	cli := tc.Client(0)
+	defer tc.DestroyClient(cli, 0)
 
 	assert := assert.New(t)
 

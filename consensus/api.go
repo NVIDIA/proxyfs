@@ -28,11 +28,13 @@ type EtcdConn struct {
 	onlineVg  bool           // CLI - are we onlining VG?
 	vgName    string         // CLI - name of VG
 	cliWG     sync.WaitGroup // CLI WG to signal when done
+
+	unitTest bool // TEST - Is this a unit test?  If so allow some operations.
 }
 
-// A database revision number.  All values in the database with the same
-// revision number appeared in the database with that value at the same point in
-// time.
+// RevisionNumber is a database revision number.  All values in the database with
+// the same revision number appeared in the database with that value at the same
+// point in time.
 //
 type RevisionNumber int64
 
@@ -95,13 +97,8 @@ type AllClusterInfo struct {
 	AllNodeInfo AllNodeInfo
 }
 
-// Register with the consensus protocol.  In our case this is etcd.
-func Register(endpoints []string, timeout time.Duration) (cs *EtcdConn, err error) {
-	// Look for our current node ID and print it
-	hostName, err := os.Hostname()
-	if err != nil {
-		return
-	}
+// New creates a new HA client.
+func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdConn, err error) {
 	cs = &EtcdConn{hostName: hostName}
 
 	// Create an etcd client - our current etcd setup does not listen on
@@ -305,15 +302,26 @@ func (cs *EtcdConn) ListNode() AllNodeInfo {
 	return cs.getRevNodeState(RevisionNumber(0))
 }
 
-// Unregister from the consensus protocol
+// Close will close client connection with HA
+//
 // TODO - this should probably set state OFFLINING
 // to initiate OFFLINE and use waitgroup to see
 // own OFFLINE before calling Close()
-func (cs *EtcdConn) Unregister() {
+func (cs *EtcdConn) Close() {
 
 	cs.cli.Close()
 
 	cs.waitWatchers()
 
 	cs.cli = nil
+}
+
+// SetTest sets the bool signalling if this is a unit
+// test.  If it is a unit test then the location of
+// of test scripts as well as operations allowed is
+// different.
+//
+// NOTE: This should only be called from a unit test.
+func (cs *EtcdConn) SetTest(flag bool) {
+	cs.unitTest = flag
 }

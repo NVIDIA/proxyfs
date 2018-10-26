@@ -22,16 +22,41 @@ import (
 // 4. Shutdown more than half of cluster
 // 6. attempt transaction and get back no leader error....
 
-// CreateCluster creates and launches a cluster
-func CreateCluster(t *testing.T, size int) (clus *ei.ClusterV3) {
-	clus = ei.NewClusterV3(t, &ei.ClusterConfig{Size: size})
+// TestCluster wraps etcd's notation of a cluster being tested.
+type TestCluster struct {
+	Clus *ei.ClusterV3
+}
+
+// NewTC creates and launches a test cluster
+func NewTC(t *testing.T, size int) (tc *TestCluster) {
+	tc = &TestCluster{Clus: ei.NewClusterV3(t, &ei.ClusterConfig{Size: size})}
 	return
 }
 
-// CleanupClient closes the client and nils the entry in the clus object
-func CleanupClient(cli *clientv3.Client, id int, clus *ei.ClusterV3) {
+// Endpoints returns the endpoints used by the client
+func (tc *TestCluster) Endpoints(id int) []string {
+	return tc.Clus.Client(id).Endpoints()
+}
+
+// Destroy stops and destroys the test cluster
+func (tc *TestCluster) Destroy(t *testing.T) {
+	tc.Clus.Terminate(t)
+}
+
+// Client returns a client pointer from the test cluster
+func (tc *TestCluster) Client(id int) (cli *clientv3.Client) {
+	return tc.Clus.Client(id)
+}
+
+// HostName returns the "hostname" where this client is running
+func (tc *TestCluster) HostName() (hostName string) {
+	return tc.Clus.Members[0].Name
+}
+
+// DestroyClient closes the client and nils the entry in the clus object
+func (tc *TestCluster) DestroyClient(cli *clientv3.Client, id int) {
 	cli.Close()
-	clus.TakeClient(id)
+	tc.Clus.TakeClient(id)
 }
 
 // watcher watches for a key change and asserts that it has the expected value.
