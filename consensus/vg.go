@@ -559,48 +559,6 @@ func (cs *EtcdConn) startVgs(revNum RevisionNumber) {
 	// overloaded.
 }
 
-// getVgState returns the state of a VG
-// TODO: delete this
-func (cs *EtcdConn) getVgState(name string) (state VgState) {
-
-	vgInfo, _, _ := cs.getVgInfo(name, 0)
-	state = vgInfo.VgState
-
-	return
-}
-
-func (cs *EtcdConn) checkKeyExists(key string) (err error) {
-
-	resp, _ := cs.cli.Get(context.TODO(), key, clientv3.WithCountOnly())
-	if resp.OpResponse().Get().Count == int64(0) {
-		err = fmt.Errorf("key '%s' does not exist", key)
-		return
-	}
-	return
-}
-
-func (cs *EtcdConn) checkAllKeysExist(keys []string) (err error) {
-	for _, v := range keys {
-		resp, _ := cs.cli.Get(context.TODO(), v, clientv3.WithCountOnly())
-		if resp.OpResponse().Get().Count == int64(0) {
-			err = fmt.Errorf("key '%s' does not exist", v)
-			return
-		}
-	}
-	return
-}
-
-func (cs *EtcdConn) checkAnyKeyExists(keys []string) (err error) {
-	for _, v := range keys {
-		resp, _ := cs.cli.Get(context.TODO(), v, clientv3.WithCountOnly())
-		if resp.OpResponse().Get().Count > int64(0) {
-			return
-		}
-	}
-	err = fmt.Errorf("None of the requested keys exist")
-	return
-}
-
 // addVg adds a volume group
 //
 // TODO - should we add create time, failover time, etc?
