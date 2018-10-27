@@ -153,6 +153,7 @@ pre-generate:
 	done
 
 python-test:
+	tox --version
 	cd pfs_middleware && tox -e py27,py27-old-swift,lint
 
 test:
