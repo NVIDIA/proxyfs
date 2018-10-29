@@ -653,7 +653,7 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 		return
 	}
 	// should probably require that the VG be empty ...
-	if vgInfo.VgState != OFFLINEVS && vgInfo.VgState != FAILEDVS {
+	if vgInfo.VgState != OFFLINEVS && vgInfo.VgState != FAILEDVS && vgInfo.VgState != INITIALVS {
 		// how will controller handle this?
 		err = fmt.Errorf("VG name '%s' must be offline to delete", name)
 		return

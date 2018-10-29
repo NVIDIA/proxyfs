@@ -1,13 +1,13 @@
 package consensus
 
 import (
-	"context"
 	"flag"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	tu "github.com/swiftstack/ProxyFS/consensus/testutils"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -52,44 +52,54 @@ func TestAPI(t *testing.T) {
 	// - online, failover, verify bad input such as bad IP address?
 }
 
-// registerEtcd sets up a connection to etcd
-func registerEtcd(t *testing.T) (cs *EtcdConn) {
-	assert := assert.New(t)
+// newHA sets up 3 node test cluster and opens connection to HA
+func newHA(t *testing.T) (cs *EtcdConn, tc *tu.TestCluster) {
 
-	endpoints := []string{"192.168.60.10:2379", "192.168.60.11:2379", "192.168.60.12:2379"}
+	// Start a 3 node etcd cluster
+	tc = tu.NewTC(t, 3)
+
+	// Grab endpoint used by client 0 and pass to New()
+	endpoints := tc.Endpoints(0)
+
+	assert := assert.New(t)
 
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
-	cs, err := Register(endpoints, 2*time.Second)
+	cs, err := New(endpoints, tc.HostName(), 2*time.Second)
 	assert.NotNil(cs, "Register() failed")
 	assert.Nil(err, "Register() returned err")
 
-	return cs
+	// Setup test script, etc
+	cs.SetTest(true)
+	cs.SetTestSWD(tc.SWD)
+
+	return cs, tc
 }
 
-// unregisterEtcd unregisters from etcd
-func unregisterEtcd(t *testing.T, cs *EtcdConn) {
+// closeHA unregisters from etcd
+func closeHA(t *testing.T, cs *EtcdConn, tc *tu.TestCluster) {
 
 	// Unregister from the etcd cluster
-	cs.Unregister()
+	cs.Close()
+
+	// Remove cluster
+	tc.Destroy(t)
 }
 
-func vgKeysToReset(vgTestName string) (keys map[string]struct{}) {
+func vgKeysToDelete(vgTestName string) (keys map[string]struct{}) {
 	keys = make(map[string]struct{})
 	keys[makeVgKey(vgTestName)] = struct{}{}
 	return
 }
 
 func testBasicAPI(t *testing.T) {
-	cs := registerEtcd(t)
-	unregisterEtcd(t, cs)
+	cs, tc := newHA(t)
+	closeHA(t, cs, tc)
 }
 
 // Delete test keys
-func resetVgKeys(t *testing.T, cs *EtcdConn, km map[string]struct{}) {
-	for k := range km {
-		_, _ = cs.cli.Delete(context.TODO(), k)
-	}
+func deleteVgKeys(t *testing.T, cs *EtcdConn, km map[string]struct{}) {
+	tu.DeleteKeys(t, cs.cli, km)
 }
 
 func testAddRmVolumeGroup(t *testing.T) {
@@ -103,10 +113,11 @@ func testAddRmVolumeGroup(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	cs := registerEtcd(t)
+	cs, tc := newHA(t)
+	defer closeHA(t, cs, tc)
 
-	keys := vgKeysToReset(vgTestName)
-	resetVgKeys(t, cs, keys)
+	keys := vgKeysToDelete(vgTestName)
+	deleteVgKeys(t, cs, keys)
 
 	// TODO - how add volume list to a volume group?
 	// assume volumes are unique across VGs???
@@ -124,8 +135,6 @@ func testAddRmVolumeGroup(t *testing.T) {
 	// Trying to removing a volume group a second time should fail
 	err = cs.RmVolumeGroup(vgTestName)
 	assert.NotNil(err, "RmVolumeGroup() twice should err")
-
-	unregisterEtcd(t, cs)
 }
 
 func testStartVolumeGroup(t *testing.T) {
@@ -139,23 +148,25 @@ func testStartVolumeGroup(t *testing.T) {
 	)
 	assert := assert.New(t)
 
-	cs := registerEtcd(t)
+	cs, tc := newHA(t)
+	defer closeHA(t, cs, tc)
 
-	keys := vgKeysToReset(vgTestName)
-	resetVgKeys(t, cs, keys)
+	keys := vgKeysToDelete(vgTestName)
+	deleteVgKeys(t, cs, keys)
 
 	// TODO - how add volume list to a volume group?
 	// assume volumes are unique across VGs???
 	err := cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
 	assert.Nil(err, "AddVolumeGroup() returned err")
 
-	// Start the VG -
-	cs.startVgs(RevisionNumber(0))
+	// Setup as a server so that startVgs() will start the
+	// VG.
+	err = cs.Server()
+
+	// TODO - block until server is ONLINE
 
 	// Now remove the volume group - should fail since VG is in ONLINE
 	// or ONLINING state.  Only VGs which are OFFLINE can be removed.
 	err = cs.RmVolumeGroup(vgTestName)
 	assert.NotNil(err, "RmVolumeGroup() returned err")
-
-	unregisterEtcd(t, cs)
 }
