@@ -2,9 +2,11 @@ package testutils
 
 import (
 	"context"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	clientv3 "go.etcd.io/etcd/clientv3"
 	ei "go.etcd.io/etcd/integration"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -25,11 +27,30 @@ import (
 // TestCluster wraps etcd's notation of a cluster being tested.
 type TestCluster struct {
 	Clus *ei.ClusterV3
+	SWD  string // Starting working directory
 }
 
 // NewTC creates and launches a test cluster
 func NewTC(t *testing.T, size int) (tc *TestCluster) {
-	tc = &TestCluster{Clus: ei.NewClusterV3(t, &ei.ClusterConfig{Size: size})}
+
+	// When running the unit tests in a container, we are unable
+	// to bind to the port for the Unix domain socket due to the mounted
+	// file system.  Therefore, change directory to /tmp before starting
+	// the cluster.
+	swd, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("Unable to chdir to /tmp")
+		os.Exit(-1)
+	}
+
+	err = os.Chdir("/tmp")
+	if err != nil {
+		fmt.Printf("Unable to chdir to /tmp")
+		os.Exit(-1)
+	}
+
+	tc = &TestCluster{Clus: ei.NewClusterV3(t, &ei.ClusterConfig{Size: size}), SWD: swd}
+
 	return
 }
 
@@ -41,6 +62,12 @@ func (tc *TestCluster) Endpoints(id int) []string {
 // Destroy stops and destroys the test cluster
 func (tc *TestCluster) Destroy(t *testing.T) {
 	tc.Clus.Terminate(t)
+
+	err := os.Chdir(tc.SWD)
+	if err != nil {
+		fmt.Printf("Unable to chdir to: %v", tc.SWD)
+		os.Exit(-1)
+	}
 }
 
 // Client returns a client pointer from the test cluster

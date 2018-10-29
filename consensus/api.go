@@ -29,7 +29,8 @@ type EtcdConn struct {
 	vgName    string         // CLI - name of VG
 	cliWG     sync.WaitGroup // CLI WG to signal when done
 
-	unitTest bool // TEST - Is this a unit test?  If so allow some operations.
+	unitTest bool   // TEST - Is this a unit test?  If so allow some operations.
+	swd      string // TEST - Starting working directory
 }
 
 // RevisionNumber is a database revision number.  All values in the database with
@@ -324,4 +325,12 @@ func (cs *EtcdConn) Close() {
 // NOTE: This should only be called from a unit test.
 func (cs *EtcdConn) SetTest(flag bool) {
 	cs.unitTest = flag
+}
+
+// SetTestSWD sets the starting working directory for use by
+// test scripts.
+//
+// NOTE: This should only be called from a unit test.
+func (cs *Struct) SetTestSWD(swd string) {
+	cs.swd = swd
 }
