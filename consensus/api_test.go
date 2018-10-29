@@ -106,7 +106,7 @@ func testAddRmVolumeGroup(t *testing.T) {
 	var (
 		vgTestName   = "myTestVg"
 		ipAddr       = "192.168.20.20"
-		netMask      = "1.1.1.1"
+		netMask      = "255.255.255.0"
 		nic          = "eth0"
 		autoFailover = true
 		enabled      = true
@@ -140,8 +140,8 @@ func testAddRmVolumeGroup(t *testing.T) {
 func testStartVolumeGroup(t *testing.T) {
 	var (
 		vgTestName   = "myTestVg"
-		ipAddr       = "192.168.20.20"
-		netMask      = "1.1.1.1"
+		ipAddr       = "10.10.10.10"
+		netMask      = "255.255.255.0"
 		nic          = "eth0"
 		autoFailover = true
 		enabled      = true

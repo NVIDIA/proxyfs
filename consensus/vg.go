@@ -15,15 +15,17 @@ import (
 	"time"
 )
 
+// whether callUpDownScript() is being called for an "up" or a "down"
+//
+type upDownOperation int
+
 const (
 	// upDownScript is the location of the script to bring VG up or down
 	// TODO - change location of this script
-	upDownScript         = "/vagrant/src/github.com/swiftstack/ProxyFS/consensus/vg_up_down.sh"
-	upDownUnitTestScript = "./vg_up_down.sh"
-	up                   = "up"
-	down                 = "down"
-	mockUp               = "mockUp"
-	mockDown             = "mockDown"
+	upDownScript                         = "/vagrant/src/github.com/swiftstack/ProxyFS/consensus/proto/vg_up_down.sh"
+	upDownUnitTestScript                 = "./vg_up_down.sh"
+	upOperation          upDownOperation = iota
+	downOperation
 )
 
 const (
@@ -89,7 +91,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 	vgInfo := vgInfos[vgName]
 	vgInfoCmp := vgInfoCmps[vgName]
-	fmt.Printf("vgState now: %v for vgName: %v node: %v\n", vgInfo.VgState, vgName, vgInfo.VgNode)
+	fmt.Printf("stateChgEvent(): vg '%s' node '%s' state '%v'\n", vgName, vgInfo.VgNode, vgInfo.VgState)
 
 	var (
 		conditionals = make([]clientv3.Cmp, 0, 1)
@@ -138,7 +140,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		// for this VG (i.e. if any field changes).
 		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - ONLINING\n", vgName)
 
-		err = cs.callUpDownScript(up, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err = cs.callUpDownScript(upOperation, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript UP for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
 				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
@@ -169,7 +171,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		}
 		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - OFFLINING\n", vgName)
 
-		err = cs.callUpDownScript(down, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err = cs.callUpDownScript(downOperation, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript Down for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
 				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
@@ -401,29 +403,34 @@ func (cs *EtcdConn) setVgOnlining(vgName string, node string) (err error) {
 	return
 }
 
-func (cs *EtcdConn) setOps(operation string) (realOp string, script string) {
+func (cs *EtcdConn) setOps(operation upDownOperation) (realOp string, script string) {
 	switch cs.unitTest {
 	case false:
 		script = upDownScript
-		realOp = operation
+		if operation == upOperation {
+			realOp = "up"
+		} else {
+			realOp = "down"
+		}
 	case true:
 		script = cs.swd + "/" + upDownUnitTestScript
-		if operation == up {
-			realOp = mockUp
+		if operation == upOperation {
+			realOp = "mockup"
 		} else {
-			realOp = mockDown
+			realOp = "mockdown"
 		}
 	}
 
 	return
 }
 
-func (cs *EtcdConn) callUpDownScript(operation string, vgName string, ipAddr string,
+func (cs *EtcdConn) callUpDownScript(operation upDownOperation, vgName string, ipAddr string,
 	netMask string, nic string) (err error) {
 
 	realOp, script := cs.setOps(operation)
 
 	cmd := exec.Command(script, realOp, vgName, ipAddr, netMask, nic)
+
 	cmd.Stdin = strings.NewReader("some input")
 	var stderr bytes.Buffer
 	var out bytes.Buffer
@@ -431,7 +438,7 @@ func (cs *EtcdConn) callUpDownScript(operation string, vgName string, ipAddr str
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	fmt.Printf("callUpDownScript() - operation: %v name: %v ipaddr: %v nic: %v OUT: %v STDERR: %v\n",
-		operation, vgName, ipAddr, nic, out.String(), stderr.String())
+		realOp, vgName, ipAddr, nic, out.String(), stderr.String())
 
 	return
 }
@@ -450,9 +457,9 @@ func (cs *EtcdConn) doAllVgOfflineBeforeDead(deadRevNum RevisionNumber) {
 	}
 
 	// Drop the VIPs and daemons before we die
-	for name, vgInfo := range allVgInfo {
+	for vgName, vgInfo := range allVgInfo {
 		if vgInfo.VgNode == cs.hostName {
-			_ = cs.callUpDownScript(down, name, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+			_ = cs.callUpDownScript(downOperation, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 		}
 	}
 }
@@ -518,7 +525,7 @@ func (cs *EtcdConn) clearMyVgs(revNum RevisionNumber) {
 
 	for vgName, vgInfo := range allVgInfo {
 		if vgName == cs.hostName {
-			_ = cs.callUpDownScript(down, vgName,
+			_ = cs.callUpDownScript(downOperation, vgName,
 				vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
 			cs.setVgOfflining(vgName)
 
@@ -657,12 +664,13 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 		err = fmt.Errorf("VG name '%s' does not exist", name)
 		return
 	}
-	// should probably require that the VG be empty ...
+	// should probably require that the VG be empty as well ...
 	if vgInfo.VgState != OFFLINEVS && vgInfo.VgState != FAILEDVS && vgInfo.VgState != INITIALVS {
 		// how will controller handle this?
 		err = fmt.Errorf("VG name '%s' must be offline to delete", name)
 		return
 	}
+	fmt.Printf("rmVg(): vg '%s' state '%v' vgInfo '%v'r\n", name, vgInfo.VgState, vgInfo)
 	conditionals = append(conditionals, cmpVgInfoName...)
 
 	// create the operation to delete this Volume Group
@@ -685,6 +693,9 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 // (clientv3.Cmp) that can be used as conditionals in a transaction.  It will
 // evaluate to false if the VG has changed from this information.
 //
+// Note: if VgInfo.CreateRevNum == 0 then the VG has been deleted and the
+// VgValue part of VgInfo is zero values.
+//
 func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue) (vgInfos map[string]*VgInfo,
 	vgInfoCmps map[string][]clientv3.Cmp, err error) {
 
@@ -699,10 +710,14 @@ func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyVal
 	for key, value := range values {
 
 		var vgInfoValue VgInfoValue
-		err = json.Unmarshal(value, &vgInfoValue)
-		if err != nil {
-			fmt.Printf("unpackVgInfo(): Unmarshall of '%v' returned err: %s\n", string(values[key]), err)
-			return
+		if keyHeaders[key].CreateRevNum != 0 {
+			err = json.Unmarshal(value, &vgInfoValue)
+			if err != nil {
+				fmt.Printf("unpackVgInfo(): Unmarshall of key '%s' header '%v' "+
+					"value '%v' failed: %s\n",
+					key, keyHeaders[key], string(values[key]), err)
+				return
+			}
 		}
 
 		vgName := strings.TrimPrefix(key, getVgKeyPrefix())
