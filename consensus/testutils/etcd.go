@@ -147,7 +147,7 @@ func ResetKeys(t *testing.T, cli *clientv3.Client, km map[string]string) {
 }
 
 // DeleteKeys deletes test keys in km
-func DeleteKeys(t *testing.T, cli *clientv3.Client, km map[string]string) {
+func DeleteKeys(t *testing.T, cli *clientv3.Client, km map[string]struct{}) {
 	for k := range km {
 		_, _ = cli.Delete(context.TODO(), k)
 	}

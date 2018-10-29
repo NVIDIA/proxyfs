@@ -314,6 +314,8 @@ func (cs *EtcdConn) Close() {
 
 	cs.waitWatchers()
 
+	// TODO - stop HB thread!
+
 	cs.cli = nil
 }
 
@@ -331,6 +333,6 @@ func (cs *EtcdConn) SetTest(flag bool) {
 // test scripts.
 //
 // NOTE: This should only be called from a unit test.
-func (cs *Struct) SetTestSWD(swd string) {
+func (cs *EtcdConn) SetTestSWD(swd string) {
 	cs.swd = swd
 }
