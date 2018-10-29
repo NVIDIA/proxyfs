@@ -69,21 +69,26 @@ func (cs *EtcdConn) allVgsDown(revNum RevisionNumber) (allDown bool, compares []
 	return
 }
 
-// stateChgEvent handles any event notification for a VG state change
+// stateChgEvent handles any event notification for a VG state change (the
+// KeyValue, ev.Kv, must be for a Volume Group).
 func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 	// Something about a VG has changed ... try to figure out what it was
-	// and how to react.
-	vgName := strings.TrimPrefix(string(ev.Kv.Key), getVgKeyPrefix())
+	// and how to react
 	revNum := RevisionNumber(ev.Kv.ModRevision)
-	vgInfoBuf, vgInfoCmp, err := cs.unpackVgInfo(revNum, ev.Kv)
+	vgName := strings.TrimPrefix(string(ev.Kv.Key), getVgKeyPrefix())
+
+	// unpackVgInfo operates on a slice of KeyValue
+	keyValues := []*mvccpb.KeyValue{ev.Kv}
+	vgInfos, vgInfoCmps, err := cs.unpackVgInfo(revNum, keyValues)
 	if err != nil {
 		fmt.Printf("stateChgEvent() unexpected error for VG %s from unpackVgInfo(%v): %s\n",
-			vgName, ev.Kv, err)
+			ev.Kv.Key, ev.Kv, err)
 		return
 	}
-	vgInfo := &vgInfoBuf
 
+	vgInfo := vgInfos[vgName]
+	vgInfoCmp := vgInfoCmps[vgName]
 	fmt.Printf("vgState now: %v for vgName: %v node: %v\n", vgInfo.VgState, vgName, vgInfo.VgNode)
 
 	var (
@@ -673,30 +678,41 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 	return
 }
 
-// Unpack a VgInfo from the KeyValue in an event or response from a Get.
+// Unpack a slice of VgInfo from the slice of KeyValue received from an event or
+// a Get or Range request.
 //
-// modRevCmp is a compare operation that can be used in transaction.  It will
-// evaluate to false if the VG has changed from this info.
+// For each key a VgInfo is returned and a slice of comparison struct
+// (clientv3.Cmp) that can be used as conditionals in a transaction.  It will
+// evaluate to false if the VG has changed from this information.
 //
-func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKV *mvccpb.KeyValue) (vgInfo VgInfo,
-	vgInfoCmp []clientv3.Cmp, err error) {
+func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue) (vgInfos map[string]*VgInfo,
+	vgInfoCmps map[string][]clientv3.Cmp, err error) {
 
-	var vgInfoValue VgInfoValue
-	err = json.Unmarshal(etcdKV.Value, &vgInfoValue)
+	vgInfos = make(map[string]*VgInfo)
+	vgInfoCmps = make(map[string][]clientv3.Cmp)
+
+	keyHeaders, values, modCmps, err := unpackKeyValues(revNum, etcdKVs)
 	if err != nil {
-		fmt.Printf("getVgInfo(): Unmarshall of '%v' returned err: %s\n", string(etcdKV.Value), err)
+		fmt.Printf("unpackVgInfo(): unpackKeyValues of '%v' returned err: %s\n", etcdKVs, err)
 		return
 	}
+	for key, value := range values {
 
-	vgInfo.VgInfoValue = vgInfoValue
-	vgInfo.RevNum = RevisionNumber(revNum)
-	vgInfo.CreateRevNum = RevisionNumber(etcdKV.CreateRevision)
-	vgInfo.ModRevNum = RevisionNumber(etcdKV.ModRevision)
+		var vgInfoValue VgInfoValue
+		err = json.Unmarshal(value, &vgInfoValue)
+		if err != nil {
+			fmt.Printf("unpackVgInfo(): Unmarshall of '%v' returned err: %s\n", string(values[key]), err)
+			return
+		}
 
-	// a comparison function that will return false if any of the
-	// VgInfo has changed since the call to this function
-	cmp := clientv3.Compare(clientv3.ModRevision(string(etcdKV.Key)), "=", int64(vgInfo.ModRevNum))
-	vgInfoCmp = []clientv3.Cmp{cmp}
+		vgName := strings.TrimPrefix(key, getVgKeyPrefix())
+		info := VgInfo{
+			EtcdKeyHeader: keyHeaders[key],
+			VgInfoValue:   vgInfoValue,
+		}
+		vgInfos[vgName] = &info
+		vgInfoCmps[vgName] = []clientv3.Cmp{modCmps[key]}
+	}
 
 	return
 }
@@ -741,12 +757,14 @@ func (cs *EtcdConn) getVgInfo(vgName string, revNum RevisionNumber) (vgInfo *VgI
 		return
 	}
 
-	vgInfoBuffer, vgInfoCmp, err := cs.unpackVgInfo(revNum, resp.OpResponse().Get().Kvs[0])
+	vgInfos, vgInfoCmps, err := cs.unpackVgInfo(revNum, resp.OpResponse().Get().Kvs)
 	if err != nil {
-		fmt.Printf("getVgInfo(): unpackVgInfo returned err: %s\n", err)
+		fmt.Printf("getVgInfo(): unpackVgInfo of %v returned err: %s\n",
+			resp.OpResponse().Get().Kvs, err)
 		return
 	}
-	vgInfo = &vgInfoBuffer
+	vgInfo = vgInfos[vgName]
+	vgInfoCmp = vgInfoCmps[vgName]
 
 	return
 }
@@ -811,65 +829,12 @@ func (cs *EtcdConn) getAllVgInfo(revNum RevisionNumber) (allVgInfo map[string]*V
 		os.Exit(-1)
 	}
 
-	allVgInfo = make(map[string]*VgInfo)
-	allVgInfoCmp = make(map[string][]clientv3.Cmp)
-
-	for _, kv := range resp.Kvs {
-		vgName := strings.TrimPrefix(string(kv.Key), getVgKeyPrefix())
-		vgInfo, vgInfoCmp, err2 := cs.unpackVgInfo(revNum, kv)
-		if err2 != nil {
-			fmt.Printf("unpackVgInfo() for '%s' of '%v' failed: %s\n",
-				vgName, kv, err)
-			err = err2
-			return
-		}
-		allVgInfo[vgName] = &vgInfo
-		allVgInfoCmp[vgName] = vgInfoCmp
-	}
-
-	return
-}
-
-// Perform a transaction to update the etcd database (shared state).  The
-// transaction consits of operations (changes to keys in the database) and
-// conditionals which must be satisfied for the operations to take effect.  If
-// the conditionals are not satisfied then none of the operations are performed,
-// txnResponse.Succeeded is false, and err is nil.
-//
-// If err != nil then it probably indicates a failure to communicate with etcd.
-//
-// This routine should probably retry the operation until the transaction
-// succeedds or fails.
-//
-func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv3.Op) (txnResp *clientv3.TxnResponse, err error) {
-
-	// create a context and then a transaction to update the database;
-	// cancel() must be called or we will leak memory
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	txn := cs.kvc.Txn(ctx)
-
-	// if the conditionals are not satisfied then none of the operations are performed
-	txn = txn.If(conditionals...).Then(operations...)
-
-	// let's do this thing ...
-	txnResp, err = txn.Commit()
-
+	allVgInfo, allVgInfoCmp, err = cs.unpackVgInfo(revNum, resp.Kvs)
 	if err != nil {
-		fmt.Printf("updateEtcd(): transaction failed: %s\n", err)
+		fmt.Printf("getAllVgInfo() unexpected error for from unpackVgInfo(%v): %s\n",
+			resp.Kvs, err)
+		return
 	}
-	fmt.Printf("updateEtcd(): Transaction: %s\n", cs.dumpTxn(txn))
-	fmt.Printf("updateEtcd(): Response: %s\n", cs.dumpTxnResp(txnResp))
-
-	return
-}
-
-func (cs *EtcdConn) dumpTxn(txn clientv3.Txn) (dump string) {
-
-	return
-}
-
-func (cs *EtcdConn) dumpTxnResp(txnResp *clientv3.TxnResponse) (dump string) {
 
 	return
 }

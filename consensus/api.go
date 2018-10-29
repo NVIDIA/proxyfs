@@ -33,12 +33,6 @@ type EtcdConn struct {
 	swd      string // TEST - Starting working directory
 }
 
-// RevisionNumber is a database revision number.  All values in the database with
-// the same revision number appeared in the database with that value at the same
-// point in time.
-//
-type RevisionNumber int64
-
 // VgState represents the state of a volume group at a given point in time
 type VgState string
 
@@ -69,12 +63,9 @@ type VgInfoValue struct {
 
 // VgInfo is information associated with a volume group as well as the revision
 // number when the info was fetched and the last time the value was modified.
-
 //
 type VgInfo struct {
-	CreateRevNum RevisionNumber
-	ModRevNum    RevisionNumber
-	RevNum       RevisionNumber
+	EtcdKeyHeader
 	VgInfoValue
 }
 
