@@ -402,7 +402,7 @@ func (cs *EtcdConn) setOps(operation string) (realOp string, script string) {
 		script = upDownScript
 		realOp = operation
 	case true:
-		script = upDownUnitTestScript
+		script = cs.swd + "/" + upDownUnitTestScript
 		if operation == up {
 			realOp = mockUp
 		} else {
