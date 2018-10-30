@@ -21,6 +21,8 @@ type EtcdConn struct {
 	hostName  string         // hostname of the local host
 	watcherWG sync.WaitGroup // WaitGroup to keep track of watchers outstanding
 	HBTicker  *time.Ticker   // HB ticker for sending HB and processing DEAD nodes
+	stopHB    bool           // True means local node DEAD and wants to kill HB routine
+	stopHBWG  sync.WaitGroup // WaitGroup to serialize shutdown of HB goroutine
 	server    bool           // Is this instance a server?
 	stopNode  bool           // CLI - are we offlining node?
 	nodeName  string         // CLI - name of node for operation
@@ -28,6 +30,7 @@ type EtcdConn struct {
 	onlineVg  bool           // CLI - are we onlining VG?
 	vgName    string         // CLI - name of VG
 	cliWG     sync.WaitGroup // CLI WG to signal when done
+	sync.Mutex
 
 	unitTest bool   // TEST - Is this a unit test?  If so allow some operations.
 	swd      string // TEST - Starting working directory
@@ -80,7 +83,7 @@ type AllNodeInfo struct {
 	NodesOnline      []string
 }
 
-// ClusterInfo contains the state of the interesting keys in the shared database
+// AllClusterInfo contains the state of the interesting keys in the shared database
 // relevant to the cluster as of a particular revision number (sequence number).
 // (The revision numbers is VgInfo and NodeInfo are the same as RevNum.)
 //
@@ -273,7 +276,7 @@ func (cs *EtcdConn) CLIStopNode(name string) (err error) {
 	return
 }
 
-// ListVG grabs info for all volume groups and returns it.
+// ListVg grabs info for all volume groups and returns it.
 //
 func (cs *EtcdConn) ListVg() (allVgInfo map[string]*VgInfo) {
 
@@ -285,7 +288,7 @@ func (cs *EtcdConn) ListVg() (allVgInfo map[string]*VgInfo) {
 	return
 }
 
-// ListVG grabs  for all nodes and returns it.
+// ListNode grabs  for all nodes and returns it.
 //
 // Note that this uses the "old format".
 //
@@ -294,18 +297,17 @@ func (cs *EtcdConn) ListNode() AllNodeInfo {
 	return cs.getRevNodeState(RevisionNumber(0))
 }
 
-// Close will close client connection with HA
-//
-// TODO - this should probably set state OFFLINING
-// to initiate OFFLINE and use waitgroup to see
-// own OFFLINE before calling Close()
+// Close will cause this local "node" to transition to
+// OFFLINING -> DEAD and leave etcd cluster.
 func (cs *EtcdConn) Close() {
 
-	cs.cli.Close()
+	cs.setNodeState(cs.hostName, OFFLININGNS)
 
+	// When we receive our own DEAD notification, we
+	// close the connection to etcd.   This causes
+	// the watchers to exit and waitWatchers() blocks
+	// until the watchers have exited.
 	cs.waitWatchers()
-
-	// TODO - stop HB thread!
 
 	cs.cli = nil
 }
