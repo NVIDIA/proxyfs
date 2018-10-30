@@ -75,8 +75,8 @@ func TestAPI(t *testing.T) {
 		"FSGlobals.VolumeList=",
 
 		"Logging.LogFilePath=/dev/null",
-		"Logging.LogToConsole=false",
-		//"Logging.LogToConsole=true",
+		//"Logging.LogToConsole=false",
+		"Logging.LogToConsole=true",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
@@ -869,6 +869,9 @@ func testChunkedPut(t *testing.T) {
 	)
 	defer cleanup()
 
+	// maximum number of concurrent requests
+	maxThread := 32
+
 	var (
 		accountName   = "TestAccount"
 		containerName = "TestContainer"
@@ -877,7 +880,7 @@ func testChunkedPut(t *testing.T) {
 	)
 
 	// increase the pool sizes to get some concurrency (non-chunked isn't tested here)
-	poolSize := 12
+	poolSize := maxThread
 	globals.chunkedConnectionPool.poolCapacity = uint16(poolSize)
 	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, poolSize)
 	for i := 0; i < poolSize; i++ {
@@ -945,10 +948,9 @@ func testChunkedPut(t *testing.T) {
 	globals.chaosCloseChunkFailureRate = 11
 	globals.retryLimitObject = 10
 
-	maxThread := 6
 	doneChan = make(chan error, maxThread)
 	threads := 0
-	for i := 0; i < 18; i++ {
+	for i := 0; i < 180; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 		randGen = rand.New(rand.NewSource(int64(i) + 3))
 
@@ -1139,13 +1141,68 @@ func testObjectWriteVerify(t *testing.T, accountName string, containerName strin
 			accountName, containerName, objName, err)
 		return tErr
 	}
+
+	// mung the buffer just read to induce an error
+	// if len(readBuf) > 65536 {
+	// 	for i := 0; i < 62; i++ {
+	// 		readBuf[i+4000] = uint8(i)
+	// 	}
+	// }
+
 	if !bytes.Equal(readBuf, writeBuf) {
-		tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
-			"Object() read back something different then written",
-			accountName, containerName, objName)
+		fmt.Printf("testObjectWriteVerify('%s/%s/%s'): readBuf (len %d) !Equal writeBuf (len %d)\n",
+			accountName, containerName, objName,
+			len(readBuf), len(writeBuf))
+
+		// find range of mismatch
+		var (
+			firstIdx int
+			lastIdx  int
+		)
+		for firstIdx = 0; firstIdx < len(readBuf); firstIdx++ {
+			if readBuf[firstIdx] != writeBuf[firstIdx] {
+				break
+			}
+		}
+		for lastIdx = len(readBuf) - 1; lastIdx > firstIdx; lastIdx-- {
+			if readBuf[lastIdx] != writeBuf[lastIdx] {
+				break
+			}
+		}
+
+		// it the contents don't match (not just a length issue)
+		if firstIdx <= lastIdx {
+			fmt.Printf("mismatched bytes in readBuf offset: 0x%x - 0x%x out of 0x%x bytes\n",
+				firstIdx, lastIdx, len(readBuf))
+			for idx := firstIdx & ^(16 - 1); idx < lastIdx; idx += 16 {
+
+				// writeBuf
+				fmt.Printf("%08x ", idx)
+				for b := 0; b < 16 && idx+b < lastIdx; b++ {
+					fmt.Printf(" %02x", writeBuf[idx+b])
+					if b == 7 {
+						fmt.Print(" ")
+					}
+				}
+				fmt.Print("\n")
+
+				// readBuf
+				fmt.Printf("%8s ", "readBuf")
+				for b := 0; b < 16 && idx+b < lastIdx; b++ {
+					fmt.Printf(" %02x", readBuf[idx+b])
+					if b == 7 {
+						fmt.Print(" ")
+					}
+				}
+				fmt.Print("\n")
+			}
+		}
+
 		// panic because this should *never* happen
+		tErr := fmt.Errorf("testObjectWriteVerify('%s/%s/%s'): "+
+			"read back something different then written; len(writeBuf) %d len(readBuf) %d",
+			accountName, containerName, objName, len(writeBuf), len(readBuf))
 		panic(tErr)
-		// return tErr
 	}
 
 	return nil
