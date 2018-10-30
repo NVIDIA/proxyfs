@@ -79,7 +79,7 @@ func newHA(t *testing.T) (cs *EtcdConn, tc *tu.TestCluster) {
 // closeHA unregisters from etcd
 func closeHA(t *testing.T, cs *EtcdConn, tc *tu.TestCluster) {
 
-	// Unregister from the etcd cluster
+	// Close our client
 	cs.Close()
 
 	// Remove cluster

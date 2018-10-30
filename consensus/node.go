@@ -218,6 +218,17 @@ func (cs *EtcdConn) startHBandMonitor() {
 	cs.HBTicker = time.NewTicker(1 * time.Second)
 	go func() {
 		for range cs.HBTicker.C {
+
+			var stopHB bool
+			cs.Lock()
+			stopHB = cs.stopHB
+			cs.Unlock()
+
+			if stopHB {
+				// Shutting down - stop heartbeating
+				cs.stopHBWG.Done()
+				return
+			}
 			cs.sendHb()
 			cs.checkForDeadNodes()
 		}
@@ -273,14 +284,37 @@ func (cs *EtcdConn) myNodeStateEvents(ev *clientv3.Event) {
 			cs.setNodeState(cs.hostName, ONLINENS)
 		}
 	case DEADNS.String():
-		fmt.Printf("Exiting proxyfsd - after stopping VIP\n")
+		fmt.Printf("Exiting proxyfsd - after stopping VIP(s)\n")
+
+		// There are several cases here:
+		//
+		// 1. "hacli stop" CLI process
+		// 2. Server shutting down and called Close().  Want os.Exit(-1)
+		// 3. Server shutting down from remote call of "hacli stop".
+		//    Want os.Exit(-1).
+		// 4. Unit test shutting server down
 		if cs.server {
 			cs.doAllVgOfflineBeforeDead(revNum)
-			os.Exit(-1)
+			cs.stopHBWG.Add(1)
+
+			cs.Lock()
+			cs.stopHB = true
+			cs.Unlock()
+
+			// Wait HB goroutine to finish
+			cs.stopHBWG.Wait()
+
+			// Exit etcd - this will also cause the watchers to
+			// exit.
+			cs.cli.Close()
+
+			if !cs.unitTest {
+				os.Exit(-1)
+			}
 		} else {
 
-			// The CLI shutdown the local node.  Signal the CLI that
-			// complete.
+			// We are in the CLI process.  The CLI blocks while waiting on
+			// confirmation that the node has reached the DEAD state.
 			if cs.stopNode && (cs.nodeName == cs.hostName) {
 				cs.cliWG.Done()
 			}
