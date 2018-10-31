@@ -327,15 +327,15 @@ func (cs *EtcdConn) setVgOfflining(vgName string) (err error) {
 
 	vgInfo, vgInfoCmp, err := cs.getVgInfo(vgName, RevisionNumber(0))
 	if err != nil {
-		err = fmt.Errorf("setVgOfflining(%s) failed to get VgInfo: %s\n", vgName, err)
+		err = fmt.Errorf("setVgOfflining(%s) failed to get VgInfo: %s", vgName, err)
 		return
 	}
 	if vgInfo.VgState == OFFLINEVS {
-		err = fmt.Errorf("setVgOfflining(): VG %s is already \n", vgName)
+		err = fmt.Errorf("setVgOfflining(): VG %s is already", vgName)
 		return
 	}
 	if vgInfo.VgState == FAILEDVS {
-		err = fmt.Errorf("setVgOfflining(): VG %s is FAILED\n", vgName)
+		err = fmt.Errorf("setVgOfflining(): VG %s is FAILED", vgName)
 		return
 	}
 
@@ -373,7 +373,7 @@ func (cs *EtcdConn) setVgOnlining(vgName string, node string) (err error) {
 
 	vgInfo, vgInfoCmp, err := cs.getVgInfo(vgName, RevisionNumber(0))
 	if err != nil || vgInfo == nil {
-		err = fmt.Errorf("setVgOnlining(%s) failed to get VgInfo: %s\n", vgName, err)
+		err = fmt.Errorf("setVgOnlining(%s) failed to get VgInfo: %s", vgName, err)
 		return
 	}
 
@@ -381,11 +381,11 @@ func (cs *EtcdConn) setVgOnlining(vgName string, node string) (err error) {
 	// node to be offlined is down unless another node steps up to the plate.
 	// Fix this later.
 	if vgInfo.VgState == ONLINEVS || vgInfo.VgState == ONLININGVS {
-		err = fmt.Errorf("setVgOnlining(): VG %s is already %s\n", vgName, vgInfo.VgState)
+		err = fmt.Errorf("setVgOnlining(): VG %s is already %s", vgName, vgInfo.VgState)
 		return
 	}
 	if vgInfo.VgState == FAILEDVS {
-		err = fmt.Errorf("setVgOnlining(): VG %s is FAILED\n", vgName)
+		err = fmt.Errorf("setVgOnlining(): VG %s is FAILED", vgName)
 		return
 	}
 

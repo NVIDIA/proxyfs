@@ -11,15 +11,14 @@ import (
 	"time"
 )
 
-// An etcd revision number.  A revision number refers to a particular
-// transaction in the raft stream that updated the database (or failed).
-//
+// RevisionNumber refers to a particular transaction in the raft stream that
+// updated the database (or failed).
 type RevisionNumber int64
 
-// An etcd revision number.  All values in the database with the same revision
-// number for CreateRevNum, ModRevNum, or RevNum were created in the database,
-// modified in the datbase, or looked up in the database at the same revision
-// number, respectively.
+// EtcdKeyHeader is an etcd revision number.  All values in the database with
+// the same revision number for CreateRevNum, ModRevNum, or RevNum were created
+// in the database, modified in the datbase, or looked up in the database at the
+// same revision number, respectively.
 //
 type EtcdKeyHeader struct {
 	CreateRevNum RevisionNumber
@@ -119,13 +118,11 @@ func (cs *EtcdConn) dumpTxn(txn clientv3.Txn) (dump string) {
 		dump += fmt.Sprintf("expected a pointer, got %v", reflect.TypeOf(txn).Kind())
 
 		panic(fmt.Sprintf("dumpTxn() Type(%T) should be a pointer to _something_", txn))
-		return
 	}
 	if reflect.ValueOf(txn).Elem().Type().Kind() != reflect.Struct {
 		dump += fmt.Sprintf("expected a pointer to a struct, got %v", reflect.TypeOf(txn).Kind())
 
 		panic(fmt.Sprintf("dumpTxn() Type(%T) should be a pointer to struct!", txn))
-		return
 	}
 	fmt.Printf("dumpTxn(): %s\n", dump)
 

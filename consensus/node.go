@@ -122,7 +122,7 @@ func (cs *EtcdConn) getRevNodeState(revNeeded RevisionNumber) (nodeInfo AllNodeI
 		clientv3.WithRev(int64(revNeeded)))
 	if err != nil {
 		fmt.Printf("GET node state failed with: %v\n", err)
-		panic(fmt.Errorf("GET node state rev %d failed with: %v\n", revNeeded, err))
+		panic(fmt.Errorf("GET node state rev %d failed with: %v", revNeeded, err))
 	}
 
 	nodeInfo = parseNodeResp(resp)
