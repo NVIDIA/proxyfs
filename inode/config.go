@@ -1,6 +1,7 @@
 package inode
 
 import (
+	"container/list"
 	"fmt"
 	"sync"
 	"time"
@@ -71,9 +72,7 @@ type volumeStruct struct {
 	flowControl                    *flowControlStruct
 	headhunterVolumeHandle         headhunter.VolumeHandle
 	inodeCache                     sortedmap.LLRBTree //                        key == InodeNumber; value == *inMemoryInodeStruct
-	inodeCacheLRUHead              *inMemoryInodeStruct
-	inodeCacheLRUTail              *inMemoryInodeStruct
-	inodeCacheLRUItems             uint64
+	inodeCacheLRU                  list.List
 	inodeCacheLRUMaxBytes          uint64
 	inodeCacheLRUTicker            *time.Ticker
 	inodeCacheLRUTickerInterval    time.Duration
@@ -272,10 +271,6 @@ func Up(confMap conf.ConfMap) (err error) {
 			physicalContainerLayoutSet:     make(map[string]struct{}),
 			physicalContainerNamePrefixSet: make(map[string]struct{}),
 			physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-			inodeCacheLRUHead:              nil,
-			inodeCacheLRUTail:              nil,
-			inodeCacheLRUItems:             0,
-			snapShotPolicy:                 nil,
 		}
 
 		volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
@@ -658,9 +653,7 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 		}
 		volume.flowControl = nil
 		volume.inodeCache = nil
-		volume.inodeCacheLRUHead = nil
-		volume.inodeCacheLRUTail = nil
-		volume.inodeCacheLRUItems = 0
+		volume.inodeCacheLRU.Init()
 	}
 
 	err = nil
@@ -850,10 +843,6 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 				physicalContainerLayoutSet:     make(map[string]struct{}),
 				physicalContainerNamePrefixSet: make(map[string]struct{}),
 				physicalContainerLayoutMap:     make(map[string]*physicalContainerLayoutStruct),
-				inodeCacheLRUHead:              nil,
-				inodeCacheLRUTail:              nil,
-				inodeCacheLRUItems:             0,
-				snapShotPolicy:                 nil,
 			}
 
 			volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)

@@ -72,14 +72,13 @@ type inFlightLogSegmentStruct struct { //               Used as (by reference) V
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex        //                                             Used to synchronize with background fileInodeFlusherDaemon
-	sync.WaitGroup    //                                             FileInode Flush requests wait on this
-	inodeCacheLRUNext *inMemoryInodeStruct
-	inodeCacheLRUPrev *inMemoryInodeStruct
-	dirty             bool
-	volume            *volumeStruct
-	snapShotID        uint64
-	payload           interface{} //                                 DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
+	lruCacheLink   list.Element
+	sync.Mutex     //                                             Used to synchronize with background fileInodeFlusherDaemon
+	sync.WaitGroup //                                             FileInode Flush requests wait on this
+	dirty          bool
+	volume         *volumeStruct
+	snapShotID     uint64
+	payload        interface{} //                                 DirInode:  B+Tree with Key == dir_entry_name, Value = InodeNumber
 	//                                                               FileInode: B+Tree with Key == fileOffset, Value = *fileExtent
 	openLogSegment           *inFlightLogSegmentStruct            // FileInode only... also in inFlightLogSegmentMap
 	inFlightLogSegmentMap    map[uint64]*inFlightLogSegmentStruct // FileInode: key == logSegmentNumber
@@ -201,8 +200,6 @@ func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode
 	}
 
 	inMemoryInode = &inMemoryInodeStruct{
-		inodeCacheLRUNext:        nil,
-		inodeCacheLRUPrev:        nil,
 		dirty:                    false,
 		volume:                   vS,
 		snapShotID:               snapShotID,
@@ -311,18 +308,7 @@ func (vS *volumeStruct) inodeCacheInsertWhileLocked(inode *inMemoryInodeStruct) 
 	}
 
 	// Place inode at the MRU end of inodeCacheLRU
-
-	if 0 == vS.inodeCacheLRUItems {
-		vS.inodeCacheLRUHead = inode
-		vS.inodeCacheLRUTail = inode
-		vS.inodeCacheLRUItems = 1
-	} else {
-		inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
-		inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode
-
-		vS.inodeCacheLRUTail = inode
-		vS.inodeCacheLRUItems++
-	}
+	vS.inodeCacheLRU.PushBack(inode)
 
 	return
 }
@@ -335,29 +321,9 @@ func (vS *volumeStruct) inodeCacheInsert(inode *inMemoryInodeStruct) (ok bool, e
 }
 
 func (vS *volumeStruct) inodeCacheTouchWhileLocked(inode *inMemoryInodeStruct) {
+
 	// Move inode to the MRU end of inodeCacheLRU
-
-	if inode != vS.inodeCacheLRUTail {
-		if inode == vS.inodeCacheLRUHead {
-			vS.inodeCacheLRUHead = inode.inodeCacheLRUNext
-			vS.inodeCacheLRUHead.inodeCacheLRUPrev = nil
-
-			inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
-			inode.inodeCacheLRUNext = nil
-
-			vS.inodeCacheLRUTail.inodeCacheLRUNext = inode
-			vS.inodeCacheLRUTail = inode
-		} else {
-			inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode.inodeCacheLRUNext
-			inode.inodeCacheLRUNext.inodeCacheLRUPrev = inode.inodeCacheLRUPrev
-
-			inode.inodeCacheLRUNext = nil
-			inode.inodeCacheLRUPrev = vS.inodeCacheLRUTail
-
-			vS.inodeCacheLRUTail.inodeCacheLRUNext = inode
-			vS.inodeCacheLRUTail = inode
-		}
-	}
+	vS.inodeCacheLRU.MoveToBack(&inode.lruCacheLink)
 }
 
 func (vS *volumeStruct) inodeCacheTouch(inode *inMemoryInodeStruct) {
@@ -372,15 +338,15 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 
 	vS.Lock()
 
-	if (vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes {
+	if (uint64(vS.inodeCacheLRU.Len()) * globals.inodeSize) > vS.inodeCacheLRUMaxBytes {
 		// Check, at most, 1.25 * (minimum_number_to_drop)
-		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
+		inodesToDrop = uint64(vS.inodeCacheLRU.Len())*globals.inodeSize - vS.inodeCacheLRUMaxBytes
 		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
 		for (inodesToDrop > 0) && ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) {
 			inodesToDrop--
 
-			ic := vS.inodeCacheLRUHead
+			ic := vS.inodeCacheLRU.Front().Value.(*inMemoryInodeStruct)
 
 			// Create a DLM lock object
 			id := dlm.GenerateCallerID()
@@ -390,7 +356,7 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 			// Inode is locked; skip it
 			if err != nil {
 				// Move inode to tail of LRU
-				vS.inodeCacheTouchWhileLocked(ic)
+				vS.inodeCacheLRU.MoveToBack(&ic.lruCacheLink)
 				locked++
 				continue
 			}
@@ -398,8 +364,9 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 			if ic.dirty {
 				// The inode is busy - drop the DLM lock and move to tail
 				inodeRWLock.Unlock()
+
+				vS.inodeCacheLRU.MoveToBack(&ic.lruCacheLink)
 				dirty++
-				vS.inodeCacheTouchWhileLocked(ic)
 				continue
 			}
 
@@ -408,7 +375,8 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 			discarded++
 			ok, err = vS.inodeCacheDropWhileLocked(ic)
 			if err != nil || !ok {
-				pStr := fmt.Errorf("The inodes was not found in the inode cache - ok: %v err: %v", ok, err)
+				pStr := fmt.Errorf("Inode %v was not found in the inode cache - ok: %v err: %v",
+					ic, ok, err)
 				panic(pStr)
 			}
 
@@ -429,35 +397,7 @@ func (vS *volumeStruct) inodeCacheDropWhileLocked(inode *inMemoryInodeStruct) (o
 	if (nil != err) || !ok {
 		return
 	}
-
-	if inode == vS.inodeCacheLRUHead {
-		if inode == vS.inodeCacheLRUTail {
-			vS.inodeCacheLRUHead = nil
-			vS.inodeCacheLRUTail = nil
-			vS.inodeCacheLRUItems = 0
-		} else {
-			vS.inodeCacheLRUHead = inode.inodeCacheLRUNext
-			vS.inodeCacheLRUHead.inodeCacheLRUPrev = nil
-			vS.inodeCacheLRUItems--
-
-			inode.inodeCacheLRUNext = nil
-		}
-	} else {
-		if inode == vS.inodeCacheLRUTail {
-			vS.inodeCacheLRUTail = inode.inodeCacheLRUPrev
-			vS.inodeCacheLRUTail.inodeCacheLRUNext = nil
-			vS.inodeCacheLRUItems--
-
-			inode.inodeCacheLRUPrev = nil
-		} else {
-			inode.inodeCacheLRUPrev.inodeCacheLRUNext = inode.inodeCacheLRUNext
-			inode.inodeCacheLRUNext.inodeCacheLRUPrev = inode.inodeCacheLRUPrev
-			vS.inodeCacheLRUItems--
-
-			inode.inodeCacheLRUNext = nil
-			inode.inodeCacheLRUPrev = nil
-		}
-	}
+	vS.inodeCacheLRU.Remove(&inode.lruCacheLink)
 
 	return
 }
@@ -546,8 +486,6 @@ func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType
 	birthTime = time.Now()
 
 	inMemoryInode = &inMemoryInodeStruct{
-		inodeCacheLRUNext:        nil,
-		inodeCacheLRUPrev:        nil,
 		dirty:                    true,
 		volume:                   vS,
 		snapShotID:               snapShotID,
