@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -64,13 +65,17 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 	if confErr == nil {
 		switch profileType {
 		case "Block":
+			runtime.SetBlockProfileRate(10 * 1000 * 1000) // one trace per 10 msec blocked
 			defer profile.Start(profile.BlockProfile).Stop()
 		case "CPU":
+			runtime.SetCPUProfileRate(100) // this may not work
 			defer profile.Start(profile.CPUProfile).Stop()
 		case "Memory":
 			defer profile.Start(profile.MemProfile).Stop()
 		case "Mutex":
-			defer profile.Start(profile.MutexProfile).Stop()
+			// defer profile.Start(profile.MutexProfile).Stop()
+			runtime.SetMutexProfileFraction(10 * 1000) // record 1 out of 10,000 contention events
+			defer profile.Start(profile.BlockProfile).Stop()
 		}
 	}
 	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
