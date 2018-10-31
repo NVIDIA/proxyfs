@@ -833,7 +833,7 @@ func (tree *btreeTreeStruct) FetchLayoutReport() (layoutReport LayoutReport, err
 	return
 }
 
-func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error) {
+func (tree *btreeTreeStruct) Flush2(andPurge bool) (rootLocation BPlusTreeLocation, totalBytes uint64, err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -844,13 +844,22 @@ func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, root
 		return
 	}
 
-	rootObjectNumber = tree.root.objectNumber
-	rootObjectOffset = tree.root.objectOffset
-	rootObjectLength = tree.root.objectLength
+	rootLocation.ObjectNumber = tree.root.objectNumber
+	rootLocation.ObjectOffset = tree.root.objectOffset
+	rootLocation.ObjectLength = tree.root.objectLength
+	totalBytes = 0
 
 	// All done
 
 	err = nil
+	return
+}
+
+func (tree *btreeTreeStruct) Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error) {
+
+	var rootLocation BPlusTreeLocation
+
+	rootLocation, _, err = tree.Flush2(andPurge)
 	return
 }
 

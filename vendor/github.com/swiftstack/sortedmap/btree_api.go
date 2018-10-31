@@ -12,12 +12,21 @@ var OnDiskByteOrder = cstruct.LittleEndian
 // LayoutReport is a map where key is an objectNumber and value is objectBytes used in that objectNumber
 type LayoutReport map[uint64]uint64
 
+// BPlusTreeLocation describes the "location" where the root of a BPlusTree is
+// stored (it may contain the entire tree)
+type BPlusTreeLocation struct {
+	ObjectNumber uint64
+	ObjectOffset uint64
+	ObjectLength uint64
+}
+
 // BPlusTree interface declares the available methods available for a B+Tree
 type BPlusTree interface {
 	SortedMap
 	FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64)
 	FetchLayoutReport() (layoutReport LayoutReport, err error)
 	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error)
+	Flush2(andPurge bool) (rootLocation BPlusTreeLocation, totalBytes uint64, err error)
 	Purge(full bool) (err error)
 	Touch() (err error)
 	TouchItem(thisItemIndexToTouch uint64) (nextItemIndexToTouch uint64, err error)
