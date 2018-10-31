@@ -91,10 +91,11 @@ func (tc *TestCluster) DestroyClient(cli *clientv3.Client, id int) {
 func watcher(t *testing.T, cli *clientv3.Client, key string, expectedValue string,
 	swg *sync.WaitGroup, fwg *sync.WaitGroup) {
 
-	swg.Done() // The watcher is running!
-
 	assert := assert.New(t)
 	wch1 := cli.Watch(context.Background(), key)
+
+	swg.Done() // The watcher is running!
+
 	for wresp1 := range wch1 {
 		for _, e := range wresp1.Events {
 			assert.Equal(expectedValue, string(e.Kv.Value),
