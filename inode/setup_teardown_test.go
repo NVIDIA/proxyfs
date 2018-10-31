@@ -2,8 +2,11 @@ package inode
 
 import (
 	"io/ioutil"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
+	_ "runtime/pprof"
 	"sync"
 	"syscall"
 	"testing"
@@ -202,6 +205,10 @@ func testSetup(t *testing.T, starvationMode bool) {
 	if nil != err {
 		t.Fatalf("inode.Up() failed: %v", err)
 	}
+
+	go func() {
+		logger.Info(http.ListenAndServe("localhost:6060", nil))
+	}()
 }
 
 func testTeardown(t *testing.T) {

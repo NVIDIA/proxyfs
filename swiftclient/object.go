@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"bitbucket.org/creachadair/cityhash"
-
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -903,8 +903,6 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	evtlog.Record(evtlog.FormatObjectPutChunkedStart, accountName, containerName, objectName)
 
-	objectFetchChunkedPutContextCnt++
-
 	connection = acquireChunkedConnection(useReserveForVolumeName)
 
 	headers = make(map[string][]string)
@@ -912,7 +910,7 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	// check for chaos error generation (testing only)
 	if globals.chaosFetchChunkedPutFailureRate > 0 &&
-		objectFetchChunkedPutContextCnt%globals.chaosFetchChunkedPutFailureRate == 0 {
+		atomic.AddUint64(&objectFetchChunkedPutContextCnt, 1)%globals.chaosFetchChunkedPutFailureRate == 0 {
 		err = fmt.Errorf("swiftclient.objectFetchChunkedPutContext returning simulated error")
 	} else {
 		err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)

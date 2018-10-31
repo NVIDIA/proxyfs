@@ -3,6 +3,7 @@ package httpserver
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 type ExtentMapElementStruct struct {
@@ -192,6 +194,10 @@ func Up(confMap conf.ConfMap) (err error) {
 	globals.active = true
 	globals.wg.Add(1)
 	go serveHTTP()
+
+	go func() {
+		logger.Info(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	err = nil
 	return
