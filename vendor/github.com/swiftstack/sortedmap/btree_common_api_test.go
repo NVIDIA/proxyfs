@@ -12,7 +12,10 @@ const (
 	commonBPlusTreeTestNumKeysMaxTypical = uint64(100)
 	commonBPlusTreeTestNumKeysMaxLarge   = uint64(1000)
 
-	commonBPlusTreeBenchmarkNumKeys = 10000
+	// commonBPlusTreeBenchmarkNumKeys = 10000
+	commonBPlusTreeBenchmarkNumKeys = 500000
+
+	useCache = true
 )
 
 type commonBPlusTreeTestContextStruct struct {
@@ -281,55 +284,101 @@ func TestBPlusTreeBisect(t *testing.T) {
 }
 
 func BenchmarkBPlusTreePut(b *testing.B) {
+
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkPut(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeGetByIndex(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkGetByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreePatchByIndex(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkPatchByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeDeleteByIndex(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkDeleteByIndex(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeGetByKey(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkGetByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeBisectLeft(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkBisectLeft(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeBisectRight(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkBisectRight(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreePatchByKey(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkPatchByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }
 
 func BenchmarkBPlusTreeDeleteByKey(b *testing.B) {
+	var cache BPlusTreeCache
+	if useCache {
+		cache = NewBPlusTreeCache(commonBPlusTreeBenchmarkNumKeys, commonBPlusTreeBenchmarkNumKeys+1024)
+	}
+
 	context := &commonBPlusTreeBenchmarkContextStruct{b: b}
-	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, nil)
+	context.tree = NewBPlusTree(commonBPlusTreeTestNumKeysMaxTypical, CompareInt, context, cache)
 	metaBenchmarkDeleteByKey(b, context.tree, commonBPlusTreeBenchmarkNumKeys)
 }

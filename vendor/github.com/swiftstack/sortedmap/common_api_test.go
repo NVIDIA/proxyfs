@@ -6,9 +6,9 @@ package sortedmap
 // Random (non-repeating) sequence dynamically generated via Knuth Shuffle
 
 import (
-	cryptoRand "crypto/rand"
+	// cryptoRand "crypto/rand"
 	"fmt"
-	"math/big"
+	// "math/big"
 	mathRand "math/rand"
 	"strconv"
 	"testing"
@@ -790,14 +790,17 @@ func metaTestDeleteByKeySimple(t *testing.T, tree SortedMap) {
 }
 
 func testKnuthShuffledIntSlice(n int) (intSlice []int, err error) {
-	var (
-		swapFrom int64
-		swapTo   int64
-	)
+
 	intSlice = make([]int, n)
 	for i := 0; i < n; i++ {
 		intSlice[i] = i
 	}
+
+/*
+	var (
+		swapFrom int64
+		swapTo   int64
+	)
 	for swapFrom = int64(n - 1); swapFrom > int64(0); swapFrom-- {
 		if pseudoRandom {
 			if nil == randSource {
@@ -821,6 +824,7 @@ func testKnuthShuffledIntSlice(n int) (intSlice []int, err error) {
 			intSlice[swapFrom], intSlice[swapTo] = intSlice[swapTo], intSlice[swapFrom]
 		}
 	}
+*/
 
 	err = nil
 	return
