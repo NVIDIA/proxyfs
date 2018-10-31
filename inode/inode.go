@@ -377,6 +377,9 @@ func (vS *volumeStruct) inodeCacheDiscard() (discarded uint64, dirty uint64, loc
 		inodesToDrop = (vS.inodeCacheLRUItems * globals.inodeSize) - vS.inodeCacheLRUMaxBytes
 		inodesToDrop = inodesToDrop / globals.inodeSize
 		inodesToDrop += inodesToDrop / 4
+
+		logger.Infof("inodeCacheDiscard(): checking %d inodes in a cache with %d inodes (maximum %d)",
+			inodesToDrop, vS.inodeCacheLRUItems, vS.inodeCacheLRUMaxBytes/globals.inodeSize)
 		for (inodesToDrop > 0) && ((vS.inodeCacheLRUItems * globals.inodeSize) > vS.inodeCacheLRUMaxBytes) {
 			inodesToDrop--
 

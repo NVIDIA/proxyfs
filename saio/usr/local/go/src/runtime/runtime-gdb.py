@@ -473,10 +473,10 @@ class GoroutineCmd(gdb.Command):
 
 		for ptr in goptr_list:
 			gor = goroutine_info(ptr)
-			if gor['atomicstatus'] == 'gdead':
+			if gor['atomicstatus'] == 'dead':
 				continue
 
-			print("\ngoroutine %d:" % (gor['goid']))
+			print("\ngoroutine %d [%s]:" % (gor['goid'], gor['atomicstatus']))
 			if gor['sp_as_int'] == 0:
 				print("#0  %s -- stack trace unavailable (goroutine status: %s)" %
 				      (gor['pc_as_str'], gor['atomicstatus']))
