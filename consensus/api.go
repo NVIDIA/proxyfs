@@ -98,11 +98,17 @@ func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdCo
 
 	// Create an etcd client - our current etcd setup does not listen on
 	// localhost.  Therefore, we pass the IP addresses used by etcd.
-	cs.cli, err = clientv3.New(clientv3.Config{Endpoints: endpoints, DialTimeout: timeout})
+	cs.cli, err = clientv3.New(clientv3.Config{Endpoints: endpoints, DialTimeout: timeout,
+		AutoSyncInterval: 60 * time.Second})
 
 	cs.kvc = clientv3.NewKV(cs.cli)
 
 	return
+}
+
+// Endpoints returns the current list of endpoints in use
+func (cs *EtcdConn) Endpoints() []string {
+	return cs.cli.Endpoints()
 }
 
 func (cs *EtcdConn) startWatchers() {
