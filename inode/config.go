@@ -23,8 +23,8 @@ type readCacheKeyStruct struct {
 
 type readCacheElementStruct struct {
 	readCacheKey readCacheKeyStruct
-	next         *readCacheElementStruct // nil if MRU element of flowControlStruct.readCache
-	prev         *readCacheElementStruct // nil if LRU element of flowControlStruct.readCache
+	next         *readCacheElementStruct // nil if MRU element of volumeGroupStruct.readCache
+	prev         *readCacheElementStruct // nil if LRU element of volumeGroupStruct.readCache
 	cacheLine    []byte
 }
 
@@ -559,7 +559,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	}
 
 	defaultPhysicalContainerLayout = &physicalContainerLayoutStruct{
-		name:                        defaultPhysicalContainerLayoutName,
+		name: defaultPhysicalContainerLayoutName,
 		containerNameSliceNextIndex: 0,
 		containerNameSliceLoopCount: 0,
 	}
