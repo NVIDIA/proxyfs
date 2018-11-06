@@ -576,7 +576,11 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 
 		volumeGroup.activePeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupName, "PrimaryPeer")
 		if nil != err {
-			return
+			if nil == confMap.VerifyOptionValueIsEmpty("VolumeGroup:"+volumeGroupName, "PrimaryPeer") {
+				volumeGroup.activePeer = ""
+			} else {
+				return
+			}
 		}
 
 		volumeGroup.served = (whoAmI == volumeGroup.activePeer)
@@ -848,8 +852,8 @@ func upgradeConfMapIfNeeded(confMap conf.ConfMap) (err error) {
 		}
 
 		primaryPeer, primaryPeerOK = volume["PrimaryPeer"]
-		if !primaryPeerOK {
-			err = fmt.Errorf("confMap must contain a Volume:%s.PrimaryPeer key", volumeName)
+		if !primaryPeerOK || (1 < len(primaryPeer)) {
+			err = fmt.Errorf("confMap must contain an empty or single-valued Volume:%s.PrimaryPeer key", volumeName)
 			return
 		}
 
