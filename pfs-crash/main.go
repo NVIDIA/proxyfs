@@ -25,6 +25,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/httpserver"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -153,6 +154,12 @@ func main() {
 
 		mkproxyfsArgs = append(mkproxyfsArgs, confStrings...)
 		proxyfsdArgs = append(proxyfsdArgs, confStrings...)
+	}
+
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		log.Fatalf("Failed to upgrade config: %v", err)
 	}
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")

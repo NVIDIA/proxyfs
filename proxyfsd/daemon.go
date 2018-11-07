@@ -19,6 +19,7 @@ import (
 	_ "github.com/swiftstack/ProxyFS/fuse"
 	_ "github.com/swiftstack/ProxyFS/httpserver"
 	_ "github.com/swiftstack/ProxyFS/jrpcfs"
+	_ "github.com/swiftstack/ProxyFS/statslogger"
 )
 
 // Daemon is launched as a GoRoutine that launches ProxyFS. During startup, the parent should read errChan
