@@ -134,6 +134,13 @@ func main() {
 		}
 	}
 
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "Failed to upgrade config: %v", err)
+		os.Exit(1)
+	}
+
 	// Start up needed ProxyFS components
 
 	err = transitions.Up(confMap)

@@ -65,6 +65,12 @@ func main() {
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		log.Fatalf("Failed to upgrade config: %v", err)
+	}
+
 	err = transitions.Up(confMap)
 	if nil != err {
 		log.Fatalf("transitions.Up() failed: %v", err)

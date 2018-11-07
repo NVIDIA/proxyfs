@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 var (
@@ -76,6 +77,12 @@ func main() {
 	err = confMap.UpdateFromStrings(args[1:])
 	if nil != err {
 		log.Fatalf("failed to load config overrides: %v", err)
+	}
+
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		log.Fatalf("Failed to upgrade config: %v", err)
 	}
 
 	// Process resultant confMap

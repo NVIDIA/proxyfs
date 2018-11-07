@@ -21,14 +21,6 @@ const (
 	FormatTestPatternSSS016X016X03D
 	FormatHalterArm
 	FormatHalterDisarm
-	FormatUpSequenceStart
-	FormatUpSequenceEnd
-	FormatPauseAndContractSequenceStart
-	FormatPauseAndContractSequenceEnd
-	FormatExpandAndResumeSequenceStart
-	FormatExpandAndResumeSequenceEnd
-	FormatDownSequenceStart
-	FormatDownSequenceEnd
 	FormatAccountDelete
 	FormatAccountGet
 	FormatAccountHead
@@ -170,38 +162,6 @@ var (
 		eventType{ // FormatHalterDisarm
 			patternType:  patternS,
 			formatString: "%s halter.Disarm(%s) called",
-		},
-		eventType{ // FormatUpSequenceStart
-			patternType:  patternFixed,
-			formatString: "%s Up() Sequence Start",
-		},
-		eventType{ // FormatUpSequenceEnd
-			patternType:  patternFixed,
-			formatString: "%s Up() Sequence End",
-		},
-		eventType{ // FormatPauseAndContractSequenceStart
-			patternType:  patternFixed,
-			formatString: "%s PauseAndContract() Sequence Start",
-		},
-		eventType{ // FormatPauseAndContractSequenceEnd
-			patternType:  patternFixed,
-			formatString: "%s PauseAndContract() Sequence End",
-		},
-		eventType{ // FormatExpandAndResumeSequenceStart
-			patternType:  patternFixed,
-			formatString: "%s ExpandAndResume() Sequence Start",
-		},
-		eventType{ // FormatExpandAndResumeSequenceEnd
-			patternType:  patternFixed,
-			formatString: "%s ExpandAndResume() Sequence End",
-		},
-		eventType{ // FormatDownSequenceStart
-			patternType:  patternFixed,
-			formatString: "%s Down() Sequence Start",
-		},
-		eventType{ // FormatDownSequenceEnd
-			patternType:  patternFixed,
-			formatString: "%s Down() Sequence End",
 		},
 		eventType{ // FormatAccountDelete
 			patternType:  patternS03D,

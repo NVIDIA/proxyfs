@@ -64,19 +64,20 @@ func register(packageName string, callbacks Callbacks) {
 
 func up(confMap conf.ConfMap) (err error) {
 	var (
-		registrationListElement      *list.Element
-		registrationListElementValue *registrationListElementValueStruct
-		volume                       *volumeStruct
-		volumeGroup                  *volumeGroupStruct
-		volumeGroupName              string
-		volumeName                   string
+		registrationListElement                *list.Element
+		registrationListElementValue           *registrationListElementValueStruct
+		registrationListPackageNameStringSlice []string
+		volume                                 *volumeStruct
+		volumeGroup                            *volumeGroupStruct
+		volumeGroupName                        string
+		volumeName                             string
 	)
 
-	logger.Tracef("transitions.Up() called")
 	defer func() {
 		if nil == err {
-			logger.Tracef("transitions.Up() returning successfully")
+			logger.Infof("transitions.Up() returning successfully")
 		} else {
+			// On the relatively good likelihood that at least logger.Up() worked...
 			logger.Errorf("transitions.Up() returning with failure: %v", err)
 		}
 	}()
@@ -126,6 +127,20 @@ func up(confMap conf.ConfMap) (err error) {
 		}
 		registrationListElement = registrationListElement.Next()
 	}
+
+	// Log transitions registrationList from Front() to Back()
+
+	registrationListPackageNameStringSlice = make([]string, 0, globals.registrationList.Len())
+
+	registrationListElement = globals.registrationList.Front()
+
+	for nil != registrationListElement {
+		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationListPackageNameStringSlice = append(registrationListPackageNameStringSlice, registrationListElementValue.packageName)
+		registrationListElement = registrationListElement.Next()
+	}
+
+	logger.Infof("Transitions Package Registration List: %v", registrationListPackageNameStringSlice)
 
 	// Issue Callbacks.VolumeGroupCreated() calls from Front() to Back() of globals.registrationList
 
@@ -210,10 +225,10 @@ func signaled(confMap conf.ConfMap) (err error) {
 		volumeName                   string
 	)
 
-	logger.Tracef("transitions.Signaled() called")
+	logger.Infof("transitions.Signaled() called")
 	defer func() {
 		if nil == err {
-			logger.Tracef("transitions.Signaled() returning successfully")
+			logger.Infof("transitions.Signaled() returning successfully")
 		} else {
 			logger.Errorf("transitions.Signaled() returning with failure: %v", err)
 		}
@@ -397,11 +412,10 @@ func down(confMap conf.ConfMap) (err error) {
 		volumeName                   string
 	)
 
-	logger.Tracef("transitions.Down() called")
+	logger.Infof("transitions.Down() called")
 	defer func() {
-		if nil == err {
-			logger.Tracef("transitions.Down() returning successfully")
-		} else {
+		if nil != err {
+			// On the relatively good likelihood that the failure occurred before calling logger.Down()...
 			logger.Errorf("transitions.Down() returning with failure: %v", err)
 		}
 	}()

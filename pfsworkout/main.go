@@ -195,6 +195,13 @@ func main() {
 			}
 		}
 
+		// Upgrade confMap if necessary
+		err = transitions.UpgradeConfMapIfNeeded(confMap)
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "Failed to upgrade config: %v", err)
+			os.Exit(1)
+		}
+
 		// Select first Volume of the first "active" VolumeGroup in [FSGlobals]VolumeGroupList
 
 		whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
