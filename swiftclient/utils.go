@@ -80,7 +80,7 @@ func getStarvationParameters() (starvationParameters *StarvationParameters) {
 	return
 }
 
-func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct) {
+func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct, err error) {
 	var (
 		connectionToBeCreated bool
 		cv                    *sync.Cond
@@ -111,7 +111,8 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 
 			connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: useReserveForVolumeName}
 
-			openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")", useReserveForVolumeName), connection)
+			err = openConnection(fmt.Sprintf("swiftclient.acquireChunkedConnection(\"%v\")",
+				useReserveForVolumeName), connection)
 
 			stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 		}
@@ -169,7 +170,7 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 
 	if connectionToBeCreated {
 		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
-		openConnection("swiftclient.acquireChunkedConnection()", connection)
+		err = openConnection("swiftclient.acquireChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftChunkedConnsCreateOps)
 	} else {
 		stats.IncrementOperations(&stats.SwiftChunkedConnsReuseOps)
@@ -243,7 +244,7 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 // when it tries to use it.  Its really no different then if the connection
 // failed after we opened it.
 
-func acquireNonChunkedConnection() (connection *connectionStruct) {
+func acquireNonChunkedConnection() (connection *connectionStruct, err error) {
 	var (
 		connectionToBeCreated bool
 		cv                    *sync.Cond
@@ -285,7 +286,7 @@ func acquireNonChunkedConnection() (connection *connectionStruct) {
 
 	if connectionToBeCreated {
 		connection = &connectionStruct{connectionNonce: globals.connectionNonce, reserveForVolumeName: ""}
-		openConnection("swiftclient.acquireNonChunkedConnection()", connection)
+		err = openConnection("swiftclient.acquireNonChunkedConnection()", connection)
 		stats.IncrementOperations(&stats.SwiftNonChunkedConnsCreateOps)
 	} else {
 		stats.IncrementOperations(&stats.SwiftNonChunkedConnsReuseOps)
@@ -352,23 +353,18 @@ func nonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
 //
 // The connection is closed first, just in case it was already open.
 //
-func openConnection(caller string, connection *connectionStruct) {
-	var (
-		err error
-	)
+func openConnection(caller string, connection *connectionStruct) (err error) {
 
 	if connection.tcpConn != nil {
 		_ = connection.tcpConn.Close()
 	}
 
 	connection.tcpConn, err = net.DialTCP("tcp4", nil, globals.noAuthTCPAddr)
-	if nil != err {
-		logger.FatalfWithError(
-			err,
-			"%s cannot connect to Swift NoAuth Pipeline at %s",
-			caller,
-			globals.noAuthStringAddr)
+	if err != nil {
+		logger.WarnfWithError(err, "%s cannot connect to Swift NoAuth Pipeline at %s",
+			caller, globals.noAuthStringAddr)
 	}
+	return
 }
 
 func writeBytesToTCPConn(tcpConn *net.TCPConn, buf []byte) (err error) {

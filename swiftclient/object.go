@@ -64,7 +64,11 @@ func objectContentLength(accountName string, containerName string, objectName st
 		isError            bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
 	if nil != err {
@@ -208,7 +212,11 @@ func objectDeleteOneTime(accountName string, containerName string, objectName st
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
 	if nil != err {
@@ -292,7 +300,11 @@ func objectGet(accountName string, containerName string, objectName string, offs
 	headers = make(map[string][]string)
 	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+length-1), 10)}
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
 	if nil != err {
@@ -407,7 +419,11 @@ func objectHead(accountName string, containerName string, objectName string) (he
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
 	if nil != err {
@@ -486,7 +502,11 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		isError       bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
 	if nil != err {
@@ -611,7 +631,11 @@ func objectRead(accountName string, containerName string, objectName string, off
 	headers = make(map[string][]string)
 	headers["Range"] = []string{"bytes=" + strconv.FormatUint(offset, 10) + "-" + strconv.FormatUint((offset+capacity-1), 10)}
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
 	if nil != err {
@@ -735,7 +759,11 @@ func objectTail(accountName string, containerName string, objectName string, len
 	headers = make(map[string][]string)
 	headers["Range"] = []string{"bytes=-" + strconv.FormatUint(length, 10)}
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
 	if nil != err {
@@ -905,7 +933,11 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	objectFetchChunkedPutContextCnt++
 
-	connection = acquireChunkedConnection(useReserveForVolumeName)
+	connection, err = acquireChunkedConnection(useReserveForVolumeName)
+	if err != nil {
+		// acquireChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	headers = make(map[string][]string)
 	headers["Transfer-Encoding"] = []string{"chunked"}
@@ -1253,13 +1285,19 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		return
 	}
 
-	// clear error from the previous attempt
+	// clear error from the previous attempt and make active
 	chunkedPutContext.err = nil
-
-	// re-open chunked put connection
-	openConnection("swiftclient.chunkedPutContext.retry()", chunkedPutContext.connection)
-
 	chunkedPutContext.active = true
+
+	// try to re-open chunked put connection
+	err = openConnection("swiftclient.chunkedPutContext.retry()", chunkedPutContext.connection)
+	if err != nil {
+		chunkedPutContext.Unlock()
+		err = blunder.AddError(err, blunder.BadHTTPPutError)
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") openConnection() failed",
+			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
+		return
+	}
 
 	headers = make(map[string][]string)
 	headers["Transfer-Encoding"] = []string{"chunked"}
