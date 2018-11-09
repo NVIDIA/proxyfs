@@ -57,7 +57,11 @@ func main() {
 	// how ever we get to here, exit abnormally if nil != err
 
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "proxyfsd: Daemon(): returned error: %v\n", err) // Can't use logger.*() as it's not currently "up"
-		os.Exit(1)                                                              // Exit with non-success status that can be checked from scripts
+		exitStr := fmt.Sprintf("proxyfsd: Daemon(): returned error: %v\n", err)
+
+		// Can't use logger.*() as it's not currently "up"
+		syslogger.Err(exitStr)
+		fmt.Fprintf(os.Stderr, exitStr)
+		os.Exit(1)           // Exit with non-success status that can be checked from scripts
 	}
 }
