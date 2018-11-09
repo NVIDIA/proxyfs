@@ -48,7 +48,11 @@ func accountDelete(accountName string) (err error) {
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName, nil)
 	if nil != err {
@@ -116,7 +120,11 @@ func accountGetWithRetry(accountName string) (headers map[string][]string, conta
 	headers = make(map[string][]string)
 	containerList = make([]string, 0)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	marker = ""
 
@@ -225,7 +233,11 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName, nil)
 	if nil != err {
@@ -297,7 +309,11 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
@@ -387,7 +403,11 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
