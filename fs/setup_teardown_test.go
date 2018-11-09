@@ -16,9 +16,9 @@ import (
 )
 
 var (
-	mS               *mountStruct // our global mountStruct to be used in tests
-	ramswiftDoneChan chan bool    // our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
-	testConfMap      conf.ConfMap
+	testConfMap          conf.ConfMap
+	testMountStruct      *mountStruct // our global mountStruct to be used in tests
+	testRamswiftDoneChan chan bool    // our test chan used during testTeardown() to know ramswift is, indeed, down
 )
 
 func testSetup(t *testing.T, starvationMode bool) {
@@ -132,8 +132,8 @@ func testSetup(t *testing.T, starvationMode bool) {
 	}
 
 	signalHandlerIsArmedWG.Add(1)
-	ramswiftDoneChan = make(chan bool, 1)
-	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmedWG, ramswiftDoneChan, unix.SIGTERM)
+	testRamswiftDoneChan = make(chan bool, 1)
+	go ramswift.Daemon("/dev/null", testConfMapStrings, &signalHandlerIsArmedWG, testRamswiftDoneChan, unix.SIGTERM)
 
 	signalHandlerIsArmedWG.Wait()
 
@@ -146,7 +146,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 	if nil != err {
 		t.Fatalf("fs.Mount() failed: %v", err)
 	}
-	mS, ok = mountHandle.(*mountStruct)
+	testMountStruct, ok = mountHandle.(*mountStruct)
 	if !ok {
 		t.Fatalf("fs.Mount() returned !ok")
 	}
@@ -164,7 +164,7 @@ func testTeardown(t *testing.T) {
 	}
 
 	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)
-	_ = <-ramswiftDoneChan
+	_ = <-testRamswiftDoneChan
 
 	// Run GC to reclaim memory before we proceed to next test
 	runtime.GC()
