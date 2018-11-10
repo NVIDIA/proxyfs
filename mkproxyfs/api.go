@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 type Mode int
@@ -77,8 +78,8 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	defer func() {
 		_ = logger.Down()
 	}()
-	logger.Infof("mkproxyfs is starting up (PID %d); invoked as '%s'",
-		os.Getpid(), strings.Join(execArgs, "' '"))
+	logger.Infof("mkproxyfs is starting up (version %s) (PID %d); invoked as '%s'",
+		version.ProxyFSVersion, os.Getpid(), strings.Join(execArgs, "' '"))
 
 	err = evtlog.Up(confMap)
 	if nil != err {

@@ -48,7 +48,11 @@ func containerDelete(accountName string, containerName string) (err error) {
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName+"/"+containerName, nil)
 	if nil != err {
@@ -116,7 +120,11 @@ func containerGetWithRetry(accountName string, containerName string) (headers ma
 	headers = make(map[string][]string)
 	objectList = make([]string, 0)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	marker = ""
 
@@ -226,7 +234,11 @@ func containerHead(accountName string, containerName string) (headers map[string
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName+"/"+containerName, nil)
 	if nil != err {
@@ -298,7 +310,11 @@ func containerPost(accountName string, containerName string, requestHeaders map[
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
@@ -388,7 +404,11 @@ func containerPut(accountName string, containerName string, requestHeaders map[s
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 

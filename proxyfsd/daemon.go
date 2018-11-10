@@ -25,6 +25,7 @@ import (
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/statslogger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 // Daemon is launched as a GoRoutine that launches ProxyFS. During startup, the parent should read errChan
@@ -83,8 +84,8 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		return
 	}
 	wg.Add(1)
-	logger.Infof("proxyfsd is starting up (PID %d); invoked as '%s'",
-		os.Getpid(), strings.Join(execArgs, "' '"))
+	logger.Infof("proxyfsd is starting up (version %s) (PID %d); invoked as '%s'",
+		version.ProxyFSVersion, os.Getpid(), strings.Join(execArgs, "' '"))
 	defer func() {
 		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
 		err = logger.Down()
