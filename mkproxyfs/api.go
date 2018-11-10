@@ -12,6 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 type Mode int
@@ -91,8 +92,8 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		return
 	}
 
-	logger.Infof("mkproxyfs is starting up (PID %d); invoked as '%s'",
-		os.Getpid(), strings.Join(execArgs, "' '"))
+	logger.Infof("mkproxyfs is starting up (version %s) (PID %d); invoked as '%s'",
+		version.ProxyFSVersion, os.Getpid(), strings.Join(execArgs, "' '"))
 
 	// Determine if underlying accountName is empty
 

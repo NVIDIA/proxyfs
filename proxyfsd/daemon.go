@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/transitions"
+	"github.com/swiftstack/ProxyFS/version"
 
 	// Force importing of the following "top-most" packages
 	_ "github.com/swiftstack/ProxyFS/fuse"
@@ -78,8 +79,8 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		return
 	}
 	wg.Add(1)
-	logger.Infof("proxyfsd is starting up (PID %d); invoked as '%s'",
-		os.Getpid(), strings.Join(execArgs, "' '"))
+	logger.Infof("proxyfsd is starting up (version %s) (PID %d); invoked as '%s'",
+		version.ProxyFSVersion, os.Getpid(), strings.Join(execArgs, "' '"))
 	defer func() {
 		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
 		err = transitions.Down(confMap)
