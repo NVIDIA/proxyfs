@@ -1,5 +1,13 @@
 # ProxyFS Release Notes
 
+## 1.8.0.3 (November 9, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to exit if the noauth proxy server
+restarted while file system i/o to Swift was in progress.  In particular
+this could happen during a reconfig triggered by a controller config push.
+
 ## 1.8.0.2 (October 19, 2018)
 
 ### Bug Fixes:
