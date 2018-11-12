@@ -516,6 +516,9 @@ func (worker *workerStruct) workerLauncher() {
 				switch containerGetResponse.StatusCode {
 				case http.StatusOK:
 					objectList = strings.Split(string(containerGetBody[:]), "\n")
+					if (0 < len(objectList)) && ("" == objectList[len(objectList)-1]) {
+						objectList = objectList[:len(objectList)-1]
+					}
 
 					if 0 == len(objectList) {
 						break optionDestroyLoop
