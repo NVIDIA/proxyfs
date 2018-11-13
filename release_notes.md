@@ -1,5 +1,16 @@
 # ProxyFS Release Notes
 
+## 1.8.0.4 (November 12, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to exit if the SwiftStack controller
+deleted a file system using its two step process of first inactivating
+it (one reconfig event) and then deleting it (second reconfig event).
+In that case, the UnregisterForEvents() would be called twice and it
+would call logger.Fatalf() to complain, causing Samba (smbd) to exit
+and making the SMB client unhappy.
+
 ## 1.8.0.3 (November 9, 2018)
 
 ### Bug Fixes:

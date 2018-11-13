@@ -620,7 +620,9 @@ func PauseAndContract(confMap conf.ConfMap) (err error) {
 
 	for volumeName = range volumesDeletedSet {
 		volume = globals.volumeMap[volumeName]
-		volume.headhunterVolumeHandle.UnregisterForEvents(volume)
+		if volume.active {
+			volume.headhunterVolumeHandle.UnregisterForEvents(volume)
+		}
 		volume.flowControl.refCount--
 		if 0 == volume.flowControl.refCount {
 			delete(globals.flowControlMap, volume.flowControl.flowControlName)
