@@ -39,7 +39,11 @@ func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
 
 	_, ok = volume.eventListeners[listener]
 	if !ok {
-		logger.Fatalf("headhunter.UnregisterForEvents() called for volume %v listener %p not active", volume.volumeName, listener)
+		// this should never happen, its an internal logic error, so log
+		// it as an error.  it is not a panic or fatal because this
+		// internal error will probably not break proxyfs (and panic'ing
+		// is hard on the SMB clients)
+		logger.Errorf("headhunter.UnregisterForEvents() called for volume %v listener %p not active", volume.volumeName, listener)
 	}
 
 	delete(volume.eventListeners, listener)

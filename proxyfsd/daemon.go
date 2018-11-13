@@ -435,7 +435,7 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 
 			// tell each daemon to apply "expanding" confMap changes and result
 
-			logger.Infof("Reconfig starting; resuming daemons")
+			logger.Infof("Reconfig continuing; resuming daemons")
 
 			err = logger.ExpandAndResume(confMap)
 			if nil != err {
