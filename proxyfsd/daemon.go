@@ -139,7 +139,6 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		}
 
 		// caught SIGHUP -- recompute confMap and re-apply
-
 		confMap, err = conf.MakeConfMapFromFile(confFile)
 		if nil != err {
 			err = fmt.Errorf("failed to load updated config: %v", err)
