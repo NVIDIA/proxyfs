@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -370,6 +371,18 @@ func openConnection(caller string, connection *connectionStruct) (err error) {
 	if err != nil {
 		logger.WarnfWithError(err, "%s cannot connect to Swift NoAuth Pipeline at %s",
 			caller, globals.noAuthStringAddr)
+	}
+	return
+}
+
+func pathEscape(pathElements ...string) (pathEscaped string) {
+	if 0 == len(pathElements) {
+		pathEscaped = ""
+	} else {
+		pathEscaped = url.PathEscape(pathElements[0])
+		for i := 1; i < len(pathElements); i++ {
+			pathEscaped += "/" + url.PathEscape(pathElements[i])
+		}
 	}
 	return
 }
