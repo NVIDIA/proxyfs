@@ -4,6 +4,7 @@ package swiftclient
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
@@ -54,7 +55,7 @@ func accountDelete(accountName string) (err error) {
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+pathEscape(accountName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
@@ -162,7 +163,7 @@ func accountGet(connection *connectionStruct, accountName string, marker string)
 		isError    bool
 	)
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"?marker="+marker, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName)+"?marker="+url.QueryEscape(marker), nil)
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
 		logger.WarnfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName, marker)
@@ -239,7 +240,7 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+pathEscape(accountName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
@@ -317,7 +318,7 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "POST", "/"+swiftVersion+"/"+accountName, requestHeaders)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "POST", "/"+swiftVersion+"/"+pathEscape(accountName), requestHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
@@ -411,7 +412,7 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+accountName, requestHeaders)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(accountName), requestHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)

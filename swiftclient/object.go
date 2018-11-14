@@ -70,7 +70,7 @@ func objectContentLength(accountName string, containerName string, objectName st
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
@@ -218,7 +218,7 @@ func objectDeleteOneTime(accountName string, containerName string, objectName st
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
@@ -306,7 +306,7 @@ func objectGet(accountName string, containerName string, objectName string, offs
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
@@ -425,7 +425,7 @@ func objectHead(accountName string, containerName string, objectName string) (he
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
@@ -508,7 +508,7 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
@@ -637,7 +637,7 @@ func objectRead(accountName string, containerName string, objectName string, off
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
@@ -765,7 +765,7 @@ func objectTail(accountName string, containerName string, objectName string, len
 		return
 	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
@@ -947,7 +947,7 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 		objectFetchChunkedPutContextCnt%globals.chaosFetchChunkedPutFailureRate == 0 {
 		err = fmt.Errorf("swiftclient.objectFetchChunkedPutContext returning simulated error")
 	} else {
-		err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+accountName+"/"+containerName+"/"+objectName, headers)
+		err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
 	}
 	if nil != err {
 		releaseChunkedConnection(connection, false)
@@ -1302,7 +1302,7 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	headers = make(map[string][]string)
 	headers["Transfer-Encoding"] = []string{"chunked"}
 
-	err = writeHTTPRequestLineAndHeaders(chunkedPutContext.connection.tcpConn, "PUT", "/"+swiftVersion+"/"+chunkedPutContext.accountName+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, headers)
+	err = writeHTTPRequestLineAndHeaders(chunkedPutContext.connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName), headers)
 	if nil != err {
 		chunkedPutContext.Unlock()
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
