@@ -28,7 +28,6 @@ func init() {
 }
 
 func parseConfMap(confMap conf.ConfMap) (err error) {
-
 	globals.statsLogPeriod, err = confMap.FetchOptionValueDuration("StatsLogger", "Period")
 	if err != nil {
 		logger.Warnf("config variable 'StatsLogger.Period' defaulting to '10m': %v", err)
@@ -48,7 +47,6 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 // Up initializes the package and must successfully return before any API
 // functions are invoked
 func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
-
 	err = parseConfMap(confMap)
 	if err != nil {
 		// parseConfMap() has logged an error
@@ -98,10 +96,11 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	return nil
 }
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	return nil
+}
 
-// ExpandAndResume applies any additions from the supplied confMap and get new stats
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
-
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	// read the new confmap; if the log period has changed or there was an
 	// error shutdown the old logger prior to starting a new one
 	oldLogPeriod := globals.statsLogPeriod

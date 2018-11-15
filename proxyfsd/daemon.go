@@ -16,11 +16,8 @@ import (
 	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/version"
 
-	// Force importing of the following "top-most" packages
-	_ "github.com/swiftstack/ProxyFS/fuse"
+	// Force importing of the following "top-most" package
 	_ "github.com/swiftstack/ProxyFS/httpserver"
-	_ "github.com/swiftstack/ProxyFS/jrpcfs"
-	_ "github.com/swiftstack/ProxyFS/statslogger"
 )
 
 // Daemon is launched as a GoRoutine that launches ProxyFS. During startup, the parent should read errChan
@@ -85,8 +82,9 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		logger.Infof("proxyfsd logger is shutting down (PID %d)", os.Getpid())
 		err = transitions.Down(confMap)
 		if nil != err {
-			logger.Errorf("logger.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
+			logger.Errorf("transitions.Down() failed: %v", err) // Oddly, if logger.Down() fails, will this work?
 		}
+		errChan <- err
 		wg.Done()
 	}()
 
@@ -129,12 +127,7 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 
 			if signalReceived != unix.SIGTERM && signalReceived != unix.SIGINT {
 				logger.Errorf("proxyfsd received unexpected signal: %v", signalReceived)
-				err = fmt.Errorf("proxyfsd received unexpected signal: %v", signalReceived)
 			}
-
-			err = transitions.Down(confMap)
-
-			errChan <- err
 			return
 		}
 

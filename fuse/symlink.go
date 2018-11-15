@@ -23,8 +23,8 @@ func (s Symlink) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = s.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, s.inodeNumber)
 	if nil != err {
@@ -58,8 +58,8 @@ func (s Symlink) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp 
 		statUpdates fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = s.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
 	if nil != err {

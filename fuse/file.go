@@ -20,8 +20,8 @@ type File struct {
 }
 
 func (f File) Access(ctx context.Context, req *fuselib.AccessRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	if f.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, f.inodeNumber, inode.InodeMode(req.Mask)) {
 		return nil
@@ -35,8 +35,8 @@ func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = f.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, f.inodeNumber)
 	if nil != err {
@@ -72,8 +72,8 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 		statUpdates fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = f.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
@@ -132,8 +132,8 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 }
 
 func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
@@ -143,8 +143,8 @@ func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 }
 
 func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
 		f.inodeNumber)
@@ -155,8 +155,8 @@ func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 }
 
 func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.ReadResponse) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	buf, err := f.mountHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
 	if err != nil && err != io.EOF {
@@ -168,8 +168,8 @@ func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.
 }
 
 func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuselib.WriteResponse) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	// We need to buffer contents of req.Data because fs.Write() will likely retain a reference to it
 	// (down in the Chunked PUT retry buffer) and Bazil FUSE will be reusing this WriteRequest (including

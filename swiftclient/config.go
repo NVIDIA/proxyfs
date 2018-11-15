@@ -346,11 +346,15 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return nil
 }
 
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	drainConnections()
 	globals.connectionNonce++
 	err = nil
 	return
+}
+
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
+	return nil
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {

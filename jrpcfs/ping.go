@@ -8,8 +8,8 @@ import (
 )
 
 func (s *Server) RpcPing(in *PingReq, reply *PingReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	if globals.dataPathLogging {
 		flog := logger.TraceEnter("in.", in)

@@ -14,6 +14,11 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/transitions"
+
+	// Force importing of the following next "top-most" packages
+	_ "github.com/swiftstack/ProxyFS/fuse"
+	_ "github.com/swiftstack/ProxyFS/jrpcfs"
+	_ "github.com/swiftstack/ProxyFS/statslogger"
 )
 
 type ExtentMapElementStruct struct {
@@ -260,7 +265,13 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return // return err from globals.volumeLLRB.DeleteByKey sufficient
 }
 
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	globals.confMap = confMap
+	globals.active = false
+	return nil
+}
+
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	globals.confMap = confMap
 	globals.active = true
 	return nil
@@ -284,8 +295,6 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("httpserver.Down() called with 0 != globals.volumeLLRB.Len()")
 		return
 	}
-
-	globals.active = false
 
 	_ = globals.netListener.Close()
 

@@ -141,7 +141,12 @@ func Down(confMap conf.ConfMap) (err error) {
 	return
 }
 
-func Signaled(confMap conf.ConfMap) (err error) {
+func SignaledStart(confMap conf.ConfMap) (err error) {
+	err = nil
+	return
+}
+
+func SignaledFinish(confMap conf.ConfMap) (err error) {
 	err = Down(confMap)
 	if nil == err {
 		err = Up(confMap)

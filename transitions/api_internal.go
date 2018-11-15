@@ -189,24 +189,24 @@ func up(confMap conf.ConfMap) (err error) {
 			err = registrationListElementValue.callbacks.ServeVolume(confMap, volumeName)
 			if nil != err {
 				logger.Errorf("transitions.Up() call to %s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.VolumeCreated(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				err = fmt.Errorf("%s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
 				return
 			}
 		}
 		registrationListElement = registrationListElement.Next()
 	}
 
-	// Issue Callbacks.Signaled() calls from Front() to Back() of globals.registrationList
+	// Issue Callbacks.SignaledFinish() calls from Front() to Back() of globals.registrationList
 
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
 		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Signaled() calling %s.Signaled()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.Signaled(confMap)
+		logger.Tracef("transitions.SignaledFinish() calling %s.SignaledFinish()", registrationListElementValue.packageName)
+		err = registrationListElementValue.callbacks.SignaledFinish(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Signaled() call to %s.Signaled() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.Signaled() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.SignaledFinish() call to %s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
+			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Next()
@@ -237,6 +237,22 @@ func signaled(confMap conf.ConfMap) (err error) {
 	err = computeConfMapDelta(confMap)
 	if nil != err {
 		return
+	}
+
+	// Issue Callbacks.SignaledStart() calls from Back() to Front() of globals.registrationList
+
+	registrationListElement = globals.registrationList.Back()
+
+	for nil != registrationListElement {
+		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		logger.Tracef("transitions.Signaled() calling %s.SignaledStart()", registrationListElementValue.packageName)
+		err = registrationListElementValue.callbacks.SignaledStart(confMap)
+		if nil != err {
+			logger.Errorf("transitions.Signaled() call to %s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			return
+		}
+		registrationListElement = registrationListElement.Prev()
 	}
 
 	// Issue Callbacks.UnserveVolume() calls from Back() to Front() of globals.registrationList
@@ -385,17 +401,17 @@ func signaled(confMap conf.ConfMap) (err error) {
 		registrationListElement = registrationListElement.Next()
 	}
 
-	// Issue Callbacks.Signaled() calls from Front() to Back() of globals.registrationList
+	// Issue Callbacks.SignaledFinish() calls from Front() to Back() of globals.registrationList
 
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
 		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Signaled() calling %s.Signaled()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.Signaled(confMap)
+		logger.Tracef("transitions.Signaled() calling %s.SignaledFinish()", registrationListElementValue.packageName)
+		err = registrationListElementValue.callbacks.SignaledFinish(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Signaled() call to %s.Signaled() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.Signaled() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Signaled() call to %s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
+			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Next()
@@ -448,6 +464,22 @@ func down(confMap conf.ConfMap) (err error) {
 	if 0 != len(globals.destroyedVolumeList) {
 		err = fmt.Errorf("transitions.Down() did not expect destroyedVolumeList to be non-empty")
 		return
+	}
+
+	// Issue Callbacks.SignaledStart() calls from Back() to Front() of globals.registrationList
+
+	registrationListElement = globals.registrationList.Back()
+
+	for nil != registrationListElement {
+		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		logger.Tracef("transitions.Down() calling %s.SignaledStart()", registrationListElementValue.packageName)
+		err = registrationListElementValue.callbacks.SignaledStart(confMap)
+		if nil != err {
+			logger.Errorf("transitions.Down() call to %s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			return
+		}
+		registrationListElement = registrationListElement.Prev()
 	}
 
 	// Issue Callbacks.UnserveVolume() calls from Back() to Front() of globals.registrationList
@@ -970,8 +1002,12 @@ func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) UnserveVolume(co
 	return nil
 }
 
-func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) Signaled(confMap conf.ConfMap) (err error) {
-	return logger.Signaled(confMap)
+func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	return logger.SignaledStart(confMap)
+}
+
+func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
+	return logger.SignaledFinish(confMap)
 }
 
 func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) Down(confMap conf.ConfMap) (err error) {

@@ -672,8 +672,8 @@ func splitPath(fullpath string) (parentDir string, basename string) {
 }
 
 func (s *Server) RpcChown(in *ChownRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -699,8 +699,8 @@ func (s *Server) RpcChown(in *ChownRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcChownPath(in *ChownPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -733,8 +733,8 @@ func (s *Server) RpcChownPath(in *ChownPathRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcChmod(in *ChmodRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -757,8 +757,8 @@ func (s *Server) RpcChmod(in *ChmodRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -789,8 +789,8 @@ func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcCreate(in *CreateRequest, reply *InodeReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -807,8 +807,8 @@ func (s *Server) RpcCreate(in *CreateRequest, reply *InodeReply) (err error) {
 }
 
 func (s *Server) RpcCreatePath(in *CreatePathRequest, reply *InodeReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -844,8 +844,8 @@ func (s *Server) RpcCreatePath(in *CreatePathRequest, reply *InodeReply) (err er
 }
 
 func (s *Server) RpcFlock(in *FlockRequest, reply *FlockReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -885,8 +885,8 @@ func UnixNanosec(t time.Time) (ns int64) {
 func (s *Server) RpcFlush(in *FlushRequest, reply *Reply) (err error) {
 	var profiler = utils.NewProfilerIf(doProfiling, "flush")
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	sendTime := time.Unix(in.SendTimeSec, in.SendTimeNsec)
 	requestRecTime := time.Now()
@@ -942,8 +942,8 @@ func (stat *StatStruct) fsStatToStatStruct(fsStat fs.Stat) {
 }
 
 func (s *Server) RpcGetStat(in *GetStatRequest, reply *StatStruct) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	var stat fs.Stat
 	var profiler = utils.NewProfilerIf(doProfiling, "getstat")
@@ -972,8 +972,8 @@ func (s *Server) RpcGetStat(in *GetStatRequest, reply *StatStruct) (err error) {
 func (s *Server) RpcGetStatPath(in *GetStatPathRequest, reply *StatStruct) (err error) {
 	var profiler = utils.NewProfilerIf(doProfiling, "getstat_path")
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1013,8 +1013,8 @@ func (s *Server) RpcGetStatPath(in *GetStatPathRequest, reply *StatStruct) (err 
 func (s *Server) RpcGetXAttr(in *GetXAttrRequest, reply *GetXAttrReply) (err error) {
 	var profiler = utils.NewProfilerIf(doProfiling, "getxattr")
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1037,8 +1037,8 @@ func (s *Server) RpcGetXAttr(in *GetXAttrRequest, reply *GetXAttrReply) (err err
 func (s *Server) RpcGetXAttrPath(in *GetXAttrPathRequest, reply *GetXAttrReply) (err error) {
 	var profiler = utils.NewProfilerIf(doProfiling, "getxattr_path")
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1074,8 +1074,8 @@ func (s *Server) RpcGetXAttrPath(in *GetXAttrPathRequest, reply *GetXAttrReply) 
 }
 
 func (s *Server) RpcLog(in *LogRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	logger.Info(in.Message)
 	return
@@ -1084,8 +1084,8 @@ func (s *Server) RpcLog(in *LogRequest, reply *Reply) (err error) {
 func (s *Server) RpcLookupPath(in *LookupPathRequest, reply *InodeReply) (err error) {
 	var profiler = utils.NewProfilerIf(doProfiling, "lookup_path")
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1111,8 +1111,8 @@ func (s *Server) RpcLookupPath(in *LookupPathRequest, reply *InodeReply) (err er
 }
 
 func (s *Server) RpcLink(in *LinkRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1128,8 +1128,8 @@ func (s *Server) RpcLink(in *LinkRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1161,8 +1161,8 @@ func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcListXAttr(in *ListXAttrRequest, reply *ListXAttrReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1178,8 +1178,8 @@ func (s *Server) RpcListXAttr(in *ListXAttrRequest, reply *ListXAttrReply) (err 
 }
 
 func (s *Server) RpcListXAttrPath(in *ListXAttrPathRequest, reply *ListXAttrReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1204,8 +1204,8 @@ func (s *Server) RpcListXAttrPath(in *ListXAttrPathRequest, reply *ListXAttrRepl
 }
 
 func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	var profiler = utils.NewProfilerIf(doProfiling, "lookup")
 
@@ -1235,8 +1235,8 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 }
 
 func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1253,8 +1253,8 @@ func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
 }
 
 func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1289,8 +1289,8 @@ func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcMount(in *MountRequest, reply *MountReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1305,8 +1305,8 @@ func (s *Server) RpcMount(in *MountRequest, reply *MountReply) (err error) {
 }
 
 func (s *Server) RpcRead(in *ReadRequest, reply *ReadReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	sendTime := time.Unix(in.SendTimeSec, in.SendTimeNsec)
 	requestRecTime := time.Now()
@@ -1392,8 +1392,8 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
@@ -1451,8 +1451,8 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
@@ -1482,8 +1482,8 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 }
 
 func (s *Server) RpcReadSymlink(in *ReadSymlinkRequest, reply *ReadSymlinkReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1500,8 +1500,8 @@ func (s *Server) RpcReadSymlink(in *ReadSymlinkRequest, reply *ReadSymlinkReply)
 }
 
 func (s *Server) RpcReadSymlinkPath(in *ReadSymlinkPathRequest, reply *ReadSymlinkReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1524,8 +1524,8 @@ func (s *Server) RpcReadSymlinkPath(in *ReadSymlinkPathRequest, reply *ReadSymli
 }
 
 func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1541,8 +1541,8 @@ func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err erro
 }
 
 func (s *Server) RpcRemoveAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1563,8 +1563,8 @@ func (s *Server) RpcRemoveAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (er
 }
 
 func (s *Server) RpcRename(in *RenameRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1580,8 +1580,8 @@ func (s *Server) RpcRename(in *RenameRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1616,8 +1616,8 @@ func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) 
 }
 
 func (s *Server) RpcResize(in *ResizeRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1633,8 +1633,8 @@ func (s *Server) RpcResize(in *ResizeRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcRmdir(in *UnlinkRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1650,8 +1650,8 @@ func (s *Server) RpcRmdir(in *UnlinkRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcRmdirPath(in *UnlinkPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1677,8 +1677,8 @@ func (s *Server) RpcRmdirPath(in *UnlinkPathRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcSetstat(in *SetstatRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1702,8 +1702,8 @@ func (s *Server) RpcSetstat(in *SetstatRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcSetTime(in *SetTimeRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1722,8 +1722,8 @@ func (s *Server) RpcSetTime(in *SetTimeRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1748,8 +1748,8 @@ func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error
 }
 
 func (s *Server) RpcSetXAttr(in *SetXAttrRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1765,8 +1765,8 @@ func (s *Server) RpcSetXAttr(in *SetXAttrRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcSetXAttrPath(in *SetXAttrPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1787,8 +1787,8 @@ func (s *Server) RpcSetXAttrPath(in *SetXAttrPathRequest, reply *Reply) (err err
 }
 
 func (s *Server) RpcStatVFS(in *StatVFSRequest, reply *StatVFS) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1821,8 +1821,8 @@ func (s *Server) RpcStatVFS(in *StatVFSRequest, reply *StatVFS) (err error) {
 }
 
 func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1838,8 +1838,8 @@ func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcSymlinkPath(in *SymlinkPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1864,8 +1864,8 @@ func (s *Server) RpcSymlinkPath(in *SymlinkPathRequest, reply *Reply) (err error
 }
 
 func (s *Server) RpcType(in *TypeRequest, reply *TypeReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1883,8 +1883,8 @@ func (s *Server) RpcType(in *TypeRequest, reply *TypeReply) (err error) {
 }
 
 func (s *Server) RpcUnlink(in *UnlinkRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1900,8 +1900,8 @@ func (s *Server) RpcUnlink(in *UnlinkRequest, reply *Reply) (err error) {
 }
 
 func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -1929,8 +1929,8 @@ func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) 
 func (s *Server) RpcWrite(in *WriteRequest, reply *WriteReply) (err error) {
 	var size uint64
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	sendTime := time.Unix(in.SendTimeSec, in.SendTimeNsec)
 	requestRecTime := time.Now()
