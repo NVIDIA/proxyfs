@@ -49,6 +49,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]*volumeStruct)
 	globals.mountPointMap = make(map[string]*volumeStruct)
 
+	closeGate() // Ensure gate starts out in the Exclusively Locked state
+
 	err = nil
 	return
 }
@@ -87,14 +89,10 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		return
 	}
 
-	globals.gate.Lock()
-
 	globals.volumeMap[volume.volumeName] = volume
 	globals.mountPointMap[volume.mountPointName] = volume
 
 	err = performMount(volume)
-
-	globals.gate.Unlock()
 
 	return // return err from performMount() sufficient
 }
@@ -133,8 +131,18 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return // return err as set from above
 }
 
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
-	return nil
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	closeGate()
+
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
+	openGate()
+
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
@@ -146,6 +154,8 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("fuse.Down() called with 0 != len(globals.mountPointMap")
 		return
 	}
+
+	openGate() // In case we are restarted... Up() expects Gate to initially be open
 
 	err = nil
 	return
@@ -286,4 +296,25 @@ func performMount(volume *volumeStruct) (err error) {
 
 	err = nil
 	return
+}
+
+func openGate() {
+	globals.gate.Unlock()
+}
+
+func closeGate() {
+	globals.gate.Lock()
+}
+
+// Note: The following func's do nothing today. Thus, no "gate" is enforced in this package.
+//       The reason is that as part of the fuselib.Unmount() in UnserveVolume(), a call to
+//       Fsync() will be made. If the closeGate() were honored, the call to Fsync() would
+//       indefinitely block.
+
+func enterGate() {
+	// globals.gate.RLock()
+}
+
+func leaveGate() {
+	// globals.gate.RUnlock()
 }

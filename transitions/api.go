@@ -44,7 +44,8 @@ type Callbacks interface {
 	VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error)
 	ServeVolume(confMap conf.ConfMap, volumeName string) (err error)
 	UnserveVolume(confMap conf.ConfMap, volumeName string) (err error)
-	Signaled(confMap conf.ConfMap) (err error)
+	SignaledStart(confMap conf.ConfMap) (err error)
+	SignaledFinish(confMap conf.ConfMap) (err error)
 	Down(confMap conf.ConfMap) (err error)
 }
 
@@ -98,7 +99,7 @@ func Register(packageName string, callbacks Callbacks) {
 //   VolumeGroupCreated() - registration order (for each such volume group)
 //   VolumeCreated()      - registration order (for each such volume)
 //   ServeVolume()        - registration order (for each such volume)
-//   Signaled()           - registration order
+//   SignaledFinish()     - registration order
 //
 func Up(confMap conf.ConfMap) (err error) {
 	return up(confMap)
@@ -114,6 +115,7 @@ func Up(confMap conf.ConfMap) (err error) {
 // these volume sets, the following callbacks will be issued to each of the packages
 // that have registered with package transitions:
 //
+//   SignaledStart()        - reverse registration order
 //   VolumeGroupCreated()   -         registration order (for each such volume group)
 //   VolumeCreated()        -         registration order (for each such volume)
 //   UnserveVolume()        - reverse registration order (for each such volume)
@@ -122,7 +124,7 @@ func Up(confMap conf.ConfMap) (err error) {
 //   ServeVolume()          -         registration order (for each such volume)
 //   VolumeDestroyed()      - reverse registration order (for each such volume)
 //   VolumeGroupDestroyed() - reverse registration order (for each such volume group)
-//   Signaled()             -         registration order
+//   SignaledFinish()       -         registration order
 //
 func Signaled(confMap conf.ConfMap) (err error) {
 	return signaled(confMap)
@@ -136,6 +138,7 @@ func Signaled(confMap conf.ConfMap) (err error) {
 // Prior to the Down() callbacks, the following subset of the callbacks triggered
 // by a call to Signaled() will be made as if the prior confMap were empty:
 //
+//   SignaledStart()        - reverse registration order
 //   UnserveVolume()        - reverse registration order (for each such volume group)
 //   VolumeDestroyed()      - reverse registration order (for each such volume)
 //   VolumeGroupDestroyed() - reverse registration order (for each such volume)

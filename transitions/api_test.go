@@ -376,7 +376,7 @@ func TestAPI(t *testing.T) {
 
 	t.Log("Perform Up() sequence")
 
-	testCallbackLog = make([]string, 0, 22)
+	testCallbackLog = make([]string, 0, 24)
 
 	err = Up(testConfMap)
 	if nil != err {
@@ -417,14 +417,14 @@ func TestAPI(t *testing.T) {
 				"testCallbacksInterface2.ServeVolume(,VolumeA) called",
 				"testCallbacksInterface2.ServeVolume(,VolumeB) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"},
+				"testCallbacksInterface2.SignaledFinish() called"},
 		})
 
 	t.Log("Perform Signaled() sequence with no changes")
 
-	testCallbackLog = make([]string, 0, 2)
+	testCallbackLog = make([]string, 0, 4)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -435,15 +435,19 @@ func TestAPI(t *testing.T) {
 		"Perform Signaled() sequence with no changes",
 		[][]string{
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface2.SignaledStart() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledFinish() called"},
+			[]string{
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Move VolumeB from Peer0 to Peer1")
 
 	testConfMap["VolumeGroup:V_VolumeB_G"]["PrimaryPeer"] = []string{"Peer1"}
 
-	testCallbackLog = make([]string, 0, 6)
+	testCallbackLog = make([]string, 0, 8)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -454,6 +458,10 @@ func TestAPI(t *testing.T) {
 		"Move VolumeB from Peer0 to Peer1",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface2.UnserveVolume(,VolumeB) called"},
 			[]string{
 				"testCallbacksInterface1.UnserveVolume(,VolumeB) called"},
@@ -462,15 +470,15 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface2.VolumeGroupMoved(,V_VolumeB_G,Peer1,) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Move VolumeC from Peer1 to Peer2")
 
 	testConfMap["VolumeGroup:V_VolumeC_G"]["PrimaryPeer"] = []string{"Peer2"}
 
-	testCallbackLog = make([]string, 0, 4)
+	testCallbackLog = make([]string, 0, 6)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -481,13 +489,17 @@ func TestAPI(t *testing.T) {
 		"Move VolumeC from Peer1 to Peer2",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface1.VolumeGroupMoved(,V_VolumeC_G,Peer2,) called"},
 			[]string{
 				"testCallbacksInterface2.VolumeGroupMoved(,V_VolumeC_G,Peer2,) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Destroy VolumeC")
 
@@ -496,7 +508,7 @@ func TestAPI(t *testing.T) {
 	delete(testConfMap, "VolumeGroup:V_VolumeC_G")
 	delete(testConfMap, "Volume:VolumeC")
 
-	testCallbackLog = make([]string, 0, 6)
+	testCallbackLog = make([]string, 0, 8)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -507,6 +519,10 @@ func TestAPI(t *testing.T) {
 		"Destroy VolumeC",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface2.VolumeDestroyed(,VolumeC) called"},
 			[]string{
 				"testCallbacksInterface1.VolumeDestroyed(,VolumeC) called"},
@@ -515,15 +531,15 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface1.VolumeGroupDestroyed(,V_VolumeC_G) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Move VolumeD from Peer2 to Peer0")
 
 	testConfMap["VolumeGroup:V_VolumeD_G"]["PrimaryPeer"] = []string{"Peer0"}
 
-	testCallbackLog = make([]string, 0, 6)
+	testCallbackLog = make([]string, 0, 8)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -534,6 +550,10 @@ func TestAPI(t *testing.T) {
 		"Move VolumeD from Peer2 to Peer0",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface1.VolumeGroupMoved(,V_VolumeD_G,Peer0,) called"},
 			[]string{
 				"testCallbacksInterface2.VolumeGroupMoved(,V_VolumeD_G,Peer0,) called"},
@@ -542,9 +562,9 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface2.ServeVolume(,VolumeD) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Destroy VolumeD")
 
@@ -553,7 +573,7 @@ func TestAPI(t *testing.T) {
 	delete(testConfMap, "VolumeGroup:V_VolumeD_G")
 	delete(testConfMap, "Volume:VolumeD")
 
-	testCallbackLog = make([]string, 0, 8)
+	testCallbackLog = make([]string, 0, 10)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -563,6 +583,10 @@ func TestAPI(t *testing.T) {
 	testValidateCallbackLog(t,
 		"Destroy VolumeD",
 		[][]string{
+			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
 			[]string{
 				"testCallbacksInterface2.UnserveVolume(,VolumeD) called"},
 			[]string{
@@ -576,9 +600,9 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface1.VolumeGroupDestroyed(,V_VolumeD_G) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Create VolumeE on Peer0")
 
@@ -587,7 +611,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfStringsToAddVolumeE) failed: %v", err)
 	}
 
-	testCallbackLog = make([]string, 0, 8)
+	testCallbackLog = make([]string, 0, 10)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -597,6 +621,10 @@ func TestAPI(t *testing.T) {
 	testValidateCallbackLog(t,
 		"Create VolumeE on Peer0",
 		[][]string{
+			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
 			[]string{
 				"testCallbacksInterface1.VolumeGroupCreated(,VG_One,Peer0,) called"},
 			[]string{
@@ -610,9 +638,9 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface2.ServeVolume(,VolumeE) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Create VolumeF on Peer1")
 
@@ -621,7 +649,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfStringsToAddVolumeF) failed: %v", err)
 	}
 
-	testCallbackLog = make([]string, 0, 6)
+	testCallbackLog = make([]string, 0, 8)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -632,6 +660,10 @@ func TestAPI(t *testing.T) {
 		"Create VolumeF on Peer1",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface1.VolumeGroupCreated(,VG_Two,Peer1,) called"},
 			[]string{
 				"testCallbacksInterface2.VolumeGroupCreated(,VG_Two,Peer1,) called"},
@@ -640,9 +672,9 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface2.VolumeCreated(,VolumeF,VG_Two) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Create VolumeG on Peer2")
 
@@ -651,7 +683,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfStringsToAddVolumeG) failed: %v", err)
 	}
 
-	testCallbackLog = make([]string, 0, 6)
+	testCallbackLog = make([]string, 0, 8)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -662,6 +694,10 @@ func TestAPI(t *testing.T) {
 		"Create VolumeG on Peer2",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface1.VolumeGroupCreated(,VG_Three,Peer2,) called"},
 			[]string{
 				"testCallbacksInterface2.VolumeGroupCreated(,VG_Three,Peer2,) called"},
@@ -670,9 +706,9 @@ func TestAPI(t *testing.T) {
 			[]string{
 				"testCallbacksInterface2.VolumeCreated(,VolumeG,VG_Three) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Move VolumeG to VolumeF's VolumeGroup")
 
@@ -681,7 +717,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("testConfMap.UpdateFromStrings(testConfStringsToMoveVolumeG) failed: %v", err)
 	}
 
-	testCallbackLog = make([]string, 0, 4)
+	testCallbackLog = make([]string, 0, 6)
 
 	err = Signaled(testConfMap)
 	if nil != err {
@@ -692,17 +728,21 @@ func TestAPI(t *testing.T) {
 		"Move VolumeG to VolumeF's VolumeGroup",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
+			[]string{
 				"testCallbacksInterface1.VolumeMoved(,VolumeG,VG_Two) called"},
 			[]string{
 				"testCallbacksInterface2.VolumeMoved(,VolumeG,VG_Two) called"},
 			[]string{
-				"testCallbacksInterface1.Signaled() called"},
+				"testCallbacksInterface1.SignaledFinish() called"},
 			[]string{
-				"testCallbacksInterface2.Signaled() called"}})
+				"testCallbacksInterface2.SignaledFinish() called"}})
 
 	t.Log("Perform Down() sequence")
 
-	testCallbackLog = make([]string, 0, 26)
+	testCallbackLog = make([]string, 0, 28)
 
 	err = Down(testConfMap)
 	if nil != err {
@@ -712,6 +752,10 @@ func TestAPI(t *testing.T) {
 	testValidateCallbackLog(t,
 		"Perform Down() sequence",
 		[][]string{
+			[]string{
+				"testCallbacksInterface2.SignaledStart() called"},
+			[]string{
+				"testCallbacksInterface1.SignaledStart() called"},
 			[]string{
 				"testCallbacksInterface2.UnserveVolume(,VolumeA) called",
 				"testCallbacksInterface2.UnserveVolume(,VolumeE) called"},
@@ -811,8 +855,15 @@ func (testCallbacksInterface *testCallbacksInterfaceStruct) UnserveVolume(confMa
 	return nil
 }
 
-func (testCallbacksInterface *testCallbacksInterfaceStruct) Signaled(confMap conf.ConfMap) (err error) {
-	logMessage := fmt.Sprintf("testCallbacksInterface%s.Signaled() called", testCallbacksInterface.name)
+func (testCallbacksInterface *testCallbacksInterfaceStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	logMessage := fmt.Sprintf("testCallbacksInterface%s.SignaledStart() called", testCallbacksInterface.name)
+	testCallbacksInterface.t.Logf("  %s", logMessage)
+	testCallbackLog = append(testCallbackLog, logMessage)
+	return nil
+}
+
+func (testCallbacksInterface *testCallbacksInterfaceStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
+	logMessage := fmt.Sprintf("testCallbacksInterface%s.SignaledFinish() called", testCallbacksInterface.name)
 	testCallbacksInterface.t.Logf("  %s", logMessage)
 	testCallbackLog = append(testCallbackLog, logMessage)
 	return nil

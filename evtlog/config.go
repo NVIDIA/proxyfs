@@ -152,8 +152,11 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	return nil
 }
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	return nil
+}
 
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	var settings eventLogConfigSettings
 
 	settings, err = parseConfMap(confMap)

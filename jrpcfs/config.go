@@ -91,6 +91,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	// Ensure gate starts out in the Exclusively Locked state
+	closeGate()
+
 	// Init listeners
 	globals.listeners = make([]net.Listener, 0, 2)
 	globals.connections = list.New()
@@ -124,9 +127,7 @@ func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName str
 }
 
 func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
-	globals.gate.Lock()
 	globals.volumeMap[volumeName] = true
-	globals.gate.Unlock()
 
 	err = nil
 	return
@@ -139,8 +140,6 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		removedMountID     uint64
 		removedMountIDList []uint64
 	)
-
-	globals.gate.Lock()
 
 	removedMountIDList = make([]uint64, 0, len(globals.mountIDMap))
 
@@ -157,14 +156,22 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	delete(globals.volumeMap, volumeName)
 	delete(globals.bimodalMountMap, volumeName)
 
-	globals.gate.Unlock()
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	closeGate()
 
 	err = nil
 	return
 }
 
-func (dummy *globalsStruct) Signaled(confMap conf.ConfMap) (err error) {
-	return nil
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
+	openGate()
+
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
@@ -181,6 +188,24 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	openGate() // In case we are restarted... Up() expects Gate to initially be open
+
 	err = nil
 	return
+}
+
+func openGate() {
+	globals.gate.Unlock()
+}
+
+func closeGate() {
+	globals.gate.Lock()
+}
+
+func enterGate() {
+	globals.gate.RLock()
+}
+
+func leaveGate() {
+	globals.gate.RUnlock()
 }
