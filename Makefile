@@ -30,6 +30,7 @@ gobinsubdirs = \
 	cleanproxyfs \
 	fsworkout \
 	inodeworkout \
+	liveness \
 	pfs-crash \
 	pfs-stress \
 	pfs-swift-load \
