@@ -93,7 +93,7 @@ execute "swift-specs-install" do
 end
 
 execute "install tox" do
-  command "pip install tox"
+  command "pip install tox==3.5.3"
   if not node['full_reprovision']
     creates "/usr/local/lib/python2.7/dist-packages/tox"
   end

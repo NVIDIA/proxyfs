@@ -19,7 +19,7 @@ execute "Install PIP" do
 end
 
 execute "Check setuptools & tox is installed" do
-  command "pip install setuptools tox"
+  command "pip install setuptools tox==3.5.3"
 end
 
 # install middleware in development mode
