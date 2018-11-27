@@ -147,6 +147,7 @@ func TestAPI(t *testing.T) {
 	testRetry(t)
 	testOps(t)
 	testChunkedPut(t)
+	testBadConnection(t)
 
 	// Shutdown packages
 
@@ -864,7 +865,7 @@ func testChunkedPut(t *testing.T) {
 			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
 			globals.chaosCloseChunkFailureRate = chaosCloseChunkFailureRate
 			globals.retryLimitObject = retryLimitObject
-			globals.chunkedConnectionPool.poolCapacity = chunkedConnectionPoolSize
+			resizeChunkedConnectionPool(uint(chunkedConnectionPoolSize))
 		}
 	)
 	defer cleanup()
@@ -877,13 +878,7 @@ func testChunkedPut(t *testing.T) {
 	)
 
 	// increase the pool sizes to get some concurrency (non-chunked isn't tested here)
-	poolSize := 12
-	globals.chunkedConnectionPool.poolCapacity = uint16(poolSize)
-	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, poolSize)
-	for i := 0; i < poolSize; i++ {
-		globals.chunkedConnectionPool.lifoOfActiveConnections[i] = nil
-	}
-	globals.chunkedConnectionPool.lifoIndex = 0
+	resizeChunkedConnectionPool(12)
 
 	// (lack of) headers for putting
 	catDogHeaderMap := make(map[string][]string)
@@ -1523,5 +1518,181 @@ func testRetryFails(t *testing.T, logcopy *logger.LogTarget,
 	if retrySuccessCntPost != retrySuccessCntPre {
 		t.Errorf("%s: stats updated incorrectly: retrySuccessOps is %d should be %d",
 			opname, retrySuccessCntPost, retrySuccessCntPre)
+	}
+}
+
+// Test intermittent bad connections (can't connect to server)
+//
+func testBadConnection(t *testing.T) {
+
+	// preserve the original settings of these globals that we change
+	var (
+		chaosOpenConnectionFailureRate  = globals.chaosOpenConnectionFailureRate
+		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
+		chaosFetchChunkedPutFailureRate = globals.chaosFetchChunkedPutFailureRate
+
+		retryLimitObject             = globals.retryLimitObject
+		retryDelay                   = globals.retryDelay
+		nonChunkedConnectionPoolSize = globals.nonChunkedConnectionPool.poolCapacity
+
+		cleanup = func() {
+			globals.chaosOpenConnectionFailureRate = chaosOpenConnectionFailureRate
+			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
+			globals.chaosFetchChunkedPutFailureRate = chaosFetchChunkedPutFailureRate
+
+			globals.retryLimitObject = retryLimitObject
+			globals.retryDelay = retryDelay
+			resizeNonChunkedConnectionPool(uint(nonChunkedConnectionPoolSize))
+		}
+	)
+	defer cleanup()
+
+	var (
+		accountName   = "TestAccount"
+		containerName = "TestContainer"
+		objNameFmt    = "chunkObj%d"
+		objName       string
+	)
+
+	// increase the pool sizes to get some concurrency (chunked isn't tested here)
+	resizeNonChunkedConnectionPool(12)
+
+	// (lack of) headers for putting
+	catDogHeaderMap := make(map[string][]string)
+
+	// (re)create the test account and container
+
+	err := AccountPut(accountName, catDogHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("testBadConnection.AccountPut('%s', catDogHeaderMap) failed: %v", accountName, err)
+		t.Fatalf(tErr)
+	}
+
+	err = ContainerPut(accountName, containerName, catDogHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("testBadConnection.ContainerPut('%s', '%s', catDogHeaderMap) failed: %v",
+			accountName, containerName, err)
+		t.Fatalf(tErr)
+	}
+
+	// create a couple of dozen objects to work with
+	nObject := 24
+	globals.chaosSendChunkFailureRate = 0
+	globals.chaosFetchChunkedPutFailureRate = 0
+
+	objSize := 64 * 1024
+	randGen := rand.New(rand.NewSource(2))
+	for i := 0; i < nObject; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+
+		// write an object and verify it
+		err = testObjectWriteVerify(t, accountName, containerName, objName, objSize, randGen)
+		if err != nil {
+			fmt.Printf("testBadConnection: FATAL ERROR: %v\n", err)
+			t.Error(err)
+		}
+	}
+
+	// verify we can access the last object
+	_, err = ObjectHead(accountName, containerName, objName)
+	if err != nil {
+		fmt.Printf("testBadConnection: HEAD of object %s failed: %v\n", objName, err)
+		t.Error(err)
+	}
+
+	// cause all openConnection calls to fails and close any cached connections
+	globals.chaosOpenConnectionFailureRate = 1
+	drainConnections()
+
+	_, err = ObjectHead(accountName, containerName, objName)
+	if err == nil {
+		fmt.Printf("testBadConnection: HEAD of object %s should have failed: %v\n",
+			objName, err)
+		t.Error(err)
+	}
+
+	// object operations will retry for:
+	// globals.retryDelayObjects * (globals.RetryExpBackoffObject ^ globals.retryLimitObject - 1)
+	//
+	// before they fail.  once globals.retryLimitObject is set to 6, with the existing
+	// paramaters this works out to 25 msec * (2.0^6 - 1) == 1.575 sec.
+	//
+	// disable openConnection() for 500 msec and then enable it.  the HEAD
+	// request should succeed during the last 2 or 3 retries.
+	globals.retryLimitObject = 6
+
+	var rendezvous sync.WaitGroup
+
+	rendezvous.Add(1)
+	go func() {
+		_, err = ObjectHead(accountName, containerName, objName)
+		if err != nil {
+			fmt.Printf("testBadConnection: HEAD of object %s failed: %v\n", objName, err)
+			t.Error(err)
+		}
+
+		rendezvous.Done()
+	}()
+	time.Sleep(500 * time.Millisecond)
+
+	globals.chaosOpenConnectionFailureRate = 0
+	rendezvous.Wait()
+
+	// try a batch of HEAD operations in parallel in the same scenario.
+	//
+	// unfortunately, we also have ramswift Chaos settings that cause every 2nd object
+	// HEAD request to fail ("RamSwiftChaos.ObjectHeadFailureRate=2" at the top of
+	// this file).  that means that if we submit 4 HEAD requests, about 2 of them will
+	// fail.  of those 4, the 2 that succeed will exit while the 2 that fail will try
+	// again after the retry interval expires, at which point 1 will succeed and the
+	// the other will fail.
+	//
+	// start with 8 HEAD requests.  while chaosOpenConnectionFailureRate == 1 all of
+	// the requests will fail.  after chaosOpenConnectionFailureRate == 0 then half of
+	// the requests will succeed, so we need 4 successful retry cycles for all 8 to
+	// succeed.  waiting 60 msec before enabled connections should leave enough time
+	// for all 8 requests to complete.
+	globals.chaosOpenConnectionFailureRate = 1
+	for i := 0; i < 8; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+
+		rendezvous.Add(1)
+		go func() {
+			_, err = ObjectHead(accountName, containerName, objName)
+			if err != nil {
+				fmt.Printf("testBadConnection: HEAD of object %s failed: %v\n", objName, err)
+				t.Error(err)
+			}
+
+			rendezvous.Done()
+		}()
+	}
+	time.Sleep(60 * time.Millisecond)
+
+	globals.chaosOpenConnectionFailureRate = 0
+	rendezvous.Wait()
+
+	// cleanup the mess we made (objects, container, and account)
+	globals.chaosOpenConnectionFailureRate = 0
+	for i := 0; i < nObject; i++ {
+		objName = fmt.Sprintf(objNameFmt, i)
+
+		err = ObjectDelete(accountName, containerName, objName, 0)
+		if nil != err {
+			tErr := fmt.Sprintf("ObjectDelete('%s', '%s', '%s') failed: %v",
+				accountName, containerName, objName, err)
+			t.Error(tErr)
+		}
+	}
+
+	err = ContainerDelete(accountName, containerName)
+	if nil != err {
+		tErr := fmt.Sprintf("ContainerDelete('%s', '%s') failed: %v", accountName, containerName, err)
+		t.Error(tErr)
+	}
+	err = AccountDelete(accountName)
+	if nil != err {
+		tErr := fmt.Sprintf("AccountDelete('%s') failed: %v", accountName, err)
+		t.Error(tErr)
 	}
 }
