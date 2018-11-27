@@ -82,6 +82,7 @@ type globalsStruct struct {
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
 	chaosSendChunkFailureRate       uint64 // set only during testing
 	chaosCloseChunkFailureRate      uint64 // set only during testing
+	chaosOpenConnectionFailureRate  uint32 // set only during testing
 
 	// statistics for requests to swiftclient
 	AccountDeleteUsec              bucketstats.BucketLog2Round     // bucketized by time

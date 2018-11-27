@@ -63,7 +63,7 @@ def parse_path(path):
     return segs
 
 
-PFS_ERRNO_RE = re.compile("^errno: (\d+)$")
+PFS_ERRNO_RE = re.compile(r'^errno: (\d+)$')
 
 
 def extract_errno(errstr):
