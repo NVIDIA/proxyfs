@@ -1,5 +1,16 @@
 # ProxyFS Release Notes
 
+## 1.8.0.5 (November 27, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to leak "connection slots" from
+the ChunkedConnectionPool or the NonChunkedConnectionPool if
+the noauth proxy was not running when proxyfs tried to open a
+new connection (in swiftclient.acquireChunkedConnection() and
+swiftclient.acquireNonChunkedConnection()).  This could happen during
+a reload of the noauth proxy when a new configuraiton is pushed.
+
 ## 1.8.0.4 (November 12, 2018)
 
 ### Bug Fixes:
