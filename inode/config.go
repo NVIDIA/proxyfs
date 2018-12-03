@@ -68,7 +68,6 @@ type volumeStruct struct {
 	maxExtentsPerFileNode          uint64
 	defaultPhysicalContainerLayout *physicalContainerLayoutStruct
 	maxFlushSize                   uint64
-	maxFlushTime                   time.Duration
 	headhunterVolumeHandle         headhunter.VolumeHandle
 	inodeCache                     sortedmap.LLRBTree //                        key == InodeNumber; value == *inMemoryInodeStruct
 	inodeCacheLRUHead              *inMemoryInodeStruct
@@ -559,7 +558,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	}
 
 	defaultPhysicalContainerLayout = &physicalContainerLayoutStruct{
-		name:                        defaultPhysicalContainerLayoutName,
+		name: defaultPhysicalContainerLayoutName,
 		containerNameSliceNextIndex: 0,
 		containerNameSliceLoopCount: 0,
 	}
@@ -590,6 +589,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	defaultPhysicalContainerLayout.containerNameSlice = make([]string, defaultPhysicalContainerLayout.containersPerPeer)
 
 	volume.defaultPhysicalContainerLayout = defaultPhysicalContainerLayout
+
+	volume.maxFlushSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxFlushSize")
+	if nil != err {
+		globals.Unlock()
+		return
+	}
 
 	err = volume.loadSnapShotPolicy(confMap)
 	if nil != err {
