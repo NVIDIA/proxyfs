@@ -15,24 +15,20 @@ import (
 //
 //   Up()
 //   VolumeGroupCreated()
+//   VolumeGroupMoved()
 //   VolumeCreated()
+//   VolumeMoved()
 //   ServeVolume()
+//   SignaledFinish()
 //
 // By contrast, the following callbacks will be issued in the reverse order as package
 // init() func calls have registered:
 //
-//   VolumeGroupDestroyed()
-//   VolumeDestroyed()
+//   SignaledStart()
 //   UnserveVolume()
+//   VolumeDestroyed()
+//   VolumeGroupDestroyed()
 //   Down()
-//
-// The remaining APIs should be implemented such that order is not required. Nevertheless,
-// the following callbacks will also be issued in the same order as package init() func
-// calls have registered:
-//
-//   VolumeGroupMoved()
-//   VolumeMoved()
-//   Signaled()
 //
 type Callbacks interface {
 	Up(confMap conf.ConfMap) (err error)
