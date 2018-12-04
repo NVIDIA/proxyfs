@@ -346,6 +346,10 @@ func TestFetch(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionBool=true: %v", err)
 	}
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionUint8=91")
+	if nil != err {
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionUint8=91: %v", err)
+	}
 	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionUint16=12")
 	if nil != err {
 		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionUint16=12: %v", err)
@@ -400,6 +404,10 @@ func TestFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionBool: %v", err)
 	}
+	testUint8, err := confMap.FetchOptionValueUint8("TestNamespace:Test_-_Section", "Test_-_OptionUint8")
+	if nil != err {
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint8: %v", err)
+	}
 	testUint16, err := confMap.FetchOptionValueUint16("TestNamespace:Test_-_Section", "Test_-_OptionUint16")
 	if nil != err {
 		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionUint16: %v", err)
@@ -448,6 +456,9 @@ func TestFetch(t *testing.T) {
 	}
 	if testBool != true {
 		t.Fatalf("TestNamespace:Test_-_Section.TestBool contained unexpected value")
+	}
+	if uint8(91) != testUint8 {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint8 contained unexpected value")
 	}
 	if uint16(12) != testUint16 {
 		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionUint16 contained unexpected value")

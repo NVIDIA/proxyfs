@@ -3,6 +3,7 @@ package utils
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -640,6 +641,25 @@ func (p *Profiler) Dump() {
 	remainingTime := totalDuration - totalEventTime
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "(remaining time)", remainingTime, remainingTime*100/totalDuration)
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "total duration", totalDuration, totalDuration*100/totalDuration)
+}
+
+func FetchRandomBool() (randBool bool) {
+	var (
+		err         error
+		randByteBuf []byte
+	)
+
+	randByteBuf = make([]byte, 1)
+
+	_, err = rand.Read(randByteBuf)
+	if nil != err {
+		err = fmt.Errorf("rand.Read(randByteBuf) failed: %v", err)
+		panic(err)
+	}
+
+	randBool = (randByteBuf[0] < 0x80)
+
+	return
 }
 
 func JSONify(input interface{}, indentify bool) (output string) {
