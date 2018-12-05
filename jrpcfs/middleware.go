@@ -132,7 +132,7 @@ func (s *Server) RpcGetAccount(in *GetAccountReq, reply *GetAccountReply) (err e
 		return err
 	}
 
-	entries, mtime, ctime, err := mountHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker)
+	entries, mtime, ctime, err := mountHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker, in.EndMarker)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 		return err
 	}
 
-	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.Prefix, in.Delimiter)
+	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.EndMarker, in.Prefix, in.Delimiter)
 	if err != nil {
 		return err
 	}
