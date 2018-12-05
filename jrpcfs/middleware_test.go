@@ -527,6 +527,7 @@ func TestRpcGetContainerMetadata(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 1,
 	}
 	response := GetContainerReply{}
@@ -546,6 +547,7 @@ func TestRpcGetContainerNested(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 	}
 	response := GetContainerReply{}
@@ -594,6 +596,7 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     ".git/logs/refs/",
 	}
@@ -614,6 +617,7 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     ".git/logs/re",
 	}
@@ -634,6 +638,7 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     "a/b/",
 	}
@@ -650,13 +655,14 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	assert.Equal("a/b/c/d-2", ents[4].Basename)
 }
 
-func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
+func TestRpcGetContainerPrefixAndMarkers(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
 
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     ".git/logs/refs/heads",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     ".git/logs/refs/",
 	}
@@ -670,6 +676,22 @@ func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[1].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[2].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[3].Basename)
+
+	request = GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     ".git/logs/refs/heads",
+		EndMarker:  ".git/logs/refs/heads/stable",
+		MaxEntries: 10000,
+		Prefix:     ".git/logs/refs/",
+	}
+	response = GetContainerReply{}
+	err = server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(2, len(response.ContainerEntries))
+	ents = response.ContainerEntries
+	assert.Equal(".git/logs/refs/heads/.DS_Store", ents[0].Basename)
+	assert.Equal(".git/logs/refs/heads/development", ents[1].Basename)
 }
 
 func TestRpcGetContainerPrefixAndDelimiter(t *testing.T) {
@@ -679,6 +701,7 @@ func TestRpcGetContainerPrefixAndDelimiter(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     ".git/logs/refs/",
 		Delimiter:  "/",
@@ -697,6 +720,7 @@ func TestRpcGetContainerPrefixAndDelimiter(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-nested",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 10000,
 		Prefix:     ".git/logs/refs",
 		Delimiter:  "/",
@@ -718,6 +742,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 5,
 	}
 	response := GetContainerReply{}
@@ -772,6 +797,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "animals/cow.txt",
+		EndMarker:  "",
 		MaxEntries: 5,
 	}
 	response = GetContainerReply{}
@@ -792,6 +818,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "empty-directory",
+		EndMarker:  "",
 		MaxEntries: 10,
 	}
 	response = GetContainerReply{}
@@ -817,6 +844,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "plants/eggplant.txt-symlink",
+		EndMarker:  "",
 		MaxEntries: 5,
 	}
 	response = GetContainerReply{}
@@ -830,6 +858,7 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	request = GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c",
 		Marker:     "zzzzzzzzzzzzzz",
+		EndMarker:  "",
 		MaxEntries: 5,
 	}
 	response = GetContainerReply{}
@@ -846,6 +875,7 @@ func TestRpcGetContainerZeroLimit(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   "/v1/AN_account/c",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 0,
 	}
 	response := GetContainerReply{}
@@ -862,6 +892,7 @@ func TestRpcGetContainerSymlink(t *testing.T) {
 	request := GetContainerReq{
 		VirtPath:   testVerAccountName + "/" + "c-symlink",
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 1,
 	}
 	response := GetContainerReply{}
@@ -883,6 +914,7 @@ func TestRpcGetAccount(t *testing.T) {
 	request := GetAccountReq{
 		VirtPath:   "/v1/" + testAccountName2,
 		Marker:     "",
+		EndMarker:  "",
 		MaxEntries: 5,
 	}
 	response := GetAccountReply{}
@@ -907,6 +939,7 @@ func TestRpcGetAccount(t *testing.T) {
 	request = GetAccountReq{
 		VirtPath:   "/v1/" + testAccountName2,
 		Marker:     "lima",
+		EndMarker:  "",
 		MaxEntries: 3,
 	}
 	response = GetAccountReply{}
@@ -918,10 +951,26 @@ func TestRpcGetAccount(t *testing.T) {
 	assert.Equal("november", response.AccountEntries[1].Basename)
 	assert.Equal("oscar", response.AccountEntries[2].Basename)
 
+	// EndMarker query can cap results ahead of MaxEntries
+	request = GetAccountReq{
+		VirtPath:   "/v1/" + testAccountName2,
+		Marker:     "lima",
+		EndMarker:  "oscar",
+		MaxEntries: 3,
+	}
+	response = GetAccountReply{}
+	err = server.RpcGetAccount(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(2, len(response.AccountEntries))
+	assert.Equal("mancy", response.AccountEntries[0].Basename)
+	assert.Equal("november", response.AccountEntries[1].Basename)
+
 	// Asking past the end is not an error, just empty
 	request = GetAccountReq{
 		VirtPath:   "/v1/" + testAccountName2,
 		Marker:     "zulu",
+		EndMarker:  "",
 		MaxEntries: 3,
 	}
 	response = GetAccountReply{}

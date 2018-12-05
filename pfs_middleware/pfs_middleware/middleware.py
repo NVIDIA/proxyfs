@@ -827,8 +827,9 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_account_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         get_account_request = rpc.get_account_request(
-            urllib_parse.unquote(req.path), marker, limit)
+            urllib_parse.unquote(req.path), marker, end_marker, limit)
         # If the account does not exist, then __call__ just falls through to
         # self.app, so we never even get here. If we got here, then the
         # account does exist, so we don't have to worry about not-found
@@ -1142,13 +1143,15 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         prefix = req.params.get('prefix', '')
         delimiter = req.params.get('delimiter', '')
         # For now, we only support "/" as a delimiter
         if delimiter not in ("", "/"):
             return swob.HTTPBadRequest(request=req)
         get_container_request = rpc.get_container_request(
-            urllib_parse.unquote(req.path), marker, limit, prefix, delimiter)
+            urllib_parse.unquote(req.path),
+            marker, end_marker, limit, prefix, delimiter)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
         except utils.RpcError as err:
