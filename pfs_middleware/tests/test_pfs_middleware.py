@@ -225,6 +225,34 @@ class TestAccountGet(BaseMiddlewareTest):
             headers.get("X-Account-Storage-Policy-Default-Container-Count"),
             "4")
 
+    def test_escape_hatch(self):
+        self.app.register(
+            'GET', '/v1/AUTH_test', 200, {},
+            '000000000000DACA\n000000000000DACC\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", headers={
+            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, '000000000000DACA\n000000000000DACC\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", environ={
+            'swift_owner': True})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", method='PUT', headers={
+            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '405 Method Not Allowed')
+
+        req = swob.Request.blank("/v1/AUTH_test", headers={
+            "X-Bypass-ProxyFS": "true"})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+
     def test_text(self):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
