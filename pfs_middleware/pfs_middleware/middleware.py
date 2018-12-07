@@ -1522,6 +1522,9 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
+        if req.environ.get('swift_owner') and 'get-read-plan' in req.params:
+            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
+                               headers={"Content-Type": "application/json"})
         headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
 
         if "Content-Type" not in headers:
