@@ -552,10 +552,10 @@ class TestObjectGet(BaseMiddlewareTest):
                         "Offset": 0,
                         "Length": 8}]}}
 
-        req = swob.Request.blank('/v1/AUTH_test/notes/lunch')
-
         self.fake_rpc.register_handler(
             "Server.RpcGetObject", mock_RpcGetObject)
+
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch')
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
@@ -565,6 +565,19 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(headers["ETag"],
                          mware.construct_etag("AUTH_test", 1245, 2424))
         self.assertEqual(body, 'burritos')
+
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(json.loads(body), [{
+            "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                           "/0000000000c11fbd"),
+            "Offset": 0,
+            "Length": 8,
+        }])
 
     def test_GET_slo_manifest(self):
         self.app.register(
