@@ -107,7 +107,7 @@ from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
-from swift.common.utils import get_logger, Timestamp
+from swift.common.utils import config_true_value, get_logger, Timestamp
 
 
 # POSIX file-path limits. Taken from Linux's limits.h, which is also where
@@ -719,8 +719,25 @@ class PfsMiddleware(object):
                     if denial_response:
                         return denial_response
 
-                # Authorization succeeded; dispatch to a helper method
+                # Authorization succeeded
                 method = req.method
+
+                # Check whether we ought to bypass. Note that swift_owner
+                # won't be set until we call authorize
+                if config_true_value(req.headers.get('X-Bypass-ProxyFS')) and \
+                        req.environ.get('swift_owner'):
+                    if method not in ('GET', 'HEAD'):
+                        return swob.HTTPMethodNotAllowed()
+                    # We needed to do a PFS-namespace container HEAD to get
+                    # the "appropriate" ACL ahead of calling the authorize
+                    # callback, but that almost certainly didn't exist and
+                    # even if it did, it probably gave an inappropriate
+                    # storage policy. Kill the cache entry, or bypassed object
+                    # GETs will likely 404.
+                    clear_info_cache(None, req.environ, acc, con)
+                    return self.app
+
+                # Otherwise, dispatch to a helper method
                 if method == 'GET' and obj:
                     resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
