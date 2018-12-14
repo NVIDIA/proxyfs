@@ -123,6 +123,8 @@ ZERO_FILL_PATH = "/0"
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+LISTING_ETAG_OVERRIDE_HEADER = \
+    "X-Object-Sysmeta-Container-Update-Override-Etag"
 
 # They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
@@ -426,10 +428,18 @@ def extract_container_metadata_from_headers(req):
 
 
 def best_possible_etag(obj_metadata, account_name, ino, num_writes,
-                       is_dir=False):
+                       is_dir=False, container_listing=False):
     if is_dir:
         return EMPTY_OBJECT_ETAG
-    if ORIGINAL_MD5_HEADER in obj_metadata:
+    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                return rest
+        except ValueError:
+            pass
+    elif ORIGINAL_MD5_HEADER in obj_metadata:
         val = obj_metadata[ORIGINAL_MD5_HEADER]
         try:
             stored_num_writes, md5sum = val.split(':', 1)
@@ -1200,7 +1210,8 @@ class PfsMiddleware(object):
                 ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
+                container_listing=True)
             json_entry = {
                 "name": name,
                 "bytes": int(swift_bytes or size),
@@ -1431,6 +1442,11 @@ class PfsMiddleware(object):
         obj_metadata = extract_object_metadata_from_headers(req.headers)
         obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
                                                        hasher.hexdigest())
+        # Add a similar prefix to any container-update-override etag, to
+        # similarly verify that there wasn't a subsequent write.
+        if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+            obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
+                len(log_segments), obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
