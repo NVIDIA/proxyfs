@@ -13,13 +13,14 @@ import (
 func (cs *EtcdConn) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
 	switch keyPrefix {
-	case nodeKeyStatePrefix():
+	case getNodeStateKeyPrefix():
 		cs.nodeStateWatchEvents(swg)
-	case nodeKeyHbPrefix():
+	case getNodeHbKeyPrefix():
 		cs.nodeHbWatchEvents(swg)
 	case getVgKeyPrefix():
 		cs.vgWatchEvents(swg)
 	}
+
 	cs.watcherWG.Done()
 }
 

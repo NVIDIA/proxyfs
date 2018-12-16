@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+const (
+	etcdQueryTimeout  time.Duration = 5 * time.Second
+	etcdUpdateTimeout time.Duration = 5 * time.Second
+)
+
 // TODO - use etcd namepspace.  At a mininum we need a proxyfsd
 // namespace in case we coexist with other users.
 
@@ -39,7 +44,6 @@ type EtcdConn struct {
 // VgState represents the state of a volume group at a given point in time
 type VgState string
 
-// NOTE: When updating NodeState be sure to also update String() below.
 const (
 	INITIALVS   VgState = "INITIAL"   // INITIAL means just created
 	ONLININGVS  VgState = "ONLINING"  // ONLINING means VG is starting to come online on the node in the volume list
@@ -47,11 +51,10 @@ const (
 	OFFLININGVS VgState = "OFFLINING" // OFFLINING means the VG is gracefully going offline
 	OFFLINEVS   VgState = "OFFLINE"   // OFFLINE means the VG is offline and volume list is empty
 	FAILEDVS    VgState = "FAILED"    // FAILED means the VG failed on the node in the volume list
-	maxVgState                        // Must be last field!
 )
 
 // VgInfoValue is the information associated with a volume group key in the etcd
-// database (except its JSON encoded)
+// database (except its JSON encoded in the database)
 //
 type VgInfoValue struct {
 	VgState      VgState
@@ -72,13 +75,40 @@ type VgInfo struct {
 	VgInfoValue
 }
 
+// VgState represents the state of a volume group at a given point in time
+type NodeState string
+
+const (
+	INITIAL   NodeState = "INITIAL"   // INITIAL means just created
+	STARTING  NodeState = "STARTING"  // STARTING means node is starting to come online
+	ONLINE    NodeState = "ONLINE"    // ONLINE means node is available to online VGs
+	OFFLINING NodeState = "OFFLINING" // OFFLINING means the node gracefully shut down
+	DEAD      NodeState = "DEAD"      // DEAD means node appears to have left the cluster
+)
+
+// NodeInfoValue is the information associated with a node key in the etcd
+// database (except its JSON encoded in the database)
+//
+type NodeInfoValue struct {
+	NodeState     NodeState
+	NodeHeartBeat time.Time
+}
+
+// NodeInfo is information associated with a node as well as the revision number
+// when the info was fetched and the last time the value was modified.
+//
+type NodeInfo struct {
+	EtcdKeyHeader
+	NodeInfoValue
+}
+
 // AllNodeInfo contains the state of the interesting keys in the shared database
 // relevant to nodes as of a particular revision number (sequence number)
 //
 type AllNodeInfo struct {
 	RevNum           RevisionNumber
 	NodesHb          map[string]time.Time
-	NodesState       map[string]string
+	NodesState       map[string]NodeState
 	NodesAlreadyDead []string
 	NodesOnline      []string
 }
@@ -114,10 +144,22 @@ func (cs *EtcdConn) Endpoints() []string {
 func (cs *EtcdConn) startWatchers() {
 
 	// Start a watcher to watch for node state changes
-	cs.startAWatcher(nodeKeyStatePrefix())
+	cs.startAWatcher(getNodeStateKeyPrefix())
 
 	// Start a watcher to watch for node heartbeats
-	cs.startAWatcher(nodeKeyHbPrefix())
+	cs.startAWatcher(getNodeHbKeyPrefix())
+
+	// Start a watcher to watch for volume group changes
+	cs.startAWatcher(getVgKeyPrefix())
+}
+
+func (cs *EtcdConn) stopWatchers() {
+
+	// Start a watcher to watch for node state changes
+	cs.startAWatcher(getNodeStateKeyPrefix())
+
+	// Start a watcher to watch for node heartbeats
+	cs.startAWatcher(getNodeHbKeyPrefix())
 
 	// Start a watcher to watch for volume group changes
 	cs.startAWatcher(getVgKeyPrefix())
@@ -126,6 +168,7 @@ func (cs *EtcdConn) startWatchers() {
 // Server sets up to be a long running process in the consensus cluster
 // driving longer term operations as opposed to CLI which is only doing
 // short term operations before exiting.
+//
 func (cs *EtcdConn) Server() (err error) {
 
 	// Verify that our hostName is one of the members of the cluster
@@ -146,12 +189,13 @@ func (cs *EtcdConn) Server() (err error) {
 		return
 	}
 
+	// we're going to be a server! we're going to be a server!
 	cs.server = true
 
 	cs.startWatchers()
 
 	// Set state of local node to STARTING
-	err = cs.setNodeStateForced(cs.hostName, STARTINGNS)
+	err = cs.updateNodeState(cs.hostName, RevisionNumber(0), STARTING, nil)
 	if err != nil {
 		// TODO - assume this means txn timed out, could not
 		// get majority, etc.... what do we do?
@@ -187,6 +231,12 @@ func (cs *EtcdConn) AddVolumeGroup(name string, ipAddr string, netMask string,
 // RmVolumeGroup removes a volume group if it is OFFLINE
 func (cs *EtcdConn) RmVolumeGroup(name string) (err error) {
 	err = cs.rmVg(name)
+	return
+}
+
+// Mark the volume group failed (a transition that can occur from any state).
+func (cs *EtcdConn) MarkVolumeGroupFailed(name string) (err error) {
+	err = cs.markVgFailed(name)
 	return
 }
 
@@ -273,7 +323,7 @@ func (cs *EtcdConn) CLIStopNode(name string) (err error) {
 
 	cs.stopNode = true
 	cs.nodeName = name
-	err = cs.setNodeState(name, OFFLININGNS)
+	err = cs.updateNodeState(name, RevisionNumber(0), OFFLINING, nil)
 	if err != nil {
 		return err
 	}
@@ -303,19 +353,27 @@ func (cs *EtcdConn) ListNode() AllNodeInfo {
 	return cs.getRevNodeState(RevisionNumber(0))
 }
 
-// Close will cause this local "node" to transition to
-// OFFLINING -> DEAD and leave etcd cluster.
+// Close the connection
 func (cs *EtcdConn) Close() {
+	fmt.Printf("(*EtcdConn).Close(): called\n")
 
-	cs.setNodeState(cs.hostName, OFFLININGNS)
+	// until, or if, we implement stopWatcher() functions for the several
+	// watchers that each client creates, do not zero out the cs.cli
+	// pointer they use for messages.
+	cs.cli = nil
+}
+
+// Cause this local "node" to transition to OFFLINING and wait for another node
+// to mark it DEAD.
+func (cs *EtcdConn) OfflineNode() {
+
+	cs.updateNodeState(cs.hostName, RevisionNumber(0), OFFLINING, nil)
 
 	// When we receive our own DEAD notification, we
 	// close the connection to etcd.   This causes
 	// the watchers to exit and waitWatchers() blocks
 	// until the watchers have exited.
 	cs.waitWatchers()
-
-	cs.cli = nil
 }
 
 // SetTest sets the bool signalling if this is a unit

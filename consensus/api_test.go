@@ -116,6 +116,7 @@ func testAddRmVolumeGroup(t *testing.T) {
 	cs, tc := newHA(t)
 	defer closeHA(t, cs, tc)
 
+	// just to be on the safe side delete the test key if it already exists
 	keys := vgKeysToDelete(vgTestName)
 	deleteVgKeys(t, cs, keys)
 
@@ -127,6 +128,11 @@ func testAddRmVolumeGroup(t *testing.T) {
 	// If recreate the VG again it should fail
 	err = cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
 	assert.NotNil(err, "AddVolumeGroup() twice should err")
+
+	// the volume has to be offline or dead before it can be removed; let's
+	// go straight to dead
+	err = cs.MarkVolumeGroupFailed(vgTestName)
+	assert.Nil(err, "MarkVolumeGroupFailed() returned err")
 
 	// Now remove the volume group
 	err = cs.RmVolumeGroup(vgTestName)
@@ -159,8 +165,11 @@ func testStartVolumeGroup(t *testing.T) {
 	err := cs.AddVolumeGroup(vgTestName, ipAddr, netMask, nic, autoFailover, enabled)
 	assert.Nil(err, "AddVolumeGroup() returned err")
 
-	// Setup as a server so that startVgs() will start the
-	// VG.
+	// Create this node as part of the cluster
+	err = cs.createNode(cs.hostName)
+	assert.Nil(err, "createNode() returned err")
+
+	// Setup as a server so that startVgs() will start the VG.
 	err = cs.Server()
 
 	// TODO - block until server is ONLINE

@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"go.etcd.io/etcd/clientv3"
-	mvccpb "go.etcd.io/etcd/mvcc/mvccpb"
+	etcdserverpb "go.etcd.io/etcd/etcdserver/etcdserverpb"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -15,31 +17,38 @@ import (
 // updated the database (or failed).
 type RevisionNumber int64
 
-// EtcdKeyHeader is an etcd revision number.  All values in the database with
-// the same revision number for CreateRevNum, ModRevNum, or RevNum were created
-// in the database, modified in the datbase, or looked up in the database at the
-// same revision number, respectively.
+// Revision numbers associated with a key.  If two keys in the database have the
+// same revision number for CreateRevNum, ModRevNum, or RevNum then they were
+// created in the database, modified in the datbase, or looked up in the
+// database at that revision number, respectively.
 //
 type EtcdKeyHeader struct {
 	CreateRevNum RevisionNumber
 	ModRevNum    RevisionNumber
 	RevNum       RevisionNumber
+	// Number of times the value for the key has been modified, starting
+	// with 1.
+	Version int64
 }
 
-// Unpack a slice of etcd KeyValue into a map from the keys to the corresponding
-// key header information, a map from the keys to the corresponding Values, and
-// a map from the keys to a comparison function (clientv3.Cmp) that can be used
-// as a conditional in an etcd transaction to determine if the key or its value
-// has changed.
+// Given a slice of etcd KeyValue ([]*mvccpb.KeyValue) build and return several maps:
+//  - a map of keys to the corresponding key header information;
+//  - a map of keys to the corresponding Values; and
+//  - a map of keys to a comparison function (clientv3.Cmp) that can be used as
+//    a conditional in an etcd transaction to determine if the key or its value
+//    has changed.
 //
 // These maps are empty if there are no keys in the response.
 //
-func unpackKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (keyHeaders map[string]EtcdKeyHeader,
-	values map[string][]byte, keyCmps map[string]clientv3.Cmp, err error) {
+// revNum should be the revision number of the transaction or query that
+// returned the keys.
+//
+func mapKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (headers map[string]*EtcdKeyHeader,
+	values map[string][]byte, cmps map[string]clientv3.Cmp, err error) {
 
-	keyHeaders = make(map[string]EtcdKeyHeader)
+	headers = make(map[string]*EtcdKeyHeader)
 	values = make(map[string][]byte)
-	keyCmps = make(map[string]clientv3.Cmp)
+	cmps = make(map[string]clientv3.Cmp)
 
 	for _, keyValue := range etcdKV {
 		key := string(keyValue.Key)
@@ -47,6 +56,7 @@ func unpackKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (keyHeade
 			CreateRevNum: RevisionNumber(keyValue.CreateRevision),
 			ModRevNum:    RevisionNumber(keyValue.ModRevision),
 			RevNum:       revNum,
+			Version:      keyValue.Version,
 		}
 
 		// Create a comparison function that will return false if the
@@ -60,10 +70,120 @@ func unpackKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (keyHeade
 			cmp = clientv3.Compare(clientv3.ModRevision(key), "=", keyValue.ModRevision)
 		}
 
-		keyHeaders[key] = header
+		headers[key] = &header
 		values[key] = keyValue.Value
-		keyCmps[key] = cmp
+		cmps[key] = cmp
 	}
+	return
+}
+
+// Unpack a slice of KeyValue pairs from an event, a Get request, or a range
+// request and return a map from keys to unpacked values and a map from keys to
+// slices of compare conditionals.
+//
+// For each KeyValue passed in, the etcd value is unpacked using the passed
+// unpack function and the unpacked value is returned in the unpackedValues map.
+// In addition a slice of Compare conditionals (clientv3.Cmp) is returned for
+// each key in a separate map, where the Compare can be used as a conditional in
+// a transaction (the comparison will evaluate to false if the key has changed
+// since the query).
+//
+// If the key has been deleted or does not exist then the compare function
+// (conditional) checks that CreateRevNum == 0 for the key; such a compare
+// function does *not* guarantee that the key has not been modified since the
+// query, it simply guarantees the key doesn't exist.  If the key is created
+// again and then deleted before the compare function is used it will still
+// evaluate to true even though the key has changed since the query.
+//
+func (cs *EtcdConn) unpackKeyValues(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue,
+	unpackValueFunc func(header *EtcdKeyHeader, value []byte) (unpackedValue interface{}, err error)) (
+	unpackedValues map[string]interface{}, nodeInfoCmps map[string][]clientv3.Cmp, err error) {
+
+	unpackedValues = make(map[string]interface{})
+	nodeInfoCmps = make(map[string][]clientv3.Cmp)
+
+	keyHeaders, values, modCmps, err := mapKeyValues(revNum, etcdKVs)
+	if err != nil {
+		fmt.Printf("unpackNodeInfo(): unpackKeyValues for '%v' returned err: %s\n", etcdKVs, err)
+		return
+	}
+
+	for key, header := range keyHeaders {
+		// values[key] is empty if the key was deleted
+		unpackedValues[key], err = unpackValueFunc(header, values[key])
+		if err != nil {
+			fmt.Printf("unpackKeyValues(): unpack key '%s' header '%v' "+
+				"value '%v' failed: %s\n",
+				key, header, string(values[key]), err)
+			return
+		}
+		nodeInfoCmps[key] = []clientv3.Cmp{modCmps[key]}
+	}
+
+	return
+}
+
+// Fetch the values(s) for the specified key or key prefix as of the specified
+// revNum and unpack them into a map of keys to unpacked values and keys to
+// comparison functions.
+//
+// If revNum == 0 then return the information for the current revision number.
+//
+// The comparision function (conditional) can be used as a conditional in a
+// transaction to insure the value for the associated key has not changed.
+//
+// Note that it is not an error if the key does not exist.  Instead, the
+// returned unpackedValues map is empty and a comparison function that can be
+// used as a conditional to check that the key doesn't exist is returned.  (This
+// is probably not what you want if the value passed is a prefix).
+//
+// Only one comparison function per key is returned, but we return it in a slice
+// for convenience of the caller.
+//
+func (cs *EtcdConn) getUnpackedKeyValues(revNum RevisionNumber, key string,
+	unpackValueFunc func(header *EtcdKeyHeader, value []byte) (unpackedValue interface{}, err error)) (
+	unpackedValues map[string]interface{},
+	nodeInfoCmps map[string][]clientv3.Cmp, err error) {
+
+	// create a context for the request
+	ctx, cancel := context.WithTimeout(context.Background(), etcdQueryTimeout)
+	defer cancel()
+
+	var resp *clientv3.GetResponse
+	if revNum != 0 {
+		resp, err = cs.cli.Get(ctx, key, clientv3.WithRev(int64(revNum)))
+	} else {
+		resp, err = cs.cli.Get(ctx, key)
+	}
+	if err != nil {
+		return
+	}
+
+	if revNum != 0 && revNum != RevisionNumber(resp.Header.Revision) {
+		// how did this happen?
+		fmt.Printf("WARNING: key '%s' requested revision %d does not match returned revisision %d\n",
+			key, revNum, resp.Header.Revision)
+		revNum = RevisionNumber(resp.Header.Revision)
+	}
+	if revNum == 0 {
+		// if revNum not specified then return the version that we got
+		revNum = RevisionNumber(resp.Header.Revision)
+	}
+	if resp.OpResponse().Get().Count == int64(0) {
+		cmps := []clientv3.Cmp{
+			clientv3.Compare(clientv3.CreateRevision(key), "=", 0),
+		}
+		nodeInfoCmps = map[string][]clientv3.Cmp{key: cmps}
+		return
+	}
+
+	unpackedValues, nodeInfoCmps, err = cs.unpackKeyValues(revNum, resp.OpResponse().Get().Kvs, unpackValueFunc)
+	if err != nil {
+		fmt.Printf("getUnpackedKeyValues(): unpackKeyValues of %v returned err: %s\n",
+			resp.OpResponse().Get().Kvs, err)
+		return
+	}
+
 	return
 }
 
@@ -76,11 +196,12 @@ func unpackKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (keyHeade
 // If err != nil then it probably indicates a failure to communicate with etcd.
 //
 // This routine should probably retry the operation until the transaction
-// succeedds or fails.
+// succeeds or fails.
 //
 func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv3.Op) (txnResp *clientv3.TxnResponse, err error) {
-
-	fmt.Printf("updateEtcd() called on node '%s' for something\n", cs.hostName)
+	if len(operations) == 0 {
+		panic("no operations passed to updateEtcd()")
+	}
 
 	// create a context and then a transaction to update the database;
 	// cancel() must be called or we will leak memory
@@ -91,14 +212,17 @@ func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv
 	// if the conditionals are not satisfied then none of the operations are performed
 	txn = txn.If(conditionals...).Then(operations...)
 
+	// this should probably be logged
+	//fmt.Printf("updateEtcd(): called on node '%s' Transaction:\n%s", cs.hostName, cs.formatTxn(txn))
+
 	// let's do this thing ...
 	txnResp, err = txn.Commit()
 
-	fmt.Printf("updateEtcd(): Transaction: %s\n", cs.dumpTxn(txn))
+	// we should probably log the pass/fail results ...
 	if err != nil {
-		fmt.Printf("updateEtcd(): transaction failed: %s\n", err)
+		fmt.Printf("updateEtcd(): transaction failed: %s:\n%s", err, cs.formatTxn(txn))
 	} else {
-		fmt.Printf("updateEtcd(): Response: %s\n", cs.dumpTxnResp(txnResp))
+		//fmt.Printf("updateEtcd(): Transaction response: %s\n", cs.formatTxnResp(txnResp))
 	}
 
 	return
@@ -109,77 +233,272 @@ func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv
 // because none of these fields are exported, we can only get at them via
 // reflection, so let the navel gazing commence!
 //
-func (cs *EtcdConn) dumpTxn(txn clientv3.Txn) (dump string) {
+func (cs *EtcdConn) formatTxn(txnPtr clientv3.Txn) (dump string) {
 
-	// this is ~/code/ProxyFS/src/go.etcd.io/etcd/clientv3/txn.go 'type txn'
-	dump = fmt.Sprintf("txn type '%T' and value '%v'\n", txn, txn)
-
-	if reflect.TypeOf(txn).Kind() != reflect.Ptr {
-		dump += fmt.Sprintf("expected a pointer, got %v", reflect.TypeOf(txn).Kind())
-
-		panic(fmt.Sprintf("dumpTxn() Type(%T) should be a pointer to _something_", txn))
+	// txnPtr should be '*txn' from go.etcd.io/etcd/clientv3/txn.go; start by
+	// drilling down to the struct
+	if reflect.TypeOf(txnPtr).Kind() != reflect.Ptr {
+		dump += fmt.Sprintf("expected a pointer, got %v", reflect.TypeOf(txnPtr).Kind())
+		panic(dump)
+		// return
 	}
-	if reflect.ValueOf(txn).Elem().Type().Kind() != reflect.Struct {
-		dump += fmt.Sprintf("expected a pointer to a struct, got %v", reflect.TypeOf(txn).Kind())
-
-		panic(fmt.Sprintf("dumpTxn() Type(%T) should be a pointer to struct!", txn))
+	if reflect.ValueOf(txnPtr).Elem().Type().Kind() != reflect.Struct {
+		dump += fmt.Sprintf("expected a pointer to a struct, got %v", reflect.TypeOf(txnPtr).Kind())
+		panic(dump)
+		// return
 	}
-	fmt.Printf("dumpTxn(): %s\n", dump)
+	// txnAsValue "points to" a clientv3.txn; uncomment this line to use it
+	// to jump to the definition
+	// _ = clientv3.txn
+	txnAsValue := reflect.ValueOf(txnPtr).Elem()
 
-	structAsValue := reflect.ValueOf(txn).Elem()
-	structAsType := structAsValue.Type()
+	// this code is brittle; if clientv3.txn is changed it will probably panic.
+	//
+	// format the interesting fields of txn, which are:
+	// "cmps"	-- conditionals
+	// "sus"	-- actions if conditionals true (success)
+	// "fas"	-- actions if conditionatls false (fail)
+	// we don't care much about:
+	// "kv"		-- key value connection(???)
+	// "ctx"	-- request context (deadlines and cancellation)
+	// "mu"         -- a mutex which should be locked
+	// "cif"        -- debug field to insure If() called only once
+	// "cten"       -- debug field to insure Then() called only once
+	// "celse"      -- debug field to insure Else() called only once
+	// "isWrite"    -- true if transaction might modify database
+	// "callOpts"   -- call options(???)
+	cmpsAsValue := txnAsValue.FieldByName("cmps")
+	susAsValue := txnAsValue.FieldByName("sus")
+	fasAsValue := txnAsValue.FieldByName("fas")
 
-	for i := 0; i < structAsType.NumField(); i++ {
-		fieldName := structAsType.Field(i).Name
-		fieldAsType := structAsType.Field(i).Type
-		fieldAsValue := structAsValue.Field(i)
+	// dump the comparisons (conditionals)
+	//
+	// cmpsAsValue "points to" a slice of *etcdserverpb.Compare;
+	// use the next line to jump to that definition
+	_ = etcdserverpb.Compare{}
+	dump += fmt.Sprintf("    If: [")
+	for i := 0; i < cmpsAsValue.Len(); i++ {
+		cmp := cmpsAsValue.Index(i)
+		dump += cs.formatCompare(cmp)
+		if i+1 < cmpsAsValue.Len() {
+			dump += " && "
+		}
+	}
+	dump += fmt.Sprintf("]\n")
 
-		switch fieldName {
+	// dump the ops (actions) performed on success
+	//
+	// susAsValue "points to" a slice of *etcdserverpb.RequestOp;
+	// use the next line to jump to that definition
+	_ = etcdserverpb.RequestOp{}
+	dump += fmt.Sprintf("    Then: [")
+	for i := 0; i < susAsValue.Len(); i++ {
+		cmp := susAsValue.Index(i)
+		dump += cs.formatOp(cmp)
+		if i+1 < susAsValue.Len() {
+			dump += ", "
+		}
+	}
+	dump += fmt.Sprintf("]\n")
 
-		case "kv":
-			// pb.KVClient is not (very) interesting
+	// dump the ops (actions) performed on !success
+	//
+	// fasAsValue "points to" a slice of *etcdserverpb.RequestOp;
+	// use the next line to jump to that definition
+	_ = etcdserverpb.RequestOp{}
+	dump += fmt.Sprintf("    Else: [")
+	for i := 0; i < fasAsValue.Len(); i++ {
+		cmp := fasAsValue.Index(i)
+		dump += cs.formatOp(cmp)
+		if i+1 < fasAsValue.Len() {
+			dump += ", "
+		}
+	}
+	dump += fmt.Sprintf("]\n")
 
-		case "ctx":
-			// context.Context is not interesting
+	return
+}
 
-		case "mu":
-			// sync.Mutex not interestiong -- but it should be locked!
+// pretty print a single etcdserverpb.Compare struct
+//
+func (cs *EtcdConn) formatCompare(cmpPtrAsValue reflect.Value) (dump string) {
 
-		case "cif":
-			// cif should be false!
+	// drill down through the pointer to the Compare struct
+	cmpPtrAsType := cmpPtrAsValue.Type()
+	if cmpPtrAsType.Kind() != reflect.Ptr {
+		dump += fmt.Sprintf("expected a pointer, got %v", cmpPtrAsType.Kind())
+		panic(dump)
+		// return
+	}
+	if cmpPtrAsValue.Elem().Type().Kind() != reflect.Struct {
+		dump += fmt.Sprintf("expected a pointer to a struct, got %v", cmpPtrAsValue)
+		panic(dump)
+		// return
+	}
+	// cmpsAsValue "points to" an etcdserverpb.Compare; use the next line to jump to
+	// that definition
+	_ = etcdserverpb.Compare{}
+	cmpAsValue := cmpPtrAsValue.Elem()
 
-		case "cthen":
-			// cthen should be false!
+	result := cmpAsValue.FieldByName("Result").Int()
+	target := cmpAsValue.FieldByName("Target").Int()
+	key := cmpAsValue.FieldByName("Key").Bytes()
+	rangeEnd := cmpAsValue.FieldByName("RangeEnd").Bytes()
+	targetUnionAsValue := cmpAsValue.FieldByName("TargetUnion")
 
-		case "celse":
-			// celse should be false!
+	var targetUnion string = "<nil>"
+	if !targetUnionAsValue.IsNil() {
 
-		case "isWrite":
-			// isWrite -- not sure what this is
+		switch targetUnionAsValue.Elem().Type().String() {
 
-		case "cmps":
-			// dump the comparison operations
+		case "*etcdserverpb.Compare_Version":
+			targetUnion = fmt.Sprintf("Revision:%d",
+				targetUnionAsValue.Elem().Elem().FieldByName("Version").Int())
 
-		case "sus":
-			// dump the success operations
+		case "*etcdserverpb.Compare_CreateRevision":
+			targetUnion = fmt.Sprintf("CreateRevision:%d",
+				targetUnionAsValue.Elem().Elem().FieldByName("CreateRevision").Int())
 
-		case "fas":
-			// dump the fail operations
+		case "*etcdserverpb.Compare_ModRevision":
+			targetUnion = fmt.Sprintf("ModRevision:%d",
+				targetUnionAsValue.Elem().Elem().FieldByName("ModRevision").Int())
 
-		case "callOpts":
-			// grpc call options -- not interesting?
+		case "*etcdserverpb.Compare_Value":
+			targetUnion = fmt.Sprintf("Value:%s",
+				string(targetUnionAsValue.Elem().Elem().FieldByName("Value").Bytes()))
+
+		case "*etcdserverpb.Compare_Lease":
+			targetUnion = fmt.Sprintf("Lease:%d",
+				targetUnionAsValue.Elem().Elem().FieldByName("Lease").Int())
 
 		default:
-			fmt.Printf("dumpTxn(): tx has an unknown field named '%s' type '%v' value '%v'\n",
-				fieldName, fieldAsType, fieldAsValue)
+			targetUnion = "unknown"
+			panic("unknown type!")
+
 		}
+	}
+
+	if len(rangeEnd) == 0 {
+		dump = fmt.Sprintf("(key:'%s' %s %s %s)", key,
+			etcdserverpb.Compare_CompareResult_name[int32(result)],
+			etcdserverpb.Compare_CompareTarget_name[int32(target)], targetUnion)
+	} else {
+		dump = fmt.Sprintf("(key:'%s'-'%s' %s %s %s)", key, rangeEnd,
+			etcdserverpb.Compare_CompareResult_name[int32(result)],
+			etcdserverpb.Compare_CompareTarget_name[int32(target)], targetUnion)
 	}
 
 	return
 }
 
-func (cs *EtcdConn) dumpTxnResp(txnResp *clientv3.TxnResponse) (dump string) {
+// pretty print a single etcdserverpb.RequestOp struct
+//
+func (cs *EtcdConn) formatOp(opPtrAsValue reflect.Value) (dump string) {
 
-	dump = fmt.Sprintf("txnResp type `%T' and value '%v'\n", *txnResp, *txnResp)
+	// drill down through the pointer to the RequestOp struct
+	cmpPtrAsType := opPtrAsValue.Type()
+	if cmpPtrAsType.Kind() != reflect.Ptr {
+		dump += fmt.Sprintf("expected a pointer, got %v", cmpPtrAsType.Kind())
+		panic(dump)
+		// return
+	}
+	if opPtrAsValue.Elem().Type().Kind() != reflect.Struct {
+		dump += fmt.Sprintf("expected a pointer to a struct, got %v", opPtrAsValue)
+		panic(dump)
+		// return
+	}
+	// opAsValue "points to" a etcdserverpb.RequestOp;
+	// use the next line to jump to that definition
+	_ = etcdserverpb.RequestOp{}
+	opAsValue := opPtrAsValue.Elem()
+
+	requestAsValue := opAsValue.FieldByName("Request")
+
+	var opAsString string
+	switch requestAsValue.Elem().Type().String() {
+
+	case "*etcdserverpb.RequestOp_RequestRange":
+		// RangeRequestAsValue "points to" an etcdserverpb.RangeRequest;
+		// use the next line to jump to that definition
+		_ = etcdserverpb.RangeRequest{}
+		RangeRequestAsValue := requestAsValue.Elem().Elem().FieldByName("RequestRange").Elem()
+
+		if len(RangeRequestAsValue.FieldByName("RangeEnd").Bytes()) == 0 {
+			opAsString = fmt.Sprintf("(DELETERANGE key:'%s')",
+				RangeRequestAsValue.FieldByName("Key").Bytes())
+		} else {
+			opAsString = fmt.Sprintf("(DELETERANGE keys:'%s'-'%s')",
+				RangeRequestAsValue.FieldByName("Key").Bytes(),
+				RangeRequestAsValue.FieldByName("RangeEnd").Bytes())
+		}
+
+	case "*etcdserverpb.RequestOp_RequestPut":
+		// PutRequestAsValue "points to" an etcdserverpb.PutRequest;
+		// use the next line to jump to that definition
+		_ = etcdserverpb.PutRequest{}
+		putRequestAsValue := requestAsValue.Elem().Elem().FieldByName("RequestPut").Elem()
+
+		opAsString = fmt.Sprintf("(PUT key:'%s' Value:'%s')",
+			putRequestAsValue.FieldByName("Key").Bytes(),
+			putRequestAsValue.FieldByName("Value").Bytes())
+
+	case "*etcdserverpb.RequestOp_RequestDeleteRange":
+		// deleteRangeRequestAsValue "points to" an etcdserverpb.DeleteRangeRequest;
+		// use the next line to jump to that definition
+		_ = etcdserverpb.DeleteRangeRequest{}
+		deleteRangeRequestAsValue := requestAsValue.Elem().Elem().FieldByName("RequestDeleteRange").Elem()
+
+		if len(deleteRangeRequestAsValue.FieldByName("RangeEnd").Bytes()) == 0 {
+			opAsString = fmt.Sprintf("(DELETERANGE key:'%s')",
+				deleteRangeRequestAsValue.FieldByName("Key").Bytes())
+		} else {
+			opAsString = fmt.Sprintf("(DELETERANGE keys:'%s'-'%s')",
+				deleteRangeRequestAsValue.FieldByName("Key").Bytes(),
+				deleteRangeRequestAsValue.FieldByName("RangeEnd").Bytes())
+		}
+
+	case "*etcdserverpb.RequestOp_RequestTxn":
+		// TxnRequestAsValue "points to" an etcdserverpb.TxnRequest (apparently
+		// operations in a transaction can contain transactions -- this code
+		// doesn't go there); use the next line to jump to that definition
+		_ = etcdserverpb.TxnRequest{}
+		txnRequestAsValue := requestAsValue.Elem().Elem().FieldByName("RequestTxn").Elem()
+		opAsString = fmt.Sprintf("(TRANSACTION:'%v')", txnRequestAsValue.String())
+
+	default:
+		opAsString = fmt.Sprintf("Unknown request op: %s", requestAsValue.Elem().Type().String())
+	}
+
+	dump = opAsString
+	return
+}
+
+func (cs *EtcdConn) formatTxnResp(txnResp *clientv3.TxnResponse) (dump string) {
+
+	opList := make([]string, 0, 1)
+	for _, responseOp := range txnResp.Responses {
+
+		switch op := responseOp.Response.(type) {
+
+		case *etcdserverpb.ResponseOp_ResponseRange:
+			opList = append(opList, "range")
+
+		case *etcdserverpb.ResponseOp_ResponsePut:
+			opList = append(opList, fmt.Sprintf("put %v", op))
+
+		case *etcdserverpb.ResponseOp_ResponseDeleteRange:
+			opList = append(opList, "deleteRange")
+
+		case *etcdserverpb.ResponseOp_ResponseTxn:
+			opList = append(opList, "Transaction")
+
+		default:
+			opList = append(opList, fmt.Sprintf("UNKNOWN RESPONSE type %T", op))
+		}
+	}
+
+	dump = fmt.Sprintf("Revision %d  Succeeded: %v  Ops[%s]",
+		txnResp.Header.Revision, txnResp.Succeeded,
+		strings.Join(opList, ", "))
 	return
 }

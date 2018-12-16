@@ -39,13 +39,13 @@ func NewTC(t *testing.T, size int) (tc *TestCluster) {
 	// the cluster.
 	swd, err := os.Getwd()
 	if err != nil {
-		fmt.Printf("Unable to chdir to /tmp")
+		fmt.Printf("os.Getwd() failed\n")
 		os.Exit(-1)
 	}
 
 	err = os.Chdir("/tmp")
 	if err != nil {
-		fmt.Printf("Unable to chdir to /tmp")
+		fmt.Printf("Unable to chdir to /tmp\n")
 		os.Exit(-1)
 	}
 

@@ -28,23 +28,6 @@ const (
 	downOperation
 )
 
-const (
-	vgKeyPrefixName = "ProxyFS_VgName:"
-)
-
-// vgNamePrefix returns a string containing the prefix
-// for volume group name keys
-func getVgKeyPrefix() string {
-	return vgKeyPrefixName
-}
-
-// makeVgKey() uses the VG name as the key for the database
-// (we will need to change this to a UUID)
-//
-func makeVgKey(vgName string) string {
-	return getVgKeyPrefix() + vgName
-}
-
 // allVgsDown is called to test if all VGs on the local node are OFFLINE.
 //
 func (cs *EtcdConn) allVgsDown(revNum RevisionNumber) (allDown bool, compares []clientv3.Cmp) {
@@ -80,6 +63,12 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 	revNum := RevisionNumber(ev.Kv.ModRevision)
 	vgName := strings.TrimPrefix(string(ev.Kv.Key), getVgKeyPrefix())
 
+	if ev.Kv.CreateRevision == 0 {
+		// if the vg was deleted then there's nothing to do
+		fmt.Printf("stateChgEvent(): vg '%s' deleted\n", vgName)
+		return
+	}
+
 	// unpackVgInfo operates on a slice of KeyValue
 	keyValues := []*mvccpb.KeyValue{ev.Kv}
 	vgInfos, vgInfoCmps, err := cs.unpackVgInfo(revNum, keyValues)
@@ -91,7 +80,7 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 	vgInfo := vgInfos[vgName]
 	vgInfoCmp := vgInfoCmps[vgName]
-	fmt.Printf("stateChgEvent(): vg '%s' node '%s' state '%v'\n", vgName, vgInfo.VgNode, vgInfo.VgState)
+	fmt.Printf("stateChgEvent(): vg '%s' vgInfo %v  node '%s' state '%v'\n", vgName, vgInfo, vgInfo.VgNode, vgInfo.VgState)
 
 	var (
 		conditionals = make([]clientv3.Cmp, 0, 1)
@@ -204,11 +193,10 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 			return
 		}
 
-		// If the local node is in OFFLINING and all VGs are OFFLINE then
-		// transition to DEAD.
-		if cs.getRevNodeState(revNum).NodesState[cs.hostName] != OFFLININGNS.String() {
+		// If the local node is in OFFLINING and all VGs are OFFLINE
+		// then transition to DEAD, otherwise there's nothing to do.
+		if cs.getRevNodeState(revNum).NodesState[cs.hostName] != OFFLINING {
 			// nothing else to do
-			// TOD: this should include a conditional comparison
 			return
 		}
 
@@ -220,8 +208,16 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 		// All VGs are down - now transition the node to DEAD.
 		// TODO: this should be a transaction OP that checks conditionals
-		cs.setNodeState(cs.hostName, DEADNS)
+		cs.updateNodeState(cs.hostName, revNum, DEAD, nil)
 		return
+
+	case FAILEDVS:
+		// the volume group is now failed; there's nothing else to do
+		return
+
+	default:
+		fmt.Printf("stateChgEvent(): vg '%s' has unknown state '%v'\n",
+			vgName, vgInfo.VgState)
 	}
 
 	// update the shared state (or fail)
@@ -299,14 +295,14 @@ func (cs *EtcdConn) setVgsOfflineDeadNodes(newlyDeadNodes []string, revNum Revis
 // Don't we have to use the same revision of ETCD for all these decisions?
 // TODO - how prevent autofailback from happening? Does it matter?
 //
-func (cs *EtcdConn) failoverVgs(newlyDeadNodes []string, revNum RevisionNumber) {
+func (cs *EtcdConn) failoverVgs(deadNodes []string, revNum RevisionNumber) {
 
 	if !cs.server {
 		return
 	}
 
 	// Mark all VGs that were online on newlyDeadNodes as OFFLINE
-	cs.setVgsOfflineDeadNodes(newlyDeadNodes, revNum)
+	cs.setVgsOfflineDeadNodes(deadNodes, revNum)
 
 	// TODO - startVgs() should be triggered from the watcher since
 	// the state will not be updated to OFFLINE until then
@@ -641,10 +637,11 @@ func (cs *EtcdConn) addVg(name string, ipAddr string, netMask string,
 	operations = append(operations, putOps...)
 
 	// update the shared state (or fail)
-	txnResp, err := cs.updateEtcd(conditionals, operations)
+	//txnResp, err := cs.updateEtcd(conditionals, operations)
+	_, err = cs.updateEtcd(conditionals, operations)
 
 	// TODO: should we retry on failure?
-	fmt.Printf("addVg(): txnResp: %v err %v\n", txnResp, err)
+	//fmt.Printf("addVg(): txnResp: %v err %v\n", txnResp, err)
 
 	return
 }
@@ -665,12 +662,11 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 		return
 	}
 	// should probably require that the VG be empty as well ...
-	if vgInfo.VgState != OFFLINEVS && vgInfo.VgState != FAILEDVS && vgInfo.VgState != INITIALVS {
+	if vgInfo.VgState != OFFLINEVS && vgInfo.VgState != FAILEDVS {
 		// how will controller handle this?
 		err = fmt.Errorf("VG name '%s' must be offline to delete", name)
 		return
 	}
-	fmt.Printf("rmVg(): vg '%s' state '%v' vgInfo '%v'r\n", name, vgInfo.VgState, vgInfo)
 	conditionals = append(conditionals, cmpVgInfoName...)
 
 	// create the operation to delete this Volume Group
@@ -678,20 +674,68 @@ func (cs *EtcdConn) rmVg(name string) (err error) {
 	operations = append(operations, deleteOp)
 
 	// update the shared state (or fail)
-	txnResp, err := cs.updateEtcd(conditionals, operations)
+	//txnResp, err := cs.updateEtcd(conditionals, operations)
+	_, err = cs.updateEtcd(conditionals, operations)
 
 	// TODO: should we retry on failure?
-	fmt.Printf("rmVg(): txnResp: %v err %v\n", txnResp, err)
+	//fmt.Printf("rmVg(): txnResp: %v err %v\n", txnResp, err)
 
 	return
 }
 
-// Unpack a slice of VgInfo from the slice of KeyValue received from an event or
-// a Get or Range request.
+// Mark a volume group as failed (no matter what its current state is, as long as
+// it exists).
+//
+func (cs *EtcdConn) markVgFailed(name string) (err error) {
+
+	for {
+		var (
+			conditionals = make([]clientv3.Cmp, 0, 1)
+			operations   = make([]clientv3.Op, 0, 1)
+		)
+
+		vgInfo, cmpVgInfoName, err := cs.getVgInfo(name, RevisionNumber(0))
+		if err != nil {
+			return err
+		}
+		if vgInfo == nil {
+			err = fmt.Errorf("VG name '%s' does not exist", name)
+			return err
+		}
+
+		// Delete this --craig
+		fmt.Printf("markVgFailed(): vg '%s' state '%v' vgInfo '%v'r\n", name, vgInfo.VgState, vgInfo)
+		conditionals = append(conditionals, cmpVgInfoName...)
+
+		// mark the VG dead
+		vgInfo.VgState = FAILEDVS
+		putOp, err := cs.putVgInfo(name, vgInfo)
+		operations = append(operations, putOp...)
+
+		// update the shared state (or fail)
+		txnResp, err := cs.updateEtcd(conditionals, operations)
+
+		if err != nil {
+			fmt.Printf("markVgFailed(): vg '%s' updateEtcd error: %s\n", name, err)
+			return err
+		}
+
+		if txnResp.Succeeded {
+			return nil
+		}
+
+		fmt.Printf("markVgFailed(): vg '%s' transaction failed; retrying\n", name)
+	}
+	return
+}
+
+// Unpack a slice of VgInfo's from the slice of KeyValue's received from an event,
+// a Get request or a Range request.
 //
 // For each key a VgInfo is returned and a slice of comparison struct
-// (clientv3.Cmp) that can be used as conditionals in a transaction.  It will
-// evaluate to false if the VG has changed from this information.
+// (clientv3.Cmp) that can be used as conditionals in a transaction.  The
+// comparison will evaluate to false if the VG has changed from this
+// information.
 //
 // Note: if VgInfo.CreateRevNum == 0 then the VG has been deleted and the
 // VgValue part of VgInfo is zero values.
@@ -702,15 +746,19 @@ func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyVal
 	vgInfos = make(map[string]*VgInfo)
 	vgInfoCmps = make(map[string][]clientv3.Cmp)
 
-	keyHeaders, values, modCmps, err := unpackKeyValues(revNum, etcdKVs)
+	keyHeaders, values, modCmps, err := mapKeyValues(revNum, etcdKVs)
 	if err != nil {
 		fmt.Printf("unpackVgInfo(): unpackKeyValues of '%v' returned err: %s\n", etcdKVs, err)
 		return
 	}
 	for key, value := range values {
 
-		var vgInfoValue VgInfoValue
+		vgName := strings.TrimPrefix(key, getVgKeyPrefix())
+		vgInfoCmps[vgName] = []clientv3.Cmp{modCmps[key]}
+
 		if keyHeaders[key].CreateRevNum != 0 {
+			var vgInfoValue VgInfoValue
+
 			err = json.Unmarshal(value, &vgInfoValue)
 			if err != nil {
 				fmt.Printf("unpackVgInfo(): Unmarshall of key '%s' header '%v' "+
@@ -718,22 +766,21 @@ func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyVal
 					key, keyHeaders[key], string(values[key]), err)
 				return
 			}
+
+			info := VgInfo{
+				EtcdKeyHeader: *keyHeaders[key],
+				VgInfoValue:   vgInfoValue,
+			}
+			vgInfos[vgName] = &info
 		}
 
-		vgName := strings.TrimPrefix(key, getVgKeyPrefix())
-		info := VgInfo{
-			EtcdKeyHeader: keyHeaders[key],
-			VgInfoValue:   vgInfoValue,
-		}
-		vgInfos[vgName] = &info
-		vgInfoCmps[vgName] = []clientv3.Cmp{modCmps[key]}
 	}
 
 	return
 }
 
 // Fetch the volume group information for volume group "name" as of revNum, or
-// the "current" revision number if revNum is 0.
+// as of the "current" revision number if revNum is 0.
 //
 // If there's no error, return the vgInfo as well as a comparision function that
 // can be used as a conditional in a transaction to insure the info hasn't
@@ -764,8 +811,6 @@ func (cs *EtcdConn) getVgInfo(vgName string, revNum RevisionNumber) (vgInfo *VgI
 	}
 
 	if resp.OpResponse().Get().Count == int64(0) {
-		fmt.Printf("getVgInfo(): VG name '%s' key '%s' revNum %d not found, but not an error\n",
-			vgName, vgKey, revNum)
 		vgInfo = nil
 		cmp := clientv3.Compare(clientv3.CreateRevision(vgKey), "=", 0)
 		vgInfoCmp = []clientv3.Cmp{cmp}
@@ -796,7 +841,8 @@ func (cs *EtcdConn) putVgInfo(vgName string, vgInfo *VgInfo) (operations []clien
 	// extract the VgInfoValue fields without the rest of VgInfo
 	vgInfoValue := vgInfo.VgInfoValue
 
-	vgInfoValueAsString, err := json.MarshalIndent(vgInfoValue, "", "  ")
+	// vgInfoValueAsString, err := json.MarshalIndent(vgInfoValue, "", "  ")
+	vgInfoValueAsString, err := json.Marshal(vgInfoValue)
 	if err != nil {
 		fmt.Printf("putVgInfo(): name '%s': json.MarshalIndent complained: %s\n",
 			vgName, err)
