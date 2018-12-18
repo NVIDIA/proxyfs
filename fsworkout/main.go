@@ -9,14 +9,9 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -35,7 +30,6 @@ var (
 	rootDirMutex    sync.Mutex
 	stepErrChan     chan error
 	threads         uint64
-	volumeHandle    inode.VolumeHandle
 	volumeName      string
 )
 
@@ -67,9 +61,15 @@ func main() {
 		err                          error
 		latencyPerOpInMilliSeconds   float64
 		opsPerSecond                 float64
+		primaryPeer                  string
+		threadIndex                  uint64
 		timeAfterMeasuredOperations  time.Time
 		timeBeforeMeasuredOperations time.Time
+		volumeGroupToCheck           string
+		volumeGroupToUse             string
+		volumeGroupList              []string
 		volumeList                   []string
+		whoAmI                       string
 	)
 
 	// Parse arguments
@@ -134,85 +134,69 @@ func main() {
 		}
 	}
 
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "Failed to upgrade config: %v", err)
+		os.Exit(1)
+	}
+
 	// Start up needed ProxyFS components
 
-	err = logger.Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "transitions.Up() failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = evtlog.Up(confMap)
+	// Select first Volume of the first "active" VolumeGroup in [FSGlobals]VolumeGroupList
+
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = stats.Up(confMap)
+	volumeGroupList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "stats.Up() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeGroupList\") failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	err = dlm.Up(confMap)
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "dlm.Up() failed: %v\n", err)
-		os.Exit(1)
-	}
+	volumeGroupToUse = ""
 
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "swiftclient.Up() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = headhunter.Up(confMap)
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "headhunter.Up() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = inode.Up(confMap)
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "inode.Up() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = fs.Up(confMap)
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs.Up() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Select first "active" volumeName in volumeList by attempting to mount each
-
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v\n", err)
-		os.Exit(1)
-	}
-	if 1 > len(volumeList) {
-		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") returned empty volumeList")
-		os.Exit(1)
-	}
-
-	for _, volumeName = range volumeList {
-		volumeHandle, err = inode.FetchVolumeHandle(volumeName)
-		if nil == err {
+	for _, volumeGroupToCheck = range volumeGroupList {
+		primaryPeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupToCheck, "PrimaryPeer")
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToCheck, err)
+			os.Exit(1)
+		}
+		if whoAmI == primaryPeer {
+			volumeGroupToUse = volumeGroupToCheck
 			break
-		} else {
-			volumeHandle = nil
 		}
 	}
 
-	if nil == volumeHandle {
-		fmt.Fprintf(os.Stderr, "inode.FetchVolumeHandle() failed on every volumeName in volumeList: %v\n", volumeList)
+	if "" == volumeGroupToUse {
+		fmt.Fprintf(os.Stderr, "confMap didn't contain an \"active\" VolumeGroup")
 		os.Exit(1)
 	}
 
+	volumeList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupToUse, "VolumeList")
+	if nil != err {
+		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToUse, err)
+		os.Exit(1)
+	}
+	if 1 > len(volumeList) {
+		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"VolumeList\") returned empty volumeList", volumeGroupToUse)
+		os.Exit(1)
+	}
+
+	volumeName = volumeList[0]
+
 	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs.Mount(\"%value\",,) failed: %v\n", volumeName, err)
+		fmt.Fprintf(os.Stderr, "fs.Mount(\"%value\",) failed: %v\n", volumeName, err)
 		os.Exit(1)
 	}
 
@@ -222,10 +206,10 @@ func main() {
 	doNextStepChan = make(chan bool, 0) //threads)
 
 	// Do initialization step
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		go fsWorkout(threadIndex)
 	}
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		err = <-stepErrChan
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "fsWorkout() initialization step returned: %v\n", err)
@@ -235,10 +219,10 @@ func main() {
 
 	// Do measured operations step
 	timeBeforeMeasuredOperations = time.Now()
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		doNextStepChan <- true
 	}
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		err = <-stepErrChan
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "fsWorkout() measured operations step returned: %v\n", err)
@@ -248,10 +232,10 @@ func main() {
 	timeAfterMeasuredOperations = time.Now()
 
 	// Do shutdown step
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		doNextStepChan <- true
 	}
-	for threadIndex := uint64(0); threadIndex < threads; threadIndex++ {
+	for threadIndex = uint64(0); threadIndex < threads; threadIndex++ {
 		err = <-stepErrChan
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "fsWorkout() shutdown step returned: %v\n", err)
@@ -261,51 +245,9 @@ func main() {
 
 	// Stop ProxyFS components launched above
 
-	err = fs.Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = inode.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "inode.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "swiftclient.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = headhunter.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "headhunter.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "dlm.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "stats.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "evtlog.Down() failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "transitions.Down() failed: %v\n", err)
 		os.Exit(1)
 	}
 

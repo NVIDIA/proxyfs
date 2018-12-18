@@ -4,6 +4,7 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"runtime"
@@ -639,4 +640,30 @@ func (p *Profiler) Dump() {
 	remainingTime := totalDuration - totalEventTime
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "(remaining time)", remainingTime, remainingTime*100/totalDuration)
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "total duration", totalDuration, totalDuration*100/totalDuration)
+}
+
+func JSONify(input interface{}, indentify bool) (output string) {
+	var (
+		err             error
+		inputJSON       bytes.Buffer
+		inputJSONPacked []byte
+	)
+
+	inputJSONPacked, err = json.Marshal(input)
+	if nil == err {
+		if indentify {
+			err = json.Indent(&inputJSON, inputJSONPacked, "", "\t")
+			if nil == err {
+				output = inputJSON.String()
+			} else {
+				output = fmt.Sprintf("<<<json.Indent failed: %v>>>", err)
+			}
+		} else {
+			output = string(inputJSONPacked)
+		}
+	} else {
+		output = fmt.Sprintf("<<<json.Marshall failed: %v>>>", err)
+	}
+
+	return
 }

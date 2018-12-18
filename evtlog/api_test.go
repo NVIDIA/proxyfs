@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 func TestAPI(t *testing.T) {
@@ -37,6 +37,8 @@ func TestAPI(t *testing.T) {
 		"Logging.TraceLevelLogging=none",
 		"Logging.DebugLevelLogging=none",
 		"Logging.LogToConsole=false",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
 		"EventLog.Enabled=true",
 		"EventLog.BufferKey=9876",     // Don't conflict with a running instance
 		"EventLog.BufferLength=65536", // 64KiB
@@ -49,12 +51,7 @@ func TestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = logger.Up(testConfMap)
-	if nil != err {
-		t.Fatal(err)
-	}
-
-	err = Up(testConfMap)
+	err = transitions.Up(testConfMap)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -151,12 +148,7 @@ func TestAPI(t *testing.T) {
 
 	// TODO: Eventually, it would be nice to test the overrun & wrap cases...
 
-	err = Down()
-	if nil != err {
-		t.Fatal(err)
-	}
-
-	err = logger.Down()
+	err = transitions.Down(testConfMap)
 	if nil != err {
 		t.Fatal(err)
 	}

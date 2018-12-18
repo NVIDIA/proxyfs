@@ -338,7 +338,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 	return
 }
 
-// VerifyOptionValueIsEmpty returns an error if [sectionName]valueName's string value is empty
+// VerifyOptionValueIsEmpty returns an error if [sectionName]valueName's string value is not empty
 func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName string) (err error) {
 	section, ok := confMap[sectionName]
 	if !ok {

@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -83,10 +84,11 @@ func getStarvationParameters() (starvationParameters *StarvationParameters) {
 
 func acquireChunkedConnection(useReserveForVolumeName string) (connection *connectionStruct, err error) {
 	var (
-		connectionToBeCreated bool
-		cv                    *sync.Cond
-		ok                    bool
-		wasStalled            bool
+		connectionToBeCreated           bool
+		cv                              *sync.Cond
+		ok                              bool
+		swiftChunkedStarvationCallbacks uint64
+		wasStalled                      bool
 	)
 
 	if "" != useReserveForVolumeName {
@@ -137,6 +139,8 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 	freeConnections := globals.chunkedConnectionPool.poolCapacity - globals.chunkedConnectionPool.poolInUse
 	globals.ObjectPutCtxtFreeConnection.Add(uint64(freeConnections))
 
+	swiftChunkedStarvationCallbacks = 0
+
 	for {
 		if globals.chunkedConnectionPool.poolInUse < globals.chunkedConnectionPool.poolCapacity {
 			break
@@ -158,10 +162,14 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 			globals.starvationCallback()
 			globals.starvationCallbackSerializer.Unlock()
 			globals.chunkedConnectionPool.Lock()
-			stats.IncrementOperations(&stats.SwiftChunkedStarvationCallbacks)
+			swiftChunkedStarvationCallbacks++
 		}
 
 		globals.chunkedConnectionPool.numWaiters--
+	}
+
+	if 0 < swiftChunkedStarvationCallbacks {
+		stats.IncrementOperationsBy(&stats.SwiftChunkedStarvationCallbacks, swiftChunkedStarvationCallbacks)
 	}
 
 	globals.chunkedConnectionPool.poolInUse++
@@ -472,6 +480,18 @@ func openConnection(caller string, connection *connectionStruct) (err error) {
 	if err != nil {
 		logger.WarnfWithError(err, "%s cannot connect to Swift NoAuth Pipeline at %s",
 			caller, globals.noAuthStringAddr)
+	}
+	return
+}
+
+func pathEscape(pathElements ...string) (pathEscaped string) {
+	if 0 == len(pathElements) {
+		pathEscaped = ""
+	} else {
+		pathEscaped = url.PathEscape(pathElements[0])
+		for i := 1; i < len(pathElements); i++ {
+			pathEscaped += "/" + url.PathEscape(pathElements[i])
+		}
 	}
 	return
 }

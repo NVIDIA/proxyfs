@@ -3993,9 +3993,9 @@ func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasename
 	numEntries = uint64(len(entries))
 
 	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
-	for i := range entries {
-		if inodeNumber == entries[i].InodeNumber {
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
+	for i, dirEntry := range entries {
+		if ("." == dirEntry.Basename) || (".." == dirEntry.Basename) {
+			entries[i].Type = inode.DirType
 		} else {
 			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
 			if err = err1; err != nil {
@@ -4032,9 +4032,9 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMa
 	}
 
 	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
-	for i := range entries {
-		if inodeNumber == entries[i].InodeNumber {
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
+	for i, dirEntry := range entries {
+		if ("." == dirEntry.Basename) || (".." == dirEntry.Basename) {
+			entries[i].Type = inode.DirType
 		} else {
 			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
 			if err = err1; err != nil {

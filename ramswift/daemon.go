@@ -22,6 +22,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -1162,27 +1163,31 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
-		err               error
-		errno             syscall.Errno
-		primaryPeerList   []string
-		swiftAccountName  string
-		volumeList        []string
-		volumeName        string
-		volumeSectionName string
+		err                    error
+		errno                  syscall.Errno
+		primaryPeerList        []string
+		swiftAccountName       string
+		volumeGroupNameList    []string
+		volumeGroupName        string
+		volumeGroupSectionName string
+		volumeName             string
+		volumeNameList         []string
+		volumeSectionName      string
 	)
 
 	// Fetch and configure volumes for which "we" are the PrimaryPeer
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
 	}
 
-	for _, volumeName = range volumeList {
-		volumeSectionName = "Volume:" + volumeName
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+	for _, volumeGroupName = range volumeGroupNameList {
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
+
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
 		}
 		if 0 == len(primaryPeerList) {
 			continue
@@ -1191,15 +1196,26 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 				continue
 			}
 		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
-		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+
+		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
 		}
-		_, errno = createSwiftAccount(swiftAccountName)
-		if 0 != errno {
-			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+
+		for _, volumeName = range volumeNameList {
+			volumeSectionName = "Volume:" + volumeName
+
+			swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+			if nil != err {
+				log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			}
+
+			_, errno = createSwiftAccount(swiftAccountName)
+			if 0 != errno {
+				log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+			}
 		}
 	}
 
@@ -1225,8 +1241,12 @@ func updateConf(confMap conf.ConfMap) {
 		swiftAccountNameListCurrent []string        // element == swiftAccountName
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
 		swiftAccountName            string
+		volumeGroupName             string
+		volumeGroupNameList         []string
+		volumeGroupSectionName      string
 		volumeListUpdate            []string
 		volumeName                  string
+		volumeNameList              []string
 		volumeSectionName           string
 		whoAmIUpdate                string
 	)
@@ -1263,18 +1283,19 @@ func updateConf(confMap conf.ConfMap) {
 
 	// Fetch list of accounts for which "we" are the PrimaryPeer
 
-	volumeListUpdate, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeListUpdate = make([]string, 0)
+
+	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
 	}
 
-	swiftAccountNameListUpdate = make(map[string]bool)
+	for _, volumeGroupName = range volumeGroupNameList {
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
 
-	for _, volumeName = range volumeListUpdate {
-		volumeSectionName = "Volume:" + volumeName
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
 		}
 		if 0 == len(primaryPeerList) {
 			continue
@@ -1283,8 +1304,21 @@ func updateConf(confMap conf.ConfMap) {
 				continue
 			}
 		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
+
+		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
+		}
+
+		volumeListUpdate = append(volumeListUpdate, volumeNameList...)
+	}
+
+	swiftAccountNameListUpdate = make(map[string]bool)
+
+	for _, volumeName = range volumeListUpdate {
+		volumeSectionName = "Volume:" + volumeName
 		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
@@ -1464,6 +1498,11 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		log.Fatalf("failed to upgrade confMap: %v", err)
+	}
+
 	// Find out who "we" are
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -1526,6 +1565,11 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 			err = confMap.UpdateFromStrings(confStrings)
 			if nil != err {
 				log.Fatalf("failed to reapply config overrides: %v", err)
+			}
+
+			err = transitions.UpgradeConfMapIfNeeded(confMap)
+			if nil != err {
+				log.Fatalf("failed to upgrade confMap: %v", err)
 			}
 
 			updateConf(confMap)

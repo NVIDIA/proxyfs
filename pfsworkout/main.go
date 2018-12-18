@@ -9,15 +9,11 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/fuse"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -85,8 +81,6 @@ func main() {
 		confMap conf.ConfMap
 
 		proxyfsRequired = false
-		fsRequired      = false
-		fuseRequired    = false
 
 		doDirWorkout         = false
 		doFuseWorkout        = false
@@ -95,6 +89,13 @@ func main() {
 		doSwiftclientWorkout = false
 		doSameFile           = false
 		doRandomIO           = false
+
+		primaryPeer        string
+		volumeGroupToCheck string
+		volumeGroupToUse   string
+		volumeGroupList    []string
+		volumeList         []string
+		whoAmI             string
 
 		timeBeforeWrites time.Time
 		timeAfterWrites  time.Time
@@ -125,14 +126,9 @@ func main() {
 			doDirWorkout = true
 		case 'm':
 			proxyfsRequired = true
-			fsRequired = true
-			fuseRequired = true
-
 			doFuseWorkout = true
 		case 'f':
 			proxyfsRequired = true
-			fsRequired = true
-
 			doFsWorkout = true
 		case 'i':
 			proxyfsRequired = true
@@ -142,11 +138,9 @@ func main() {
 			doSwiftclientWorkout = true
 		case 'r':
 			proxyfsRequired = true
-			fsRequired = true
 			doRandomIO = true
 		case 'u':
 			proxyfsRequired = true
-			fsRequired = true
 			doSameFile = true
 		default:
 			fmt.Fprintf(os.Stderr, "workoutSelector ('%v') must be one of 'd', 'm', 'f', 'i', or 's'\n", string(workoutSelector))
@@ -201,13 +195,61 @@ func main() {
 			}
 		}
 
-		volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+		// Upgrade confMap if necessary
+		err = transitions.UpgradeConfMapIfNeeded(confMap)
 		if nil != err {
-			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Failed to upgrade config: %v", err)
+			os.Exit(1)
+		}
+
+		// Select first Volume of the first "active" VolumeGroup in [FSGlobals]VolumeGroupList
+
+		whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		volumeGroupList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeGroupList\") failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		volumeGroupToUse = ""
+
+		for _, volumeGroupToCheck = range volumeGroupList {
+			primaryPeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupToCheck, "PrimaryPeer")
+			if nil != err {
+				fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToCheck, err)
+				os.Exit(1)
+			}
+			if whoAmI == primaryPeer {
+				volumeGroupToUse = volumeGroupToCheck
+				break
+			}
+		}
+
+		if "" == volumeGroupToUse {
+			fmt.Fprintf(os.Stderr, "confMap didn't contain an \"active\" VolumeGroup")
+			os.Exit(1)
+		}
+
+		volumeList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupToUse, "VolumeList")
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToUse, err)
 			os.Exit(1)
 		}
 		if 1 > len(volumeList) {
-			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"FSGlobals\", \"VolumeList\") returned empty volumeList")
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"VolumeList\") returned empty volumeList", volumeGroupToUse)
+			os.Exit(1)
+		}
+
+		volumeName = volumeList[0]
+
+		mountPointName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "FUSEMountPointName")
+		if nil != err {
+			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"Volume:%s\", \"FUSEMountPointName\") failed: %v\n", volumeName, err)
 			os.Exit(1)
 		}
 	}
@@ -215,85 +257,15 @@ func main() {
 	if proxyfsRequired {
 		// Start up needed ProxyFS components
 
-		err = logger.Up(confMap)
+		err = transitions.Up(confMap)
 		if nil != err {
-			fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "transitions.Up() failed: %v\n", err)
 			os.Exit(1)
 		}
 
-		err = evtlog.Up(confMap)
+		headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
 		if nil != err {
-			fmt.Fprintf(os.Stderr, "evtlog.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = stats.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "stats.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = dlm.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "dlm.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = swiftclient.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "swiftclient.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = headhunter.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "headhunter.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = inode.Up(confMap)
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "inode.Up() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		if fsRequired {
-			err = fs.Up(confMap)
-			if nil != err {
-				fmt.Fprintf(os.Stderr, "fs.Up() failed: %v\n", err)
-				os.Exit(1)
-			}
-
-			if fuseRequired {
-				err = fuse.Up(confMap)
-				if nil != err {
-					fmt.Fprintf(os.Stderr, "fuse.Up() failed: %v\n", err)
-					os.Exit(1)
-				}
-			}
-		}
-	}
-
-	// Select first "active" volumeName in volumeList by attempting to mount each (if required)
-
-	if doFuseWorkout || doFsWorkout || doInodeWorkout || doSwiftclientWorkout {
-		for _, volumeName = range volumeList {
-			headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volumeName)
-			if nil == err {
-				break
-			} else {
-				headhunterVolumeHandle = nil
-			}
-		}
-
-		if nil == headhunterVolumeHandle {
-			fmt.Fprintf(os.Stderr, "headhunter.FetchVolumeHandle() failed on every volumeName in volumeList: %v\n", volumeList)
-			os.Exit(1)
-		}
-
-		mountPointName, err = confMap.FetchOptionValueString(volumeName, "FUSEMountPointName")
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"%v\", \"FUSEMountPointName\") failed: %v\n", volumeName, err)
+			fmt.Fprintf(os.Stderr, "headhunter.FetchVolumeHandle(\"%s\") failed: %v\n", volumeName, err)
 			os.Exit(1)
 		}
 	}
@@ -632,61 +604,9 @@ func main() {
 	if proxyfsRequired {
 		// Stop ProxyFS components launched above
 
-		if fuseRequired {
-			err = fuse.Down()
-			if nil != err {
-				fmt.Fprintf(os.Stderr, "fuse.Down() failed: %v\n", err)
-				os.Exit(1)
-			}
-		}
-
-		if fsRequired {
-			err = fs.Down()
-			if nil != err {
-				fmt.Fprintf(os.Stderr, "fs.Down() failed: %v\n", err)
-				os.Exit(1)
-			}
-		}
-
-		err = inode.Down()
+		err = transitions.Down(confMap)
 		if nil != err {
-			fmt.Fprintf(os.Stderr, "inode.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = swiftclient.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "swiftclient.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = headhunter.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "headhunter.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = dlm.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "dlm.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = stats.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "stats.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = evtlog.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "evtlog.Down() failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		err = logger.Down()
-		if nil != err {
-			fmt.Fprintf(os.Stderr, "logger.Down() failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "transitions.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 	}

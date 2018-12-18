@@ -11,17 +11,14 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/headhunter"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
-// our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
-var ramswiftDoneChan chan bool
+var (
+	ramswiftDoneChan chan bool
+	testConfMap      conf.ConfMap
+)
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
@@ -30,7 +27,6 @@ func testSetup(t *testing.T, starvationMode bool) {
 		rLimitMinimum                 uint64
 		signalHandlerIsArmedWG        sync.WaitGroup
 		testChunkedConnectionPoolSize uint64
-		testConfMap                   conf.ConfMap
 		testConfStrings               []string
 		testConfUpdateStrings         []string
 		testDir                       string
@@ -62,10 +58,6 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"SwiftClient.RetryDelayObject=10ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=1.0",
-		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
-		"FlowControl:TestFlowControl.MaxFlushTime=10s",
-		"FlowControl:TestFlowControl.ReadCacheLineSize=1000000",
-		"FlowControl:TestFlowControl.ReadCacheWeight=100",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
@@ -75,13 +67,14 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
 		"Volume:TestVolume.FSID=1",
-		"Volume:TestVolume.PrimaryPeer=Peer0",
 		"Volume:TestVolume.AccountName=AUTH_test",
+		"Volume:TestVolume.AutoFormat=true",
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10s",
 		"Volume:TestVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"Volume:TestVolume.FlowControl=TestFlowControl",
+		"Volume:TestVolume.MaxFlushSize=10000000",
+		"Volume:TestVolume.MaxFlushTime=10s",
 		"Volume:TestVolume.NonceValuesToReserve=100",
 		"Volume:TestVolume.MaxEntriesPerDirNode=32",
 		"Volume:TestVolume.MaxExtentsPerFileNode=32",
@@ -90,7 +83,12 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
 		"Volume:TestVolume.MaxBytesInodeCache=100000",
 		"Volume:TestVolume.InodeCacheEvictInterval=1s",
-		"FSGlobals.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
+		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:TestVolumeGroup.ReadCacheLineSize=1000000",
+		"VolumeGroup:TestVolumeGroup.ReadCacheWeight=100",
+		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -163,44 +161,9 @@ func testSetup(t *testing.T, starvationMode bool) {
 
 	signalHandlerIsArmedWG.Wait()
 
-	err = logger.Up(testConfMap)
+	err = transitions.Up(testConfMap)
 	if nil != err {
-		t.Fatalf("logger.Up() failed: %v", err)
-	}
-
-	err = evtlog.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up() failed: %v", err)
-	}
-
-	err = stats.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("stats.Up() failed: %v", err)
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("dlm.Up() failed: %v", err)
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up() failed: %v", err)
-	}
-
-	err = headhunter.Format(testConfMap, "TestVolume")
-	if nil != err {
-		t.Fatalf("headhunter.Format() failed: %v", err)
-	}
-
-	err = headhunter.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("headhunter.Up() failed: %v", err)
-	}
-
-	err = Up(testConfMap)
-	if nil != err {
-		t.Fatalf("inode.Up() failed: %v", err)
+		t.Fatalf("transitions.Up() failed: %v", err)
 	}
 }
 
@@ -210,39 +173,9 @@ func testTeardown(t *testing.T) {
 		testDir string
 	)
 
-	err = Down()
+	err = transitions.Down(testConfMap)
 	if nil != err {
-		t.Fatalf("inode.Down() failed: %v", err)
-	}
-
-	err = headhunter.Down()
-	if nil != err {
-		t.Fatalf("headhunter.Down() failed: %v", err)
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		t.Fatalf("swiftclient.Down() failed: %v", err)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("dlm.Down() failed: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() failed: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() failed: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() failed: %v", err)
+		t.Fatalf("transitions.Down() failed: %v", err)
 	}
 
 	_ = syscall.Kill(syscall.Getpid(), unix.SIGTERM)

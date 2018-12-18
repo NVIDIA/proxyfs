@@ -21,8 +21,8 @@ type Dir struct {
 }
 
 func (d Dir) Access(ctx context.Context, req *fuselib.AccessRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	if d.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber, inode.InodeMode(req.Mask)) {
 		return nil
@@ -36,8 +36,8 @@ func (d Dir) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = d.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber)
 	if nil != err {
@@ -71,8 +71,8 @@ func (d Dir) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fus
 		statUpdates fs.Stat
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	stat, err = d.mountHandle.Getstat(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber)
 	if nil != err {
@@ -122,8 +122,8 @@ func (d Dir) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fus
 }
 
 func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	childInodeNumber, err := d.mountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, name)
 	if err != nil {
@@ -180,8 +180,8 @@ func inodeTypeToDirentType(inodeType inode.InodeType) fuselib.DirentType {
 }
 
 func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	entries := make([]inode.DirEntry, 0)
 	entryCount := uint64(0)
@@ -217,8 +217,8 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 }
 
 func (d Dir) Remove(ctx context.Context, req *fuselib.RemoveRequest) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	if req.Dir {
 		err = d.mountHandle.Rmdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name)
@@ -232,8 +232,8 @@ func (d Dir) Remove(ctx context.Context, req *fuselib.RemoveRequest) (err error)
 }
 
 func (d Dir) Mknod(ctx context.Context, req *fuselib.MknodRequest) (fusefslib.Node, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	// Note: NFSd apparently prefers to use Mknod() instead of Create() when creating normal files...
 	if 0 != (inode.InodeMode(req.Mode) & ^inode.PosixModePerm) {
@@ -252,8 +252,8 @@ func (d Dir) Mknod(ctx context.Context, req *fuselib.MknodRequest) (fusefslib.No
 }
 
 func (d Dir) Create(ctx context.Context, req *fuselib.CreateRequest, resp *fuselib.CreateResponse) (fusefslib.Node, fusefslib.Handle, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	if 0 != (inode.InodeMode(req.Mode) & ^inode.PosixModePerm) {
 		err := fmt.Errorf("Invalid Mode... only normal file creations supported")
@@ -271,8 +271,8 @@ func (d Dir) Create(ctx context.Context, req *fuselib.CreateRequest, resp *fusel
 }
 
 func (d Dir) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	err := d.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber)
 	if err != nil {
@@ -282,8 +282,8 @@ func (d Dir) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 }
 
 func (d Dir) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	err := d.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
 		d.inodeNumber)
@@ -294,8 +294,8 @@ func (d Dir) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 }
 
 func (d Dir) Mkdir(ctx context.Context, req *fuselib.MkdirRequest) (fusefslib.Node, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	trimmedMode := inode.InodeMode(req.Mode) & inode.PosixModePerm
 	newDirInodeNumber, err := d.mountHandle.Mkdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, trimmedMode)
@@ -307,8 +307,8 @@ func (d Dir) Mkdir(ctx context.Context, req *fuselib.MkdirRequest) (fusefslib.No
 }
 
 func (d Dir) Rename(ctx context.Context, req *fuselib.RenameRequest, newDir fusefslib.Node) error {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	dstDir, ok := newDir.(Dir)
 	if !ok {
@@ -322,8 +322,8 @@ func (d Dir) Rename(ctx context.Context, req *fuselib.RenameRequest, newDir fuse
 }
 
 func (d Dir) Symlink(ctx context.Context, req *fuselib.SymlinkRequest) (fusefslib.Node, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	symlinkInodeNumber, err := d.mountHandle.Symlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.NewName, req.Target)
 	if err != nil {
@@ -335,8 +335,8 @@ func (d Dir) Symlink(ctx context.Context, req *fuselib.SymlinkRequest) (fusefsli
 }
 
 func (d Dir) Link(ctx context.Context, req *fuselib.LinkRequest, old fusefslib.Node) (fusefslib.Node, error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	oldFile, ok := old.(File)
 	if !ok {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 var (
@@ -13,7 +13,6 @@ var (
 
 func benchmarkSetup(b *testing.B, enable bool) {
 	var (
-		benchmarkConfMap        conf.ConfMap
 		benchmarkConfMapStrings []string
 		err                     error
 	)
@@ -24,6 +23,8 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"Logging.TraceLevelLogging=none",
 			"Logging.DebugLevelLogging=none",
 			"Logging.LogToConsole=false",
+			"Cluster.WhoAmI=nobody",
+			"FSGlobals.VolumeGroupList=",
 			"EventLog.Enabled=true",
 			"EventLog.BufferKey=1234",
 			"EventLog.BufferLength=65536", //64KiB
@@ -36,6 +37,8 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"Logging.TraceLevelLogging=none",
 			"Logging.DebugLevelLogging=none",
 			"Logging.LogToConsole=false",
+			"Cluster.WhoAmI=nobody",
+			"FSGlobals.VolumeGroupList=",
 			"EventLog.Enabled=false",
 		}
 	}
@@ -45,12 +48,7 @@ func benchmarkSetup(b *testing.B, enable bool) {
 		b.Fatal(err)
 	}
 
-	err = logger.Up(benchmarkConfMap)
-	if nil != err {
-		b.Fatal(err)
-	}
-
-	err = Up(benchmarkConfMap)
+	err = transitions.Up(benchmarkConfMap)
 	if nil != err {
 		b.Fatal(err)
 	}
@@ -63,12 +61,7 @@ func benchmarkTeardown(b *testing.B) {
 		err error
 	)
 
-	err = Down()
-	if nil != err {
-		b.Fatal(err)
-	}
-
-	err = logger.Down()
+	err = transitions.Down(benchmarkConfMap)
 	if nil != err {
 		b.Fatal(err)
 	}

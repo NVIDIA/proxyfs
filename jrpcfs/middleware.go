@@ -39,8 +39,8 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 	// However, this results in two different mountHandle's for the different jrpcfs threads supporting middleware.
 	//
 	// Therefore, jrpcfs has to do its own serialization and store the result in globals.bimodalMountMap.
-	globals.Lock()
-	defer globals.Unlock()
+	globals.mapsLock.Lock()
+	defer globals.mapsLock.Unlock()
 
 	// Is volume mounted for this user?  If is, return the results.
 	mountHandle, ok = globals.bimodalMountMap[volumeName]
@@ -302,8 +302,8 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 //
 // Later, a RpcPutComplete() will be called to setup inode, etc.
 func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -333,8 +333,8 @@ func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (er
 
 // RpcPutContainer creates or updates a container (top-level directory).
 func (s *Server) RpcPutContainer(in *PutContainerReq, reply *PutContainerReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -352,8 +352,8 @@ func (s *Server) RpcPutContainer(in *PutContainerReq, reply *PutContainerReply) 
 // Combine a bunch of files together into a big one. It's like "cat old1 old2 ... > new", but without the cat. Also
 // removes the files old1 old2 ...
 func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -372,8 +372,8 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 //
 // Middleware calls this periodically while producing an object GET response.
 func (s *Server) RpcRenewLease(in *RenewLeaseReq, reply *RenewLeaseReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -387,8 +387,8 @@ func (s *Server) RpcRenewLease(in *RenewLeaseReq, reply *RenewLeaseReply) (err e
 //
 // Middleware calls this once an object GET response is complete.
 func (s *Server) RpcReleaseLease(in *ReleaseLeaseReq, reply *ReleaseLeaseReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -407,8 +407,8 @@ func (s *Server) RpcIsAccountBimodal(in *IsAccountBimodalReq, reply *IsAccountBi
 		volumeName string
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()

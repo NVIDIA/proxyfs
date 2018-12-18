@@ -13,16 +13,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
 )
 
 func TestMain(m *testing.M) {
@@ -32,21 +25,22 @@ func TestMain(m *testing.M) {
 
 func TestDaemon(t *testing.T) {
 	var (
-		bytesWritten                   uint64
-		confMapStrings                 []string
-		createdFileInodeNumber         inode.InodeNumber
-		err                            error
-		errChan                        chan error
-		mountHandle                    fs.MountHandle
-		ramswiftDoneChan               chan bool
-		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
-		readData                       []byte
-		testConfMap                    conf.ConfMap
-		testVersion                    uint64
-		testVersionConfFile            *os.File
-		testVersionConfFileName        string
-		toReadFileInodeNumber          inode.InodeNumber
-		wg                             sync.WaitGroup
+		bytesWritten                          uint64
+		confMapStrings                        []string
+		confMapStringsWithAutoFormatTrueAdded []string
+		createdFileInodeNumber                inode.InodeNumber
+		err                                   error
+		errChan                               chan error
+		execArgs                              []string
+		mountHandle                           fs.MountHandle
+		ramswiftDoneChan                      chan bool
+		ramswiftSignalHandlerIsArmedWG        sync.WaitGroup
+		readData                              []byte
+		testVersion                           uint64
+		testVersionConfFile                   *os.File
+		testVersionConfFileName               string
+		toReadFileInodeNumber                 inode.InodeNumber
+		wg                                    sync.WaitGroup
 	)
 
 	// Setup a ramswift instance leveraging test config
@@ -59,7 +53,8 @@ func TestDaemon(t *testing.T) {
 
 		"StatsLogger.Period=10m",
 
-		"Logging.LogFilePath=",
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 
 		"Peer:Peer0.PublicIPAddr=127.0.0.1",
 		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
@@ -91,11 +86,6 @@ func TestDaemon(t *testing.T) {
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
 
-		"FlowControl:CommonFlowControl.MaxFlushSize=10000000",
-		"FlowControl:CommonFlowControl.MaxFlushTime=10s",
-		"FlowControl:CommonFlowControl.ReadCacheLineSize=1000000",
-		"FlowControl:CommonFlowControl.ReadCacheWeight=100",
-
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
@@ -111,7 +101,8 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:CommonVolume.CheckpointInterval=10s",
 		"Volume:CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"Volume:CommonVolume.FlowControl=CommonFlowControl",
+		"Volume:CommonVolume.MaxFlushSize=10000000",
+		"Volume:CommonVolume.MaxFlushTime=10s",
 		"Volume:CommonVolume.NonceValuesToReserve=100",
 		"Volume:CommonVolume.MaxEntriesPerDirNode=32",
 		"Volume:CommonVolume.MaxExtentsPerFileNode=32",
@@ -121,7 +112,13 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.MaxBytesInodeCache=100000",
 		"Volume:CommonVolume.InodeCacheEvictInterval=1s",
 
-		"FSGlobals.VolumeList=CommonVolume",
+		"VolumeGroup:CommonVolumeGroup.VolumeList=CommonVolume",
+		"VolumeGroup:CommonVolumeGroup.VirtualIPAddr=",
+		"VolumeGroup:CommonVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:CommonVolumeGroup.ReadCacheLineSize=1000000",
+		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
+
+		"FSGlobals.VolumeGroupList=CommonVolumeGroup",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -171,75 +168,13 @@ func TestDaemon(t *testing.T) {
 
 	ramswiftSignalHandlerIsArmedWG.Wait()
 
-	// Format CommonVolume
-
-	testConfMap, err = conf.MakeConfMapFromStrings(confMapStrings)
-	if nil != err {
-		t.Fatalf("While doing pre-format, conf.MakeConfMapFromStrings() failed: %v", err)
-	}
-
-	err = logger.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, logger.Up() failed: %v", err)
-	}
-
-	err = evtlog.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, evtlog.Up() failed: %v", err)
-	}
-
-	err = stats.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, stats.Up() failed: %v", err)
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, dlm.Up() failed: %v", err)
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if nil != err {
-		t.Fatalf("While doing pre-format, swiftclient.Up() failed: %v", err)
-	}
-
-	err = headhunter.Format(testConfMap, "CommonVolume")
-	if nil != err {
-		t.Fatalf("headhunter.Format() failed: %v", err)
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, swiftclient.Down() failed: %v", err)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, dlm.Down() failed: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, stats.Down() failed: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, evtlog.Down() failed: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("While doing pre-format, logger.Down() failed: %v", err)
-	}
-
-	// Launch an instance of proxyfsd using that same config
+	// Launch an instance of proxyfsd using above config with Volume:CommonVolume.AutoFormat=true
 
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 
-	var execArgs []string
-	execArgs = append([]string{"daemon_test", "/dev/null"}, confMapStrings...)
-	go Daemon("/dev/null", confMapStrings, errChan, &wg,
+	confMapStringsWithAutoFormatTrueAdded = append(confMapStrings, "Volume:CommonVolume.AutoFormat=true")
+	execArgs = append([]string{"daemon_test", "/dev/null"}, confMapStringsWithAutoFormatTrueAdded...)
+	go Daemon("/dev/null", confMapStringsWithAutoFormatTrueAdded, errChan, &wg,
 		execArgs, unix.SIGTERM, unix.SIGHUP)
 
 	err = <-errChan
@@ -323,7 +258,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("Daemon() exited with error [case 1b]: == %v", err)
 	}
 
-	// Relaunch an instance of proxyfsd
+	// Relaunch an instance of proxyfsd (without Volume:TestVolume.AutoFormat=true)
 
 	errChan = make(chan error, 1) // Must be buffered to avoid race
 

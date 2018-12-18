@@ -93,7 +93,7 @@ RUN yum -y install python-pip
 ## Install Python tox
 # - tox
 RUN pip install --upgrade pip
-RUN pip install requests tox
+RUN pip install requests tox==3.5.3
 
 # Install Golang
 RUN cd /tmp && wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz

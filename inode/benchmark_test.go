@@ -122,11 +122,11 @@ func readCacheBenchmarkHelper(b *testing.B, byteSize uint64) {
 	for i := 0; i < b.N; i++ {
 		buf := []byte{}
 		readCacheKey := readCacheKeyStruct{volumeName: "TestVolume", logSegmentNumber: logSegmentNumber, cacheLineTag: 0}
-		volume.flowControl.Lock()
-		readCacheElement, _ := volume.flowControl.readCache[readCacheKey]
+		volume.volumeGroup.Lock()
+		readCacheElement, _ := volume.volumeGroup.readCache[readCacheKey]
 		cacheLine := readCacheElement.cacheLine
 		buf = append(buf, cacheLine[:byteSize]...)
-		volume.flowControl.Unlock()
+		volume.volumeGroup.Unlock()
 	}
 }
 
