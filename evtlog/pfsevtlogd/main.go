@@ -12,7 +12,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 func usage() {
@@ -65,25 +65,22 @@ func main() {
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
-	err = logger.Up(confMap)
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
 	if nil != err {
-		log.Fatalf("logger.Up() failed: %v", err)
+		log.Fatalf("Failed to upgrade config: %v", err)
 	}
 
-	err = evtlog.Up(confMap)
+	err = transitions.Up(confMap)
 	if nil != err {
-		log.Fatalf("evtlog.Up() failed: %v", err)
+		log.Fatalf("transitions.Up() failed: %v", err)
 	}
 
 	if justDeleteSharedMemoryObject {
 		evtlog.MarkForDeletion()
-		err = evtlog.Down()
+		err = transitions.Down(confMap)
 		if nil != err {
-			log.Fatalf("evtlog.Down() failed: %v", err)
-		}
-		err = logger.Down()
-		if nil != err {
-			log.Fatalf("logger.Down() failed: %v", err)
+			log.Fatalf("transitions.Down() failed: %v", err)
 		}
 		os.Exit(0)
 	}
@@ -119,14 +116,9 @@ func main() {
 					log.Fatalf("outputFile.Close() failed: %v", err)
 				}
 
-				err = evtlog.Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					log.Fatalf("evtlog.Down() failed: %v", err)
-				}
-
-				err = logger.Down()
-				if nil != err {
-					log.Fatalf("logger.Down() failed: %v", err)
+					log.Fatalf("transitions.Down() failed: %v", err)
 				}
 
 				os.Exit(0)

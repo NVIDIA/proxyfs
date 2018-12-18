@@ -35,6 +35,8 @@ func volumeAndFileInoForTest(t *testing.T) (VolumeHandle, InodeNumber) {
 }
 
 func TestValidate(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, fileInodeNumber := volumeAndFileInoForTest(t)
 
 	// Validation succeeds if nothing has gone wrong
@@ -66,9 +68,19 @@ func TestValidate(t *testing.T) {
 	}
 
 	// Now remove fileInodeNumber from inodeCache
-	testVolume.Lock()
-	delete(testVolume.inodeCache, fileInodeNumber)
-	testVolume.Unlock()
+	fileInode, ok, err := testVolume.inodeCacheFetch(fileInodeNumber)
+	if err != nil {
+		t.Fatalf("inodeCacheFetch(fileInodeNumber) failed: %v", err)
+	}
+	if ok {
+		ok, err = testVolume.inodeCacheDrop(fileInode)
+		if err != nil {
+			t.Fatalf("inodeCacheDrop(fileInode) failed: %v", err)
+		}
+		if !ok {
+			t.Fatalf("inodeCacheDrop(fileInode) returned !ok")
+		}
+	}
 
 	// Try to Validate, observe that it fails
 	validationErr := testVolumeHandle.Validate(fileInodeNumber, false)
@@ -84,9 +96,13 @@ func TestValidate(t *testing.T) {
 	if corruptionErr == nil && ok {
 		t.Fatalf("expected not to get inode pointer when fetching presumptively corrupt inode %v", fileInodeNumber)
 	}
+
+	testTeardown(t)
 }
 
 func TestValidateFileExtents(t *testing.T) {
+	testSetup(t, false)
+
 	testVolumeHandle, fileInodeNumber := volumeAndFileInoForTest(t)
 
 	// then let's write some more data into the file so that there will be more segments to verify
@@ -134,4 +150,5 @@ func TestValidateFileExtents(t *testing.T) {
 		t.Fatalf("expected error to contain 'returned HTTP StatusCode 404'")
 	}
 
+	testTeardown(t)
 }

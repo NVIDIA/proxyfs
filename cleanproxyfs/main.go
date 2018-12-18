@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -49,10 +50,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	confErr = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	// Upgrade confMap if necessary (remove when appropriate)
+	//   Note that this follows UpdateFromStrings()
+	//        hence overrides should be relative to the pre-upgraded .conf format
+	confErr = transitions.UpgradeConfMapIfNeeded(confMap)
 	if nil != confErr {
-		fmt.Fprintf(os.Stderr, "utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", confErr)
+		fmt.Fprintf(os.Stderr, "failed to perform transitions.UpgradeConfMapIfNeeded(): %v\n", confErr)
 		os.Exit(1)
 	}
 
@@ -63,31 +66,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Fetch VolumeList
-	volumeList, confErr := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	// Compute activeVolumeNameList from each "active" VolumeGroup's VolumeList
+	activeVolumeNameList := []string{}
+	volumeGroupNameList, confErr := confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != confErr {
-		fmt.Fprintf(os.Stderr, "confMap did not contain FSGlobals.VolumeList\n")
+		fmt.Fprintf(os.Stderr, "confMap did not contain FSGlobals.VolumeGroupList\n")
 		os.Exit(1)
 	}
-
-	// Prune VolumeList per PrimaryPeer attribute
-	volumeListPruned := []string{}
-	for _, volumeName := range volumeList {
-		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice(utils.VolumeNameConfSection(volumeName), "PrimaryPeer")
+	for _, volumeGroupName := range volumeGroupNameList {
+		volumeGroupSectionName := "VolumeGroup:" + volumeGroupName
+		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != confErr {
-			fmt.Fprintf(os.Stderr, "confMap did not contain %v.PrimaryPeer\n", volumeName)
+			fmt.Fprintf(os.Stderr, "confMap did not contain %v.PrimaryPeer\n", volumeGroupSectionName)
 			os.Exit(1)
 		}
-
 		if 0 == len(primaryPeerList) {
 			continue
 		} else if 1 == len(primaryPeerList) {
 			if whoAmI == primaryPeerList[0] {
-				volumeListPruned = append(volumeListPruned, volumeName)
+				volumeNameList, confErr := confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
+				if nil != confErr {
+					fmt.Fprintf(os.Stderr, "confMap did not contain %v.VolumeGroupList\n", volumeGroupSectionName)
+					os.Exit(1)
+				}
+				activeVolumeNameList = append(activeVolumeNameList, volumeNameList...)
+			} else {
+				fmt.Fprintf(os.Stderr, "confMap contained multiple values for %v.PrimaryPeer: %v\n", volumeGroupSectionName, primaryPeerList)
+				os.Exit(1)
 			}
-		} else {
-			fmt.Fprintf(os.Stderr, "confMap contained multiple values for %v.PrimaryPeer: %v\n", volumeName, primaryPeerList)
-			os.Exit(1)
 		}
 	}
 
@@ -102,10 +108,11 @@ func main() {
 
 	urlPrefix := "http://127.0.0.1:" + noAuthTCPPort + "/v1/"
 
-	for _, volumeName := range volumeListPruned {
-		accountName, confErr := confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeName), "AccountName")
+	for _, volumeName := range activeVolumeNameList {
+		volumeSectionName := "Volume:" + volumeName
+		accountName, confErr := confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != confErr {
-			fmt.Fprintf(os.Stderr, "confMap did not contain %v.AccountName\n", volumeName)
+			fmt.Fprintf(os.Stderr, "confMap did not contain %v.AccountName\n", volumeSectionName)
 			os.Exit(1)
 		}
 
@@ -221,7 +228,7 @@ func main() {
 					os.Exit(1)
 				}
 
-				replayLogFileName, confErr := confMap.FetchOptionValueString(utils.VolumeNameConfSection(volumeName), "ReplayLogFileName")
+				replayLogFileName, confErr := confMap.FetchOptionValueString(volumeSectionName, "ReplayLogFileName")
 				if nil == confErr {
 					if "" != replayLogFileName {
 						removeReplayLogFileErr := os.Remove(replayLogFileName)

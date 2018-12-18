@@ -4,6 +4,7 @@ package utils
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"runtime"
@@ -11,76 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/swiftstack/ProxyFS/conf"
 )
-
-var (
-	volumeNameConfSectionPrefix                  = "Volume:"
-	physicalContinaerLayoutNameConfSectionPrefix = "PhysicalContainerLayout:"
-	flowControlNameConfSectionPrefix             = "FlowControl:"
-	peerNameConfSectionPrefix                    = "Peer:"
-)
-
-// TODO: Remove AdjustConfSectionNamespacingAsNecessary() when no longer needed
-func AdjustConfSectionNamespacingAsNecessary(confMap conf.ConfMap) (err error) {
-	var (
-		namespacedWhoAmISectionExists   bool
-		namespacedWhoAmISectionName     string
-		unNamespacedWhoAmISectionExists bool
-		unNamespacedWhoAmISectionName   string
-	)
-
-	unNamespacedWhoAmISectionName, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		return
-	}
-
-	namespacedWhoAmISectionName = "Peer:" + unNamespacedWhoAmISectionName
-
-	_, unNamespacedWhoAmISectionExists = confMap[unNamespacedWhoAmISectionName]
-	_, namespacedWhoAmISectionExists = confMap[namespacedWhoAmISectionName]
-
-	if (!unNamespacedWhoAmISectionExists && !namespacedWhoAmISectionExists) || (unNamespacedWhoAmISectionExists && namespacedWhoAmISectionExists) {
-		err = fmt.Errorf("Precisely one of [%s] or [%s] must exist in confMap", unNamespacedWhoAmISectionName, namespacedWhoAmISectionName)
-		return
-	}
-
-	if unNamespacedWhoAmISectionExists {
-		volumeNameConfSectionPrefix = ""
-		physicalContinaerLayoutNameConfSectionPrefix = ""
-		flowControlNameConfSectionPrefix = ""
-		peerNameConfSectionPrefix = ""
-	} else { // namespacedWhoAmISectionExists
-		volumeNameConfSectionPrefix = "Volume:"
-		physicalContinaerLayoutNameConfSectionPrefix = "PhysicalContainerLayout:"
-		flowControlNameConfSectionPrefix = "FlowControl:"
-		peerNameConfSectionPrefix = "Peer:"
-	}
-
-	err = nil
-	return
-}
-
-func VolumeNameConfSection(volumeName string) (sectionName string) {
-	sectionName = volumeNameConfSectionPrefix + volumeName
-	return
-}
-
-func PhysicalContainerLayoutNameConfSection(physicalContainerLayoutName string) (sectionName string) {
-	sectionName = physicalContinaerLayoutNameConfSectionPrefix + physicalContainerLayoutName
-	return
-}
-
-func FlowControlNameConfSection(flowControlName string) (sectionName string) {
-	sectionName = flowControlNameConfSectionPrefix + flowControlName
-	return
-}
-
-func PeerNameConfSection(peerName string) (sectionName string) {
-	sectionName = peerNameConfSectionPrefix + peerName
-	return
-}
 
 // TryLockMutex is used to support a timeout a the lock request
 type TryLockMutex struct {
@@ -708,4 +640,30 @@ func (p *Profiler) Dump() {
 	remainingTime := totalDuration - totalEventTime
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "(remaining time)", remainingTime, remainingTime*100/totalDuration)
 	fmt.Printf("%30s   + %6d us  (%3v %%)\n", "total duration", totalDuration, totalDuration*100/totalDuration)
+}
+
+func JSONify(input interface{}, indentify bool) (output string) {
+	var (
+		err             error
+		inputJSON       bytes.Buffer
+		inputJSONPacked []byte
+	)
+
+	inputJSONPacked, err = json.Marshal(input)
+	if nil == err {
+		if indentify {
+			err = json.Indent(&inputJSON, inputJSONPacked, "", "\t")
+			if nil == err {
+				output = inputJSON.String()
+			} else {
+				output = fmt.Sprintf("<<<json.Indent failed: %v>>>", err)
+			}
+		} else {
+			output = string(inputJSONPacked)
+		}
+	} else {
+		output = fmt.Sprintf("<<<json.Marshall failed: %v>>>", err)
+	}
+
+	return
 }

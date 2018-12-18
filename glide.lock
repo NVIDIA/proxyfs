@@ -1,11 +1,13 @@
-hash: b2d815693f43553e868ae5b827a4c7bc4e00acdace91ed324887c4bb5b386151
-updated: 2018-05-26T10:54:13.161756-07:00
+hash: c66dedd28a2cbff751b9ca72f9343c4cdbce719a746e443fb9af0d3371b4fcc3
+updated: 2018-09-27T12:17:03.160658-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
   - fs
   - fuseutil
+- name: bitbucket.org/creachadair/cityhash
+  version: 0d1506f40c89df1b983c65d94162627c41a330a4
 - name: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
 - name: github.com/droundy/goopt
@@ -23,7 +25,7 @@ imports:
 - name: github.com/swiftstack/cstruct
   version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
 - name: github.com/swiftstack/sortedmap
-  version: 3ae85abd8cd438ddb4c5df92fcff25207aabc134
+  version: 6e4702794171e38765cbd736930bbc45298aa512
 - name: golang.org/x/crypto
   version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
   subpackages:

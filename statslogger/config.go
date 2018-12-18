@@ -8,6 +8,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type globalsStruct struct {
@@ -22,8 +23,11 @@ type globalsStruct struct {
 
 var globals globalsStruct
 
-func parseConfMap(confMap conf.ConfMap) (err error) {
+func init() {
+	transitions.Register("statslogger", &globals)
+}
 
+func parseConfMap(confMap conf.ConfMap) (err error) {
 	globals.statsLogPeriod, err = confMap.FetchOptionValueDuration("StatsLogger", "Period")
 	if err != nil {
 		logger.Warnf("config variable 'StatsLogger.Period' defaulting to '10m': %v", err)
@@ -42,8 +46,7 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 
 // Up initializes the package and must successfully return before any API
 // functions are invoked
-func Up(confMap conf.ConfMap) (err error) {
-
+func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	err = parseConfMap(confMap)
 	if err != nil {
 		// parseConfMap() has logged an error
@@ -69,28 +72,35 @@ func Up(confMap conf.ConfMap) (err error) {
 	return
 }
 
-func Down() (err error) {
-	// shutdown the stats logger (if any)
-	logger.Infof("statslogger.Down() called")
-	if globals.statsLogPeriod != 0 {
-		globals.stopChan <- true
-		_ = <-globals.doneChan
-	}
-
-	// err is already nil
-	return
+func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupMoved(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	return nil
 }
 
-// PauseAndContract does nothing (stats keep getting logged)
-func PauseAndContract(confMap conf.ConfMap) (err error) {
-	// Nothing to do here
-	err = nil
-	return
-}
-
-// ExpandAndResume applies any additions from the supplied confMap and get new stats
-func ExpandAndResume(confMap conf.ConfMap) (err error) {
-
+func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	// read the new confmap; if the log period has changed or there was an
 	// error shutdown the old logger prior to starting a new one
 	oldLogPeriod := globals.statsLogPeriod
@@ -117,7 +127,19 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 		_ = <-globals.doneChan
 	}
 
-	err = Up(confMap)
+	err = dummy.Up(confMap)
+	return
+}
+
+func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	// shutdown the stats logger (if any)
+	logger.Infof("statslogger.Down() called")
+	if globals.statsLogPeriod != 0 {
+		globals.stopChan <- true
+		_ = <-globals.doneChan
+	}
+
+	// err is already nil
 	return
 }
 

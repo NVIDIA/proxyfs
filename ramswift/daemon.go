@@ -15,12 +15,14 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -66,6 +68,7 @@ type globalsStruct struct {
 	sync.Mutex                      // protects globalsStruct.swiftAccountMap
 	whoAmI                          string
 	noAuthTCPPort                   uint16
+	noAuthAddr                      string
 	swiftAccountMap                 map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
 	accountMethodCount              methodStruct
 	containerMethodCount            methodStruct
@@ -81,7 +84,7 @@ type globalsStruct struct {
 	containerListingLimit           uint64
 }
 
-var globals globalsStruct
+var globals *globalsStruct
 
 type httpRequestHandler struct{}
 
@@ -1105,6 +1108,10 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 					if (0 != globals.objectMethodChaosFailureRate.put) && (0 == globals.objectMethodCount.put%globals.objectMethodChaosFailureRate.put) {
 						globals.Unlock()
 						responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
+
+						// consume the PUT so the sender can finish sending
+						// and read the response
+						_, _ = ioutil.ReadAll(request.Body)
 					} else {
 						globals.Unlock()
 						swiftContainer, errno := locateSwiftContainer(swiftAccount, swiftContainerName)
@@ -1156,39 +1163,31 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 
 func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
-		err               error
-		errno             syscall.Errno
-		primaryPeerList   []string
-		swiftAccountName  string
-		volumeList        []string
-		volumeName        string
-		volumeSectionName string
+		err                    error
+		errno                  syscall.Errno
+		primaryPeerList        []string
+		swiftAccountName       string
+		volumeGroupNameList    []string
+		volumeGroupName        string
+		volumeGroupSectionName string
+		volumeName             string
+		volumeNameList         []string
+		volumeSectionName      string
 	)
-
-	// Find out who "we" are
-
-	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
-	if nil != err {
-		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
-	}
-
-	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
-	if nil != err {
-		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
-	}
 
 	// Fetch and configure volumes for which "we" are the PrimaryPeer
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
 	}
 
-	for _, volumeName = range volumeList {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+	for _, volumeGroupName = range volumeGroupNameList {
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
+
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
 		}
 		if 0 == len(primaryPeerList) {
 			continue
@@ -1197,15 +1196,26 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 				continue
 			}
 		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
-		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+
+		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
 		}
-		_, errno = createSwiftAccount(swiftAccountName)
-		if 0 != errno {
-			log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+
+		for _, volumeName = range volumeNameList {
+			volumeSectionName = "Volume:" + volumeName
+
+			swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
+			if nil != err {
+				log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
+			}
+
+			_, errno = createSwiftAccount(swiftAccountName)
+			if 0 != errno {
+				log.Fatalf("failed create of %v: %v", swiftAccountName, err)
+			}
 		}
 	}
 
@@ -1219,7 +1229,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 
 	// Launch HTTP Server on the requested noAuthTCPPort
 
-	http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(globals.noAuthTCPPort)), httpRequestHandler{})
+	http.ListenAndServe(globals.noAuthAddr, httpRequestHandler{})
 }
 
 func updateConf(confMap conf.ConfMap) {
@@ -1231,8 +1241,12 @@ func updateConf(confMap conf.ConfMap) {
 		swiftAccountNameListCurrent []string        // element == swiftAccountName
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
 		swiftAccountName            string
+		volumeGroupName             string
+		volumeGroupNameList         []string
+		volumeGroupSectionName      string
 		volumeListUpdate            []string
 		volumeName                  string
+		volumeNameList              []string
 		volumeSectionName           string
 		whoAmIUpdate                string
 	)
@@ -1269,18 +1283,19 @@ func updateConf(confMap conf.ConfMap) {
 
 	// Fetch list of accounts for which "we" are the PrimaryPeer
 
-	volumeListUpdate, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
+	volumeListUpdate = make([]string, 0)
+
+	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
-		log.Fatalf("failed fetch of FSGlobals.VolumeList: %v", err)
+		log.Fatalf("failed fetch of FSGlobals.VolumeGroupList: %v", err)
 	}
 
-	swiftAccountNameListUpdate = make(map[string]bool)
+	for _, volumeGroupName = range volumeGroupNameList {
+		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
 
-	for _, volumeName = range volumeListUpdate {
-		volumeSectionName = utils.VolumeNameConfSection(volumeName)
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeSectionName, "PrimaryPeer")
+		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeSectionName, err)
+			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
 		}
 		if 0 == len(primaryPeerList) {
 			continue
@@ -1289,8 +1304,21 @@ func updateConf(confMap conf.ConfMap) {
 				continue
 			}
 		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeSectionName)
+			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
+
+		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
+		if nil != err {
+			log.Fatalf("failed fetch of %v.VolumeList: %v", volumeGroupSectionName, err)
+		}
+
+		volumeListUpdate = append(volumeListUpdate, volumeNameList...)
+	}
+
+	swiftAccountNameListUpdate = make(map[string]bool)
+
+	for _, volumeName = range volumeListUpdate {
+		volumeSectionName = "Volume:" + volumeName
 		swiftAccountName, err = confMap.FetchOptionValueString(volumeSectionName, "AccountName")
 		if nil != err {
 			log.Fatalf("failed fetch of %v.AccountName: %v", volumeSectionName, err)
@@ -1443,15 +1471,18 @@ func fetchSwiftInfo(confMap conf.ConfMap) {
 	}
 }
 
-func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, doneChan chan bool, signals ...os.Signal) {
+func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.WaitGroup, doneChan chan bool, signals ...os.Signal) {
 	var (
 		confMap        conf.ConfMap
 		err            error
+		resp           *http.Response
 		signalChan     chan os.Signal
 		signalReceived os.Signal
 	)
 
 	// Initialization
+
+	globals = &globalsStruct{}
 
 	globals.swiftAccountMap = make(map[string]*swiftAccountStruct)
 
@@ -1467,15 +1498,43 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
-	// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-	err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
 	if nil != err {
-		log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
+		log.Fatalf("failed to upgrade confMap: %v", err)
 	}
+
+	// Find out who "we" are
+
+	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		log.Fatalf("failed fetch of Cluster.WhoAmI: %v", err)
+	}
+
+	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		log.Fatalf("failed fetch of Swift.NoAuthTCPPort: %v", err)
+	}
+
+	globals.noAuthAddr = "127.0.0.1:" + strconv.Itoa(int(globals.noAuthTCPPort))
 
 	// Kick off NoAuth Swift Proxy Emulator
 
 	go serveNoAuthSwift(confMap)
+
+	// Wait for serveNoAuthSwift() to begin serving
+
+	for {
+		resp, err = http.Get("http://" + globals.noAuthAddr + "/info")
+		if nil != err {
+			log.Printf("failed GET of \"/info\": %v", err)
+			continue
+		}
+		if http.StatusOK == resp.StatusCode {
+			break
+		}
+		log.Printf("GET of \"/info\" returned Status %v", resp.Status)
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Arm signal handler used to indicate termination and wait on it
 	//
@@ -1486,8 +1545,8 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 
 	signal.Notify(signalChan, signals...)
 
-	if nil != signalHandlerIsArmed {
-		*signalHandlerIsArmed = true
+	if nil != signalHandlerIsArmedWG {
+		signalHandlerIsArmedWG.Done()
 	}
 
 	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
@@ -1508,15 +1567,16 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmed *bool, d
 				log.Fatalf("failed to reapply config overrides: %v", err)
 			}
 
-			// TODO: Remove call to utils.AdjustConfSectionNamespacingAsNecessary() when appropriate
-			err = utils.AdjustConfSectionNamespacingAsNecessary(confMap)
+			err = transitions.UpgradeConfMapIfNeeded(confMap)
 			if nil != err {
-				log.Fatalf("utils.AdjustConfSectionNamespacingAsNecessary() failed: %v\n", err)
+				log.Fatalf("failed to upgrade confMap: %v", err)
 			}
 
 			updateConf(confMap)
 		} else {
 			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			globals = nil
 
 			doneChan <- true
 

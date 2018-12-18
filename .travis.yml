@@ -3,6 +3,7 @@ services:
 
 git:
   submodules: false
+  depth: false
 
 notifications:
   slack:

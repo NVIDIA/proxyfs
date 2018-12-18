@@ -7,48 +7,47 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
+var testConfMap conf.ConfMap
+
 func testSetup(t *testing.T) {
-	confStrings := []string{
+	var (
+		err             error
+		testConfStrings []string
+	)
+
+	testConfStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+		"Logging.LogFilePath=/dev/null",
+		"Cluster.WhoAmI=nobody",
+		"FSGlobals.VolumeGroupList=",
 	}
 
-	confMap, err := conf.MakeConfMapFromStrings(confStrings)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
-	err = evtlog.Up(confMap)
+	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("conf.MakeConfMapFromStrings() failed: %v", err)
 	}
 
-	err = stats.Up(confMap)
+	err = transitions.Up(testConfMap)
 	if nil != err {
-		tErr := fmt.Sprintf("stats.Up(confMap) failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("transitions.Up() failed: %v", err)
 	}
 }
 
 func testTeardown(t *testing.T) {
-	err := stats.Down()
-	if nil != err {
-		tErr := fmt.Sprintf("stats.Down() failed: %v", err)
-		t.Fatalf(tErr)
-	}
+	var (
+		err error
+	)
 
-	err = evtlog.Down()
+	err = transitions.Down(testConfMap)
 	if nil != err {
-		tErr := fmt.Sprintf("evtlog.Down() failed: %v", err)
-		t.Fatalf(tErr)
+		t.Fatalf("transitions.Down() failed: %v", err)
 	}
 }
 

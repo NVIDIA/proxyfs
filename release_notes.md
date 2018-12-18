@@ -1,5 +1,172 @@
 # ProxyFS Release Notes
 
+## 1.8.0.5 (November 27, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to leak "connection slots" from
+the ChunkedConnectionPool or the NonChunkedConnectionPool if
+the noauth proxy was not running when proxyfs tried to open a
+new connection (in swiftclient.acquireChunkedConnection() and
+swiftclient.acquireNonChunkedConnection()).  This could happen during
+a reload of the noauth proxy when a new configuraiton is pushed.
+
+## 1.8.0.4 (November 12, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to exit if the SwiftStack controller
+deleted a file system using its two step process of first inactivating
+it (one reconfig event) and then deleting it (second reconfig event).
+In that case, the UnregisterForEvents() would be called twice and it
+would call logger.Fatalf() to complain, causing Samba (smbd) to exit
+and making the SMB client unhappy.
+
+## 1.8.0.3 (November 9, 2018)
+
+### Bug Fixes:
+
+Fix a bug that caused proxyfsd to exit if the noauth proxy server
+restarted while file system i/o to Swift was in progress.  In particular
+this could happen during a reconfig triggered by a controller config push.
+
+## 1.8.0.2 (October 19, 2018)
+
+### Bug Fixes:
+
+Fix a bug in the snapshot code that generated snapshot names that
+contained a colon which Windows SMB clients find hard to cope with.
+
+## 1.8.0.1 (October 6, 2018)
+
+### Bug Fixes:
+
+Fix a bug introduced in 1.8.0 that triggered a NULL pointer dereference
+if an HTTP GET request specified a byte range without an ending offset.
+
+
+## 1.8.0 (September 30, 2018)
+
+### Features:
+
+Add filesystem snapshots which are created and destroyed based on policies
+that are applied to each file system.  Snapshots are accessible via the
+newly created "/.snapshot/<snapshot_name>" directory in the root of each
+filesystem.
+
+Add bucketized statistics for package swiftclient, fs, and headhunter.
+The statistics can be queried via the built-in web server, using
+the URL "//localhost:15346:/stats" in runway environments and
+"//<private_IPaddr>:1534:/stats" in stand alone environments, where
+<private_IPaddr> is the private IP address used for the backend network.
+
+Note: the bucketized statistics API, output format, and URL is unstable
+and changing quickly.  It will be different in the next release.
+
+Change config file format (for the *.conf files) so that user defined
+names for:
+    Volume
+    PhysicalContainerLayout
+    FlowControl
+    Peer
+are now preceeded by one of the strings "Volume:",
+"PhysicalContainerLayout:", "FlowControl:", or "Peer:", as appropriate,
+to insure that names are unique.
+
+Initial work on a "liveness detector" to determine whether
+ProxyFS/Samba/NFS are currently up and serving file requests.  This is
+part of an HA solution that we are developing.
+
+### Bug Fixes:
+
+Fix a bug that could cause data corruption if a file write sent via
+the FUSE or NFS interface failed on the first PUT attempt and had to be
+retried, in which case the PUT could be retried with incorrect data for
+the file.  This bug was exacerbated by the next bug, which could cause
+PUT requests to exceed the 60 sec server timeout deadline.
+
+Fix a bug where "log segments" containing data written to files
+were not closed and flushed after the 10 sec deadline (a bug in
+inFlightFileInodeDataFlusher() that could extend the PUT request beyond
+the Swift server's timeout deadline of 60 sec).
+
+Fix a bug where ProxyFS would either move to a new container for file
+log segments too quickly ("MaxObjectsPerContainer" was not being checked
+against correctly).
+
+Insure that ProxyFS will not accept requests via the FUSE interface
+while its re-reading its configuration (could lead to corruption).
+
+Add additional units tests for sequential writes.
+
+Improvements to the mock Swift testing environment, ramswift, to free
+memory when ramswift is restarted within a test.
+
+Update generatedfiles Makefile target to make files that are now
+necessary.
+
+Reworked proxyfsd daemon startup logic to avoid possible race conditions
+during startup.
+
+Reworked ramswift daemon startup logic to avoid race conditions sometimes
+hit when running tests.
+
+
+### Notes
+
+* With the advent of Golang v1.11, new support for WebAssembly has arrived. To build for a
+WebAssembly target, setting GOOS=js and GOARCH=wasm is required. Unfortunately, the arrival
+of these two new values ("js" and "wasm"), Go source files ending with _js.go, in particular,
+will only be compiled if GOOS=js has been set. Previously (Golang v1.10 and prior), a file
+ending in _js.go would always be included. This release captures a name change to various
+static files generated in package httpserver by adding an underscore ("_") just before ".go"
+to avoid this new Golang behavior.
+
+* Enhance the swiftclient chunked put unit tests to try and cover
+concurrency and many more failure/retry scenarios.  Add a new config file
+variable in the `SwiftClient` section, `ChecksumChunkedPutChunks`` which
+defaults to 'false'.  If set to `true` then data cached in a chunked put
+connection has a checksum computed when it is Sent and checked frequently
+on subsequent operations.
+
+## 1.7 (September 6, 2018)
+
+### Bug Fixes:
+
+* Fix panic in inode cache discard thread.
+* Rework flush logic to fix deadlocks when connections are exhausted.
+
+## 1.6.4 (July 24, 2018)
+
+### Features:
+
+* Added support for configuring the NoAuth Swift Proxy to an IP Address other than a default of (IPv4) localhost (127.0.0.1). Note that in the future, the defaulting to localhost may be removed, so users should take care to specify the NoAuth Swift Proxy IP Address in their configurations in the future.
+* Added support for the "delimiter=" option for Swift API GET requests. This, along with the "prefix=" option, enables viewing of the directory hierarchy inside a Container in the same way one would view a file system.
+* Added support for SnapShots. These are invoked via the RESTful API exposed by the embedded HTTP Server inside each proxyfsd instance. Note that this API is only reachable via the PrivateIPAddr and performs not authentication/authorization. You can find the new RESTful methods underneath the /Volume/<volumeName> resource (along with FSCK, Scrub, and LayoutMap). Both JSON (textual) and formatted HTML is available.
+* Added support for viewing a FileInode's ExtentMap via this same RESTful API underneath the /Volume/<volumeName> resource (adjacent to the above-mentioned SnapShot resource).
+* RPC Timeouts from pfs_middleware to proxyfsd have new defaults and are controllable via two distinct parameters optionally specified in the [filter:pfs] section of the proxy-server.conf:
+
+>        rpc_finder_timeout
+>            specified in (floating point) seconds
+>            defaults to 3.0
+>            applies when searching for a proxyfsd instance to ask where a particular Swift Account is being served
+
+>        rpc_timeout
+>            specified in (floating point) seconds
+>            defaults to 30.0
+>            applies to requests to the specific proxyfsd instance serving a particular BiModal Swift Account
+
+### Bug Fixes:
+
+* SMB clients making multiple mounts to the same Samba/ProxyFS instance could encounter all sessions/mounts being closed when requesting any one of them to terminate. This has now been corrected.
+* Previously, a cache of Inode structures did not support eviction. As a result, a very large number of Inodes accessed since a ProxyFS instance was started could exhaust memory. To address this, a new background thread discards non-dirty Inodes from the Inode Cache. The behavior of the Inode Cache eviction thread is tuned by:
+>          MaxBytesInodeCache - defaults to 10485760 (10MB)
+>          InodeCacheEvictInterval - defaults to 1s (disabled if 0s)
+
+### Known Issues:
+
+* As of this version, the metadata format has been updated from V2 to V3 in support of the SnapShot functionality. Unfortunately there is no going back. Once a V2 volume is mounted, it is immediately upgraded to V3 despite not (yet) having any SnapShots declared.
+
 ## 1.5.3 (April 3, 2018)
 
 Ignore SIGPIPE, SIGCHLD, and some other signals that were causing

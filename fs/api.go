@@ -5,8 +5,9 @@ package fs
 import "C"
 
 import (
+	"time"
+
 	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -165,6 +166,7 @@ type MountHandle interface {
 	Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool)
 	CallInodeToProvisionObject() (pPath string, err error)
 	Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error)
+	FetchReadPlan(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64) (readPlan []inode.ReadPlanStep, err error)
 	Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error)
 	Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlockStruct *FlockStruct) (outFlockStruct *FlockStruct, err error)
 	Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error)
@@ -180,7 +182,7 @@ type MountHandle interface {
 	MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
 	MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
-	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string) (containerEnts []ContainerEntry, err error)
+	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error)
 	MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
 	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
@@ -200,8 +202,6 @@ type MountHandle interface {
 	Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
 	Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error)
 	SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error)
-	SnapShotCreate(name string) (id uint64, err error)
-	SnapShotDelete(id uint64) (err error)
 	StatVfs() (statVFS StatVFS, err error)
 	Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error)
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
@@ -214,6 +214,10 @@ func ValidateVolume(volumeName string) (validateVolumeHandle JobHandle) {
 	var (
 		vVS *validateVolumeStruct
 	)
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateVolumeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	vVS = &validateVolumeStruct{}
 
@@ -237,6 +241,10 @@ func ScrubVolume(volumeName string) (scrubVolumeHandle JobHandle) {
 	var (
 		sVS *scrubVolumeStruct
 	)
+	startTime := time.Now()
+	defer func() {
+		globals.ScrubVolumeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
 
 	sVS = &scrubVolumeStruct{}
 
@@ -258,23 +266,47 @@ func ScrubVolume(volumeName string) (scrubVolumeHandle JobHandle) {
 // Utility functions
 
 func ValidateBaseName(baseName string) (err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateBaseNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ValidateBaseNameErrors.Add(1)
+		}
+	}()
+
 	err = validateBaseName(baseName)
 	return
 }
 
 func ValidateFullPath(fullPath string) (err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.ValidateFullPathUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.ValidateFullPathErrors.Add(1)
+		}
+	}()
+
 	err = validateFullPath(fullPath)
 	return
 }
 
 func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {
+	startTime := time.Now()
+	defer func() {
+		globals.AccountNameToVolumeNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volumeName, ok = inode.AccountNameToVolumeName(accountName)
-	stats.IncrementOperations(&stats.FsAcctToVolumeOps)
 	return
 }
 
 func VolumeNameToActivePeerPrivateIPAddr(volumeName string) (activePeerPrivateIPAddr string, ok bool) {
+	startTime := time.Now()
+	defer func() {
+		globals.VolumeNameToActivePeerPrivateIPAddrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	activePeerPrivateIPAddr, ok = inode.VolumeNameToActivePeerPrivateIPAddr(volumeName)
-	stats.IncrementOperations(&stats.FsVolumeToActivePeerOps)
 	return
 }

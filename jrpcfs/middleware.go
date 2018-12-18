@@ -39,8 +39,8 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 	// However, this results in two different mountHandle's for the different jrpcfs threads supporting middleware.
 	//
 	// Therefore, jrpcfs has to do its own serialization and store the result in globals.bimodalMountMap.
-	globals.Lock()
-	defer globals.Unlock()
+	globals.mapsLock.Lock()
+	defer globals.mapsLock.Unlock()
 
 	// Is volume mounted for this user?  If is, return the results.
 	mountHandle, ok = globals.bimodalMountMap[volumeName]
@@ -171,7 +171,7 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	reply.FileSize = resp.FileSize
 	reply.ModificationTime = resp.ModificationTime
 	reply.AttrChangeTime = resp.AttrChangeTime
-	reply.InodeNumber = uint64(resp.InodeNumber)
+	reply.InodeNumber = int64(uint64(resp.InodeNumber))
 	reply.NumWrites = resp.NumWrites
 
 	reply.IsDir = resp.IsDir
@@ -191,7 +191,7 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 		return err
 	}
 
-	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.Prefix)
+	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.Prefix, in.Delimiter)
 	if err != nil {
 		return err
 	}
@@ -215,10 +215,12 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, reply.InodeNumber, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	var ino uint64
+	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		return err
 	}
+	reply.InodeNumber = int64(ino)
 
 	return err
 }
@@ -269,7 +271,7 @@ func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkd
 	mtime, ctime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
-	reply.InodeNumber = uint64(inodeNumber)
+	reply.InodeNumber = int64(uint64(inodeNumber))
 	reply.NumWrites = numWrites
 	return
 }
@@ -289,7 +291,7 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 	mtime, ctime, ino, numWrites, err := mountHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
-	reply.InodeNumber = uint64(ino)
+	reply.InodeNumber = int64(uint64(ino))
 	reply.NumWrites = numWrites
 
 	return err
@@ -300,8 +302,8 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 //
 // Later, a RpcPutComplete() will be called to setup inode, etc.
 func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -331,8 +333,8 @@ func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (er
 
 // RpcPutContainer creates or updates a container (top-level directory).
 func (s *Server) RpcPutContainer(in *PutContainerReq, reply *PutContainerReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -350,8 +352,8 @@ func (s *Server) RpcPutContainer(in *PutContainerReq, reply *PutContainerReply) 
 // Combine a bunch of files together into a big one. It's like "cat old1 old2 ... > new", but without the cat. Also
 // removes the files old1 old2 ...
 func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -359,7 +361,9 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 
 	_, destContainer, destObject, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
 
-	reply.InodeNumber, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	var ino uint64
+	ino, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	reply.InodeNumber = int64(ino)
 	return
 }
 
@@ -368,8 +372,8 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 //
 // Middleware calls this periodically while producing an object GET response.
 func (s *Server) RpcRenewLease(in *RenewLeaseReq, reply *RenewLeaseReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -383,8 +387,8 @@ func (s *Server) RpcRenewLease(in *RenewLeaseReq, reply *RenewLeaseReply) (err e
 //
 // Middleware calls this once an object GET response is complete.
 func (s *Server) RpcReleaseLease(in *ReleaseLeaseReq, reply *ReleaseLeaseReply) (err error) {
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -403,8 +407,8 @@ func (s *Server) RpcIsAccountBimodal(in *IsAccountBimodalReq, reply *IsAccountBi
 		volumeName string
 	)
 
-	globals.gate.RLock()
-	defer globals.gate.RUnlock()
+	enterGate()
+	defer leaveGate()
 
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()

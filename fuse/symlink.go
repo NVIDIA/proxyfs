@@ -23,6 +23,9 @@ func (s Symlink) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		stat fs.Stat
 	)
 
+	enterGate()
+	defer leaveGate()
+
 	stat, err = s.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, s.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
@@ -54,6 +57,9 @@ func (s Symlink) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp 
 		stat        fs.Stat
 		statUpdates fs.Stat
 	)
+
+	enterGate()
+	defer leaveGate()
 
 	stat, err = s.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
 	if nil != err {

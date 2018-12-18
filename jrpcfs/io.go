@@ -109,7 +109,7 @@ func exitWorkerLevel(level int) {
 }
 
 func incRunningWorkers() {
-	globals.gate.RLock()
+	enterGate()
 
 	if debugConcurrency {
 		concWorkerLock.Lock()
@@ -146,7 +146,7 @@ func decRunningWorkers() {
 		concWorkerLock.Unlock()
 	}
 
-	globals.gate.RUnlock()
+	leaveGate()
 }
 
 // It'd be nice if the time package supported a check for nil duration, but it doesn't.

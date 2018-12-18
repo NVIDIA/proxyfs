@@ -6,8 +6,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -21,8 +21,9 @@ func TestViaNoAuthClient(t *testing.T) {
 	var (
 		confStrings = []string{
 			"SwiftClient.NoAuthTCPPort=" + noAuthTCPPort,
+			"SwiftClient.NoAuthIPAddr=127.0.0.1",
 			"Cluster.WhoAmI=Peer0",
-			"FSGlobals.VolumeList=",
+			"FSGlobals.VolumeGroupList=",
 			"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 			"RamSwiftInfo.MaxAccountNameLength=256",
 			"RamSwiftInfo.MaxContainerNameLength=256",
@@ -44,19 +45,17 @@ func TestViaNoAuthClient(t *testing.T) {
 		pipeReader                   *io.PipeReader
 		pipeWriter                   *io.PipeWriter
 		readBuf                      []byte
-		signalHandlerIsArmed         bool
+		signalHandlerIsArmedWG       sync.WaitGroup
 		urlForInfo                   string
 		urlPrefix                    string
 	)
 
-	signalHandlerIsArmed = false
+	signalHandlerIsArmedWG.Add(1)
 	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	// Setup urlPrefix to be "http://127.0.0.1:<SwiftClient.NoAuthTCPPort>/v1/"
 

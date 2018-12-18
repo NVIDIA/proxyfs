@@ -21,33 +21,10 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type Level int
-
-// Call to configure the logger.  This really should be done before using it,
-// but you can log things before calling.  However, they will not appear in
-// the logfile and will not be in the new text format.
-//
-// Config variables that affect logging include:
-//     Logging.LogFilePath        string       if present, pathname to log file
-//     Logging.LogToConsole       bool         if present and true, log to console as well as file
-//     Logging.TraceLevelLogging  stringslice  list of packages where tracing is enabled (name must
-//                                             also appear in packageTraceSettings)
-//     Logging.DebugLevelLogging  stringslice
-//
-func Up(confMap conf.ConfMap) (err error) {
-	return up(confMap)
-}
-
-// Call to shutdown logging (closes the logfile)
-//
-func Down() (err error) {
-	return down()
-}
 
 // Our logging levels - These are the different logging levels supported by this package.
 //
@@ -810,9 +787,6 @@ func (ctx FuncCtx) log(level Level, args ...interface{}) {
 	}
 	// NOTE: Debug level checking is done in logWithID; all debug logging should
 	//       come through that API and not directly to this one.
-
-	// Peg the stat for the appropriate log level
-	stats.IncrementOperations(level.statString())
 
 	switch level {
 	case PanicLevel:

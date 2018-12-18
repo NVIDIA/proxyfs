@@ -11,7 +11,6 @@ import (
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 func (volume *volumeStruct) RegisterForEvents(listener VolumeEventListener) {
@@ -23,7 +22,7 @@ func (volume *volumeStruct) RegisterForEvents(listener VolumeEventListener) {
 
 	_, ok = volume.eventListeners[listener]
 	if ok {
-		logger.Fatalf("headhunter.RegisterForEvents() called for volume %v listener %v already active", volume.volumeName)
+		logger.Fatalf("headhunter.RegisterForEvents() called for volume %v listener %p already active", volume.volumeName, listener)
 	}
 
 	volume.eventListeners[listener] = struct{}{}
@@ -40,7 +39,11 @@ func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
 
 	_, ok = volume.eventListeners[listener]
 	if !ok {
-		logger.Fatalf("headhunter.UnregisterForEvents() called for volume %v listener %v not active", volume.volumeName)
+		// this should never happen, its an internal logic error, so log
+		// it as an error.  it is not a panic or fatal because this
+		// internal error will probably not break proxyfs (and panic'ing
+		// is hard on the SMB clients)
+		logger.Errorf("headhunter.UnregisterForEvents() called for volume %v listener %p not active", volume.volumeName, listener)
 	}
 
 	delete(volume.eventListeners, listener)
@@ -75,18 +78,16 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		logger.Fatalf("Nonces have been exhausted !!!")
 	}
 
-	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
-		newReservedToNonce = volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve)
+	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
+		newReservedToNonce = volume.checkpointHeader.reservedToNonce + uint64(volume.nonceValuesToReserve)
 
 		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
 		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
 
-		// checkpointHeaderVersion2 == volume.checkpointHeaderVersion
-
 		checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-			checkpointHeaderVersion2,
-			volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectNumber,
-			volume.checkpointHeader.CheckpointObjectTrailerV2StructObjectLength,
+			volume.checkpointHeader.checkpointVersion,
+			volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber,
+			volume.checkpointHeader.checkpointObjectTrailerStructObjectLength,
 			newReservedToNonce,
 		)
 
@@ -101,7 +102,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 			return
 		}
 
-		volume.checkpointHeader.ReservedToNonce = newReservedToNonce
+		volume.checkpointHeader.reservedToNonce = newReservedToNonce
 	}
 
 	nonce = volume.nextNonce
@@ -112,16 +113,79 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 }
 
 func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.FetchNonceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FetchNonceErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	nonce, err = volume.fetchNonceWhileLocked()
 	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) findVolumeViewAndNonceWhileLocked(key uint64) (volumeView *volumeViewStruct, nonce uint64, ok bool, err error) {
+	var (
+		snapShotID     uint64
+		snapShotIDType SnapShotIDType
+		value          sortedmap.Value
+	)
+
+	snapShotIDType, snapShotID, nonce = volume.SnapShotU64Decode(key)
+
+	if SnapShotIDTypeDotSnapShot == snapShotIDType {
+		err = fmt.Errorf("findVolumeViewAndNonceWhileLocked() called for SnapShotIDTypeDotSnapShot key")
+		return
+	}
+
+	if SnapShotIDTypeLive == snapShotIDType {
+		volumeView = volume.liveView
+		ok = true
+		err = nil
+		return
+	}
+
+	value, ok, err = volume.viewTreeByID.GetByKey(snapShotID)
+	if (nil != err) || !ok {
+		return
+	}
+
+	volumeView, ok = value.(*volumeViewStruct)
+
 	return
 }
 
 func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetInodeRecBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.GetInodeRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByKey(inodeNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(inodeNumber)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingInodeRec, volume.volumeName, inodeNumber)
+		err = fmt.Errorf("inodeNumber 0x%016X not found in volume \"%v\" inodeRecWrapper.bPlusTree", inodeNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.inodeRecWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -143,6 +207,16 @@ func (volume *volumeStruct) GetInodeRec(inodeNumber uint64) (value []byte, ok bo
 }
 
 func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.PutInodeRecErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -170,6 +244,21 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 }
 
 func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		var totalBytes int
+		for _, inodeValue := range values {
+			totalBytes += len(inodeValue)
+		}
+
+		globals.PutInodeRecsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutInodeRecsBytes.Add(uint64(totalBytes))
+		if err != nil {
+			globals.PutInodeRecsErrors.Add(1)
+		}
+	}()
+
 	if len(inodeNumbers) != len(values) {
 		err = fmt.Errorf("InodeNumber and Values array don't match")
 		return
@@ -209,6 +298,15 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 }
 
 func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteInodeRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteInodeRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
@@ -221,6 +319,15 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 }
 
 func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedInodeNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedInodeNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -239,9 +346,30 @@ func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64
 }
 
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.GetLogSegmentRecErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(logSegmentNumber)
+	if (nil != err) || !ok {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingLogSegmentRec, volume.volumeName, logSegmentNumber)
+		err = fmt.Errorf("logSegmentNumber 0x%016X not found in volume \"%v\" logSegmentRecWrapper.bPlusTree", logSegmentNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.logSegmentRecWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -263,6 +391,15 @@ func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []b
 }
 
 func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.PutLogSegmentRecErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -281,6 +418,14 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 		}
 	}
 
+	if nil != volume.priorView {
+		_, err = volume.priorView.createdObjectsWrapper.bPlusTree.Put(logSegmentNumber, valueToTree)
+		if nil != err {
+			volume.Unlock()
+			return
+		}
+	}
+
 	volume.recordTransaction(transactionPutLogSegmentRec, logSegmentNumber, value)
 
 	volume.Unlock()
@@ -289,16 +434,19 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 	return
 }
 
-/*
-	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
-	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)
-*/
 func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err error) {
 	var (
-		containerNameAsValue      sortedmap.Value
-		delayedObjectDeleteSSTODO delayedObjectDeleteSSTODOStruct
-		ok                        bool
+		containerNameAsValue sortedmap.Value
+		ok                   bool
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteLogSegmentRecUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteLogSegmentRecErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 	defer volume.Unlock()
@@ -317,17 +465,44 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 		return
 	}
 
+	if nil == volume.priorView {
+		_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+		if nil != err {
+			return
+		}
+	} else {
+		ok, err = volume.priorView.createdObjectsWrapper.bPlusTree.DeleteByKey(logSegmentNumber)
+		if nil != err {
+			return
+		}
+		if ok {
+			_, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+			if nil != err {
+				return
+			}
+		} else {
+			_, err = volume.priorView.deletedObjectsWrapper.bPlusTree.Put(logSegmentNumber, containerNameAsValue)
+			if nil != err {
+				return
+			}
+		}
+	}
+
 	volume.recordTransaction(transactionDeleteLogSegmentRec, logSegmentNumber, nil)
-
-	delayedObjectDeleteSSTODO.containerName = utils.ByteSliceToString(containerNameAsValue.([]byte))
-	delayedObjectDeleteSSTODO.objectNumber = logSegmentNumber
-
-	volume.delayedObjectDeleteSSTODOList = append(volume.delayedObjectDeleteSSTODOList, delayedObjectDeleteSSTODO)
 
 	return
 }
 
 func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedLogSegmentNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedLogSegmentNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -346,9 +521,31 @@ func (volume *volumeStruct) IndexedLogSegmentNumber(index uint64) (logSegmentNum
 }
 
 func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byte, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetBPlusTreeObjectBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.GetBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
-	valueAsValue, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByKey(objectNumber)
+	volumeView, nonce, ok, err := volume.findVolumeViewAndNonceWhileLocked(objectNumber)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	if !ok {
+		volume.Unlock()
+		evtlog.Record(evtlog.FormatHeadhunterMissingBPlusTreeObject, volume.volumeName, objectNumber)
+		err = fmt.Errorf("objectNumber 0x%016X not found in volume \"%v\" bPlusTreeObjectWrapper.bPlusTree", objectNumber, volume.volumeName)
+		return
+	}
+
+	valueAsValue, ok, err := volumeView.bPlusTreeObjectWrapper.bPlusTree.GetByKey(nonce)
 	if nil != err {
 		volume.Unlock()
 		return
@@ -370,6 +567,16 @@ func (volume *volumeStruct) GetBPlusTreeObject(objectNumber uint64) (value []byt
 }
 
 func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.PutBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.PutBPlusTreeObjectBytes.Add(uint64(len(value)))
+		if err != nil {
+			globals.PutBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	valueToTree := make([]byte, len(value))
 	copy(valueToTree, value)
 
@@ -397,6 +604,15 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 }
 
 func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.DeleteBPlusTreeObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DeleteBPlusTreeObjectErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 
 	_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
@@ -409,6 +625,15 @@ func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err erro
 }
 
 func (volume *volumeStruct) IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.IndexedBPlusTreeObjectNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.IndexedBPlusTreeObjectNumberErrors.Add(1)
+		}
+	}()
+
 	volume.Lock()
 	key, _, ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.GetByIndex(int(index))
 	if nil != err {
@@ -430,6 +655,14 @@ func (volume *volumeStruct) DoCheckpoint() (err error) {
 	var (
 		checkpointRequest checkpointRequestStruct
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.DoCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DoCheckpointErrors.Add(1)
+		}
+	}()
 
 	checkpointRequest.exitOnCompletion = false
 
@@ -486,7 +719,7 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	discrepencies = 0
 
 	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
-		objectBytesTracked, ok = treeWrapper.trackingBPlusTreeLayout[objectNumber]
+		objectBytesTracked, ok = treeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
 		if ok {
 			if objectBytesMeasured != objectBytesTracked {
 				discrepencies++
@@ -498,7 +731,7 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		}
 	}
 
-	for objectNumber, objectBytesTracked = range treeWrapper.trackingBPlusTreeLayout {
+	for objectNumber, objectBytesTracked = range treeWrapper.bPlusTreeTracker.bPlusTreeLayout {
 		objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
 		if ok {
 			// Already handled above
@@ -536,6 +769,14 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		perTreeLayoutReport    sortedmap.LayoutReport
 		perTreeObjectBytes     uint64
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.FetchLayoutReportUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.FetchLayoutReportErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 	defer volume.Unlock()
@@ -619,12 +860,29 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 
 func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, err error) {
 	var (
-		availableSnapShotIDListElement *list.Element
-		ok                             bool
-		snapShotNonce                  uint64
-		snapShotTime                   time.Time
-		volumeView                     *volumeViewStruct
+		availableSnapShotIDListElement           *list.Element
+		bPlusTreeObjectBPlusTreeRootObjectLength uint64
+		bPlusTreeObjectBPlusTreeRootObjectNumber uint64
+		bPlusTreeObjectBPlusTreeRootObjectOffset uint64
+		inodeRecBPlusTreeRootObjectLength        uint64
+		inodeRecBPlusTreeRootObjectNumber        uint64
+		inodeRecBPlusTreeRootObjectOffset        uint64
+		logSegmentRecBPlusTreeRootObjectLength   uint64
+		logSegmentRecBPlusTreeRootObjectNumber   uint64
+		logSegmentRecBPlusTreeRootObjectOffset   uint64
+		ok                                       bool
+		snapShotNonce                            uint64
+		snapShotTime                             time.Time
+		volumeView                               *volumeViewStruct
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotCreateByInodeLayerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotCreateByInodeLayerErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 
@@ -669,6 +927,14 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 	}
 	_ = volume.availableSnapShotIDList.Remove(availableSnapShotIDListElement)
 
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
 	volumeView = &volumeViewStruct{
 		volume:       volume,
 		nonce:        snapShotNonce,
@@ -676,6 +942,120 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		snapShotTime: snapShotTime,
 		snapShotName: name,
 	}
+
+	volumeView.inodeRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
+	}
+
+	inodeRecBPlusTreeRootObjectNumber,
+		inodeRecBPlusTreeRootObjectOffset,
+		inodeRecBPlusTreeRootObjectLength = volume.liveView.inodeRecWrapper.bPlusTree.FetchLocation()
+
+	if 0 == inodeRecBPlusTreeRootObjectNumber {
+		volumeView.inodeRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxInodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+	} else {
+		volumeView.inodeRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				inodeRecBPlusTreeRootObjectNumber,
+				inodeRecBPlusTreeRootObjectOffset,
+				inodeRecBPlusTreeRootObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.inodeRecWrapper,
+				globals.inodeRecCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<InodeRecBPlusTree>) failed with error: %v", err)
+		}
+	}
+
+	volumeView.logSegmentRecWrapper = &bPlusTreeWrapperStruct{
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
+	}
+
+	logSegmentRecBPlusTreeRootObjectNumber,
+		logSegmentRecBPlusTreeRootObjectOffset,
+		logSegmentRecBPlusTreeRootObjectLength = volume.liveView.logSegmentRecWrapper.bPlusTree.FetchLocation()
+
+	if 0 == logSegmentRecBPlusTreeRootObjectNumber {
+		volumeView.logSegmentRecWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxLogSegmentsPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+	} else {
+		volumeView.logSegmentRecWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				logSegmentRecBPlusTreeRootObjectNumber,
+				logSegmentRecBPlusTreeRootObjectOffset,
+				logSegmentRecBPlusTreeRootObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.logSegmentRecWrapper,
+				globals.logSegmentRecCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<LogSegmentRecBPlusTree>) failed with error: %v", err)
+		}
+	}
+
+	volumeView.bPlusTreeObjectWrapper = &bPlusTreeWrapperStruct{
+		volumeView:       volumeView,
+		bPlusTreeTracker: nil,
+	}
+
+	bPlusTreeObjectBPlusTreeRootObjectNumber,
+		bPlusTreeObjectBPlusTreeRootObjectOffset,
+		bPlusTreeObjectBPlusTreeRootObjectLength = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.FetchLocation()
+
+	if 0 == bPlusTreeObjectBPlusTreeRootObjectNumber {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree =
+			sortedmap.NewBPlusTree(
+				volumeView.volume.maxDirFileNodesPerMetadataNode,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+	} else {
+		volumeView.bPlusTreeObjectWrapper.bPlusTree, err =
+			sortedmap.OldBPlusTree(
+				bPlusTreeObjectBPlusTreeRootObjectNumber,
+				bPlusTreeObjectBPlusTreeRootObjectOffset,
+				bPlusTreeObjectBPlusTreeRootObjectLength,
+				sortedmap.CompareUint64,
+				volumeView.bPlusTreeObjectWrapper,
+				globals.bPlusTreeObjectCache)
+		if nil != err {
+			logger.Fatalf("Logic error - sortedmap.OldBPlusTree(<BPlusTreeObjectBPlusTree>) failed with error: %v", err)
+		}
+	}
+
+	volumeView.createdObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:       volumeView,
+		bPlusTreeTracker: volumeView.volume.liveView.createdObjectsWrapper.bPlusTreeTracker,
+	}
+
+	volumeView.createdObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.createdObjectsWrapper,
+			globals.createdDeletedObjectsCache)
+
+	volumeView.deletedObjectsWrapper = &bPlusTreeWrapperStruct{
+		volumeView:       volumeView,
+		bPlusTreeTracker: volumeView.volume.liveView.deletedObjectsWrapper.bPlusTreeTracker,
+	}
+
+	volumeView.deletedObjectsWrapper.bPlusTree =
+		sortedmap.NewBPlusTree(
+			volumeView.volume.maxCreatedDeletedObjectsPerMetadataNode,
+			sortedmap.CompareUint64,
+			volumeView.volume.liveView.deletedObjectsWrapper,
+			globals.createdDeletedObjectsCache)
 
 	ok, err = volume.viewTreeByNonce.Put(snapShotNonce, volumeView)
 	if nil != err {
@@ -709,17 +1089,41 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		logger.Fatalf("Logic error - viewTreeByName.Put() returned ok == false")
 	}
 
+	volume.priorView = volumeView
+
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
 	volume.Unlock()
 
-	return // TODO - there's more to do here...
+	return
 }
 
 func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 	var (
-		ok         bool
-		value      sortedmap.Value
-		volumeView *volumeViewStruct
+		deletedVolumeView              *volumeViewStruct
+		deletedVolumeViewIndex         int
+		found                          bool
+		key                            sortedmap.Key
+		newPriorVolumeView             *volumeViewStruct
+		ok                             bool
+		predecessorToDeletedVolumeView *volumeViewStruct
+		remainingSnapShotCount         int
+		value                          sortedmap.Value
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotDeleteByInodeLayerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotDeleteByInodeLayerErrors.Add(1)
+		}
+	}()
 
 	volume.Lock()
 
@@ -734,12 +1138,137 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		return
 	}
 
-	volumeView, ok = value.(*volumeViewStruct)
+	deletedVolumeView, ok = value.(*volumeViewStruct)
 	if !ok {
 		logger.Fatalf("viewTreeByID.GetByKey(0x%016X) returned something other than a volumeView", id)
 	}
+	deletedVolumeViewIndex, found, err = volume.viewTreeByNonce.BisectLeft(deletedVolumeView.nonce)
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() failed with error: %v", err)
+	}
+	if !found {
+		logger.Fatalf("Logic error - viewTreeByNonce.BisectLeft() returned found == false")
+	}
 
-	ok, err = volume.viewTreeByNonce.DeleteByKey(volumeView.nonce)
+	if 0 == deletedVolumeViewIndex {
+		ok = true
+		for ok {
+			ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+			}
+		}
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) returned ok == false")
+				}
+				ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+				if nil != err {
+					logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+				}
+			}
+		}
+	} else {
+		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(deletedVolumeViewIndex - 1)
+		if nil != err {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() failed with error: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned ok == false")
+		}
+		predecessorToDeletedVolumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex() returned something other than a volumeView")
+		}
+
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByIndex(0) returned ok == false")
+				}
+				ok, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put(key, value)
+				if nil != err {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+				}
+				if !ok {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.Put() returned ok == false")
+				}
+			}
+		}
+		ok = true
+		for ok {
+			key, value, ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0)
+			if nil != err {
+				logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.GetByIndex(0) failed with error: %v", err)
+			}
+			if ok {
+				ok, err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0)
+				if nil != err {
+					logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.DeleteByIndex(0) failed with error: %v", err)
+				}
+				_, found, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.BisectLeft(key)
+				if nil != err {
+					logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.BisectLeft(key) failed with error: %v", err)
+				}
+				if found {
+					ok, err = predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key)
+					if nil != err {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key) failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.createdObjectsWrapper.bPlusTree.DeleteByKey(key) returned ok == false")
+					}
+					ok, err = volume.liveView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+					if nil != err {
+						logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - liveView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+					}
+				} else {
+					ok, err = predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put(key, value)
+					if nil != err {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put() failed with error: %v", err)
+					}
+					if !ok {
+						logger.Fatalf("Logic error - predecessorToDeletedVolumeView.deletedObjectsWrapper.bPlusTree.Put() returned ok == false")
+					}
+				}
+			}
+		}
+	}
+
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
+	ok, err = volume.viewTreeByNonce.DeleteByKey(deletedVolumeView.nonce)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByNonce.DeleteByKey() failed with error: %v", err)
 	}
@@ -755,7 +1284,7 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.Fatalf("Logic error - viewTreeByID.DeleteByKey() returned ok == false")
 	}
 
-	ok, err = volume.viewTreeByTime.DeleteByKey(volumeView.snapShotTime)
+	ok, err = volume.viewTreeByTime.DeleteByKey(deletedVolumeView.snapShotTime)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() failed with error: %v", err)
 	}
@@ -763,7 +1292,7 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.Fatalf("Logic error - viewTreeByTime.DeleteByKey() returned ok == false")
 	}
 
-	ok, err = volume.viewTreeByName.DeleteByKey(volumeView.snapShotName)
+	ok, err = volume.viewTreeByName.DeleteByKey(deletedVolumeView.snapShotName)
 	if nil != err {
 		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() failed with error: %v", err)
 	}
@@ -771,11 +1300,125 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.Fatalf("Logic error - viewTreeByName.DeleteByKey() returned ok == false")
 	}
 
+	remainingSnapShotCount, err = volume.viewTreeByNonce.Len()
+	if nil != err {
+		logger.Fatalf("Logic error - viewTreeByNonce.Len() failed with error: %v", err)
+	}
+
+	if 0 == remainingSnapShotCount {
+		volume.priorView = nil
+	} else {
+		_, value, ok, err = volume.viewTreeByNonce.GetByIndex(remainingSnapShotCount - 1)
+		if nil != err {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) failed with error: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) returned ok == false")
+		}
+		newPriorVolumeView, ok = value.(*volumeViewStruct)
+		if !ok {
+			logger.Fatalf("Logic error - viewTreeByNonce.GetByIndex(<last>) returned something other than a volumeView")
+		}
+		volume.priorView = newPriorVolumeView
+	}
+
 	volume.availableSnapShotIDList.PushBack(id)
+
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
+	err = volume.putCheckpoint()
+	if nil != err {
+		evtlog.Record(evtlog.FormatHeadhunterCheckpointEndFailure, volume.volumeName, err.Error())
+		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
+	}
+	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
+	err = deletedVolumeView.inodeRecWrapper.bPlusTree.Prune()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.inodeRecWrapper.bPlusTree.Prune() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.logSegmentRecWrapper.bPlusTree.Prune()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.logSegmentRecWrapper.bPlusTree.Prune() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Prune()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.bPlusTreeObjectWrapper.bPlusTree.Prune() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.createdObjectsWrapper.bPlusTree.Prune()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.createdObjectsWrapper.bPlusTree.Prune() failed with error: %v", err)
+	}
+
+	err = deletedVolumeView.deletedObjectsWrapper.bPlusTree.Prune()
+	if nil != err {
+		logger.Fatalf("Logic error - deletedVolumeView.deletedObjectsWrapper.bPlusTree.Prune() failed with error: %v", err)
+	}
 
 	volume.Unlock()
 
-	return // TODO - there's more to do here...
+	return
+}
+
+func (volume *volumeStruct) SnapShotCount() (snapShotCount uint64) {
+	var (
+		err error
+		len int
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotCountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotCountErrors.Add(1)
+		}
+	}()
+
+	len, err = volume.viewTreeByID.Len()
+	if nil != err {
+		logger.Fatalf("headhunter.SnapShotCount() for volume %v hit viewTreeByID.Len() error: %v", volume.volumeName, err)
+	}
+	snapShotCount = uint64(len)
+	return
+}
+
+func (volume *volumeStruct) SnapShotLookupByName(name string) (snapShot SnapShotStruct, ok bool) {
+	var (
+		err        error
+		value      sortedmap.Value
+		volumeView *volumeViewStruct
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotLookupByNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.SnapShotLookupByNameErrors.Add(1)
+		}
+	}()
+
+	value, ok, err = volume.viewTreeByName.GetByKey(name)
+	if nil != err {
+		logger.Fatalf("headhunter.SnapShotLookupByName() for volume %v hit viewTreeByName.GetByKey(\"%v\") error: %v", volume.volumeName, name, err)
+	}
+	if !ok {
+		return
+	}
+
+	volumeView, ok = value.(*volumeViewStruct)
+	if !ok {
+		logger.Fatalf("headhunter.SnapShotLookupByName() for volume %v hit value.(*volumeViewStruct) !ok", volume.volumeName)
+	}
+
+	snapShot = SnapShotStruct{
+		ID:   volumeView.snapShotID,
+		Time: volumeView.snapShotTime,
+		Name: volumeView.snapShotName, // == name
+	}
+
+	return
 }
 
 func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed bool) (list []SnapShotStruct) {
@@ -825,6 +1468,12 @@ func (volume *volumeStruct) snapShotList(viewTree sortedmap.LLRBTree, reversed b
 }
 
 func (volume *volumeStruct) SnapShotListByID(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByIDUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByID, reversed)
 	volume.Unlock()
@@ -833,6 +1482,12 @@ func (volume *volumeStruct) SnapShotListByID(reversed bool) (list []SnapShotStru
 }
 
 func (volume *volumeStruct) SnapShotListByTime(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByTimeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByTime, reversed)
 	volume.Unlock()
@@ -841,9 +1496,64 @@ func (volume *volumeStruct) SnapShotListByTime(reversed bool) (list []SnapShotSt
 }
 
 func (volume *volumeStruct) SnapShotListByName(reversed bool) (list []SnapShotStruct) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotListByNameUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
 	volume.Lock()
 	list = volume.snapShotList(volume.viewTreeByName, reversed)
 	volume.Unlock()
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotU64Decode(snapShotU64 uint64) (snapShotIDType SnapShotIDType, snapShotID uint64, nonce uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotU64DecodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	snapShotID = snapShotU64 >> volume.snapShotIDShift
+	if 0 == snapShotID {
+		snapShotIDType = SnapShotIDTypeLive
+	} else if volume.dotSnapShotDirSnapShotID == snapShotID {
+		snapShotIDType = SnapShotIDTypeDotSnapShot
+	} else {
+		snapShotIDType = SnapShotIDTypeSnapShot
+	}
+
+	nonce = snapShotU64 & volume.snapShotU64NonceMask
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotIDAndNonceEncode(snapShotID uint64, nonce uint64) (snapShotU64 uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotIDAndNonceEncodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	snapShotU64 = snapShotID
+	snapShotU64 = snapShotU64 << volume.snapShotIDShift
+	snapShotU64 = snapShotU64 | nonce
+
+	return
+}
+
+func (volume *volumeStruct) SnapShotTypeDotSnapShotAndNonceEncode(nonce uint64) (snapShotU64 uint64) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.SnapShotTypeDotSnapShotAndNonceEncodeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+	}()
+
+	snapShotU64 = volume.dotSnapShotDirSnapShotID
+	snapShotU64 = snapShotU64 << volume.snapShotIDShift
+	snapShotU64 = snapShotU64 | nonce
 
 	return
 }

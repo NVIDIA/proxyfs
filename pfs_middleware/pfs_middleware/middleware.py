@@ -123,6 +123,8 @@ ZERO_FILL_PATH = "/0"
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+LISTING_ETAG_OVERRIDE_HEADER = \
+    "X-Object-Sysmeta-Container-Update-Override-Etag"
 
 # They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
@@ -167,6 +169,8 @@ SWIFT_OWNER_HEADERS = {
 MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 
 EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
+
+RPC_TIMEOUT_DEFAULT = 30.0
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -424,10 +428,18 @@ def extract_container_metadata_from_headers(req):
 
 
 def best_possible_etag(obj_metadata, account_name, ino, num_writes,
-                       is_dir=False):
+                       is_dir=False, container_listing=False):
     if is_dir:
         return EMPTY_OBJECT_ETAG
-    if ORIGINAL_MD5_HEADER in obj_metadata:
+    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                return rest
+        except ValueError:
+            pass
+    elif ORIGINAL_MD5_HEADER in obj_metadata:
         val = obj_metadata[ORIGINAL_MD5_HEADER]
         try:
             stored_num_writes, md5sum = val.split(':', 1)
@@ -625,7 +637,8 @@ class PfsMiddleware(object):
                 self.logger.error("Error resolving hostname %r", host)
                 raise
 
-        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout', '3.0'))
+        self.proxyfsd_rpc_timeout = float(conf.get('rpc_timeout',
+                                                   RPC_TIMEOUT_DEFAULT))
         self.bimodal_recheck_interval = float(conf.get(
             'bimodal_recheck_interval', '60.0'))
         self.max_get_time = int(conf.get('max_get_time', '86400'))
@@ -1130,8 +1143,12 @@ class PfsMiddleware(object):
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
         prefix = req.params.get('prefix', '')
+        delimiter = req.params.get('delimiter', '')
+        # For now, we only support "/" as a delimiter
+        if delimiter not in ("", "/"):
+            return swob.HTTPBadRequest(request=req)
         get_container_request = rpc.get_container_request(
-            urllib_parse.unquote(req.path), marker, limit, prefix)
+            urllib_parse.unquote(req.path), marker, limit, prefix, delimiter)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
         except utils.RpcError as err:
@@ -1151,7 +1168,7 @@ class PfsMiddleware(object):
                 container_ents)
         elif resp_content_type == "application/json":
             resp.body = self._json_container_get_response(
-                container_ents, ctx.account_name)
+                container_ents, ctx.account_name, delimiter)
         elif resp_content_type.endswith("/xml"):
             resp.body = self._xml_container_get_response(
                 container_ents, ctx.account_name, ctx.container_name)
@@ -1174,7 +1191,8 @@ class PfsMiddleware(object):
             chunks.append("\n")
         return ''.join(chunks)
 
-    def _json_container_get_response(self, container_entries, account_name):
+    def _json_container_get_response(self, container_entries, account_name,
+                                     delimiter):
         json_entries = []
         for ent in container_entries:
             name = ent["Basename"]
@@ -1192,7 +1210,8 @@ class PfsMiddleware(object):
                 ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
+                container_listing=True)
             json_entry = {
                 "name": name,
                 "bytes": int(swift_bytes or size),
@@ -1200,8 +1219,16 @@ class PfsMiddleware(object):
                 "hash": etag,
                 "last_modified": last_modified}
             json_entries.append(json_entry)
+
+            if delimiter != "" and "IsDir" in ent and ent["IsDir"]:
+                json_entries.append({"subdir": ent["Basename"] + delimiter})
+
         return json.dumps(json_entries)
 
+    # TODO: This method is usually non reachable, because at some point in the
+    # pipeline, we convert JSON to XML. We should either remove this or update
+    # it to support delimiters in case it's really needed.
+    # Same thing probably applies to plain text responses.
     def _xml_container_get_response(self, container_entries, account_name,
                                     container_name):
         root_node = ET.Element('container', name=container_name)
@@ -1415,6 +1442,11 @@ class PfsMiddleware(object):
         obj_metadata = extract_object_metadata_from_headers(req.headers)
         obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
                                                        hasher.hexdigest())
+        # Add a similar prefix to any container-update-override etag, to
+        # similarly verify that there wasn't a subsequent write.
+        if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+            obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
+                len(log_segments), obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))

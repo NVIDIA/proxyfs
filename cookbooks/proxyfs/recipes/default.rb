@@ -1,3 +1,5 @@
+require 'json'
+
 tarfile_name = 'go1.10.linux-amd64.tar.gz'
 
 tarfile_path = "/tmp/#{tarfile_name}"
@@ -7,6 +9,8 @@ source_root = node['source_root']
 proxyfs_user = node['proxyfs_user']
 proxyfs_group = node['proxyfs_group']
 is_dev = node['is_dev_environment']
+ss_packages = node['use_swiftstack_packages']
+package_spec_path = node['package_spec_path']
 
 GOROOT = "/usr/local/go"
 HOME_DIR = "/home/#{proxyfs_user}"
@@ -17,7 +21,7 @@ ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
 VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
-# SAMBA_PARENT_DIR == VFS_SRC_DIR
+JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
 # We're doing this to only need to change SAMBA_PARENT_DIR in case we decide to
 # change the location of samba again in the future.
 SAMBA_PARENT_DIR = "#{VFS_SRC_DIR}"
@@ -40,6 +44,24 @@ end
 file "/etc/profile.d/golang_path.sh" do
   content "export PATH=$PATH:#{GOROOT}/bin"
   mode '0644'
+end
+
+if node[:platform_family].include?("rhel") and ss_packages
+  cookbook_file "/etc/yum.repos.d/swiftstack-controller.repo" do
+    source "etc/yum.repos.d/swiftstack-controller.repo"
+    owner "root"
+    group "root"
+  end
+
+  cookbook_file "/etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller" do
+    source "etc/pki/rpm-gpg/RPM-GPG-KEY-swiftstack-controller"
+    owner "root"
+    group "root"
+  end
+
+  execute "yum makecache" do
+    command "yum makecache"
+  end
 end
 
 ruby_block "update_profile_and_bashrc" do
@@ -65,7 +87,11 @@ ruby_block "update_profile_and_bashrc" do
 
     file = Chef::Util::FileEdit.new(DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
-    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    if ss_packages
+      file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin:/opt/ss/bin:/opt/ss/sbin")
+    else
+      file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    end
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
@@ -93,7 +119,11 @@ ruby_block "update_profile_and_bashrc" do
 
     file = Chef::Util::FileEdit.new(ROOT_DOT_BASHRC)
     file.insert_line_if_no_match(/export GOPATH/, "export GOPATH=#{source_root}")
-    file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    if ss_packages
+      file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin:/opt/ss/bin:/opt/ss/sbin")
+    else
+      file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
+    end
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
@@ -129,6 +159,14 @@ end
 execute "Install PIP" do
   command "curl https://bootstrap.pypa.io/get-pip.py | python"
   not_if { system("pip --version") }
+end
+
+execute "Install pfs-swift-load-plot requirements" do
+  command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
+end
+
+execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
+  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
 end
 
 if is_dev
@@ -210,6 +248,20 @@ cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
   only_if { ::File.directory?("/usr/lib/systemd/system/") }
 end
 
+if node[:platform_family].include?("rhel") and ss_packages
+  cookbook_file "/usr/lib/systemd/system/smb.service" do
+    source "usr/lib/systemd/system/smb.service"
+    # notifies :restart, 'service[smb]'
+    only_if { ::File.directory?("/usr/lib/systemd/system/") }
+  end
+
+  cookbook_file "/usr/lib/systemd/system/nmb.service" do
+    source "usr/lib/systemd/system/nmb.service"
+    # notifies :restart, 'service[nmb]'
+    only_if { ::File.directory?("/usr/lib/systemd/system/") }
+  end
+end
+
 cookbook_file "/etc/init/proxyfsd.conf" do
   source "etc/init/proxyfsd.upstart"
   # notifies :restart, 'service[proxyfsd]'
@@ -221,98 +273,19 @@ end
 # Dependency lists by OS
 #
 if node[:platform_family].include?("rhel")
-
-  # packages
-  samba_packages = [["samba", "4.6.2-12.el7_4"], ["samba-client", "4.6.2-12.el7_4"]]
-
-  samba_deps = [
-    ["gcc", "4.8.5-16.el7_4.2"],
-    ["gcc-c++", "4.8.5-16.el7_4.2"],
-    ["python-devel", "2.7.5-58.el7"],
-    ["gnutls-devel", "3.3.26-9.el7"],
-    ["libacl-devel", "2.2.51-12.el7"],
-    ["openldap-devel", "2.4.44-5.el7"],
-    ["cifs-utils", "6.2-10.el7"],
-  ]
-
-  proxyfs_packages = [
-    ["json-c-devel", "0.11-4.el7_0"],
-    ["fuse", "2.9.2-8.el7"],
-  ]
-
-  wireshark_packages = [
-    ["wireshark", "1.10.14-14.el7"],
-    ["libcap", "2.22-9.el7"],
-  ]
-
-  ssh_packages = [
-    ["sshpass", "1.06-2.el7"],
-  ]
-
-  nfs_packages = [
-    ["nfs-utils", "1.3.0-0.48.el7_4.1"],
-  ]
-
-  gdb_packages = [
-    ["gdb", "7.6.1-100.el7_4.1"],
-    ["yum-utils", "1.1.31-42.el7"],
-  ]
-
-  utils_packages = [
-    ["atop", "2.3.0-8.el7"],
-    ["vim-common", "7.4.160-2.el7"],
-  ]
-
+  if ss_packages
+    package_spec_file_path = File.read(package_spec_path + '/rhel_ss.json')
+  else
+    package_spec_file_path = File.read(package_spec_path + '/rhel.json')
+  end
 else # assume debian
-
-  # packages
-  # We should probably pin these packages, just like we do for RHEL
-  samba_packages = [["samba"], ["smbclient"]]
-
-  samba_deps = [
-    ["gcc"],
-    ["python-dev"],
-    ["libgnutls-dev"],
-    ["libacl1-dev"],
-    ["libldap2-dev"],
-    ["pkg-config"],
-    ["cifs-utils"],
-  ]
-
-  proxyfs_packages = [
-    ["libjson-c-dev"],
-    ["fuse"],
-  ]
-
-  wireshark_packages = [
-    ["wireshark"],
-    ["libcap2-bin"],
-  ]
-
-  ssh_packages = [
-    ["sshpass"],
-  ]
-
-  nfs_packages = [
-    ["nfs-kernel-server"],
-    ["nfs-common"],
-  ]
-
-  # Not sure if we need anything else on Debian besides gdb itself
-  gdb_packages = [
-    ["gdb"],
-  ]
-
-  utils_packages = [
-    ["atop"],
-    ["vim-common"],
-  ]
-
+    package_spec_file_path = File.read(package_spec_path + '/debian.json')
 end
 
-packages = samba_packages + samba_deps + proxyfs_packages + nfs_packages + gdb_packages + utils_packages
-packages += wireshark_packages if is_dev
-packages += ssh_packages if is_dev
+package_spec = JSON.parse(package_spec_file_path)
+packages = package_spec['samba_packages'] + package_spec['samba_deps'] + package_spec['proxyfs_packages'] + package_spec['nfs_packages'] + package_spec['gdb_packages'] + package_spec['utils_packages']
+packages += package_spec['wireshark_packages'] if is_dev
+packages += package_spec['ssh_packages'] if is_dev
 
 packages.each do |pkg|
   if pkg.size >= 2
@@ -351,70 +324,78 @@ end
 execute "Remove samba symbolic link" do
   command "rm -f samba"
   cwd SAMBA_PARENT_DIR
-  not_if { ::File.exists?(SAMBA_SRC_DIR) }
 end
 
 
 #
 # Check out and build samba
 #
+# For now we're hard-coding the OS. It should be parametrized.
 OS_DISTRO="centos"
-OS_DISTRO_VERSION="7.4"
-SAMBA_VERSION="4.6.12"
+OS_DISTRO_VERSION="7.5"
 
-SAMBA_DIR="build-samba-#{SAMBA_VERSION.gsub(".", "-")}-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
+SAMBA_VERSION = ss_packages ? "4.6.2" : ""
 
-if File.exist?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}")
-  link "#{SAMBA_SRC_DIR}" do
-    to "#{SAMBA_DIR}"
-    link_type :symbolic
-  end
-else
-  execute "Check out samba" do
-    command "git clone -b samba-#{SAMBA_VERSION} --single-branch --depth 1 https://github.com/samba-team/samba.git #{SAMBA_DIR}"
-    cwd SAMBA_PARENT_DIR
-    not_if { ::File.exists?("#{SAMBA_PARENT_DIR}/#{SAMBA_DIR}") }
-  end
+bash 'Check out samba + build headers if needed' do
+  code <<-EOH
+  if [ "#{SAMBA_VERSION}" = "" ]; then
+    SAMBA_VERSION="`smbstatus -V | cut -d' ' -f2 | tr -d '\\n'`"
+  else
+    SAMBA_VERSION="#{SAMBA_VERSION}"
+  fi
+  SAMBA_DIR="build-samba-`echo ${SAMBA_VERSION} | sed -e 's:\\.:-:g'`-#{OS_DISTRO}-#{OS_DISTRO_VERSION.gsub(".", "-")}"
 
-  link "#{SAMBA_SRC_DIR}" do
-    to "#{SAMBA_DIR}"
-    link_type :symbolic
-  end
+  if [ -d "#{SAMBA_PARENT_DIR}/${SAMBA_DIR}" ]; then
+    ln -s ${SAMBA_DIR} #{SAMBA_SRC_DIR}
+  else
+    # Check out samba
+    git clone -b samba-${SAMBA_VERSION} --single-branch --depth 1 https://github.com/samba-team/samba.git ${SAMBA_DIR}
 
-  execute "Configure samba src" do
-    command "./configure"
-    cwd SAMBA_SRC_DIR
+    ln -s ${SAMBA_DIR} #{SAMBA_SRC_DIR}
+
+    cd #{SAMBA_SRC_DIR}
+
+    # Configure samba src
     # lockfile dropped by `waf configure`
-    not_if { ::File.exists?("#{SAMBA_SRC_DIR}/.lock-wscript") }
-  end
+    if [ ! -f "#{SAMBA_SRC_DIR}/.lock-wscript" ]; then
+      ./configure
+    fi
 
-  execute "Build samba headers" do
-    command "make GEN_NDR_TABLES"
-    cwd SAMBA_SRC_DIR
-    not_if { ::File.exists?(SAMBA_SRC_DIR + "/bin/default/librpc/gen_ndr/server_id.h") }
-  end
+    # Build samba headers
+    if [ ! -f "#{SAMBA_SRC_DIR}/bin/default/librpc/gen_ndr/server_id.h" ]; then
+      make GEN_NDR_TABLES
+    fi
+  fi
+  EOH
+  cwd SAMBA_PARENT_DIR
 end
 
 #
 # Configure Samba
 #
-execute "Setup Samba password" do
-  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | smbpasswd -a -s #{node['swift_user']}"
+
+if ss_packages
+  smb_conf = "/opt/ss/etc/samba/smb.conf"
+else
+  smb_conf = "/etc/samba/smb.conf"
 end
 
-execute "Setup /etc/samba/smb.conf" do
-  command "cat sample_entry_smb_conf.txt >> /etc/samba/smb.conf "
+execute "Setup #{smb_conf}" do
+  command "cat sample_entry_smb_conf.txt > #{smb_conf}"
   cwd "#{VFS_SRC_DIR}"
 end
 
 ruby_block "update_smb_conf" do
   block do
-    smb_conf = "/etc/samba/smb.conf"
-
     file = Chef::Util::FileEdit.new(smb_conf)
     file.search_file_replace(/valid users = CHANGEME/, "valid users = #{node['swift_user']}")
     file.write_file
   end
+end
+
+smbpasswd_path = ss_packages ? "/opt/ss/bin/smbpasswd" : "/bin/smbpasswd"
+execute "Setup Samba password" do
+  command "printf \"#{node['swift_user']}\n#{node['swift_user']}\n\" | #{smbpasswd_path} -a -s #{node['swift_user']}"
 end
 
 #
@@ -441,7 +422,7 @@ ruby_block "Create exports entry" do
     editor = Chef::Util::FileEdit.new("/etc/exports")
     editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,sync,fsid=1000,no_subtree_check,no_root_squash)")
     editor.write_file
-  end 
+  end
 end
 
 #
@@ -467,6 +448,39 @@ link '/usr/bin/proxyfsd' do
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
+end
+
+if ss_packages
+  # Creating link to jrpcclient's libs into the new /opt/ss path
+  link '/opt/ss/lib64/libproxyfs.so.1.0.0' do
+    to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+    link_type :symbolic
+    owner "root"
+    group "root"
+  end
+
+  link '/opt/ss/lib64/libproxyfs.so.1' do
+    to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+    link_type :symbolic
+    owner "root"
+    group "root"
+  end
+
+  link '/opt/ss/lib64/libproxyfs.so' do
+    to "#{JRPCCLIENT_SRC_DIR}/libproxyfs.so.1.0.0"
+    link_type :symbolic
+    owner "root"
+    group "root"
+  end
+
+  # Creating link to vfs' libs into the new /opt/ss path
+  bash 'Link VFS' do
+    code <<-EOH
+    /usr/bin/install -c -d /opt/ss/lib64/samba/vfs
+    /usr/bin/install -c -m 755 proxyfs.so /opt/ss/lib64/samba/vfs
+    EOH
+    cwd VFS_SRC_DIR
+  end
 end
 
 cookbook_file "#{HOME_DIR}/.gdbinit" do

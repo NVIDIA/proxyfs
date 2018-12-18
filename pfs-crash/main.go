@@ -25,7 +25,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/httpserver"
-	"github.com/swiftstack/ProxyFS/utils"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -95,17 +95,12 @@ func main() {
 		mkproxyfsCmd                *exec.Cmd
 		nextHalterTriggerIndex      int
 		peerSectionName             string
-		primaryPeer                 string
 		privateIPAddr               string
 		randomHaltAfterCount        uint64
 		randomKillDelay             time.Duration
 		signalChan                  chan os.Signal
 		signalToSend                os.Signal
 		triggerBoolAndTrafficScript string
-		volumeList                  []string
-		volumeListElement           string
-		volumeNameInVolumeList      bool
-		volumeSectionName           string
 		whoAmI                      string
 	)
 
@@ -161,37 +156,18 @@ func main() {
 		proxyfsdArgs = append(proxyfsdArgs, confStrings...)
 	}
 
+	// Upgrade confMap if necessary
+	err = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != err {
+		log.Fatalf("Failed to upgrade config: %v", err)
+	}
+
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		log.Fatal(err)
 	}
 
-	volumeList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeList")
-	if nil != err {
-		return
-	}
-	volumeNameInVolumeList = false
-	for _, volumeListElement = range volumeList {
-		if volumeName == volumeListElement {
-			volumeNameInVolumeList = true
-			break
-		}
-	}
-	if !volumeNameInVolumeList {
-		log.Fatalf("volumeName (%s) not found in volumeList (%v)", volumeName, volumeList)
-	}
-
-	volumeSectionName = utils.VolumeNameConfSection(volumeName)
-
-	primaryPeer, err = confMap.FetchOptionValueString(volumeSectionName, "PrimaryPeer")
-	if nil != err {
-		log.Fatal(err)
-	}
-	if whoAmI != primaryPeer {
-		log.Fatalf("Cluster.WhoAmI (%s) does not match %s.PrimaryPeer (%s)", whoAmI, volumeSectionName, primaryPeer)
-	}
-
-	peerSectionName = utils.PeerNameConfSection(primaryPeer)
+	peerSectionName = "Peer:" + whoAmI
 
 	privateIPAddr, err = confMap.FetchOptionValueString(peerSectionName, "PrivateIPAddr")
 	if nil != err {
@@ -205,7 +181,7 @@ func main() {
 
 	ipAddrTCPPort = net.JoinHostPort(privateIPAddr, strconv.Itoa(int(httpServerTCPPort)))
 
-	fuseMountPointName, err = confMap.FetchOptionValueString(volumeSectionName, "FUSEMountPointName")
+	fuseMountPointName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "FUSEMountPointName")
 	if nil != err {
 		log.Fatal(err)
 	}

@@ -4,6 +4,7 @@ package swiftclient
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
@@ -23,11 +24,17 @@ func accountDeleteWithRetry(accountName string) (err error) {
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountDelete(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountDeleteRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountDeleteRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountDelete(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountDeleteRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountDeleteRetrySuccessOps,
+			clientRequestTime: &globals.AccountDeleteUsec,
+			clientFailureCnt:  &globals.AccountDeleteFailure,
+			swiftRequestTime:  &globals.SwiftAccountDeleteUsec,
+			swiftRetryOps:     &globals.SwiftAccountDeleteRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err
@@ -42,13 +49,17 @@ func accountDelete(accountName string) (err error) {
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+accountName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "DELETE", "/"+swiftVersion+"/"+pathEscape(accountName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.accountDelete(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountDelete(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
 		return
 	}
 
@@ -56,7 +67,7 @@ func accountDelete(accountName string) (err error) {
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPDeleteError)
-		logger.ErrorfWithError(err, "swiftclient.accountDelete(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountDelete(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
 	evtlog.Record(evtlog.FormatAccountDelete, accountName, uint32(httpStatus))
@@ -65,7 +76,7 @@ func accountDelete(accountName string) (err error) {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "DELETE %s returned HTTP StatusCode %d", accountName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.accountDelete(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountDelete(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
 		return
 	}
 
@@ -86,15 +97,20 @@ func accountGetWithRetry(accountName string) (headers map[string][]string, conta
 		marker             string
 		opname             string
 		retryObj           *RetryCtrl
-		statnm             RetryStatNm
+		statnm             requestStatistics
 		toAddContainerList []string
 		toAddHeaders       map[string][]string
 	)
 
 	retryObj = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-	statnm = RetryStatNm{
-		retryCnt:        &stats.SwiftAccountGetRetryOps,
-		retrySuccessCnt: &stats.SwiftAccountGetRetrySuccessOps}
+	statnm = requestStatistics{
+		retryCnt:          &stats.SwiftAccountGetRetryOps,
+		retrySuccessCnt:   &stats.SwiftAccountGetRetrySuccessOps,
+		clientRequestTime: &globals.AccountGetUsec,
+		clientFailureCnt:  &globals.AccountGetFailure,
+		swiftRequestTime:  &globals.SwiftAccountGetUsec,
+		swiftRetryOps:     &globals.SwiftAccountGetRetryOps,
+	}
 
 	request := func() (bool, error) {
 		var err error
@@ -105,7 +121,11 @@ func accountGetWithRetry(accountName string) (headers map[string][]string, conta
 	headers = make(map[string][]string)
 	containerList = make([]string, 0)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	marker = ""
 
@@ -143,17 +163,17 @@ func accountGet(connection *connectionStruct, accountName string, marker string)
 		isError    bool
 	)
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+accountName+"?marker="+marker, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "GET", "/"+swiftVersion+"/"+pathEscape(accountName)+"?marker="+url.QueryEscape(marker), nil)
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName, marker)
+		logger.WarnfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName, marker)
 		return
 	}
 
 	httpStatus, headers, err = readHTTPStatusAndHeaders(connection.tcpConn)
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPStatusAndHeaders() error", accountName, marker)
+		logger.WarnfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPStatusAndHeaders() error", accountName, marker)
 		return
 	}
 	evtlog.Record(evtlog.FormatAccountGet, accountName, uint32(httpStatus))
@@ -161,14 +181,14 @@ func accountGet(connection *connectionStruct, accountName string, marker string)
 	if isError {
 		err = blunder.NewError(fsErr, "GET %s returned HTTP StatusCode %d", accountName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPStatusAndHeaders() bad status", accountName, marker)
+		logger.WarnfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPStatusAndHeaders() bad status", accountName, marker)
 		return
 	}
 
 	containerList, err = readHTTPPayloadLines(connection.tcpConn, headers)
 	if nil != err {
 		err = blunder.AddError(err, blunder.BadHTTPGetError)
-		logger.ErrorfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPPayloadLines() error", accountName, marker)
+		logger.WarnfWithError(err, "swiftclient.accountGet(,\"%v\",\"%v\") got readHTTPPayloadLines() error", accountName, marker)
 		return
 	}
 
@@ -190,11 +210,17 @@ func accountHeadWithRetry(accountName string) (map[string][]string, error) {
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountHead(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountHeadRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountHeadRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountHead(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountHeadRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountHeadRetrySuccessOps,
+			clientRequestTime: &globals.AccountHeadUsec,
+			clientFailureCnt:  &globals.AccountHeadFailure,
+			swiftRequestTime:  &globals.SwiftAccountHeadUsec,
+			swiftRetryOps:     &globals.SwiftAccountHeadRetryOps,
+		}
 	)
 	err := retryObj.RequestWithRetry(request, &opname, &statnm)
 	return headers, err
@@ -208,13 +234,17 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 		isError    bool
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+accountName, nil)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "HEAD", "/"+swiftVersion+"/"+pathEscape(accountName), nil)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.accountHead(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountHead(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
 		return
 	}
 
@@ -222,7 +252,7 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPHeadError)
-		logger.ErrorfWithError(err, "swiftclient.accountHead(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountHead(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
 	evtlog.Record(evtlog.FormatAccountHead, accountName, uint32(httpStatus))
@@ -231,7 +261,7 @@ func accountHead(accountName string) (headers map[string][]string, err error) {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "HEAD %s returned HTTP StatusCode %d", accountName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.accountHead(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountHead(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
 		return
 	}
 
@@ -254,11 +284,17 @@ func accountPostWithRetry(accountName string, requestHeaders map[string][]string
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountPost(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountPostRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountPostRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+
+		opname string            = fmt.Sprintf("swiftclient.accountPost(\"%v\")", accountName)
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountPostRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountPostRetrySuccessOps,
+			clientRequestTime: &globals.AccountPostUsec,
+			clientFailureCnt:  &globals.AccountPostFailure,
+			swiftRequestTime:  &globals.SwiftAccountPostUsec,
+			swiftRetryOps:     &globals.SwiftAccountPostRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err
@@ -274,15 +310,19 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "POST", "/"+swiftVersion+"/"+accountName, requestHeaders)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "POST", "/"+swiftVersion+"/"+pathEscape(accountName), requestHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPost(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
 		return
 	}
 
@@ -290,7 +330,7 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPost(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
 	evtlog.Record(evtlog.FormatAccountPost, accountName, uint32(httpStatus))
@@ -299,14 +339,14 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "POST %s returned HTTP StatusCode %d", accountName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPost(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
 		return
 	}
 	contentLength, err = parseContentLength(responseHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got parseContentLength() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPost(\"%v\") got parseContentLength() error", accountName)
 		return
 	}
 	if 0 < contentLength {
@@ -314,7 +354,7 @@ func accountPost(accountName string, requestHeaders map[string][]string) (err er
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPPutError)
-			logger.ErrorfWithError(err, "swiftclient.accountPost(\"%v\") got readBytesFromTCPConn() error", accountName)
+			logger.WarnfWithError(err, "swiftclient.accountPost(\"%v\") got readBytesFromTCPConn() error", accountName)
 			return
 		}
 	}
@@ -338,11 +378,17 @@ func accountPutWithRetry(accountName string, requestHeaders map[string][]string)
 	}
 
 	var (
-		retryObj *RetryCtrl  = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
-		opname   string      = fmt.Sprintf("swiftclient.accountPut(\"%v\")", accountName)
-		statnm   RetryStatNm = RetryStatNm{
-			retryCnt:        &stats.SwiftAccountPutRetryOps,
-			retrySuccessCnt: &stats.SwiftAccountPutRetrySuccessOps}
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.accountPut(\"%v\")", accountName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftAccountPutRetryOps,
+			retrySuccessCnt:   &stats.SwiftAccountPutRetrySuccessOps,
+			clientRequestTime: &globals.AccountPutUsec,
+			clientFailureCnt:  &globals.AccountPutFailure,
+			swiftRequestTime:  &globals.SwiftAccountPutUsec,
+			swiftRetryOps:     &globals.SwiftAccountPutRetryOps,
+		}
 	)
 	err = retryObj.RequestWithRetry(request, &opname, &statnm)
 	return err
@@ -358,15 +404,19 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 		responseHeaders map[string][]string
 	)
 
-	connection = acquireNonChunkedConnection()
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
 
 	requestHeaders["Content-Length"] = []string{"0"}
 
-	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+accountName, requestHeaders)
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(accountName), requestHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPut(\"%v\") got writeHTTPRequestLineAndHeaders() error", accountName)
 		return
 	}
 
@@ -374,7 +424,7 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPut(\"%v\") got readHTTPStatusAndHeaders() error", accountName)
 		return
 	}
 	evtlog.Record(evtlog.FormatAccountPut, accountName, uint32(httpStatus))
@@ -383,14 +433,14 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.NewError(fsErr, "PUT %s returned HTTP StatusCode %d", accountName, httpStatus)
 		err = blunder.AddHTTPCode(err, httpStatus)
-		logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPut(\"%v\") got readHTTPStatusAndHeaders() bad status", accountName)
 		return
 	}
 	contentLength, err = parseContentLength(responseHeaders)
 	if nil != err {
 		releaseNonChunkedConnection(connection, false)
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got parseContentLength() error", accountName)
+		logger.WarnfWithError(err, "swiftclient.accountPut(\"%v\") got parseContentLength() error", accountName)
 		return
 	}
 	if 0 < contentLength {
@@ -398,7 +448,7 @@ func accountPut(accountName string, requestHeaders map[string][]string) (err err
 		if nil != err {
 			releaseNonChunkedConnection(connection, false)
 			err = blunder.AddError(err, blunder.BadHTTPPutError)
-			logger.ErrorfWithError(err, "swiftclient.accountPut(\"%v\") got readBytesFromTCPConn() error", accountName)
+			logger.WarnfWithError(err, "swiftclient.accountPut(\"%v\") got readBytesFromTCPConn() error", accountName)
 			return
 		}
 	}

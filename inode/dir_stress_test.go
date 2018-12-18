@@ -31,12 +31,22 @@ type testDirStressGlobalsStruct struct {
 
 var testDirStressGlobals = &testDirStressGlobalsStruct{}
 
-func TestDirStress(t *testing.T) {
+func TestDirStressWhileStarved(t *testing.T) {
+	testDirStress(t, true)
+}
+
+func TestDirStressWhileNotStarved(t *testing.T) {
+	testDirStress(t, false)
+}
+
+func testDirStress(t *testing.T, starvationMode bool) {
 	var (
 		err                    error
 		headhunterVolumeHandle headhunter.VolumeHandle
 		threadIndex            uint64
 	)
+
+	testSetup(t, starvationMode)
 
 	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(testDirStressVolumeName)
 	if nil != err {
@@ -65,6 +75,8 @@ func TestDirStress(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+
+	testTeardown(t)
 }
 
 func testDirStressThread(threadIndex uint64) {

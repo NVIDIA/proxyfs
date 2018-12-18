@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,14 +14,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/fs"
-	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 // Shorthand for our testing debug log id; global to the package
@@ -34,16 +33,25 @@ const testVerAccountContainerName = testVerAccountName + "/" + testContainerName
 const testAccountName2 = "AN_account2"
 
 func testSetup() []func() {
-	var err error
+	var (
+		cleanupFuncs           []func()
+		cleanupTempDir         func()
+		confStrings            []string
+		doneChan               chan bool
+		err                    error
+		signalHandlerIsArmedWG sync.WaitGroup
+		tempDir                string
+		testConfMap            conf.ConfMap
+	)
 
-	cleanupFuncs := make([]func(), 0)
+	cleanupFuncs = make([]func(), 0)
 
-	confStrings := []string{
+	confStrings = []string{
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
-		"FSGlobals.VolumeList=SomeVolume,SomeVolume2",
+		"FSGlobals.VolumeGroupList=JrpcfsTestVolumeGroup",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -54,17 +62,17 @@ func testSetup() []func() {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=45262",
 		"SwiftClient.Timeout=10s",
-		"SwiftClient.RetryLimit=5",
-		"SwiftClient.RetryLimitObject=5",
-		"SwiftClient.RetryDelay=1s",
-		"SwiftClient.RetryDelayObject=1s",
+		"SwiftClient.RetryLimit=3",
+		"SwiftClient.RetryLimitObject=3",
+		"SwiftClient.RetryDelay=10ms",
+		"SwiftClient.RetryDelayObject=10ms",
 		"SwiftClient.RetryExpBackoff=1.2",
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=256",
@@ -75,117 +83,82 @@ func testSetup() []func() {
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
 		"Volume:SomeVolume.FSID=1",
-		"Volume:SomeVolume.PrimaryPeer=Peer0",
 		"Volume:SomeVolume.AccountName=" + testAccountName,
+		"Volume:SomeVolume.AutoFormat=true",
 		"Volume:SomeVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:SomeVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:SomeVolume.CheckpointInterval=10s",
-		"Volume:SomeVolume.CheckpointIntervalsPerCompaction=100",
 		"Volume:SomeVolume.DefaultPhysicalContainerLayout=SomeContainerLayout",
-		"Volume:SomeVolume.FlowControl=JrpcfsTestFlowControl",
+		"Volume:SomeVolume.MaxFlushSize=10027008",
+		"Volume:SomeVolume.MaxFlushTime=2s",
 		"Volume:SomeVolume.NonceValuesToReserve=100",
 		"Volume:SomeVolume.MaxEntriesPerDirNode=32",
 		"Volume:SomeVolume.MaxExtentsPerFileNode=32",
 		"Volume:SomeVolume.MaxInodesPerMetadataNode=32",
 		"Volume:SomeVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:SomeVolume.MaxDirFileNodesPerMetadataNode=16",
+		"Volume:SomeVolume.MaxBytesInodeCache=100000",
+		"Volume:SomeVolume.InodeCacheEvictInterval=1s",
 		"Volume:SomeVolume2.FSID=2",
-		"Volume:SomeVolume2.PrimaryPeer=Peer0",
 		"Volume:SomeVolume2.AccountName=" + testAccountName2,
+		"Volume:SomeVolume2.AutoFormat=true",
 		"Volume:SomeVolume2.CheckpointContainerName=.__checkpoint__",
 		"Volume:SomeVolume2.CheckpointContainerStoragePolicy=gold",
 		"Volume:SomeVolume2.CheckpointInterval=10s",
-		"Volume:SomeVolume2.CheckpointIntervalsPerCompaction=100",
 		"Volume:SomeVolume2.DefaultPhysicalContainerLayout=SomeContainerLayout2",
-		"Volume:SomeVolume2.FlowControl=JrpcfsTestFlowControl",
+		"Volume:SomeVolume2.MaxFlushSize=10027008",
+		"Volume:SomeVolume2.MaxFlushTime=2s",
 		"Volume:SomeVolume2.NonceValuesToReserve=100",
 		"Volume:SomeVolume2.MaxEntriesPerDirNode=32",
 		"Volume:SomeVolume2.MaxExtentsPerFileNode=32",
 		"Volume:SomeVolume2.MaxInodesPerMetadataNode=32",
 		"Volume:SomeVolume2.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:SomeVolume2.MaxDirFileNodesPerMetadataNode=16",
-		"FlowControl:JrpcfsTestFlowControl.MaxFlushSize=10027008",
-		"FlowControl:JrpcfsTestFlowControl.MaxFlushTime=2s",
-		"FlowControl:JrpcfsTestFlowControl.ReadCacheLineSize=1000000",
-		"FlowControl:JrpcfsTestFlowControl.ReadCacheWeight=100",
+		"Volume:SomeVolume2.MaxBytesInodeCache=100000",
+		"Volume:SomeVolume2.InodeCacheEvictInterval=1s",
+		"VolumeGroup:JrpcfsTestVolumeGroup.VolumeList=SomeVolume,SomeVolume2",
+		"VolumeGroup:JrpcfsTestVolumeGroup.VirtualIPAddr=",
+		"VolumeGroup:JrpcfsTestVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:JrpcfsTestVolumeGroup.ReadCacheLineSize=1000000",
+		"VolumeGroup:JrpcfsTestVolumeGroup.ReadCacheWeight=100",
 		"PhysicalContainerLayout:SomeContainerLayout.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:SomeContainerLayout.ContainerNamePrefix=kittens",
-		"PhysicalContainerLayout:SomeContainerLayout.ContainersPerPeer=1000",
+		"PhysicalContainerLayout:SomeContainerLayout.ContainersPerPeer=10",
 		"PhysicalContainerLayout:SomeContainerLayout.MaxObjectsPerContainer=1000000",
 		"PhysicalContainerLayout:SomeContainerLayout2.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:SomeContainerLayout2.ContainerNamePrefix=puppies",
-		"PhysicalContainerLayout:SomeContainerLayout2.ContainersPerPeer=1234",
-		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1234567",
+		"PhysicalContainerLayout:SomeContainerLayout2.ContainersPerPeer=10",
+		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1000000",
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
 	}
 
-	tempDir, err := ioutil.TempDir("", "jrpcfs_test")
+	tempDir, err = ioutil.TempDir("", "jrpcfs_test")
 	if nil != err {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
-	cleanupTempDir := func() {
+	cleanupTempDir = func() {
 		_ = os.RemoveAll(tempDir)
 	}
 	cleanupFuncs = append(cleanupFuncs, cleanupTempDir)
 
-	testConfMap, err := conf.MakeConfMapFromStrings(confStrings)
+	testConfMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if nil != err {
 		panic(fmt.Sprintf("failed in testSetup: %v", err))
 	}
 
-	signalHandlerIsArmed := false
-	doneChan := make(chan bool)
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	signalHandlerIsArmedWG.Add(1)
+	doneChan = make(chan bool)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
-	err = stats.Up(testConfMap)
+	err = transitions.Up(testConfMap)
 	if nil != err {
-		panic(fmt.Sprintf("failed to bring up stats: %v", err))
-	}
-
-	err = dlm.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
-	}
-
-	err = swiftclient.Up(testConfMap)
-	if err != nil {
-		panic(fmt.Sprintf("failed to bring up swiftclient: %v", err))
-	}
-
-	err = headhunter.Format(testConfMap, "SomeVolume")
-	if nil != err {
-		panic(fmt.Sprintf("failed to format SomeVolume: %v", err))
-	}
-
-	err = headhunter.Format(testConfMap, "SomeVolume2")
-	if nil != err {
-		panic(fmt.Sprintf("failed to format SomeVolume2: %v", err))
-	}
-
-	err = headhunter.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up headhunter: %v", err))
-	}
-
-	err = inode.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up inode: %v", err))
-	}
-
-	err = fs.Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up fs: %v", err))
-	}
-
-	err = Up(testConfMap)
-	if nil != err {
-		panic(fmt.Sprintf("failed to bring up jrpcfs: %v", err))
+		panic(fmt.Sprintf("transitions.Up() failed: %v", err))
 	}
 
 	// Unfortunately, we cannot call the jrpcfs Up() method here since it will start the RPC server.
@@ -516,7 +489,7 @@ func testRpcHeadObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/plants/eggplant.txt")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 }
@@ -537,7 +510,7 @@ func testRpcHeadUpdatedObjectFile(t *testing.T, server *Server) {
 
 	statResult := fsStatPath(testVerAccountName, "/c/README")
 
-	assert.Equal(statResult[fs.StatINum], response.InodeNumber)
+	assert.Equal(statResult[fs.StatINum], uint64(response.InodeNumber))
 	assert.Equal(statResult[fs.StatNumWrites], response.NumWrites)
 	// We've got different CTime and MTime, since we POSTed after writing
 	assert.True(statResult[fs.StatCTime] > statResult[fs.StatMTime], "Expected StatCTime (%v) > StatMTime (%v)", statResult[fs.StatCTime], statResult[fs.StatMTime])
@@ -697,6 +670,44 @@ func TestRpcGetContainerPrefixAndMarker(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[1].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[2].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[3].Basename)
+}
+
+func TestRpcGetContainerPrefixAndDelimiter(t *testing.T) {
+	server := &Server{}
+	assert := assert.New(t)
+
+	request := GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     ".git/logs/refs/",
+		Delimiter:  "/",
+	}
+	response := GetContainerReply{}
+	err := server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(3, len(response.ContainerEntries))
+	ents := response.ContainerEntries
+	assert.Equal(".git/logs/refs/.DS_Store", ents[0].Basename)
+	assert.Equal(".git/logs/refs/heads", ents[1].Basename)
+	assert.Equal(".git/logs/refs/stash", ents[2].Basename)
+
+	// Try with a prefix without a trailing slash
+	request = GetContainerReq{
+		VirtPath:   testVerAccountName + "/" + "c-nested",
+		Marker:     "",
+		MaxEntries: 10000,
+		Prefix:     ".git/logs/refs",
+		Delimiter:  "/",
+	}
+	response = GetContainerReply{}
+	err = server.RpcGetContainer(&request, &response)
+
+	assert.Nil(err)
+	assert.Equal(1, len(response.ContainerEntries))
+	ents = response.ContainerEntries
+	assert.Equal(".git/logs/refs", ents[0].Basename)
 }
 
 func TestRpcGetContainerPaginated(t *testing.T) {
@@ -1163,7 +1174,6 @@ func testRpcPost(t *testing.T, server *Server) {
 }
 
 func testNameLength(t *testing.T, server *Server) {
-
 	// Try to create a container with a name which is one larger than fs.FilePathMax
 	tooLongOfAString := make([]byte, (fs.FilePathMax + 1))
 	for i := 0; i < (fs.FilePathMax + 1); i++ {
@@ -1224,7 +1234,7 @@ func putFileInSwift(server *Server, virtPath string, objData []byte, objMetadata
 	// pathParts[0] is empty, pathParts[1] is "v1"
 	pAccount, pContainer, pObject := pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		return err
 	}
@@ -1498,7 +1508,7 @@ func TestPutObjectCompound(t *testing.T) {
 	// pathParts[0] is empty, pathParts[1] is "v1"
 	pAccount, pContainer, pObject := pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err := swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		panic(err)
 	}
@@ -1529,7 +1539,7 @@ func TestPutObjectCompound(t *testing.T) {
 	pathParts = strings.SplitN(putLocationResp.PhysPath, "/", 5)
 	pAccount, pContainer, pObject = pathParts[2], pathParts[3], pathParts[4]
 
-	putContext, err = swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject)
+	putContext, err = swiftclient.ObjectFetchChunkedPutContext(pAccount, pContainer, pObject, "")
 	if err != nil {
 		panic(err)
 	}
@@ -1565,7 +1575,7 @@ func TestPutObjectCompound(t *testing.T) {
 	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("hello world!"), contents)
-	assert.Equal(uint64(theInode), putCompleteResp.InodeNumber)
+	assert.Equal(uint64(theInode), uint64(putCompleteResp.InodeNumber))
 	// 2 is the number of log segments we wrote
 	assert.Equal(uint64(2), putCompleteResp.NumWrites)
 
@@ -2023,7 +2033,7 @@ func TestRpcCoalesce(t *testing.T) {
 
 	combinedInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerAName+"/combined-file")
 	assert.Nil(err)
-	assert.Equal(uint64(combinedInode), coalesceReply.InodeNumber)
+	assert.Equal(uint64(combinedInode), uint64(coalesceReply.InodeNumber))
 	assert.True(coalesceReply.NumWrites > 0)
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)

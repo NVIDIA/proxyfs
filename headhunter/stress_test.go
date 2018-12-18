@@ -5,18 +5,14 @@ import (
 	cryptoRand "crypto/rand"
 	"math/big"
 	mathRand "math/rand"
+	"sync"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/dlm"
-	"github.com/swiftstack/ProxyFS/evtlog"
-	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/ramswift"
-	"github.com/swiftstack/ProxyFS/stats"
-	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -143,7 +139,7 @@ func TestHeadHunterStress(t *testing.T) {
 		putKey                                   uint64
 		putKeys                                  []uint64
 		putValues                                [][]byte
-		signalHandlerIsArmed                     bool
+		signalHandlerIsArmedWG                   sync.WaitGroup
 		slice                                    []byte
 		volumeHandle                             VolumeHandle
 	)
@@ -154,6 +150,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -164,22 +161,21 @@ func TestHeadHunterStress(t *testing.T) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
-		"SwiftClient.StarvationCallbackFrequency=100ms",
 		"Cluster.WhoAmI=Peer0",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
-		"FlowControl:TestFlowControl.MaxFlushSize=10000000",
-		"Volume:TestVolume.PrimaryPeer=Peer0",
 		"Volume:TestVolume.AccountName=TestAccount",
 		"Volume:TestVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:TestVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:TestVolume.CheckpointInterval=10h", // We never want a time-based checkpoint
-		"Volume:TestVolume.CheckpointIntervalsPerCompaction=100",
-		"Volume:TestVolume.FlowControl=TestFlowControl",
+		"Volume:TestVolume.MaxFlushSize=10000000",
 		"Volume:TestVolume.NonceValuesToReserve=1", // We want to force worst-case nonce fetching
 		"Volume:TestVolume.MaxInodesPerMetadataNode=32",
 		"Volume:TestVolume.MaxLogSegmentsPerMetadataNode=64",
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
-		"FSGlobals.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VolumeList=TestVolume",
+		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
+		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",
+		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -195,58 +191,40 @@ func TestHeadHunterStress(t *testing.T) {
 
 	// Launch a ramswift instance
 
-	signalHandlerIsArmed = false
+	signalHandlerIsArmedWG.Add(1)
 	doneChan = make(chan bool, 1) // Must be buffered to avoid race
 
-	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmed, doneChan, unix.SIGTERM)
+	go ramswift.Daemon("/dev/null", confStrings, &signalHandlerIsArmedWG, doneChan, unix.SIGTERM)
 
-	for !signalHandlerIsArmed {
-		time.Sleep(100 * time.Millisecond)
-	}
+	signalHandlerIsArmedWG.Wait()
 
 	confMap, err = conf.MakeConfMapFromStrings(confStrings)
 	if nil != err {
 		t.Fatalf("conf.MakeConfMapFromStrings(confStrings) returned error: %v", err)
 	}
 
-	// Up packages up to headhunter
+	// Schedule a Format of TestVolume on first Up()
 
-	err = logger.Up(confMap)
+	err = confMap.UpdateFromString("Volume:TestVolume.AutoFormat=true")
 	if nil != err {
-		t.Fatalf("logger.Up() returned error: %v", err)
+		t.Fatalf("conf.UpdateFromString(\"Volume:TestVolume.AutoFormat=true\") returned error: %v", err)
 	}
 
-	err = evtlog.Up(confMap)
+	// Up packages (TestVolume will be formatted)
+
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("evtlog.Up() returned error: %v", err)
+		t.Fatalf("transitions.Up() returned error: %v", err)
 	}
 
-	err = stats.Up(confMap)
+	// Unset AutoFormat for all subsequent uses of ConfMap
+
+	err = confMap.UpdateFromString("Volume:TestVolume.AutoFormat=false")
 	if nil != err {
-		t.Fatalf("stats.Up() returned error: %v", err)
+		t.Fatalf("conf.UpdateFromString(\"Volume:TestVolume.AutoFormat=false\") returned error: %v", err)
 	}
 
-	err = dlm.Up(confMap)
-	if nil != err {
-		t.Fatalf("dlm.Up() returned error: %v", err)
-	}
-
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up() returned error: %v", err)
-	}
-
-	// Format and launch headhunter package
-
-	err = Format(confMap, "TestVolume")
-	if nil != err {
-		t.Fatalf("headhunter.Format() returned error: %v", err)
-	}
-
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("headhunter.Up() returned error: %v", err)
-	}
+	// Fetch a volumeHandle to use
 
 	volumeHandle, err = FetchVolumeHandle("TestVolume")
 	if nil != err {
@@ -347,21 +325,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -435,21 +405,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -516,21 +478,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -591,21 +545,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -672,21 +618,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -747,21 +685,13 @@ func TestHeadHunterStress(t *testing.T) {
 
 			checkpointsSinceDownUp++
 			if checkpointsSinceDownUp == checkpointsSinceDownUpCap {
-				err = Down()
+				err = transitions.Down(confMap)
 				if nil != err {
-					t.Fatalf("headhunter.Down() returned error: %v", err)
+					t.Fatalf("transitions.Down() returned error: %v", err)
 				}
-				err = swiftclient.Down()
+				err = transitions.Up(confMap)
 				if nil != err {
-					t.Fatalf("swiftclient.Down() returned error: %v", err)
-				}
-				err = swiftclient.Up(confMap)
-				if nil != err {
-					t.Fatalf("swiftclient.Up() returned error: %v", err)
-				}
-				err = Up(confMap)
-				if nil != err {
-					t.Fatalf("headhunter.Up() returned error: %v", err)
+					t.Fatalf("transitions.Up() returned error: %v", err)
 				}
 				volumeHandle, err = FetchVolumeHandle("TestVolume")
 				if nil != err {
@@ -775,101 +705,26 @@ func TestHeadHunterStress(t *testing.T) {
 
 	// Cleanly shutdown and restart
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("headhunter.Down() returned error: %v", err)
+		t.Fatalf("transitions.Down() returned error: %v", err)
 	}
 
-	err = swiftclient.Down()
+	err = transitions.Up(confMap)
 	if nil != err {
-		t.Fatalf("swiftclient.Down() returned error: %v", err)
+		t.Fatalf("transitions.Up() returned error: %v", err)
 	}
 
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("dlm.Down() returned error: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() returned error: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() returned error: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() returned error: %v", err)
-	}
-
-	err = logger.Up(confMap)
-	if nil != err {
-		t.Fatalf("logger.Up() returned error: %v", err)
-	}
-
-	err = evtlog.Up(confMap)
-	if nil != err {
-		t.Fatalf("evtlog.Up() returned error: %v", err)
-	}
-
-	err = stats.Up(confMap)
-	if nil != err {
-		t.Fatalf("stats.Up() returned error: %v", err)
-	}
-
-	err = dlm.Up(confMap)
-	if nil != err {
-		t.Fatalf("dlm.Up() returned error: %v", err)
-	}
-
-	err = swiftclient.Up(confMap)
-	if nil != err {
-		t.Fatalf("swiftclient.Up() returned error: %v", err)
-	}
-
-	err = Up(confMap)
-	if nil != err {
-		t.Fatalf("headhunter.Up() returned error: %v", err)
-	}
-
-	// TODO: Please stress reading test steps here...
+	// TODO: Place stress reading test steps here...
 	//   GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	//   GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error)
 	//   GetBPlusTreeObject(objectNumber uint64) (value []byte, err error)
 
 	// Cleanly shutdown
 
-	err = Down()
+	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("headhunter.Down() returned error: %v", err)
-	}
-
-	err = swiftclient.Down()
-	if nil != err {
-		t.Fatalf("swiftclient.Down() returned error: %v", err)
-	}
-
-	err = dlm.Down()
-	if nil != err {
-		t.Fatalf("dlm.Down() returned error: %v", err)
-	}
-
-	err = stats.Down()
-	if nil != err {
-		t.Fatalf("stats.Down() returned error: %v", err)
-	}
-
-	err = evtlog.Down()
-	if nil != err {
-		t.Fatalf("evtlog.Down() returned error: %v", err)
-	}
-
-	err = logger.Down()
-	if nil != err {
-		t.Fatalf("logger.Down() returned error: %v", err)
+		t.Fatalf("transitions.Down() returned error: %v", err)
 	}
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
