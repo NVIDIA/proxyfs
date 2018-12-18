@@ -1826,7 +1826,13 @@ class PfsMiddleware(object):
             have an errno in it, then the exception's errno attribute will
             be None.
         """
-        return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
+        rpc_method = rpc_request['method']
+        start_time = time.time()
+        try:
+            return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
+        finally:
+            duration = time.time() - start_time
+            self.logger.debug("RPC %s took %.6fs", rpc_method, duration)
 
     def _rpc_call(self, addrinfos, rpc_request):
         addrinfos = set(addrinfos)
