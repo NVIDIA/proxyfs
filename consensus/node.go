@@ -323,10 +323,14 @@ func (cs *EtcdConn) updateNodeState(nodeName string, revNum RevisionNumber,
 // if any nodes are DEAD and we should do a failover.
 //
 // TODO - also need stopHB function....
+//
 func (cs *EtcdConn) startHbAndMonitor() {
 	if !cs.server {
 		return
 	}
+
+	// the heartbeat is about to start ...
+	cs.stopHBWG.Add(1)
 
 	// TODO - interval should be tunable
 	cs.HBTicker = time.NewTicker(1 * time.Second)
@@ -355,6 +359,7 @@ func (cs *EtcdConn) startHbAndMonitor() {
 // The cs.Lock is currently held.
 //
 // TODO - what about OFFLINE, etc events which are not implemented?
+//
 func (cs *EtcdConn) otherNodeStateEvent(revNum RevisionNumber, nodeName string,
 	newNodeInfo *NodeInfo, nodeInfoCmp []clientv3.Cmp) {
 
@@ -464,10 +469,6 @@ func (cs *EtcdConn) myNodeStateEvent(revNum RevisionNumber, nodeName string,
 			// exit.
 			cs.cli.Close()
 			fmt.Printf("Exiting\n")
-
-			if !cs.unitTest {
-				os.Exit(-1)
-			}
 		} else {
 
 			// We are in the CLI process.  The CLI blocks while waiting on

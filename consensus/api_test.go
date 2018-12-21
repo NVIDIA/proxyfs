@@ -177,5 +177,17 @@ func testStartVolumeGroup(t *testing.T) {
 	// Now remove the volume group - should fail since VG is in ONLINE
 	// or ONLINING state.  Only VGs which are OFFLINE can be removed.
 	err = cs.RmVolumeGroup(vgTestName)
-	assert.NotNil(err, "RmVolumeGroup() returned err")
+	assert.NotNil(err, "RmVolumeGroup() should have returned an err")
+
+	// TODO: bring the VG OFFLINE and then remove it
+
+	// disable this node's heartbeat before exiting
+	cs.Lock()
+	cs.stopHB = true
+	cs.Unlock()
+
+	// Wait HB goroutine to finish
+	cs.stopHBWG.Wait()
+
+	return
 }
