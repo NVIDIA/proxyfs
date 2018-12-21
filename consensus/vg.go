@@ -731,7 +731,7 @@ func (cs *EtcdConn) markVgFailed(name string) (err error) {
 
 		fmt.Printf("markVgFailed(): vg '%s' transaction failed; retrying\n", name)
 	}
-	return
+	// notreached
 }
 
 // Unpack a slice of VgInfo's from the slice of KeyValue's received from an event,
