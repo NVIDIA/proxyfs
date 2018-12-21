@@ -21,20 +21,23 @@ const (
 // EtcdConn contains a connection to the etcd server and the status of any
 // operations in progress
 type EtcdConn struct {
-	cli       *clientv3.Client // etcd client pointer
-	kvc       clientv3.KV
-	hostName  string         // hostname of the local host
-	watcherWG sync.WaitGroup // WaitGroup to keep track of watchers outstanding
-	HBTicker  *time.Ticker   // HB ticker for sending HB and processing DEAD nodes
-	stopHB    bool           // True means local node DEAD and wants to kill HB routine
-	stopHBWG  sync.WaitGroup // WaitGroup to serialize shutdown of HB goroutine
-	server    bool           // Is this instance a server?
-	stopNode  bool           // CLI - are we offlining node?
-	nodeName  string         // CLI - name of node for operation
-	offlineVg bool           // CLI - are we offlining VG?
-	onlineVg  bool           // CLI - are we onlining VG?
-	vgName    string         // CLI - name of VG
-	cliWG     sync.WaitGroup // CLI WG to signal when done
+	cli             *clientv3.Client // etcd client pointer
+	kvc             clientv3.KV
+	hostName        string               // hostname of the local host
+	stopWatcherChan chan interface{}     // stop all the watchers
+	watcherWG       sync.WaitGroup       // WaitGroup to keep track of watchers outstanding
+	HBTicker        *time.Ticker         // HB ticker for sending HB and processing DEAD nodes
+	stopHB          bool                 // True means local node DEAD and wants to kill HB routine
+	stopHBWG        sync.WaitGroup       // WaitGroup to serialize shutdown of HB goroutine
+	server          bool                 // Is this instance a server?
+	stopNode        bool                 // CLI - are we offlining node?
+	nodeName        string               // CLI - name of node for operation
+	offlineVg       bool                 // CLI - are we offlining VG?
+	onlineVg        bool                 // CLI - are we onlining VG?
+	vgName          string               // CLI - name of VG
+	cliWG           sync.WaitGroup       // CLI WG to signal when done
+	vgMap           map[string]*VgInfo   // most recent info about each VG
+	nodeMap         map[string]*NodeInfo // most recent info about each node
 	sync.Mutex
 
 	unitTest bool   // TEST - Is this a unit test?  If so allow some operations.
@@ -133,6 +136,9 @@ func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdCo
 
 	cs.kvc = clientv3.NewKV(cs.cli)
 
+	cs.vgMap = make(map[string]*VgInfo)
+	cs.nodeMap = make(map[string]*NodeInfo)
+
 	return
 }
 
@@ -143,11 +149,14 @@ func (cs *EtcdConn) Endpoints() []string {
 
 func (cs *EtcdConn) startWatchers() {
 
-	// Start a watcher to watch for node state changes
-	cs.startAWatcher(getNodeStateKeyPrefix())
+	// start the node watcher(s)
+	cs.startNodeWatcher(cs.stopWatcherChan, &cs.watcherWG)
 
+	// Start a watcher to watch for node state changes
+	//cs.startAWatcher(getNodeStateKeyPrefix())
+	//
 	// Start a watcher to watch for node heartbeats
-	cs.startAWatcher(getNodeHbKeyPrefix())
+	//cs.startAWatcher(getNodeHbKeyPrefix())
 
 	// Start a watcher to watch for volume group changes
 	cs.startAWatcher(getVgKeyPrefix())
@@ -204,6 +213,17 @@ func (cs *EtcdConn) Server() (err error) {
 	}
 
 	// Watcher will start HB after getting STARTING state
+	// wait for the node to become ONLINE
+	for {
+		nodeInfo, _, err := cs.getNodeInfo(cs.hostName, RevisionNumber(0))
+		if err != nil {
+			fmt.Printf("getNodeInfo() for host '%s' failed: %s\n", cs.hostName, err)
+		} else if nodeInfo.NodeState == ONLINE {
+			break
+		}
+		sleepyTime, _ := time.ParseDuration("250ms")
+		time.Sleep(sleepyTime)
+	}
 
 	return
 }

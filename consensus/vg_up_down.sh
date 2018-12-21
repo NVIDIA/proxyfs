@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 CMD="$1"
 VGNAME="$2"
 IPADDR="$3"

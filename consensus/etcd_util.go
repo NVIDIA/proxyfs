@@ -10,6 +10,7 @@ import (
 	"go.etcd.io/etcd/mvcc/mvccpb"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -223,6 +224,68 @@ func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv
 		fmt.Printf("updateEtcd(): transaction failed: %s:\n%s", err, cs.formatTxn(txn))
 	} else {
 		//fmt.Printf("updateEtcd(): Transaction response: %s\n", cs.formatTxnResp(txnResp))
+	}
+
+	return
+}
+
+// Watch for events on the passed watchChan channel and invoke the watchFunc()
+// function with each event.  Continue looping until an item is received on
+// stopChan or an error occurs at which point doneWg is signalled, the error (or
+// nil) is pushed to errChan and this function returns.
+//
+// If an item is received on stopChan it is pushed back on stopChan (so multiple
+// watchers can share the same stopChan without the creator having to count.  If
+// stopChan is not required it can be nil, otherwise it must have a capacity of
+// at least 1.
+//
+// If an error occurs, such as waitChan being closed or watchFunc() returning an
+// error then signal finishedWg, push the error down errChan and return.
+//
+// Any of errChan, stopChan, and doneWg can be nil if they are not needed.
+//
+// Typically StartWatcher() will be called in a new goroutine, but it does not
+// have to be, i.e. if a goroutine wants pause until an event is received.
+//
+func (cs *EtcdConn) StartWatcher(watchChan clientv3.WatchChan,
+	watchFunc func(cs *EtcdConn, response *clientv3.WatchResponse) (err error),
+	doneWg *sync.WaitGroup, stopChan chan interface{}, errChan chan<- error) {
+
+	var err error
+	keepLooping := true
+	for keepLooping {
+
+		// wait for something to arrive on watchChan or stopChan
+		select {
+
+		case response, ok := <-watchChan:
+			if !ok {
+				err = fmt.Errorf("StartWatcher: watchChan was closed")
+				keepLooping = false
+				break
+			}
+
+			err = watchFunc(cs, &response)
+			if err != nil {
+				keepLooping = false
+			}
+
+		case item := <-stopChan:
+			// forward item down the channel to the next watcher waiting
+			// for it (the capacity of stopChan must be at least 1 so
+			// this does not block if its the last watcher)
+			stopChan <- item
+			err = nil
+			keepLooping = false
+		}
+	}
+
+	fmt.Printf("StartWatcher(): loop broken with err %v\n", err)
+	if errChan != nil {
+		errChan <- err
+	}
+	if doneWg != nil {
+		doneWg.Done()
 	}
 
 	return

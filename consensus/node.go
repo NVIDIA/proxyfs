@@ -318,12 +318,12 @@ func (cs *EtcdConn) updateNodeState(nodeName string, revNum RevisionNumber,
 	return
 }
 
-// startHBandMonitor() will start the HB timer to
+// startHbAndMonitor() will start the HB timer to
 // do txn(myNodeID, aliveTimeUTC) and will also look
 // if any nodes are DEAD and we should do a failover.
 //
 // TODO - also need stopHB function....
-func (cs *EtcdConn) startHBandMonitor() {
+func (cs *EtcdConn) startHbAndMonitor() {
 	if !cs.server {
 		return
 	}
@@ -352,30 +352,22 @@ func (cs *EtcdConn) startHBandMonitor() {
 
 // We received a watch event for a node other than ourselves
 //
+// The cs.Lock is currently held.
+//
 // TODO - what about OFFLINE, etc events which are not implemented?
-func (cs *EtcdConn) otherNodeStateEvents(ev *clientv3.Event) {
+func (cs *EtcdConn) otherNodeStateEvent(revNum RevisionNumber, nodeName string,
+	newNodeInfo *NodeInfo, nodeInfoCmp []clientv3.Cmp) {
 
-	revNum := RevisionNumber(ev.Kv.ModRevision)
-	nodeName := strings.TrimPrefix(string(ev.Kv.Key), getNodeStateKeyPrefix())
+	fmt.Printf("otherNodeStateEvents(): nodeName '%s'  newNodeInfo %v\n", nodeName, newNodeInfo)
 
-	// unpackNodeInfo() operates on a slice of KeyValue's
-	keyValues := []*mvccpb.KeyValue{ev.Kv}
-	nodeInfos, _, err := cs.unpackNodeInfo(revNum, keyValues)
-	if err != nil {
-		fmt.Printf("otherNodeStateEvents: failed to unpack NodeInfo event for '%s' values '%v'\n",
-			nodeName, ev.Kv)
-	}
-	if len(nodeInfos) != 1 {
-		fmt.Printf("otherNodeStateEvents: NodeInfo event for '%s' has %d entries values '%v'\n",
-			nodeName, len(nodeInfos), ev.Kv)
-	}
-
-	fmt.Printf("otherNodeStateEvents(): nodeName '%s'  nodeInfos %v\n", nodeName, nodeInfos)
-	nodeState := nodeInfos[nodeName].NodeState
+	nodeState := newNodeInfo.NodeState
 	switch nodeState {
+
 	case STARTING:
-		// TODO - strip out NODE from name
+		// add the node to the node map
+		cs.nodeMap[nodeName] = newNodeInfo
 		fmt.Printf("Node: %v went: %v\n", nodeName, nodeState)
+
 	case DEAD:
 		fmt.Printf("Node: %v went: %v\n", nodeName, nodeState)
 
@@ -394,39 +386,59 @@ func (cs *EtcdConn) otherNodeStateEvents(ev *clientv3.Event) {
 
 	case ONLINE:
 		fmt.Printf("Node: %v went: %v\n", nodeName, nodeState)
+
 	case OFFLINING:
 		fmt.Printf("Node: %v went: %v\n", nodeName, nodeState)
 	}
+
+	// update node state and revision numbers
+	cs.nodeMap[nodeName].EtcdKeyHeader = newNodeInfo.EtcdKeyHeader
+	cs.nodeMap[nodeName].NodeState = nodeState
 }
 
 // We received a watch event for the local node.
 //
-// TODO - hide watchers behind interface{}?
+// The cs.Lock is currently held.
 //
-func (cs *EtcdConn) myNodeStateEvents(ev *clientv3.Event) {
+func (cs *EtcdConn) myNodeStateEvent(revNum RevisionNumber, nodeName string,
+	newNodeInfo *NodeInfo, nodeInfoCmp []clientv3.Cmp) {
 
-	revNum := RevisionNumber(ev.Kv.ModRevision)
-	nodeName := strings.TrimPrefix(string(ev.Kv.Key), getNodeStateKeyPrefix())
+	switch newNodeInfo.NodeState {
 
-	// unpackNodeInfo() operates on a slice of KeyValue's
-	keyValues := []*mvccpb.KeyValue{ev.Kv}
-	nodeInfos, _, err := cs.unpackNodeInfo(revNum, keyValues)
-	if err != nil {
-		fmt.Printf("myNodeStateEvents: failed to unpack NodeInfo event for '%s' values '%v'\n",
-			nodeName, ev.Kv)
-	}
-	if len(nodeInfos) != 1 {
-		fmt.Printf("myNodeStateEvents: NodeInfo event for '%s' has %d entries values '%v'\n",
-			nodeName, len(nodeInfos), ev.Kv)
-	}
-
-	nodeState := nodeInfos[nodeName].NodeState
-	switch nodeState {
 	case STARTING:
+		// This node is probably not in the map, so add it
+		cs.nodeMap[nodeName] = newNodeInfo
+
+		// TODO - implement ONLINE - how know to start VGs vs
+		// avoid failback.  Probably only initiate online of
+		// VGs which are not already started.....
+		//
+		// TODO - should I pass the REVISION to the start*() functions?
 		if cs.server {
 			cs.clearMyVgs(revNum)
+
+			cs.startHbAndMonitor()
+			cs.startVgs(revNum)
+
 			cs.updateNodeState(cs.hostName, revNum, ONLINE, nil)
 		}
+
+	case ONLINE:
+
+	case OFFLINING:
+		// Initiate offlining of VGs, when last VG goes
+		// offline the watcher will transition the local node to
+		// DEAD.
+		if cs.server {
+			numVgsOffline := cs.doAllVgOfflining(revNum)
+
+			// If the node has no VGs to offline then transition
+			// to DEAD.
+			if numVgsOffline == 0 {
+				cs.updateNodeState(cs.hostName, revNum, DEAD, nil)
+			}
+		}
+
 	case DEAD:
 		fmt.Printf("Preparing to exit - stopping VIP(s)\n")
 
@@ -464,87 +476,68 @@ func (cs *EtcdConn) myNodeStateEvents(ev *clientv3.Event) {
 				cs.cliWG.Done()
 			}
 		}
-	case ONLINE:
-		// TODO - implement ONLINE - how know to start VGs vs
-		// avoid failback.  Probably only initiate online of
-		// VGs which are not already started.....
-		//
-		// TODO - should I pass the REVISION to the start*() functions?
-		if cs.server {
-			cs.startHBandMonitor()
-			cs.startVgs(revNum)
-		}
-	case OFFLINING:
-		// Initiate offlining of VGs, when last VG goes
-		// offline the watcher will transition the local node to
-		// DEAD.
-		if cs.server {
-			numVgsOffline := cs.doAllVgOfflining(revNum)
-
-			// If the node has no VGs to offline then transition
-			// to DEAD.
-			if numVgsOffline == 0 {
-				cs.updateNodeState(cs.hostName, revNum, DEAD, nil)
-			}
-		}
 	}
+
+	// update the new state and revision numbers in the map
+	cs.nodeMap[nodeName].EtcdKeyHeader = newNodeInfo.EtcdKeyHeader
+	cs.nodeMap[nodeName].NodeState = newNodeInfo.NodeState
 }
 
-// nodeStateWatchEvents creates a watcher based on node state
-// changes.
-func (cs *EtcdConn) nodeStateWatchEvents(swg *sync.WaitGroup) {
+// Start the goroutine(s) that watch for, and react to, node events
+//
+func (cs *EtcdConn) startNodeWatcher(stopChan chan interface{}, doneWg *sync.WaitGroup) {
 
+	// watch for changes to any key starting with the node prefix;
 	wch1 := cs.cli.Watch(context.Background(), getNodeStateKeyPrefix(),
-		clientv3.WithPrefix())
+		clientv3.WithPrefix(), clientv3.WithPrevKV())
 
-	swg.Done() // The watcher is running!
-	for wresp1 := range wch1 {
-		for _, ev := range wresp1.Events {
-			if string(ev.Kv.Key) == makeNodeStateKey(cs.hostName) {
-				cs.myNodeStateEvents(ev)
-			} else {
-				cs.otherNodeStateEvents(ev)
-			}
-		}
-
-		// TODO - node watcher only shutdown when local node is OFFLINE
-	}
+	go cs.StartWatcher(wch1, nodeWatchResponse, doneWg, stopChan, nil)
 }
 
-// nodeHbWatchEvents creates a watcher based on node heartbeats.
-func (cs *EtcdConn) nodeHbWatchEvents(swg *sync.WaitGroup) {
+// Something about one or more nodes changed.  React appropriately.
+//
+func nodeWatchResponse(cs *EtcdConn, response *clientv3.WatchResponse) (err error) {
 
-	wch1 := cs.cli.Watch(context.Background(), getNodeHbKeyPrefix(),
-		clientv3.WithPrefix())
+	revNum := RevisionNumber(response.Header.Revision)
+	for _, ev := range response.Events {
 
-	swg.Done() // The watcher is running!
-	for wresp1 := range wch1 {
-		for _, e := range wresp1.Events {
-			// Heartbeat is for the local node.
-			if string(e.Kv.Key) == makeNodeHbKey(cs.hostName) {
-				// TODO - need to do anything in this case?
-			} else {
-				// TODO - probably not needed....
-				var sentTime time.Time
-				err := sentTime.UnmarshalText(e.Kv.Value)
-				if err != nil {
-					fmt.Printf("UnmarshalTest failed with err: %v", err)
-					os.Exit(-1)
-				}
-
-				/* TODO - TODO -
-				Do we even do anything with heartbeats?  Do we only care
-				about a timer thread looking for nodes which missed correct
-				number of heartbeats? should we have a separate thread for
-				checking if expired hb?  should we overload sending thread
-				or is that a hack?
-				Should this be where we do a liveliness check?
-				*/
-			}
+		nodeInfos, nodeInfoCmps, err2 := cs.unpackNodeInfo(revNum, []*mvccpb.KeyValue{ev.Kv})
+		if err2 != nil {
+			err = err2
+			fmt.Printf("nodeWatchResponse: failed to unpack NodeInfo event(s) for '%s' KV '%v'\n",
+				string(ev.Kv.Key), ev.Kv)
+			return
+		}
+		if len(nodeInfos) != 1 {
+			fmt.Printf("WARNING: nodeWatchResponse: NodeInfo event for '%s' has %d entries values '%v'\n",
+				string(ev.Kv.Key), len(nodeInfos), ev.Kv)
 		}
 
-		// TODO - node watcher only shutdown when local node is OFFLINE
+		for nodeName, newNodeInfo := range nodeInfos {
+
+			cs.Lock()
+			nodeInfo, ok := cs.nodeMap[nodeName]
+			if !ok || newNodeInfo.NodeState != nodeInfo.NodeState {
+
+				// a node changed state
+				if nodeName == cs.hostName {
+					cs.myNodeStateEvent(revNum, nodeName, newNodeInfo, nodeInfoCmps[nodeName])
+				} else {
+					cs.otherNodeStateEvent(revNum, nodeName, newNodeInfo, nodeInfoCmps[nodeName])
+				}
+			}
+
+			// if the node still exists update the heartbeat and
+			// revision numbers (whether they changed or not)
+			nodeInfo, ok = cs.nodeMap[nodeName]
+			if ok {
+				nodeInfo.EtcdKeyHeader = newNodeInfo.EtcdKeyHeader
+				nodeInfo.NodeHeartBeat = newNodeInfo.NodeHeartBeat
+			}
+			cs.Unlock()
+		}
 	}
+	return
 }
 
 // Unpack a slice of NodeInfo's from the slice of KeyValue's received from an event,
@@ -582,13 +575,13 @@ func (cs *EtcdConn) unpackNodeInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyV
 			}
 		}
 
-		vgName := strings.TrimPrefix(key, getNodeStateKeyPrefix())
+		nodeName := strings.TrimPrefix(key, getNodeStateKeyPrefix())
 		info := NodeInfo{
 			EtcdKeyHeader: *keyHeaders[key],
 			NodeInfoValue: nodeInfoValue,
 		}
-		nodeInfos[vgName] = &info
-		nodeInfoCmps[vgName] = []clientv3.Cmp{modCmps[key]}
+		nodeInfos[nodeName] = &info
+		nodeInfoCmps[nodeName] = []clientv3.Cmp{modCmps[key]}
 	}
 
 	return

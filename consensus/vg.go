@@ -148,6 +148,10 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		}
 		operations = append(operations, putOps...)
 
+	case ONLINEVS:
+		// the VG is now online, so there's no work to do ...
+		return
+
 	case OFFLININGVS:
 		// A VG is offlining.  If its on this node and we're the server, do something ...
 		if vgInfo.VgNode != cs.hostName {
@@ -394,7 +398,7 @@ func (cs *EtcdConn) setVgOnlining(vgName string, node string) (err error) {
 	txnResp, err := cs.updateEtcd(vgInfoCmp, putOperations)
 
 	// TODO: should we retry on failure?
-	fmt.Printf("setVgOnlining(): txnResp: %v err %v\n", txnResp, err)
+	fmt.Printf("setVgOnlining(): txnResp: %s err %s\n", cs.formatTxnResp(txnResp), err)
 
 	return
 }
@@ -429,13 +433,14 @@ func (cs *EtcdConn) callUpDownScript(operation upDownOperation, vgName string, i
 
 	cmd.Stdin = strings.NewReader("some input")
 	var stderr bytes.Buffer
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
-	fmt.Printf("callUpDownScript() - operation: %v name: %v ipaddr: %v nic: %v OUT: %v STDERR: %v\n",
-		realOp, vgName, ipAddr, nic, out.String(), stderr.String())
-
+	fmt.Printf("callUpDownScript() - operation: %v name: %v ipaddr: %v nic: %v\n",
+		realOp, vgName, ipAddr, nic)
+	fmt.Printf("command: %s %s %s %s %s %s\n", script, realOp, vgName, ipAddr, netMask, nic)
+	fmt.Printf("STDOUT: %s  STDERR: %s\n", stdout.String(), stderr.String())
 	return
 }
 
