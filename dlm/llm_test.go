@@ -47,6 +47,8 @@ type threadInfo struct {
 	requestForThread chan *testReq
 }
 
+var testConfMap conf.ConfMap
+
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
@@ -61,7 +63,7 @@ func testSetup() (err error) {
 
 	err = os.Mkdir("TestVolume", os.ModePerm)
 
-	testConfMap := conf.MakeConfMap()
+	testConfMap = conf.MakeConfMap()
 
 	testConfMapStrings := []string{
 		"Logging.LogFilePath=/dev/null",
