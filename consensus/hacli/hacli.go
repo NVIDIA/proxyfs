@@ -35,16 +35,17 @@ func teardownConnection(cs *consensus.EtcdConn) {
 	cs.Close()
 }
 
-func listNode(cs *consensus.EtcdConn, node string, nodeInfo consensus.AllNodeInfo) {
+func listNode(cs *consensus.EtcdConn, node string, allNodeInfo map[string]*consensus.NodeInfo) {
 
 	if node != "" {
-		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, nodeInfo.NodesState[node],
-			nodeInfo.NodesHb[node])
+		fmt.Printf("Node: %v State: %v Last HB: %v\n", node, allNodeInfo[node].NodeState,
+			allNodeInfo[node].NodeHeartBeat)
 		return
 	}
 	fmt.Printf("Node Information\n")
-	for n := range nodeInfo.NodesState {
-		fmt.Printf("\tNode: %v State: %v Last HB: %v\n", n, nodeInfo.NodesState[n], nodeInfo.NodesHb[n])
+	for nodeName, nodeInfo := range allNodeInfo {
+		fmt.Printf("\tNode: %v State: %v Last HB: %v\n",
+			nodeName, nodeInfo.NodeState, nodeInfo.NodeHeartBeat)
 	}
 
 }
@@ -68,7 +69,12 @@ func listOp(nodeName string, vgName string) {
 	cs := setupConnection()
 
 	allVgInfo := cs.ListVg()
-	allNodeInfo := cs.ListNode()
+	allNodeInfo, err := cs.ListNode()
+	if err != nil {
+		fmt.Printf("listOp(): ListNode() failed: %s\n", err)
+		teardownConnection(cs)
+		return
+	}
 
 	if vgName != "" {
 		if allVgInfo[vgName] != nil {
@@ -77,7 +83,7 @@ func listOp(nodeName string, vgName string) {
 			fmt.Printf("vg: %v does not exist\n", vgName)
 		}
 	} else if nodeName != "" {
-		if allNodeInfo.NodesState[nodeName] != "" {
+		if allNodeInfo[nodeName] != nil {
 			listNode(cs, nodeName, allNodeInfo)
 		} else {
 			fmt.Printf("Node: %v does not exist\n", nodeName)

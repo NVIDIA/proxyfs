@@ -4,15 +4,12 @@ import (
 	"bytes"
 	_ "container/list"
 	"context"
-	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/clientv3"
 	mvccpb "go.etcd.io/etcd/mvcc/mvccpb"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
-	"time"
 )
 
 // whether callUpDownScript() is being called for an "up" or a "down"
@@ -54,33 +51,68 @@ func (cs *EtcdConn) allVgsDown(revNum RevisionNumber) (allDown bool, compares []
 	return
 }
 
-// stateChgEvent handles any event notification for a VG state change (the
+// Something about one or more VGs changed.  React appropriately.
+//
+func vgWatchResponse(cs *EtcdConn, response *clientv3.WatchResponse) (err error) {
+
+	revNum := RevisionNumber(response.Header.Revision)
+	for _, ev := range response.Events {
+
+		vgInfos, vgInfoCmps, err2 := cs.unpackVgInfo(revNum, []*mvccpb.KeyValue{ev.Kv})
+		if err2 != nil {
+			err = err2
+			fmt.Printf("vgWatchResponse: failed to unpack VgInfo event(s) for '%s' KV '%v'\n",
+				string(ev.Kv.Key), ev.Kv)
+			return
+		}
+		if len(vgInfos) != 1 {
+			fmt.Printf("WARNING: vgWatchResponse: VgInfo event for '%s' has %d entries values '%v'\n",
+				string(ev.Kv.Key), len(vgInfos), ev.Kv)
+		}
+
+		for vgName, newVgInfo := range vgInfos {
+
+			cs.Lock()
+			vgInfo, ok := cs.vgMap[vgName]
+			if !ok || newVgInfo.VgState != vgInfo.VgState {
+
+				// a vg changed state
+				cs.vgStateChgEvent(revNum, vgName, newVgInfo, vgInfoCmps[vgName])
+			}
+
+			// if the vg still exists update the info and revision
+			// numbers (whether they changed or not)
+			vgInfo, ok = cs.vgMap[vgName]
+			if ok {
+				vgInfo.VgInfoValue = newVgInfo.VgInfoValue
+				vgInfo.EtcdKeyHeader = newVgInfo.EtcdKeyHeader
+			}
+			cs.Unlock()
+		}
+	}
+	return
+}
+
+// vgChgEvent handles any event notification for a VG state change (the
 // KeyValue, ev.Kv, must be for a Volume Group).
-func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
+//
+// cs.Lock() is held on entry and should be held until exit.
+//
+func (cs *EtcdConn) vgStateChgEvent(revNum RevisionNumber, vgName string,
+	newVgInfo *VgInfo, vgInfoCmp []clientv3.Cmp) {
 
 	// Something about a VG has changed ... try to figure out what it was
 	// and how to react
-	revNum := RevisionNumber(ev.Kv.ModRevision)
-	vgName := strings.TrimPrefix(string(ev.Kv.Key), getVgKeyPrefix())
 
-	if ev.Kv.CreateRevision == 0 {
-		// if the vg was deleted then there's nothing to do
-		fmt.Printf("stateChgEvent(): vg '%s' deleted\n", vgName)
+	// if the vg was deleted then there's nothing to do
+	if newVgInfo.CreateRevNum == 0 {
+		fmt.Printf("vgChgEvent(): vg '%s' deleted\n", vgName)
+		delete(cs.vgMap, vgName)
 		return
 	}
 
-	// unpackVgInfo operates on a slice of KeyValue
-	keyValues := []*mvccpb.KeyValue{ev.Kv}
-	vgInfos, vgInfoCmps, err := cs.unpackVgInfo(revNum, keyValues)
-	if err != nil {
-		fmt.Printf("stateChgEvent() unexpected error for VG %s from unpackVgInfo(%v): %s\n",
-			ev.Kv.Key, ev.Kv, err)
-		return
-	}
-
-	vgInfo := vgInfos[vgName]
-	vgInfoCmp := vgInfoCmps[vgName]
-	fmt.Printf("stateChgEvent(): vg '%s' vgInfo %v  node '%s' state '%v'\n", vgName, vgInfo, vgInfo.VgNode, vgInfo.VgState)
+	fmt.Printf("vgChgEvent(): vg '%s' newVgInfo %v  node '%s' state '%v'\n",
+		vgName, newVgInfo, newVgInfo.VgNode, newVgInfo.VgState)
 
 	var (
 		conditionals = make([]clientv3.Cmp, 0, 1)
@@ -88,23 +120,29 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 	)
 	conditionals = append(conditionals, vgInfoCmp...)
 
-	switch vgInfo.VgState {
+	switch newVgInfo.VgState {
 
 	case INITIALVS:
+		if !cs.server {
+			return
+		}
+
+		// This node is probably not in the map, so add it
+		cs.Lock()
+		cs.vgMap[vgName] = newVgInfo
+		cs.Unlock()
+
 		// A new VG was created.  If this node is a server then set the
 		// VG to onlining on this node (if multiple nodes are up this is
 		// a race to see which node wins).
 		//
 		// TODO: make a placement decision
-		if !cs.server {
-			return
-		}
-		vgInfo.VgState = ONLININGVS
-		vgInfo.VgNode = cs.hostName
-		putOps, err := cs.putVgInfo(vgName, vgInfo)
+		newVgInfo.VgState = ONLININGVS
+		newVgInfo.VgNode = cs.hostName
+		putOps, err := cs.putVgInfo(vgName, newVgInfo)
 		if err != nil {
 			fmt.Printf("Hmmm. putVgInfo(%s, %v) failed: %s\n",
-				vgName, vgInfo, err)
+				vgName, newVgInfo, err)
 			return
 		}
 
@@ -112,12 +150,12 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 	case ONLININGVS:
 		// If VG onlining on local host then start the online
-		if vgInfo.VgNode != cs.hostName {
+		if newVgInfo.VgNode != cs.hostName {
 			return
 		}
 		if !cs.server {
 			fmt.Printf("ERROR: VG '%s' is onlining on node %s but %s is not a server\n",
-				vgName, vgInfo.VgNode, cs.hostName)
+				vgName, newVgInfo.VgNode, cs.hostName)
 			return
 		}
 
@@ -127,23 +165,24 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		//
 		// However, this will be run each time there is a state change
 		// for this VG (i.e. if any field changes).
-		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - ONLINING\n", vgName)
+		fmt.Printf("vgChgEvent() - vgName: %s - LOCAL - ONLINING\n", vgName)
 
-		err = cs.callUpDownScript(upOperation, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err := cs.callUpDownScript(upOperation, vgName,
+			newVgInfo.VgIpAddr, newVgInfo.VgNetmask, newVgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript UP for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
-				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
+				vgName, newVgInfo.VgIpAddr, newVgInfo.VgNetmask, newVgInfo.VgNic, err)
 
 			// old code would set to failed at this point
-			// vgInfo.VgState = FAILEDVS
-			// putOp := cs.putVgInfo(vgName, *vgInfo)
+			// newVgInfo.VgState = FAILEDVS
+			// putOp := cs.putVgInfo(vgName, *newVgInfo)
 			return
 		}
-		vgInfo.VgState = ONLINEVS
-		putOps, err := cs.putVgInfo(vgName, vgInfo)
+		newVgInfo.VgState = ONLINEVS
+		putOps, err := cs.putVgInfo(vgName, newVgInfo)
 		if err != nil {
 			fmt.Printf("Hmmm. putVgInfo(%s, %v) failed: %s\n",
-				vgName, vgInfo, err)
+				vgName, newVgInfo, err)
 			return
 		}
 		operations = append(operations, putOps...)
@@ -154,32 +193,33 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 	case OFFLININGVS:
 		// A VG is offlining.  If its on this node and we're the server, do something ...
-		if vgInfo.VgNode != cs.hostName {
+		if newVgInfo.VgNode != cs.hostName {
 			return
 		}
 		if !cs.server {
 			fmt.Printf("ERROR: VG '%s' is offlining on node %s but %s is not a server\n",
-				vgName, vgInfo.VgNode, cs.hostName)
+				vgName, newVgInfo.VgNode, cs.hostName)
 			return
 		}
-		fmt.Printf("stateChgEvent() - vgName: %s - LOCAL - OFFLINING\n", vgName)
+		fmt.Printf("vgChgEvent() - vgName: %s - LOCAL - OFFLINING\n", vgName)
 
-		err = cs.callUpDownScript(downOperation, vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic)
+		err := cs.callUpDownScript(downOperation, vgName,
+			newVgInfo.VgIpAddr, newVgInfo.VgNetmask, newVgInfo.VgNic)
 		if err != nil {
 			fmt.Printf("WARNING: UpDownScript Down for VG %s IPaddr %s netmask %s nic %s failed: %s\n",
-				vgName, vgInfo.VgIpAddr, vgInfo.VgNetmask, vgInfo.VgNic, err)
+				vgName, newVgInfo.VgIpAddr, newVgInfo.VgNetmask, newVgInfo.VgNic, err)
 			// old code would set to failed at this point
-			// vgInfo.VgState = FAILEDVS
-			// putOp := cs.putVgInfo(vgName, *vgInfo)
+			// newVgInfo.VgState = FAILEDVS
+			// putOp := cs.putVgInfo(vgName, *newVgInfo)
 			return
 		}
 
-		vgInfo.VgState = OFFLINEVS
-		vgInfo.VgNode = ""
-		putOps, err := cs.putVgInfo(vgName, vgInfo)
+		newVgInfo.VgState = OFFLINEVS
+		newVgInfo.VgNode = ""
+		putOps, err := cs.putVgInfo(vgName, newVgInfo)
 		if err != nil {
 			fmt.Printf("Hmmm. putVgInfo(%s, %v) failed: %s\n",
-				vgName, vgInfo, err)
+				vgName, newVgInfo, err)
 			return
 		}
 
@@ -199,10 +239,26 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 
 		// If the local node is in OFFLINING and all VGs are OFFLINE
 		// then transition to DEAD, otherwise there's nothing to do.
-		if cs.getRevNodeState(revNum).NodesState[cs.hostName] != OFFLINING {
+		nodeInfo, nodeInfoCmp, err := cs.getNodeInfo(cs.hostName, revNum)
+		if err != nil {
+			// not sure what we can other than  return
+			fmt.Printf("vgChgEvent(): cs.getNodeInfo() revNum %d host '%s' failed: %s\n",
+				revNum, cs.hostName, err)
+			return
+		}
+		if nodeInfo == nil {
+			// it seems like this can't happen
+			err = fmt.Errorf("vgChgEvent(): cs.getNodeInfo() revNum %d host '%s' does not exist",
+				revNum, cs.hostName)
+			fmt.Printf("WARNING: %s\n", err)
+			return
+		}
+
+		if nodeInfo.NodeState != OFFLINING {
 			// nothing else to do
 			return
 		}
+		conditionals = append(conditionals, nodeInfoCmp...)
 
 		allDown, compares := cs.allVgsDown(revNum)
 		if !allDown {
@@ -220,33 +276,26 @@ func (cs *EtcdConn) stateChgEvent(ev *clientv3.Event) {
 		return
 
 	default:
-		fmt.Printf("stateChgEvent(): vg '%s' has unknown state '%v'\n",
-			vgName, vgInfo.VgState)
+		fmt.Printf("vgChgEvent(): vg '%s' has unknown state '%v'\n",
+			vgName, newVgInfo.VgState)
 	}
 
 	// update the shared state (or fail)
 	txnResp, err := cs.updateEtcd(conditionals, operations)
 
 	// TODO: should we retry on failure?
-	fmt.Printf("stateChgEvent(): txnResp: %v err %v\n", txnResp, err)
+	fmt.Printf("vgChgEvent(): txnResp: %v err %v\n", txnResp, err)
 }
 
-// vgWatchEvents creates a watcher based on volume group
-// changes.
-func (cs *EtcdConn) vgWatchEvents(swg *sync.WaitGroup) {
+// Start the goroutine(s) that watch for, and react to, node events
+//
+func (cs *EtcdConn) startVgWatcher(stopChan chan struct{}, errChan chan<- error, doneWG *sync.WaitGroup) {
 
-	wch1 := cs.cli.Watch(context.Background(), getVgKeyPrefix(), clientv3.WithPrefix())
+	// watch for changes to any key starting with the node prefix;
+	wch1 := cs.cli.Watch(context.Background(), getVgKeyPrefix(),
+		clientv3.WithPrefix(), clientv3.WithPrevKV())
 
-	swg.Done() // The watcher is running!
-	for wresp1 := range wch1 {
-		for _, ev := range wresp1.Events {
-
-			// Something about a VG has changed
-			cs.stateChgEvent(ev)
-		}
-
-		// TODO - watcher only shutdown when local node is OFFLINE
-	}
+	go cs.StartWatcher(wch1, vgWatchResponse, stopChan, errChan, doneWG)
 }
 
 // setVgsOfflineDeadNodes finds all VGs ONLINE on the newly
@@ -440,7 +489,7 @@ func (cs *EtcdConn) callUpDownScript(operation upDownOperation, vgName string, i
 	fmt.Printf("callUpDownScript() - operation: %v name: %v ipaddr: %v nic: %v\n",
 		realOp, vgName, ipAddr, nic)
 	fmt.Printf("command: %s %s %s %s %s %s\n", script, realOp, vgName, ipAddr, netMask, nic)
-	fmt.Printf("STDOUT: %s  STDERR: %s\n", stdout.String(), stderr.String())
+	fmt.Printf("STDOUT: %s\nSTDERR: %s\n", stdout.String(), stderr.String())
 	return
 }
 
@@ -732,175 +781,4 @@ func (cs *EtcdConn) markVgFailed(name string) (err error) {
 		fmt.Printf("markVgFailed(): vg '%s' transaction failed; retrying\n", name)
 	}
 	// notreached
-}
-
-// Unpack a slice of VgInfo's from the slice of KeyValue's received from an event,
-// a Get request or a Range request.
-//
-// For each key a VgInfo is returned and a slice of comparison struct
-// (clientv3.Cmp) that can be used as conditionals in a transaction.  The
-// comparison will evaluate to false if the VG has changed from this
-// information.
-//
-// Note: if VgInfo.CreateRevNum == 0 then the VG has been deleted and the
-// VgValue part of VgInfo is zero values.
-//
-func (cs *EtcdConn) unpackVgInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue) (vgInfos map[string]*VgInfo,
-	vgInfoCmps map[string][]clientv3.Cmp, err error) {
-
-	vgInfos = make(map[string]*VgInfo)
-	vgInfoCmps = make(map[string][]clientv3.Cmp)
-
-	keyHeaders, values, modCmps, err := mapKeyValues(revNum, etcdKVs)
-	if err != nil {
-		fmt.Printf("unpackVgInfo(): unpackKeyValues of '%v' returned err: %s\n", etcdKVs, err)
-		return
-	}
-	for key, value := range values {
-
-		vgName := strings.TrimPrefix(key, getVgKeyPrefix())
-		vgInfoCmps[vgName] = []clientv3.Cmp{modCmps[key]}
-
-		if keyHeaders[key].CreateRevNum != 0 {
-			var vgInfoValue VgInfoValue
-
-			err = json.Unmarshal(value, &vgInfoValue)
-			if err != nil {
-				fmt.Printf("unpackVgInfo(): Unmarshall of key '%s' header '%v' "+
-					"value '%v' failed: %s\n",
-					key, keyHeaders[key], string(values[key]), err)
-				return
-			}
-
-			info := VgInfo{
-				EtcdKeyHeader: *keyHeaders[key],
-				VgInfoValue:   vgInfoValue,
-			}
-			vgInfos[vgName] = &info
-		}
-
-	}
-
-	return
-}
-
-// Fetch the volume group information for volume group "name" as of revNum, or
-// as of the "current" revision number if revNum is 0.
-//
-// If there's no error, return the vgInfo as well as a comparision function that
-// can be used as a conditional in a transaction to insure the info hasn't
-// changed.  Note that its not an error if the VG doesn't exist -- instead nil
-// is returned for vgInfo and the comparison function can still be used as a
-// conditional that it doesn't exist.
-//
-// Only one comparison function is returned, but we return it in a slice for
-// convenience of the caller.
-//
-func (cs *EtcdConn) getVgInfo(vgName string, revNum RevisionNumber) (vgInfo *VgInfo,
-	vgInfoCmp []clientv3.Cmp, err error) {
-
-	// create a context for the request
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var resp *clientv3.GetResponse
-
-	vgKey := makeVgKey(vgName)
-	if revNum != 0 {
-		resp, err = cs.cli.Get(ctx, vgKey, clientv3.WithRev(int64(revNum)))
-	} else {
-		resp, err = cs.cli.Get(ctx, vgKey)
-	}
-	if err != nil {
-		return
-	}
-
-	if resp.OpResponse().Get().Count == int64(0) {
-		vgInfo = nil
-		cmp := clientv3.Compare(clientv3.CreateRevision(vgKey), "=", 0)
-		vgInfoCmp = []clientv3.Cmp{cmp}
-		return
-	}
-
-	vgInfos, vgInfoCmps, err := cs.unpackVgInfo(revNum, resp.OpResponse().Get().Kvs)
-	if err != nil {
-		fmt.Printf("getVgInfo(): unpackVgInfo of %v returned err: %s\n",
-			resp.OpResponse().Get().Kvs, err)
-		return
-	}
-	vgInfo = vgInfos[vgName]
-	vgInfoCmp = vgInfoCmps[vgName]
-
-	return
-}
-
-// Return a clientv3.Op "function" that can be added to a transaction's Then()
-// clause to change the VgInfo for a VolumeGroup to the passed Value.
-//
-// Typically the transaction will will include a conditional (a clientv3.Cmp
-// "function") returned by getVgInfo() for this same Volume Group to insure that
-// the changes should be applied.
-//
-func (cs *EtcdConn) putVgInfo(vgName string, vgInfo *VgInfo) (operations []clientv3.Op, err error) {
-
-	// extract the VgInfoValue fields without the rest of VgInfo
-	vgInfoValue := vgInfo.VgInfoValue
-
-	// vgInfoValueAsString, err := json.MarshalIndent(vgInfoValue, "", "  ")
-	vgInfoValueAsString, err := json.Marshal(vgInfoValue)
-	if err != nil {
-		fmt.Printf("putVgInfo(): name '%s': json.MarshalIndent complained: %s\n",
-			vgName, err)
-		return
-	}
-
-	vgKey := makeVgKey(vgName)
-	op := clientv3.OpPut(vgKey, string(vgInfoValueAsString))
-	operations = []clientv3.Op{op}
-	return
-}
-
-// Return a clientv3.Op "function" that can be added to a transaction's Then()
-// clause to delete the Volume Group for the specified name.
-//
-// Typically the transaction will will include a conditional (a clientv3.Cmp
-// "function") returned by getVgInfo() for this same Volume Group to insure that
-// the changes should be applied.
-//
-func (cs *EtcdConn) deleteVgInfo(vgName string) (op clientv3.Op, err error) {
-
-	vgKey := makeVgKey(vgName)
-	op = clientv3.OpDelete(vgKey)
-	return
-}
-
-// getAllVgInfo() gathers all VG information and returns it as a map from VG
-// name to VgInfo
-//
-// All data is taken from the same etcd global revision number.
-//
-func (cs *EtcdConn) getAllVgInfo(revNum RevisionNumber) (allVgInfo map[string]*VgInfo,
-	allVgInfoCmp map[string][]clientv3.Cmp, err error) {
-
-	// First grab all VG state information in one operation
-	var resp *clientv3.GetResponse
-	if revNum != 0 {
-		resp, err = cs.cli.Get(context.TODO(), getVgKeyPrefix(), clientv3.WithPrefix(),
-			clientv3.WithRev(int64(revNum)))
-	} else {
-		resp, err = cs.cli.Get(context.TODO(), getVgKeyPrefix(), clientv3.WithPrefix())
-	}
-	if err != nil {
-		fmt.Printf("GET VG state failed with: %v\n", err)
-		os.Exit(-1)
-	}
-
-	allVgInfo, allVgInfoCmp, err = cs.unpackVgInfo(revNum, resp.Kvs)
-	if err != nil {
-		fmt.Printf("getAllVgInfo() unexpected error for from unpackVgInfo(%v): %s\n",
-			resp.Kvs, err)
-		return
-	}
-
-	return
 }

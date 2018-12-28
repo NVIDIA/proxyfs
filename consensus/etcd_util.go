@@ -74,6 +74,14 @@ func mapKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (headers map
 		headers[key] = &header
 		values[key] = keyValue.Value
 		cmps[key] = cmp
+
+		// sanity check
+		if header.ModRevNum > revNum || header.CreateRevNum > revNum {
+			err = fmt.Errorf("mapKeyValues(): key '%s' request revNum %d has too recent revNum '%v'\n",
+				key, revNum, keyValue)
+			fmt.Printf("PANIC: %s\n", err)
+			panic(err)
+		}
 	}
 	return
 }
@@ -97,7 +105,8 @@ func mapKeyValues(revNum RevisionNumber, etcdKV []*mvccpb.KeyValue) (headers map
 // evaluate to true even though the key has changed since the query.
 //
 func (cs *EtcdConn) unpackKeyValues(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue,
-	unpackValueFunc func(header *EtcdKeyHeader, value []byte) (unpackedValue interface{}, err error)) (
+	unpackKeyValueFunc func(key string, header *EtcdKeyHeader, value []byte) (
+		unpackedKey string, unpackedValue interface{}, err error)) (
 	unpackedValues map[string]interface{}, nodeInfoCmps map[string][]clientv3.Cmp, err error) {
 
 	unpackedValues = make(map[string]interface{})
@@ -110,15 +119,17 @@ func (cs *EtcdConn) unpackKeyValues(revNum RevisionNumber, etcdKVs []*mvccpb.Key
 	}
 
 	for key, header := range keyHeaders {
-		// values[key] is empty if the key was deleted
-		unpackedValues[key], err = unpackValueFunc(header, values[key])
-		if err != nil {
+
+		unpackedKey, unpackedValue, err2 := unpackKeyValueFunc(key, header, values[key])
+		if err2 != nil {
 			fmt.Printf("unpackKeyValues(): unpack key '%s' header '%v' "+
 				"value '%v' failed: %s\n",
-				key, header, string(values[key]), err)
+				key, header, string(values[key]), err2)
+			err = err2
 			return
 		}
-		nodeInfoCmps[key] = []clientv3.Cmp{modCmps[key]}
+		unpackedValues[unpackedKey] = unpackedValue
+		nodeInfoCmps[unpackedKey] = []clientv3.Cmp{modCmps[key]}
 	}
 
 	return
@@ -142,7 +153,8 @@ func (cs *EtcdConn) unpackKeyValues(revNum RevisionNumber, etcdKVs []*mvccpb.Key
 // for convenience of the caller.
 //
 func (cs *EtcdConn) getUnpackedKeyValues(revNum RevisionNumber, key string,
-	unpackValueFunc func(header *EtcdKeyHeader, value []byte) (unpackedValue interface{}, err error)) (
+	unpackKeyValueFunc func(key string, header *EtcdKeyHeader, value []byte) (
+		unpackedKey string, unpackedValue interface{}, err error)) (
 	unpackedValues map[string]interface{},
 	nodeInfoCmps map[string][]clientv3.Cmp, err error) {
 
@@ -160,14 +172,8 @@ func (cs *EtcdConn) getUnpackedKeyValues(revNum RevisionNumber, key string,
 		return
 	}
 
-	if revNum != 0 && revNum != RevisionNumber(resp.Header.Revision) {
-		// how did this happen?
-		fmt.Printf("WARNING: key '%s' requested revision %d does not match returned revisision %d\n",
-			key, revNum, resp.Header.Revision)
-		revNum = RevisionNumber(resp.Header.Revision)
-	}
+	// if revNum not specified then return the version that we got
 	if revNum == 0 {
-		// if revNum not specified then return the version that we got
 		revNum = RevisionNumber(resp.Header.Revision)
 	}
 	if resp.OpResponse().Get().Count == int64(0) {
@@ -178,7 +184,7 @@ func (cs *EtcdConn) getUnpackedKeyValues(revNum RevisionNumber, key string,
 		return
 	}
 
-	unpackedValues, nodeInfoCmps, err = cs.unpackKeyValues(revNum, resp.OpResponse().Get().Kvs, unpackValueFunc)
+	unpackedValues, nodeInfoCmps, err = cs.unpackKeyValues(revNum, resp.OpResponse().Get().Kvs, unpackKeyValueFunc)
 	if err != nil {
 		fmt.Printf("getUnpackedKeyValues(): unpackKeyValues of %v returned err: %s\n",
 			resp.OpResponse().Get().Kvs, err)
@@ -249,7 +255,7 @@ func (cs *EtcdConn) updateEtcd(conditionals []clientv3.Cmp, operations []clientv
 //
 func (cs *EtcdConn) StartWatcher(watchChan clientv3.WatchChan,
 	watchFunc func(cs *EtcdConn, response *clientv3.WatchResponse) (err error),
-	doneWg *sync.WaitGroup, stopChan chan interface{}, errChan chan<- error) {
+	stopChan chan struct{}, errChan chan<- error, doneWg *sync.WaitGroup) {
 
 	var err error
 	keepLooping := true
@@ -281,6 +287,8 @@ func (cs *EtcdConn) StartWatcher(watchChan clientv3.WatchChan,
 	}
 
 	fmt.Printf("StartWatcher(): loop broken with err %v\n", err)
+
+	// if errChan exist, push err or nil down it
 	if errChan != nil {
 		errChan <- err
 	}

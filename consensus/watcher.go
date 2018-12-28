@@ -1,7 +1,7 @@
 package consensus
 
 import (
-	"sync"
+	"time"
 )
 
 // TODO - use etcd namepspace
@@ -10,37 +10,37 @@ import (
 // TODO - review how compaction works with watchers,
 //
 // watcher is a goroutine which watches for events with the key prefix.
-func (cs *EtcdConn) watcher(keyPrefix string, swg *sync.WaitGroup) {
 
-	switch keyPrefix {
-	case getNodeStateKeyPrefix():
-		cs.startNodeWatcher(nil, nil)
-	// case getNodeHbKeyPrefix():
-	//	cs.nodeHbWatchEvents(swg)
-	case getVgKeyPrefix():
-		cs.vgWatchEvents(swg)
-	}
+func (cs *EtcdConn) startWatchers() {
 
-	cs.watcherWG.Done()
+	// start the node watcher(s)
+	cs.startNodeWatcher(cs.stopWatcherChan, cs.watcherErrChan, &cs.watcherWG)
+
+	// start a watcher to watch for volume group changes
+	cs.startVgWatcher(cs.stopWatcherChan, cs.watcherErrChan, &cs.watcherWG)
 }
 
-// StartAWatcher starts a goroutine to watch for changes
-// to the given keys
-func (cs *EtcdConn) startAWatcher(prefixKey string) {
-	// Keep track of how many watchers we have started so that we
-	// can clean them up as needed.
-	cs.watcherWG.Add(1)
+func (cs *EtcdConn) stopWatchers() {
 
-	var startedWG sync.WaitGroup
-	startedWG.Add(1)
-
-	go cs.watcher(prefixKey, &startedWG)
-
-	// Wait for watcher to start before returning
-	startedWG.Wait()
+	// signal the watchers to stop
+	cs.stopWatcherChan <- struct{}{}
 }
 
 // WaitWatchers waits for all watchers to return
 func (cs *EtcdConn) waitWatchers() {
+
 	cs.watcherWG.Wait()
+
+	// drain any values already pushed on errChan
+	for {
+		select {
+		case <-cs.watcherErrChan:
+			// err is discarded
+		default:
+			time.Sleep(10 * time.Millisecond)
+			// if there's no more err after 10 ms then its drained
+			return
+		}
+	}
+
 }

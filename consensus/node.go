@@ -2,38 +2,13 @@ package consensus
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/clientv3"
-	mvccpb "go.etcd.io/etcd/mvcc/mvccpb"
+	"go.etcd.io/etcd/mvcc/mvccpb"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
-
-// getRevNodeState retrieves node state as of given revision
-func (cs *EtcdConn) getRevNodeState(revNeeded RevisionNumber) (allNodeState AllNodeInfo) {
-
-	allNodeState.NodesAlreadyDead = make([]string, 0)
-	allNodeState.NodesOnline = make([]string, 0)
-	allNodeState.NodesHb = make(map[string]time.Time)
-	allNodeState.NodesState = make(map[string]NodeState)
-
-	allNodeInfo, _, err := cs.getAllNodeInfo(revNeeded)
-	if err != nil {
-		msg := fmt.Sprintf("getAllNodeInfo(%d) failed with: %v\n", revNeeded, err)
-		fmt.Printf(msg)
-		panic(msg)
-	}
-
-	for nodeName, nodeInfo := range allNodeInfo {
-		allNodeState.NodesHb[nodeName] = nodeInfo.NodeHeartBeat
-		allNodeState.NodesState[nodeName] = nodeInfo.NodeState
-		allNodeState.RevNum = nodeInfo.RevNum
-	}
-	return
-}
 
 // checkForDeadNodes() looks for nodes no longer
 // heartbeating and sets their state to DEAD.
@@ -458,9 +433,8 @@ func (cs *EtcdConn) myNodeStateEvent(revNum RevisionNumber, nodeName string,
 			cs.doAllVgOfflineBeforeDead(revNum)
 			cs.stopHBWG.Add(1)
 
-			cs.Lock()
+			// cs.Lock() is currently held
 			cs.stopHB = true
-			cs.Unlock()
 
 			// Wait HB goroutine to finish
 			cs.stopHBWG.Wait()
@@ -486,13 +460,13 @@ func (cs *EtcdConn) myNodeStateEvent(revNum RevisionNumber, nodeName string,
 
 // Start the goroutine(s) that watch for, and react to, node events
 //
-func (cs *EtcdConn) startNodeWatcher(stopChan chan interface{}, doneWg *sync.WaitGroup) {
+func (cs *EtcdConn) startNodeWatcher(stopChan chan struct{}, errChan chan<- error, doneWG *sync.WaitGroup) {
 
 	// watch for changes to any key starting with the node prefix;
 	wch1 := cs.cli.Watch(context.Background(), getNodeStateKeyPrefix(),
 		clientv3.WithPrefix(), clientv3.WithPrevKV())
 
-	go cs.StartWatcher(wch1, nodeWatchResponse, doneWg, stopChan, nil)
+	go cs.StartWatcher(wch1, nodeWatchResponse, stopChan, errChan, doneWG)
 }
 
 // Something about one or more nodes changed.  React appropriately.
@@ -538,177 +512,5 @@ func nodeWatchResponse(cs *EtcdConn, response *clientv3.WatchResponse) (err erro
 			cs.Unlock()
 		}
 	}
-	return
-}
-
-// Unpack a slice of NodeInfo's from the slice of KeyValue's received from an event,
-// a Get request or a Range request.
-//
-// For each key a NodeInfo is returned and a slice of comparison struct
-// (clientv3.Cmp) that can be used as conditionals in a transaction.  The
-// comparison will evaluate to false if the VG has changed from this
-// information.
-//
-// Note: if NodeInfo.CreateRevNum == 0 then the VG has been deleted and the
-// NodeValue part of NodeInfo is zero values.
-//
-func (cs *EtcdConn) unpackNodeInfo(revNum RevisionNumber, etcdKVs []*mvccpb.KeyValue) (nodeInfos map[string]*NodeInfo,
-	nodeInfoCmps map[string][]clientv3.Cmp, err error) {
-
-	nodeInfos = make(map[string]*NodeInfo)
-	nodeInfoCmps = make(map[string][]clientv3.Cmp)
-
-	keyHeaders, values, modCmps, err := mapKeyValues(revNum, etcdKVs)
-	if err != nil {
-		fmt.Printf("unpackNodeInfo(): mapKeyValues for '%v' returned err: %s\n", etcdKVs, err)
-		return
-	}
-	for key, value := range values {
-
-		var nodeInfoValue NodeInfoValue
-		if keyHeaders[key].CreateRevNum != 0 {
-			err = json.Unmarshal(value, &nodeInfoValue)
-			if err != nil {
-				fmt.Printf("unpackNodeInfo(): Unmarshall of key '%s' header '%v' "+
-					"value '%v' failed: %s\n",
-					key, keyHeaders[key], string(values[key]), err)
-				return
-			}
-		}
-
-		nodeName := strings.TrimPrefix(key, getNodeStateKeyPrefix())
-		info := NodeInfo{
-			EtcdKeyHeader: *keyHeaders[key],
-			NodeInfoValue: nodeInfoValue,
-		}
-		nodeInfos[nodeName] = &info
-		nodeInfoCmps[nodeName] = []clientv3.Cmp{modCmps[key]}
-	}
-
-	return
-}
-
-// Fetch the node information for node "name" as of revNum, or as of the
-// "current" revision number if revNum is 0.
-//
-// If there's no error, return the NodeInfo as well as a comparision operation
-// that can be used as a conditional in a transaction to insure the info hasn't
-// changed.  Note that its not an error if the VG doesn't exist -- instead nil
-// is returned for nodeInfo and the comparison function can still be used as a
-// conditional that it doesn't exist.
-//
-// Only one comparison function is returned, but we return it in a slice for
-// convenience of the caller.
-//
-func (cs *EtcdConn) getNodeInfo(nodeName string, revNum RevisionNumber) (nodeInfo *NodeInfo,
-	nodeInfoCmp []clientv3.Cmp, err error) {
-
-	// create a context for the request
-	ctx, cancel := context.WithTimeout(context.Background(), etcdQueryTimeout)
-	defer cancel()
-
-	var resp *clientv3.GetResponse
-
-	nodeKey := makeNodeStateKey(nodeName)
-	if revNum != 0 {
-		resp, err = cs.cli.Get(ctx, nodeKey, clientv3.WithRev(int64(revNum)))
-	} else {
-		resp, err = cs.cli.Get(ctx, nodeKey)
-	}
-	if err != nil {
-		return
-	}
-
-	if resp.OpResponse().Get().Count == int64(0) {
-		nodeInfo = nil
-		cmp := clientv3.Compare(clientv3.CreateRevision(nodeKey), "=", 0)
-		nodeInfoCmp = []clientv3.Cmp{cmp}
-		return
-	}
-
-	nodeInfos, nodeInfoCmps, err := cs.unpackNodeInfo(revNum, resp.OpResponse().Get().Kvs)
-	if err != nil {
-		fmt.Printf("getNodeInfo(): unpackNodeInfo of %v returned err: %s\n",
-			resp.OpResponse().Get().Kvs, err)
-		return
-	}
-	nodeInfo = nodeInfos[nodeName]
-	nodeInfoCmp = nodeInfoCmps[nodeName]
-
-	return
-}
-
-// Return a clientv3.Op "function" that can be added to a transaction's Then()
-// clause to change the NodeInfo for a VolumeGroup to the passed Value.
-//
-// Typically the transaction will will include a conditional (a clientv3.Cmp
-// "function") returned by getNodeInfo() for this same Volume Group to insure that
-// the changes should be applied.
-//
-func (cs *EtcdConn) putNodeInfo(nodeName string, nodeInfo *NodeInfo) (operations []clientv3.Op, err error) {
-
-	// extract the NodeInfoValue fields without the rest of NodeInfo
-	nodeInfoValue := nodeInfo.NodeInfoValue
-
-	// nodeInfoValueAsString, err := json.MarshalIndent(nodeInfoValue, "", "  ")
-	nodeInfoValueAsString, err := json.Marshal(nodeInfoValue)
-	if err != nil {
-		fmt.Printf("putNodeInfo(): name '%s': json.MarshalIndent complained: %s\n",
-			nodeName, err)
-		return
-	}
-
-	nodeKey := makeNodeStateKey(nodeName)
-	op := clientv3.OpPut(nodeKey, string(nodeInfoValueAsString))
-	operations = []clientv3.Op{op}
-	return
-}
-
-// Return a clientv3.Op "function" that can be added to a transaction's Then()
-// clause to delete the Volume Group for the specified name.
-//
-// Typically the transaction will will include a conditional (a clientv3.Cmp
-// "function") returned by getNodeInfo() for this same Volume Group to insure that
-// the changes should be applied.
-//
-func (cs *EtcdConn) deleteNodeInfo(nodeName string) (op clientv3.Op, err error) {
-
-	nodeKey := makeNodeStateKey(nodeName)
-	op = clientv3.OpDelete(nodeKey)
-	return
-}
-
-// getAllNodeInfo() gathers information about all the nodes and returns it as a
-// map from node name to NodeInfo
-//
-// All data is taken from the same etcd global revision number.
-//
-func (cs *EtcdConn) getAllNodeInfo(revNum RevisionNumber) (allNodeInfo map[string]*NodeInfo,
-	allNodeInfoCmp map[string][]clientv3.Cmp, err error) {
-
-	// create a context for the request
-	ctx, cancel := context.WithTimeout(context.Background(), etcdQueryTimeout)
-	defer cancel()
-
-	// First grab all VG state information in one operation
-	var resp *clientv3.GetResponse
-	if revNum != 0 {
-		resp, err = cs.cli.Get(ctx, getNodeStateKeyPrefix(), clientv3.WithPrefix(),
-			clientv3.WithRev(int64(revNum)))
-	} else {
-		resp, err = cs.cli.Get(ctx, getNodeStateKeyPrefix(), clientv3.WithPrefix())
-	}
-	if err != nil {
-		fmt.Printf("Get Node state failed with: %v\n", err)
-		os.Exit(-1)
-	}
-
-	allNodeInfo, allNodeInfoCmp, err = cs.unpackNodeInfo(revNum, resp.Kvs)
-	if err != nil {
-		fmt.Printf("getAllNodeInfo() unexpected error for from unpackNodeInfo(%v): %s\n",
-			resp.Kvs, err)
-		return
-	}
-
 	return
 }

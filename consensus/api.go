@@ -24,7 +24,8 @@ type EtcdConn struct {
 	cli             *clientv3.Client // etcd client pointer
 	kvc             clientv3.KV
 	hostName        string               // hostname of the local host
-	stopWatcherChan chan interface{}     // stop all the watchers
+	stopWatcherChan chan struct{}        // stop all the s
+	watcherErrChan  chan error           // any errors returned by watchers
 	watcherWG       sync.WaitGroup       // WaitGroup to keep track of watchers outstanding
 	HBTicker        *time.Ticker         // HB ticker for sending HB and processing DEAD nodes
 	stopHB          bool                 // True means local node DEAD and wants to kill HB routine
@@ -105,28 +106,9 @@ type NodeInfo struct {
 	NodeInfoValue
 }
 
-// AllNodeInfo contains the state of the interesting keys in the shared database
-// relevant to nodes as of a particular revision number (sequence number)
-//
-type AllNodeInfo struct {
-	RevNum           RevisionNumber
-	NodesHb          map[string]time.Time
-	NodesState       map[string]NodeState
-	NodesAlreadyDead []string
-	NodesOnline      []string
-}
-
-// AllClusterInfo contains the state of the interesting keys in the shared database
-// relevant to the cluster as of a particular revision number (sequence number).
-// (The revision numbers is VgInfo and NodeInfo are the same as RevNum.)
-//
-type AllClusterInfo struct {
-	RevNum      RevisionNumber
-	AllNodeInfo AllNodeInfo
-}
-
 // New creates a new HA client.
 func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdConn, err error) {
+
 	cs = &EtcdConn{hostName: hostName}
 
 	// Create an etcd client - our current etcd setup does not listen on
@@ -136,8 +118,13 @@ func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdCo
 
 	cs.kvc = clientv3.NewKV(cs.cli)
 
+	// capacity of 16 means a maximum of 16 watchers ...
+	cs.watcherErrChan = make(chan error, 16)
+	cs.stopWatcherChan = make(chan struct{}, 1)
+
 	cs.vgMap = make(map[string]*VgInfo)
 	cs.nodeMap = make(map[string]*NodeInfo)
+	fmt.Printf("(*consensus.New() opening new &EtcdConn\n")
 
 	return
 }
@@ -145,33 +132,6 @@ func New(endpoints []string, hostName string, timeout time.Duration) (cs *EtcdCo
 // Endpoints returns the current list of endpoints in use
 func (cs *EtcdConn) Endpoints() []string {
 	return cs.cli.Endpoints()
-}
-
-func (cs *EtcdConn) startWatchers() {
-
-	// start the node watcher(s)
-	cs.startNodeWatcher(cs.stopWatcherChan, &cs.watcherWG)
-
-	// Start a watcher to watch for node state changes
-	//cs.startAWatcher(getNodeStateKeyPrefix())
-	//
-	// Start a watcher to watch for node heartbeats
-	//cs.startAWatcher(getNodeHbKeyPrefix())
-
-	// Start a watcher to watch for volume group changes
-	cs.startAWatcher(getVgKeyPrefix())
-}
-
-func (cs *EtcdConn) stopWatchers() {
-
-	// Start a watcher to watch for node state changes
-	cs.startAWatcher(getNodeStateKeyPrefix())
-
-	// Start a watcher to watch for node heartbeats
-	cs.startAWatcher(getNodeHbKeyPrefix())
-
-	// Start a watcher to watch for volume group changes
-	cs.startAWatcher(getVgKeyPrefix())
 }
 
 // Server sets up to be a long running process in the consensus cluster
@@ -366,11 +326,10 @@ func (cs *EtcdConn) ListVg() (allVgInfo map[string]*VgInfo) {
 
 // ListNode grabs  for all nodes and returns it.
 //
-// Note that this uses the "old format".
-//
-func (cs *EtcdConn) ListNode() AllNodeInfo {
+func (cs *EtcdConn) ListNode() (allNodeInfo map[string]*NodeInfo, err error) {
 
-	return cs.getRevNodeState(RevisionNumber(0))
+	allNodeInfo, _, err = cs.getAllNodeInfo(RevisionNumber(0))
+	return
 }
 
 // Close the connection
