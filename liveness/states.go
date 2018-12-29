@@ -24,6 +24,7 @@ func doCandidate() {
 		awaitingResponses                               map[*peerStruct]struct{}
 		durationDelta                                   time.Duration
 		err                                             error
+		livenessReportWhileCandidate                    *internalLivenessReportStruct
 		msgAsFetchLivenessReportRequest                 *FetchLivenessReportRequestStruct
 		msgAsFetchLivenessReportResponse                *FetchLivenessReportResponseStruct
 		msgAsHeartBeatRequest                           *HeartBeatRequestStruct
@@ -47,6 +48,16 @@ func doCandidate() {
 		logger.Infof("%s entered Candidate state", globals.myUDPAddr)
 	}
 
+	// Point all LivenessChackAssignments at globals.whoAmI
+
+	globals.Lock()
+	livenessReportWhileCandidate = computeLivenessCheckAssignments([]string{globals.whoAmI})
+	updateMyObservingPeerReportWhileLocked(livenessReportWhileCandidate.observingPeer[globals.whoAmI])
+	globals.Unlock()
+	globals.livenessCheckerControlChan <- true
+
+	// Attempt to start a new term
+
 	globals.currentTerm++
 
 	if 0 == len(globals.peersByTuple) {
@@ -54,6 +65,8 @@ func doCandidate() {
 		globals.nextState = doLeader
 		return
 	}
+
+	// Issue RequestVoteRequest to all other Peers
 
 	requestVoteMsgTag = fetchNonce()
 
