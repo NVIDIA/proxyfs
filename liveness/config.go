@@ -572,115 +572,127 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 			virtualIPAddr = ""
 		}
 
-		peerName, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupName, "PrimaryPeer")
+		peerList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupName, "PrimaryPeer")
 		if nil != err {
 			return
 		}
 
-		delete(globals.emptyServingPeerToCheckSet, peerName)
+		switch len(peerList) {
+		case 0:
+			// Since VolumeGroup has no PrimaryPeer, just skip it
+		case 1:
+			// Include this VolumeGroup
 
-		if peerName == globals.whoAmI {
-			_, ok = globals.myVolumeGroupMap[volumeGroupName]
-			if ok {
-				err = fmt.Errorf("Duplicate VolumeGroup (%v) not allowed", volumeGroupName)
-				return
-			}
+			peerName = peerList[0]
 
-			volumeGroup = &volumeGroupStruct{
-				peer:      nil,
-				name:      volumeGroupName,
-				volumeMap: make(map[string]*volumeStruct),
-			}
+			delete(globals.emptyServingPeerToCheckSet, peerName)
 
-			if "" == virtualIPAddr {
-				volumeGroup.virtualIPAddr = globals.myPublicIPAddr
-			} else {
-				volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
-				if nil == volumeGroup.virtualIPAddr {
-					err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
-					return
-				}
-			}
-
-			globals.myVolumeGroupMap[volumeGroupName] = volumeGroup
-		} else {
-			peer, ok = globals.peersByName[peerName]
-			if !ok {
-				err = fmt.Errorf("[VolumeGroup:%v]PrimaryPeer (%v) not found in [Cluster]Peers", volumeGroupName, peerName)
-				return
-			}
-
-			_, ok = peer.volumeGroupMap[volumeGroupName]
-			if ok {
-				err = fmt.Errorf("Duplicate VolumeGroup (%v) not allowed", volumeGroupName)
-				return
-			}
-
-			volumeGroup = &volumeGroupStruct{
-				peer:      peer,
-				name:      volumeGroupName,
-				volumeMap: make(map[string]*volumeStruct),
-			}
-
-			if "" == virtualIPAddr {
-				volumeGroup.virtualIPAddr = peer.publicIPAddr
-			} else {
-				volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
-				if nil == volumeGroup.virtualIPAddr {
-					err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
-					return
-				}
-			}
-
-			peer.volumeGroupMap[volumeGroupName] = volumeGroup
-		}
-
-		volumeList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupName, "VolumeList")
-		if nil != err {
-			return
-		}
-
-		if 0 == len(volumeList) {
-			globals.emptyVolumeGroupToCheckSet[volumeGroupName] = peerName
-		} else {
-			for _, volumeName = range volumeList {
-				_, ok = volumeGroup.volumeMap[volumeName]
+			if peerName == globals.whoAmI {
+				_, ok = globals.myVolumeGroupMap[volumeGroupName]
 				if ok {
-					err = fmt.Errorf("[VolumeGroup:%v]VolumeList contains Volume %v more than once", volumeGroupName, volumeName)
+					err = fmt.Errorf("Duplicate VolumeGroup (%v) not allowed", volumeGroupName)
 					return
 				}
 
-				volume = &volumeStruct{
-					volumeGroup: volumeGroup,
-					name:        volumeName,
+				volumeGroup = &volumeGroupStruct{
+					peer:      nil,
+					name:      volumeGroupName,
+					volumeMap: make(map[string]*volumeStruct),
 				}
 
-				volume.fuseMountPointName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "FUSEMountPointName")
-				if nil != err {
+				if "" == virtualIPAddr {
+					volumeGroup.virtualIPAddr = globals.myPublicIPAddr
+				} else {
+					volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
+					if nil == volumeGroup.virtualIPAddr {
+						err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
+						return
+					}
+				}
+
+				globals.myVolumeGroupMap[volumeGroupName] = volumeGroup
+			} else {
+				peer, ok = globals.peersByName[peerName]
+				if !ok {
+					err = fmt.Errorf("[VolumeGroup:%v]PrimaryPeer (%v) not found in [Cluster]Peers", volumeGroupName, peerName)
 					return
 				}
 
-				volume.nfsExportName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "NFSExportName")
-				if nil != err {
-					// Default to no NFS Export
-					volume.nfsExportName = ""
-				}
-
-				volume.smbShareName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "SMBShareName")
-				if nil != err {
-					// Default to no SMB Share
-					volume.smbShareName = ""
-				}
-
-				volume.accountName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "AccountName")
-				if nil != err {
+				_, ok = peer.volumeGroupMap[volumeGroupName]
+				if ok {
+					err = fmt.Errorf("Duplicate VolumeGroup (%v) not allowed", volumeGroupName)
 					return
 				}
 
-				volumeGroup.volumeMap[volumeName] = volume
+				volumeGroup = &volumeGroupStruct{
+					peer:      peer,
+					name:      volumeGroupName,
+					volumeMap: make(map[string]*volumeStruct),
+				}
 
-				globals.volumeToCheckList = append(globals.volumeToCheckList, volume)
+				if "" == virtualIPAddr {
+					volumeGroup.virtualIPAddr = peer.publicIPAddr
+				} else {
+					volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
+					if nil == volumeGroup.virtualIPAddr {
+						err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
+						return
+					}
+				}
+
+				peer.volumeGroupMap[volumeGroupName] = volumeGroup
 			}
+
+			volumeList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupName, "VolumeList")
+			if nil != err {
+				return
+			}
+
+			if 0 == len(volumeList) {
+				globals.emptyVolumeGroupToCheckSet[volumeGroupName] = peerName
+			} else {
+				for _, volumeName = range volumeList {
+					_, ok = volumeGroup.volumeMap[volumeName]
+					if ok {
+						err = fmt.Errorf("[VolumeGroup:%v]VolumeList contains Volume %v more than once", volumeGroupName, volumeName)
+						return
+					}
+
+					volume = &volumeStruct{
+						volumeGroup: volumeGroup,
+						name:        volumeName,
+					}
+
+					volume.fuseMountPointName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "FUSEMountPointName")
+					if nil != err {
+						return
+					}
+
+					volume.nfsExportName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "NFSExportName")
+					if nil != err {
+						// Default to no NFS Export
+						volume.nfsExportName = ""
+					}
+
+					volume.smbShareName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "SMBShareName")
+					if nil != err {
+						// Default to no SMB Share
+						volume.smbShareName = ""
+					}
+
+					volume.accountName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "AccountName")
+					if nil != err {
+						return
+					}
+
+					volumeGroup.volumeMap[volumeName] = volume
+
+					globals.volumeToCheckList = append(globals.volumeToCheckList, volume)
+				}
+			}
+		default:
+			err = fmt.Errorf("[VolumeGroup:%s]PrimaryPeer must be empty or single-valued", volumeGroupName)
+			return
 		}
 	}
 
