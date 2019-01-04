@@ -179,7 +179,19 @@ func testStartVolumeGroup(t *testing.T) {
 	err = cs.RmVolumeGroup(vgTestName)
 	assert.NotNil(err, "RmVolumeGroup() should have returned an err")
 
-	// TODO: bring the VG OFFLINE and then remove it
+	// bring the VG offline, then online, then offline, and then remove it
+	err = cs.setVgOfflining(vgTestName)
+	assert.Nil(err, "setVgOfflining() should succeed")
+
+	err = cs.setVgOnlining(vgTestName, cs.hostName)
+	assert.Nil(err, "setVgOnlining() should succeed")
+
+	err = cs.setVgOfflining(vgTestName)
+	assert.Nil(err, "setVgOfflining() should succeed second time")
+
+	// and remove the volume gorup
+	err = cs.RmVolumeGroup(vgTestName)
+	assert.Nil(err, "RmVolumeGroup() should now succeed")
 
 	// disable this node's heartbeat before exiting
 	cs.Lock()

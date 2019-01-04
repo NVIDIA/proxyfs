@@ -372,8 +372,6 @@ func (cs *EtcdConn) failoverVgs(deadNodes []string, revNum RevisionNumber) {
 //
 func (cs *EtcdConn) setVgOfflining(vgName string) (err error) {
 
-	fmt.Printf("setVgOfflining() - vg: %v\n", vgName)
-
 	vgInfo, vgInfoCmp, err := cs.getVgInfo(vgName, RevisionNumber(0))
 	if err != nil {
 		err = fmt.Errorf("setVgOfflining(%s) failed to get VgInfo: %s", vgName, err)
@@ -406,7 +404,9 @@ func (cs *EtcdConn) setVgOfflining(vgName string) (err error) {
 	txnResp, err := cs.updateEtcd(vgInfoCmp, putOperations)
 
 	// TODO: should we retry on failure?
-	fmt.Printf("setVgOfflining(): txnResp: %v err %v\n", txnResp, err)
+	if err != nil {
+		fmt.Printf("setVgOfflining(): updateEtcd failed: txnResp: %v err %v\n", txnResp, err)
+	}
 
 	return
 }
@@ -757,8 +757,6 @@ func (cs *EtcdConn) markVgFailed(name string) (err error) {
 			return err
 		}
 
-		// Delete this --craig
-		fmt.Printf("markVgFailed(): vg '%s' state '%v' vgInfo '%v'r\n", name, vgInfo.VgState, vgInfo)
 		conditionals = append(conditionals, cmpVgInfoName...)
 
 		// mark the VG dead
