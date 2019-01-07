@@ -78,7 +78,7 @@ func testSetup() []func() {
 		"RamSwiftInfo.MaxObjectNameLength=256",
 		"RamSwiftInfo.AccountListingLimit=10000",
 		"RamSwiftInfo.ContainerListingLimit=10000",
-		"Peer:Peer0.PrivateIPAddr=localhost",
+		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",

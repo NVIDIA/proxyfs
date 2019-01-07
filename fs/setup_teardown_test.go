@@ -64,7 +64,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainersPerPeer=10",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.MaxObjectsPerContainer=1000000",
-		"Peer:Peer0.PrivateIPAddr=localhost",
+		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
 		"Cluster.WhoAmI=Peer0",
