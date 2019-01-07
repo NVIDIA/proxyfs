@@ -433,6 +433,27 @@ func (confMap ConfMap) FetchOptionValueBool(sectionName string, optionName strin
 	return
 }
 
+// FetchOptionValueUint8 returns [sectionName]valueName's single string value converted to a uint8
+func (confMap ConfMap) FetchOptionValueUint8(sectionName string, optionName string) (optionValue uint8, err error) {
+	optionValue = 0
+
+	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
+	if nil != err {
+		return
+	}
+
+	optionValueUint64, strconvErr := strconv.ParseUint(optionValueString, 10, 8)
+	if nil != strconvErr {
+		err = fmt.Errorf("[%v]%v strconv.ParseUint() error: %v", sectionName, optionName, strconvErr)
+		return
+	}
+
+	optionValue = uint8(optionValueUint64)
+
+	err = nil
+	return
+}
+
 // FetchOptionValueUint16 returns [sectionName]valueName's single string value converted to a uint16
 func (confMap ConfMap) FetchOptionValueUint16(sectionName string, optionName string) (optionValue uint16, err error) {
 	optionValue = 0

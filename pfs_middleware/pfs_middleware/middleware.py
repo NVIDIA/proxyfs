@@ -107,7 +107,7 @@ from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
-from swift.common.utils import get_logger, Timestamp
+from swift.common.utils import config_true_value, get_logger, Timestamp
 
 
 # POSIX file-path limits. Taken from Linux's limits.h, which is also where
@@ -123,6 +123,8 @@ ZERO_FILL_PATH = "/0"
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+LISTING_ETAG_OVERRIDE_HEADER = \
+    "X-Object-Sysmeta-Container-Update-Override-Etag"
 
 # They don't start with X-Object-(Meta|Sysmeta)-, but we save them anyway.
 SPECIAL_OBJECT_METADATA_HEADERS = {
@@ -426,10 +428,18 @@ def extract_container_metadata_from_headers(req):
 
 
 def best_possible_etag(obj_metadata, account_name, ino, num_writes,
-                       is_dir=False):
+                       is_dir=False, container_listing=False):
     if is_dir:
         return EMPTY_OBJECT_ETAG
-    if ORIGINAL_MD5_HEADER in obj_metadata:
+    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                return rest
+        except ValueError:
+            pass
+    elif ORIGINAL_MD5_HEADER in obj_metadata:
         val = obj_metadata[ORIGINAL_MD5_HEADER]
         try:
             stored_num_writes, md5sum = val.split(':', 1)
@@ -709,8 +719,25 @@ class PfsMiddleware(object):
                     if denial_response:
                         return denial_response
 
-                # Authorization succeeded; dispatch to a helper method
+                # Authorization succeeded
                 method = req.method
+
+                # Check whether we ought to bypass. Note that swift_owner
+                # won't be set until we call authorize
+                if config_true_value(req.headers.get('X-Bypass-ProxyFS')) and \
+                        req.environ.get('swift_owner'):
+                    if method not in ('GET', 'HEAD'):
+                        return swob.HTTPMethodNotAllowed()
+                    # We needed to do a PFS-namespace container HEAD to get
+                    # the "appropriate" ACL ahead of calling the authorize
+                    # callback, but that almost certainly didn't exist and
+                    # even if it did, it probably gave an inappropriate
+                    # storage policy. Kill the cache entry, or bypassed object
+                    # GETs will likely 404.
+                    clear_info_cache(None, req.environ, acc, con)
+                    return self.app
+
+                # Otherwise, dispatch to a helper method
                 if method == 'GET' and obj:
                     resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
@@ -817,8 +844,9 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_account_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         get_account_request = rpc.get_account_request(
-            urllib_parse.unquote(req.path), marker, limit)
+            urllib_parse.unquote(req.path), marker, end_marker, limit)
         # If the account does not exist, then __call__ just falls through to
         # self.app, so we never even get here. If we got here, then the
         # account does exist, so we don't have to worry about not-found
@@ -1132,13 +1160,15 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         prefix = req.params.get('prefix', '')
         delimiter = req.params.get('delimiter', '')
         # For now, we only support "/" as a delimiter
         if delimiter not in ("", "/"):
             return swob.HTTPBadRequest(request=req)
         get_container_request = rpc.get_container_request(
-            urllib_parse.unquote(req.path), marker, limit, prefix, delimiter)
+            urllib_parse.unquote(req.path),
+            marker, end_marker, limit, prefix, delimiter)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
         except utils.RpcError as err:
@@ -1200,7 +1230,8 @@ class PfsMiddleware(object):
                 ';swift_bytes=')[::2]
             etag = best_possible_etag(
                 obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"])
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
+                container_listing=True)
             json_entry = {
                 "name": name,
                 "bytes": int(swift_bytes or size),
@@ -1431,6 +1462,11 @@ class PfsMiddleware(object):
         obj_metadata = extract_object_metadata_from_headers(req.headers)
         obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
                                                        hasher.hexdigest())
+        # Add a similar prefix to any container-update-override etag, to
+        # similarly verify that there wasn't a subsequent write.
+        if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+            obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
+                len(log_segments), obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
@@ -1813,7 +1849,13 @@ class PfsMiddleware(object):
             have an errno in it, then the exception's errno attribute will
             be None.
         """
-        return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
+        rpc_method = rpc_request['method']
+        start_time = time.time()
+        try:
+            return self._rpc_call([ctx.proxyfsd_addrinfo], rpc_request)
+        finally:
+            duration = time.time() - start_time
+            self.logger.debug("RPC %s took %.6fs", rpc_method, duration)
 
     def _rpc_call(self, addrinfos, rpc_request):
         addrinfos = set(addrinfos)

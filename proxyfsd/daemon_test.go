@@ -63,14 +63,15 @@ func TestDaemon(t *testing.T) {
 		"Cluster.WhoAmI=Peer0",
 		"Cluster.Peers=Peer0",
 		"Cluster.ServerGuid=a66488e9-a051-4ff7-865d-87bfb84cc2ae",
-		"Cluster.PrivateClusterUDPPort=5002", // 5002 instead of 5001 so that test can run if proxyfsd is already running
-		"Cluster.HeartBeatInterval=100ms",
-		"Cluster.HeartBeatVariance=5ms",
-		"Cluster.HeartBeatExpiration=400ms",
-		"Cluster.MessageExpiration=700ms",
-		"Cluster.RequestExpiration=1s",
-		"Cluster.UDPReadSize=8000",
-		"Cluster.UDPWriteSize=7000",
+		"Cluster.PrivateClusterUDPPort=18123",
+		"Cluster.UDPPacketSendSize=1400",
+		"Cluster.UDPPacketRecvSize=1500",
+		"Cluster.UDPPacketCapPerMessage=5",
+		"Cluster.HeartBeatDuration=1s",
+		"Cluster.HeartBeatMissLimit=3",
+		"Cluster.MessageQueueDepthPerPeer=4",
+		"Cluster.MaxRequestDuration=1s",
+		"Cluster.LivenessCheckRedundancy=2",
 
 		"HTTPServer.TCPPort=53461",
 

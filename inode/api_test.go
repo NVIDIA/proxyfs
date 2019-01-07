@@ -252,8 +252,8 @@ func TestAPI(t *testing.T) {
 	if !ok {
 		t.Fatalf("VolumeNameToActivePeerPrivateIPAddr(\"TestVolume\") should have succeeded")
 	}
-	if "localhost" != goodActivePeerPrivateIPAddr {
-		t.Fatalf("VolumeNameToActivePeerPrivateIPAddr(\"TestVolume\") should have returned \"localhost\"")
+	if "127.0.0.1" != goodActivePeerPrivateIPAddr {
+		t.Fatalf("VolumeNameToActivePeerPrivateIPAddr(\"TestVolume\") should have returned \"127.0.0.1\"")
 	}
 
 	_, err := FetchVolumeHandle("BadVolumeName")

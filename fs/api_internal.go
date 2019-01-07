@@ -1586,7 +1586,7 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
+func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string, endmarker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
 
 	startTime := time.Now()
 	defer func() {
@@ -1612,7 +1612,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 	// listing.
 	areMoreEntries := true
 	lastBasename := marker
-	for areMoreEntries && uint64(len(accountEnts)) < maxEntries {
+	for areMoreEntries && uint64(len(accountEnts)) < maxEntries && (endmarker == "" || lastBasename < endmarker) {
 		var dirEnts []inode.DirEntry
 		dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, lastBasename, maxEntries-uint64(len(accountEnts)), 0)
 		if err != nil {
@@ -1639,6 +1639,9 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 			if dirEnt.Basename == "." || dirEnt.Basename == ".." {
 				continue
 			}
+			if endmarker != "" && dirEnt.Basename >= endmarker {
+				break
+			}
 
 			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEnt.InodeNumber)
 			if err1 != nil {
@@ -1664,7 +1667,7 @@ func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string) (a
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error) {
+func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, endmarker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error) {
 
 	startTime := time.Now()
 	defer func() {
@@ -1775,6 +1778,11 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				// Remember that we're going over these in order, so the first time we see something that's greater that
 				// the prefix but doesn't start with it, we can skip the entire rest of the directory entries since they
 				// are *also* greater than the prefix but don't start with it.
+				return nil
+			}
+			if endmarker != "" && fileName >= endmarker {
+				// Similarly, when we encounter something past our endmarker, we can skip the rest of the directory entries
+				// since they are *also* greater than the endmarker
 				return nil
 			}
 

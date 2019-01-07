@@ -241,7 +241,7 @@ def parse_put_complete_response(put_complete_response):
             put_complete_response["NumWrites"])
 
 
-def get_account_request(path, marker, limit):
+def get_account_request(path, marker, end_marker, limit):
     """
     Return a JSON-RPC request to get a account listing for a given
     account.
@@ -252,13 +252,17 @@ def get_account_request(path, marker, limit):
                    from the ?marker=X part of the query string sent by the
                    client.
 
+    :param end_marker: end_marker query param, e.g. "animals/zebra.png". Comes
+                       from the ?end_marker=X part of the query string sent by
+                       the client.
+
     :param limit: maximum number of entries to return
     """
     # This RPC method takes one positional argument, which is a JSON object
     # with two fields: the path and the ranges.
     return jsonrpc_request("Server.RpcGetAccount",
                            [{"VirtPath": path, "Marker": marker,
-                             "MaxEntries": limit}])
+                             "EndMarker": end_marker, "MaxEntries": limit}])
 
 
 def parse_get_account_response(get_account_response):
@@ -284,7 +288,7 @@ def parse_get_account_response(get_account_response):
         return (mtime, account_entries)
 
 
-def get_container_request(path, marker, limit, prefix, delimiter):
+def get_container_request(path, marker, end_marker, limit, prefix, delimiter):
     """
     Return a JSON-RPC request to get a container listing for a given
     container.
@@ -294,6 +298,10 @@ def get_container_request(path, marker, limit, prefix, delimiter):
     :param marker: marker query param, e.g. "animals/fish/carp.png". Comes
                    from the ?marker=X part of the query string sent by the
                    client.
+
+    :param end_marker: end_marker query param, e.g. "animals/zebra.png". Comes
+                       from the ?end_marker=X part of the query string sent by
+                       the client.
 
     :param limit: maximum number of entries to return
 
@@ -306,6 +314,7 @@ def get_container_request(path, marker, limit, prefix, delimiter):
     # with two fields: the path and the ranges.
     return jsonrpc_request("Server.RpcGetContainer",
                            [{"VirtPath": path, "Marker": marker,
+                             "EndMarker": end_marker,
                              "MaxEntries": limit, "Prefix": prefix,
                              "Delimiter": delimiter}])
 

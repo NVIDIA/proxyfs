@@ -20,6 +20,7 @@ import (
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/liveness"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -74,11 +75,16 @@ func doDeleteOfVolume(responseWriter http.ResponseWriter, request *http.Request)
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
-	//                                                  pathSplit[1] must be "volume" based on how we got here
+	//                                                  pathSplit[1] should be "volume" based on how we got here
 	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
 	numPathParts = len(pathSplit) - 1
 	if "" == pathSplit[numPathParts] {
 		numPathParts--
+	}
+
+	if "volume" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	if 4 != numPathParts {
@@ -145,6 +151,8 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.Header().Set("Content-Type", jsontreeDotJSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(jsontreeDotJSContent))
+	case "/liveness" == path:
+		doGetOfLiveness(responseWriter, request)
 	case "/metrics" == path:
 		doGetOfMetrics(responseWriter, request)
 	case "/stats" == path:
@@ -265,6 +273,50 @@ func doGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusOK)
 
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(configTemplate, version.ProxyFSVersion, globals.ipAddrTCPPort, utils.ByteSliceToString(confMapJSONPacked))))
+	}
+}
+
+func doGetOfLiveness(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		livenessReportAsJSON       bytes.Buffer
+		livenessReportAsJSONPacked []byte
+		livenessReportAsStruct     *liveness.LivenessReportStruct
+		ok                         bool
+		paramList                  []string
+		sendPackedReport           bool
+	)
+
+	// TODO: For now, assume JSON reponse requested
+
+	livenessReportAsStruct = liveness.FetchLivenessReport()
+
+	if nil == livenessReportAsStruct {
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	livenessReportAsJSONPacked, _ = json.Marshal(livenessReportAsStruct)
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedReport = false
+		} else {
+			sendPackedReport = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		sendPackedReport = false
+	}
+
+	if sendPackedReport {
+		_, _ = responseWriter.Write(livenessReportAsJSONPacked)
+	} else {
+		json.Indent(&livenessReportAsJSON, livenessReportAsJSONPacked, "", "\t")
+		_, _ = responseWriter.Write(livenessReportAsJSON.Bytes())
+		_, _ = responseWriter.Write([]byte("\n"))
 	}
 }
 
@@ -505,11 +557,17 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
-	//                                                  pathSplit[1] must be "trigger" based on how we got here
+	//                                                  pathSplit[1] should be "trigger" based on how we got here
 	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
 	numPathParts = len(pathSplit) - 1
 	if "" == pathSplit[numPathParts] {
 		numPathParts--
+	}
+
+	if "trigger" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	switch numPathParts {
@@ -664,17 +722,20 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
-	//                                                  pathSplit[1] must be "volume" based on how we got here
+	//                                                  pathSplit[1] should be "volume" based on how we got here
 	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
 	numPathParts = len(pathSplit) - 1
 	if "" == pathSplit[numPathParts] {
 		numPathParts--
 	}
 
-	switch numPathParts {
-	case 0:
+	if "volume" != pathSplit[1] {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
+	}
+
+	switch numPathParts {
 	case 1:
 		// Form: /volume
 	case 2:
@@ -1368,11 +1429,17 @@ func doPostOfTrigger(responseWriter http.ResponseWriter, request *http.Request) 
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
-	//                                                  pathSplit[1] must be "trigger" based on how we got here
+	//                                                  pathSplit[1] should be "trigger" based on how we got here
 	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
 	numPathParts = len(pathSplit) - 1
 	if "" == pathSplit[numPathParts] {
 		numPathParts--
+	}
+
+	if "trigger" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	switch numPathParts {
@@ -1426,11 +1493,17 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	)
 
 	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
-	//                                                  pathSplit[1] must be "volume" based on how we got here
+	//                                                  pathSplit[1] should be "volume" based on how we got here
 	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
 	numPathParts = len(pathSplit) - 1
 	if "" == pathSplit[numPathParts] {
 		numPathParts--
+	}
+
+	if "volume" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	switch numPathParts {
