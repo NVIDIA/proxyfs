@@ -49,7 +49,7 @@ function await_swift_startup {
 }
 
 function format_volume_if_necessary {
-    sudo /vagrant/bin/mkproxyfs -I $1 /vagrant/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf
+    sudo /vagrant/bin/mkproxyfs -I $1 /vagrant/src/github.com/swiftstack/ProxyFS/saio/proxyfs.conf SwiftClient.RetryLimit=1
     if [ $? -ne 0 ]
     then
         echo "Could not pre-format $1"
@@ -124,7 +124,7 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl stop nfs-server
     sudo /usr/bin/systemctl stop rpcbind
     sudo /usr/bin/systemctl stop smb
-    sudo /usr/bin/systemctl stop nmb
+    # sudo /usr/bin/systemctl stop nmb
     # sudo /usr/bin/systemctl stop winbind
     sudo /usr/bin/systemctl stop proxyfsd
     await_proxyfsd_shutdown
@@ -140,7 +140,7 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start proxyfsd
     await_proxyfsd_startup
     # sudo /usr/bin/systemctl start winbind
-    sudo /usr/bin/systemctl start nmb
+    # sudo /usr/bin/systemctl start nmb
     sudo /usr/bin/systemctl start smb
     sudo /usr/bin/systemctl start rpcbind
     sudo /usr/bin/systemctl start nfs-server
@@ -154,7 +154,7 @@ else
     sudo /usr/sbin/service nfs-server stop
     sudo /usr/sbin/service rpcbind stop
     sudo /usr/sbin/service smbd stop
-    sudo /usr/sbin/service nmbd stop
+    # sudo /usr/sbin/service nmbd stop
     # sudo /usr/sbin/service winbindd stop
     sudo /usr/sbin/service proxyfsd stop
     await_proxyfsd_shutdown
@@ -170,7 +170,7 @@ else
     sudo /usr/sbin/service proxyfsd start
     await_proxyfsd_startup
     # sudo /usr/sbin/service winbindd start
-    sudo /usr/sbin/service nmbd start
+    # sudo /usr/sbin/service nmbd start
     sudo /usr/sbin/service smbd start
     sudo /usr/sbin/service rpcbind start
     sudo /usr/sbin/service nfs-server start

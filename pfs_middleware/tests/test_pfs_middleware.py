@@ -369,6 +369,15 @@ class TestAccountGet(BaseMiddlewareTest):
         # relevant to what we're testing here
         self.assertEqual(self.fake_rpc.calls[1][1][0]['Marker'], 'mk')
 
+    def test_end_marker(self):
+        req = swob.Request.blank("/v1/AUTH_test?end_marker=mk")
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(2, len(self.fake_rpc.calls))
+        # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
+        # relevant to what we're testing here
+        self.assertEqual(self.fake_rpc.calls[1][1][0]['EndMarker'], 'mk')
+
     def test_limit(self):
         req = swob.Request.blank("/v1/AUTH_test?limit=101")
         status, headers, body = self.call_pfs(req)
@@ -1938,6 +1947,21 @@ class TestContainerGet(BaseMiddlewareTest):
         # sanity check
         self.assertEqual(rpc_method, "Server.RpcGetContainer")
         self.assertEqual(rpc_args[0]["Marker"], "sharpie")
+
+    def test_end_marker(self):
+        req = swob.Request.blank(
+            '/v1/AUTH_test/a-container?end_marker=whiteboard')
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+
+        rpc_calls = self.fake_rpc.calls
+        self.assertEqual(len(rpc_calls), 2)
+        # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
+        # relevant to what we're testing here
+        rpc_method, rpc_args = rpc_calls[1]
+        # sanity check
+        self.assertEqual(rpc_method, "Server.RpcGetContainer")
+        self.assertEqual(rpc_args[0]["EndMarker"], "whiteboard")
 
     def test_prefix(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container?prefix=cow')

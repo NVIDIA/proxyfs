@@ -216,7 +216,7 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 			maxEntries = 10
 			totalEntriesRead = 0 // Useful for debugging
 			for areMoreEntries {
-				containerEnts, err = testMountStruct.MiddlewareGetContainer(testDirName, maxEntries, lastBasename, "", "")
+				containerEnts, err = testMountStruct.MiddlewareGetContainer(testDirName, maxEntries, lastBasename, "", "", "")
 				if nil != err {
 					return
 				}
