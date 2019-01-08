@@ -34,9 +34,6 @@ differences that must be called out.
 * Account HEAD responses contain a header "ProxyFS-Enabled: yes". This way,
   clients can know what they're dealing with.
 
-* Unlimited object size. A PUT request is not limited to 5 GiB, but can be
-  arbitrarily large.
-
 * Support for the COALESCE verb. Since static large objects will not work
   with this middleware's ETag values, another solution was found. A client
   can combine (or coalesce, if you will) a number of small files together
