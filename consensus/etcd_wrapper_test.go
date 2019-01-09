@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Test etcd wrapper routines and demonstrate how to use them.TestEtcdWrapperAPI
+// Test etcd wrapper routines and demonstrate how to use them.
 func TestEtcdWrapperAPI(t *testing.T) {
 
 	testAddWidget(t)
