@@ -34,6 +34,8 @@ type WidInfo struct {
 	WidInfoValue
 }
 
+// Helper functions to make and return the key name.
+// The actual key in the etcd database will be of the form "WidgetKey:<name>"
 func getWidKeyPrefix() string {
 	return "WidgetKey:"
 }
@@ -72,7 +74,7 @@ func unpackKeyValueToWidInfo(key string, header *EtcdKeyHeader, value []byte) (
 // JSON encoded "value" into a WidInfo structure.
 //
 // It also returns a slice to be used for comparisons in future transactions.
-func getWidInfo(cs *EtcdConn, name string, revNum RevisionNumber) (widInfo *WidInfo,
+func getWidInfo(cs *EtcdConn, name string, revNum RevisionNumber, assert *assert.Assertions) (widInfo *WidInfo,
 	widInfoCmp []clientv3.Cmp, err error) {
 
 	widKey := makeWidKey(name)
@@ -80,16 +82,20 @@ func getWidInfo(cs *EtcdConn, name string, revNum RevisionNumber) (widInfo *WidI
 	// Do a GET on the key and use unpackKeyValueToWidInfo() to decode the
 	// JSON.
 	values, widInfoCmps, err := cs.getUnpackedKeyValues(revNum, widKey, unpackKeyValueToWidInfo)
+	buf := fmt.Sprintf("Unable to GET key: %v", widKey)
+	assert.Nil(err, buf)
 
 	// debug: there should be at most one key in this result
 	if len(values) > 1 || len(widInfoCmps) != 1 {
-		err = fmt.Errorf("getVgInfo(): found too many keys for node name '%s': values '%v' Cmps '%v'",
+		err = fmt.Errorf("getWidInfo(): found too many keys for node name '%s': values '%v' Cmps '%v'",
 			name, values, widInfoCmps)
 		fmt.Printf("%s\n", err)
 		return
 	}
 
-	// NOTE: getUnpackedKeyValues() could return multiple keys.
+	// NOTE: getUnpackedKeyValues() could return multiple keys if that is what
+	// was PUT into the database.
+	//
 	// That is why values is a map.  In our case, it only returns one key.
 	widInfoCmp = widInfoCmps[name]
 	if len(values) > 0 {
@@ -157,7 +163,7 @@ func testAddWidget(t *testing.T) {
 
 	// Check if the widget already exists by doing a GET with
 	// revision number of 0
-	widInfo, cmpWidInfoName, err := getWidInfo(cs, name, RevisionNumber(0))
+	widInfo, cmpWidInfoName, err := getWidInfo(cs, name, RevisionNumber(0), assert)
 	if err != nil {
 		return
 	}
@@ -184,4 +190,18 @@ func testAddWidget(t *testing.T) {
 	assert.True(txnResp.Succeeded, "Expected txn to succeed")
 
 	fmt.Printf("testAddWidget(): txnResp: %v err %v\n", txnResp, err)
+
+	// PART 2 - Now update a field in testWidget
+	widInfo.State = "NEWSTATE"
+	operationsPhase2 := make([]clientv3.Op, 0, 1)
+
+	// Create the operation to update this Widget.  putWidInfo()
+	// does the update via a transaction.
+	putOpsPhase2, err := putWidInfo(cs, name, widInfo)
+	operationsPhase2 = append(operationsPhase2, putOpsPhase2...)
+
+	// Update the shared state (or fail)
+	txnResp, err = cs.updateEtcd(conditionals, operationsPhase2)
+	assert.True(txnResp.Succeeded, "Expected txn to succeed")
+
 }
