@@ -558,7 +558,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	}
 
 	defaultPhysicalContainerLayout = &physicalContainerLayoutStruct{
-		name: defaultPhysicalContainerLayoutName,
+		name:                        defaultPhysicalContainerLayoutName,
 		containerNameSliceNextIndex: 0,
 		containerNameSliceLoopCount: 0,
 	}
