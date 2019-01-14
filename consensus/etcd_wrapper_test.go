@@ -12,9 +12,9 @@ import (
 // Test etcd wrapper routines and demonstrate how to use them.
 func TestEtcdWrapperAPI(t *testing.T) {
 
-	testAddWidget(t)
+	testAddAndUpdateWidget(t)
+	//testAddAndUpdateMultipleWidgets(t)
 	//testRmWidget(t)
-	//testUpdateWidget(t)
 	// TODO - add test for mv from workQ to finishQ case...
 }
 
@@ -149,7 +149,7 @@ func putWidInfo(cs *EtcdConn, name string, widInfo *WidInfo) (operations []clien
 }
 
 // Use the wrappers to create a key for the first time
-func testAddWidget(t *testing.T) {
+func testAddAndUpdateWidget(t *testing.T) {
 	var (
 		name         = "testWidget"
 		conditionals = make([]clientv3.Cmp, 0, 1)
