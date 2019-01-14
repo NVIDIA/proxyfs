@@ -48,9 +48,10 @@ yum -y install wget git nfs-utils vim
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz
-tar -C /usr/local -xf go1.10.linux-amd64.tar.gz
-rm go1.10.linux-amd64.tar.gz
+TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+wget -q https://dl.google.com/go/$TARFILE_NAME
+tar -C /usr/local -xf $TARFILE_NAME
+rm $TARFILE_NAME
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Patch Golang's GDB runtime plug-in

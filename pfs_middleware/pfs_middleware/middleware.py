@@ -1555,9 +1555,6 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        if req.environ.get('swift_owner') and 'get-read-plan' in req.params:
-            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
-                               headers={"Content-Type": "application/json"})
         headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
 
         if "Content-Type" not in headers:
@@ -1574,6 +1571,24 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["Etag"] = best_possible_etag(headers, ctx.account_name,
                                              ino, num_writes)
+
+        get_read_plan = req.params.get("get-read-plan", "no")
+        if get_read_plan == "":
+            get_read_plan = "yes"
+        if req.environ.get("swift_owner") and config_true_value(get_read_plan):
+            headers.update({
+                # Flag that pfs_middleware correctly interpretted this request
+                "X-ProxyFS-Read-Plan": "True",
+                # Stash the "real" content type...
+                "X-Object-Content-Type": headers["Content-Type"],
+                # ... so we can indicate that *this* data is coming out JSON
+                "Content-Type": "application/json",
+                # Also include the total object size
+                # (since the read plan respects Range requests)
+                "X-Object-Content-Length": size,
+            })
+            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
+                               headers=headers)
 
         if size > 0 and read_plan is None:
             headers["Content-Range"] = "bytes */%d" % size

@@ -566,18 +566,92 @@ class TestObjectGet(BaseMiddlewareTest):
                          mware.construct_etag("AUTH_test", 1245, 2424))
         self.assertEqual(body, 'burritos')
 
-        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=on',
                                  environ={'swift_owner': True})
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
         self.assertEqual(json.loads(body), [{
             "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
                            "/0000000000c11fbd"),
             "Offset": 0,
             "Length": 8,
         }])
+
+        # Can explicitly say you *don't* want the read plan
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=no',
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'burritos')
+
+        # Can handle Range requests, too
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/notes/lunch")
+            self.assertEqual(get_object_req['ReadEntsIn'], [
+                {"Len": 2, "Offset": 2}])
+
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 8,
+                    "Metadata": "",
+                    "InodeNumber": 1245,
+                    "NumWrites": 2424,
+                    "ModificationTime": 1481152134331862558,
+                    "LeaseId": "prominority-sarcocyst",
+                    "ReadEntsOut": [
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11fbd"),
+                            "Offset": 587,
+                            "Length": 1
+                        },
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11798"),
+                            "Offset": 25,
+                            "Length": 1
+                        },
+                    ]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+
+        # Present-but-blank query param is truthy
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+                                 headers={'Range': 'bytes=2-3'},
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
+        self.assertEqual(json.loads(body), [
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11fbd"),
+                "Offset": 587,
+                "Length": 1,
+            },
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11798"),
+                "Offset": 25,
+                "Length": 1,
+            },
+        ])
 
     def test_GET_slo_manifest(self):
         self.app.register(

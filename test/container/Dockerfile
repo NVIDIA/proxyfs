@@ -96,9 +96,10 @@ RUN pip install --upgrade pip
 RUN pip install requests tox==3.5.3
 
 # Install Golang
-RUN cd /tmp && wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz
-RUN tar -C /usr/local -xf /tmp/go1.10.linux-amd64.tar.gz
-RUN rm -rf /tmp/go1.10.linux-amd64.tar.gz
+ENV GOLANG_TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME}
+RUN tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME}
+RUN rm -rf /tmp/${GOLANG_TARFILE_NAME}
 ENV PATH=$PATH:/usr/local/go/bin
 
 # Setup ProxyFS build environment
