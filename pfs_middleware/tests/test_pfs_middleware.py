@@ -44,7 +44,7 @@ class FakeLogger(object):
     def info(fmt, *args):
         pass
 
-    def debug(fmt, *args):
+    def debug(fmt, *args, **kwargs):
         pass
 
 
@@ -4468,3 +4468,181 @@ class TestBestPossibleEtag(unittest.TestCase):
                 {self.HEADER: "magpie:interfollicular"},
                 "AUTH_test", 0x707301, 2),
             '"pfsv2/AUTH_test/00707301/00000002-32"')
+
+
+class TestProxyfsMethod(BaseMiddlewareTest):
+    def test_non_swift_owner(self):
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS')
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '405 Method Not Allowed')
+
+    def test_bad_content_type(self):
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS',
+                                 environ={'swift_owner': True}, body=b'')
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '415 Unsupported Media Type')
+        self.assertEqual(
+            body, b'RPC body must have Content-Type application/json')
+
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS',
+                                 headers={'Content-Type': 'text/plain'},
+                                 environ={'swift_owner': True}, body=b'')
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '415 Unsupported Media Type')
+        self.assertEqual(body, (b'RPC body must have Content-Type '
+                                b'application/json, not text/plain'))
+
+    def test_exactly_one_payload(self):
+        def expect_one_payload(body):
+            req = swob.Request.blank(
+                "/v1/AUTH_test", method='PROXYFS',
+                headers={'Content-Type': 'application/json'},
+                environ={'swift_owner': True}, body=body)
+            status, _, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request')
+            self.assertEqual(body, b'Expected exactly one JSON payload')
+
+        expect_one_payload(b'')
+        expect_one_payload(b'\n')
+        one_payload = json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.RpcPing',
+            'params': [{}],
+        })
+        expect_one_payload(one_payload + '\n' + one_payload)
+
+    def test_bad_body(self):
+        def expect_parse_error(req_body):
+            req = swob.Request.blank(
+                "/v1/AUTH_test", method='PROXYFS',
+                headers={'Content-Type': 'application/json'},
+                environ={'swift_owner': True}, body=req_body)
+            status, _, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request')
+            exp_start = (b'Could not parse/validate JSON payload #0 '
+                         b'%s:' % req_body)
+            self.assertEqual(body[:len(exp_start)], exp_start)
+
+        expect_parse_error(b'[')
+        expect_parse_error(b'{')
+        expect_parse_error(b'[]')
+        expect_parse_error(b'{}')
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '1.0',
+            'method': 'Server.PingReq',
+            'params': [{}],
+        }).encode('ascii'))
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'asdf',
+            'params': [{}],
+        }).encode('ascii'))
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [{}, {}],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [[]],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': {},
+        }).encode('ascii'))
+
+    def test_success(self):
+        def mock_RpcGetAccount(params):
+            self.assertEqual(params, {
+                "AccountName": "AUTH_test",
+            })
+            return {
+                "error": None,
+                "result": {
+                    "ModificationTime": 1498766381451119000,
+                    "AccountEntries": [{
+                        "Basename": "chickens",
+                        "ModificationTime": 1510958440808682000,
+                    }, {
+                        "Basename": "cows",
+                        "ModificationTime": 1510958450657045000,
+                    }, {
+                        "Basename": "goats",
+                        "ModificationTime": 1510958452544251000,
+                    }, {
+                        "Basename": "pigs",
+                        "ModificationTime": 1510958459200130000,
+                    }],
+                }}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test", method='PROXYFS',
+            headers={'Content-Type': 'application/json'},
+            environ={'swift_owner': True}, body=json.dumps({
+                'jsonrpc': '2.0',
+                'method': 'Server.RpcGetAccount',
+                'params': [{}],
+            }))
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK', body)
+        self.assertEqual(headers.get('content-type'), 'application/json')
+        resp = json.loads(body)
+        self.assertIsNotNone(resp.pop('id', None))
+        self.assertEqual(resp, {
+            "error": None,
+            "result": {
+                "ModificationTime": 1498766381451119000,
+                "AccountEntries": [{
+                    "Basename": "chickens",
+                    "ModificationTime": 1510958440808682000,
+                }, {
+                    "Basename": "cows",
+                    "ModificationTime": 1510958450657045000,
+                }, {
+                    "Basename": "goats",
+                    "ModificationTime": 1510958452544251000,
+                }, {
+                    "Basename": "pigs",
+                    "ModificationTime": 1510958459200130000,
+                }]
+            }
+        })
+
+    def test_error(self):
+        def mock_RpcGetAccount(params):
+            self.assertEqual(params, {
+                "AccountName": "AUTH_test",
+                "some": "args",
+            })
+            return {"error": "errno 2"}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test", method='PROXYFS',
+            headers={'Content-Type': 'application/json'},
+            environ={'swift_owner': True}, body=json.dumps({
+                'jsonrpc': '2.0',
+                'method': 'Server.RpcGetAccount',
+                'params': [{'some': 'args'}],
+            }))
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '422 Unprocessable Entity', body)
+        self.assertEqual(headers.get('content-type'), 'application/json')
+        resp = json.loads(body)
+        self.assertIsNotNone(resp.pop('id', None))
+        self.assertEqual(resp, {"error": "errno 2"})

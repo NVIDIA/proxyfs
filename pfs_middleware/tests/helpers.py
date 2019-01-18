@@ -118,7 +118,7 @@ class FakeJsonRpc(object):
         """
         self._rpc_handlers[method] = handler
 
-    def call(self, rpc_request, _timeout):
+    def call(self, rpc_request, _timeout, raise_on_rpc_error=True):
         # Note: rpc_request here is a JSON-RPC request object. In Python
         # terms, it's a dictionary with a particular format.
 
