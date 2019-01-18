@@ -1,5 +1,42 @@
 # ProxyFS Release Notes
 
+## 1.9.2 (January 18, 2018)
+
+### Bug Fixes:
+
+Resolved race condition when simultaneous first references to
+an `Inode` are executed resulting in a lock blocking any further
+access to the `Inode`. This condition was frequently seen when
+attempting a multi-part upload via the S3 or Swift HTTP APIs
+as it would be typical/expected that the uploading of all the
+parts of a new `file` would begin roughly at the same time.
+
+It is now possible to perform builds and unit tests on the
+same node where an active ProxyFS session is in operation.
+Previously, identical TCP and UDP Ports were being used by
+default leading to bind() failures.
+
+### Features:
+
+Updated to leverage Golang 1.11.4 features.
+
+Added support for `X-Object-Sysmeta-Container-Update-Override-Etag`.
+
+Added support for `end-marker` query params.
+
+Added support for fetching a `ReadPlan` for a given file
+via the HTTP interface. The `ReadPlan` may then be used to
+HEAD or GET the individual `LogSegments` that, when stitched
+together, represent the contents of the file.
+
+Liveness monitoring now active among all ProxyFS instances
+visable via JSON response to an HTTP Query on the embedded
+HTTP Server's Port for `/liveness`.
+
+Added support for VolumeGroups where the set of Volumes in a
+VolumeGroup are what is assigned to a Peer/Node rather than
+each individual Volume.
+
 ## 1.8.0.5 (November 27, 2018)
 
 ### Bug Fixes:

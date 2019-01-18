@@ -638,6 +638,7 @@ type GetContainerReply struct {
 type GetContainerReq struct {
 	VirtPath   string // virtual container path, e.g. /v1/AUTH_acc/some-dir
 	Marker     string // marker from query string, used in pagination
+	EndMarker  string // endmarker from query string, used in pagination
 	Prefix     string // only look at entries starting with this
 	MaxEntries uint64 // maximum number of entries to return
 	Delimiter  string // only match up to the first occurrence of delimiter (excluding prefix)
@@ -654,6 +655,7 @@ type GetAccountReply struct {
 type GetAccountReq struct {
 	VirtPath   string // account path, e.g. /v1/AUTH_acc
 	Marker     string // marker from query string, used in pagination
+	EndMarker  string // endmarker from query string, used in pagination
 	MaxEntries uint64 // maximum number of entries to return
 }
 

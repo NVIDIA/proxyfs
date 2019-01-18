@@ -34,9 +34,6 @@ differences that must be called out.
 * Account HEAD responses contain a header "ProxyFS-Enabled: yes". This way,
   clients can know what they're dealing with.
 
-* Unlimited object size. A PUT request is not limited to 5 GiB, but can be
-  arbitrarily large.
-
 * Support for the COALESCE verb. Since static large objects will not work
   with this middleware's ETag values, another solution was found. A client
   can combine (or coalesce, if you will) a number of small files together
@@ -107,7 +104,7 @@ from swift.common import swob, constraints
 
 # Our logs should go to the same place as everyone else's. Plus, this logger
 # works well in an eventlet-ified process, and SegmentedIterable needs one.
-from swift.common.utils import get_logger, Timestamp
+from swift.common.utils import config_true_value, get_logger, Timestamp
 
 
 # POSIX file-path limits. Taken from Linux's limits.h, which is also where
@@ -650,6 +647,11 @@ class PfsMiddleware(object):
         # a few extra for JSON quotes, commas, et cetera.
         self.max_coalesce_request_size = self.max_coalesce * 1100
 
+        self.bypass_mode = conf.get('bypass_mode', 'off')
+        if self.bypass_mode not in ('off', 'read-only', 'read-write'):
+            raise ValueError('Expected bypass_mode to be one of off, '
+                             'read-only, or read-write')
+
     @swob.wsgify
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
@@ -719,8 +721,27 @@ class PfsMiddleware(object):
                     if denial_response:
                         return denial_response
 
-                # Authorization succeeded; dispatch to a helper method
+                # Authorization succeeded
                 method = req.method
+
+                # Check whether we ought to bypass. Note that swift_owner
+                # won't be set until we call authorize
+                if config_true_value(req.headers.get('X-Bypass-ProxyFS')) and \
+                        self.bypass_mode in ('read-only', 'read-write') and \
+                        req.environ.get('swift_owner'):
+                    if self.bypass_mode == 'read-only' and method not in (
+                            'GET', 'HEAD'):
+                        return swob.HTTPMethodNotAllowed()
+                    # We needed to do a PFS-namespace container HEAD to get
+                    # the "appropriate" ACL ahead of calling the authorize
+                    # callback, but that almost certainly didn't exist and
+                    # even if it did, it probably gave an inappropriate
+                    # storage policy. Kill the cache entry, or bypassed object
+                    # GETs will likely 404.
+                    clear_info_cache(None, req.environ, acc, con)
+                    return self.app
+
+                # Otherwise, dispatch to a helper method
                 if method == 'GET' and obj:
                     resp = self.get_object(ctx)
                 elif method == 'HEAD' and obj:
@@ -827,8 +848,9 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_account_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         get_account_request = rpc.get_account_request(
-            urllib_parse.unquote(req.path), marker, limit)
+            urllib_parse.unquote(req.path), marker, end_marker, limit)
         # If the account does not exist, then __call__ just falls through to
         # self.app, so we never even get here. If we got here, then the
         # account does exist, so we don't have to worry about not-found
@@ -1142,13 +1164,15 @@ class PfsMiddleware(object):
         limit = self._get_listing_limit(
             req, self._default_container_listing_limit())
         marker = req.params.get('marker', '')
+        end_marker = req.params.get('end_marker', '')
         prefix = req.params.get('prefix', '')
         delimiter = req.params.get('delimiter', '')
         # For now, we only support "/" as a delimiter
         if delimiter not in ("", "/"):
             return swob.HTTPBadRequest(request=req)
         get_container_request = rpc.get_container_request(
-            urllib_parse.unquote(req.path), marker, limit, prefix, delimiter)
+            urllib_parse.unquote(req.path),
+            marker, end_marker, limit, prefix, delimiter)
         try:
             get_container_response = self.rpc_call(ctx, get_container_request)
         except utils.RpcError as err:
@@ -1554,6 +1578,25 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["Etag"] = best_possible_etag(headers, ctx.account_name,
                                              ino, num_writes)
+
+        get_read_plan = req.params.get("get-read-plan", "no")
+        if get_read_plan == "":
+            get_read_plan = "yes"
+        if self.bypass_mode != 'off' and req.environ.get('swift_owner') and \
+                config_true_value(get_read_plan):
+            headers.update({
+                # Flag that pfs_middleware correctly interpretted this request
+                "X-ProxyFS-Read-Plan": "True",
+                # Stash the "real" content type...
+                "X-Object-Content-Type": headers["Content-Type"],
+                # ... so we can indicate that *this* data is coming out JSON
+                "Content-Type": "application/json",
+                # Also include the total object size
+                # (since the read plan respects Range requests)
+                "X-Object-Content-Length": size,
+            })
+            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
+                               headers=headers)
 
         if size > 0 and read_plan is None:
             headers["Content-Range"] = "bytes */%d" % size

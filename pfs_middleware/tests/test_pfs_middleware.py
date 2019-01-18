@@ -53,7 +53,9 @@ class BaseMiddlewareTest(unittest.TestCase):
     def setUp(self):
         super(BaseMiddlewareTest, self).setUp()
         self.app = helpers.FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {}, FakeLogger())
+        self.pfs = mware.PfsMiddleware(self.app, {
+            'bypass_mode': 'read-only',
+        }, FakeLogger())
         self.bimodal_checker = bimodal_checker.BimodalChecker(self.pfs, {
             'bimodal_recheck_interval': 'inf',  # avoid timing dependencies
         }, FakeLogger())
@@ -225,6 +227,34 @@ class TestAccountGet(BaseMiddlewareTest):
             headers.get("X-Account-Storage-Policy-Default-Container-Count"),
             "4")
 
+    def test_escape_hatch(self):
+        self.app.register(
+            'GET', '/v1/AUTH_test', 200, {},
+            '000000000000DACA\n000000000000DACC\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", headers={
+            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, '000000000000DACA\n000000000000DACC\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", environ={
+            'swift_owner': True})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+
+        req = swob.Request.blank("/v1/AUTH_test", method='PUT', headers={
+            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '405 Method Not Allowed')
+
+        req = swob.Request.blank("/v1/AUTH_test", headers={
+            "X-Bypass-ProxyFS": "true"})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+
     def test_text(self):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
@@ -340,6 +370,15 @@ class TestAccountGet(BaseMiddlewareTest):
         # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
         # relevant to what we're testing here
         self.assertEqual(self.fake_rpc.calls[1][1][0]['Marker'], 'mk')
+
+    def test_end_marker(self):
+        req = swob.Request.blank("/v1/AUTH_test?end_marker=mk")
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(2, len(self.fake_rpc.calls))
+        # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
+        # relevant to what we're testing here
+        self.assertEqual(self.fake_rpc.calls[1][1][0]['EndMarker'], 'mk')
 
     def test_limit(self):
         req = swob.Request.blank("/v1/AUTH_test?limit=101")
@@ -515,10 +554,10 @@ class TestObjectGet(BaseMiddlewareTest):
                         "Offset": 0,
                         "Length": 8}]}}
 
-        req = swob.Request.blank('/v1/AUTH_test/notes/lunch')
-
         self.fake_rpc.register_handler(
             "Server.RpcGetObject", mock_RpcGetObject)
+
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch')
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
@@ -528,6 +567,93 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(headers["ETag"],
                          mware.construct_etag("AUTH_test", 1245, 2424))
         self.assertEqual(body, 'burritos')
+
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=on',
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
+        self.assertEqual(json.loads(body), [{
+            "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                           "/0000000000c11fbd"),
+            "Offset": 0,
+            "Length": 8,
+        }])
+
+        # Can explicitly say you *don't* want the read plan
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=no',
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'burritos')
+
+        # Can handle Range requests, too
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/notes/lunch")
+            self.assertEqual(get_object_req['ReadEntsIn'], [
+                {"Len": 2, "Offset": 2}])
+
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 8,
+                    "Metadata": "",
+                    "InodeNumber": 1245,
+                    "NumWrites": 2424,
+                    "ModificationTime": 1481152134331862558,
+                    "LeaseId": "prominority-sarcocyst",
+                    "ReadEntsOut": [
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11fbd"),
+                            "Offset": 587,
+                            "Length": 1
+                        },
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11798"),
+                            "Offset": 25,
+                            "Length": 1
+                        },
+                    ]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+
+        # Present-but-blank query param is truthy
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+                                 headers={'Range': 'bytes=2-3'},
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
+        self.assertEqual(json.loads(body), [
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11fbd"),
+                "Offset": 587,
+                "Length": 1,
+            },
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11798"),
+                "Offset": 25,
+                "Length": 1,
+            },
+        ])
 
     def test_GET_slo_manifest(self):
         self.app.register(
@@ -1910,6 +2036,21 @@ class TestContainerGet(BaseMiddlewareTest):
         # sanity check
         self.assertEqual(rpc_method, "Server.RpcGetContainer")
         self.assertEqual(rpc_args[0]["Marker"], "sharpie")
+
+    def test_end_marker(self):
+        req = swob.Request.blank(
+            '/v1/AUTH_test/a-container?end_marker=whiteboard')
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+
+        rpc_calls = self.fake_rpc.calls
+        self.assertEqual(len(rpc_calls), 2)
+        # rpc_calls[0] is a call to RpcIsAccountBimodal, which is not
+        # relevant to what we're testing here
+        rpc_method, rpc_args = rpc_calls[1]
+        # sanity check
+        self.assertEqual(rpc_method, "Server.RpcGetContainer")
+        self.assertEqual(rpc_args[0]["EndMarker"], "whiteboard")
 
     def test_prefix(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container?prefix=cow')

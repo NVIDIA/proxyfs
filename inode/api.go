@@ -140,6 +140,7 @@ type VolumeHandle interface {
 	SnapShotDelete(id uint64) (err error)
 
 	// Wrapper methods around DLM locks.  Implemented in locker.go
+
 	MakeLockID(inodeNumber InodeNumber) (lockID string, err error)
 	InitInodeLock(inodeNumber InodeNumber, callerID dlm.CallerID) (lock *dlm.RWLockStruct, err error)
 	GetReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
