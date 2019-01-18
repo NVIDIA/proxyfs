@@ -53,7 +53,9 @@ class BaseMiddlewareTest(unittest.TestCase):
     def setUp(self):
         super(BaseMiddlewareTest, self).setUp()
         self.app = helpers.FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {}, FakeLogger())
+        self.pfs = mware.PfsMiddleware(self.app, {
+            'bypass_mode': 'read-only',
+        }, FakeLogger())
         self.bimodal_checker = bimodal_checker.BimodalChecker(self.pfs, {
             'bimodal_recheck_interval': 'inf',  # avoid timing dependencies
         }, FakeLogger())
