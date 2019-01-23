@@ -470,28 +470,36 @@ func (vS *volumeStruct) inodeCacheDrop(inode *inMemoryInodeStruct) (ok bool, err
 }
 
 func (vS *volumeStruct) fetchInode(inodeNumber InodeNumber) (inode *inMemoryInodeStruct, ok bool, err error) {
-	inode, ok, err = vS.inodeCacheFetch(inodeNumber)
-	if nil != err {
-		return
-	}
-
-	if ok {
-		return
-	}
-
-	inode, ok, err = vS.fetchOnDiskInode(inodeNumber)
-	if nil != err {
-		return
-	}
-
-	if ok {
-		ok, err = vS.inodeCacheInsert(inode)
-		if (nil == err) && !ok {
-			err = fmt.Errorf("inodeCacheInsert(inode) failed")
+	for {
+		inode, ok, err = vS.inodeCacheFetch(inodeNumber)
+		if nil != err {
+			return
 		}
-	}
 
-	return
+		if ok {
+			return
+		}
+
+		inode, ok, err = vS.fetchOnDiskInode(inodeNumber)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("%s.fetchInode(0x%016X) not found", vS.volumeName, inodeNumber)
+			return
+		}
+
+		ok, err = vS.inodeCacheInsert(inode)
+		if nil != err {
+			return
+		}
+
+		if ok {
+			return
+		}
+
+		// If we reach here, somebody beat us to it... just restart the fetch...
+	}
 }
 
 // Fetch inode with inode type checking
