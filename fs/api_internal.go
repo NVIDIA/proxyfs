@@ -3441,14 +3441,14 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 	statVFS = make(map[StatVFSKey]uint64)
 
 	statVFS[StatVFSFilesystemID] = mS.volStruct.inodeVolumeHandle.GetFSID()
-	statVFS[StatVFSBlockSize] = FsBlockSize
-	statVFS[StatVFSFragmentSize] = FsOptimalTransferSize
-	statVFS[StatVFSTotalBlocks] = VolFakeTotalBlocks
-	statVFS[StatVFSFreeBlocks] = VolFakeFreeBlocks
-	statVFS[StatVFSAvailBlocks] = VolFakeAvailBlocks
-	statVFS[StatVFSTotalInodes] = VolFakeTotalInodes
-	statVFS[StatVFSFreeInodes] = VolFakeAvailInodes
-	statVFS[StatVFSAvailInodes] = VolFakeAvailInodes
+	statVFS[StatVFSBlockSize] = mS.volStruct.reportedBlockSize
+	statVFS[StatVFSFragmentSize] = mS.volStruct.reportedFragmentSize
+	statVFS[StatVFSTotalBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSFreeBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSAvailBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSTotalInodes] = mS.volStruct.reportedNumInodes
+	statVFS[StatVFSFreeInodes] = mS.volStruct.reportedNumInodes
+	statVFS[StatVFSAvailInodes] = mS.volStruct.reportedNumInodes
 	statVFS[StatVFSMountFlags] = 0
 	statVFS[StatVFSMaxFilenameLen] = FileNameMax
 
