@@ -37,6 +37,26 @@ Added support for VolumeGroups where the set of Volumes in a
 VolumeGroup are what is assigned to a Peer/Node rather than
 each individual Volume.
 
+## 1.8.0.7 (January 28, 2019)
+
+### Features:
+
+The response to fsstat(1), statfs(2), and statvfs(3) returns
+capacities that were hardcoded (e.g. Total Space of 1TiB). While
+it is currently not possible for such reporting to represent
+actual capacities, new config values are available to adjust the
+reported values. In addition, the defaults have been increased
+(e.g. Total Space is now reported as 100 TiB).
+
+## 1.8.0.6 (January 23, 2019)
+
+### Bug Fixes:
+
+A race condition triggered by e.g. multi-part uploads could
+render the targeted portion of a file system indefinitely
+locked requiring a restart of the proxyfsd daemon. This release
+prevents this race condition.
+
 ## 1.8.0.5 (November 27, 2018)
 
 ### Bug Fixes:
