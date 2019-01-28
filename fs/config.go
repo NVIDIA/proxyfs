@@ -36,6 +36,10 @@ type volumeStruct struct {
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
+	reportedBlockSize        uint64
+	reportedFragmentSize     uint64
+	reportedNumBlocks        uint64 // Used for Total, Free, and Avail
+	reportedNumInodes        uint64 // Used for Total, Free, and Avail
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
@@ -238,6 +242,23 @@ func Up(confMap conf.ConfMap) (err error) {
 					return
 				}
 
+				volume.reportedBlockSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedBlockSize")
+				if nil != err {
+					volume.reportedBlockSize = DefaultReportedBlockSize // TODO: Eventually, just return
+				}
+				volume.reportedFragmentSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedFragmentSize")
+				if nil != err {
+					volume.reportedFragmentSize = DefaultReportedFragmentSize // TODO: Eventually, just return
+				}
+				volume.reportedNumBlocks, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumBlocks")
+				if nil != err {
+					volume.reportedNumBlocks = DefaultReportedNumBlocks // TODO: Eventually, just return
+				}
+				volume.reportedNumInodes, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumInodes")
+				if nil != err {
+					volume.reportedNumInodes = DefaultReportedNumInodes // TODO: Eventually, just return
+				}
+
 				volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
 				if nil != err {
 					return
@@ -403,6 +424,23 @@ func ExpandAndResume(confMap conf.ConfMap) (err error) {
 					volume.maxFlushTime, err = confMap.FetchOptionValueDuration(flowControlSectionName, "MaxFlushTime")
 					if nil != err {
 						return
+					}
+
+					volume.reportedBlockSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedBlockSize")
+					if nil != err {
+						volume.reportedBlockSize = DefaultReportedBlockSize // TODO: Eventually, just return
+					}
+					volume.reportedFragmentSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedFragmentSize")
+					if nil != err {
+						volume.reportedFragmentSize = DefaultReportedFragmentSize // TODO: Eventually, just return
+					}
+					volume.reportedNumBlocks, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumBlocks")
+					if nil != err {
+						volume.reportedNumBlocks = DefaultReportedNumBlocks // TODO: Eventually, just return
+					}
+					volume.reportedNumInodes, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumInodes")
+					if nil != err {
+						volume.reportedNumInodes = DefaultReportedNumInodes // TODO: Eventually, just return
 					}
 
 					volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)
