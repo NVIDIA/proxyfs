@@ -66,29 +66,20 @@ const MaxSymlinks = 8 // same as Linux; see include/linux/namei.h in Linux's Git
 // Constant defining the name of the alternate data stream used by Swift Middleware
 const MiddlewareStream = "middleware"
 
-// Byte prefix constants
+// Base-2 constants
 const (
-	KiloByte = 1024
-	MegaByte = KiloByte * 1024
-	GigaByte = MegaByte * 1024
-	TeraByte = GigaByte * 1024
+	Kibi = 1024
+	Mebi = Kibi * 1024
+	Gibi = Mebi * 1024
+	Tebi = Gibi * 1024
 )
 
-// The following constants are used when responding to StatVfs calls
+// StatVfs defaults
 const (
-	FsBlockSize           = 64 * KiloByte
-	FsOptimalTransferSize = 64 * KiloByte
-)
-
-// XXX TBD: For now we are cooking up these numbers...
-const (
-	VolFakeTotalBlocks = TeraByte / FsBlockSize
-	VolFakeFreeBlocks  = TeraByte / FsBlockSize
-	VolFakeAvailBlocks = TeraByte / FsBlockSize
-
-	VolFakeTotalInodes = TeraByte
-	VolFakeFreeInodes  = TeraByte
-	VolFakeAvailInodes = TeraByte
+	DefaultReportedBlockSize    uint64 = 64 * Kibi
+	DefaultReportedFragmentSize uint64 = 64 * Kibi
+	DefaultReportedNumBlocks    uint64 = 100 * Tebi / DefaultReportedBlockSize
+	DefaultReportedNumInodes    uint64 = 100 * Gibi
 )
 
 type FlockStruct struct {

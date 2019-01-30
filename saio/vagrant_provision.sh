@@ -231,9 +231,11 @@ python setup.py develop
 cd ~swift
 git clone https://github.com/openstack/swift.git
 cd swift
-git checkout 5cf96230c82d4fcbac297775997a7e0abe3e9ff9
+git checkout 184fdf17ef7490038e89fe92a92de0fe4f2b36b7
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
+# The following avoid dependency on pip-installed pyOpenSSL being newer than required
+pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
 pip install -r test-requirements.txt
 
 # [Setup Swift] Setting up rsync
@@ -281,6 +283,24 @@ python setup.py develop
 
 cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
 python setup.py develop
+
+# Setup AWS access for local vagrant user
+
+pip install awscli-plugin-endpoint
+mkdir -p ~vagrant/.aws
+cat > ~vagrant/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R vagrant:vagrant ~vagrant/.aws
 
 # Ensure proxyfsd logging will work
 
