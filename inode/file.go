@@ -966,6 +966,13 @@ func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinati
 		if err != nil {
 			return
 		}
+
+		if 0 == obstacleInode.LinkCount {
+			err = vS.Destroy(obstacleInodeNumber)
+			if err != nil {
+				return
+			}
+		}
 	}
 
 	// Link the new entry in
