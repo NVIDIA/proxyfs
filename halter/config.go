@@ -1,14 +1,13 @@
 package halter
 
 import (
-	"sync"
-
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	armedTriggers         map[uint32]uint32 // key: haltLabel; value: haltAfterCount (remaining)
 	triggerNamesToNumbers map[string]uint32
 	triggerNumbersToNames map[uint32]string

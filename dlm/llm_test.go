@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -21,7 +21,7 @@ import (
 var s1 string = strconv.Itoa(1)
 
 // Mutex for protecting global variables
-var mutex sync.Mutex
+var mutex trackedlock.Mutex
 
 type testOpTyp int
 

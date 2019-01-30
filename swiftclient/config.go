@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -21,7 +21,7 @@ type connectionStruct struct {
 }
 
 type connectionPoolStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	poolCapacity            uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
 	poolInUse               uint16              // Active (i.e. not in LIFO) *connectionStruct's
 	lifoIndex               uint16              // Indicates where next released *connectionStruct will go
@@ -75,9 +75,9 @@ type globalsStruct struct {
 	chunkedConnectionPool           connectionPoolStruct
 	nonChunkedConnectionPool        connectionPoolStruct
 	starvationCallback              StarvationCallbackFunc
-	starvationCallbackSerializer    sync.Mutex
+	starvationCallbackSerializer    trackedlock.Mutex
 	reservedChunkedConnection       map[string]*connectionStruct // Key: VolumeName
-	reservedChunkedConnectionMutex  sync.Mutex
+	reservedChunkedConnectionMutex  trackedlock.Mutex
 	maxIntAsUint64                  uint64
 	checksumChunkedPutChunks        bool   // compute and verify checksums (for testing)
 	chaosFetchChunkedPutFailureRate uint64 // set only during testing
