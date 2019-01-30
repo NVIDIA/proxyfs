@@ -107,6 +107,10 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
+
+		"TrackedLock.LockHoldTimeLimit=0s",
+		"TrackedLock.LockCheckPeriod=0s",
+
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -189,7 +193,6 @@ func TestHeadHunterAPI(t *testing.T) {
 	}
 
 	// Up packages (TestVolume will be formatted)
-
 	err = transitions.Up(confMap)
 	if nil != err {
 		t.Fatalf("transitions.Up() [case 1] returned error: %v", err)

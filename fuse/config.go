@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -31,10 +31,10 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	gate sync.RWMutex //                      API Requests RLock()/RUnlock()
+	gate trackedlock.RWMutex //               API Requests RLock()/RUnlock()
 	//                                        confMap changes Lock()/Unlock()
 	//                                        Note: fuselib.Unmount() results in an Fsync() call on RootDir
-	//                                              Hence, no current confMap changes currently call Lock()
+	//                                        Hence, no current confMap changes currently call Lock()
 	volumeMap     map[string]*volumeStruct // key == volumeStruct.volumeName
 	mountPointMap map[string]*volumeStruct // key == volumeStruct.mountPointName
 }

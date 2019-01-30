@@ -22,6 +22,10 @@ func TestViaNoAuthClient(t *testing.T) {
 		confStrings = []string{
 			"SwiftClient.NoAuthTCPPort=" + noAuthTCPPort,
 			"SwiftClient.NoAuthIPAddr=127.0.0.1",
+
+			"TrackedLock.LockHoldTimeLimit=0s",
+			"TrackedLock.LockCheckPeriod=0s",
+
 			"Cluster.WhoAmI=Peer0",
 			"FSGlobals.VolumeGroupList=",
 			"Peer:Peer0.ReadCacheQuotaFraction=0.20",

@@ -2,7 +2,6 @@ package inode
 
 import (
 	"fmt"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -29,7 +29,7 @@ type readCacheElementStruct struct {
 }
 
 type volumeGroupStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	name                    string
 	volumeMap               map[string]*volumeStruct // key == volumeStruct.volumeName
 	numServed               uint64
@@ -58,7 +58,7 @@ type physicalContainerLayoutStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	volumeGroup                    *volumeGroupStruct
 	served                         bool
 	fsid                           uint64
@@ -80,7 +80,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	whoAmI                             string
 	myPrivateIPAddr                    string
 	dirEntryCache                      sortedmap.BPlusTreeCache

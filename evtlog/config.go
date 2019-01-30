@@ -2,12 +2,12 @@ package evtlog
 
 import (
 	"fmt"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -35,7 +35,7 @@ import (
 import "C"
 
 type globalsStruct struct {
-	sync.Mutex              // While there can only ever be a single Consumer, multiple Producers are possible (within the same process)
+	trackedlock.Mutex       // While there can only ever be a single Consumer, multiple Producers are possible (within the same process)
 	eventLogEnabled         bool
 	eventLogBufferKey       uint64
 	eventLogBufferLength    uint64

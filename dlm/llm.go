@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 // This struct is used by LLM to track a lock.
 type localLockTrack struct {
-	lockId string // For debugging use
-	sync.Mutex
+	trackedlock.Mutex
+	lockId       string // For debugging use
 	owners       uint64 // Count of threads which own lock
 	waiters      uint64 // Count of threads which want to own the lock (either shared or exclusive)
 	state        lockState

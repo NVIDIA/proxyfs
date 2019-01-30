@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -26,26 +26,26 @@ type statNameLinkStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex       //                     Used only for snapshotting statFullMap
-	ipAddr           string
-	udpPort          uint16
-	tcpPort          uint16
-	useUDP           bool   //              Logically useTCP == !useUDP
-	connectionType   string //              Either "udp" or "tcp"
-	udpLAddr         *net.UDPAddr
-	udpRAddr         *net.UDPAddr
-	tcpLAddr         *net.TCPAddr
-	tcpRAddr         *net.TCPAddr
-	bufferLength     uint16
-	maxLatency       time.Duration //       Timer should pop in maxLatency/statTree.Len()
-	statChan         chan *statStruct
-	tickChan         <-chan time.Time
-	stopChan         chan bool
-	doneChan         chan bool
-	statDeltaMap     map[string]uint64 //   Key is stat.name, Value is the sum of all un-sent/accumulated stat.increment's
-	statFullMap      map[string]uint64 //   Key is stat.name, Value is the sum of all accumulated stat.increment's
-	headStatNameLink *statNameLinkStruct
-	tailStatNameLink *statNameLinkStruct
+	trackedlock.Mutex //                     Used only for snapshotting statFullMap
+	ipAddr            string
+	udpPort           uint16
+	tcpPort           uint16
+	useUDP            bool   //              Logically useTCP == !useUDP
+	connectionType    string //              Either "udp" or "tcp"
+	udpLAddr          *net.UDPAddr
+	udpRAddr          *net.UDPAddr
+	tcpLAddr          *net.TCPAddr
+	tcpRAddr          *net.TCPAddr
+	bufferLength      uint16
+	maxLatency        time.Duration //       Timer should pop in maxLatency/statTree.Len()
+	statChan          chan *statStruct
+	tickChan          <-chan time.Time
+	stopChan          chan bool
+	doneChan          chan bool
+	statDeltaMap      map[string]uint64 //   Key is stat.name, Value is the sum of all un-sent/accumulated stat.increment's
+	statFullMap       map[string]uint64 //   Key is stat.name, Value is the sum of all accumulated stat.increment's
+	headStatNameLink  *statNameLinkStruct
+	tailStatNameLink  *statNameLinkStruct
 }
 
 var globals globalsStruct
