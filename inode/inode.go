@@ -21,6 +21,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -72,7 +73,7 @@ type inFlightLogSegmentStruct struct { //               Used as (by reference) V
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex        //                                             Used to synchronize with background fileInodeFlusherDaemon
+	trackedlock.Mutex //                                             Used to synchronize with background fileInodeFlusherDaemon
 	sync.WaitGroup    //                                             FileInode Flush requests wait on this
 	inodeCacheLRUNext *inMemoryInodeStruct
 	inodeCacheLRUPrev *inMemoryInodeStruct

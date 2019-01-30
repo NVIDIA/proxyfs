@@ -13,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type ExtentMapElementStruct struct {
@@ -58,7 +59,7 @@ type JobStatusJSONPackedStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	name                   string
 	fsMountHandle          fs.MountHandle
 	inodeVolumeHandle      inode.VolumeHandle
@@ -70,7 +71,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	active            bool
 	jobHistoryMaxSize uint32
 	whoAmI            string

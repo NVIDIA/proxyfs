@@ -16,6 +16,7 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 func inodeRecPutGet(t *testing.T, volume VolumeHandle, key uint64, value []byte) {
@@ -111,6 +112,10 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
+
+		"TrackedLock.LockHoldTimeLimit=0s",
+		"TrackedLock.LockCheckPeriod=0s",
+
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -190,6 +195,11 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("logger.Up() [case 1] returned error: %v", err)
 	}
 
+	err = trackedlock.Up(confMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	err = evtlog.Up(confMap)
 	if nil != err {
 		t.Fatalf("evtlog.Up() [case 1] returned error: %v", err)
@@ -256,6 +266,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() [case 1] returned error: %v", err)
+	}
+
+	err = trackedlock.Down()
+	if err != nil {
+		t.Fatalf("trackedlock.Down() [case 1] returned error: %v", err)
 	}
 
 	err = logger.Down()
@@ -367,6 +382,11 @@ func TestHeadHunterAPI(t *testing.T) {
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() [case 2] returned error: %v", err)
+	}
+
+	err = trackedlock.Down()
+	if err != nil {
+		t.Fatalf("trackedlock.Down() [case 2] returned error: %v", err)
 	}
 
 	err = logger.Down()

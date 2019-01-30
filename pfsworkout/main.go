@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -18,6 +17,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -47,7 +47,7 @@ var (
 	dirPath                string
 	doNextStepChan         chan bool
 	mountPointName         string
-	mutex                  sync.Mutex
+	mutex                  trackedlock.Mutex
 	rwSizeTotal            uint64
 	stepErrChan            chan error
 	volumeList             []string
@@ -218,6 +218,12 @@ func main() {
 		err = logger.Up(confMap)
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "logger.Up() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = trackedlock.Up(confMap)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trackedlock.Up() failed: %v", err)
 			os.Exit(1)
 		}
 
@@ -681,6 +687,12 @@ func main() {
 		err = evtlog.Down()
 		if nil != err {
 			fmt.Fprintf(os.Stderr, "evtlog.Down() failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		err = trackedlock.Down()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "trackedlock.Down() failed: %v\n", err)
 			os.Exit(1)
 		}
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/evtlog"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 var (
@@ -12,7 +13,12 @@ var (
 )
 
 func TestAPI(t *testing.T) {
-	err := evtlog.Up(nil)
+
+	err := trackedlock.Up(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = evtlog.Up(nil)
 	if nil != err {
 		t.Fatalf("evtlog.Up() unexpeectedly failed: %v", err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 const (
@@ -104,7 +105,7 @@ type volumeViewStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	volumeName                              string
 	accountName                             string
 	maxFlushSize                            uint64
@@ -145,7 +146,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	crc64ECMATable                             *crc64.Table
 	uint64Size                                 uint64
 	elementOfBPlusTreeLayoutStructSize         uint64

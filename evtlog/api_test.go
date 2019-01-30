@@ -5,6 +5,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 func TestAPI(t *testing.T) {
@@ -51,6 +52,11 @@ func TestAPI(t *testing.T) {
 
 	err = logger.Up(testConfMap)
 	if nil != err {
+		t.Fatal(err)
+	}
+
+	err = trackedlock.Up(testConfMap)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,6 +159,11 @@ func TestAPI(t *testing.T) {
 
 	err = Down()
 	if nil != err {
+		t.Fatal(err)
+	}
+
+	err = trackedlock.Down()
+	if err != nil {
 		t.Fatal(err)
 	}
 

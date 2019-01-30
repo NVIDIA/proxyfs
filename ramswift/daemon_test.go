@@ -11,6 +11,8 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -22,6 +24,10 @@ func TestViaNoAuthClient(t *testing.T) {
 		confStrings = []string{
 			"SwiftClient.NoAuthTCPPort=" + noAuthTCPPort,
 			"SwiftClient.NoAuthIPAddr=127.0.0.1",
+
+			"TrackedLock.LockHoldTimeLimit=0s",
+			"TrackedLock.LockCheckPeriod=0s",
+
 			"Cluster.WhoAmI=Peer0",
 			"FSGlobals.VolumeList=",
 			"Peer:Peer0.ReadCacheQuotaFraction=0.20",
@@ -49,6 +55,16 @@ func TestViaNoAuthClient(t *testing.T) {
 		urlForInfo                   string
 		urlPrefix                    string
 	)
+
+	testConfMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = trackedlock.Up(testConfMap)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	signalHandlerIsArmedWG.Add(1)
 	doneChan = make(chan bool, 1) // Must be buffered to avoid race

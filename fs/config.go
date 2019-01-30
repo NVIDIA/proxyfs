@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type inFlightFileInodeDataStruct struct {
@@ -32,7 +33,7 @@ type mountStruct struct {
 }
 
 type volumeStruct struct {
-	dataMutex                sync.Mutex
+	dataMutex                trackedlock.Mutex
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
@@ -43,13 +44,13 @@ type volumeStruct struct {
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
-	jobRWMutex               sync.RWMutex
+	jobRWMutex               trackedlock.RWMutex
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	whoAmI                    string
 	volumeMap                 map[string]*volumeStruct
 	mountMap                  map[MountID]*mountStruct

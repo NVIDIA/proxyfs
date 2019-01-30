@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 const (
@@ -30,7 +30,7 @@ type mountPointStruct struct {
 }
 
 type globalsStruct struct {
-	gate sync.RWMutex // SIGHUP triggered confMap change control
+	gate trackedlock.RWMutex // SIGHUP triggered confMap change control
 	//                   API Requests RLock()/RUnlock
 	//                   SIGHUP confMap changes Lock()/Unlock()
 	whoAmI        string

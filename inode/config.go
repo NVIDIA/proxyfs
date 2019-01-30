@@ -2,7 +2,6 @@ package inode
 
 import (
 	"fmt"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type physicalContainerLayoutStruct struct {
@@ -42,7 +42,7 @@ type readCacheElementStruct struct {
 }
 
 type flowControlStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	flowControlName    string //     == [volume-section]FlowControl (<flow-control-section>)
 	refCount           uint32
 	maxFlushSize       uint64
@@ -56,7 +56,7 @@ type flowControlStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	fsid                           uint64
 	volumeName                     string
 	accountName                    string
@@ -81,7 +81,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	whoAmI                             string
 	myPrivateIPAddr                    string
 	dirEntryCache                      sortedmap.BPlusTreeCache

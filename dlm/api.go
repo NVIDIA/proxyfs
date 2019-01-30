@@ -50,8 +50,8 @@ package dlm
 
 import (
 	"fmt"
-	"sync"
 
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -84,7 +84,7 @@ type RWLockStruct struct {
 
 // Lock for generating unique caller IDs
 // For now, this is just an in-memory thing.
-var callerIDLock sync.Mutex
+var callerIDLock trackedlock.Mutex
 var nextCallerID uint64 = 1000
 
 // GenerateCallerID() returns a cluster wide unique number useful in deadlock detection.

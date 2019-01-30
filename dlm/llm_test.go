@@ -2,10 +2,10 @@ package dlm
 
 import (
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,13 +14,14 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 // Test string for passing inode 1
 var s1 string = strconv.Itoa(1)
 
 // Mutex for protecting global variables
-var mutex sync.Mutex
+var mutex trackedlock.Mutex
 
 type testOpTyp int
 
@@ -66,6 +67,11 @@ func testSetup() (err error) {
 
 	// Setup channel used to synchronize multiple test thread operations
 	globalSyncPt = make(chan testReq)
+
+	err = trackedlock.Up(testConfMap)
+	if err != nil {
+		fmt.Printf("testSetup(): trackedlock.Up() failed: %v\n", err)
+	}
 
 	err = Up(testConfMap)
 	if nil != err {

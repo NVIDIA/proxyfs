@@ -19,6 +19,7 @@ import (
 	"github.com/swiftstack/ProxyFS/ramswift"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 // our global ramswiftDoneChan used during testTeardown() to know ramswift is, indeed, down
@@ -146,6 +147,11 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("logger.Up() failed: %v", err)
 	}
 
+	err = trackedlock.Up(testConfMap)
+	if err != nil {
+		t.Fatalf("trackedlock.Up() failed: %v", err)
+	}
+
 	err = evtlog.Up(testConfMap)
 	if nil != err {
 		t.Fatalf("evtlog.Up() failed: %v", err)
@@ -235,6 +241,11 @@ func testTeardown(t *testing.T) {
 	err = evtlog.Down()
 	if nil != err {
 		t.Fatalf("evtlog.Down() failed: %v", err)
+	}
+
+	err = trackedlock.Down()
+	if err != nil {
+		t.Fatalf("trackedlock.Down() failed: %v", err)
 	}
 
 	err = logger.Down()
