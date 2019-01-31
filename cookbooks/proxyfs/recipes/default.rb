@@ -252,8 +252,8 @@ execute "Provision enable_s3api" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3api /usr/bin"
 end
 
-execute "Provision disble_s3api" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disble_s3api /usr/bin"
+execute "Provision disable_s3api" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disable_s3api /usr/bin"
 end
 
 link '/usr/bin/disable_swift3' do
