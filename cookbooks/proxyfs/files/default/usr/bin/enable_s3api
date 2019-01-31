@@ -39,5 +39,5 @@ for i in /etc/swift/object-server/*; do
     fi
 done
 
-echo "Swift was configured successfully. Remember to restart Swift or jusr run:"
+echo "Swift was configured successfully for s3api. Remember to restart Swift or just run:"
 echo "    start_and_mount_pfs keepmounts"
