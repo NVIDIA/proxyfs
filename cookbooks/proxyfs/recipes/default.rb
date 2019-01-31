@@ -526,6 +526,7 @@ end
 
 bash 'Configure awscli for swift user' do
     code <<-EOH
+    mkdir ~swift/.aws
     cat > ~swift/.aws/config << EOF
 [plugins]
 endpoint = awscli_plugin_endpoint
@@ -544,6 +545,7 @@ end
 
 bash 'Configure awscli for root user' do
     code <<-EOH
+    mkdir ~root/.aws
     cat > ~root/.aws/config << EOF
 [plugins]
 endpoint = awscli_plugin_endpoint
