@@ -117,6 +117,7 @@ var packageTraceSettings = map[string]bool{
 	"proxyfsd":    false,
 	"sortedmap":   false,
 	"swiftclient": false,
+	"transitions": false,
 }
 
 func setTraceLoggingLevel(confStrSlice []string) {
