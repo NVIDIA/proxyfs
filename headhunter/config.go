@@ -437,7 +437,7 @@ func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string,
 		return
 	}
 	_, ok = newVolumeGroup.volumeMap[volumeName]
-	if !ok {
+	if ok {
 		globals.Unlock()
 		err = fmt.Errorf("headhunter.VolumeMoved() called for Volume (%s) to be moved to VolumeGroup (%s) already containing the Volume", volumeName, volumeGroupName)
 		return
