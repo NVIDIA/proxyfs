@@ -173,6 +173,10 @@ execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
   command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
 end
 
+execute "Install awscli and awscli-plugin-endpoint" do
+  command "pip install awscli awscli-plugin-endpoint"
+end
+
 if is_dev
   ruby_block "fuse_user_allow_other" do
     block do
@@ -238,6 +242,24 @@ end
 
 execute "Provision unmount_and_stop_pfs" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
+end
+
+execute "Provision enable_swift3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_swift3 /usr/bin"
+end
+
+execute "Provision enable_s3api" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3api /usr/bin"
+end
+
+execute "Provision disble_s3api" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disble_s3api /usr/bin"
+end
+
+link '/usr/bin/disable_swift3' do
+  to "/usr/bin/disable_s3api"
+  link_type :symbolic
+  mode '0755'
 end
 
 execute "Provision pfs_stat" do
@@ -500,4 +522,44 @@ template "/root/.gdbinit" do
   variables({
     :proxyfs_user => "#{proxyfs_user}"
   })
+end
+
+bash 'Configure awscli for swift user' do
+    code <<-EOH
+    cat > ~swift/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R swift:swift ~swift/.aws
+    EOH
+end
+
+bash 'Configure awscli for root user' do
+    code <<-EOH
+    cat > ~root/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R root:root ~root/.aws
+    EOH
+end
+
+execute 'enable s3api' do
+  command "/usr/bin/enable_s3api"
 end

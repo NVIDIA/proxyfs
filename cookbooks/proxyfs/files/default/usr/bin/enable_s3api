@@ -1,0 +1,43 @@
+#!/bin/bash
+
+set -e
+
+PROXYSERVERCONF=/etc/swift/proxy-server.conf
+BACKUPDIR=/etc/backup_before_s3
+
+if [ -d "$BACKUPDIR" ]; then
+    echo
+    echo "ERROR: $BACKUPDIR already exists, meaning we'd backup a configuration"
+    echo "with swift3/s3api already enabled, and re-enable on top of that."
+    echo
+    echo "If you still want to enable s3api and backup the current conf files,"
+    echo "delete the $BACKUPDIR and run this script again."
+    echo
+    exit 1
+fi
+
+mkdir -p $BACKUPDIR/object-server/
+rm -rf $BACKUPDIR/proxy-server.conf
+cp $PROXYSERVERCONF $BACKUPDIR/proxy-server.conf
+sed -i '/^pipeline/ s/tempauth/s3api tempauth/' $PROXYSERVERCONF
+cat <<EOT >> $PROXYSERVERCONF
+
+[filter:s3api]
+use = egg:swift#s3api
+s3_acl = False
+allow_multipart_uploads = True
+
+EOT
+sed -i '/^\[filter:tempauth/ a user_adminreg_adminreg = adminreg .admin .reseller_admin\nuser_testreg_testerreg = testingreg .admin\nuser_test2reg_tester2reg = testing2reg .admin\nuser_testreg_tester3reg = testing3reg' $PROXYSERVERCONF
+
+for i in /etc/swift/object-server/*; do
+    if test -f "$i"; then
+        filename=`basename $i`
+        rm -rf $BACKUPDIR/object-server/$filename
+        cp $i $BACKUPDIR/object-server/
+        sed -i '/^\[app:object-server/ a allowed_headers = Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Expires, X-Delete-At, X-Object-Manifest, X-Robots-Tag, X-Static-Large-Object' $i
+    fi
+done
+
+echo "Swift was configured successfully. Remember to restart Swift or jusr run:"
+echo "    start_and_mount_pfs keepmounts"
