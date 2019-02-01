@@ -13,6 +13,12 @@ import (
 
 type MountID uint64
 
+// Random Backoff range... affects how long to wait when try-lock's return EAGAIN
+const (
+	TryLockBackoffMin = time.Duration(100 * time.Microsecond)
+	TryLockBackoffMax = time.Duration(300 * time.Microsecond)
+)
+
 // ReadRangeIn is the ReadPlan range requested
 //
 // Either Offset or Len can be omitted, but not both. Those correspond
