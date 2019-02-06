@@ -34,6 +34,7 @@ type mountStruct struct {
 
 type volumeStruct struct {
 	dataMutex                trackedlock.Mutex
+	renameLock               trackedlock.Mutex
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration

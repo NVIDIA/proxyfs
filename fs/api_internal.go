@@ -1694,6 +1694,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 	containerEnts = make([]ContainerEntry, 0)
 	var recursiveReaddirPlus func(dirName string, dirInode inode.InodeNumber) error
+
 	recursiveReaddirPlus = func(dirName string, dirInode inode.InodeNumber) error {
 		var dirEnts []inode.DirEntry
 		var recursiveDescents []dirToDescend
@@ -2638,6 +2639,14 @@ func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroup
 	// Flag to tell us if there's only one directory to be locked
 	srcAndDestDirsAreSame := srcDirInodeNumber == dstDirInodeNumber
 
+	// we don't need the rename lock if the src and dst directories are the same;
+	// if they're not we could try trylock first before falling back to the rename
+	// lock, but the code is simpler if we just get it now
+	if !srcAndDestDirsAreSame {
+		mS.volStruct.renameLock.Lock()
+		defer mS.volStruct.renameLock.Unlock()
+	}
+
 	// Generate our calling context ID, so that the locks will have the same callerID
 	callerID := dlm.GenerateCallerID()
 
@@ -2779,7 +2788,225 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 	return buf, err
 }
 
-func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
+// Acquire the DLM lock on a directory inode, perform the permission checks for
+// read access, then return the parent inode number, parent stat information,
+// and the held DLM lock -- or an error.
+//
+// Because of the locking hierarchy we can't block on the parent's DLM lock
+// while holding the target inodes DLM lock so we have to lock the target inode
+// to get its parent, release the lock, get the lock on the parent, reget the
+// lock on the child, and then fetch the information and perform the permission
+// checks.
+//
+// This is primarily used by the sundry Readdir() routines which need to return
+// information about the parent of the directory (info for the ".." directory).
+//
+func (mS *mountStruct) getDirReadLockAndInfo(userID inode.InodeUserID, groupID inode.InodeGroupID,
+	otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (
+	inodeLock *dlm.RWLockStruct, parentInodeNumber inode.InodeNumber, parentInodeStat Stat, err error) {
+
+	inodeLock, err = mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	if err != nil {
+		return
+	}
+
+	// lock the target inode (the lock will be released and re-acquired in the loop below)
+	err = inodeLock.ReadLock()
+	if err != nil {
+		return
+	}
+
+	// Get the parent inode number and Stat information and then verify that it is
+	// still the parent of the target inode.  Repeat this process until the parent
+	// inode number doesn't change when we relock the target directory (the target
+	// directory could be mv'ed to a new parent while all locks are dropped).
+	//
+	// This loop may acquire the file system (volume) rename lock to block operations
+	// that could change the parent directory.  If so it sets hasRenameLock to true,
+	// so when the loop exits the rename lock, if held, must be released (even if an
+	// error is indicated).
+	//
+	// The target inode lock, inodeLock, on the other hand, is held when we exit the
+	// loop with err == nil but is not held if err != nil.
+	lastParentInodeNumber := inode.InvalidInodeNumber
+	hasRenameLock := false
+	for {
+		var inodeType inode.InodeType
+
+		inodeType, err = mS.volStruct.inodeVolumeHandle.GetType(inodeNumber)
+		if err != nil {
+			inodeLock.Unlock()
+			break
+		}
+		if inodeType != inode.DirType {
+			err = fmt.Errorf("called for on non-Directory inode %v", inodeType)
+			err = blunder.AddError(err, blunder.NotFoundError)
+			logger.WarnfWithError(err, "getDirReadLockAndInfo(): rmdir race?")
+			inodeLock.Unlock()
+			break
+		}
+
+		parentInodeNumber, err = mS.volStruct.inodeVolumeHandle.Lookup(inodeNumber, "..")
+		if err != nil {
+			// all directories have ".." (except for directories open when
+			// they were removed, which should be completely empty -- but
+			// proxyfs doesn't support that since there is no hold count)
+			logger.WarnfWithError(err, "getDirReadLockAndInfo(): rmdir race? directory has no '..' entry")
+			inodeLock.Unlock()
+			break
+		}
+
+		if parentInodeNumber == inodeNumber {
+
+			// either this is the root directory (which is its own parent) or
+			// the directory is corrupt
+			if inodeNumber != inode.RootDirInodeNumber {
+				err = fmt.Errorf("directory inode %d is corrupt: it is its own parent", inodeNumber)
+				err = blunder.AddError(err, blunder.CorruptInodeError)
+			} else {
+				parentInodeStat, err = mS.getstatHelper(parentInodeNumber, inodeLock.GetCallerID())
+			}
+			if err != nil {
+				inodeLock.Unlock()
+			}
+			break
+		}
+
+		if lastParentInodeNumber == parentInodeNumber {
+			// if the parent inode number has not changed since the last iteration
+			// of the loop (the last lookup of ".." and stat) then we're done!
+			break
+		}
+		lastParentInodeNumber = parentInodeNumber
+
+		// prepare to get the parent inode lock; drop both locks if this fails
+		var parentInodeLock *dlm.RWLockStruct
+
+		parentInodeLock, err = mS.volStruct.inodeVolumeHandle.InitInodeLock(
+			parentInodeNumber, inodeLock.GetCallerID())
+		if err != nil {
+			inodeLock.Unlock()
+			break
+		}
+
+		// be optimistic and trylock the parent
+		err = parentInodeLock.TryReadLock()
+		if err == nil {
+
+			// success! stat the parent, drop the parent lock, and break out
+			// of the loop.
+			parentInodeStat, err = mS.getstatHelper(parentInodeNumber, inodeLock.GetCallerID())
+			parentInodeLock.Unlock()
+			parentInodeLock = nil
+			if err != nil {
+				inodeLock.Unlock()
+			}
+			break
+		}
+
+		// trylock of the parent failed.  drop the lock on this directory, get the
+		// parent inode lock, and stat it (note that in the interval when no locks
+		// are held a rename request could move the target directory and thereby
+		// change its parent inode)
+		inodeLock.Unlock()
+
+		err = parentInodeLock.ReadLock()
+		if err != nil {
+			break
+		}
+		parentInodeStat, err = mS.getstatHelper(parentInodeNumber, inodeLock.GetCallerID())
+		if err != nil {
+			parentInodeLock.Unlock()
+			break
+		}
+
+		// Re-lock the target directory and return to the top of the loop to check
+		// if parentInodeNumber is still the same -- it may have changed if the
+		// target directory was moved to a new parent while locks were released.
+		//
+		// (Arguably, even if the parent did change a readdir operation could
+		// return the stat information for the "old" parent directory and still be
+		// correct -- at least if it also returned the old inode number as well;
+		// which the readdir code that called this func can't know unless this
+		// functions returns it.  Nevertheless there's an argument that its OK to
+		// break out of the loop right now -- provided a little inconsistency is
+		// OK.  Instead, this code is written to be scrupulously correct, at the
+		// expense of some complexity (this code could cache inode.ctime to check
+		// for that without the lookup but that adds complexity).
+		//
+		// Relock the target directory.  The target directory *should* be a child
+		// of the parent directory, which would mean its OK to use a blocking DLM
+		// lock operation (its always OK to hold a single parent lock while
+		// locking a lookup on the child).  But we don't *know* that the target is
+		// still its child (it could have changed, which would mean that we're
+		// locking two random directories, which could deadlock), so do a trylock
+		// on the target directory inode.
+		//
+		// If the trylock fails, get the filesystem-wide rename lock and then
+		// retry.  If we already hold the rename lock then block on the target
+		// inode DLM lock -- with the rename lock held it cannot have changed
+		// parents (though if Rename() changes to attempting a trylock when moving
+		// a directory before falling back to the rename lock this will have to be
+		// rethought).
+		if hasRenameLock {
+			inodeLock.ReadLock()
+			parentInodeLock.Unlock()
+			parentInodeLock = nil
+			continue
+		}
+
+		err = inodeLock.TryReadLock()
+		parentInodeLock.Unlock()
+		parentInodeLock = nil
+		if err == nil {
+			// got the target inode lock before releasing the parent inode
+			// lock; go back to check ".." and then we're done
+			continue
+		}
+
+		// no locks are held so lastParentInodeNumber info may no longer be correct
+		lastParentInodeNumber = inode.InvalidInodeNumber
+
+		// trylock on target directory inode failed, so get the rename lock to
+		// avoid TryReadLock on the next iteration
+		mS.volStruct.renameLock.Lock()
+		hasRenameLock = true
+
+		err = inodeLock.ReadLock()
+		if err != nil {
+			break
+		}
+
+	}
+	if hasRenameLock {
+		mS.volStruct.renameLock.Unlock()
+		hasRenameLock = false
+	}
+	if err != nil {
+		return
+	}
+
+	// existence and permissions checking (existence was already checked, above)
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
+		inode.NoOverride) {
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		inodeLock.Unlock()
+		return
+	}
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
+		inode.OwnerOverride) {
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		inodeLock.Unlock()
+		return
+	}
+
+	return
+}
+
+func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID,
+	otherGroupIDs []inode.InodeGroupID,
+	inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (
+	entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
 
 	startTime := time.Now()
 	defer func() {
@@ -2793,29 +3020,19 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
-	if err != nil {
-		return
-	}
-	err = inodeLock.ReadLock()
+	// get the inode's DLM lock and parent's Stat information
+	inodeLock, parentInodeNumber, parentInodeStat, err :=
+		mS.getDirReadLockAndInfo(userID, groupID, otherGroupIDs, inodeNumber)
 	if err != nil {
 		return
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
-		inode.OwnerOverride) {
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
 	// Call readdir helper function to do the work
-	return mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
+	entries, _, numEntries, areMoreEntries, err = mS.readdirHelper(inodeNumber, prevBasenameReturned,
+		maxEntries, maxBufSize, parentInodeNumber, &parentInodeStat, inodeLock.GetCallerID())
+
+	return
 }
 
 func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
@@ -2831,31 +3048,17 @@ func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeG
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	// get the inode's DLM lock and parent's Stat information
+	inodeLock, parentInodeNumber, parentInodeStat, err :=
+		mS.getDirReadLockAndInfo(userID, groupID, otherGroupIDs, inodeNumber)
 	if err != nil {
-		return entries, err
-	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return entries, err
+		return
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
-		inode.OwnerOverride) {
-
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Call readdirOne helper function to do the work
-	entries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
+	// Call readdir helper function to do the work
+	entries, _, _, _, err = mS.readdirHelper(inodeNumber, prevDirMarker, 1, 0,
+		parentInodeNumber, &parentInodeStat, inodeLock.GetCallerID())
 	if err != nil {
 		// When the client uses location-based readdir, it knows it is done when it reads beyond
 		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
@@ -2880,60 +3083,26 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	// get the inode's DLM lock and parent's Stat information
+	inodeLock, parentInodeNumber, parentInodeStat, err :=
+		mS.getDirReadLockAndInfo(userID, groupID, otherGroupIDs, inodeNumber)
 	if err != nil {
 		return
 	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return
-	}
-
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK|inode.X_OK,
-		inode.OwnerOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
+	defer inodeLock.Unlock()
 
 	// Get dir entries; Call readdir helper function to do the work
-	dirEntries, numEntries, areMoreEntries, err = mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
-	inodeLock.Unlock()
+	dirEntries, statEntries, numEntries, areMoreEntries, err = mS.readdirHelper(
+		inodeNumber, prevBasenameReturned, maxEntries, maxBufSize,
+		parentInodeNumber, &parentInodeStat, inodeLock.GetCallerID())
 
 	if err != nil {
-		// Not logging here, since Readdir will have done that for us already.
-		return dirEntries, statEntries, numEntries, areMoreEntries, err
+		// its probably best to log something ...
+		logger.ErrorWithError(err, "readdirHelper returned error")
+		return
 	}
 
-	// Get stats
-	statEntries = make([]Stat, numEntries)
-	for i := range dirEntries {
-		entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(dirEntries[i].InodeNumber, nil)
-		if err = err1; err != nil {
-			return
-		}
-		err = entryInodeLock.ReadLock()
-		if err != nil {
-			return
-		}
-
-		// Fill in stats, calling getstat helper function to do the work
-		statEntries[i], err = mS.getstatHelper(dirEntries[i].InodeNumber, entryInodeLock.GetCallerID())
-		entryInodeLock.Unlock()
-
-		if err != nil {
-			logger.ErrorWithError(err)
-			return dirEntries, statEntries, numEntries, areMoreEntries, err
-		}
-	}
-
-	return dirEntries, statEntries, numEntries, areMoreEntries, err
+	return
 }
 
 func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
@@ -2949,31 +3118,17 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	// get the inode's DLM lock and parent's Stat information
+	inodeLock, parentInodeNumber, parentInodeStat, err :=
+		mS.getDirReadLockAndInfo(userID, groupID, otherGroupIDs, inodeNumber)
 	if err != nil {
 		return
 	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return
-	}
+	defer inodeLock.Unlock()
 
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK|inode.X_OK,
-		inode.OwnerOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Get dir entries; Call readdirOne helper function to do the work
-	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
-	inodeLock.Unlock()
+	// Get dir entries; Call readdir helper function to do the work
+	dirEntries, statEntries, _, _, err = mS.readdirHelper(inodeNumber, prevDirMarker, 1, 0,
+		parentInodeNumber, &parentInodeStat, inodeLock.GetCallerID())
 
 	if err != nil {
 		// When the client uses location-based readdir, it knows it is done when it reads beyond
@@ -2981,35 +3136,18 @@ func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.In
 		if blunder.IsNot(err, blunder.NotFoundError) {
 			logger.ErrorWithError(err)
 		}
-		return dirEntries, statEntries, err
+		return
 	}
 
-	// Always only one entry
-	numEntries := 1
-
-	// Get stats
-	statEntries = make([]Stat, numEntries)
-	for i := range dirEntries {
-		entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(dirEntries[i].InodeNumber, nil)
-		if err = err1; err != nil {
-			return
-		}
-		err = entryInodeLock.ReadLock()
-		if err != nil {
-			return
-		}
-
-		// Fill in stats, calling getstat helper function to do the work
-		statEntries[i], err = mS.getstatHelper(dirEntries[i].InodeNumber, entryInodeLock.GetCallerID())
-		entryInodeLock.Unlock()
-
-		if err != nil {
-			logger.ErrorWithError(err)
-			return dirEntries, statEntries, err
-		}
+	if len(dirEntries) != 1 || len(statEntries) != 1 {
+		err = fmt.Errorf("ReaddirOnePlus(): ReaddirHelper returned the wrong number of entries %d %d",
+			len(dirEntries), len(statEntries))
+		err = blunder.AddError(err, blunder.CorruptInodeError)
+		logger.ErrorWithError(err, "Software error")
+		return
 	}
 
-	return dirEntries, statEntries, err
+	return
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
@@ -4003,44 +4141,11 @@ type dirToDescend struct {
 }
 
 // readdir is a helper function to do the work of Readdir once we hold the lock.
-func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64, callerID dlm.CallerID) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
-	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
-	if err != nil {
-		return
-	}
-	if !dlm.IsLockHeld(lockID, callerID, dlm.ANYLOCK) {
-		err = fmt.Errorf("%s: inode %v lock must be held before calling.", utils.GetFnName(), inodeNumber)
-		return nil, 0, false, blunder.AddError(err, blunder.NotFoundError)
-	}
+func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevDirMarker interface{},
+	maxEntries uint64, maxBufSize uint64,
+	parentInodeNumber inode.InodeNumber, parentInodeStat *Stat, callerID dlm.CallerID) (
+	entries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
 
-	entries, areMoreEntries, err = mS.volStruct.inodeVolumeHandle.ReadDir(inodeNumber, maxEntries, maxBufSize, prevBasenameReturned)
-	if err != nil {
-		return entries, numEntries, areMoreEntries, err
-	}
-	numEntries = uint64(len(entries))
-
-	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
-	for i := range entries {
-		if inodeNumber == entries[i].InodeNumber {
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
-		} else {
-			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
-			if err = err1; err != nil {
-				return
-			}
-			err = entryInodeLock.ReadLock()
-			if err != nil {
-				return
-			}
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, entryInodeLock.GetCallerID())
-			entryInodeLock.Unlock()
-		}
-	}
-	return entries, numEntries, areMoreEntries, err
-}
-
-// readdirOne is a helper function to do the work of ReaddirOne once we hold the lock.
-func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMarker interface{}, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
 	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
 	if err != nil {
 		return
@@ -4051,19 +4156,48 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMa
 		return
 	}
 
-	entries, _, err = mS.volStruct.inodeVolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirMarker)
+	entries, areMoreEntries, err = mS.volStruct.inodeVolumeHandle.ReadDir(
+		inodeNumber, maxEntries, maxBufSize, prevDirMarker)
 	if err != nil {
-		// Note: by convention, we don't log errors in helper functions; the caller should
-		//       be the one to log or not given its use case.
-		return entries, err
+		return
 	}
+	numEntries = uint64(len(entries))
 
-	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
+	statEntries = make([]Stat, numEntries, numEntries)
 	for i := range entries {
-		if inodeNumber == entries[i].InodeNumber {
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID) // in case of "."
+
+		if entries[i].InodeNumber == inodeNumber {
+
+			// handle entry for "." (don't attempt to get the inode lock recursively)
+			if entries[i].Basename != "." && entries[i].Basename != ".." {
+				err = fmt.Errorf("readdirHelper(): dir inode %d directory entry '%s' points to itself",
+					inodeNumber, entries[i].Basename)
+				err = blunder.AddError(err, blunder.CorruptInodeError)
+				logger.ErrorWithError(err, "Corrupt directory entry")
+				return
+			}
+
+			statEntries[i], err = mS.getstatHelper(entries[i].InodeNumber, callerID)
+			if err != nil {
+				logger.ErrorWithError(err, "Corrupt directory entry")
+				return
+			}
+
+		} else if entries[i].InodeNumber == parentInodeNumber {
+
+			// handle entry for ".." (don't get parent inode lock -- it could deadlock)
+			if entries[i].Basename != ".." {
+				err = fmt.Errorf("readdirHelper(): dir inode %d directory entry '%s' points to parent",
+					inodeNumber, entries[i].Basename)
+				err = blunder.AddError(err, blunder.CorruptInodeError)
+				logger.ErrorWithError(err, "Corrupt directory entry")
+				return
+			}
+			statEntries[i] = *parentInodeStat
+
 		} else {
-			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
+			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(
+				entries[i].InodeNumber, callerID)
 			if err = err1; err != nil {
 				return
 			}
@@ -4071,10 +4205,13 @@ func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMa
 			if err != nil {
 				return
 			}
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID)
+
+			statEntries[i], err = mS.getstatHelper(entries[i].InodeNumber, callerID)
 			entryInodeLock.Unlock()
 		}
-	}
 
-	return entries, err
+		// fill the Type info from that Stat info
+		entries[i].Type = inode.InodeType(statEntries[i][StatFType])
+	}
+	return
 }

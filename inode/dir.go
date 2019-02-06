@@ -499,7 +499,8 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		dstInode = nil
 	}
 
-	// I believe this is allowed so long at the dstInode is empty --craig
+	// TOD: This should be allowed so long at the dstInode is empty, i.e.
+	// "mkdir fu bar fu/bar; mv bar fu" replaces the old "fu/bar"
 	if (nil != dstInode) && (DirType == dstInode.InodeType) {
 		err = fmt.Errorf("%v: Target of Move() is an existing directory: %v/%v", utils.GetFnName(), dstDirInodeNumber, dstBasename)
 		logger.ErrorWithError(err)
