@@ -84,7 +84,7 @@ type globalsStruct struct {
 	ReaddirOneUsec     bucketstats.BucketLog2Round
 	ReaddirOnePlusUsec bucketstats.BucketLog2Round
 	ReaddirPlusUsec    bucketstats.BucketLog2Round
-	ReaddirPlusBytes   bucketstats.BucketLog2Round
+	ReaddirPlusEntries bucketstats.BucketLog2Round
 	ReadsymlinkUsec    bucketstats.BucketLog2Round
 	ResizeUsec         bucketstats.BucketLog2Round
 	RmdirUsec          bucketstats.BucketLog2Round

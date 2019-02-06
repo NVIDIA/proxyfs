@@ -3074,7 +3074,7 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 	startTime := time.Now()
 	defer func() {
 		globals.ReaddirPlusUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		globals.ReaddirPlusBytes.Add(uint64(len(dirEntries)))
+		globals.ReaddirPlusEntries.Add(uint64(len(dirEntries)))
 		if err != nil {
 			globals.ReaddirPlusErrors.Add(1)
 		}
