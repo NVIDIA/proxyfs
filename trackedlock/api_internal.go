@@ -257,18 +257,7 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 	// held too long" by the lock watcher.  To compensate for this, when the
 	// last RLock() is released, we clear out extra stale entries.
 	//
-	// This also leads to a performance optimization we fetch the goId from
-	// the map instead of calling utils.GetGoID(), which gets a stack trace.
-	//
-	var goId uint64
-	if rwmt.tracker.lockCnt == 1 && len(rwmt.rLockTime) == 1 {
-		for goId, _ = range rwmt.rLockTime {
-			break
-		}
-	} else {
-		goId = utils.GetGoId()
-	}
-
+	goId := utils.GetGoId()
 	now := time.Now()
 	rwmt.sharedStateLock.Lock()
 	rLockTime, ok := rwmt.rLockTime[goId]
