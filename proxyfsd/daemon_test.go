@@ -76,7 +76,7 @@ func TestDaemon(t *testing.T) {
 		"HTTPServer.TCPPort=53461",
 
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthTCPPort=35262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
 		"SwiftClient.RetryLimitObject=1",
@@ -120,6 +120,9 @@ func TestDaemon(t *testing.T) {
 		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
 
 		"FSGlobals.VolumeGroupList=CommonVolumeGroup",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=32",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",

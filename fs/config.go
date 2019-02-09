@@ -55,6 +55,9 @@ type globalsStruct struct {
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
+	tryLockBackoffMin         time.Duration
+	tryLockBackoffMax         time.Duration
+	symlinkMax                uint16
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
@@ -185,6 +188,19 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.mountMap = make(map[MountID]*mountStruct)
 	globals.lastMountID = MountID(0)
 	globals.inFlightFileInodeDataList = list.New()
+
+	globals.tryLockBackoffMin, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMin")
+	if nil != err {
+		globals.tryLockBackoffMin = time.Duration(100 * time.Microsecond) // TODO: Eventually, just return
+	}
+	globals.tryLockBackoffMax, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMax")
+	if nil != err {
+		globals.tryLockBackoffMax = time.Duration(300 * time.Microsecond) // TODO: Eventually, just return
+	}
+	globals.symlinkMax, err = confMap.FetchOptionValueUint16("FSGlobals", "SymlinkMax")
+	if nil != err {
+		globals.symlinkMax = 32 // TODO: Eventually, just return
+	}
 
 	err = nil
 	return
