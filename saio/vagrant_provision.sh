@@ -231,7 +231,7 @@ python setup.py develop
 cd ~swift
 git clone https://github.com/openstack/swift.git
 cd swift
-git checkout 184fdf17ef7490038e89fe92a92de0fe4f2b36b7
+git checkout 64e5fd364ae044ebfda541fd90bb3551bab36dcb
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
