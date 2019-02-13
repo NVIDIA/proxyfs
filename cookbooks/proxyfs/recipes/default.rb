@@ -244,22 +244,24 @@ execute "Provision unmount_and_stop_pfs" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
 end
 
-execute "Provision enable_swift3" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_swift3 /usr/bin"
+execute "Provision set_up_s3api" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_s3api /usr/bin"
 end
 
-execute "Provision enable_s3api" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3api /usr/bin"
+execute "Provision set_up_swift3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_swift3 /usr/bin"
 end
 
-execute "Provision disable_s3api" do
-  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disable_s3api /usr/bin"
+execute "Provision enable_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3 /usr/bin"
 end
 
-link '/usr/bin/disable_swift3' do
-  to "/usr/bin/disable_s3api"
-  link_type :symbolic
-  mode '0755'
+execute "Provision disable_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disable_s3 /usr/bin"
+end
+
+execute "Provision detect_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/detect_s3 /usr/bin"
 end
 
 execute "Provision pfs_stat" do
@@ -562,6 +564,10 @@ chown -R root:root ~root/.aws
     EOH
 end
 
+execute 'set up s3api' do
+  command "/usr/bin/set_up_s3api"
+end
+
 execute 'enable s3api' do
-  command "/usr/bin/enable_s3api"
+  command "/usr/bin/enable_s3 s3api"
 end
