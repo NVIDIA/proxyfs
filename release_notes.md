@@ -1,6 +1,47 @@
 # ProxyFS Release Notes
 
-## 1.9.2 (January 18, 2018)
+## 1.9.5 (February 13, 2019)
+
+### Features:
+
+Made StatVfs() responses configurable. Note that values
+for space (total, free, available) continue to be set
+to artificial values... but at least they are now settable.
+
+### Bug Fixes:
+
+Re-worked logic for various path-based operations (i.e.
+operations invoked via Swift or S3 APIs) could result in
+a deadlock when combined with file-based operations. These
+have now largely been resolved (see Issues section for
+details on what is not).
+
+Modified pfsconfjson{|packed} to auto-upgrade supplied
+.conf files to report the VolumeGroup-translated form
+(if up-conversion would be done by ProxyFS itself).
+
+COALESCE method, when targeted at an existing Object,
+would previously fail to recover the overwritten Object's
+space.
+
+Various pre-VolumeGroup->VolumeGroup auto-upgrade patterns
+could result in false reporting of a Volume being moved to
+a VolumeGroup where it already exists in response to SIGHUP.
+Just restarting ProxyFS would not see this issue.
+
+### Issues:
+
+While much work was completed towards avoiding deadlock
+situations resulting from path-based (i.e. Swift/S3 API)
+operations, the work is not yet complete. A GET on a
+Container/Bucket that recurses could still result in a
+deadlock but the bug fix for this case largely closes
+that window. A PUT also has the potential for another
+deadlock situation that is equally very unlikely. No test
+case has been able to expose these remaining deadlocks
+so they remain theoretical.
+
+## 1.9.2 (January 18, 2019)
 
 ### Bug Fixes:
 

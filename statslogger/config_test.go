@@ -73,6 +73,9 @@ func TestAPI(t *testing.T) {
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
 		"FSGlobals.VolumeGroupList=",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=32",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",

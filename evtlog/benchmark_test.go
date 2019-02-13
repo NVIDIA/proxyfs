@@ -25,6 +25,9 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"Logging.LogToConsole=false",
 			"Cluster.WhoAmI=nobody",
 			"FSGlobals.VolumeGroupList=",
+			"FSGlobals.TryLockBackoffMin=100us",
+			"FSGlobals.TryLockBackoffMax=300us",
+			"FSGlobals.SymlinkMax=32",
 			"EventLog.Enabled=true",
 			"EventLog.BufferKey=1234",
 			"EventLog.BufferLength=65536", //64KiB
@@ -39,6 +42,9 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"Logging.LogToConsole=false",
 			"Cluster.WhoAmI=nobody",
 			"FSGlobals.VolumeGroupList=",
+			"FSGlobals.TryLockBackoffMin=100us",
+			"FSGlobals.TryLockBackoffMax=300us",
+			"FSGlobals.SymlinkMax=32",
 			"EventLog.Enabled=false",
 		}
 	}

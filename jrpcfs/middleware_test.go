@@ -52,6 +52,9 @@ func testSetup() []func() {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"FSGlobals.VolumeGroupList=JrpcfsTestVolumeGroup",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=8",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -63,7 +66,7 @@ func testSetup() []func() {
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthTCPPort=35262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=3",
 		"SwiftClient.RetryLimitObject=3",
@@ -2384,5 +2387,5 @@ func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.InvalidArgError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.PermDeniedError), err.Error())
 }
