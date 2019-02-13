@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -658,6 +659,28 @@ func FetchRandomBool() (randBool bool) {
 	}
 
 	randBool = (randByteBuf[0] < 0x80)
+
+	return
+}
+
+func PerformDelayAndComputeNextDelay(thisDelay time.Duration, nextDelayMin time.Duration, nextDelayMax time.Duration) (nextDelay time.Duration, err error) {
+	var (
+		randomBigInt *big.Int
+	)
+
+	// Sleep for thisDelay first
+
+	time.Sleep(thisDelay)
+
+	// Now compute nextDelay (between nextDelayMin & nextDelayMax)
+
+	randomBigInt, err = rand.Int(rand.Reader, big.NewInt(int64(nextDelayMax)-int64(nextDelayMin)))
+
+	if nil == err {
+		nextDelay = time.Duration(int64(nextDelayMin) + randomBigInt.Int64())
+	} else {
+		err = fmt.Errorf("utils.retryBackup() failed in call to rand.Int(): %v", err)
+	}
 
 	return
 }

@@ -145,6 +145,8 @@ type VolumeHandle interface {
 	InitInodeLock(inodeNumber InodeNumber, callerID dlm.CallerID) (lock *dlm.RWLockStruct, err error)
 	GetReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
 	GetWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
+	AttemptReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
+	AttemptWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
 	EnsureReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
 	EnsureWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error)
 
@@ -192,7 +194,7 @@ type VolumeHandle interface {
 	Wrote(fileInodeNumber InodeNumber, fileOffset uint64, objectPath string, objectOffset uint64, length uint64, patchOnly bool) (err error)
 	SetSize(fileInodeNumber InodeNumber, Size uint64) (err error)
 	Flush(fileInodeNumber InodeNumber, andPurge bool) (err error)
-	Coalesce(containingDirInode InodeNumber, combinationName string, elements []CoalesceElement) (combinationInodeNumber InodeNumber, modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
+	Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
 
 	// Symlink Inode specific methods, implemented in symlink.go
 

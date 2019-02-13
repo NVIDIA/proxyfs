@@ -485,13 +485,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		return
 	}
 	volume.served = true
+	globals.Unlock()
 	err = volume.up(confMap)
 	if nil != err {
-		globals.Unlock()
 		err = fmt.Errorf("headhunter.ServeVolume() failed to \"up\" Volume (%s): %v", volumeName, err)
 		return
 	}
-	globals.Unlock()
 	err = nil
 	return
 }
@@ -509,14 +508,13 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		err = fmt.Errorf("headhunter.UnserveVolume() called for Volume (%s) not being served", volumeName)
 		return
 	}
+	volume.served = false
+	globals.Unlock()
 	err = volume.down(confMap)
 	if nil != err {
-		globals.Unlock()
 		err = fmt.Errorf("headhunter.UnserveVolume() failed to \"down\" Volume (%s): %v", volumeName, err)
 		return
 	}
-	volume.served = false
-	globals.Unlock()
 	err = nil
 	return
 }

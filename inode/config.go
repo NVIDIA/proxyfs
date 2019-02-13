@@ -456,7 +456,7 @@ func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string,
 	newVolumeGroup.Lock()
 
 	_, ok = newVolumeGroup.volumeMap[volumeName]
-	if !ok {
+	if ok {
 		newVolumeGroup.Unlock()
 		globals.Unlock()
 		err = fmt.Errorf("inode.VolumeMoved() called for Volume (%s) to be moved to VolumeGroup (%s) already containing the Volume", volumeName, volumeGroupName)

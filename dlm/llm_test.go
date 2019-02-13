@@ -74,6 +74,9 @@ func testSetup() (err error) {
 		"Logging.LogFilePath=/dev/null",
 		"Cluster.WhoAmI=nobody",
 		"FSGlobals.VolumeGroupList=",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=32",
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfMapStrings)

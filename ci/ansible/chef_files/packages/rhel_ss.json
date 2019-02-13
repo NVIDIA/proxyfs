@@ -8,7 +8,7 @@
     ["python-devel", "2.7.5-76.el7"],
     ["gnutls-devel", "3.3.29-8.el7"],
     ["libacl-devel", "2.2.51-14.el7"],
-    ["openldap-devel", "2.4.44-20.el7"],
+    ["openldap-devel", "2.4.44-21.el7_6"],
     ["cifs-utils", "6.2-10.el7"],
     ["pam-devel", "1.1.8-22.el7"]
   ],

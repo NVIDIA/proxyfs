@@ -1,7 +1,6 @@
 package inode
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -817,209 +816,255 @@ func flush(fileInode *inMemoryInodeStruct, andPurge bool) (err error) {
 	return
 }
 
-func (vS *volumeStruct) Coalesce(containingDirInodeNumber InodeNumber, combinationName string, elements []CoalesceElement) (combinationInodeNumber InodeNumber, modificationTime time.Time, numWrites uint64, size uint64, err error) {
-	// We steal the log segments from each element by getting a read plan for the whole element, then calling
-	// recordWrite to point the combined inode at them.
-	//
-	// While this does result in log segments being shared by two inodes (an illegal state), we undo the damage later by
-	// deleting the elements' inodes but not their log segments. Also, we carefully manage transactions so this whole
-	// thing is atomic.
+func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (err error) {
+	var (
+		fileInodeExtentMap sortedmap.BPlusTree
+		ok                 bool
+	)
 
-	if (RootDirInodeNumber == containingDirInodeNumber) && (SnapShotDirName == combinationName) {
-		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() into /%v not allowed", SnapShotDirName)
-		return
-	}
-	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(containingDirInodeNumber))
-	if headhunter.SnapShotIDTypeLive != snapShotIDType {
-		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() into non-LiveView containingDirInodeNumber not allowed")
-		return
-	}
+	fileInode.dirty = true
 
-	elementInodes := make([]*inMemoryInodeStruct, len(elements))
-	elementDirInodes := make([]*inMemoryInodeStruct, len(elements))
+	fileInodeExtentMap = fileInode.payload.(sortedmap.BPlusTree)
 
-	alreadyFlushing := make(map[InodeNumber]bool)
-
-	// Validate that no element inodes are from non-LiveView's or duplicated
-	seenInode := make(map[InodeNumber]bool)
-	for _, element := range elements {
-		snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(element.ContainingDirectoryInodeNumber))
-		if headhunter.SnapShotIDTypeLive != snapShotIDType {
-			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() from non-LiveView ContainingDirectoryInodeNumber not allowed")
+	ok = true
+	for ok {
+		ok, err = fileInodeExtentMap.DeleteByIndex(0)
+		if nil != err {
+			err = fmt.Errorf("resetFileInodeInMemory() on Inode# 0x%016X failed: %v", fileInode.InodeNumber, err)
 			return
 		}
+	}
+
+	fileInode.LogSegmentMap = make(map[uint64]uint64)
+	fileInode.Size = 0
+	fileInode.NumWrites = 0
+
+	err = nil
+	return
+}
+
+func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (coalesceTime time.Time, numWrites uint64, fileSize uint64, err error) {
+	var (
+		alreadyInInodeMap                  bool
+		destInode                          *inMemoryInodeStruct
+		destInodeExtentMap                 sortedmap.BPlusTree
+		destInodeOffsetBeforeElementAppend uint64
+		dirEntryInodeNumber                InodeNumber
+		element                            *CoalesceElement
+		elementInode                       *inMemoryInodeStruct
+		elementInodeExtent                 *fileExtentStruct
+		elementInodeExtentAsValue          sortedmap.Value
+		elementInodeExtentMap              sortedmap.BPlusTree
+		elementInodeExtentMapIndex         int
+		elementInodeExtentMapLen           int
+		inodeList                          []*inMemoryInodeStruct
+		inodeMap                           map[InodeNumber]*inMemoryInodeStruct
+		localErr                           error
+		logSegmentReferencedBytes          uint64
+		ok                                 bool
+		snapShotIDType                     headhunter.SnapShotIDType
+	)
+
+	// Validate all referenced {Dir|File}Inodes
+
+	inodeMap = make(map[InodeNumber]*inMemoryInodeStruct)
+	inodeList = make([]*inMemoryInodeStruct, 0, 1+len(elements))
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(destInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = blunder.NewError(blunder.PermDeniedError, "Coalesce into non-LiveView destInodeNumber 0x%016X not allowed", destInodeNumber)
+		return
+	}
+
+	destInode, ok, err = vS.fetchInode(destInodeNumber)
+	if nil != err {
+		err = blunder.NewError(blunder.BadFileError, "Coalesce() couldn't fetch destInodeNumber 0x%016X: %v", destInodeNumber, err)
+		return
+	}
+	if !ok {
+		err = blunder.NewError(blunder.NotFoundError, "Coalesce() couldn't find destInodeNumber 0x%16X", destInodeNumber)
+		return
+	}
+	if destInode.InodeType != FileType {
+		err = blunder.NewError(blunder.PermDeniedError, "Coalesce() called for destInodeNumber 0x%016X that is not a FileInode", destInodeNumber)
+		return
+	}
+
+	inodeMap[destInodeNumber] = destInode
+	inodeList = append(inodeList, destInode)
+
+	for _, element = range elements {
 		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(element.ElementInodeNumber))
 		if headhunter.SnapShotIDTypeLive != snapShotIDType {
-			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() from non-LiveView ElementInodeNumber not allowed")
-			return
-		}
-		if seenInode[element.ElementInodeNumber] {
-			err = blunder.NewError(blunder.InvalidArgError, "Inode %v passed to Coalesce() twice", element.ElementInodeNumber)
-			return
-		}
-		seenInode[element.ElementInodeNumber] = true
-	}
-
-	for i := 0; i < len(elements); i++ {
-		// Validation: the provided files are files, the dirs are dirs, and the files are singly-linked.
-		elementInodes[i], err = vS.fetchInodeType(elements[i].ElementInodeNumber, FileType)
-		if err != nil {
+			err = blunder.NewError(blunder.PermDeniedError, "Coalesce() from non-LiveView element.ElementInodeNumber (0x%016X) not allowed", element.ElementInodeNumber)
 			return
 		}
 
-		if elementInodes[i].LinkCount > 1 {
-			err = blunder.NewError(blunder.TooManyLinksError, "File %v has more than one link", elements[i].ElementName)
+		_, alreadyInInodeMap = inodeMap[element.ElementInodeNumber]
+		if alreadyInInodeMap {
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() called with duplicate Element Inode 0x%016X", element.ElementInodeNumber)
 			return
 		}
 
-		elementDirInodes[i], err = vS.fetchInodeType(elements[i].ContainingDirectoryInodeNumber, DirType)
-		if err != nil {
-			return
-		}
-	}
-
-	containingDirInode, err := vS.fetchInodeType(containingDirInodeNumber, DirType)
-	if err != nil {
-		return
-	}
-
-	combinationInode, err := vS.createFileInode(PosixModePerm, 0, 0)
-	if err != nil {
-		return
-	}
-
-	sumOfElementSizes := uint64(0)
-	for _, inodeStruct := range elementInodes {
-		offset := uint64(0)
-		length := inodeStruct.Size
-		// NB: we rely on the fact that GetReadPlan causes a flush of any pending writes to disk. This lets us steal log
-		// segments without concerning ourselves with stealing data from the write-back cache as well.
-		readPlanSteps, err1 := vS.GetReadPlan(inodeStruct.InodeNumber, &offset, &length)
-		if err1 != nil {
-			err = err1
+		elementInode, ok, err = vS.fetchInode(element.ElementInodeNumber)
+		if nil != err {
+			err = blunder.NewError(blunder.BadFileError, "Coalesce() couldn't fetch ElementInodeNumber 0x%016X: %v", element.ElementInodeNumber, err)
 			return
 		}
 
-		fileOffset := uint64(0)
-		for _, step := range readPlanSteps {
-			// For normal steps, steal the log segment. For sparse steps (zero-fill in sparse files), just increment the
-			// file size.
-			if step.LogSegmentNumber != 0 {
-				err = recordWrite(combinationInode, sumOfElementSizes+fileOffset, step.Length, step.LogSegmentNumber, step.Offset)
-				combinationInode.NumWrites++
-				if err != nil {
-					return
-				}
-			}
-			fileOffset += step.Length
-		}
-		sumOfElementSizes += fileOffset
-	}
+		inodeMap[element.ElementInodeNumber] = elementInode
+		inodeList = append(inodeList, elementInode)
 
-	combinationInode.Size = sumOfElementSizes
-
-	// Now combinationInode is completely set up; what remains is to link it into its directory, unlink all the element
-	// inodes, and destroy the element inodes while leaving their log segments (just the data ones, not the payloads).
-	//
-	// We'll do all this and then flush all the inodes at once so that this function is atomic.
-	toFlush := []*inMemoryInodeStruct{combinationInode}
-
-	// Unlink elements from their directories
-	for i := 0; i < len(elements); i++ {
-		dirInode := elementDirInodes[i]
-		fileInode := elementInodes[i]
-		err = unlinkInMemory(dirInode, fileInode, elements[i].ElementName)
-		if err != nil {
-			return
-		}
-
-		// we may have multiple files from a given directory, but a given file appears only once
-		if !alreadyFlushing[dirInode.InodeNumber] {
-			toFlush = append(toFlush, dirInode)
-			alreadyFlushing[dirInode.InodeNumber] = true
-		}
-	}
-
-	// Unlink the old dirent, if any, so we can overwrite it atomically
-	obstacle, ok, err := containingDirInode.payload.(sortedmap.BPlusTree).GetByKey(combinationName)
-	if err != nil {
-		panic(err)
-	}
-	if ok {
-		obstacleInodeNumber := obstacle.(InodeNumber)
-		obstacleInode, ok, err1 := vS.fetchInode(obstacleInodeNumber)
 		if !ok {
-			err = errors.New("dir has inode, but we can't fetch it?")
+			err = blunder.NewError(blunder.NotFoundError, "Coalesce() couldn't find ElementInodeNumber 0x%16X", element.ElementInodeNumber)
 			return
 		}
-		if err1 != nil {
-			err = err1
+		if elementInode.InodeType != FileType {
+			err = blunder.NewError(blunder.PermDeniedError, "Coalesce() called for ElementInodeNumber 0x%016X that is not a FileInode", element.ElementInodeNumber)
 			return
 		}
-		// can't remove a non-empty dir
-		if obstacleInode.InodeType == DirType && obstacleInode.LinkCount > 2 {
-			err = blunder.NewError(blunder.NotEmptyError, "Destination path refers to a non-empty directory")
-			return
-		}
-
-		err = unlinkInMemory(containingDirInode, obstacleInode, combinationName)
-		if err != nil {
+		if elementInode.LinkCount != 1 {
+			err = blunder.NewError(blunder.TooManyLinksError, "Coalesce() called for ElementInodeNumber 0x%016X with LinkCount not == 1 (%v)", element.ElementInodeNumber, elementInode.LinkCount)
 			return
 		}
 
-		if 0 == obstacleInode.LinkCount {
-			err = vS.Destroy(obstacleInodeNumber)
-			if err != nil {
+		dirEntryInodeNumber, err = vS.lookup(element.ContainingDirectoryInodeNumber, element.ElementName)
+		if nil != err {
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() called for ElementName %s not found in ContainingDir 0x%016X: %v", element.ElementName, element.ContainingDirectoryInodeNumber, err)
+			return
+		}
+		if dirEntryInodeNumber != element.ElementInodeNumber {
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() called for ElementName %s in ContainingDir 0x%016X had mismatched InodeNumber", element.ElementName, element.ContainingDirectoryInodeNumber)
+			return
+		}
+	}
+
+	// Ensure all referenced FileInodes are pre-flushed
+
+	err = vS.flushInodes(inodeList)
+	if nil != err {
+		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to flush inodeList: %v", err)
+		return
+	}
+
+	// Now truncate destInode & "append" each Element's extents to destInode (creating duplicate references to LogSegments for now)
+
+	destInodeExtentMap = destInode.payload.(sortedmap.BPlusTree)
+
+	destInode.dirty = true
+
+	err = setSizeInMemory(destInode, 0)
+	if nil != err {
+		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to truncate destInodeNumber 0x%016X: %v", destInodeNumber, err)
+		return
+	}
+
+	destInodeOffsetBeforeElementAppend = 0
+	destInode.NumWrites = 0
+
+	for _, element = range elements {
+		elementInode = inodeMap[element.ElementInodeNumber]
+		destInode.NumWrites += elementInode.NumWrites
+		elementInodeExtentMap = elementInode.payload.(sortedmap.BPlusTree)
+		elementInodeExtentMapLen, err = elementInodeExtentMap.Len()
+		for elementInodeExtentMapIndex = 0; elementInodeExtentMapIndex < elementInodeExtentMapLen; elementInodeExtentMapIndex++ {
+			_, elementInodeExtentAsValue, ok, err = elementInodeExtentMap.GetByIndex(elementInodeExtentMapIndex)
+			if nil != err {
+				localErr = vS.resetFileInodeInMemory(destInode)
+				if nil != localErr {
+					logger.Fatalf("Coalesce() doing resetFileInodeInMemory(destInode) failed: %v", localErr)
+				}
+				localErr = vS.flushInode(destInode)
+				if nil != localErr {
+					logger.Errorf("Coalesce() doing flushInode(destInode) failed: %v", localErr)
+				}
+				err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to fetch fileExtentStruct from ExtentMap: %v", err)
 				return
 			}
+			elementInodeExtent = elementInodeExtentAsValue.(*fileExtentStruct)
+			elementInodeExtent.FileOffset += destInodeOffsetBeforeElementAppend
+			_, err = destInodeExtentMap.Put(elementInodeExtent.FileOffset, elementInodeExtent)
+			if nil != err {
+				localErr = vS.resetFileInodeInMemory(destInode)
+				if nil != localErr {
+					logger.Fatalf("Coalesce() doing resetFileInodeInMemory(destInode) failed: %v", localErr)
+				}
+				localErr = vS.flushInode(destInode)
+				if nil != localErr {
+					logger.Errorf("Coalesce() doing flushInode(destInode) failed: %v", localErr)
+				}
+				err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to append elementInodeExtent to destInodeExtentMap: %v", err)
+				return
+			}
+			logSegmentReferencedBytes, ok = destInode.LogSegmentMap[elementInodeExtent.LogSegmentNumber]
+			if ok {
+				destInode.LogSegmentMap[elementInodeExtent.LogSegmentNumber] = elementInodeExtent.Length + logSegmentReferencedBytes
+			} else {
+				destInode.LogSegmentMap[elementInodeExtent.LogSegmentNumber] = elementInodeExtent.Length
+			}
+		}
+		destInodeOffsetBeforeElementAppend += elementInode.Size
+		err = setSizeInMemory(destInode, destInodeOffsetBeforeElementAppend)
+		if nil != err {
+			localErr = vS.resetFileInodeInMemory(destInode)
+			if nil != localErr {
+				logger.Fatalf("Coalesce() doing resetFileInodeInMemory(destInode) failed: %v", localErr)
+			}
+			localErr = vS.flushInode(destInode)
+			if nil != localErr {
+				logger.Errorf("Coalesce() doing flushInode(destInode) failed: %v", localErr)
+			}
+			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to setSize() destInodeNumber 0x%016X: %v", destInodeNumber, err)
+			return
 		}
 	}
 
-	// Link the new entry in
-	err = linkInMemory(containingDirInode, combinationInode, combinationName)
-	if err != nil {
-		return
-	}
+	// Now, destInode is fully assembled... need to remove all elements references to currently shared LogSegments
 
-	if !alreadyFlushing[containingDirInode.InodeNumber] {
-		toFlush = append(toFlush, containingDirInode)
-		alreadyFlushing[containingDirInode.InodeNumber] = true
-	}
-
-	// This is a bit of a hack. flushInodes() doesn't let us destroy inodes. If we crash after flushInodes() but before
-	// destroying all the elements' inodes, there will be unreferenced inodes left lying around. Should fsck discover
-	// such inodes, it will delete them *and* their log segments, thus corrupting the combined file we have just built.
-	//
-	// To avoid that, we set the size of each element to 0, clear its LogSegmentMap, and flush it. This way, should fsck
-	// get its hands on the inode, it will not destroy the underlying log segments, leaving the combined file intact.
-	for _, elementInode := range elementInodes {
-		elementInode.Size = uint64(0)
-		elementInode.LogSegmentMap = make(map[uint64]uint64)
-		toFlush = append(toFlush, elementInode)
-	}
-
-	err = vS.flushInodes(toFlush)
-	if err != nil {
-		return
-	}
-	// At this point, everything was successful from the caller's point of view. Now all that's left is to destroy our
-	// unreferenced inodes, logging but not returning any errors, and move on.
-	for _, elementInode := range elementInodes {
-		destroyErr := vS.Destroy(elementInode.InodeNumber)
-		if destroyErr != nil {
-			logger.ErrorWithError(destroyErr)
+	for _, element = range elements {
+		localErr = vS.resetFileInodeInMemory(inodeMap[element.ElementInodeNumber])
+		if nil != err {
+			logger.Fatalf("Coalesce() doing resetFileInodeInMemory(inodeMap[element.ElementInodeNumber]) failed: %v", localErr)
 		}
 	}
 
-	updateTime := time.Now()
-	combinationInode.CreationTime = updateTime
-	combinationInode.AttrChangeTime = updateTime
-	combinationInode.ModificationTime = updateTime
+	// Time to flush all affected FileInodes
 
-	combinationInodeNumber = combinationInode.InodeNumber
-	numWrites = combinationInode.NumWrites
-	modificationTime = updateTime
-	size = combinationInode.Size
+	err = vS.flushInodes(inodeList)
+	if nil != err {
+		err = fmt.Errorf("Coalesce() doing flushInodes(inodeList) failed: %v", err)
+		return
+	}
+
+	// Now we can Unlink and Destroy each element
+
+	for _, element = range elements {
+		err = vS.Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false)
+		if nil != err {
+			err = fmt.Errorf("Coalesce() doing Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false) failed: %v", err)
+			return
+		}
+		err = vS.Destroy(element.ElementInodeNumber)
+		if nil != err {
+			err = fmt.Errorf("Coalesce() doing Destroy(element.ElementInodeNumber) failed: %v", err)
+			return
+		}
+	}
+
+	// Now assemble & record successful results
+
+	coalesceTime = time.Now()
+
+	destInode.CreationTime = coalesceTime
+	destInode.AttrChangeTime = coalesceTime
+	destInode.ModificationTime = coalesceTime
+
+	numWrites = destInode.NumWrites
+
+	fileSize = destInode.Size
+
+	err = nil
+
 	return
 }
 

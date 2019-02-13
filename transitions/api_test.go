@@ -36,6 +36,9 @@ var testConfStrings = []string{
 	//                                     VolumeF will be created on Peer1
 	//                                     VolumeG will be created on Peer2...then migrate to VolumeF's VolumeGroup
 	"FSGlobals.VolumeList=VolumeA,VolumeB,VolumeC,VolumeD",
+	"FSGlobals.TryLockBackoffMin=100us",
+	"FSGlobals.TryLockBackoffMax=300us",
+	"FSGlobals.SymlinkMax=32",
 	"Cluster.Peers=Peer0,Peer1,Peer2,Peer3",
 	"Cluster.WhoAmI=Peer0",
 	"Transitions.AutoVolumeGroupPrefix=V_",

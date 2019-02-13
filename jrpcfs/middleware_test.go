@@ -52,6 +52,9 @@ func testSetup() []func() {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"FSGlobals.VolumeGroupList=JrpcfsTestVolumeGroup",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=8",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -63,7 +66,7 @@ func testSetup() []func() {
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthTCPPort=35262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=3",
 		"SwiftClient.RetryLimitObject=3",
@@ -2151,49 +2154,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 
 }
 
-func TestRpcCoalesceOverwriteEmptyDir(t *testing.T) {
-	server := &Server{}
-	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
-	if nil != err {
-		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
-	}
-
-	containerName := "rpc-coalesce-brushwood-Batis"
-	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
-
-	destinationPath := containerPath + "/" + "combined"
-
-	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
-	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	fsMkDir(mountHandle, containerInode, "combined")
-
-	// Create the file
-	coalesceRequest := CoalesceReq{
-		VirtPath: destinationPath,
-		ElementAccountRelativePaths: []string{
-			"/" + containerName + "/red",
-			"/" + containerName + "/orange",
-			"/" + containerName + "/yellow",
-		},
-	}
-	coalesceReply := CoalesceReply{}
-	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
-	assert.Nil(err)
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
-	assert.Nil(err)
-	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
-}
-
-func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
+func TestRpcCoalesceOverwriteDir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
 	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
@@ -2217,7 +2178,6 @@ func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
 	}
 
 	combinedInode := fsMkDir(mountHandle, containerInode, "combined")
-	fsMkDir(mountHandle, combinedInode, "now-its-not-empty")
 
 	// Create the file
 	coalesceRequest := CoalesceReq{
@@ -2356,8 +2316,6 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	// The directory structure partially exists, but not totally
 	aInode := fsMkDir(mountHandle, containerInode, "a")
 	fsCreateSymlink(mountHandle, aInode, "busted", "this-symlink-is-broken")
-	bInode := fsMkDir(mountHandle, aInode, "b")
-	fsMkDir(mountHandle, bInode, "c")
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
@@ -2379,8 +2337,15 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	}
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
-	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
+	assert.Nil(err)
+
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/this-symlink-is-broken/c/combined")
+	assert.Nil(err)
+	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
+
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
 
 func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
@@ -2422,5 +2387,5 @@ func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.PermDeniedError), err.Error())
 }
