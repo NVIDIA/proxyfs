@@ -568,6 +568,10 @@ execute 'set up s3api' do
   command "/usr/bin/set_up_s3api"
 end
 
+execute 'set up swift3' do
+  command "/usr/bin/set_up_swift3"
+end
+
 execute 'enable s3api' do
   command "/usr/bin/enable_s3 s3api"
 end
