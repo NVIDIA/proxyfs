@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -e
+
+usage() {
+    echo "Usage: $0 [s3 library name]"
+    echo "s3 library name options:"
+    echo "    s3api"
+    echo "    swift3"
+    exit 1
+}
+
+if [ $# -gt 0 ]; then
+    LIBRARY="$1"
+    LIBRARY=${LIBRARY,,}
+    if [ "$LIBRARY" != "s3api" ] && [ "$LIBRARY" != "swift3" ]; then
+        if [ "$LIBRARY" != "-h" ] && [ "$LIBRARY" != "--help" ]; then
+            echo "Invalid argument '$1'."
+            echo
+        fi
+        usage
+    fi
+else
+    usage
+fi
+
+PROXYSERVERCONF=/etc/swift/proxy-server.conf
+
+# Making sure there's no other s3api/swift3 already enabled
+sed -i '/^pipeline/ s/swift3 tempauth/tempauth/' $PROXYSERVERCONF
+sed -i '/^pipeline/ s/s3api tempauth/tempauth/' $PROXYSERVERCONF
+# Enabling s3 library
+sed -i "/^pipeline/ s/tempauth/${LIBRARY} tempauth/" $PROXYSERVERCONF
+
+echo "${LIBRARY} was successfully enabled. Remember to restart Swift or just run:"
+echo "    start_and_mount_pfs keepmounts"

@@ -1,0 +1,33 @@
+#!/bin/bash
+
+PROXYSERVERCONF=/etc/swift/proxy-server.conf
+# [filter:s3api] is found by default in /etc/swift/proxy-server.conf, so we'll
+# look for one of the options that are not set by default: allow_multipart_uploads
+
+# Careful! This method is not totally safe, as [filter:swift3] also defines this
+# option, but we control the whole process, and this script should be run BEFORE
+# set_up_swift3 during Runway provisioning, so we should be fine. If anybody
+# else is messing with this, they should know what they're doing.
+grep "allow_multipart_uploads" $PROXYSERVERCONF > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo "s3api is already set up. No need to do anything. Run enable_s3api to enable this configuration."
+    exit 0
+fi
+
+set -e
+
+sed -i '/^dns_compliant_bucket_names/ s/dns_compliant_bucket_names = no/dns_compliant_bucket_names = yes/' $PROXYSERVERCONF
+sed -i '/^\[filter:s3api/ a allow_multipart_uploads = yes\nforce_swift_request_proxy_log = yes' $PROXYSERVERCONF
+
+# We're only setting up tempauth and the object servers during s3api set up
+# When we set up swift3, everything will be already in place
+sed -i '/^\[filter:tempauth/ a user_adminreg_adminreg = adminreg .admin .reseller_admin\nuser_testreg_testerreg = testingreg .admin\nuser_test2reg_tester2reg = testing2reg .admin\nuser_testreg_tester3reg = testing3reg' $PROXYSERVERCONF
+for i in /etc/swift/object-server/*; do
+    if test -f "$i"; then
+        filename=`basename $i`
+        sed -i '/^\[app:object-server/ a allowed_headers = Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Expires, X-Delete-At, X-Object-Manifest, X-Robots-Tag, X-Static-Large-Object' $i
+    fi
+done
+
+echo "Swift was configured successfully for s3api, but NOT ENABLED YET. In order to enable it, run:"
+echo "    enable_s3api"
