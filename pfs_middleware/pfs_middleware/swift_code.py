@@ -26,6 +26,7 @@ The copyright header in this file was taken from
 swift/common/request_helpers.py in the OpenStack Swift source distribution.
 """
 
+from distutils.version import LooseVersion
 import email.parser
 import hashlib
 import itertools
@@ -35,6 +36,7 @@ import sys
 import time
 from six import BytesIO
 from six.moves.urllib.parse import unquote
+from swift import __version__ as swift_version
 from swift.common.swob import HTTPBadRequest, HTTPNotAcceptable, \
     HTTPNotImplemented, HTTPLengthRequired, Request, Range, \
     multi_range_iterator, HeaderKeyDict
@@ -44,6 +46,11 @@ from swift.common.swob import HTTPBadRequest, HTTPNotAcceptable, \
 #: Query string format= values to their corresponding content-type values
 FORMAT2CONTENT_TYPE = {'plain': 'text/plain', 'json': 'application/json',
                        'xml': 'application/xml'}
+
+
+# On new enough swift, we should always send JSON listings;
+# see https://github.com/openstack/swift/commit/4806434
+LISTING_FORMATS_SWIFT = (LooseVersion(swift_version) >= LooseVersion('2.16.0'))
 
 
 # Taken from swift/common/request_helpers.py, commit d2e32b3
@@ -82,6 +89,8 @@ def get_listing_content_type(req):
     :raises HTTPBadRequest: if the 'format' query param is provided and
              not valid UTF-8
     """
+    if LISTING_FORMATS_SWIFT:
+        return 'application/json'
     query_format = get_param(req, 'format')
     if query_format:
         req.accept = FORMAT2CONTENT_TYPE.get(

@@ -115,6 +115,12 @@ class BaseMiddlewareTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+        # For the sake of the listing format tests, assume old Swift
+        patcher = mock.patch(
+            'pfs_middleware.swift_code.LISTING_FORMATS_SWIFT', False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         def fake_RpcIsAccountBimodal(request):
             return {
                 "error": None,
@@ -1531,6 +1537,13 @@ class TestContainerHead(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "text/plain; charset=utf-8")
 
+        with mock.patch('pfs_middleware.swift_code.LISTING_FORMATS_SWIFT',
+                        True):
+            status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+
     def test_no_meta(self):
         self.serialized_container_metadata = ""
 
@@ -1717,6 +1730,14 @@ class TestContainerGet(BaseMiddlewareTest):
                                 "images/elderberry.png\n"))
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
+
+        with mock.patch('pfs_middleware.swift_code.LISTING_FORMATS_SWIFT',
+                        True):
+            status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        json.loads(body)
 
     def test_dlo(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container',
