@@ -1375,19 +1375,29 @@ func (s *Server) RpcReaddirByLoc(in *ReaddirByLocRequest, reply *ReaddirReply) (
 }
 
 func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profiler *utils.Profiler) (err error) {
-	var iH InodeHandle
-	var prevMarker interface{}
-	var inByLoc *ReaddirByLocRequest
-	var flog logger.FuncCtx
+	var (
+		dirEnts     []inode.DirEntry
+		flog        logger.FuncCtx
+		i           int
+		iH          InodeHandle
+		inByLoc     *ReaddirByLocRequest
+		inByName    *ReaddirRequest
+		maxEntries  uint64
+		mountHandle fs.MountHandle
+		okByName    bool
+		prevMarker  interface{}
+	)
 
-	inByName, okByName := in.(*ReaddirRequest)
+	inByName, okByName = in.(*ReaddirRequest)
 	if okByName {
 		iH = inByName.InodeHandle
+		maxEntries = inByName.MaxEntries
 		prevMarker = inByName.PrevDirEntName
 		flog = logger.TraceEnter("in.", inByName)
 	} else {
 		inByLoc, _ = in.(*ReaddirByLocRequest)
 		iH = inByLoc.InodeHandle
+		maxEntries = inByLoc.MaxEntries
 		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
@@ -1398,17 +1408,18 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(iH.MountID)
+	mountHandle, err = lookupMountHandle(iH.MountID)
 	if nil != err {
 		return
 	}
 
-	profiler.AddEventNow("before fs.ReaddirOne()")
-	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
-	profiler.AddEventNow("after fs.ReaddirOne()")
-	if err == nil {
+	profiler.AddEventNow("before fs.Readdir()")
+	dirEnts, _, _, err = mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), maxEntries, prevMarker)
+	profiler.AddEventNow("after fs.Readdir()")
+
+	if nil == err {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
-		for i := range dirEnts {
+		for i = range dirEnts {
 			reply.DirEnts[i].fsDirentToDirEntryStruct(dirEnts[i])
 		}
 	}
@@ -1435,18 +1446,30 @@ func (s *Server) RpcReaddirPlusByLoc(in *ReaddirPlusByLocRequest, reply *Readdir
 }
 
 func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply, profiler *utils.Profiler) (err error) {
-	var iH InodeHandle
-	var prevMarker interface{}
-	var flog logger.FuncCtx
+	var (
+		dirEnts     []inode.DirEntry
+		flog        logger.FuncCtx
+		i           int
+		iH          InodeHandle
+		inByLoc     *ReaddirPlusByLocRequest
+		inByName    *ReaddirPlusRequest
+		maxEntries  uint64
+		mountHandle fs.MountHandle
+		okByName    bool
+		prevMarker  interface{}
+		statEnts    []fs.Stat
+	)
 
-	inByName, okByName := in.(*ReaddirPlusRequest)
+	inByName, okByName = in.(*ReaddirPlusRequest)
 	if okByName {
 		iH = inByName.InodeHandle
+		maxEntries = inByName.MaxEntries
 		prevMarker = inByName.PrevDirEntName
 		flog = logger.TraceEnter("in.", inByName)
 	} else {
-		inByLoc, _ := in.(*ReaddirPlusByLocRequest)
+		inByLoc, _ = in.(*ReaddirPlusByLocRequest)
 		iH = inByLoc.InodeHandle
+		maxEntries = inByLoc.MaxEntries
 		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
@@ -1457,23 +1480,20 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(iH.MountID)
+	mountHandle, err = lookupMountHandle(iH.MountID)
 	if err != nil {
 		return
 	}
 
-	profiler.AddEventNow("before fs.ReaddirOnePlus()")
-	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
+	profiler.AddEventNow("before fs.ReaddirPlus()")
+	dirEnts, statEnts, _, _, err = mountHandle.ReaddirPlus(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), maxEntries, prevMarker)
+	profiler.AddEventNow("after fs.ReaddirPlus()")
 
-	profiler.AddEventNow("after fs.ReaddirOnePlus()")
-	if err == nil {
+	if nil == err {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
-		reply.StatEnts = make([]StatStruct, len(dirEnts))
-		for i := range dirEnts {
-			// Fill in dirents
+		reply.StatEnts = make([]StatStruct, len(dirEnts)) // Assuming len(dirEnts) == len(statEnts)
+		for i = range dirEnts {
 			reply.DirEnts[i].fsDirentToDirEntryStruct(dirEnts[i])
-
-			// Fill in stats
 			reply.StatEnts[i].fsStatToStatStruct(statEnts[i])
 		}
 	}

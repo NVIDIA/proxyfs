@@ -12,6 +12,7 @@ func TestResolvePath(t *testing.T) {
 		dirA                     inode.InodeNumber
 		dirEntryBasename         string
 		dirEntryInodeNumber      inode.InodeNumber
+		dirEntryInodeType        inode.InodeType
 		dirInodeNumber           inode.InodeNumber
 		err                      error
 		fileA                    inode.InodeNumber
@@ -87,7 +88,7 @@ func TestResolvePath(t *testing.T) {
 
 	heldLocks = newHeldLocks()
 
-	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, retryRequired, err =
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		testMountStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
@@ -101,6 +102,7 @@ func TestResolvePath(t *testing.T) {
 	if (testContainer != dirInodeNumber) ||
 		(fileA != dirEntryInodeNumber) ||
 		("FileA" != dirEntryBasename) ||
+		(inode.FileType != dirEntryInodeType) ||
 		retryRequired ||
 		(0 != len(heldLocks.exclusive)) ||
 		(1 != len(heldLocks.shared)) {
@@ -118,7 +120,7 @@ func TestResolvePath(t *testing.T) {
 
 	heldLocks = newHeldLocks()
 
-	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, retryRequired, err =
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		testMountStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
@@ -134,6 +136,7 @@ func TestResolvePath(t *testing.T) {
 	if (testContainer != dirInodeNumber) ||
 		(fileA != dirEntryInodeNumber) ||
 		("FileA" != dirEntryBasename) ||
+		(inode.FileType != dirEntryInodeType) ||
 		retryRequired ||
 		(1 != len(heldLocks.exclusive)) ||
 		(0 != len(heldLocks.shared)) {
@@ -151,7 +154,7 @@ func TestResolvePath(t *testing.T) {
 
 	heldLocks = newHeldLocks()
 
-	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, retryRequired, err =
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		testMountStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
@@ -166,6 +169,7 @@ func TestResolvePath(t *testing.T) {
 	if (testContainer != dirInodeNumber) ||
 		(symlinkA != dirEntryInodeNumber) ||
 		("SymlinkA" != dirEntryBasename) ||
+		(inode.SymlinkType != dirEntryInodeType) ||
 		retryRequired ||
 		(2 != len(heldLocks.exclusive)) ||
 		(0 != len(heldLocks.shared)) {
@@ -187,7 +191,7 @@ func TestResolvePath(t *testing.T) {
 
 	heldLocks = newHeldLocks()
 
-	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, retryRequired, err =
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		testMountStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/DirA/FileB",
@@ -201,6 +205,7 @@ func TestResolvePath(t *testing.T) {
 		t.Fatalf("resolvePath() for PUT (thru symlink & missing dir) failed: %v", err)
 	}
 	if ("FileB" != dirEntryBasename) ||
+		(inode.FileType != dirEntryInodeType) ||
 		retryRequired ||
 		(3 != len(heldLocks.exclusive)) ||
 		(0 != len(heldLocks.shared)) {
@@ -262,6 +267,154 @@ func TestResolvePath(t *testing.T) {
 	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "TestResolvePathContainer")
 	if nil != err {
 		t.Fatalf("Rmdir(,,,,\"TestResolvePathContainer\") failed: %v", err)
+	}
+
+	testTeardown(t)
+}
+
+type testCanonicalizePathItemStruct struct {
+	path                   string
+	shouldSucceed          bool
+	canonicalizedPathSplit []string
+	dirInodeIndex          int
+}
+
+func TestCanonicalizePath(t *testing.T) {
+	var (
+		canonicalizedPathSplit   []string
+		containerInodeNumber     inode.InodeNumber
+		dirInodeIndex            int
+		directoryInodeNumber     inode.InodeNumber
+		err                      error
+		pathSplitIndex           int
+		testCanonicalizePathItem *testCanonicalizePathItemStruct
+		testCanonicalizePathList []*testCanonicalizePathItemStruct
+	)
+
+	testSetup(t, false)
+
+	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName", inode.PosixModePerm)
+	if nil != err {
+		t.Fatal(err)
+	}
+	containerInodeNumber, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName", inode.PosixModePerm)
+	if nil != err {
+		t.Fatal(err)
+	}
+	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName", inode.PosixModePerm)
+	if nil != err {
+		t.Fatal(err)
+	}
+	directoryInodeNumber, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName", inode.PosixModePerm)
+	if nil != err {
+		t.Fatal(err)
+	}
+	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName", inode.PosixModePerm)
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	testCanonicalizePathList = []*testCanonicalizePathItemStruct{
+		&testCanonicalizePathItemStruct{
+			path:                   "",
+			shouldSucceed:          false,
+			canonicalizedPathSplit: []string{}, // Not actually returned
+			dirInodeIndex:          0,          // Not actually returned
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "MissingNameInRoot",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"MissingNameInRoot"},
+			dirInodeIndex:          -1,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "RootFileName",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"RootFileName"},
+			dirInodeIndex:          -1,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName"},
+			dirInodeIndex:          0,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName/MissingNameInContainer",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName", "MissingNameInContainer"},
+			dirInodeIndex:          0,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName/DirectoryName",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName", "DirectoryName"},
+			dirInodeIndex:          1,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName/DirectoryName/MissingNameInDirectory",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName", "DirectoryName", "MissingNameInDirectory"},
+			dirInodeIndex:          1,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName/DirectoryName/DirectoryFileName",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName", "DirectoryName", "DirectoryFileName"},
+			dirInodeIndex:          1,
+		},
+		&testCanonicalizePathItemStruct{
+			path:                   "ContainerName/DirectoryName/MissingNameInDirectory/MissingSubDirectoryName",
+			shouldSucceed:          true,
+			canonicalizedPathSplit: []string{"ContainerName", "DirectoryName", "MissingNameInDirectory", "MissingSubDirectoryName"},
+			dirInodeIndex:          2,
+		},
+	}
+
+	for _, testCanonicalizePathItem = range testCanonicalizePathList {
+		canonicalizedPathSplit, dirInodeIndex, err = testMountStruct.canonicalizePathAndLocateLeafDirInode(testCanonicalizePathItem.path)
+		if testCanonicalizePathItem.shouldSucceed {
+			if nil == err {
+				if len(canonicalizedPathSplit) != len(testCanonicalizePathItem.canonicalizedPathSplit) {
+					t.Fatalf("canonicalizePathAndLocateLeafDirInode(\"%s\") received unexpected canonicalizedPathSplit: %v", testCanonicalizePathItem.path, canonicalizedPathSplit)
+				}
+				for pathSplitIndex = range canonicalizedPathSplit {
+					if canonicalizedPathSplit[pathSplitIndex] != testCanonicalizePathItem.canonicalizedPathSplit[pathSplitIndex] {
+						t.Fatalf("canonicalizePathAndLocateLeafDirInode(\"%s\") received unexpected canonicalizedPathSplit: %v", testCanonicalizePathItem.path, canonicalizedPathSplit)
+					}
+				}
+				if dirInodeIndex != testCanonicalizePathItem.dirInodeIndex {
+					t.Fatalf("canonicalizePathAndLocateLeafDirInode(\"%s\") received unexpected canonicalizedPathSplit: %v", testCanonicalizePathItem.path, dirInodeIndex)
+				}
+			} else {
+				t.Fatalf("canonicalizePathAndLocateLeafDirInode(\"%s\") unexpectadly failed: %v", testCanonicalizePathItem.path, err)
+			}
+		} else { // !testCanonicalizePathItem.shouldSucceed
+			if nil == err {
+				t.Fatalf("canonicalizePathAndLocateLeafDirInode(\"%s\") unexpectadly succeeded", testCanonicalizePathItem.path)
+			}
+		}
+	}
+
+	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName")
+	if nil != err {
+		t.Fatal(err)
+	}
+	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName")
+	if nil != err {
+		t.Fatal(err)
+	}
+	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName")
+	if nil != err {
+		t.Fatal(err)
+	}
+	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName")
+	if nil != err {
+		t.Fatal(err)
+	}
+	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName")
+	if nil != err {
+		t.Fatal(err)
 	}
 
 	testTeardown(t)
