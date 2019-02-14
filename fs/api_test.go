@@ -14,7 +14,7 @@ import (
 
 // TODO: Enhance this to do a stat() as well and check number of files
 func expectDirectory(t *testing.T, userID inode.InodeUserID, groupID inode.InodeGroupID, inodeNum inode.InodeNumber, expectedEntries []string) {
-	readdirEntries, numEntries, moreEntries, err := testMountStruct.Readdir(userID, groupID, nil, inodeNum, "", 0, 0)
+	readdirEntries, numEntries, moreEntries, err := testMountStruct.Readdir(userID, groupID, nil, inodeNum, 0, "")
 	if nil != err {
 		t.Fatalf("Readdir() [#1] returned error: %v", err)
 	}
@@ -952,8 +952,7 @@ func TestStaleInodes(t *testing.T) {
 	}
 
 	// Readdir
-	_, _, _, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
-		staleDirInodeNumber, "", 0, 0)
+	_, _, _, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, staleDirInodeNumber, 0, "")
 	if nil == err {
 		t.Fatalf("Readdir() should not have returned success")
 	}

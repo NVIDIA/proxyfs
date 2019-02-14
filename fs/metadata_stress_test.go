@@ -192,7 +192,7 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 			maxEntries = 10
 			totalEntriesRead = 0 // Useful for debugging
 			for areMoreEntries {
-				dirEnts, numEntries, more, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, lastBasename, maxEntries, 0)
+				dirEnts, numEntries, more, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, maxEntries, lastBasename)
 				if nil != err {
 					return
 				}

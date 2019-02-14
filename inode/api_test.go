@@ -1201,7 +1201,7 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	testMetadata.NumWrites = 3
+	testMetadata.NumWrites = 1
 	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,false)")
 
 	testFileInodeData, err = testVolumeHandle.Read(fileInodeNumber, 0, 4, nil)

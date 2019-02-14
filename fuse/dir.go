@@ -193,7 +193,7 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 		var readCount uint64
 		var err error
 
-		readEntries, readCount, more, err = d.mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, lastEntryName, 1024, 4096)
+		readEntries, readCount, more, err = d.mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, 1024, lastEntryName)
 		if err != nil {
 			logger.ErrorfWithError(err, "Error in ReadDirAll")
 			return nil, fuselib.EIO

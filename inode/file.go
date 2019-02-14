@@ -707,12 +707,16 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 		updateTime := time.Now()
 		fileInode.ModificationTime = updateTime
 		fileInode.AttrChangeTime = updateTime
+
+		fileInode.NumWrites++
 	} else {
 		err = setSizeInMemory(fileInode, length)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return
 		}
+
+		fileInode.NumWrites = 1
 	}
 
 	fileInode.dirty = true
@@ -723,7 +727,6 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 	}
 
 	stats.IncrementOperationsAndBucketedBytes(stats.FileWrote, length)
-	fileInode.NumWrites++
 
 	return
 }
@@ -1019,6 +1022,18 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 		}
 	}
 
+	// Now, destInode is fully assembled... update its metadata & assemble remaining results
+
+	coalesceTime = time.Now()
+
+	destInode.CreationTime = coalesceTime
+	destInode.AttrChangeTime = coalesceTime
+	destInode.ModificationTime = coalesceTime
+
+	numWrites = destInode.NumWrites
+
+	fileSize = destInode.Size
+
 	// Now, destInode is fully assembled... need to remove all elements references to currently shared LogSegments
 
 	for _, element = range elements {
@@ -1051,20 +1066,9 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 		}
 	}
 
-	// Now assemble & record successful results
-
-	coalesceTime = time.Now()
-
-	destInode.CreationTime = coalesceTime
-	destInode.AttrChangeTime = coalesceTime
-	destInode.ModificationTime = coalesceTime
-
-	numWrites = destInode.NumWrites
-
-	fileSize = destInode.Size
+	// All done
 
 	err = nil
-
 	return
 }
 
