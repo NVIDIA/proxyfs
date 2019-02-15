@@ -1662,15 +1662,15 @@ class TestContainerGet(BaseMiddlewareTest):
                         "NumWrites": 0,
                         "Metadata": "",
                     }, {
-                        "Basename": "images/avocado.png",
+                        "Basename": u"images/\xE1vocado.png",
                         "FileSize": 70,
                         "ModificationTime": 1471915816859209471,
                         "IsDir": False,
                         "InodeNumber": 9213768,
                         "NumWrites": 2,
                         "Metadata": base64.b64encode(json.dumps({
-                            "Content-Type": "snack/millenial" +
-                                            ";swift_bytes=3503770"})),
+                            "Content-Type": u"snack/m\xEDllenial" +
+                                            u";swift_bytes=3503770"})),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
@@ -1722,12 +1722,12 @@ class TestContainerGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
-        self.assertEqual(body, ("images\n"
-                                "images/avocado.png\n"
-                                "images/banana.png\n"
-                                "images/cherimoya.png\n"
-                                "images/durian.png\n"
-                                "images/elderberry.png\n"))
+        self.assertEqual(body, (b"images\n"
+                                b"images/\xC3\xA1vocado.png\n"
+                                b"images/banana.png\n"
+                                b"images/cherimoya.png\n"
+                                b"images/durian.png\n"
+                                b"images/elderberry.png\n"))
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
 
@@ -1825,9 +1825,9 @@ class TestContainerGet(BaseMiddlewareTest):
             "hash": "d41d8cd98f00b204e9800998ecf8427e",
             "last_modified": "2016-08-23T01:30:16.359210"})
         self.assertEqual(resp_data[1], {
-            "name": "images/avocado.png",
+            "name": u"images/\xE1vocado.png",
             "bytes": 3503770,
-            "content_type": "snack/millenial",
+            "content_type": u"snack/m\xEDllenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1880,9 +1880,9 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(resp_data[1], {
             "subdir": "images/"})
         self.assertEqual(resp_data[2], {
-            "name": "images/avocado.png",
+            "name": u"images/\xE1vocado.png",
             "bytes": 3503770,
-            "content_type": "snack/millenial",
+            "content_type": u"snack/m\xEDllenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1957,7 +1957,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         name_node = obj_attr_tags[0]
         self.assertEqual(name_node.tag, 'name')
-        self.assertEqual(name_node.text, 'images/avocado.png')
+        self.assertEqual(name_node.text, u'images/\xE1vocado.png')
         self.assertEqual(name_node.attrib, {})  # nothing extra in there
 
         hash_node = obj_attr_tags[1]
@@ -1973,7 +1973,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         content_type_node = obj_attr_tags[3]
         self.assertEqual(content_type_node.tag, 'content_type')
-        self.assertEqual(content_type_node.text, 'snack/millenial')
+        self.assertEqual(content_type_node.text, u'snack/m\xEDllenial')
         self.assertEqual(content_type_node.attrib, {})
 
         last_modified_node = obj_attr_tags[4]
@@ -2001,7 +2001,7 @@ class TestContainerGet(BaseMiddlewareTest):
         # Check the names are correct
         all_names = [tag.getchildren()[0].text for tag in objects]
         self.assertEqual(
-            ["images", "images/avocado.png", "images/banana.png",
+            ["images", u"images/\xE1vocado.png", "images/banana.png",
              "images/cherimoya.png", "images/durian.png",
              "images/elderberry.png"],
             all_names)
