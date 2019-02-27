@@ -124,11 +124,14 @@ func waitCountOwners(lockId string, count uint64) {
 }
 
 // This function assumes the mutex is held on the tracker structure
-func removeFromListOfOwners(listOfOwners []CallerID, callerID CallerID) {
-	// Find Position
-	for i, id := range listOfOwners {
+func (t *localLockTrack) removeFromListOfOwners(callerID CallerID) {
+
+	// Find Position and delete entry (a map might be more efficient)
+	for i, id := range t.listOfOwners {
 		if id == callerID {
-			listOfOwners = append(listOfOwners[:i], listOfOwners[i+1:]...)
+			lastIdx := len(t.listOfOwners) - 1
+			t.listOfOwners[i] = t.listOfOwners[lastIdx]
+			t.listOfOwners = t.listOfOwners[:lastIdx]
 			return
 		}
 	}
@@ -249,9 +252,12 @@ func (l *RWLockStruct) commonLock(requestedState lockState, try bool) (err error
 		// Lock does not exist in map, get one
 		track = localLockTrackPool.Get().(*localLockTrack)
 		if track.waitReqQ.Len() != 0 {
-			panic(fmt.Sprintf(
-				"localLockTrack object %p retrieved from pool does not have an empty waitReqQ",
-				track.waitReqQ))
+			panic(fmt.Sprintf("localLockTrack object %p from pool does not have empty waitReqQ",
+				track))
+		}
+		if len(track.listOfOwners) != 0 {
+			panic(fmt.Sprintf("localLockTrack object %p  from pool does not have empty ListOfOwners",
+				track))
 		}
 		track.lockId = l.LockID
 		track.state = stale
@@ -351,7 +357,7 @@ func (l *RWLockStruct) unlock() (err error) {
 	// TODO - handle release of lock back to DLM and delete from localLockMap
 	// Set stale and signal any waiters
 	track.owners--
-	removeFromListOfOwners(track.listOfOwners, l.LockCallerID)
+	track.removeFromListOfOwners(l.LockCallerID)
 	if track.state == exclusive {
 		if track.owners != 0 || track.exclOwner == nil {
 			panic(fmt.Sprintf("releasing exclusive lock when (exclOwner == nil || track.owners != 0)! "+

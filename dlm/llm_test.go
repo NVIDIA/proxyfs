@@ -427,9 +427,26 @@ func testTwoThreadsSharedLocking(t *testing.T) {
 	waitCountOwners(s1, 1)
 	waitCountWaiters(s1, 0)
 
-	sendRequestToThread(1, t, unlock, s1)
+	// Have thread 0 acquire the lock again
+	sendRequestToThread(0, t, readLock, s1)
+	waitCountOwners(s1, 2)
 	waitCountWaiters(s1, 0)
+
+	// Thread 1 releases the lock
+	sendRequestToThread(1, t, unlock, s1)
+	waitCountOwners(s1, 1)
+	waitCountWaiters(s1, 0)
+
+	// Thread 1 acquires the lock again
+	sendRequestToThread(1, t, readLock, s1)
+	waitCountOwners(s1, 2)
+	waitCountWaiters(s1, 0)
+
+	// both threads release their locks
+	sendRequestToThread(0, t, unlock, s1)
+	sendRequestToThread(1, t, unlock, s1)
 	waitCountOwners(s1, 0)
+	waitCountWaiters(s1, 0)
 
 	// Stop worker threads
 	stopThreads(t)

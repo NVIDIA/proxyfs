@@ -163,6 +163,16 @@ func PathToAcctContObj(path string) (accountName string, containerName string, o
 	return accountName, containerName, objectName, nil
 }
 
+// Return the stack track of the caller, including this function.
+//
+func MyStackTrace() (stackTrace string) {
+
+	stackTraceBuf := make([]byte, 16384, 16384)
+	cnt := runtime.Stack(stackTraceBuf, false)
+
+	return string(stackTraceBuf[0:cnt])
+}
+
 // Given the first line of a stack trace parse out and return the goroutine ID.
 // The first line of a stack trace starts with: "goroutine 7 [runnable]:\n"
 //
