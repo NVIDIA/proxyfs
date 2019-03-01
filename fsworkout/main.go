@@ -5,12 +5,12 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -27,7 +27,7 @@ var (
 	measureStat     bool
 	mountHandle     fs.MountHandle
 	perThreadDir    bool
-	rootDirMutex    sync.Mutex
+	rootDirMutex    trackedlock.Mutex
 	stepErrChan     chan error
 	threads         uint64
 	volumeName      string
@@ -150,7 +150,6 @@ func main() {
 	}
 
 	// Select first Volume of the first "active" VolumeGroup in [FSGlobals]VolumeGroupList
-
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"Cluster\", \"WhoAmI\") failed: %v\n", err)

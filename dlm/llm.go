@@ -8,17 +8,31 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 // This struct is used by LLM to track a lock.
 type localLockTrack struct {
-	lockId string // For debugging use
-	sync.Mutex
+	trackedlock.Mutex
+	lockId       string // lock identity (must be unique)
 	owners       uint64 // Count of threads which own lock
 	waiters      uint64 // Count of threads which want to own the lock (either shared or exclusive)
 	state        lockState
+	exclOwner    CallerID
 	listOfOwners []CallerID
-	waitReqQ     *list.List // List of requests waiting for lock
+	waitReqQ     *list.List               // List of requests waiting for lock
+	rwMutexTrack trackedlock.RWMutexTrack // Track the lock to see how long its held
+}
+
+var localLockTrackPool = sync.Pool{
+	New: func() interface{} {
+		var track localLockTrack
+
+		// every localLockTrack should have a waitReqQ
+		track.waitReqQ = list.New()
+
+		return &track
+	},
 }
 
 type localLockRequest struct {
@@ -110,11 +124,14 @@ func waitCountOwners(lockId string, count uint64) {
 }
 
 // This function assumes the mutex is held on the tracker structure
-func removeFromListOfOwners(listOfOwners []CallerID, callerID CallerID) {
-	// Find Position
-	for i, id := range listOfOwners {
+func (t *localLockTrack) removeFromListOfOwners(callerID CallerID) {
+
+	// Find Position and delete entry (a map might be more efficient)
+	for i, id := range t.listOfOwners {
 		if id == callerID {
-			listOfOwners = append(listOfOwners[:i], listOfOwners[i+1:]...)
+			lastIdx := len(t.listOfOwners) - 1
+			t.listOfOwners[i] = t.listOfOwners[lastIdx]
+			t.listOfOwners = t.listOfOwners[:lastIdx]
 			return
 		}
 	}
@@ -167,6 +184,17 @@ func grantAndSignal(track *localLockTrack, localQRequest *localLockRequest) {
 	track.state = localQRequest.requestedState
 	track.listOfOwners = append(track.listOfOwners, localQRequest.LockCallerID)
 	track.owners++
+
+	if track.state == exclusive {
+		if track.exclOwner != nil || track.owners != 1 {
+			panic(fmt.Sprintf("granted exclusive lock when (exclOwner != nil || track.owners != 1)! "+
+				"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+				track.lockId, track.owners, track.waiters, track.state,
+				*track.exclOwner, track.listOfOwners))
+		}
+		track.exclOwner = localQRequest.LockCallerID
+	}
+
 	localQRequest.wakeUp = true
 	localQRequest.Cond.Broadcast()
 }
@@ -221,9 +249,19 @@ func (l *RWLockStruct) commonLock(requestedState lockState, try bool) (err error
 	if !ok {
 		// TODO - handle blocking waiting for lock from DLM
 
-		// Lock does not exist in map, create one
-		track = &localLockTrack{lockId: l.LockID, state: stale}
-		track.waitReqQ = list.New()
+		// Lock does not exist in map, get one
+		track = localLockTrackPool.Get().(*localLockTrack)
+		if track.waitReqQ.Len() != 0 {
+			panic(fmt.Sprintf("localLockTrack object %p from pool does not have empty waitReqQ",
+				track))
+		}
+		if len(track.listOfOwners) != 0 {
+			panic(fmt.Sprintf("localLockTrack object %p  from pool does not have empty ListOfOwners",
+				track))
+		}
+		track.lockId = l.LockID
+		track.state = stale
+
 		globals.localLockMap[l.LockID] = track
 
 	}
@@ -260,6 +298,27 @@ func (l *RWLockStruct) commonLock(requestedState lockState, try bool) (err error
 		localRequest.Cond.Wait()
 	}
 
+	// sanity check request and lock state
+	if localRequest.wakeUp != true {
+		panic(fmt.Sprintf("commonLock(): thread awoke without being signalled; localRequest %v "+
+			"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+			localRequest, track.lockId, track.owners, track.waiters, track.state,
+			*track.exclOwner, track.listOfOwners))
+	}
+	if track.state == stale || track.owners == 0 || (track.owners > 1 && track.state != shared) {
+		panic(fmt.Sprintf("commonLock(): lock is in undefined state: localRequest %v "+
+			"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+			localRequest, track.lockId, track.owners, track.waiters, track.state,
+			*track.exclOwner, track.listOfOwners))
+	}
+
+	// let trackedlock package track how long we hold the lock
+	if track.state == exclusive {
+		track.rwMutexTrack.LockTrack(track)
+	} else {
+		track.rwMutexTrack.RLockTrack(track)
+	}
+
 	// At this point, we got the lock either by the call to processLocalQ() above
 	// or as a result of processLocalQ() being called from the unlock() path.
 
@@ -287,7 +346,9 @@ func (l *RWLockStruct) unlock() (err error) {
 	// We have track structure for lock.  While holding mutex on localLockMap, remove
 	// lock from map if we are the last holder of the lock.
 	// TODO - does this handle revoke case and any others?
+	var deleted = false
 	if (track.owners == 1) && (track.waiters == 0) {
+		deleted = true
 		delete(globals.localLockMap, l.LockID)
 	}
 
@@ -296,7 +357,17 @@ func (l *RWLockStruct) unlock() (err error) {
 	// TODO - handle release of lock back to DLM and delete from localLockMap
 	// Set stale and signal any waiters
 	track.owners--
-	removeFromListOfOwners(track.listOfOwners, l.LockCallerID)
+	track.removeFromListOfOwners(l.LockCallerID)
+	if track.state == exclusive {
+		if track.owners != 0 || track.exclOwner == nil {
+			panic(fmt.Sprintf("releasing exclusive lock when (exclOwner == nil || track.owners != 0)! "+
+				"track lockId %v owners %d waiters %d lockState %v exclOwner %v listOfOwners %v",
+				track.lockId, track.owners, track.waiters, track.state,
+				*track.exclOwner, track.listOfOwners))
+		}
+		track.exclOwner = nil
+	}
+
 	if track.owners == 0 {
 		track.state = stale
 	} else {
@@ -304,11 +375,23 @@ func (l *RWLockStruct) unlock() (err error) {
 			panic("track.owners < 0!!!")
 		}
 	}
+	// record the release of the lock
+	track.rwMutexTrack.DLMUnlockTrack(track)
 
 	// See if any locks can be granted
 	processLocalQ(track)
 
 	track.Mutex.Unlock()
+
+	// can't return the
+	if deleted {
+		if track.waitReqQ.Len() != 0 || track.waiters != 0 || track.state != stale {
+			panic(fmt.Sprintf(
+				"localLockTrack object %p retrieved from pool does not have an empty waitReqQ",
+				track.waitReqQ))
+		}
+		localLockTrackPool.Put(track)
+	}
 
 	// TODO what error is possible?
 	return nil

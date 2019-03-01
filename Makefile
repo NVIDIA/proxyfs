@@ -24,6 +24,7 @@ gopkgsubdirs = \
 	statslogger \
 	swiftclient \
 	transitions \
+	trackedlock \
 	utils \
 	version
 

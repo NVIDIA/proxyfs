@@ -12,6 +12,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -113,7 +114,7 @@ type internalLivenessReportStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	active                     bool
 	whoAmI                     string
 	myPublicIPAddr             net.IP
