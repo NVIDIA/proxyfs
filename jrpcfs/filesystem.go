@@ -9,13 +9,13 @@ import (
 	"net/rpc/jsonrpc"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -150,15 +150,15 @@ type opProfiles map[int]*utils.Profiler
 
 // All of our RPC methods are called on/passed this Server struct.
 type Server struct {
-	opStatsLock           sync.Mutex
+	opStatsLock           trackedlock.Mutex
 	maxSavedProfilesPerOp int
 	allProfiles           map[OpType]opProfiles
-	saveLock              sync.Mutex
+	saveLock              trackedlock.Mutex
 	saveChannel           chan *utils.Profiler
 	internalSaveChannel   chan *utils.Profiler
 	saveProfilerProfiles  opProfiles
 	dumpRunning           bool
-	dumpLock              sync.Mutex
+	dumpLock              trackedlock.Mutex
 }
 
 func NewOpProfiles() opProfiles {
@@ -225,15 +225,15 @@ func NewServer() *Server {
 
 	// Set profiling-related variables
 	if doProfiling {
-		s.opStatsLock = sync.Mutex{}
+		s.opStatsLock = trackedlock.Mutex{}
 		s.maxSavedProfilesPerOp = maxSavedStatProfiles
 		s.allProfiles = AllocOpProfiles()
-		s.saveLock = sync.Mutex{}
+		s.saveLock = trackedlock.Mutex{}
 		s.saveChannel = make(chan *utils.Profiler, saveChannelSize)
 		s.internalSaveChannel = make(chan *utils.Profiler, saveChannelSize)
 		s.saveProfilerProfiles = make(opProfiles, maxSavedStatProfiles)
 		s.dumpRunning = false
-		s.dumpLock = sync.Mutex{}
+		s.dumpLock = trackedlock.Mutex{}
 	}
 
 	// Kick off goroutines for saving profiles
@@ -299,7 +299,9 @@ func intProfileSaver(s *Server) {
 }
 
 // Saves a profile, if there is room. Returns true on success and false if out of room
-func saveProfilerInternal(profiles *opProfiles, profiler *utils.Profiler, profLock *sync.Mutex, maxProfiles int) bool {
+func saveProfilerInternal(profiles *opProfiles, profiler *utils.Profiler, profLock *trackedlock.Mutex,
+	maxProfiles int) bool {
+
 	rtnVal := true // success
 
 	profLock.Lock()

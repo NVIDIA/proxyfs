@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -81,7 +81,7 @@ func ioServerDown() {
 
 var debugConcurrency = false
 
-var concWorkerLock sync.Mutex
+var concWorkerLock trackedlock.Mutex
 var numConcWorkers int = 0 // number of concurrent workers
 var hwmConcWorkers int = 0 // high water mark of concurrent workers
 

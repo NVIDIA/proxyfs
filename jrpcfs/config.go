@@ -9,13 +9,14 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type globalsStruct struct {
-	mapsLock sync.Mutex   // protects volumeMap/mountIDMap/lastMountID/bimodalMountMap
-	gate     sync.RWMutex // API Requests RLock()/RUnlock()
-	//                       confMap changes Lock()/Unlock()
+	mapsLock trackedlock.Mutex   // protects volumeMap/mountIDMap/lastMountID/bimodalMountMap
+	gate     trackedlock.RWMutex // API Requests RLock()/RUnlock()
+	//                              confMap changes Lock()/Unlock()
 
 	whoAmI          string
 	ipAddr          string
@@ -36,7 +37,7 @@ type globalsStruct struct {
 
 	// Connection list and listener list to close during shutdown:
 	halting     bool
-	connLock    sync.Mutex
+	connLock    trackedlock.Mutex
 	connections *list.List
 	connWG      sync.WaitGroup
 	listeners   []net.Listener
