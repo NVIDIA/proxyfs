@@ -44,13 +44,18 @@ gobinsubdirs = \
 	ramswift/ramswift
 
 uname = $(shell uname)
+machine = $(shell uname -m)
 
 ifeq ($(uname),Linux)
-    distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
+    ifeq ($(machine),armv7l)
+        all: version fmt pre-generate generate install test
+    else
+        distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-    all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
+        all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
 
-    all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
+        all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
+    endif
 else
     all: version fmt pre-generate generate install test
 endif

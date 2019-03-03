@@ -145,11 +145,11 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 
 	inodeLock, err = vS.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
 	if nil != err {
-		logger.PanicfWithError(err, "InitInodeLock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "InitInodeLock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 	err = inodeLock.WriteLock()
 	if nil != err {
-		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 
 	stillExists = vS.inodeVolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.F_OK,
@@ -159,13 +159,13 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 		if nil == err {
 			vS.untrackInFlightFileInodeData(inodeNumber, false)
 		} else {
-			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d", vS.volumeName, inodeNumber)
+			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %v", vS.volumeName, inodeNumber)
 		}
 	}
 
 	err = inodeLock.Unlock()
 	if nil != err {
-		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 }
 
@@ -174,7 +174,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		flushFirst bool
 	)
 
-	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %v",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 
 	select {
@@ -184,7 +184,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		flushFirst = true
 	}
 
-	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %d flushfirst %t",
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %v flushfirst %t",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
 	if flushFirst {
@@ -3324,8 +3324,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	// sanity checks for invalid/illegal values
 	if settingUserID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
-		if newUserID > math.MaxUint32 {
-			err = fmt.Errorf("%s: userID is too large - value is %d, max is %d.", utils.GetFnName(), newUserID, math.MaxUint32)
+		if newUserID > uint64(math.MaxUint32) {
+			err = fmt.Errorf("%s: userID is too large - value is %v, max is %v.", utils.GetFnName(), newUserID, uint64(math.MaxUint32))
 			err = blunder.AddError(err, blunder.InvalidUserIDError)
 			return
 		}
@@ -3333,8 +3333,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 
 	if settingGroupID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
-		if newGroupID > math.MaxUint32 {
-			err = fmt.Errorf("%s: groupID is too large - value is %d, max is %d.", utils.GetFnName(), newGroupID, math.MaxUint32)
+		if newGroupID > uint64(math.MaxUint32) {
+			err = fmt.Errorf("%s: groupID is too large - value is %v, max is %v.", utils.GetFnName(), newGroupID, uint64(math.MaxUint32))
 			err = blunder.AddError(err, blunder.InvalidGroupIDError)
 			return
 		}
@@ -3344,7 +3344,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	if settingFilePerm {
 		// Since we are using a uint64 to convey a 12 bit value, make sure we didn't get something too big
 		if filePerm >= 1<<12 {
-			err = fmt.Errorf("%s: filePerm is too large - value is %d, max is %d.", utils.GetFnName(),
+			err = fmt.Errorf("%s: filePerm is too large - value is %v, max is %v.", utils.GetFnName(),
 				filePerm, 1<<12)
 			err = blunder.AddError(err, blunder.InvalidFileModeError)
 			return
@@ -3707,7 +3707,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
+	logger.Tracef("fs.Write(): starting volume '%s' inode %v offset %v len %v",
 		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
 
 	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
@@ -3739,7 +3739,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return 0, err
 	}
 
-	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
+	logger.Tracef("fs.Write(): tracking write volume '%s' inode %v", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
 
