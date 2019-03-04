@@ -87,6 +87,11 @@ type globalsStruct struct {
 
 var globals *globalsStruct
 
+// True if ramswift is running as a separate process.  Controls whether ramswift
+// signals other packages about Up/Down/Config changed events
+//
+var StandAloneMode bool
+
 type httpRequestHandler struct{}
 
 type rangeStruct struct {
@@ -1504,6 +1509,16 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 		log.Fatalf("failed to upgrade confMap: %v", err)
 	}
 
+	// if ramswift as running as part of another package/test then that
+	// package will call transitions; otherwise bring up any packages that
+	// are interested
+	if StandAloneMode {
+		err = transitions.Up(confMap)
+		if nil != err {
+			log.Fatalf("transitions.Up() failed: %v", err)
+		}
+	}
+
 	// Find out who "we" are
 
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -1573,10 +1588,27 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 				log.Fatalf("failed to upgrade confMap: %v", err)
 			}
 
+			// inform any packages that are interested
+
+			// if ramswift as running as part of another package/test then
+			// that package will call transitions
+			if StandAloneMode {
+				err = transitions.Signaled(confMap)
+				if nil != err {
+					log.Fatalf("transitions.Signaled() failed: %v", err)
+				}
+			}
+
 			updateConf(confMap)
 		} else {
-			// signalReceived either SIGINT or SIGTERM... so just exit
+			// signalReceived either SIGINT or SIGTERM... so shutdown and exit
 
+			if StandAloneMode {
+				err = transitions.Down(confMap)
+				if nil != err {
+					log.Fatalf("transitions.Down() failed: %v", err)
+				}
+			}
 			globals = nil
 
 			doneChan <- true
