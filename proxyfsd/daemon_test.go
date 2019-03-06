@@ -188,9 +188,9 @@ func TestDaemon(t *testing.T) {
 
 	// Write to the volume (with no flush so that only time-based/restart flush is performed)
 
-	mountHandle, err = fs.Mount("CommonVolume", fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName("CommonVolume", fs.MountOptions(0))
 	if nil != err {
-		t.Fatalf("fs.Mount() failed [case 1]: %v", err)
+		t.Fatalf("fs.MountByVolumeName() failed [case 1]: %v", err)
 	}
 
 	createdFileInodeNumber, err = mountHandle.Create(
@@ -277,9 +277,9 @@ func TestDaemon(t *testing.T) {
 
 	// Verify written data after restart
 
-	mountHandle, err = fs.Mount("CommonVolume", fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName("CommonVolume", fs.MountOptions(0))
 	if nil != err {
-		t.Fatalf("fs.Mount() failed [case 2]: %v", err)
+		t.Fatalf("fs.MountByVolumeName() failed [case 2]: %v", err)
 	}
 
 	toReadFileInodeNumber, err = mountHandle.Lookup(

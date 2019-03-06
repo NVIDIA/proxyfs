@@ -148,8 +148,13 @@ type JobHandle interface {
 
 // Mount handle interface
 
-func Mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
-	mountHandle, err = mount(volumeName, mountOptions)
+func MountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	mountHandle, err = mountByAccountName(accountName, mountOptions)
+	return
+}
+
+func MountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	mountHandle, err = mountByVolumeName(volumeName, mountOptions)
 	return
 }
 

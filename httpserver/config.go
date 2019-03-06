@@ -177,7 +177,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 	}
 
-	volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+	volume.fsMountHandle, err = fs.MountByVolumeName(volume.name, 0)
 	if nil != err {
 		return
 	}

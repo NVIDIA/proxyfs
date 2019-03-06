@@ -117,6 +117,12 @@ func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {
 	return
 }
 
+// VolumeNameToAccountName returns the corresponding accountName for the supplied volumeName (if any).
+func VolumeNameToAccountName(volumeName string) (accountName string, ok bool) {
+	accountName, ok = volumeNameToAccountName(volumeName)
+	return
+}
+
 // VolumeNameToActivePeerPrivateIPAddr returns the Peer IP Address serving the specified VolumeName.
 func VolumeNameToActivePeerPrivateIPAddr(volumeName string) (activePeerPrivateIPAddr string, ok bool) {
 	activePeerPrivateIPAddr, ok = volumeNameToActivePeerPrivateIPAddr(volumeName)

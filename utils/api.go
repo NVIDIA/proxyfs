@@ -711,19 +711,40 @@ func (p *Profiler) Dump() {
 
 func FetchRandomBool() (randBool bool) {
 	var (
-		err         error
-		randByteBuf []byte
+		randByteSlice []byte
 	)
 
-	randByteBuf = make([]byte, 1)
+	randByteSlice = FetchRandomByteSlice(1)
 
-	_, err = rand.Read(randByteBuf)
+	randBool = (randByteSlice[0] < 0x80)
+
+	return
+}
+
+func FetchRandomUint64() (randUint64 uint64) {
+	var (
+		randByteSlice []byte
+	)
+
+	randByteSlice = FetchRandomByteSlice(8)
+
+	randUint64 = binary.LittleEndian.Uint64(randByteSlice)
+
+	return
+}
+
+func FetchRandomByteSlice(len int) (randByteSlice []byte) {
+	var (
+		err error
+	)
+
+	randByteSlice = make([]byte, len)
+
+	_, err = rand.Read(randByteSlice)
 	if nil != err {
-		err = fmt.Errorf("rand.Read(randByteBuf) failed: %v", err)
+		err = fmt.Errorf("rand.Read(randByteSlice) failed: %v", err)
 		panic(err)
 	}
-
-	randBool = (randByteBuf[0] < 0x80)
 
 	return
 }
@@ -744,7 +765,7 @@ func PerformDelayAndComputeNextDelay(thisDelay time.Duration, nextDelayMin time.
 	if nil == err {
 		nextDelay = time.Duration(int64(nextDelayMin) + randomBigInt.Int64())
 	} else {
-		err = fmt.Errorf("utils.retryBackup() failed in call to rand.Int(): %v", err)
+		err = fmt.Errorf("utils.PerformDelayAndComputeNextDelay() failed in call to rand.Int(): %v", err)
 	}
 
 	return

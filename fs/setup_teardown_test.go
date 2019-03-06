@@ -145,7 +145,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("transitions.Up() failed: %v", err)
 	}
 
-	mountHandle, err = Mount("TestVolume", MountOptions(0))
+	mountHandle, err = MountByVolumeName("TestVolume", MountOptions(0))
 	if nil != err {
 		t.Fatalf("fs.Mount() failed: %v", err)
 	}
