@@ -838,6 +838,23 @@ func accountNameToVolumeName(accountName string) (volumeName string, ok bool) {
 	return
 }
 
+func volumeNameToAccountName(volumeName string) (accountName string, ok bool) {
+	var (
+		volume *volumeStruct
+	)
+
+	globals.Lock()
+
+	volume, ok = globals.volumeMap[volumeName]
+	if ok {
+		accountName = volume.accountName
+	}
+
+	globals.Unlock()
+
+	return
+}
+
 func volumeNameToActivePeerPrivateIPAddr(volumeName string) (activePeerPrivateIPAddr string, ok bool) {
 	var (
 		volume *volumeStruct

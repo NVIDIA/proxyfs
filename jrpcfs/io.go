@@ -318,7 +318,7 @@ func putUint64Profiled(conn net.Conn, fieldName string, value uint64, field []by
 
 type ioRequest struct {
 	opType  uint64
-	mountID uint64
+	mountID MountIDAsByteArray
 	inodeID uint64
 	offset  uint64
 	length  uint64
@@ -338,8 +338,8 @@ type ioContext struct {
 	data []byte
 }
 
-const ioRequestSize int = 8 * 5
-const ioResponseSize int = 8 * 2
+const ioRequestSize int = 8 + 16 + 8 + 8 + 8
+const ioResponseSize int = 8 + 8
 
 func makeBytesReq(req *ioRequest) []byte {
 	mem := *(*[ioRequestSize]byte)(unsafe.Pointer(req))
@@ -406,7 +406,7 @@ func ioHandle(conn net.Conn) {
 			}
 
 			profiler.AddEventNow("before fs.Write()")
-			mountHandle, err = lookupMountHandle(ctx.req.mountID)
+			mountHandle, err = lookupMountHandleByMountIDAsByteArray(ctx.req.mountID)
 			if err == nil {
 				ctx.resp.ioSize, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
 			}
@@ -424,7 +424,7 @@ func ioHandle(conn net.Conn) {
 			}
 
 			profiler.AddEventNow("before fs.Read()")
-			mountHandle, err = lookupMountHandle(ctx.req.mountID)
+			mountHandle, err = lookupMountHandleByMountIDAsByteArray(ctx.req.mountID)
 			if err == nil {
 				ctx.data, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
 			}

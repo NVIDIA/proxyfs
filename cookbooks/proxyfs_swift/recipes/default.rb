@@ -66,6 +66,7 @@ ruby_block "update_proxy_server_pipeline" do
       file.insert_line_if_no_match(/egg.pfs_middleware/, "use = egg:pfs_middleware#pfs")
       file.insert_line_if_no_match(/proxyfsd_host/, "proxyfsd_host = 127.0.0.1")
       file.insert_line_if_no_match(/proxyfsd_port/, "proxyfsd_port = 12345")
+      file.insert_line_if_no_match(/bypass_mode/, "bypass_mode = read-write")
       file.write_file
     end
   end

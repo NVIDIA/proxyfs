@@ -33,13 +33,13 @@
 // The Go-side definitions of interest are:
 //
 // From this file:
-//   type MountRequest struct {
+//   type MountRequestByVolumeName struct {
 //       VolumeName   string
 //       MountOptions uint64
 //   }
 //
 //   type MountReply struct {
-//       MountID            uint64
+//       MountID            MountIDAsString
 //       RootDirInodeNumber uint64
 //   }
 //
@@ -65,10 +65,10 @@
 //    # This will become the JSON request once we encode it
 //    #
 //    payload = {
-//        "method": "Server.RpcMount",   # This will always be "Server."<method name from filesystem.go>
-//        "params": [args],              # Args must be encoded in an array here!
-//        "jsonrpc": "2.0",              # JSON RPC version
-//        "id": id,                      # Client request id
+//        "method": "Server.RpcMountByVolumeName", # This will always be "Server."<method name from filesystem.go>
+//        "params": [args],                        # Args must be encoded in an array here!
+//        "jsonrpc": "2.0",                        # JSON RPC version
+//        "id": id,                                # Client request id
 //    }
 //
 //    # Encode payload into JSON
@@ -134,7 +134,7 @@
 //  It turns out that all uint64's previously in the jrpcfs-specified RPC (i.e. those in api.go) fall
 //  into three categories:
 //
-//    Practically never > math.MaxInt64 - e.g. MountID, Stat.Size
+//    Practically never > math.MaxInt64 - e.g. Stat.Size
 //    Possibly          > math.MaxInt64 - specifically SnapShotIDs adorning InodeNumbers
 //
 //  In the "Possibly" category, the InodeNumbers are the worry here. Fortunately, InodeNumbers are
@@ -155,6 +155,26 @@ import (
 // The API for this section is implemented in filesystem.go.
 //
 // Structs used by Swift middleware are defined below.
+
+// MountID is embedded in a number of request objects (as well as InodeHandle & PathHandle)
+//
+// For Reads/Writes, the binary form of MountID will be used
+// For Non-Reads/Writes, a base64.StdEncoding.Encode() of the binary form of MountID will be used
+//
+type MountIDAsByteArray [16]byte
+type MountIDAsString string
+
+// InodeHandle is embedded in a number of the request objects.
+type InodeHandle struct {
+	MountID     MountIDAsString
+	InodeNumber int64
+}
+
+// PathHandle is embedded in a number of the request objects.
+type PathHandle struct {
+	MountID  MountIDAsString
+	Fullpath string
+}
 
 // ChmodRequest is the request object for RpcChmod.
 type ChmodRequest struct {
@@ -260,12 +280,6 @@ type FlockReply struct {
 	FlockPid    uint64
 }
 
-// InodeHandle is embedded in a number of the request objects.
-type InodeHandle struct {
-	MountID     uint64
-	InodeNumber int64
-}
-
 // InodeReply is the reply object for requests that return an inode number.
 // This response object is used by a number of the methods.
 type InodeReply struct {
@@ -279,7 +293,7 @@ type LogRequest struct {
 
 // LookupPathRequest is the request object for RpcLookupPath.
 type LookupPathRequest struct {
-	MountID  uint64
+	MountID  MountIDAsString
 	Fullpath string
 }
 
@@ -331,24 +345,32 @@ type MkdirPathRequest struct {
 	FileMode uint32
 }
 
-// MountRequest is the request object for RpcMount.
-type MountRequest struct {
+// MountByAccountNameRequest is the request object for RpcMountByAccountName.
+type MountByAccountNameRequest struct {
+	AccountName  string
+	MountOptions uint64
+	AuthUserID   uint64
+	AuthGroupID  uint64
+}
+
+// MountByAccountNameReply is the reply object for RpcMountByAccountName.
+type MountByAccountNameReply struct {
+	MountID            MountIDAsString
+	RootDirInodeNumber int64
+}
+
+// MountByVolumeNameRequest is the request object for RpcMountByVolumeName.
+type MountByVolumeNameRequest struct {
 	VolumeName   string
 	MountOptions uint64
 	AuthUserID   uint64
 	AuthGroupID  uint64
 }
 
-// MountReply is the reply object for RpcMount.
-type MountReply struct {
-	MountID            uint64
+// MountByVolumeNameReply is the reply object for RpcMountByVolumeName.
+type MountByVolumeNameReply struct {
+	MountID            MountIDAsString
 	RootDirInodeNumber int64
-}
-
-// PathHandle is embedded in a number of the request objects.
-type PathHandle struct {
-	MountID  uint64
-	Fullpath string
 }
 
 // ReaddirRequest is the request object for RpcReaddir.
@@ -390,24 +412,6 @@ type ReaddirPlusReply struct {
 	StatEnts []StatStruct
 }
 
-// ReadRequest is the request object for RpcRead.
-type ReadRequest struct {
-	InodeHandle
-	Offset       uint64
-	Length       uint64
-	SendTimeSec  int64
-	SendTimeNsec int64
-}
-
-// ReadReply is the reply object for RpcRead.
-type ReadReply struct {
-	Buf             []byte
-	RequestTimeSec  int64
-	RequestTimeNsec int64
-	SendTimeSec     int64
-	SendTimeNsec    int64
-}
-
 // ReadSymlinkRequest is the request object for RpcReadSymlink.
 type ReadSymlinkRequest struct {
 	InodeHandle
@@ -435,7 +439,7 @@ type RemoveXAttrPathRequest struct {
 
 // RenameRequest is the request object for RpcRename.
 type RenameRequest struct {
-	MountID           uint64
+	MountID           MountIDAsString
 	SrcDirInodeNumber int64
 	SrcBasename       string
 	DstDirInodeNumber int64
@@ -497,7 +501,7 @@ type SetXAttrPathRequest struct {
 
 // StatVFSRequest is the request object for RpcStatVFS.
 type StatVFSRequest struct {
-	MountID uint64
+	MountID MountIDAsString
 }
 
 // StatVFS is used when filesystem stats need to be conveyed. It is used by RpcStatVFS.
@@ -572,24 +576,6 @@ type UnlinkRequest struct {
 // UnlinkPathRequest is the request object for RpcUnlinkPath.
 type UnlinkPathRequest struct {
 	PathHandle
-}
-
-// WriteRequest is the request object for RpcWrite.
-type WriteRequest struct {
-	InodeHandle
-	Offset       uint64
-	Buf          []byte
-	SendTimeSec  int64
-	SendTimeNsec int64
-}
-
-// WriteReply is the reply object for RpcWrite.
-type WriteReply struct {
-	Size            uint64
-	RequestTimeSec  int64
-	RequestTimeNsec int64
-	SendTimeSec     int64
-	SendTimeNsec    int64
 }
 
 // This section of the file contains RPC data structures for Swift middleware bimodal support.

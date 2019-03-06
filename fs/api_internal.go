@@ -194,7 +194,63 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	inFlightFileInodeData.wg.Done()
 }
 
-func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+func mountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	var (
+		mS         *mountStruct
+		ok         bool
+		volStruct  *volumeStruct
+		volumeName string
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.MountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MountErrors.Add(1)
+		}
+	}()
+
+	globals.Lock()
+
+	volumeName, ok = inode.AccountNameToVolumeName(accountName)
+	if !ok {
+		err = fmt.Errorf("Unknown accountName passed to mountByAccountName(): \"%s\"", accountName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	volStruct, ok = globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("Unknown volumeName computed by mountByAccountName(): \"%s\"", volumeName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	globals.lastMountID++
+
+	mS = &mountStruct{
+		id:        globals.lastMountID,
+		options:   mountOptions,
+		volStruct: volStruct,
+	}
+
+	globals.mountMap[mS.id] = mS
+
+	volStruct.dataMutex.Lock()
+	volStruct.mountList = append(volStruct.mountList, mS.id)
+	volStruct.dataMutex.Unlock()
+
+	globals.Unlock()
+
+	mountHandle = mS
+	err = nil
+
+	return
+}
+
+func mountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
 	var (
 		mS        *mountStruct
 		ok        bool
@@ -213,7 +269,7 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 
 	volStruct, ok = globals.volumeMap[volumeName]
 	if !ok {
-		err = fmt.Errorf("Unknown volumeName passed to mount(): \"%s\"", volumeName)
+		err = fmt.Errorf("Unknown volumeName passed to mountByVolumeName(): \"%s\"", volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		globals.Unlock()
 		return

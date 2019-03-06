@@ -50,7 +50,7 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 
 	// We have not already mounted it, mount it now and store result in bimodalMountMap
 	// TODO - add proper mountOpts
-	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.Mount() of acct: %v container: %v failed!", accountName, containerName)
 		return accountName, containerName, objectName, volumeName, nil, err

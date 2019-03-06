@@ -393,7 +393,7 @@ func main() {
 
 			// If we are doing the operations on the same file for all threads, create the file now.
 			if doSameFile {
-				// Save off MountID and FileInodeNumber in rwSizeEach since all threads need this
+				// Save off MountHandle and FileInodeNumber in rwSizeEach since all threads need this
 				err, rwSizeEach.MountHandle, rwSizeEach.FileInodeNumber, fileName = createFsFile()
 				if nil != err {
 					// In an error, no point in continuing.  Just break from this for loop.
@@ -830,9 +830,9 @@ func fuseWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64) {
 }
 
 func createFsFile() (err error, mountHandle fs.MountHandle, fileInodeNumber inode.InodeNumber, fileName string) {
-	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
 	if nil != err {
-		stepErrChan <- fmt.Errorf("fs.Mount(\"%v\", fs.MountOptions(0), \"\") failed: %v\n", volumeName, err)
+		stepErrChan <- fmt.Errorf("fs.MountByVolumeName(\"%v\", fs.MountOptions(0), \"\") failed: %v\n", volumeName, err)
 		return
 	}
 
