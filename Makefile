@@ -49,15 +49,21 @@ machine = $(shell uname -m)
 ifeq ($(uname),Linux)
     ifeq ($(machine),armv7l)
         all: version fmt pre-generate generate install test
+
+        minimal: pre-generate generate install
     else
         distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
         all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
 
         all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
+
+        minimal: pre-generate generate install c-clean c-build c-install
     endif
 else
     all: version fmt pre-generate generate install test
+
+    minimal: pre-generate generate install
 endif
 
 .PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install pre-generate python-test test version

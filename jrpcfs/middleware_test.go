@@ -943,8 +943,12 @@ func TestRpcGetContainerSymlink(t *testing.T) {
 	response := GetContainerReply{}
 	err := server.RpcGetContainer(&request, &response)
 
+	// Note: We are not supporting GetContainer *thru* a symlink
+	//       In other words, the Container itself cannot be a SymlinkInode
+	//       This aligns with GetAccount which will only return DirInode dir_entry's
+
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.InvalidArgError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
 }
 
 func TestRpcGetAccount(t *testing.T) {
