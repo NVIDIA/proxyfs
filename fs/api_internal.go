@@ -1724,6 +1724,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 	} else {
 		markerPath, markerPathDirInodeIndex, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + marker)
 		if nil != err {
+			err = blunder.AddError(err, blunder.InvalidArgError)
 			return
 		}
 
@@ -1744,6 +1745,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 	} else {
 		endmarkerPath, _, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + endmarker)
 		if nil != err {
+			err = blunder.AddError(err, blunder.InvalidArgError)
 			return
 		}
 
@@ -1760,10 +1762,11 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 	prefixPath, prefixPathDirInodeIndex, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + prefix)
 	if nil != err {
+		err = blunder.AddError(err, blunder.InvalidArgError)
 		return
 	}
 	if prefixPathDirInodeIndex < 0 {
-		err = blunder.NewError(blunder.InvalidArgError, "MiddlewareGetContainer() only supports querying an existing Container")
+		err = blunder.NewError(blunder.NotFoundError, "MiddlewareGetContainer() only supports querying an existing Container")
 		return
 	}
 

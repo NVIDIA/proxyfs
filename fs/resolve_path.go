@@ -868,8 +868,6 @@ RestartAfterFollowingSymlink:
 		}
 	}
 
-	// Finally, return with values already set from above
-
 	return
 }
 
