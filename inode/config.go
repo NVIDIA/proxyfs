@@ -627,6 +627,11 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.volumeGroup.numServed++
 
 	volume.volumeGroup.Unlock()
+
+	if nil != volume.snapShotPolicy {
+		volume.snapShotPolicy.up()
+	}
+
 	globals.Unlock()
 
 	err = adoptVolumeGroupReadCacheParameters(confMap)
@@ -652,6 +657,10 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		globals.Unlock()
 		err = fmt.Errorf("inode.UnserveVolume() called for Volume (%s) not being served", volumeName)
 		return
+	}
+
+	if nil != volume.snapShotPolicy {
+		volume.snapShotPolicy.down()
 	}
 
 	stopInodeCacheDiscard(volume)
