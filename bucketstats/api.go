@@ -123,16 +123,16 @@ func SprintStats(stringFmt StatStringFormat, pkgName string, statsGroupName stri
 // Register() will assign a name based on the name of the field.
 //
 type Total struct {
+	total uint64 // Ensure 64-bit alignment
 	Name  string
-	total uint64
 }
 
 func (this *Total) Add(value uint64) {
-	atomic.AddUint64(&this.total, value)
+	atomicAddUint64(&this.total, value)
 }
 
 func (this *Total) Increment() {
-	atomic.AddUint64(&this.total, 1)
+	atomicAddUint64(&this.total, 1)
 }
 
 func (this *Total) TotalGet() uint64 {
@@ -152,16 +152,16 @@ func (this *Total) Sprint(stringFmt StatStringFormat, pkgName string, statsGroup
 // Register() will assign a name based on the name of the field.
 //
 type Average struct {
+	count uint64 // Ensure 64-bit alignment
+	total uint64 // Ensure 64-bit alignment
 	Name  string
-	count uint64
-	total uint64
 }
 
 // Add a value to the mean statistics.
 //
 func (this *Average) Add(value uint64) {
-	atomic.AddUint64(&this.total, value)
-	atomic.AddUint64(&this.count, 1)
+	atomicAddUint64(&this.total, value)
+	atomicAddUint64(&this.count, 1)
 }
 
 // Add a value of 1 to the mean statistics.
@@ -171,15 +171,15 @@ func (this *Average) Increment() {
 }
 
 func (this *Average) CountGet() uint64 {
-	return this.count
+	return atomicLoadUint64(&this.count)
 }
 
 func (this *Average) TotalGet() uint64 {
-	return this.total
+	return atomicLoadUint64(&this.total)
 }
 
 func (this *Average) AverageGet() uint64 {
-	return this.total / this.count
+	return atomicLoadUint64(&this.total) / atomicLoadUint64(&this.count)
 }
 
 // Return a string with the statistic's value in the specified format.

@@ -3,18 +3,22 @@ package fs
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
 	resolvePathFollowDirEntrySymlinks              uint32 = 1 << iota //
 	resolvePathFollowDirSymlinks                                      //
-	resolvePathCreateMissingPathElements                              //
-	resolvePathDirEntryInodeMustBeDirectory                           // Otherwise, it must be a File
+	resolvePathCreateMissingPathElements                              // Defaults created DirEntry to be a File
+	resolvePathDirEntryInodeMustBeDirectory                           //
+	resolvePathDirEntryInodeMustBeFile                                //
+	resolvePathDirEntryInodeMustBeSymlink                             //
 	resolvePathRequireExclusiveLockOnDirEntryInode                    //
 	resolvePathRequireExclusiveLockOnDirInode                         // Presumably only useful if resolvePathRequireExclusiveLockOnDirEntryInode also specified
 	resolvePathRequireSharedLockOnDirInode                            // Not valid if resolvePathRequireExclusiveLockOnDirInode also specified
@@ -38,10 +42,105 @@ func newHeldLocks() (heldLocks *heldLocksStruct) {
 	return
 }
 
+func (heldLocks *heldLocksStruct) attemptExclusiveLock(inodeVolumeHandle inode.VolumeHandle, dlmCallerID dlm.CallerID, inodeNumber inode.InodeNumber) (retryRequired bool) {
+	var (
+		err       error
+		inodeLock *dlm.RWLockStruct
+		ok        bool
+	)
+
+	_, ok = heldLocks.exclusive[inodeNumber]
+	if ok {
+		retryRequired = false
+		return
+	}
+
+	inodeLock, ok = heldLocks.shared[inodeNumber]
+	if ok {
+		err = inodeLock.Unlock()
+		if nil != err {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, err)
+		}
+
+		delete(heldLocks.shared, inodeNumber)
+	}
+
+	inodeLock, err = inodeVolumeHandle.AttemptWriteLock(inodeNumber, dlmCallerID)
+	if nil != err {
+		retryRequired = true
+		return
+	}
+
+	heldLocks.exclusive[inodeNumber] = inodeLock
+
+	retryRequired = false
+	return
+}
+
+func (heldLocks *heldLocksStruct) attemptSharedLock(inodeVolumeHandle inode.VolumeHandle, dlmCallerID dlm.CallerID, inodeNumber inode.InodeNumber) (retryRequired bool) {
+	var (
+		err       error
+		inodeLock *dlm.RWLockStruct
+		ok        bool
+	)
+
+	_, ok = heldLocks.exclusive[inodeNumber]
+	if ok {
+		retryRequired = false
+		return
+	}
+	_, ok = heldLocks.shared[inodeNumber]
+	if ok {
+		retryRequired = false
+		return
+	}
+
+	inodeLock, err = inodeVolumeHandle.AttemptReadLock(inodeNumber, dlmCallerID)
+	if nil != err {
+		retryRequired = true
+		return
+	}
+
+	heldLocks.shared[inodeNumber] = inodeLock
+
+	retryRequired = false
+	return
+}
+
+func (heldLocks *heldLocksStruct) unlock(inodeNumber inode.InodeNumber) {
+	var (
+		err      error
+		heldLock *dlm.RWLockStruct
+		ok       bool
+	)
+
+	heldLock, ok = heldLocks.exclusive[inodeNumber]
+	if ok {
+		err = heldLock.Unlock()
+		if nil != err {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", heldLock.LockID, err)
+		}
+		delete(heldLocks.exclusive, inodeNumber)
+		return
+	}
+
+	heldLock, ok = heldLocks.shared[inodeNumber]
+	if ok {
+		err = heldLock.Unlock()
+		if nil != err {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", heldLock.LockID, err)
+		}
+		delete(heldLocks.shared, inodeNumber)
+		return
+	}
+
+	logger.Fatalf("Attempt to unlock a non-held Lock on inodeNumber 0x%016X", inodeNumber)
+}
+
 func (heldLocks *heldLocksStruct) free() {
 	var (
-		heldLock *dlm.RWLockStruct
 		err      error
+		heldLock *dlm.RWLockStruct
 	)
 
 	for _, heldLock = range heldLocks.exclusive {
@@ -78,24 +177,24 @@ func (heldLocks *heldLocksStruct) free() {
 //
 //     heldLocks = newHeldLocks()
 //
-//     dirInode, fileInode, retryRequired, err =
+//     dirInode, dirEntryInode, retryRequired, err =
 //         resolvePath(inode.RootDirInodeNumber, path, heldLocks, resolvePathFollowSymlnks|...)
 //
 //     if retryRequired {
 //         heldLocks.free()
-//         got Restart
+//         goto Restart
 //     }
 //
-//     // Do whatever needed to be done with returned [dirInode and] fileInode
+//     // Do whatever needed to be done with returned [dirInode and] dirEntryInode
 //
 //     heldLocks.free()
-func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options uint32) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, retryRequired bool, err error) {
+//
+func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options uint32) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, dirEntryInodeType inode.InodeType, retryRequired bool, err error) {
 	var (
 		dirEntryInodeLock                 *dlm.RWLockStruct
 		dirEntryInodeLockAlreadyExclusive bool
 		dirEntryInodeLockAlreadyHeld      bool
 		dirEntryInodeLockAlreadyShared    bool
-		dirEntryInodeType                 inode.InodeType
 		dirInodeLock                      *dlm.RWLockStruct
 		dirInodeLockAlreadyExclusive      bool
 		dirInodeLockAlreadyHeld           bool
@@ -126,6 +225,16 @@ func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path s
 		return
 	}
 
+	if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeDirectory) {
+		if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) || resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) {
+			err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,,,options) cannot include more than one {resolvePathDirEntryInodeMustBeDirectory, resolvePathDirEntryInodeMustBeFile, resolvePathDirEntryInodeMustBeSymlink}")
+			return
+		}
+	} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) && resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) {
+		err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,,,options) cannot include more than one {resolvePathDirEntryInodeMustBeDirectory, resolvePathDirEntryInodeMustBeFile, resolvePathDirEntryInodeMustBeSymlink}")
+		return
+	}
+
 	// Setup shortcuts/contants
 
 	dlmCallerID = dlm.GenerateCallerID()
@@ -139,7 +248,7 @@ func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path s
 
 RestartAfterFollowingSymlink:
 
-	if (nil != internalErr) || (0 == len(pathSplit)) {
+	if nil != internalErr {
 		err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) invalid", path)
 		return
 	}
@@ -166,6 +275,95 @@ RestartAfterFollowingSymlink:
 				return
 			}
 		}
+	}
+
+	if 0 == len(pathSplit) {
+		// Special case where path resolves to "/"
+		// Note: dirEntryInodeNumber == inode.RootDirInodeNumber
+
+		// Reject invalid options for the "/" case
+
+		if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) ||
+			resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) ||
+			resolvePathOptionsCheck(options, resolvePathRequireExclusiveLockOnDirInode) ||
+			resolvePathOptionsCheck(options, resolvePathRequireSharedLockOnDirInode) {
+			err = blunder.NewError(blunder.InvalidArgError, "resolvePath(inode.RootDirInodeNumber,\"/\",,options) cannot satisfy options: 0x%08X", options)
+			return
+		}
+
+		// Attempt to obtain requested lock on "/"
+
+		if resolvePathOptionsCheck(options, resolvePathRequireExclusiveLockOnDirEntryInode) {
+			if !dirEntryInodeLockAlreadyExclusive {
+				if dirEntryInodeLockAlreadyShared {
+					// Promote heldLocks.shared dirEntryInodeLock to .exclusive
+
+					internalErr = dirEntryInodeLock.Unlock()
+					if nil != internalErr {
+						logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+					}
+
+					delete(heldLocks.shared, dirEntryInodeNumber)
+					dirEntryInodeLockAlreadyHeld = false
+					dirEntryInodeLockAlreadyShared = false
+
+					dirEntryInodeLock, internalErr = inodeVolumeHandle.AttemptWriteLock(dirEntryInodeNumber, dlmCallerID)
+					if nil != internalErr {
+						// Caller must call heldLocks.free(), "backoff", and retry
+
+						if !dirInodeLockAlreadyHeld {
+							internalErr = dirInodeLock.Unlock()
+							if nil != internalErr {
+								logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+							}
+						}
+
+						retryRequired = true
+						return
+					}
+
+					heldLocks.exclusive[dirEntryInodeNumber] = dirEntryInodeLock
+					dirEntryInodeLockAlreadyExclusive = true
+					dirEntryInodeLockAlreadyHeld = true
+				} else {
+					// Promote temporary ReadLock dirEntryInodeLock to .exclusive
+
+					internalErr = dirEntryInodeLock.Unlock()
+					if nil != internalErr {
+						logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+					}
+
+					dirEntryInodeLock, internalErr = inodeVolumeHandle.AttemptWriteLock(dirEntryInodeNumber, dlmCallerID)
+					if nil != internalErr {
+						// Caller must call heldLocks.free(), "backoff", and retry
+
+						if !dirInodeLockAlreadyHeld {
+							internalErr = dirInodeLock.Unlock()
+							if nil != internalErr {
+								logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+							}
+						}
+
+						retryRequired = true
+						return
+					}
+
+					heldLocks.exclusive[dirEntryInodeNumber] = dirEntryInodeLock
+					dirEntryInodeLockAlreadyExclusive = true
+					dirEntryInodeLockAlreadyHeld = true
+				}
+			}
+		} else {
+			if !dirEntryInodeLockAlreadyHeld {
+				// Promote temporary ReadLock dirEntryInodeLock to heldLocks.shared
+
+				heldLocks.shared[dirEntryInodeNumber] = dirEntryInodeLock
+				dirEntryInodeLockAlreadyHeld = true
+				dirEntryInodeLockAlreadyShared = true
+			}
+		}
+
+		return
 	}
 
 	// Now loop for each pathSplit part
@@ -295,6 +493,106 @@ RestartAfterFollowingSymlink:
 
 						err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) invalid", path)
 						return
+					} else {
+						// Being the last pathSplitPart, ensure caller didn't require it to be a DirInode or FileInode
+
+						if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeDirectory) {
+							if !dirEntryInodeLockAlreadyHeld {
+								internalErr = dirEntryInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+								}
+							}
+							if !dirInodeLockAlreadyHeld {
+								internalErr = dirInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+								}
+							}
+
+							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find DirInode", path)
+							return
+						} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) {
+							if !dirEntryInodeLockAlreadyHeld {
+								internalErr = dirEntryInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+								}
+							}
+							if !dirInodeLockAlreadyHeld {
+								internalErr = dirInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+								}
+							}
+
+							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find FileInode", path)
+							return
+						} else {
+							// SymlinkInode is ok
+						}
+					}
+				}
+			} else {
+				// Not a SymlinkInode... check if it's last pathSplitPart and, if so, of correct InodeType
+
+				if pathSplitPartIndex == (len(pathSplit) - 1) {
+					if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeDirectory) {
+						if dirEntryInodeType != inode.DirType {
+							if !dirEntryInodeLockAlreadyHeld {
+								internalErr = dirEntryInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+								}
+							}
+							if !dirInodeLockAlreadyHeld {
+								internalErr = dirInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+								}
+							}
+
+							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find DirInode", path)
+							return
+						}
+					} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) {
+						if dirEntryInodeType != inode.FileType {
+							if !dirEntryInodeLockAlreadyHeld {
+								internalErr = dirEntryInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+								}
+							}
+							if !dirInodeLockAlreadyHeld {
+								internalErr = dirInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+								}
+							}
+
+							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find FileInode", path)
+							return
+						}
+					} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) {
+						if dirEntryInodeType != inode.SymlinkType {
+							if !dirEntryInodeLockAlreadyHeld {
+								internalErr = dirEntryInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirEntryInodeLock.LockID, internalErr)
+								}
+							}
+							if !dirInodeLockAlreadyHeld {
+								internalErr = dirInodeLock.Unlock()
+								if nil != internalErr {
+									logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+								}
+							}
+
+							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find SymlinkInode", path)
+							return
+						}
+					} else {
+						// Any InodeType is ok
 					}
 				}
 			}
@@ -302,6 +600,20 @@ RestartAfterFollowingSymlink:
 			// Lookup() failed... is resolvePath() asked to create missing Inode?
 
 			if resolvePathOptionsCheck(options, resolvePathCreateMissingPathElements) {
+				// Cannot implicitly create a SymlinkInode for last pathSplitPart
+
+				if (pathSplitPartIndex == (len(pathSplit) - 1)) && resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) {
+					if !dirInodeLockAlreadyHeld {
+						internalErr = dirInodeLock.Unlock()
+						if nil != internalErr {
+							logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+						}
+					}
+
+					err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find SymlinkInode", path)
+					return
+				}
+
 				// Must hold exclusive lock to create missing {Dir|File}Inode
 
 				if !dirInodeLockAlreadyExclusive {
@@ -350,23 +662,34 @@ RestartAfterFollowingSymlink:
 					}
 				}
 
-				// Create missing {Dir|File}Inode
+				// Create missing {Dir|File}Inode (cannot implicitly create a SymlinkInode)
 
 				if (pathSplitPartIndex < (len(pathSplit) - 1)) || resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeDirectory) {
 					// Create a DirInode to be inserted
+
+					dirEntryInodeType = inode.DirType
 
 					dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeGroupID(0))
 					if nil != internalErr {
 						err = blunder.NewError(blunder.PermDeniedError, "resolvePath(): failed to create a DirInode: %v", err)
 						return
 					}
-				} else {
-					// Create a FileInode to be inserted
+				} else { // (pathSplitPartIndex == (len(pathSplit) - 1)) && !resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeDirectory)
+					if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeSymlink) {
+						// Cannot implicitly create a SymlinkInode
 
-					dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateFile(inode.InodeMode(0644), inode.InodeRootUserID, inode.InodeGroupID(0))
-					if nil != internalErr {
-						err = blunder.NewError(blunder.PermDeniedError, "resolvePath(): failed to create a FileInode: %v", err)
+						err = blunder.NewError(blunder.InvalidArgError, "resolvePath(): cannot create a missing SymlinkInode")
 						return
+					} else {
+						// Create a FileInode to be inserted
+
+						dirEntryInodeType = inode.FileType
+
+						dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateFile(inode.InodeMode(0644), inode.InodeRootUserID, inode.InodeGroupID(0))
+						if nil != internalErr {
+							err = blunder.NewError(blunder.PermDeniedError, "resolvePath(): failed to create a FileInode: %v", err)
+							return
+						}
 					}
 				}
 
@@ -428,6 +751,13 @@ RestartAfterFollowingSymlink:
 				if nil != internalErr {
 					// Caller must call heldLocks.free(), "backoff", and retry
 
+					if !dirInodeLockAlreadyHeld {
+						internalErr = dirInodeLock.Unlock()
+						if nil != internalErr {
+							logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+						}
+					}
+
 					retryRequired = true
 					return
 				}
@@ -446,6 +776,13 @@ RestartAfterFollowingSymlink:
 				dirEntryInodeLock, internalErr = inodeVolumeHandle.AttemptWriteLock(dirEntryInodeNumber, dlmCallerID)
 				if nil != internalErr {
 					// Caller must call heldLocks.free(), "backoff", and retry
+
+					if !dirInodeLockAlreadyHeld {
+						internalErr = dirInodeLock.Unlock()
+						if nil != internalErr {
+							logger.Fatalf("resolvePath(): failed unlocking held LockID %s: %v", dirInodeLock.LockID, internalErr)
+						}
+					}
 
 					retryRequired = true
 					return
@@ -531,8 +868,6 @@ RestartAfterFollowingSymlink:
 		}
 	}
 
-	// Finally, return with values already set from above
-
 	return
 }
 
@@ -594,5 +929,85 @@ func reCanonicalizePathForSymlink(canonicalizedPathSplit []string, symlinkIndex 
 
 	reCanonicalizedPathSplit, err = canonicalizePath(updatedPath)
 
+	return
+}
+
+// canonicalizePathAndLocateLeafDirInode performs what canonicalizePath() does above but, in addition,
+// locates the index in the resultant canonicalizedPathSplit where an existing directory resides. Note
+// that no DLM Locks should be held at invocation as this func will be performing any necessary retries
+// and would have no way of backing out of a caller's existing DLM locks.
+//
+// Returns:
+//   If canonicalPath is empty or invalid, err will be non-nil
+//   If path-located Inode exists,
+//     If path-located Inode is     a DirInode, dirInodeIndex == len(canonicalizedPathSplit) - 1
+//     If path-located Inode is not a DirInode, dirInodeIndex == len(canonicalizedPathSplit) - 2
+//   If path-located Inode does not exist,      dirInodeIndex == len(canonicalizedPathSplit) - 2
+//
+// Note 1: A dirInodeIndex == -1 is certainly possible and is, indeed, the expected result when
+//         parsing a path that directory refers to a Swift Container (i.e. root-level subdirectory).
+//
+// Note 2: No symbolic links will be followed. This is not a problem given that all we are really
+//         trying to indicate is if we know the path would resolve to a directory or not. It is
+//         certainly possible that the leaf element of the supplied path is a SymlinkInode pointing
+//         at a DirInode, but in that case it's still ok to begin searching from the DirInode
+//         containing the SymlinkInode (as in the case of MiddlewareGetContainer()'s use case).
+//
+// Note that a dirInodeIndex == -1 is possible
+//
+func (mS *mountStruct) canonicalizePathAndLocateLeafDirInode(path string) (canonicalizedPathSplit []string, dirInodeIndex int, err error) {
+	var (
+		dirEntryInodeType inode.InodeType
+		heldLocks         *heldLocksStruct
+		restartBackoff    time.Duration
+		retryRequired     bool
+	)
+
+	canonicalizedPathSplit, err = canonicalizePath(path)
+	if nil != err {
+		return
+	}
+	if 0 == len(canonicalizedPathSplit) {
+		err = fmt.Errorf("Canonically empty path \"%s\" not allowed", path)
+		return
+	}
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
+	}
+
+	heldLocks = newHeldLocks()
+
+	_, _, _, dirEntryInodeType, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			strings.Join(canonicalizedPathSplit, "/"),
+			heldLocks,
+			0)
+	if nil != err {
+		heldLocks.free()
+		dirInodeIndex = len(canonicalizedPathSplit) - 2
+		err = nil
+		return
+	}
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	heldLocks.free()
+
+	if inode.DirType == dirEntryInodeType {
+		dirInodeIndex = len(canonicalizedPathSplit) - 1
+	} else {
+		dirInodeIndex = len(canonicalizedPathSplit) - 2
+	}
+
+	err = nil
 	return
 }

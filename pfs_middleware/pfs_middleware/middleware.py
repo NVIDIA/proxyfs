@@ -913,9 +913,9 @@ class PfsMiddleware(object):
     def _plaintext_account_get_response(self, account_entries):
         chunks = []
         for entry in account_entries:
-            chunks.append(entry["Basename"])
-            chunks.append("\n")
-        return ''.join(chunks)
+            chunks.append(entry["Basename"].encode('utf-8'))
+            chunks.append(b"\n")
+        return b''.join(chunks)
 
     def _json_account_get_response(self, account_entries):
         json_entries = []
@@ -1211,9 +1211,9 @@ class PfsMiddleware(object):
     def _plaintext_container_get_response(self, container_entries):
         chunks = []
         for ent in container_entries:
-            chunks.append(ent["Basename"])
-            chunks.append("\n")
-        return ''.join(chunks)
+            chunks.append(ent["Basename"].encode('utf-8'))
+            chunks.append(b"\n")
+        return b''.join(chunks)
 
     def _json_container_get_response(self, container_entries, account_name,
                                      delimiter):
@@ -1286,7 +1286,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = content_type
+            ct_node.text = content_type.decode('utf-8')
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')

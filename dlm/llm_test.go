@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -21,7 +21,7 @@ import (
 var s1 string = strconv.Itoa(1)
 
 // Mutex for protecting global variables
-var mutex sync.Mutex
+var mutex trackedlock.Mutex
 
 type testOpTyp int
 
@@ -53,6 +53,11 @@ var testConfMap conf.ConfMap
 
 // Largely stolen from fs/api_test.go
 func testSetup() (err error) {
+	confStrings := []string{
+		"TrackedLock.LockHoldTimeLimit=2s",
+		"TrackedLock.LockCheckPeriod=1s",
+	}
+
 	testDir, err := ioutil.TempDir(os.TempDir(), "ProxyFS_test_ldlm_")
 	if nil != err {
 		return
@@ -65,7 +70,15 @@ func testSetup() (err error) {
 
 	err = os.Mkdir("TestVolume", os.ModePerm)
 
-	testConfMap := conf.MakeConfMap()
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		return
+	}
+
+	err = logger.Up(confMap)
+	if nil != err {
+		return
+	}
 
 	// Setup channel used to synchronize multiple test thread operations
 	globalSyncPt = make(chan testReq)
@@ -86,6 +99,7 @@ func testSetup() (err error) {
 
 	err = transitions.Up(testConfMap)
 	if nil != err {
+		logger.ErrorWithError(err, "transitions.Up() failed")
 		return
 	}
 
@@ -96,6 +110,7 @@ func testSetup() (err error) {
 func testTeardown() (err error) {
 	err = transitions.Down(testConfMap)
 	if nil != err {
+		logger.ErrorWithError(err, "transitions.Down() failed")
 		return
 	}
 
@@ -130,7 +145,7 @@ func TestMain(m *testing.M) {
 
 	err = testTeardown()
 	if nil != err {
-		logger.ErrorWithError(err)
+		logger.ErrorWithError(err, "testTeardown failed")
 	}
 
 	os.Exit(testResults)
@@ -412,9 +427,26 @@ func testTwoThreadsSharedLocking(t *testing.T) {
 	waitCountOwners(s1, 1)
 	waitCountWaiters(s1, 0)
 
-	sendRequestToThread(1, t, unlock, s1)
+	// Have thread 0 acquire the lock again
+	sendRequestToThread(0, t, readLock, s1)
+	waitCountOwners(s1, 2)
 	waitCountWaiters(s1, 0)
+
+	// Thread 1 releases the lock
+	sendRequestToThread(1, t, unlock, s1)
+	waitCountOwners(s1, 1)
+	waitCountWaiters(s1, 0)
+
+	// Thread 1 acquires the lock again
+	sendRequestToThread(1, t, readLock, s1)
+	waitCountOwners(s1, 2)
+	waitCountWaiters(s1, 0)
+
+	// both threads release their locks
+	sendRequestToThread(0, t, unlock, s1)
+	sendRequestToThread(1, t, unlock, s1)
 	waitCountOwners(s1, 0)
+	waitCountWaiters(s1, 0)
 
 	// Stop worker threads
 	stopThreads(t)

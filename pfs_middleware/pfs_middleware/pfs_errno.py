@@ -27,6 +27,7 @@ errorcode = {
     17: "FileExistsError",
     20: "NotDirError",
     21: "IsDirError",
+    22: "InvalidArgError",
     31: "TooManyLinksError",
     39: "NotEmptyError",
 }

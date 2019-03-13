@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -13,6 +12,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -43,7 +43,7 @@ var (
 	dirPath                string
 	doNextStepChan         chan bool
 	mountPointName         string
-	mutex                  sync.Mutex
+	mutex                  trackedlock.Mutex
 	rwSizeTotal            uint64
 	stepErrChan            chan error
 	volumeList             []string

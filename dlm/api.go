@@ -50,7 +50,8 @@ package dlm
 
 import (
 	"fmt"
-	"sync"
+
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type NotifyReason uint32
@@ -82,14 +83,13 @@ type RWLockStruct struct {
 
 // Lock for generating unique caller IDs
 // For now, this is just an in-memory thing.
-var callerIDLock sync.Mutex
+var callerIDLock trackedlock.Mutex
 var nextCallerID uint64 = 1000
 
 // GenerateCallerID() returns a cluster wide unique number useful in deadlock detection.
 func GenerateCallerID() (callerID CallerID) {
 
 	// TODO - we need to use a nonce value instead of this when we have clustering
-
 	callerIDLock.Lock()
 
 	callerIDStr := fmt.Sprintf("%d", nextCallerID)

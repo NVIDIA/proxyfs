@@ -1165,7 +1165,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 			if validObjectNameRE.MatchString(checkpointContainerObjectName) {
 				checkpointContainerObjectNumber, err = strconv.ParseUint(checkpointContainerObjectName, 16, 64)
 				if nil != err {
-					vVS.jobLogErr("Got strconv.ParseUint(\"%v\",16,64) failure: %v", checkpointContainerObjectName)
+					vVS.jobLogErr("Got strconv.ParseUint(\"%v\",16,64) failure: %v", checkpointContainerObjectName, err)
 					return // Note: Already scheduled async Object DELETEs will continue in the background
 				}
 

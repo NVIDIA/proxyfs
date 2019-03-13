@@ -32,6 +32,8 @@ const testVerAccountName = testVer + testAccountName
 const testVerAccountContainerName = testVerAccountName + "/" + testContainerName
 const testAccountName2 = "AN_account2"
 
+const testRequireSlashesInPathsToProperlySort = false
+
 func testSetup() []func() {
 	var (
 		cleanupFuncs           []func()
@@ -581,15 +583,27 @@ func TestRpcGetContainerNested(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[19].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[20].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[21].Basename)
-	assert.Equal("a", ents[22].Basename)
-	assert.Equal("a/b", ents[23].Basename)
-	assert.Equal("a/b-1", ents[24].Basename)
-	assert.Equal("a/b-2", ents[25].Basename)
-	assert.Equal("a/b/c", ents[26].Basename)
-	assert.Equal("a/b/c-1", ents[27].Basename)
-	assert.Equal("a/b/c-2", ents[28].Basename)
-	assert.Equal("a/b/c/d-1", ents[29].Basename)
-	assert.Equal("a/b/c/d-2", ents[30].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("a", ents[22].Basename)
+		assert.Equal("a/b", ents[23].Basename)
+		assert.Equal("a/b-1", ents[24].Basename)
+		assert.Equal("a/b-2", ents[25].Basename)
+		assert.Equal("a/b/c", ents[26].Basename)
+		assert.Equal("a/b/c-1", ents[27].Basename)
+		assert.Equal("a/b/c-2", ents[28].Basename)
+		assert.Equal("a/b/c/d-1", ents[29].Basename)
+		assert.Equal("a/b/c/d-2", ents[30].Basename)
+	} else {
+		assert.Equal("a", ents[22].Basename)
+		assert.Equal("a/b", ents[23].Basename)
+		assert.Equal("a/b/c", ents[24].Basename)
+		assert.Equal("a/b/c/d-1", ents[25].Basename)
+		assert.Equal("a/b/c/d-2", ents[26].Basename)
+		assert.Equal("a/b/c-1", ents[27].Basename)
+		assert.Equal("a/b/c-2", ents[28].Basename)
+		assert.Equal("a/b-1", ents[29].Basename)
+		assert.Equal("a/b-2", ents[30].Basename)
+	}
 }
 
 func TestRpcGetContainerPrefix(t *testing.T) {
@@ -651,11 +665,19 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(5, len(response.ContainerEntries))
 	ents = response.ContainerEntries
-	assert.Equal("a/b/c", ents[0].Basename)
-	assert.Equal("a/b/c-1", ents[1].Basename)
-	assert.Equal("a/b/c-2", ents[2].Basename)
-	assert.Equal("a/b/c/d-1", ents[3].Basename)
-	assert.Equal("a/b/c/d-2", ents[4].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("a/b/c", ents[0].Basename)
+		assert.Equal("a/b/c-1", ents[1].Basename)
+		assert.Equal("a/b/c-2", ents[2].Basename)
+		assert.Equal("a/b/c/d-1", ents[3].Basename)
+		assert.Equal("a/b/c/d-2", ents[4].Basename)
+	} else {
+		assert.Equal("a/b/c", ents[0].Basename)
+		assert.Equal("a/b/c/d-1", ents[1].Basename)
+		assert.Equal("a/b/c/d-2", ents[2].Basename)
+		assert.Equal("a/b/c-1", ents[3].Basename)
+		assert.Equal("a/b/c-2", ents[4].Basename)
+	}
 }
 
 func TestRpcGetContainerPrefixAndMarkers(t *testing.T) {
@@ -831,24 +853,44 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	assert.Equal(8, len(response.ContainerEntries))
 
 	ents = response.ContainerEntries
-	assert.Equal("plants", ents[0].Basename)
-	assert.Equal("plants-README", ents[1].Basename)
-	assert.Equal("plants-symlink", ents[2].Basename)
-	assert.Equal("plants/aloe.txt", ents[3].Basename)
-	assert.Equal("plants/banana.txt", ents[4].Basename)
-	assert.Equal("plants/cherry.txt", ents[5].Basename)
-	assert.Equal("plants/eggplant.txt", ents[6].Basename)
-	assert.Equal("plants/eggplant.txt-symlink", ents[7].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("plants", ents[0].Basename)
+		assert.Equal("plants-README", ents[1].Basename)
+		assert.Equal("plants-symlink", ents[2].Basename)
+		assert.Equal("plants/aloe.txt", ents[3].Basename)
+		assert.Equal("plants/banana.txt", ents[4].Basename)
+		assert.Equal("plants/cherry.txt", ents[5].Basename)
+		assert.Equal("plants/eggplant.txt", ents[6].Basename)
+		assert.Equal("plants/eggplant.txt-symlink", ents[7].Basename)
+	} else {
+		assert.Equal("plants", ents[0].Basename)
+		assert.Equal("plants/aloe.txt", ents[1].Basename)
+		assert.Equal("plants/banana.txt", ents[2].Basename)
+		assert.Equal("plants/cherry.txt", ents[3].Basename)
+		assert.Equal("plants/eggplant.txt", ents[4].Basename)
+		assert.Equal("plants/eggplant.txt-symlink", ents[5].Basename)
+		assert.Equal("plants-README", ents[6].Basename)
+		assert.Equal("plants-symlink", ents[7].Basename)
+	}
 
 	// Some Swift clients keep asking for container listings until
 	// they see an empty page, which will result in RpcGetContainer
 	// being called with a marker equal to the last object. This
 	// should simply return 0 results.
-	request = GetContainerReq{
-		VirtPath:   testVerAccountName + "/" + "c",
-		Marker:     "plants/eggplant.txt-symlink",
-		EndMarker:  "",
-		MaxEntries: 5,
+	if testRequireSlashesInPathsToProperlySort {
+		request = GetContainerReq{
+			VirtPath:   testVerAccountName + "/" + "c",
+			Marker:     "plants/eggplant.txt-symlink",
+			EndMarker:  "",
+			MaxEntries: 5,
+		}
+	} else {
+		request = GetContainerReq{
+			VirtPath:   testVerAccountName + "/" + "c",
+			Marker:     "plants-symlink",
+			EndMarker:  "",
+			MaxEntries: 5,
+		}
 	}
 	response = GetContainerReply{}
 	err = server.RpcGetContainer(&request, &response)
@@ -896,18 +938,17 @@ func TestRpcGetContainerSymlink(t *testing.T) {
 		VirtPath:   testVerAccountName + "/" + "c-symlink",
 		Marker:     "",
 		EndMarker:  "",
-		MaxEntries: 1,
+		MaxEntries: 3, // 1
 	}
 	response := GetContainerReply{}
 	err := server.RpcGetContainer(&request, &response)
 
-	assert.Nil(err)
-	assert.Equal(1, len(response.ContainerEntries))
-	ents := response.ContainerEntries
+	// Note: We are not supporting GetContainer *thru* a symlink
+	//       In other words, the Container itself cannot be a SymlinkInode
+	//       This aligns with GetAccount which will only return DirInode dir_entry's
 
-	assert.Equal("README", ents[0].Basename)
-	assert.Equal(uint64(37), ents[0].FileSize)
-	assert.Equal(false, ents[0].IsDir)
+	assert.NotNil(err)
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
 }
 
 func TestRpcGetAccount(t *testing.T) {
@@ -927,7 +968,7 @@ func TestRpcGetAccount(t *testing.T) {
 	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 
 	assert.Nil(err)
-	assert.Equal(len(response.AccountEntries), 5)
+	assert.Equal(5, len(response.AccountEntries))
 	assert.Equal("alpha", response.AccountEntries[0].Basename)
 	statResult = fsStatPath("/v1/"+testAccountName2, "/alpha")
 	assert.Equal(statResult[fs.StatMTime], response.AccountEntries[0].ModificationTime)
@@ -1407,25 +1448,7 @@ func TestPutObjectOverwriteFile(t *testing.T) {
 	assert.Equal(objData2, contents)
 }
 
-func TestPutObjectOverwriteEmptyDirectory(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
-
-	objName := "was-a-dir"
-	objData := []byte("sialemesis-pseudembryo")
-	objMetadata := []byte("I'm So Meta, Even This Acronym")
-	objVirtPath := testVerAccountName + "/" + containerName + "/" + objName
-
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
-	if err != nil {
-		panic(err)
-	}
-	_ = fsMkDir(mountHandle, containerInode, "was-a-dir")
-
-	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
-	assert.Nil(err) // sanity check
-}
-
-func TestPutObjectOverwriteNonEmptyDirectory(t *testing.T) {
+func TestPutObjectOverwriteDirectory(t *testing.T) {
 	assert, server, containerName, mountHandle := testPutObjectSetup(t)
 
 	objName := "dir-with-stuff-in-it"
@@ -1447,7 +1470,7 @@ func TestPutObjectOverwriteNonEmptyDirectory(t *testing.T) {
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.IsDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.InvalidArgError), err.Error())
 }
 
 func TestPutObjectSymlinkedDir(t *testing.T) {
@@ -1497,7 +1520,7 @@ func TestPutObjectOverwriteSymlink(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"thing.dat")
+	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"somewhere-else")
 	assert.Nil(err)
 	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
@@ -1527,7 +1550,7 @@ func TestPutObjectFileInDirPath(t *testing.T) {
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.PermDeniedError), err.Error())
 }
 
 func TestPutObjectCompound(t *testing.T) {
@@ -1982,7 +2005,7 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	assert.True(headReply.IsDir)
 	oldInodeNumber := headReply.InodeNumber
 
-	// If the file exists, we just overwrite it, same as with RpcPutComplete
+	// If the dir exists, we just reuse it, so verify this happened
 	req = MiddlewareMkdirReq{
 		VirtPath: dirPath,
 		Metadata: dirMetadata,
@@ -1990,7 +2013,7 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	reply = MiddlewareMkdirReply{}
 	err = server.RpcMiddlewareMkdir(&req, &reply)
 	assert.Nil(err)
-	assert.NotEqual(reply.InodeNumber, oldInodeNumber)
+	assert.Equal(reply.InodeNumber, oldInodeNumber)
 }
 
 func TestRpcMiddlewareMkdirNested(t *testing.T) {

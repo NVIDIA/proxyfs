@@ -1,7 +1,6 @@
 package inode
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -419,7 +418,6 @@ func TestCoalesceDuplicates(t *testing.T) {
 	// Coalesce the above 3 files into d1/combined
 	_, _, _, err = vh.Coalesce(combinedInodeNumber, elements)
 	assert.NotNil(err)
-	fmt.Println(err)
 	assert.True(blunder.Is(err, blunder.InvalidArgError))
 
 	testTeardown(t)

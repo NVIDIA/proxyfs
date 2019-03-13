@@ -101,7 +101,7 @@ func main() {
 		log.Fatalf("FileSize must be > 0")
 	}
 	if fileSize > math.MaxInt64 {
-		log.Fatalf("FileSize(%v) must be <= math.MaxInt64(%v)", fileSize, math.MaxInt64)
+		log.Fatalf("FileSize(%v) must be <= math.MaxInt64(%v)", fileSize, uint64(math.MaxInt64))
 	}
 
 	minExtentSize, err = confMap.FetchOptionValueUint64("StressParameters", "MinExtentSize")
