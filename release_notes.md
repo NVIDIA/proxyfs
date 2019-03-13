@@ -1,5 +1,58 @@
 # ProxyFS Release Notes
 
+## 1.10.0 (March 12, 2019)
+
+### Bug Fixes:
+
+A number of Swift and S3 operations are necessarily path-based. Hence, although
+the RESTful Object-based APIs purport to be atomic, this is actually impossible
+to honor in the presence of File-based access. In attempts to retain the atomicity
+of the RESTful Object-based APIs, several deadlock conditions were unaddressed.
+One such deadlock addressed in both 1.8.0.6 and 1.9.2/1.9.5 involved the contention
+between the COALESCE method that references an unbounded number of file paths with
+other path and Inode-based APIs. This release addresses in a much more encompassing
+way all the contentions that could arise within and amongst all of the path and
+Inode-based APIs.
+
+### Notes:
+
+Lock tracking capabilities have been significantly enhanced that will provide
+several mechanisms with which both deadlocks and unusually high latency conditions
+can be examined with a performant mechanism that, when enabled, clearly reports
+what contentions are at the root of the observed condition. This instrumentation
+includes instrumenting both the various Mutexes that serialize data structure
+access as well as per-Inode locks that serialize client operations.
+
+A modern file system such as ProxyFS is obliged to support nearly unbounded
+parameters governing nearly every enumerated aspect. To clients, this includes
+support for things like extremely large files as well as a huge number of such
+files. Internally, management of extremely fragmented files is also a demanding
+requirement. Despite this, constrained compute environments should also be supported.
+This release introduces support for particularly the 32-bit architecture of Arm7L
+based systems.
+
+### Issues:
+
+While not a new issue, the release focused on exposing the inherent incompatibility
+between path-based RESTful Object APIs and File Access. Indeed, such issues are
+impossible to fully accomodate. In addition, a key feature of the S3 API is support
+for so-called multi-part uploads. This is accomplished by clients uploading each
+part - perhaps simultaneously - to unique Objects. Once all parts have been uploaded,
+a Multi-Part Put Complete operation is performed that requests that, logically, all
+of the parts are combined to form the resultant single Object. Support for this fianl
+step is implemented by means of a new COALESCE HTTP Method effectively added to the
+OpenStack Swift API. Unfortunately, this is where the "impedance mismatch" between
+the hierarchical nature of the File System clashes with the "flat" nature of an
+Object API such as S3 (and, for that matter, OpenStack Swift).
+
+The key issue is how to represent a Directory in the File System hierarchy. At this
+point, a Container (or Bucket) listing (via GET) will report both Objects (Files)
+and Directories. This is in conflict with an Object-only system that lacks any sort
+of Directory Inode concept. Indeed, several typical client operations are confused
+by the presence of Directories in the Container/Bucket listing (not the least of
+which is the widely used BOTO Python library used in S3 access). This conflict
+remains in the current release.
+
 ## 1.9.5 (February 13, 2019)
 
 ### Features:
@@ -142,7 +195,6 @@ contained a colon which Windows SMB clients find hard to cope with.
 Fix a bug introduced in 1.8.0 that triggered a NULL pointer dereference
 if an HTTP GET request specified a byte range without an ending offset.
 
-
 ## 1.8.0 (September 30, 2018)
 
 ### Features:
@@ -208,7 +260,6 @@ during startup.
 
 Reworked ramswift daemon startup logic to avoid race conditions sometimes
 hit when running tests.
-
 
 ### Notes
 
