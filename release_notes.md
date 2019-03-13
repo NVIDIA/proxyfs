@@ -14,6 +14,11 @@ other path and Inode-based APIs. This release addresses in a much more encompass
 way all the contentions that could arise within and amongst all of the path and
 Inode-based APIs.
 
+The SnapShotPolicy feature introduced in 1.8.0 was inadvertantly disabled in 1.9.5
+due to the conversion to the new transitions package mechanism introduction. As such,
+only explicitly created SnapShots would be created. This release restores the ability
+to schedule SnapShots via a per-Volume SnapShotPolicy.
+
 ### Notes:
 
 Lock tracking capabilities have been significantly enhanced that will provide
