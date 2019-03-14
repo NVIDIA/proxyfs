@@ -21,6 +21,7 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -72,7 +73,7 @@ type inFlightLogSegmentStruct struct { //               Used as (by reference) V
 }
 
 type inMemoryInodeStruct struct {
-	sync.Mutex        //                                             Used to synchronize with background fileInodeFlusherDaemon
+	trackedlock.Mutex //                                             Used to synchronize with background fileInodeFlusherDaemon
 	sync.WaitGroup    //                                             FileInode Flush requests wait on this
 	inodeCacheLRUNext *inMemoryInodeStruct
 	inodeCacheLRUPrev *inMemoryInodeStruct
@@ -830,6 +831,23 @@ func accountNameToVolumeName(accountName string) (volumeName string, ok bool) {
 	volume, ok = globals.accountMap[accountName]
 	if ok {
 		volumeName = volume.volumeName
+	}
+
+	globals.Unlock()
+
+	return
+}
+
+func volumeNameToAccountName(volumeName string) (accountName string, ok bool) {
+	var (
+		volume *volumeStruct
+	)
+
+	globals.Lock()
+
+	volume, ok = globals.volumeMap[volumeName]
+	if ok {
+		accountName = volume.accountName
 	}
 
 	globals.Unlock()

@@ -34,9 +34,6 @@ differences that must be called out.
 * Account HEAD responses contain a header "ProxyFS-Enabled: yes". This way,
   clients can know what they're dealing with.
 
-* Unlimited object size. A PUT request is not limited to 5 GiB, but can be
-  arbitrarily large.
-
 * Support for the COALESCE verb. Since static large objects will not work
   with this middleware's ETag values, another solution was found. A client
   can combine (or coalesce, if you will) a number of small files together
@@ -650,6 +647,11 @@ class PfsMiddleware(object):
         # a few extra for JSON quotes, commas, et cetera.
         self.max_coalesce_request_size = self.max_coalesce * 1100
 
+        self.bypass_mode = conf.get('bypass_mode', 'off')
+        if self.bypass_mode not in ('off', 'read-only', 'read-write'):
+            raise ValueError('Expected bypass_mode to be one of off, '
+                             'read-only, or read-write')
+
     @swob.wsgify
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
@@ -725,8 +727,10 @@ class PfsMiddleware(object):
                 # Check whether we ought to bypass. Note that swift_owner
                 # won't be set until we call authorize
                 if config_true_value(req.headers.get('X-Bypass-ProxyFS')) and \
+                        self.bypass_mode in ('read-only', 'read-write') and \
                         req.environ.get('swift_owner'):
-                    if method not in ('GET', 'HEAD'):
+                    if self.bypass_mode == 'read-only' and method not in (
+                            'GET', 'HEAD'):
                         return swob.HTTPMethodNotAllowed()
                     # We needed to do a PFS-namespace container HEAD to get
                     # the "appropriate" ACL ahead of calling the authorize
@@ -909,9 +913,9 @@ class PfsMiddleware(object):
     def _plaintext_account_get_response(self, account_entries):
         chunks = []
         for entry in account_entries:
-            chunks.append(entry["Basename"])
-            chunks.append("\n")
-        return ''.join(chunks)
+            chunks.append(entry["Basename"].encode('utf-8'))
+            chunks.append(b"\n")
+        return b''.join(chunks)
 
     def _json_account_get_response(self, account_entries):
         json_entries = []
@@ -1207,9 +1211,9 @@ class PfsMiddleware(object):
     def _plaintext_container_get_response(self, container_entries):
         chunks = []
         for ent in container_entries:
-            chunks.append(ent["Basename"])
-            chunks.append("\n")
-        return ''.join(chunks)
+            chunks.append(ent["Basename"].encode('utf-8'))
+            chunks.append(b"\n")
+        return b''.join(chunks)
 
     def _json_container_get_response(self, container_entries, account_name,
                                      delimiter):
@@ -1282,7 +1286,7 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = content_type
+            ct_node.text = content_type.decode('utf-8')
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
@@ -1558,9 +1562,6 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        if req.environ.get('swift_owner') and 'get-read-plan' in req.params:
-            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
-                               headers={"Content-Type": "application/json"})
         headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
 
         if "Content-Type" not in headers:
@@ -1577,6 +1578,25 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["Etag"] = best_possible_etag(headers, ctx.account_name,
                                              ino, num_writes)
+
+        get_read_plan = req.params.get("get-read-plan", "no")
+        if get_read_plan == "":
+            get_read_plan = "yes"
+        if self.bypass_mode != 'off' and req.environ.get('swift_owner') and \
+                config_true_value(get_read_plan):
+            headers.update({
+                # Flag that pfs_middleware correctly interpretted this request
+                "X-ProxyFS-Read-Plan": "True",
+                # Stash the "real" content type...
+                "X-Object-Content-Type": headers["Content-Type"],
+                # ... so we can indicate that *this* data is coming out JSON
+                "Content-Type": "application/json",
+                # Also include the total object size
+                # (since the read plan respects Range requests)
+                "X-Object-Content-Length": size,
+            })
+            return swob.HTTPOk(request=req, body=json.dumps(read_plan),
+                               headers=headers)
 
         if size > 0 and read_plan is None:
             headers["Content-Range"] = "bytes */%d" % size

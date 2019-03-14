@@ -11,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -33,24 +34,31 @@ type mountStruct struct {
 }
 
 type volumeStruct struct {
-	dataMutex                sync.Mutex
+	dataMutex                trackedlock.Mutex
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
+	reportedBlockSize        uint64
+	reportedFragmentSize     uint64
+	reportedNumBlocks        uint64 // Used for Total, Free, and Avail
+	reportedNumInodes        uint64 // Used for Total, Free, and Avail
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
 	mountList                []MountID
-	jobRWMutex               sync.RWMutex
+	jobRWMutex               trackedlock.RWMutex
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	volumeMap                 map[string]*volumeStruct // key == volumeStruct.volumeName
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
+	tryLockBackoffMin         time.Duration
+	tryLockBackoffMax         time.Duration
+	symlinkMax                uint16
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
@@ -182,6 +190,19 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.lastMountID = MountID(0)
 	globals.inFlightFileInodeDataList = list.New()
 
+	globals.tryLockBackoffMin, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMin")
+	if nil != err {
+		globals.tryLockBackoffMin = time.Duration(100 * time.Microsecond) // TODO: Eventually, just return
+	}
+	globals.tryLockBackoffMax, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMax")
+	if nil != err {
+		globals.tryLockBackoffMax = time.Duration(300 * time.Microsecond) // TODO: Eventually, just return
+	}
+	globals.symlinkMax, err = confMap.FetchOptionValueUint16("FSGlobals", "SymlinkMax")
+	if nil != err {
+		globals.symlinkMax = 32 // TODO: Eventually, just return
+	}
+
 	err = nil
 	return
 }
@@ -233,6 +254,23 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.maxFlushTime, err = confMap.FetchOptionValueDuration(volumeSectionName, "MaxFlushTime")
 	if nil != err {
 		return
+	}
+
+	volume.reportedBlockSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedBlockSize")
+	if nil != err {
+		volume.reportedBlockSize = DefaultReportedBlockSize // TODO: Eventually, just return
+	}
+	volume.reportedFragmentSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedFragmentSize")
+	if nil != err {
+		volume.reportedFragmentSize = DefaultReportedFragmentSize // TODO: Eventually, just return
+	}
+	volume.reportedNumBlocks, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumBlocks")
+	if nil != err {
+		volume.reportedNumBlocks = DefaultReportedNumBlocks // TODO: Eventually, just return
+	}
+	volume.reportedNumInodes, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedNumInodes")
+	if nil != err {
+		volume.reportedNumInodes = DefaultReportedNumInodes // TODO: Eventually, just return
 	}
 
 	volume.inodeVolumeHandle, err = inode.FetchVolumeHandle(volumeName)

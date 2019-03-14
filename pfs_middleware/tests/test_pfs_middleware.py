@@ -53,7 +53,9 @@ class BaseMiddlewareTest(unittest.TestCase):
     def setUp(self):
         super(BaseMiddlewareTest, self).setUp()
         self.app = helpers.FakeProxy()
-        self.pfs = mware.PfsMiddleware(self.app, {}, FakeLogger())
+        self.pfs = mware.PfsMiddleware(self.app, {
+            'bypass_mode': 'read-only',
+        }, FakeLogger())
         self.bimodal_checker = bimodal_checker.BimodalChecker(self.pfs, {
             'bimodal_recheck_interval': 'inf',  # avoid timing dependencies
         }, FakeLogger())
@@ -110,6 +112,12 @@ class BaseMiddlewareTest(unittest.TestCase):
         self.fake_rpc = helpers.FakeJsonRpc()
         patcher = mock.patch('pfs_middleware.utils.JsonRpcClient',
                              lambda *_: self.fake_rpc)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+        # For the sake of the listing format tests, assume old Swift
+        patcher = mock.patch(
+            'pfs_middleware.swift_code.LISTING_FORMATS_SWIFT', False)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -566,18 +574,92 @@ class TestObjectGet(BaseMiddlewareTest):
                          mware.construct_etag("AUTH_test", 1245, 2424))
         self.assertEqual(body, 'burritos')
 
-        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=on',
                                  environ={'swift_owner': True})
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
         self.assertEqual(json.loads(body), [{
             "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
                            "/0000000000c11fbd"),
             "Offset": 0,
             "Length": 8,
         }])
+
+        # Can explicitly say you *don't* want the read plan
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=no',
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, 'burritos')
+
+        # Can handle Range requests, too
+        def mock_RpcGetObject(get_object_req):
+            self.assertEqual(get_object_req['VirtPath'],
+                             "/v1/AUTH_test/notes/lunch")
+            self.assertEqual(get_object_req['ReadEntsIn'], [
+                {"Len": 2, "Offset": 2}])
+
+            return {
+                "error": None,
+                "result": {
+                    "FileSize": 8,
+                    "Metadata": "",
+                    "InodeNumber": 1245,
+                    "NumWrites": 2424,
+                    "ModificationTime": 1481152134331862558,
+                    "LeaseId": "prominority-sarcocyst",
+                    "ReadEntsOut": [
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11fbd"),
+                            "Offset": 587,
+                            "Length": 1
+                        },
+                        {
+                            "ObjectPath": ("/v1/AUTH_test/InternalContainer"
+                                           "Name/0000000000c11798"),
+                            "Offset": 25,
+                            "Length": 1
+                        },
+                    ]}}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetObject", mock_RpcGetObject)
+
+        # Present-but-blank query param is truthy
+        req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan',
+                                 headers={'Range': 'bytes=2-3'},
+                                 environ={'swift_owner': True})
+        status, headers, body = self.call_pfs(req)
+
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(headers['Content-Type'], 'application/json')
+        self.assertEqual(headers['X-Object-Content-Type'],
+                         'application/octet-stream')
+        self.assertEqual(headers['X-Object-Content-Length'], '8')
+        self.assertIn('ETag', headers)
+        self.assertIn('Last-Modified', headers)
+        self.assertEqual(json.loads(body), [
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11fbd"),
+                "Offset": 587,
+                "Length": 1,
+            },
+            {
+                "ObjectPath": ("/v1/AUTH_test/InternalContainerName"
+                               "/0000000000c11798"),
+                "Offset": 25,
+                "Length": 1,
+            },
+        ])
 
     def test_GET_slo_manifest(self):
         self.app.register(
@@ -1455,6 +1537,13 @@ class TestContainerHead(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "text/plain; charset=utf-8")
 
+        with mock.patch('pfs_middleware.swift_code.LISTING_FORMATS_SWIFT',
+                        True):
+            status, headers, _ = self.call_pfs(req)
+        self.assertEqual(status, '204 No Content')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+
     def test_no_meta(self):
         self.serialized_container_metadata = ""
 
@@ -1573,15 +1662,15 @@ class TestContainerGet(BaseMiddlewareTest):
                         "NumWrites": 0,
                         "Metadata": "",
                     }, {
-                        "Basename": "images/avocado.png",
+                        "Basename": u"images/\xE1vocado.png",
                         "FileSize": 70,
                         "ModificationTime": 1471915816859209471,
                         "IsDir": False,
                         "InodeNumber": 9213768,
                         "NumWrites": 2,
                         "Metadata": base64.b64encode(json.dumps({
-                            "Content-Type": "snack/millenial" +
-                                            ";swift_bytes=3503770"})),
+                            "Content-Type": u"snack/m\xEDllenial" +
+                                            u";swift_bytes=3503770"})),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
@@ -1633,14 +1722,22 @@ class TestContainerGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
-        self.assertEqual(body, ("images\n"
-                                "images/avocado.png\n"
-                                "images/banana.png\n"
-                                "images/cherimoya.png\n"
-                                "images/durian.png\n"
-                                "images/elderberry.png\n"))
+        self.assertEqual(body, (b"images\n"
+                                b"images/\xC3\xA1vocado.png\n"
+                                b"images/banana.png\n"
+                                b"images/cherimoya.png\n"
+                                b"images/durian.png\n"
+                                b"images/elderberry.png\n"))
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/a-container')
+
+        with mock.patch('pfs_middleware.swift_code.LISTING_FORMATS_SWIFT',
+                        True):
+            status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')  # sanity check
+        self.assertEqual(headers["Content-Type"],
+                         "application/json; charset=utf-8")
+        json.loads(body)
 
     def test_dlo(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container',
@@ -1728,9 +1825,9 @@ class TestContainerGet(BaseMiddlewareTest):
             "hash": "d41d8cd98f00b204e9800998ecf8427e",
             "last_modified": "2016-08-23T01:30:16.359210"})
         self.assertEqual(resp_data[1], {
-            "name": "images/avocado.png",
+            "name": u"images/\xE1vocado.png",
             "bytes": 3503770,
-            "content_type": "snack/millenial",
+            "content_type": u"snack/m\xEDllenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1783,9 +1880,9 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(resp_data[1], {
             "subdir": "images/"})
         self.assertEqual(resp_data[2], {
-            "name": "images/avocado.png",
+            "name": u"images/\xE1vocado.png",
             "bytes": 3503770,
-            "content_type": "snack/millenial",
+            "content_type": u"snack/m\xEDllenial",
             "hash": mware.construct_etag(
                 "AUTH_test", 9213768, 2),
             "last_modified": "2016-08-23T01:30:16.859210"})
@@ -1860,7 +1957,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         name_node = obj_attr_tags[0]
         self.assertEqual(name_node.tag, 'name')
-        self.assertEqual(name_node.text, 'images/avocado.png')
+        self.assertEqual(name_node.text, u'images/\xE1vocado.png')
         self.assertEqual(name_node.attrib, {})  # nothing extra in there
 
         hash_node = obj_attr_tags[1]
@@ -1876,7 +1973,7 @@ class TestContainerGet(BaseMiddlewareTest):
 
         content_type_node = obj_attr_tags[3]
         self.assertEqual(content_type_node.tag, 'content_type')
-        self.assertEqual(content_type_node.text, 'snack/millenial')
+        self.assertEqual(content_type_node.text, u'snack/m\xEDllenial')
         self.assertEqual(content_type_node.attrib, {})
 
         last_modified_node = obj_attr_tags[4]
@@ -1904,7 +2001,7 @@ class TestContainerGet(BaseMiddlewareTest):
         # Check the names are correct
         all_names = [tag.getchildren()[0].text for tag in objects]
         self.assertEqual(
-            ["images", "images/avocado.png", "images/banana.png",
+            ["images", u"images/\xE1vocado.png", "images/banana.png",
              "images/cherimoya.png", "images/durian.png",
              "images/elderberry.png"],
             all_names)

@@ -2,8 +2,6 @@ package headhunter
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"sync"
 	"testing"
 
@@ -86,14 +84,18 @@ func putInodeRecsTest(t *testing.T, volume VolumeHandle) {
 
 func TestHeadHunterAPI(t *testing.T) {
 	var (
-		confMap                conf.ConfMap
-		confStrings            []string
-		doneChan               chan bool
-		err                    error
-		firstUpNonce           uint64
-		key                    uint64
-		replayLogFile          *os.File
-		replayLogFileName      string
+		confMap      conf.ConfMap
+		confStrings  []string
+		doneChan     chan bool
+		err          error
+		firstUpNonce uint64
+		key          uint64
+		/*
+			// The following is now obsolete given the deprecation of ReplayLog in practice
+
+			replayLogFile          *os.File
+			replayLogFileName      string
+		*/
 		secondUpNonce          uint64
 		signalHandlerIsArmedWG sync.WaitGroup
 		value                  []byte
@@ -107,6 +109,10 @@ func TestHeadHunterAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
+
+		"TrackedLock.LockHoldTimeLimit=0s",
+		"TrackedLock.LockCheckPeriod=0s",
+
 		"SwiftClient.NoAuthTCPPort=9999",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=0",
@@ -133,6 +139,9 @@ func TestHeadHunterAPI(t *testing.T) {
 		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
 		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",
 		"FSGlobals.VolumeGroupList=TestVolumeGroup",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=32",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -146,26 +155,30 @@ func TestHeadHunterAPI(t *testing.T) {
 		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
 
-	// Construct replayLogFileName to use as Volume:TestVolume.ReplayLogFileName
+	/*
+		// The following is now obsolete given the deprecation of ReplayLog in practice
 
-	replayLogFile, err = ioutil.TempFile("", "TestVolume_Replay_Log_")
-	if nil != err {
-		t.Fatalf("ioutil.TempFile() returned error: %v", err)
-	}
+		// Construct replayLogFileName to use as Volume:TestVolume.ReplayLogFileName
 
-	replayLogFileName = replayLogFile.Name()
+		replayLogFile, err = ioutil.TempFile("", "TestVolume_Replay_Log_")
+		if nil != err {
+			t.Fatalf("ioutil.TempFile() returned error: %v", err)
+		}
 
-	err = replayLogFile.Close()
-	if nil != err {
-		t.Fatalf("replayLogFile.Close() returned error: %v", err)
-	}
+		replayLogFileName = replayLogFile.Name()
 
-	err = os.Remove(replayLogFileName)
-	if nil != err {
-		t.Fatalf("os.Remove(replayLogFileName) returned error: %v", err)
-	}
+		err = replayLogFile.Close()
+		if nil != err {
+			t.Fatalf("replayLogFile.Close() returned error: %v", err)
+		}
 
-	confStrings = append(confStrings, "Volume:TestVolume.ReplayLogFileName="+replayLogFileName)
+		err = os.Remove(replayLogFileName)
+		if nil != err {
+			t.Fatalf("os.Remove(replayLogFileName) returned error: %v", err)
+		}
+
+		confStrings = append(confStrings, "Volume:TestVolume.ReplayLogFileName="+replayLogFileName)
+	*/
 
 	// Launch a ramswift instance
 
@@ -189,7 +202,6 @@ func TestHeadHunterAPI(t *testing.T) {
 	}
 
 	// Up packages (TestVolume will be formatted)
-
 	err = transitions.Up(confMap)
 	if nil != err {
 		t.Fatalf("transitions.Up() [case 1] returned error: %v", err)
@@ -219,7 +231,7 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("transitions.Up() [case 1] returned error: %v", err)
+		t.Fatalf("transitions.Down() [case 1] returned error: %v", err)
 	}
 
 	err = transitions.Up(confMap)
@@ -269,19 +281,23 @@ func TestHeadHunterAPI(t *testing.T) {
 
 	err = transitions.Down(confMap)
 	if nil != err {
-		t.Fatalf("transitions.Up() [case 2] returned error: %v", err)
+		t.Fatalf("transitions.Down() [case 2] returned error: %v", err)
 	}
 
-	err = os.Remove(replayLogFileName)
-	if nil == err {
-		t.Fatal("os.Remove(replayLogFileName) should not have succeeded")
-	} else {
-		if os.IsNotExist(err) {
-			// This is what we expect
+	/*
+		// The following is now obsolete given the deprecation of ReplayLog in practice
+
+		err = os.Remove(replayLogFileName)
+		if nil == err {
+			t.Fatal("os.Remove(replayLogFileName) should not have succeeded")
 		} else {
-			t.Fatalf("os.Remove(replayLogFileName) returned unexpected error: %v", err)
+			if os.IsNotExist(err) {
+				// This is what we expect
+			} else {
+				t.Fatalf("os.Remove(replayLogFileName) returned unexpected error: %v", err)
+			}
 		}
-	}
+	*/
 
 	// Send ourself a SIGTERM to terminate ramswift.Daemon()
 

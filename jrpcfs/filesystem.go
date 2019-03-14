@@ -3,6 +3,7 @@ package jrpcfs
 
 import (
 	"container/list"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -198,23 +199,60 @@ var saveChannelSize int = 1000
 // Default values here are false
 var loggedOutOfStatsRoom map[OpType]bool = make(map[OpType]bool)
 
-func allocateMountID(mountHandle fs.MountHandle) (mountID uint64) {
+func allocateMountID(mountHandle fs.MountHandle) (mountIDAsByteArray MountIDAsByteArray, mountIDAsString MountIDAsString) {
+	var (
+		i             int
+		keepTrying    bool
+		randByteSlice []byte
+	)
+
 	globals.mapsLock.Lock()
-	globals.lastMountID++
-	mountID = globals.lastMountID
-	globals.mountIDMap[mountID] = mountHandle
+
+	keepTrying = true
+	for keepTrying {
+		randByteSlice = utils.FetchRandomByteSlice(len(mountIDAsByteArray))
+		for i = 0; i < len(mountIDAsByteArray); i++ {
+			if i != 0 {
+				keepTrying = false // At least one of the bytes is non-zero... so it's a valid MountID
+			}
+			mountIDAsByteArray[i] = randByteSlice[i]
+		}
+		if !keepTrying {
+			_, keepTrying = globals.mountIDAsByteArrayMap[mountIDAsByteArray]
+		}
+	}
+
+	mountIDAsString = MountIDAsString(base64.StdEncoding.EncodeToString(mountIDAsByteArray[:]))
+
+	globals.mountIDAsByteArrayMap[mountIDAsByteArray] = mountHandle
+	globals.mountIDAsStringMap[mountIDAsString] = mountHandle
+
 	globals.mapsLock.Unlock()
+
 	return
 }
 
-func lookupMountHandle(mountID uint64) (mountHandle fs.MountHandle, err error) {
+func lookupMountHandleByMountIDAsByteArray(mountIDAsByteArray MountIDAsByteArray) (mountHandle fs.MountHandle, err error) {
 	globals.mapsLock.Lock()
-	mountHandle, ok := globals.mountIDMap[mountID]
+	mountHandle, ok := globals.mountIDAsByteArrayMap[mountIDAsByteArray]
 	globals.mapsLock.Unlock()
 	if ok {
 		err = nil
 	} else {
-		err = fmt.Errorf("MountID %v not found in jrpcfs globals.mountIDMap", mountID)
+		err = fmt.Errorf("MountID %v not found in jrpcfs globals.mountIDMap", mountIDAsByteArray)
+		err = blunder.AddError(err, blunder.BadMountIDError)
+	}
+	return
+}
+
+func lookupMountHandleByMountIDAsString(mountIDAsString MountIDAsString) (mountHandle fs.MountHandle, err error) {
+	globals.mapsLock.Lock()
+	mountHandle, ok := globals.mountIDAsStringMap[mountIDAsString]
+	globals.mapsLock.Unlock()
+	if ok {
+		err = nil
+	} else {
+		err = fmt.Errorf("MountID %v not found in jrpcfs globals.mountIDMap", mountIDAsString)
 		err = blunder.AddError(err, blunder.BadMountIDError)
 	}
 	return
@@ -679,7 +717,7 @@ func (s *Server) RpcChown(in *ChownRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -706,7 +744,7 @@ func (s *Server) RpcChownPath(in *ChownPathRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -743,7 +781,7 @@ func (s *Server) RpcChmod(in *ChmodRequest, reply *Reply) (err error) {
 	// NOTE: We currently just store and return per-inode ownership info.
 	//       We do not check/enforce it; that is the caller's responsibility.
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -764,7 +802,7 @@ func (s *Server) RpcChmodPath(in *ChmodPathRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -796,7 +834,7 @@ func (s *Server) RpcCreate(in *CreateRequest, reply *InodeReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -814,7 +852,7 @@ func (s *Server) RpcCreatePath(in *CreatePathRequest, reply *InodeReply) (err er
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -851,7 +889,7 @@ func (s *Server) RpcFlock(in *FlockRequest, reply *FlockReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -908,7 +946,7 @@ func (s *Server) RpcFlush(in *FlushRequest, reply *Reply) (err error) {
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
 	profiler.AddEventNow("before fs.Flush()")
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil == err {
 		err = mountHandle.Flush(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	}
@@ -953,7 +991,7 @@ func (s *Server) RpcGetStat(in *GetStatRequest, reply *StatStruct) (err error) {
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
 	profiler.AddEventNow("before fs.Getstat()")
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil == err {
 		stat, err = mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
 	}
@@ -979,7 +1017,7 @@ func (s *Server) RpcGetStatPath(in *GetStatPathRequest, reply *StatStruct) (err 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1021,7 +1059,7 @@ func (s *Server) RpcGetXAttr(in *GetXAttrRequest, reply *GetXAttrReply) (err err
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
 	profiler.AddEventNow("before fs.GetXAttr()")
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil == err {
 		reply.AttrValue, err = mountHandle.GetXAttr(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.AttrName)
 	}
@@ -1044,7 +1082,7 @@ func (s *Server) RpcGetXAttrPath(in *GetXAttrPathRequest, reply *GetXAttrReply) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1091,7 +1129,7 @@ func (s *Server) RpcLookupPath(in *LookupPathRequest, reply *InodeReply) (err er
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1118,7 +1156,7 @@ func (s *Server) RpcLink(in *LinkRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1135,7 +1173,7 @@ func (s *Server) RpcLinkPath(in *LinkPathRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1168,7 +1206,7 @@ func (s *Server) RpcListXAttr(in *ListXAttrRequest, reply *ListXAttrReply) (err 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1185,7 +1223,7 @@ func (s *Server) RpcListXAttrPath(in *ListXAttrPathRequest, reply *ListXAttrRepl
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1213,7 +1251,7 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1242,7 +1280,7 @@ func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1260,7 +1298,7 @@ func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1288,7 +1326,7 @@ func (s *Server) RpcMkdirPath(in *MkdirPathRequest, reply *Reply) (err error) {
 	return
 }
 
-func (s *Server) RpcMount(in *MountRequest, reply *MountReply) (err error) {
+func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *MountByAccountNameReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1296,56 +1334,27 @@ func (s *Server) RpcMount(in *MountRequest, reply *MountReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := fs.Mount(in.VolumeName, fs.MountOptions(in.MountOptions))
+	mountHandle, err := fs.MountByAccountName(in.AccountName, fs.MountOptions(in.MountOptions))
 	if err == nil {
-		reply.MountID = allocateMountID(mountHandle)
+		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 	}
 	return
 }
 
-func (s *Server) RpcRead(in *ReadRequest, reply *ReadReply) (err error) {
+func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *MountByVolumeNameReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	sendTime := time.Unix(in.SendTimeSec, in.SendTimeNsec)
-	requestRecTime := time.Now()
-	deliveryLatency := requestRecTime.Sub(sendTime)
-	deliveryLatencyUsec := deliveryLatency.Nanoseconds() / int64(time.Microsecond)
-	var flog logger.FuncCtx
-
-	if globals.dataPathLogging {
-		// log function enter and exit, without printing read buffer
-		flog = logger.TraceEnter("in.", in, "deliveryLatencyUsec:"+strconv.FormatInt(deliveryLatencyUsec, 10))
-	}
-
-	stopwatch := utils.NewStopwatch()
-	defer func() {
-		_ = stopwatch.Stop()
-		if globals.dataPathLogging {
-			flog.TraceExitErr("reply.", err,
-				"Buf.size:"+strconv.Itoa(len(reply.Buf))+", Buf.<buffer not printed>",
-				"reply.SendTimeSec:"+strconv.FormatInt(reply.SendTimeSec, 10),
-				"reply.SendTimeNsec:"+strconv.FormatInt(reply.SendTimeNsec, 10),
-				"reply.RequestTimeSec:"+strconv.FormatInt(reply.RequestTimeSec, 10),
-				"reply.RequestTimeNsec:"+strconv.FormatInt(reply.RequestTimeNsec, 10),
-				"duration:"+stopwatch.ElapsedMsString(),
-			)
-		}
-	}()
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
-	if nil == err {
-		reply.Buf, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Length, nil)
+	mountHandle, err := fs.MountByVolumeName(in.VolumeName, fs.MountOptions(in.MountOptions))
+	if err == nil {
+		_, reply.MountID = allocateMountID(mountHandle)
+		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 	}
-
-	reply.RequestTimeSec = UnixSec(requestRecTime)
-	reply.RequestTimeNsec = UnixNanosec(requestRecTime)
-
-	replySendTime := time.Now()
-	reply.SendTimeSec = UnixSec(replySendTime)
-	reply.SendTimeNsec = UnixNanosec(replySendTime)
 	return
 }
 
@@ -1375,19 +1384,29 @@ func (s *Server) RpcReaddirByLoc(in *ReaddirByLocRequest, reply *ReaddirReply) (
 }
 
 func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profiler *utils.Profiler) (err error) {
-	var iH InodeHandle
-	var prevMarker interface{}
-	var inByLoc *ReaddirByLocRequest
-	var flog logger.FuncCtx
+	var (
+		dirEnts     []inode.DirEntry
+		flog        logger.FuncCtx
+		i           int
+		iH          InodeHandle
+		inByLoc     *ReaddirByLocRequest
+		inByName    *ReaddirRequest
+		maxEntries  uint64
+		mountHandle fs.MountHandle
+		okByName    bool
+		prevMarker  interface{}
+	)
 
-	inByName, okByName := in.(*ReaddirRequest)
+	inByName, okByName = in.(*ReaddirRequest)
 	if okByName {
 		iH = inByName.InodeHandle
+		maxEntries = inByName.MaxEntries
 		prevMarker = inByName.PrevDirEntName
 		flog = logger.TraceEnter("in.", inByName)
 	} else {
 		inByLoc, _ = in.(*ReaddirByLocRequest)
 		iH = inByLoc.InodeHandle
+		maxEntries = inByLoc.MaxEntries
 		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
@@ -1398,17 +1417,18 @@ func (s *Server) rpcReaddirInternal(in interface{}, reply *ReaddirReply, profile
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(iH.MountID)
+	mountHandle, err = lookupMountHandleByMountIDAsString(iH.MountID)
 	if nil != err {
 		return
 	}
 
-	profiler.AddEventNow("before fs.ReaddirOne()")
-	dirEnts, err := mountHandle.ReaddirOne(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
-	profiler.AddEventNow("after fs.ReaddirOne()")
-	if err == nil {
+	profiler.AddEventNow("before fs.Readdir()")
+	dirEnts, _, _, err = mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), maxEntries, prevMarker)
+	profiler.AddEventNow("after fs.Readdir()")
+
+	if nil == err {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
-		for i := range dirEnts {
+		for i = range dirEnts {
 			reply.DirEnts[i].fsDirentToDirEntryStruct(dirEnts[i])
 		}
 	}
@@ -1435,18 +1455,30 @@ func (s *Server) RpcReaddirPlusByLoc(in *ReaddirPlusByLocRequest, reply *Readdir
 }
 
 func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply, profiler *utils.Profiler) (err error) {
-	var iH InodeHandle
-	var prevMarker interface{}
-	var flog logger.FuncCtx
+	var (
+		dirEnts     []inode.DirEntry
+		flog        logger.FuncCtx
+		i           int
+		iH          InodeHandle
+		inByLoc     *ReaddirPlusByLocRequest
+		inByName    *ReaddirPlusRequest
+		maxEntries  uint64
+		mountHandle fs.MountHandle
+		okByName    bool
+		prevMarker  interface{}
+		statEnts    []fs.Stat
+	)
 
-	inByName, okByName := in.(*ReaddirPlusRequest)
+	inByName, okByName = in.(*ReaddirPlusRequest)
 	if okByName {
 		iH = inByName.InodeHandle
+		maxEntries = inByName.MaxEntries
 		prevMarker = inByName.PrevDirEntName
 		flog = logger.TraceEnter("in.", inByName)
 	} else {
-		inByLoc, _ := in.(*ReaddirPlusByLocRequest)
+		inByLoc, _ = in.(*ReaddirPlusByLocRequest)
 		iH = inByLoc.InodeHandle
+		maxEntries = inByLoc.MaxEntries
 		prevMarker = inode.InodeDirLocation(inByLoc.PrevDirEntLocation)
 		flog = logger.TraceEnter("in.", inByLoc)
 	}
@@ -1457,23 +1489,20 @@ func (s *Server) rpcReaddirPlusInternal(in interface{}, reply *ReaddirPlusReply,
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(iH.MountID)
+	mountHandle, err = lookupMountHandleByMountIDAsString(iH.MountID)
 	if err != nil {
 		return
 	}
 
-	profiler.AddEventNow("before fs.ReaddirOnePlus()")
-	dirEnts, statEnts, err := mountHandle.ReaddirOnePlus(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), prevMarker)
+	profiler.AddEventNow("before fs.ReaddirPlus()")
+	dirEnts, statEnts, _, _, err = mountHandle.ReaddirPlus(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(iH.InodeNumber), maxEntries, prevMarker)
+	profiler.AddEventNow("after fs.ReaddirPlus()")
 
-	profiler.AddEventNow("after fs.ReaddirOnePlus()")
-	if err == nil {
+	if nil == err {
 		reply.DirEnts = make([]DirEntry, len(dirEnts))
-		reply.StatEnts = make([]StatStruct, len(dirEnts))
-		for i := range dirEnts {
-			// Fill in dirents
+		reply.StatEnts = make([]StatStruct, len(dirEnts)) // Assuming len(dirEnts) == len(statEnts)
+		for i = range dirEnts {
 			reply.DirEnts[i].fsDirentToDirEntryStruct(dirEnts[i])
-
-			// Fill in stats
 			reply.StatEnts[i].fsStatToStatStruct(statEnts[i])
 		}
 	}
@@ -1489,7 +1518,7 @@ func (s *Server) RpcReadSymlink(in *ReadSymlinkRequest, reply *ReadSymlinkReply)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1507,7 +1536,7 @@ func (s *Server) RpcReadSymlinkPath(in *ReadSymlinkPathRequest, reply *ReadSymli
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1531,7 +1560,7 @@ func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err erro
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1548,7 +1577,7 @@ func (s *Server) RpcRemoveAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (er
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1570,7 +1599,7 @@ func (s *Server) RpcRename(in *RenameRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1587,7 +1616,7 @@ func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1623,7 +1652,7 @@ func (s *Server) RpcResize(in *ResizeRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1640,7 +1669,7 @@ func (s *Server) RpcRmdir(in *UnlinkRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1657,7 +1686,7 @@ func (s *Server) RpcRmdirPath(in *UnlinkPathRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1684,7 +1713,7 @@ func (s *Server) RpcSetstat(in *SetstatRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1709,7 +1738,7 @@ func (s *Server) RpcSetTime(in *SetTimeRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1729,7 +1758,7 @@ func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1755,7 +1784,7 @@ func (s *Server) RpcSetXAttr(in *SetXAttrRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1772,7 +1801,7 @@ func (s *Server) RpcSetXAttrPath(in *SetXAttrPathRequest, reply *Reply) (err err
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1794,7 +1823,7 @@ func (s *Server) RpcStatVFS(in *StatVFSRequest, reply *StatVFS) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1828,7 +1857,7 @@ func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1845,7 +1874,7 @@ func (s *Server) RpcSymlinkPath(in *SymlinkPathRequest, reply *Reply) (err error
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1871,7 +1900,7 @@ func (s *Server) RpcType(in *TypeRequest, reply *TypeReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1890,7 +1919,7 @@ func (s *Server) RpcUnlink(in *UnlinkRequest, reply *Reply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1907,7 +1936,7 @@ func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	mountHandle, err := lookupMountHandle(in.MountID)
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil != err {
 		return
 	}
@@ -1923,55 +1952,5 @@ func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) 
 
 	// Do the unlink
 	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, basename)
-	return
-}
-
-func (s *Server) RpcWrite(in *WriteRequest, reply *WriteReply) (err error) {
-	var size uint64
-
-	enterGate()
-	defer leaveGate()
-
-	sendTime := time.Unix(in.SendTimeSec, in.SendTimeNsec)
-	requestRecTime := time.Now()
-	deliveryLatency := requestRecTime.Sub(sendTime)
-	deliveryLatencyUsec := deliveryLatency.Nanoseconds() / int64(time.Microsecond)
-	var flog logger.FuncCtx
-
-	if globals.dataPathLogging {
-
-		// log function enter and exit, without printing write buffer
-		flog = logger.TraceEnter("in.", in.InodeHandle,
-			"in.Offset:"+strconv.FormatUint(in.Offset, 10),
-			"in.Buf.size:"+strconv.Itoa(len(in.Buf)),
-			"in.SendTimeSec:"+strconv.FormatInt(in.SendTimeSec, 10),
-			"in.SendTimeNsec:"+strconv.FormatInt(in.SendTimeNsec, 10),
-			"in.ReceiveTimeSec:"+strconv.FormatInt(UnixSec(requestRecTime), 10),
-			"in.RecTimeNs:"+strconv.FormatInt(UnixNanosec(requestRecTime), 10),
-			"deliveryLatencyUsec:"+strconv.FormatInt(deliveryLatencyUsec, 10),
-		)
-	}
-
-	stopwatch := utils.NewStopwatch()
-	defer func() {
-		_ = stopwatch.Stop()
-		if globals.dataPathLogging {
-			flog.TraceExitErr("reply.", err, reply, "duration:"+stopwatch.ElapsedMsString())
-		}
-	}()
-	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
-
-	mountHandle, err := lookupMountHandle(in.MountID)
-	if nil == err {
-		size, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Offset, in.Buf, nil)
-		reply.Size = uint64(size)
-	}
-
-	reply.RequestTimeSec = UnixSec(requestRecTime)
-	reply.RequestTimeNsec = UnixNanosec(requestRecTime)
-
-	replySendTime := time.Now()
-	reply.SendTimeSec = UnixSec(replySendTime)
-	reply.SendTimeNsec = UnixNanosec(replySendTime)
 	return
 }

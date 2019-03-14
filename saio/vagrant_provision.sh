@@ -48,9 +48,10 @@ yum -y install wget git nfs-utils vim
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-wget -q https://dl.google.com/go/go1.10.linux-amd64.tar.gz
-tar -C /usr/local -xf go1.10.linux-amd64.tar.gz
-rm go1.10.linux-amd64.tar.gz
+TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+wget -q https://dl.google.com/go/$TARFILE_NAME
+tar -C /usr/local -xf $TARFILE_NAME
+rm $TARFILE_NAME
 echo "export PATH=\$PATH:/usr/local/go/bin" >> ~vagrant/.bash_profile
 
 # Patch Golang's GDB runtime plug-in
@@ -230,9 +231,11 @@ python setup.py develop
 cd ~swift
 git clone https://github.com/openstack/swift.git
 cd swift
-git checkout 5cf96230c82d4fcbac297775997a7e0abe3e9ff9
+git checkout 64e5fd364ae044ebfda541fd90bb3551bab36dcb
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
+# The following avoid dependency on pip-installed pyOpenSSL being newer than required
+pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
 pip install -r test-requirements.txt
 
 # [Setup Swift] Setting up rsync
@@ -280,6 +283,24 @@ python setup.py develop
 
 cd /vagrant/src/github.com/swiftstack/ProxyFS/meta_middleware
 python setup.py develop
+
+# Setup AWS access for local vagrant user
+
+pip install awscli-plugin-endpoint
+mkdir -p ~vagrant/.aws
+cat > ~vagrant/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R vagrant:vagrant ~vagrant/.aws
 
 # Ensure proxyfsd logging will work
 

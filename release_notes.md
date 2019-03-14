@@ -1,5 +1,161 @@
 # ProxyFS Release Notes
 
+## 1.10.0 (March 12, 2019)
+
+### Bug Fixes:
+
+A number of Swift and S3 operations are necessarily path-based. Hence, although
+the RESTful Object-based APIs purport to be atomic, this is actually impossible
+to honor in the presence of File-based access. In attempts to retain the atomicity
+of the RESTful Object-based APIs, several deadlock conditions were unaddressed.
+One such deadlock addressed in both 1.8.0.6 and 1.9.2/1.9.5 involved the contention
+between the COALESCE method that references an unbounded number of file paths with
+other path and Inode-based APIs. This release addresses in a much more encompassing
+way all the contentions that could arise within and amongst all of the path and
+Inode-based APIs.
+
+The SnapShotPolicy feature introduced in 1.8.0 was inadvertantly disabled in 1.9.5
+due to the conversion to the new transitions package mechanism introduction. As such,
+only explicitly created SnapShots would be created. This release restores the ability
+to schedule SnapShots via a per-Volume SnapShotPolicy.
+
+### Notes:
+
+Lock tracking capabilities have been significantly enhanced that will provide
+several mechanisms with which both deadlocks and unusually high latency conditions
+can be examined with a performant mechanism that, when enabled, clearly reports
+what contentions are at the root of the observed condition. This instrumentation
+includes instrumenting both the various Mutexes that serialize data structure
+access as well as per-Inode locks that serialize client operations.
+
+A modern file system such as ProxyFS is obliged to support nearly unbounded
+parameters governing nearly every enumerated aspect. To clients, this includes
+support for things like extremely large files as well as a huge number of such
+files. Internally, management of extremely fragmented files is also a demanding
+requirement. Despite this, constrained compute environments should also be supported.
+This release introduces support for particularly the 32-bit architecture of Arm7L
+based systems.
+
+### Issues:
+
+While not a new issue, the release focused on exposing the inherent incompatibility
+between path-based RESTful Object APIs and File Access. Indeed, such issues are
+impossible to fully accomodate. In addition, a key feature of the S3 API is support
+for so-called multi-part uploads. This is accomplished by clients uploading each
+part - perhaps simultaneously - to unique Objects. Once all parts have been uploaded,
+a Multi-Part Put Complete operation is performed that requests that, logically, all
+of the parts are combined to form the resultant single Object. Support for this fianl
+step is implemented by means of a new COALESCE HTTP Method effectively added to the
+OpenStack Swift API. Unfortunately, this is where the "impedance mismatch" between
+the hierarchical nature of the File System clashes with the "flat" nature of an
+Object API such as S3 (and, for that matter, OpenStack Swift).
+
+The key issue is how to represent a Directory in the File System hierarchy. At this
+point, a Container (or Bucket) listing (via GET) will report both Objects (Files)
+and Directories. This is in conflict with an Object-only system that lacks any sort
+of Directory Inode concept. Indeed, several typical client operations are confused
+by the presence of Directories in the Container/Bucket listing (not the least of
+which is the widely used BOTO Python library used in S3 access). This conflict
+remains in the current release.
+
+## 1.9.5 (February 13, 2019)
+
+### Features:
+
+Made StatVfs() responses configurable. Note that values
+for space (total, free, available) continue to be set
+to artificial values... but at least they are now settable.
+
+### Bug Fixes:
+
+Re-worked logic for various path-based operations (i.e.
+operations invoked via Swift or S3 APIs) could result in
+a deadlock when combined with file-based operations. These
+have now largely been resolved (see Issues section for
+details on what is not).
+
+Modified pfsconfjson{|packed} to auto-upgrade supplied
+.conf files to report the VolumeGroup-translated form
+(if up-conversion would be done by ProxyFS itself).
+
+COALESCE method, when targeted at an existing Object,
+would previously fail to recover the overwritten Object's
+space.
+
+Various pre-VolumeGroup->VolumeGroup auto-upgrade patterns
+could result in false reporting of a Volume being moved to
+a VolumeGroup where it already exists in response to SIGHUP.
+Just restarting ProxyFS would not see this issue.
+
+### Issues:
+
+While much work was completed towards avoiding deadlock
+situations resulting from path-based (i.e. Swift/S3 API)
+operations, the work is not yet complete. A GET on a
+Container/Bucket that recurses could still result in a
+deadlock but the bug fix for this case largely closes
+that window. A PUT also has the potential for another
+deadlock situation that is equally very unlikely. No test
+case has been able to expose these remaining deadlocks
+so they remain theoretical.
+
+## 1.9.2 (January 18, 2019)
+
+### Bug Fixes:
+
+Resolved race condition when simultaneous first references to
+an `Inode` are executed resulting in a lock blocking any further
+access to the `Inode`. This condition was frequently seen when
+attempting a multi-part upload via the S3 or Swift HTTP APIs
+as it would be typical/expected that the uploading of all the
+parts of a new `file` would begin roughly at the same time.
+
+It is now possible to perform builds and unit tests on the
+same node where an active ProxyFS session is in operation.
+Previously, identical TCP and UDP Ports were being used by
+default leading to bind() failures.
+
+### Features:
+
+Updated to leverage Golang 1.11.4 features.
+
+Added support for `X-Object-Sysmeta-Container-Update-Override-Etag`.
+
+Added support for `end-marker` query params.
+
+Added support for fetching a `ReadPlan` for a given file
+via the HTTP interface. The `ReadPlan` may then be used to
+HEAD or GET the individual `LogSegments` that, when stitched
+together, represent the contents of the file.
+
+Liveness monitoring now active among all ProxyFS instances
+visable via JSON response to an HTTP Query on the embedded
+HTTP Server's Port for `/liveness`.
+
+Added support for VolumeGroups where the set of Volumes in a
+VolumeGroup are what is assigned to a Peer/Node rather than
+each individual Volume.
+
+## 1.8.0.7 (January 28, 2019)
+
+### Features:
+
+The response to fsstat(1), statfs(2), and statvfs(3) returns
+capacities that were hardcoded (e.g. Total Space of 1TiB). While
+it is currently not possible for such reporting to represent
+actual capacities, new config values are available to adjust the
+reported values. In addition, the defaults have been increased
+(e.g. Total Space is now reported as 100 TiB).
+
+## 1.8.0.6 (January 23, 2019)
+
+### Bug Fixes:
+
+A race condition triggered by e.g. multi-part uploads could
+render the targeted portion of a file system indefinitely
+locked requiring a restart of the proxyfsd daemon. This release
+prevents this race condition.
+
 ## 1.8.0.5 (November 27, 2018)
 
 ### Bug Fixes:
@@ -43,7 +199,6 @@ contained a colon which Windows SMB clients find hard to cope with.
 
 Fix a bug introduced in 1.8.0 that triggered a NULL pointer dereference
 if an HTTP GET request specified a byte range without an ending offset.
-
 
 ## 1.8.0 (September 30, 2018)
 
@@ -110,7 +265,6 @@ during startup.
 
 Reworked ramswift daemon startup logic to avoid race conditions sometimes
 hit when running tests.
-
 
 ### Notes
 

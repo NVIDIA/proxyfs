@@ -2,7 +2,6 @@ package inode
 
 import (
 	"fmt"
-	"sync"
 	"time"
 	"unsafe"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -29,7 +29,7 @@ type readCacheElementStruct struct {
 }
 
 type volumeGroupStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	name                    string
 	volumeMap               map[string]*volumeStruct // key == volumeStruct.volumeName
 	numServed               uint64
@@ -58,7 +58,7 @@ type physicalContainerLayoutStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	volumeGroup                    *volumeGroupStruct
 	served                         bool
 	fsid                           uint64
@@ -80,7 +80,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	whoAmI                             string
 	myPrivateIPAddr                    string
 	dirEntryCache                      sortedmap.BPlusTreeCache
@@ -456,7 +456,7 @@ func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string,
 	newVolumeGroup.Lock()
 
 	_, ok = newVolumeGroup.volumeMap[volumeName]
-	if !ok {
+	if ok {
 		newVolumeGroup.Unlock()
 		globals.Unlock()
 		err = fmt.Errorf("inode.VolumeMoved() called for Volume (%s) to be moved to VolumeGroup (%s) already containing the Volume", volumeName, volumeGroupName)
@@ -558,7 +558,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	}
 
 	defaultPhysicalContainerLayout = &physicalContainerLayoutStruct{
-		name: defaultPhysicalContainerLayoutName,
+		name:                        defaultPhysicalContainerLayoutName,
 		containerNameSliceNextIndex: 0,
 		containerNameSliceLoopCount: 0,
 	}
@@ -596,12 +596,6 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		return
 	}
 
-	err = volume.loadSnapShotPolicy(confMap)
-	if nil != err {
-		globals.Unlock()
-		return
-	}
-
 	volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
 	if nil != err {
 		globals.Unlock()
@@ -627,6 +621,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.volumeGroup.numServed++
 
 	volume.volumeGroup.Unlock()
+
 	globals.Unlock()
 
 	err = adoptVolumeGroupReadCacheParameters(confMap)
@@ -677,10 +672,40 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
-	return nil
+	var (
+		volume *volumeStruct
+	)
+
+	for _, volume = range globals.volumeMap {
+		if volume.served && (nil != volume.snapShotPolicy) {
+			volume.snapShotPolicy.down()
+			volume.snapShotPolicy = nil
+		}
+	}
+
+	err = nil
+	return
 }
+
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
-	return nil
+	var (
+		volume *volumeStruct
+	)
+
+	for _, volume = range globals.volumeMap {
+		if volume.served {
+			err = volume.loadSnapShotPolicy(confMap)
+			if nil != err {
+				return
+			}
+			if nil != volume.snapShotPolicy {
+				volume.snapShotPolicy.up()
+			}
+		}
+	}
+
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {

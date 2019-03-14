@@ -50,7 +50,7 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 
 	// We have not already mounted it, mount it now and store result in bimodalMountMap
 	// TODO - add proper mountOpts
-	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.Mount() of acct: %v container: %v failed!", accountName, containerName)
 		return accountName, containerName, objectName, volumeName, nil, err
@@ -211,12 +211,12 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, vContainerName, objectName, volumeName, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, vContainerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
 
 	mountRelativePath := vContainerName + "/" + objectName
 
 	var ino uint64
-	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(volumeName, mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		return err
 	}

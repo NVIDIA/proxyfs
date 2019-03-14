@@ -14,6 +14,7 @@ import (
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/swiftclient"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -105,7 +106,7 @@ type volumeViewStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	volumeName                              string
 	accountName                             string
 	maxFlushSize                            uint64
@@ -155,7 +156,7 @@ type volumeGroupStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
@@ -437,7 +438,7 @@ func (dummy *globalsStruct) VolumeMoved(confMap conf.ConfMap, volumeName string,
 		return
 	}
 	_, ok = newVolumeGroup.volumeMap[volumeName]
-	if !ok {
+	if ok {
 		globals.Unlock()
 		err = fmt.Errorf("headhunter.VolumeMoved() called for Volume (%s) to be moved to VolumeGroup (%s) already containing the Volume", volumeName, volumeGroupName)
 		return
@@ -485,13 +486,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		return
 	}
 	volume.served = true
+	globals.Unlock()
 	err = volume.up(confMap)
 	if nil != err {
-		globals.Unlock()
 		err = fmt.Errorf("headhunter.ServeVolume() failed to \"up\" Volume (%s): %v", volumeName, err)
 		return
 	}
-	globals.Unlock()
 	err = nil
 	return
 }
@@ -509,14 +509,13 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		err = fmt.Errorf("headhunter.UnserveVolume() called for Volume (%s) not being served", volumeName)
 		return
 	}
+	volume.served = false
+	globals.Unlock()
 	err = volume.down(confMap)
 	if nil != err {
-		globals.Unlock()
 		err = fmt.Errorf("headhunter.UnserveVolume() failed to \"down\" Volume (%s): %v", volumeName, err)
 		return
 	}
-	volume.served = false
-	globals.Unlock()
 	err = nil
 	return
 }

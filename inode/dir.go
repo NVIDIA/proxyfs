@@ -763,7 +763,6 @@ func (vS *volumeStruct) NumDirEntries(dirInodeNumber InodeNumber) (numEntries ui
 // A maxEntries or maxBufSize argument of zero is interpreted to mean "no maximum".
 func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntries []DirEntry, moreEntries bool, err error) {
 	var (
-		atLeastOneEntryFound         bool
 		bufSize                      uint64
 		dirEntryBasename             string
 		dirEntryBasenameAsKey        sortedmap.Key
@@ -919,7 +918,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 			return
 		}
 
-		atLeastOneEntryFound = false
 		bufSize = 0
 
 		snapShotListSortedLen, err = snapShotListSorted.Len()
@@ -960,8 +958,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 				return
 			}
 
-			atLeastOneEntryFound = true
-
 			nextEntry = DirEntry{
 				InodeNumber:     dirEntryInodeNumber,
 				Basename:        dirEntryBasename,
@@ -981,16 +977,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		}
 
 		moreEntries = dirIndex < dirMappingLen
-
-		if 0 == len(dirEntries) {
-			if atLeastOneEntryFound {
-				// moreEntries will be true despite none fitting withing supplied constraints
-			} else {
-				err = fmt.Errorf("ReadDir() called for prevReturned at or beyond end of directory")
-				err = blunder.AddError(err, blunder.NotFoundError)
-				return
-			}
-		}
 
 		stats.IncrementOperationsEntriesAndBytes(stats.DirRead, uint64(len(dirEntries)), bufSize)
 
@@ -1106,7 +1092,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		return
 	}
 
-	atLeastOneEntryFound = false
 	bufSize = 0
 
 	for {
@@ -1145,8 +1130,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 			}
 		}
 
-		atLeastOneEntryFound = true
-
 		nextEntry = DirEntry{
 			InodeNumber:     dirEntryInodeNumber,
 			Basename:        dirEntryBasename,
@@ -1167,16 +1150,6 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	}
 
 	moreEntries = dirIndex < dirMappingLen
-
-	if 0 == len(dirEntries) {
-		if atLeastOneEntryFound {
-			// moreEntries will be true despite none fitting withing supplied constraints
-		} else {
-			err = fmt.Errorf("ReadDir() called for prevReturned at or beyond end of directory")
-			err = blunder.AddError(err, blunder.NotFoundError)
-			return
-		}
-	}
 
 	stats.IncrementOperationsEntriesAndBytes(stats.DirRead, uint64(len(dirEntries)), bufSize)
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"path"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -146,11 +145,11 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 
 	inodeLock, err = vS.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
 	if nil != err {
-		logger.PanicfWithError(err, "InitInodeLock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "InitInodeLock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 	err = inodeLock.WriteLock()
 	if nil != err {
-		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "dlm.Writelock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 
 	stillExists = vS.inodeVolumeHandle.Access(inodeNumber, inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.F_OK,
@@ -160,13 +159,13 @@ func (vS *volumeStruct) inFlightFileInodeDataFlusher(inodeNumber inode.InodeNumb
 		if nil == err {
 			vS.untrackInFlightFileInodeData(inodeNumber, false)
 		} else {
-			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %d", vS.volumeName, inodeNumber)
+			logger.ErrorfWithError(err, "Flush of file data failed on volume '%s' inode %v", vS.volumeName, inodeNumber)
 		}
 	}
 
 	err = inodeLock.Unlock()
 	if nil != err {
-		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %d failed", vS.volumeName, inodeNumber)
+		logger.PanicfWithError(err, "dlm.Unlock() for volume '%s' inode %v failed", vS.volumeName, inodeNumber)
 	}
 }
 
@@ -175,7 +174,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		flushFirst bool
 	)
 
-	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %d",
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): waiting to flush volume '%s' inode %v",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber)
 
 	select {
@@ -185,7 +184,7 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 		flushFirst = true
 	}
 
-	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %d flushfirst %t",
+	logger.Tracef("fs.inFlightFileInodeDataTracker(): flush starting for volume '%s' inode %v flushfirst %t",
 		inFlightFileInodeData.volStruct.volumeName, inFlightFileInodeData.InodeNumber, flushFirst)
 
 	if flushFirst {
@@ -195,7 +194,63 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	inFlightFileInodeData.wg.Done()
 }
 
-func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+func mountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	var (
+		mS         *mountStruct
+		ok         bool
+		volStruct  *volumeStruct
+		volumeName string
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.MountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MountErrors.Add(1)
+		}
+	}()
+
+	globals.Lock()
+
+	volumeName, ok = inode.AccountNameToVolumeName(accountName)
+	if !ok {
+		err = fmt.Errorf("Unknown accountName passed to mountByAccountName(): \"%s\"", accountName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	volStruct, ok = globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("Unknown volumeName computed by mountByAccountName(): \"%s\"", volumeName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	globals.lastMountID++
+
+	mS = &mountStruct{
+		id:        globals.lastMountID,
+		options:   mountOptions,
+		volStruct: volStruct,
+	}
+
+	globals.mountMap[mS.id] = mS
+
+	volStruct.dataMutex.Lock()
+	volStruct.mountList = append(volStruct.mountList, mS.id)
+	volStruct.dataMutex.Unlock()
+
+	globals.Unlock()
+
+	mountHandle = mS
+	err = nil
+
+	return
+}
+
+func mountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
 	var (
 		mS        *mountStruct
 		ok        bool
@@ -214,7 +269,7 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 
 	volStruct, ok = globals.volumeMap[volumeName]
 	if !ok {
-		err = fmt.Errorf("Unknown volumeName passed to mount(): \"%s\"", volumeName)
+		err = fmt.Errorf("Unknown volumeName passed to mountByVolumeName(): \"%s\"", volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		globals.Unlock()
 		return
@@ -613,7 +668,7 @@ func (mS *mountStruct) fileLockInsert(inodeNumber inode.InodeNumber, inFlock *Fl
 
 }
 
-// Unlock a given range. All locks held in this range by the process (indentified by Pid) are removed.
+// Unlock a given range. All locks held in this range by the process (identified by Pid) are removed.
 func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockStruct) (err error) {
 
 	flockList := mS.getFileLockList(inodeNumber)
@@ -798,13 +853,22 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 		return nil, blunder.AddError(err, blunder.NotFoundError)
 	}
 
-	stat = make(map[StatKey]uint64)
+	stat, err = mS.getstatHelperWhileLocked(inodeNumber)
 
-	metadata, err := mS.volStruct.inodeVolumeHandle.GetMetadata(inodeNumber)
+	return
+}
 
-	if err != nil {
-		return nil, err
+func (mS *mountStruct) getstatHelperWhileLocked(inodeNumber inode.InodeNumber) (stat Stat, err error) {
+	var (
+		metadata *inode.MetadataStruct
+	)
+
+	metadata, err = mS.volStruct.inodeVolumeHandle.GetMetadata(inodeNumber)
+	if nil != err {
+		return
 	}
+
+	stat = make(map[StatKey]uint64)
 
 	stat[StatCRTime] = uint64(metadata.CreationTime.UnixNano())
 	stat[StatMTime] = uint64(metadata.ModificationTime.UnixNano())
@@ -819,7 +883,7 @@ func (mS *mountStruct) getstatHelper(inodeNumber inode.InodeNumber, callerID dlm
 	stat[StatGroupID] = uint64(metadata.GroupID)
 	stat[StatNumWrites] = metadata.NumWrites
 
-	return stat, nil
+	return
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
@@ -1277,8 +1341,21 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 }
 
 func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+	var (
+		coalesceElementList      []*inode.CoalesceElement
+		coalesceElementListIndex int
+		coalesceSize             uint64
+		coalesceTime             time.Time
+		destFileInodeNumber      inode.InodeNumber
+		dirEntryBasename         string
+		dirEntryInodeNumber      inode.InodeNumber
+		dirInodeNumber           inode.InodeNumber
+		elementPath              string
+		heldLocks                *heldLocksStruct
+		restartBackoff           time.Duration
+		retryRequired            bool
+	)
 
-	var coalesceSize uint64
 	startTime := time.Now()
 	defer func() {
 		globals.MiddlewareCoalesceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1291,217 +1368,107 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	// it'll hold a dir lock and a file lock for each element path, plus a lock on the destination dir and the root dir
-	heldLocks := make([]*dlm.RWLockStruct, 0, 2*len(elementPaths)+2)
-	defer func() {
-		for _, lock := range heldLocks {
-			if lock != nil {
-				lock.Unlock()
-			}
-		}
-	}()
+	// Retry until done or failure (starting with ZERO backoff)
 
-	elementDirAndFileNames := make(dirAndFileNameSlice, 0, len(elementPaths))
-	coalesceElements := make([]inode.CoalesceElement, 0, len(elementPaths))
+	restartBackoff = time.Duration(0)
 
-	for _, path := range elementPaths {
-		dirName, fileName := filepath.Split(path)
-		if dirName == "" {
-			err = fmt.Errorf("Files to coalesce must not be in the root directory")
-			return
-		} else {
-			// filepath.Split leaves the trailing slash on the directory file name; the only time it doesn't is if you
-			// split something lacking slashes, e.g. "file.txt", in which case dirName is "" and we've already returned
-			// an error.
-			dirName = dirName[0 : len(dirName)-1]
-		}
+Restart:
 
-		elementDirAndFileNames = append(elementDirAndFileNames, dirAndFileName{
-			dirName:  dirName,
-			fileName: fileName,
-		})
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
 	}
 
-	destDirName, destFileName := filepath.Split(destPath)
-	if destDirName == "" {
-		// NB: the middleware won't ever call us with a destination file in the root directory, as that would look like
-		// a container path.
-		err = fmt.Errorf("Coalesce target must not be in the root directory")
-		return
-	}
-	destDirName = destDirName[0 : len(destDirName)-1] // chop off trailing slash
+	// Construct fresh heldLocks for this restart
 
-	// We lock things in whatever order the caller provides them. To protect against deadlocks with other concurrent
-	// calls to this function, we first obtain a write lock on the root inode.
-	//
-	// One might think there's some way to sort these paths and do something smarter, but then one would remember that
-	// symlinks exist and so one cannot do anything useful with paths. For example, given two directory paths, which is
-	// more deeply nested, a/b/c or d/e/f/g/h? It might be the first one, if b is a symlink to b1/b2/b3/b4/b5, or it
-	// might not.
-	//
-	// This function is called infrequently enough that we can probably get away with the big heavy lock without causing
-	// too much trouble.
-	callerID := dlm.GenerateCallerID()
+	heldLocks = newHeldLocks()
 
-	rootDirInodeLock, err := mS.volStruct.inodeVolumeHandle.GetWriteLock(inode.RootDirInodeNumber, callerID)
-	if err != nil {
-		return
-	}
-	heldLocks = append(heldLocks, rootDirInodeLock)
+	// Assemble WriteLock on each FileInode and their containing DirInode in elementPaths
 
-	// Walk the path one directory at a time, stopping when we either encounter a missing path component or when we've
-	// gone through the whole path.
-	destDirPathComponents := strings.Split(destDirName, "/")
+	coalesceElementList = make([]*inode.CoalesceElement, len(elementPaths))
 
-	cursorInodeNumber := inode.RootDirInodeNumber
-	var cursorInodeLock *dlm.RWLockStruct // deliberately starts as nil; we have a lock on the root dir already
+	for coalesceElementListIndex, elementPath = range elementPaths {
+		dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, _, retryRequired, err =
+			mS.resolvePath(
+				inode.RootDirInodeNumber,
+				elementPath,
+				heldLocks,
+				resolvePathFollowDirSymlinks|
+					resolvePathRequireExclusiveLockOnDirEntryInode|
+					resolvePathRequireExclusiveLockOnDirInode)
 
-	defer func() {
-		if cursorInodeLock != nil {
-			cursorInodeLock.Unlock()
-		}
-	}()
-
-	// Resolve as much of the path as exists
-	for len(destDirPathComponents) > 0 {
-		pathComponent := destDirPathComponents[0]
-		// We have to look up the dirent ourselves instead of letting resolvePath do it so we can distinguish between
-		// the following cases:
-		//
-		// (A) dirent doesn't exist, in which case we break out of this loop and start creating directories
-		//
-		// (B) dirent does exist, but references a broken symlink, so resolvePath returns NotFoundError, in which case
-		// we return an error
-		_, err1 := mS.volStruct.inodeVolumeHandle.Lookup(cursorInodeNumber, pathComponent)
-		if err1 != nil {
-			if blunder.Is(err1, blunder.NotFoundError) {
-				// We found a dir entry that doesn't exist; now we start making directories.
-				break
-			} else {
-				// Mystery error; bail out
-				err = err1
-				return
-			}
-		}
-
-		// Resolve one path component and advance the cursor
-		nextCursorInodeNumber, nextCursorInodeType, nextCursorInodeLock, err1 := mS.resolvePath(pathComponent, callerID, cursorInodeNumber, mS.volStruct.inodeVolumeHandle.EnsureWriteLock)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		if nextCursorInodeType != inode.DirType {
-			// Every path component must resolve to a directory. There may be symlinks along the way, but resolvePath
-			// takes care of following those.
-			if nextCursorInodeLock != nil {
-				nextCursorInodeLock.Unlock()
-			}
-			err = blunder.NewError(blunder.NotDirError, "%v is not a directory", pathComponent)
+		if nil != err {
+			heldLocks.free()
 			return
 		}
 
-		if cursorInodeLock != nil {
-			cursorInodeLock.Unlock()
-		}
-		cursorInodeNumber = nextCursorInodeNumber
-		cursorInodeLock = nextCursorInodeLock
-		destDirPathComponents = destDirPathComponents[1:]
-	}
-
-	// Make any missing directory entires
-	for len(destDirPathComponents) > 0 {
-		pathComponent := destDirPathComponents[0]
-		// can't use Mkdir since it wants to take its own lock, so we make and link the dir ourselves
-
-		newDirInodeNumber, err1 := mS.volStruct.inodeVolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeGroupID(0))
-		if err1 != nil {
-			logger.ErrorWithError(err1)
-			err = err1
-			return
+		if retryRequired {
+			heldLocks.free()
+			goto Restart
 		}
 
-		err = mS.volStruct.inodeVolumeHandle.Link(cursorInodeNumber, pathComponent, newDirInodeNumber, false)
-		if err != nil {
-			destroyErr := mS.volStruct.inodeVolumeHandle.Destroy(newDirInodeNumber)
-			if destroyErr != nil {
-				logger.WarnfWithError(destroyErr, "couldn't destroy inode %v after failed Link() in fs.MiddlewareCoalesce", newDirInodeNumber)
-			}
-			return
-		}
+		// Record dirInode & dirEntryInode (fileInode) in elementList
 
-		if cursorInodeLock != nil {
-			cursorInodeLock.Unlock()
-		}
-		destDirPathComponents = destDirPathComponents[1:]
-		cursorInodeNumber = newDirInodeNumber
-		cursorInodeLock, err1 = mS.volStruct.inodeVolumeHandle.EnsureWriteLock(newDirInodeNumber, callerID)
-		if err1 != nil {
-			err = err1
-			return
-		}
-	}
-
-	for _, entry := range elementDirAndFileNames {
-		dirInodeNumber, dirInodeType, dirInodeLock, err1 := mS.resolvePathForWrite(entry.dirName, callerID)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		if dirInodeLock != nil {
-			heldLocks = append(heldLocks, dirInodeLock)
-		}
-
-		if dirInodeType != inode.DirType {
-			err = blunder.NewError(blunder.NotDirError, "%s is not a directory", entry.dirName)
-			return
-		}
-
-		fileInodeNumber, err1 := mS.volStruct.inodeVolumeHandle.Lookup(dirInodeNumber, entry.fileName)
-		if err1 != nil {
-			err = err1
-			return
-		}
-
-		fileInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(fileInodeNumber, callerID)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		if !fileInodeLock.IsWriteHeld() {
-			err = fileInodeLock.WriteLock()
-			if err != nil {
-				return
-			}
-			heldLocks = append(heldLocks, fileInodeLock)
-		}
-
-		fileMetadata, err1 := mS.volStruct.inodeVolumeHandle.GetMetadata(fileInodeNumber)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		if fileMetadata.InodeType != inode.FileType {
-			err = blunder.NewError(blunder.NotFileError, "%s/%s is not an ordinary file", entry.dirName, entry.fileName)
-			return
-		}
-
-		coalesceElements = append(coalesceElements, inode.CoalesceElement{
+		coalesceElementList[coalesceElementListIndex] = &inode.CoalesceElement{
 			ContainingDirectoryInodeNumber: dirInodeNumber,
-			ElementInodeNumber:             fileInodeNumber,
-			ElementName:                    entry.fileName,
-		})
+			ElementInodeNumber:             dirEntryInodeNumber,
+			ElementName:                    dirEntryBasename,
+		}
 	}
 
-	// We've now jumped through all the requisite hoops to get the required locks, so now we can call inode.Coalesce and
-	// do something useful
-	destInodeNumber, mtime, numWrites, coalesceSize, err :=
-		mS.volStruct.inodeVolumeHandle.Coalesce(cursorInodeNumber, destFileName, coalesceElements)
-	ino = uint64(destInodeNumber)
-	modificationTime = uint64(mtime.UnixNano())
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			destPath,
+			heldLocks,
+			resolvePathFollowDirEntrySymlinks|
+				resolvePathFollowDirSymlinks|
+				resolvePathCreateMissingPathElements|
+				resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Invoke package inode to actually perform the Coalesce operation
+
+	destFileInodeNumber = dirEntryInodeNumber
+	coalesceTime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(destFileInodeNumber, coalesceElementList)
+
+	// We can now release all the WriteLocks we are currently holding
+
+	heldLocks.free()
+
+	// Regardless of err return, fill in other return values
+
+	ino = uint64(destFileInodeNumber)
+	modificationTime = uint64(coalesceTime.UnixNano())
+
 	return
 }
 
-func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err error) {
+func (mS *mountStruct) MiddlewareDelete(parentDir string, basename string) (err error) {
+	var (
+		dirEntryBasename    string
+		dirEntryInodeNumber inode.InodeNumber
+		dirInodeNumber      inode.InodeNumber
+		doDestroy           bool
+		heldLocks           *heldLocksStruct
+		inodeType           inode.InodeType
+		inodeVolumeHandle   inode.VolumeHandle
+		linkCount           uint64
+		numDirEntries       uint64
+		restartBackoff      time.Duration
+		retryRequired       bool
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -1511,398 +1478,868 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, baseName string) (err 
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	// Retry until done or failure (starting with ZERO backoff)
 
-	// Get the inode, type, and lock for the parent directory
-	parentInodeNumber, parentInodeType, parentDirLock, err := mS.resolvePathForWrite(parentDir, nil)
-	if err != nil {
-		return err
-	}
-	defer parentDirLock.Unlock()
-	if parentInodeType != inode.DirType {
-		err = blunder.NewError(blunder.NotDirError, "%s is a file", parentDir)
-	}
+	restartBackoff = time.Duration(0)
 
-	// We will need both parentDir lock to Unlink() and baseInode lock.
-	baseNameInodeNumber, err := mS.volStruct.inodeVolumeHandle.Lookup(parentInodeNumber, baseName)
-	if err != nil {
-		return err
-	}
-	baseInodeLock, err := mS.volStruct.inodeVolumeHandle.GetWriteLock(baseNameInodeNumber, parentDirLock.GetCallerID())
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
 	if nil != err {
+		logger.Fatalf("MiddlewareDelete(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			parentDir+"/"+basename,
+			heldLocks,
+			resolvePathFollowDirSymlinks|
+				resolvePathRequireExclusiveLockOnDirEntryInode|
+				resolvePathRequireExclusiveLockOnDirInode)
+
+	if nil != err {
+		heldLocks.free()
 		return
 	}
-	defer baseInodeLock.Unlock()
 
-	inodeType, err := mS.volStruct.inodeVolumeHandle.GetType(baseNameInodeNumber)
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Check if Unlink() and Destroy() are doable
+
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+
+	inodeType, err = inodeVolumeHandle.GetType(dirEntryInodeNumber)
 	if nil != err {
+		heldLocks.free()
 		return
 	}
 
-	var doDestroy bool
-
-	if inodeType == inode.DirType {
-		dirEntries, nonShadowingErr := mS.volStruct.inodeVolumeHandle.NumDirEntries(baseNameInodeNumber)
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	if inode.DirType == inodeType {
+		numDirEntries, err = inodeVolumeHandle.NumDirEntries(dirEntryInodeNumber)
+		if nil != err {
+			heldLocks.free()
 			return
 		}
 
-		if 2 != dirEntries {
-			err = fmt.Errorf("Directory not empty")
-			err = blunder.AddError(err, blunder.NotEmptyError)
+		if 2 != numDirEntries {
+			heldLocks.free()
+			err = blunder.NewError(blunder.NotEmptyError, "%s/%s not empty", parentDir, basename)
 			return
 		}
-
-		// LinkCount must == 2 ("." and "..") since we don't allow hardlinks to DirInode's
 
 		doDestroy = true
-	} else { // inodeType != inode.DirType
-		basenameLinkCount, nonShadowingErr := mS.volStruct.inodeVolumeHandle.GetLinkCount(baseNameInodeNumber)
-		if nil != nonShadowingErr {
-			err = nonShadowingErr
+	} else {
+		linkCount, err = inodeVolumeHandle.GetLinkCount(dirEntryInodeNumber)
+		if nil != err {
+			heldLocks.free()
 			return
 		}
 
-		doDestroy = (1 == basenameLinkCount)
+		doDestroy = (1 == linkCount)
 	}
 
-	// At this point, we *are* going to Unlink... and optionally Destroy... the inode
+	// Now perform the Unlink() and (potentially) Destroy()
 
-	err = mS.volStruct.inodeVolumeHandle.Unlink(parentInodeNumber, baseName, false)
+	err = inodeVolumeHandle.Unlink(dirInodeNumber, dirEntryBasename, false)
 	if nil != err {
+		heldLocks.free()
 		return
 	}
 
 	if doDestroy {
-		err = mS.volStruct.inodeVolumeHandle.Destroy(baseNameInodeNumber)
+		err = inodeVolumeHandle.Destroy(dirEntryInodeNumber)
 		if nil != err {
-			return err
+			logger.Errorf("fs.MiddlewareDelete() failed to Destroy dirEntryInodeNumber 0x%016X: %v", dirEntryInodeNumber, err)
 		}
-		mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 	}
 
+	// Release heldLocks and exit with success (even if Destroy() failed earlier)
+
+	heldLocks.free()
+
+	err = nil
+	return
+}
+
+func (mS *mountStruct) middlewareReadDirHelper(path string, maxEntries uint64, prevBasename string) (pathDirInodeNumber inode.InodeNumber, dirEntrySlice []inode.DirEntry, moreEntries bool, err error) {
+	var (
+		dirEntrySliceElement  inode.DirEntry
+		heldLocks             *heldLocksStruct
+		internalDirEntrySlice []inode.DirEntry
+		restartBackoff        time.Duration
+		retryRequired         bool
+	)
+
+	// Retry until done or failure (starting with ZERO backoff)
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, pathDirInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			path,
+			heldLocks,
+			resolvePathFollowDirSymlinks)
+
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Now assemble response
+
+	internalDirEntrySlice, moreEntries, err = mS.volStruct.inodeVolumeHandle.ReadDir(pathDirInodeNumber, maxEntries, 0, prevBasename)
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	// No need to hold any locks now... directory contents should be allowed to change while enumerating
+	heldLocks.free()
+
+	dirEntrySlice = make([]inode.DirEntry, 0, len(internalDirEntrySlice))
+
+	for _, dirEntrySliceElement = range internalDirEntrySlice {
+		if ("." == dirEntrySliceElement.Basename) || (".." == dirEntrySliceElement.Basename) {
+			dirEntrySliceElement.Type = inode.DirType
+		} else {
+			dirEntrySliceElement.Type, err = mS.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntrySliceElement.InodeNumber)
+			if nil != err {
+				// It's ok to have an error here... it just means the directory we are iterating is changing
+				continue
+			}
+		}
+		dirEntrySlice = append(dirEntrySlice, dirEntrySliceElement)
+	}
+
+	dirEntrySlice = dirEntrySlice[:len(dirEntrySlice)]
+
+	err = nil
 	return
 }
 
 func (mS *mountStruct) MiddlewareGetAccount(maxEntries uint64, marker string, endmarker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error) {
+	var (
+		dirEntrySlice        []inode.DirEntry
+		dirEntrySliceElement inode.DirEntry
+		remainingMaxEntries  uint64
+		moreEntries          bool
+		statResult           Stat
+	)
 
-	startTime := time.Now()
-	defer func() {
-		globals.MiddlewareGetAccountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		if err != nil {
-			globals.MiddlewareGetAccountErrors.Add(1)
-		}
-	}()
-
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber)
-	if err != nil {
+	statResult, err = mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber)
+	if nil != err {
 		return
 	}
 	mtime = statResult[StatMTime]
 	ctime = statResult[StatCTime]
 
-	// List the root directory, starting at the marker, and keep only
-	// the directories. The Swift API doesn't let you have objects in
-	// an account, so files or symlinks don't belong in an account
-	// listing.
-	areMoreEntries := true
-	lastBasename := marker
-	for areMoreEntries && uint64(len(accountEnts)) < maxEntries && (endmarker == "" || lastBasename < endmarker) {
-		var dirEnts []inode.DirEntry
-		dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, lastBasename, maxEntries-uint64(len(accountEnts)), 0)
-		if err != nil {
-			if blunder.Is(err, blunder.NotFoundError) {
-				// Readdir gives you a NotFoundError if you ask for a
-				// lastBasename that's lexicographically greater than
-				// the last entry in the directory.
-				//
-				// For account listings, it's not an error to set
-				// marker=$PAST_END where $PAST_END is greater than
-				// the last container in the account; you simply get
-				// back an empty listing.
-				//
-				// Therefore, we treat this as though Readdir returned
-				// 0 entries.
-				err = nil
+	if 0 != maxEntries {
+		// Hard limit to number of DirInode Basenames to return
+		accountEnts = make([]AccountEntry, 0, maxEntries)
+	}
+
+	remainingMaxEntries = maxEntries
+
+	moreEntries = true
+
+	for moreEntries {
+		_, dirEntrySlice, moreEntries, err = mS.middlewareReadDirHelper("/", remainingMaxEntries, marker)
+		if nil != err {
+			return
+		}
+
+		if 0 == maxEntries {
+			// No limit to number of DirInode Basenames to return... so it must be <= len(dirEntrySlice)
+			accountEnts = make([]AccountEntry, 0, len(dirEntrySlice))
+			// Note: moreEntries should be false so the "for moreEntries" loop should exit after 1st iteration
+		}
+
+		for _, dirEntrySliceElement = range dirEntrySlice {
+			if ("" != endmarker) && (0 <= strings.Compare(dirEntrySliceElement.Basename, endmarker)) {
+				moreEntries = false
 				break
-			} else {
-				return
+			}
+			if ("." != dirEntrySliceElement.Basename) && (".." != dirEntrySliceElement.Basename) {
+				// So we've skipped "." & ".." - now also skip non-DirInodes
+				if inode.DirType == dirEntrySliceElement.Type {
+					statResult, err = mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntrySliceElement.InodeNumber)
+					if nil != err {
+						return
+					}
+					accountEnts = append(accountEnts, AccountEntry{
+						Basename:         dirEntrySliceElement.Basename,
+						ModificationTime: statResult[StatMTime],
+						AttrChangeTime:   statResult[StatCTime],
+					})
+				}
 			}
 		}
 
-		for _, dirEnt := range dirEnts {
-			if dirEnt.Basename == "." || dirEnt.Basename == ".." {
-				continue
+		if moreEntries && (0 != maxEntries) {
+			remainingMaxEntries = maxEntries - uint64(len(accountEnts))
+			if 0 == remainingMaxEntries {
+				moreEntries = false
 			}
-			if endmarker != "" && dirEnt.Basename >= endmarker {
-				break
-			}
-
-			statResult, err1 := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEnt.InodeNumber)
-			if err1 != nil {
-				err = err1
-				return
-			}
-			if inode.InodeType(statResult[StatFType]) != inode.DirType {
-				// Yes, there might be files or symlinks in here, but the Swift API wouldn't know what to do with them.
-				continue
-			}
-			accountEnts = append(accountEnts, AccountEntry{
-				Basename:         dirEnt.Basename,
-				ModificationTime: statResult[StatMTime],
-				AttrChangeTime:   statResult[StatCTime],
-			})
 		}
-		if len(dirEnts) == 0 {
-			break
-		} else {
-			lastBasename = dirEnts[len(dirEnts)-1].Basename
+
+		if moreEntries {
+			// Adjust marker to fetch next dirEntrySlice
+			marker = dirEntrySlice[len(dirEntrySlice)-1].Basename
 		}
 	}
+
+	accountEnts = accountEnts[:len(accountEnts)]
+
 	return
+}
+
+type dirEntrySliceStackElementStruct struct {
+	dirPath       string
+	dirEntrySlice []inode.DirEntry
+	numConsumed   int
+	moreEntries   bool
 }
 
 func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, endmarker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error) {
+	var (
+		containerEntry                ContainerEntry
+		containerEntryBasename        string // Misnamed... this is actually everything after ContainerName
+		containerEntryPath            string
+		containerEntryPathSplit       []string // Split on only the first '/' (to remove ContainerName from it)
+		doSingleDirectory             bool
+		dirEntryInodeLock             *dlm.RWLockStruct
+		dirEntryInodeNumber           inode.InodeNumber
+		dirEntryInodeType             inode.InodeType
+		dirEntryMetadata              *inode.MetadataStruct
+		dirEntryPath                  string
+		dirEntrySlice                 []inode.DirEntry
+		dirEntrySliceElement          inode.DirEntry
+		dirEntrySliceElementIndex     int
+		dirEntrySliceElementToPrepend *inode.DirEntry
+		dirEntrySliceStack            []*dirEntrySliceStackElementStruct
+		dirEntrySliceStackElement     *dirEntrySliceStackElementStruct
+		dirEntrySliceToAppend         []inode.DirEntry
+		dirInodeNumber                inode.InodeNumber
+		dirPath                       string
+		dirPathSplit                  []string
+		dlmCallerID                   dlm.CallerID
+		endmarkerCanonicalized        string
+		endmarkerPath                 []string
+		heldLocks                     *heldLocksStruct
+		initialDirEntryToMatch        string // == "" if no initial path should be returned (i.e. in marker starting point case)
+		inodeVolumeHandle             inode.VolumeHandle
+		markerCanonicalized           string
+		markerPath                    []string
+		markerPathDirInodeIndex       int
+		moreEntries                   bool
+		pathIndex                     int
+		prefixCanonicalized           string
+		prefixPath                    []string
+		prefixPathDirInodeIndex       int
+		prevReturned                  string
+		remainingMaxEntries           uint64
+		restartBackoff                time.Duration
+		retryRequired                 bool
+	)
 
-	startTime := time.Now()
-	defer func() {
-		globals.MiddlewareGetContainerUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		if err != nil {
-			globals.MiddlewareGetContainerErrors.Add(1)
+	// Validate marker, endmarker, and prefix
+
+	if "" == marker {
+		markerPath = []string{}
+		markerPathDirInodeIndex = -1 // Must be special cased below to ensure we don't look in markerPath
+		markerCanonicalized = ""     // Actually never accessed
+	} else {
+		markerPath, markerPathDirInodeIndex, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + marker)
+		if nil != err {
+			err = blunder.AddError(err, blunder.InvalidArgError)
+			return
 		}
-	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+		markerCanonicalized = strings.Join(markerPath, "/")
+		if strings.HasSuffix(marker, "/") {
+			markerCanonicalized += "/"
+		}
 
-	ino, _, inoLock, err := mS.resolvePathForRead(vContainerName, nil)
-	if err != nil {
+		if vContainerName+"/"+marker != markerCanonicalized {
+			err = blunder.NewError(blunder.InvalidArgError, "MiddlewareGetContainer() only supports a canonicalized marker")
+			return
+		}
+	}
+
+	if "" == endmarker {
+		endmarkerPath = []string{}
+		endmarkerCanonicalized = "" // Actually never accessed
+	} else {
+		endmarkerPath, _, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + endmarker)
+		if nil != err {
+			err = blunder.AddError(err, blunder.InvalidArgError)
+			return
+		}
+
+		endmarkerCanonicalized = strings.Join(endmarkerPath, "/")
+		if strings.HasSuffix(endmarker, "/") {
+			endmarkerCanonicalized += "/"
+		}
+
+		if vContainerName+"/"+endmarker != endmarkerCanonicalized {
+			err = blunder.NewError(blunder.InvalidArgError, "MiddlewareGetContainer() only supports a canonicalized endmarker")
+			return
+		}
+	}
+
+	prefixPath, prefixPathDirInodeIndex, err = mS.canonicalizePathAndLocateLeafDirInode(vContainerName + "/" + prefix)
+	if nil != err {
+		err = blunder.AddError(err, blunder.InvalidArgError)
 		return
 	}
-	// Because a container listing can take a long time to generate,
-	// we don't hold locks for the whole time. While this might lead
-	// to some small inconsistencies (like a new file created halfway
-	// through a call to MiddlewareGetContainer being omitted from the
-	// listing), this is mitigated by two things. First, this lets us
-	// accept new PUTs and writes while generating a container
-	// listing, and second, Swift container listings are subject to
-	// all sorts of temporary inconsistencies, so this is no worse
-	// than what a Swift client would normally have to put up with.
-	inoLock.Unlock()
+	if prefixPathDirInodeIndex < 0 {
+		err = blunder.NewError(blunder.NotFoundError, "MiddlewareGetContainer() only supports querying an existing Container")
+		return
+	}
 
-	containerEnts = make([]ContainerEntry, 0)
-	var recursiveReaddirPlus func(dirName string, dirInode inode.InodeNumber) error
-	recursiveReaddirPlus = func(dirName string, dirInode inode.InodeNumber) error {
-		var dirEnts []inode.DirEntry
-		var recursiveDescents []dirToDescend
-		areMoreEntries := true
-		lastBasename := ""
-		var delimiterSet bool
-		if delimiter != "" {
-			delimiterSet = true
-		} else {
-			delimiterSet = false
-		}
-		prefixMatched := false
+	prefixCanonicalized = strings.Join(prefixPath, "/")
+	if strings.HasSuffix(prefix, "/") {
+		prefixCanonicalized += "/"
+	}
 
-		// Note that we're taking advantage of the fact that
-		// Readdir() returns things in lexicographic order, which
-		// is the same as our desired order. This lets us avoid
-		// reading the whole directory only to sort it.
-		for (areMoreEntries || len(dirEnts) > 0 || len(recursiveDescents) > 0) && uint64(len(containerEnts)) < maxEntries {
-			// If we've run out of real directory entries, load some more.
-			if areMoreEntries && len(dirEnts) == 0 {
-				dirEnts, _, areMoreEntries, err = mS.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInode, lastBasename, maxEntries-uint64(len(containerEnts)), 0)
-				if err != nil {
-					logger.ErrorfWithError(err, "MiddlewareGetContainer: error reading directory %s (inode %v)", dirName, dirInode)
-					return err
-				}
-				if len(dirEnts) > 0 {
-					// If there's no dirEnts here, then areMoreEntries
-					// is false, so we'll never call Readdir again,
-					// and thus it doesn't matter what the value of
-					// lastBasename is.
-					lastBasename = dirEnts[len(dirEnts)-1].Basename
-				}
-			}
+	if (prefix != "") && (vContainerName+"/"+prefix != prefixCanonicalized) {
+		err = blunder.NewError(blunder.InvalidArgError, "MiddlewareGetContainer() only supports a canonicalized prefix")
+		return
+	}
 
-			// Ignore these early so we can stop thinking about them
-			if len(dirEnts) > 0 && (dirEnts[0].Basename == "." || dirEnts[0].Basename == "..") {
-				dirEnts = dirEnts[1:]
-				continue
-			}
+	// Validate delimiter
 
-			// If we've got pending recursive descents that should go before the next dirEnt, handle them
-			// If delimiter has been set and prefix has been matched, it means we're only interested in the
-			// current level in the hierarchy, so we want to stop recursion.
-			for len(recursiveDescents) > 0 && (len(dirEnts) == 0 || (recursiveDescents[0].name < dirEnts[0].Basename)) && (!delimiterSet || !prefixMatched) {
-				err = recursiveReaddirPlus(recursiveDescents[0].path, recursiveDescents[0].ino)
-				if err != nil {
-					// already logged
-					return err
-				}
-				if uint64(len(containerEnts)) >= maxEntries {
-					// we're finished here
-					return nil
-				}
-				recursiveDescents = recursiveDescents[1:]
-			}
+	switch delimiter {
+	case "":
+		doSingleDirectory = false
+	case "/":
+		doSingleDirectory = true
+	default:
+		err = blunder.NewError(blunder.InvalidArgError, "MiddlewareGetContainer() only supports a delimiter of \"/\"")
+		return
+	}
 
-			// Handle just one dirEnt per loop iteration. That lets us
-			// avoid having to refill dirEnts at more than one
-			// location in the code.
-			if !(len(dirEnts) > 0) {
-				if delimiterSet && prefixMatched {
-					// We ran out of dirEnts and we won't do more recursion because the delimiter
-					// was set and the prefix was already matched => return!
-					return nil
+	// Determine what DirInode from which to begin our enumeration
+
+	pathIndex = 0
+
+	for {
+		if (pathIndex > markerPathDirInodeIndex) && (pathIndex > prefixPathDirInodeIndex) {
+			// Special (though probably typical) case where marker lands in prefix-indicated directory
+
+			dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex+1], "/")
+
+			if (1 == len(prefixPath)) || strings.HasSuffix(prefix, "/") {
+				if (markerPathDirInodeIndex + 1) == len(markerPath) {
+					prevReturned = ""
 				} else {
-					continue
+					prevReturned = markerPath[markerPathDirInodeIndex+1]
 				}
-			}
-
-			dirEnt := dirEnts[0]
-			dirEnts = dirEnts[1:]
-
-			fileName := dirEnt.Basename
-			if len(dirName) > 0 {
-				fileName = dirName + dirEnt.Basename
-			}
-
-			if fileName > prefix && !strings.HasPrefix(fileName, prefix) {
-				// Remember that we're going over these in order, so the first time we see something that's greater that
-				// the prefix but doesn't start with it, we can skip the entire rest of the directory entries since they
-				// are *also* greater than the prefix but don't start with it.
-				return nil
-			}
-			if endmarker != "" && fileName >= endmarker {
-				// Similarly, when we encounter something past our endmarker, we can skip the rest of the directory entries
-				// since they are *also* greater than the endmarker
-				return nil
-			}
-
-			// Swift container listings are paginated; you
-			// retrieve the first page with a simple GET
-			// <container>, then you retrieve each subsequent page
-			// with a GET <container>?marker=<last-obj-returned>.
-			//
-			// If we were given a marker, then we can prune the
-			// directory tree that we're walking.
-			//
-			// For a regular file, if its container-relative path
-			// is lexicographically less than or equal to the
-			// marker, we skip it.
-			//
-			// For a directory, if its container-relative path is
-			// lexicographically less than or equal to the marker
-			// and the marker does not begin with the directory's
-			// path, we skip it.
-			//
-			// Since no regular file's container-relative path
-			// starts with another regular file's
-			// container-relative path, we can make the following
-			// test prior to any Getstat() calls, avoiding
-			// unneeded IO.
-			if fileName <= marker && strings.Index(marker, fileName) != 0 {
-				continue
-			}
-
-			statResult, err := mS.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEnt.InodeNumber) // TODO: fix this
-			if err != nil {
-				logger.ErrorfWithError(err, "MiddlewareGetContainer: error in Getstat of %s", fileName)
-				return err
-			}
-
-			fileType := inode.InodeType(statResult[StatFType])
-
-			if fileType == inode.FileType || fileType == inode.SymlinkType {
-				if fileName <= marker {
-					continue
-				}
-				if !strings.HasPrefix(fileName, prefix) {
-					continue
-				}
-				if delimiterSet {
-					// We only care about 'prefixMatched' if delimiter was set
-					prefixMatched = true
-				}
-
-				// Alternate data streams live in the inode, so this is almost certainly still cached from the Getstat()
-				// call, and hence is very cheap to retrieve.
-				serializedMetadata, err := mS.volStruct.inodeVolumeHandle.GetStream(dirEnt.InodeNumber, MiddlewareStream)
-
-				// It's okay if there's no such stream; we just treat it as empty metadata. The middleware handles it.
-				if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
-					return err
-				}
-
-				containerEnt := ContainerEntry{
-					Basename:         fileName,
-					FileSize:         statResult[StatSize],
-					ModificationTime: statResult[StatMTime],
-					AttrChangeTime:   statResult[StatCTime],
-					NumWrites:        statResult[StatNumWrites],
-					InodeNumber:      statResult[StatINum],
-					IsDir:            false,
-					Metadata:         serializedMetadata,
-				}
-				containerEnts = append(containerEnts, containerEnt)
 			} else {
-				if !strings.HasPrefix(fileName, prefix) && !strings.HasPrefix(prefix, fileName) {
-					continue
-				}
+				// Handle four remaining cases:
+				//   marker & prefix both specified directories
+				//   marker specified a directory, prefix did not
+				//   prefix specified a directory, marker did not
+				//   neither marker nor prefix specified a directory
 
-				// Directories are handled specially. For a directory
-				// "some-dir", we put an entry for "some-dir" in the
-				// container listing, then put "some-dir/" into
-				// recursiveDescents (note the trailing slash). This
-				// lets us put off the descent until we have handled
-				// all dirEnts coming before "some-dir/".
-				//
-				// For example, consider a filesystem with a dir "d",
-				// a file "d/f", and a file "d-README".
-				// Lexicographically, these would be ordered "d",
-				// "d-README", "d/f" ("-" is ASCII 45, "/" is ASCII
-				// 47). If we recursed into d immediately upon
-				// encountering it, we would have "d/f" before
-				// "d-README", which is not what the Swift API
-				// demands.
-				if fileName > marker && strings.HasPrefix(fileName, prefix) {
-					if delimiterSet {
-						// We only care about 'prefixMatched' if delimiter was set
-						prefixMatched = true
+				if (markerPathDirInodeIndex + 1) == len(markerPath) {
+					if (prefixPathDirInodeIndex + 1) == len(prefixPath) {
+						// Case where marker & prefix both specified directories
+
+						prevReturned = ""
+					} else {
+						// Case where marker specified a directory, prefix did not
+
+						prevReturned = prefixPath[prefixPathDirInodeIndex+1]
 					}
-					containerEnt := ContainerEntry{
-						Basename:         fileName,
-						FileSize:         0,
-						ModificationTime: statResult[StatMTime],
-						AttrChangeTime:   statResult[StatCTime],
-						NumWrites:        statResult[StatNumWrites],
-						InodeNumber:      statResult[StatINum],
-						IsDir:            true,
+				} else { // (markerPathDirInodeIndex + 1) != len(markerPath)
+					if (prefixPathDirInodeIndex + 1) == len(prefixPath) {
+						// Case where prefix specified a directory, marker did not
+
+						prevReturned = markerPath[markerPathDirInodeIndex+1]
+					} else {
+						// Case where neither marker nor prefix specified a directory
+
+						if strings.Compare(prefixPath[prefixPathDirInodeIndex+1], markerPath[markerPathDirInodeIndex+1]) <= 0 {
+							prevReturned = markerPath[markerPathDirInodeIndex+1]
+						} else {
+							prevReturned = prefixPath[prefixPathDirInodeIndex+1]
+						}
 					}
-					containerEnts = append(containerEnts, containerEnt)
 				}
-				recursiveDescents = append(recursiveDescents, dirToDescend{path: fileName + "/", name: dirEnt.Basename + "/", ino: dirEnt.InodeNumber})
 			}
+			initialDirEntryToMatch = prevReturned
+			break
 		}
-		return nil
+
+		if pathIndex > markerPathDirInodeIndex {
+			// Handle case where prefix is more constraining than marker
+
+			if prefixPathDirInodeIndex == (len(prefixPath) - 1) {
+				if (1 == len(prefixPath)) || strings.HasSuffix(prefix, "/") {
+					dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex+1], "/")
+					prevReturned = ""
+				} else {
+					dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex], "/")
+					prevReturned = prefixPath[len(prefixPath)-1]
+				}
+			} else {
+				dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex+1], "/")
+				prevReturned = prefixPath[len(prefixPath)-1]
+			}
+			initialDirEntryToMatch = prevReturned
+			break
+		}
+
+		if pathIndex > prefixPathDirInodeIndex {
+			// Handle case where marker is more constraining than prefix
+
+			dirPath = strings.Join(markerPath[:markerPathDirInodeIndex+1], "/")
+			if markerPathDirInodeIndex == (len(markerPath) - 1) {
+				prevReturned = ""
+			} else {
+				prevReturned = markerPath[len(markerPath)-1]
+			}
+			initialDirEntryToMatch = ""
+			break
+		}
+
+		switch strings.Compare(prefixPath[pathIndex], markerPath[pathIndex]) {
+		case -1:
+			dirPath = strings.Join(markerPath[:markerPathDirInodeIndex+1], "/")
+			if markerPathDirInodeIndex == (len(markerPath) - 1) {
+				prevReturned = ""
+			} else {
+				prevReturned = markerPath[len(markerPath)-1]
+			}
+			initialDirEntryToMatch = ""
+			break
+		case 0:
+			pathIndex++
+		case 1:
+			if prefixPathDirInodeIndex == (len(prefixPath) - 1) {
+				if (1 == len(prefixPath)) || strings.HasSuffix(prefix, "/") {
+					dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex+1], "/")
+					prevReturned = ""
+				} else {
+					dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex], "/")
+					prevReturned = prefixPath[len(prefixPath)-1]
+				}
+			} else {
+				dirPath = strings.Join(prefixPath[:prefixPathDirInodeIndex+1], "/")
+				prevReturned = prefixPath[len(prefixPath)-1]
+			}
+			initialDirEntryToMatch = prevReturned
+			break
+		}
 	}
 
-	err = recursiveReaddirPlus("", ino)
-	if err != nil {
-		// already logged
+	// Setup shortcuts/contants
+
+	dlmCallerID = dlm.GenerateCallerID()
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+
+	// Compute initial response
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
+	}
+
+	heldLocks = newHeldLocks()
+
+	_, dirInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			dirPath,
+			heldLocks,
+			resolvePathDirEntryInodeMustBeDirectory)
+	if nil != err {
+		heldLocks.free()
 		return
 	}
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	containerEnts = make([]ContainerEntry, 0, maxEntries)
+
+	if 0 == maxEntries {
+		heldLocks.free()
+		err = nil
+		return
+	}
+
+	if "" == initialDirEntryToMatch {
+		dirEntrySliceElementToPrepend = nil
+	} else {
+		if "" == dirPath {
+			dirEntryPath = initialDirEntryToMatch
+		} else {
+			dirEntryPath = dirPath + "/" + initialDirEntryToMatch
+		}
+		if ("" != endmarker) && (strings.Compare(dirEntryPath, endmarkerCanonicalized) >= 0) {
+			heldLocks.free()
+			err = nil
+			return
+		}
+		dirEntryInodeNumber, err = inodeVolumeHandle.Lookup(dirInodeNumber, initialDirEntryToMatch)
+		if nil == err {
+			retryRequired = heldLocks.attemptSharedLock(inodeVolumeHandle, dlmCallerID, dirEntryInodeNumber)
+			if retryRequired {
+				heldLocks.free()
+				goto Restart
+			}
+			dirEntryInodeType, err = inodeVolumeHandle.GetType(dirEntryInodeNumber)
+			if nil == err {
+				dirEntrySliceElementToPrepend = &inode.DirEntry{
+					InodeNumber: dirEntryInodeNumber,
+					Basename:    initialDirEntryToMatch,
+					Type:        dirEntryInodeType,
+				}
+			} else {
+				dirEntrySliceElementToPrepend = nil
+			}
+			heldLocks.unlock(dirEntryInodeNumber)
+		} else {
+			dirEntrySliceElementToPrepend = nil
+		}
+	}
+
+	heldLocks.free()
+
+	if 0 == maxEntries {
+		remainingMaxEntries = 0
+	} else {
+		if nil == dirEntrySliceElementToPrepend {
+			remainingMaxEntries = maxEntries
+		} else {
+			remainingMaxEntries = maxEntries - 1
+		}
+	}
+
+	// At this point:
+	//   no heldLocks
+	//   containerEnts has been declared
+	//   doSingleDirectory is set based on supplied delimiter
+	//   if {marker,endmarker,prefix} asked to include an exact matched path that existed, it's in dirEntrySliceElementToPrepend
+	//   prefixCanonicalized & endmarkerCanonicalized are set to terminate the ensuing treewalk
+	//   remainingMaxEntries indicates how many more DirEntry's will fit in containerEnts (if capped)
+	//   dirPath is pointing to the initial DirInode to read
+	//   prevReturned indicates from where in the DirInode to start reading
+
+	// Perform initial ReadDir and place in dirEntrySliceStack
+
+	if nil == dirEntrySliceElementToPrepend {
+		_, dirEntrySlice, moreEntries, err = mS.middlewareReadDirHelper(dirPath, remainingMaxEntries, prevReturned)
+		if nil != err {
+			return
+		}
+	} else {
+		if 0 == remainingMaxEntries {
+			dirEntrySlice = []inode.DirEntry{*dirEntrySliceElementToPrepend}
+			moreEntries = false
+		} else {
+			_, dirEntrySliceToAppend, moreEntries, err = mS.middlewareReadDirHelper(dirPath, remainingMaxEntries, prevReturned)
+			if nil == err {
+				dirEntrySlice = make([]inode.DirEntry, 1, 1+len(dirEntrySliceToAppend))
+				dirEntrySlice[0] = *dirEntrySliceElementToPrepend
+				dirEntrySlice = append(dirEntrySlice, dirEntrySliceToAppend...)
+			} else {
+				return
+			}
+		}
+	}
+
+	dirEntrySliceStackElement = &dirEntrySliceStackElementStruct{
+		dirPath:       dirPath,
+		dirEntrySlice: dirEntrySlice,
+		numConsumed:   0,
+		moreEntries:   moreEntries,
+	}
+
+	dirEntrySliceStack = []*dirEntrySliceStackElementStruct{dirEntrySliceStackElement}
+
+	containerEnts = make([]ContainerEntry, 0, len(dirEntrySlice))
+
+	// Now append appropriate ContainerEntry's until exit criteria is reached
+
+	for uint64(len(containerEnts)) < maxEntries {
+		dirEntrySliceStackElement = dirEntrySliceStack[len(dirEntrySliceStack)-1]
+
+		if dirEntrySliceStackElement.numConsumed == len(dirEntrySliceStackElement.dirEntrySlice) {
+			if dirEntrySliceStackElement.moreEntries {
+				dirPath = dirEntrySliceStackElement.dirPath
+				dirEntrySlice = dirEntrySliceStackElement.dirEntrySlice
+				dirEntrySliceElementIndex = len(dirEntrySlice) - 1
+				dirEntrySliceElement = dirEntrySlice[dirEntrySliceElementIndex]
+				prevReturned = dirEntrySliceElement.Basename
+
+				_, dirEntrySlice, moreEntries, err = mS.middlewareReadDirHelper(dirPath, remainingMaxEntries, prevReturned)
+				if (nil != err) || (0 == len(dirEntrySlice)) {
+					// Even though we thought there were moreEntries, there now are not for some reason
+
+					if doSingleDirectory {
+						// Regardless of remaining contents of dirEntrySliceStack, we must be done
+
+						err = nil
+						return
+					}
+
+					// Navigate to parent directory
+
+					dirEntrySliceStack = dirEntrySliceStack[:len(dirEntrySliceStack)-1]
+					continue
+				}
+
+				// Restart this loop on current dirEntrySliceStackElement with new middlewareReadDirHelper() results
+
+				dirEntrySliceStackElement.dirEntrySlice = dirEntrySlice
+				dirEntrySliceStackElement.numConsumed = 0
+				dirEntrySliceStackElement.moreEntries = moreEntries
+
+				continue
+			} else {
+				// We've reached the end of this DirInode
+
+				if doSingleDirectory {
+					// Regardless of remaining contents of dirEntrySliceStack, we must be done
+
+					err = nil
+					return
+				}
+
+				// Navigate to parent directory (staying within this Container)
+
+				if 1 == len(dirEntrySliceStack) {
+					// We are at the starting directory
+
+					dirPathSplit = strings.Split(dirEntrySliceStackElement.dirPath, "/")
+
+					if 1 == len(dirPathSplit) {
+						// We just finished Container-level directory, so we are done
+
+						err = nil
+						return
+					}
+
+					// Modify dirEntrySliceStackElement to point to parent directory as if we'd just processed the dirEntry of this directory
+
+					dirPath = strings.Join(dirPathSplit[:len(dirPathSplit)-1], "/")
+
+					if 0 == maxEntries {
+						remainingMaxEntries = 0
+					} else {
+						remainingMaxEntries = maxEntries - uint64(len(containerEnts))
+					}
+
+					prevReturned = dirPathSplit[len(dirPathSplit)-1]
+
+					_, dirEntrySlice, moreEntries, err = mS.middlewareReadDirHelper(dirPath, remainingMaxEntries, prevReturned)
+					if nil != err {
+						return
+					}
+
+					dirEntrySliceStackElement.dirPath = dirPath
+					dirEntrySliceStackElement.dirEntrySlice = dirEntrySlice
+					dirEntrySliceStackElement.numConsumed = 0
+					dirEntrySliceStackElement.moreEntries = moreEntries
+				} else {
+					// Parent directory already in dirEntrySliceStack... so just pop current ...Element
+
+					dirEntrySliceStack = dirEntrySliceStack[:len(dirEntrySliceStack)-1]
+				}
+
+				continue
+			}
+		}
+
+		// Consume next dirEntrySliceElement
+		// ...skipping "." and ".."
+		// ...skipping if <dirPath>/<Basename> <= marker
+		// ...recursing when encountering DirInode's if !doSingleDirectory
+		// ...terminating early if either:
+		//      len(*containerEnts) reaches maxEntries
+		//      <dirPath>/<Basename> >= endmarker
+		//      <dirPath>/<Basename> does not start with prefix
+
+		dirEntrySlice = dirEntrySliceStackElement.dirEntrySlice
+		dirEntrySliceElementIndex = dirEntrySliceStackElement.numConsumed
+		dirEntrySliceElement = dirEntrySlice[dirEntrySliceElementIndex]
+
+		dirEntrySliceStackElement.numConsumed++
+
+		if ("." == dirEntrySliceElement.Basename) || (".." == dirEntrySliceElement.Basename) {
+			continue
+		}
+
+		containerEntryPath = dirEntrySliceStackElement.dirPath + "/" + dirEntrySliceElement.Basename
+
+		if ("" != marker) && (strings.Compare(containerEntryPath, markerCanonicalized) <= 0) {
+			err = nil
+			return
+		}
+		if ("" != endmarker) && (strings.Compare(containerEntryPath, endmarkerCanonicalized) >= 0) {
+			err = nil
+			return
+		}
+		if ("" != prefix) && !strings.HasPrefix(containerEntryPath, prefixCanonicalized) {
+			err = nil
+			return
+		}
+
+		// Ok... so we actually want to append this entry to containerEnts
+
+		restartBackoff = time.Duration(0)
+
+	Retry:
+
+		restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+		if nil != err {
+			logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
+		}
+
+		dirEntryInodeLock, err = inodeVolumeHandle.AttemptReadLock(dirEntrySliceElement.InodeNumber, dlmCallerID)
+		if nil != err {
+			goto Retry
+		}
+
+		dirEntryMetadata, err = inodeVolumeHandle.GetMetadata(dirEntrySliceElement.InodeNumber)
+		if nil != err {
+			// Ok... so it must have disappeared... just skip it
+
+			err = dirEntryInodeLock.Unlock()
+			if nil != err {
+				logger.Fatalf("Failure unlocking a held LockID %s: %v", dirEntryInodeLock.LockID, err)
+			}
+
+			continue
+		}
+
+		containerEntryPathSplit = strings.SplitN(containerEntryPath, "/", 2)
+		containerEntryBasename = containerEntryPathSplit[1]
+
+		containerEntry = ContainerEntry{
+			Basename:         containerEntryBasename,
+			FileSize:         dirEntryMetadata.Size,
+			ModificationTime: uint64(dirEntryMetadata.ModificationTime.UnixNano()),
+			AttrChangeTime:   uint64(dirEntryMetadata.AttrChangeTime.UnixNano()),
+			IsDir:            (dirEntrySliceElement.Type == inode.DirType),
+			NumWrites:        dirEntryMetadata.NumWrites,
+			InodeNumber:      uint64(dirEntrySliceElement.InodeNumber),
+		}
+
+		containerEntry.Metadata, err = inodeVolumeHandle.GetStream(dirEntrySliceElement.InodeNumber, MiddlewareStream)
+		if nil != err {
+			if blunder.Is(err, blunder.StreamNotFound) {
+				// No MiddlewareStream... just make it appear empty
+
+				containerEntry.Metadata = []byte{}
+				err = nil
+			} else {
+				// Ok... so it must have disappeared... just skip it
+
+				err = dirEntryInodeLock.Unlock()
+				if nil != err {
+					logger.Fatalf("Failure unlocking a held LockID %s: %v", dirEntryInodeLock.LockID, err)
+				}
+
+				continue
+			}
+		}
+
+		// We can finally Unlock() this dirEntryInodeLock
+
+		err = dirEntryInodeLock.Unlock()
+		if nil != err {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", dirEntryInodeLock.LockID, err)
+		}
+
+		// If we reach here, we get to append this containerEntry to containerEnts
+
+		containerEnts = append(containerEnts, containerEntry)
+
+		// We must now descend into dirEntryInode descend into it if it's a DirInode and !doSingleDirectory
+
+		if !doSingleDirectory && (dirEntrySliceElement.Type == inode.DirType) {
+			dirPath = dirEntrySliceStackElement.dirPath + "/" + dirEntrySliceElement.Basename
+
+			if 0 == maxEntries {
+				remainingMaxEntries = 0
+			} else {
+				remainingMaxEntries = maxEntries - uint64(len(containerEnts))
+			}
+
+			prevReturned = ""
+
+			_, dirEntrySlice, moreEntries, err = mS.middlewareReadDirHelper(dirPath, remainingMaxEntries, prevReturned)
+			if nil != err {
+				return
+			}
+
+			dirEntrySliceStackElement = &dirEntrySliceStackElementStruct{
+				dirPath:       dirPath,
+				dirEntrySlice: dirEntrySlice,
+				numConsumed:   0,
+				moreEntries:   moreEntries,
+			}
+
+			dirEntrySliceStack = append(dirEntrySliceStack, dirEntrySliceStackElement)
+		}
+	}
+
+	// We will only reach here if we exhausted maxEntries before exhausing the tree/list of containerEntry's to append
+
+	err = nil
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
+func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		fileOffset          uint64
+		heldLocks           *heldLocksStruct
+		inodeVolumeHandle   inode.VolumeHandle
+		readPlan            []inode.ReadPlanStep
+		readRangeInIndex    int
+		restartBackoff      time.Duration
+		retryRequired       bool
+		stat                Stat
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -1918,85 +2355,108 @@ func (mS *mountStruct) MiddlewareGetObject(volumeName string, containerObjectPat
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	// Retry until done or failure (starting with ZERO backoff)
 
-	inodeNumber, inodeType, inodeLock, err := mS.resolvePathForRead(containerObjectPath, nil)
-	ino = uint64(inodeNumber)
-	if err != nil {
-		return
-	}
-	defer inodeLock.Unlock()
+	restartBackoff = time.Duration(0)
 
-	// If resolvePathForRead succeeded, then inodeType is either
-	// inode.DirType or inode.FileType; if it was inode.SymlinkType,
-	// then err was not nil, and we bailed out before reaching this
-	// point.
-	if inode.DirType == inodeType {
-		err = blunder.NewError(blunder.IsDirError, "%s: inode %v is a directory.", utils.GetFnName(), inodeNumber)
-		return
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
 	}
 
-	// Find file size
-	metadata, err := mS.volStruct.inodeVolumeHandle.GetMetadata(inodeNumber)
-	if err != nil {
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			containerObjectPath,
+			heldLocks,
+			resolvePathFollowDirEntrySymlinks|
+				resolvePathFollowDirSymlinks)
+
+	if nil != err {
+		heldLocks.free()
 		return
 	}
-	fileSize = metadata.Size
-	lastModified = uint64(metadata.ModificationTime.UnixNano())
-	lastChanged = uint64(metadata.AttrChangeTime.UnixNano())
-	numWrites = metadata.NumWrites
 
-	// If no ranges are given then get range of whole file.  Otherwise, get ranges.
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Now assemble response
+
+	stat, err = mS.getstatHelperWhileLocked(dirEntryInodeNumber)
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	fileSize = stat[StatSize]
+	lastModified = stat[StatMTime]
+	lastChanged = stat[StatCTime]
+	ino = uint64(dirEntryInodeNumber)
+	numWrites = stat[StatNumWrites]
+
+	serializedMetadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
+	if nil != err {
+		if blunder.Is(err, blunder.StreamNotFound) {
+			serializedMetadata = []byte{}
+			err = nil
+		} else {
+			heldLocks.free()
+			return
+		}
+	}
+
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+
 	if len(readRangeIn) == 0 {
-		// Get ReadPlan for file
-		volumeHandle, err1 := inode.FetchVolumeHandle(volumeName)
-		if err1 != nil {
-			err = err1
-			logger.ErrorWithError(err)
-			return
-		}
-		var offset uint64 = 0
-		tmpReadEnt, err1 := volumeHandle.GetReadPlan(inodeNumber, &offset, &metadata.Size)
-		if err1 != nil {
-			err = err1
-			return
-		}
-		appendReadPlanEntries(tmpReadEnt, readRangeOut)
-	} else {
-		volumeHandle, err1 := inode.FetchVolumeHandle(volumeName)
-		if err1 != nil {
-			err = err1
-			logger.ErrorWithError(err)
+		// Get ReadPlan for entire file
+
+		fileOffset = 0
+
+		readPlan, err = inodeVolumeHandle.GetReadPlan(dirEntryInodeNumber, &fileOffset, &fileSize)
+		if nil != err {
+			heldLocks.free()
 			return
 		}
 
-		// Get ReadPlan for each range and append physical path ranges to result
-		for i := range readRangeIn {
-			// TODO - verify that range request is within file size
-			tmpReadEnt, err1 := volumeHandle.GetReadPlan(inodeNumber, readRangeIn[i].Offset, readRangeIn[i].Len)
-			if err1 != nil {
-				err = err1
+		_ = appendReadPlanEntries(readPlan, readRangeOut)
+	} else { // len(readRangeIn) > 0
+		// Append each computed range
+
+		for readRangeInIndex = range readRangeIn {
+			readPlan, err = inodeVolumeHandle.GetReadPlan(dirEntryInodeNumber, readRangeIn[readRangeInIndex].Offset, readRangeIn[readRangeInIndex].Len)
+			if nil != err {
+				heldLocks.free()
 				return
 			}
-			appendReadPlanEntries(tmpReadEnt, readRangeOut)
+
+			_ = appendReadPlanEntries(readPlan, readRangeOut)
 		}
 	}
 
-	serializedMetadata, err = mS.volStruct.inodeVolumeHandle.GetStream(inodeNumber, MiddlewareStream)
-	// If someone makes a directory or file via SMB/FUSE and then
-	// accesses it via HTTP, we'll see StreamNotFound. We treat it as
-	// though there is no metadata. The middleware is equipped to
-	// handle receiving empty metadata.
-	if err != nil && !blunder.Is(err, blunder.StreamNotFound) {
-		return
-	} else {
-		err = nil
-	}
+	heldLocks.free()
+
+	err = nil
 	return
 }
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		heldLocks           *heldLocksStruct
+		restartBackoff      time.Duration
+		retryRequired       bool
+		stat                Stat
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -2006,28 +2466,59 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	// Retry until done or failure (starting with ZERO backoff)
 
-	ino, inoType, inoLock, err := mS.resolvePathForRead(entityPath, nil)
-	if err != nil {
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			entityPath,
+			heldLocks,
+			resolvePathFollowDirEntrySymlinks|
+				resolvePathFollowDirSymlinks)
+
+	if nil != err {
+		heldLocks.free()
 		return
 	}
-	defer inoLock.Unlock()
 
-	statResult, err := mS.getstatHelper(ino, inoLock.GetCallerID())
-	if err != nil {
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Now assemble response
+
+	stat, err = mS.getstatHelperWhileLocked(dirEntryInodeNumber)
+	if nil != err {
+		heldLocks.free()
 		return
 	}
-	response.ModificationTime = statResult[StatMTime]
-	response.AttrChangeTime = statResult[StatCTime]
-	response.FileSize = statResult[StatSize]
-	response.IsDir = (inoType == inode.DirType)
-	response.InodeNumber = ino
-	response.NumWrites = statResult[StatNumWrites]
 
-	response.Metadata, err = mS.volStruct.inodeVolumeHandle.GetStream(ino, MiddlewareStream)
-	if err != nil {
+	response.ModificationTime = stat[StatMTime]
+	response.AttrChangeTime = stat[StatCTime]
+	response.FileSize = stat[StatSize]
+	response.IsDir = (stat[StatFType] == uint64(inode.DirType))
+	response.InodeNumber = dirEntryInodeNumber
+	response.NumWrites = stat[StatNumWrites]
+
+	response.Metadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
+	if nil != err {
+		heldLocks.free()
 		response.Metadata = []byte{}
 		// If someone makes a directory or file via SMB/FUSE and then
 		// HEADs it via HTTP, we'll see this error. We treat it as
@@ -2038,10 +2529,19 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 		}
 		return
 	}
+
+	heldLocks.free()
 	return
 }
 
 func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		existingStreamData  []byte
+		heldLocks           *heldLocksStruct
+		restartBackoff      time.Duration
+		retryRequired       bool
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -2052,316 +2552,95 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	// Retry until done or failure (starting with ZERO backoff)
 
-	// Find inode for container or object
-	fullPathName := parentDir + "/" + baseName
-	baseNameInodeNumber, _, baseInodeLock, err := mS.resolvePathForWrite(fullPathName, nil)
-	if err != nil {
-		return err
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
 	}
-	defer baseInodeLock.Unlock()
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			parentDir+"/"+baseName,
+			heldLocks,
+			resolvePathFollowDirEntrySymlinks|
+				resolvePathFollowDirSymlinks|
+				resolvePathCreateMissingPathElements|
+				resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Now apply MiddlewareStream update
 
 	// Compare oldMetaData to existing existingStreamData to make sure that the HTTP metadata has not changed.
 	// If it has changed, then return an error since middleware has to handle it.
-	existingStreamData, err := mS.volStruct.inodeVolumeHandle.GetStream(baseNameInodeNumber, MiddlewareStream)
 
-	// GetStream() will return an error if there is no "middleware" stream
-	if err != nil && blunder.IsNot(err, blunder.StreamNotFound) {
-		return err
+	existingStreamData, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
+	if nil != err {
+		if blunder.Is(err, blunder.StreamNotFound) {
+			err = nil
+			existingStreamData = make([]byte, 0)
+		} else {
+			heldLocks.free()
+			return
+		}
 	}
 
 	// Verify that the oldMetaData is the same as the one we think we are changing.
-	if err == nil && !bytes.Equal(existingStreamData, oldMetaData) {
-		return blunder.NewError(blunder.TryAgainError, "%s: MetaData different - existingStreamData: %v OldMetaData: %v.", utils.GetFnName(), existingStreamData, oldMetaData)
+
+	if !bytes.Equal(existingStreamData, oldMetaData) {
+		heldLocks.free()
+		err = blunder.NewError(blunder.TryAgainError, "MiddlewarePost(): MetaData different - existingStreamData: %v OldMetaData: %v", existingStreamData, oldMetaData)
+		return
 	}
 
 	// Change looks okay so make it.
-	err = mS.volStruct.inodeVolumeHandle.PutStream(baseNameInodeNumber, MiddlewareStream, newMetaData)
-	mS.volStruct.untrackInFlightFileInodeData(baseNameInodeNumber, false)
 
-	return err
-}
-
-func putObjectHelper(mS *mountStruct, vContainerName string, vObjectPath string, makeInodeFunc func() (inode.InodeNumber, error)) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
-
-	// Find the inode of the directory corresponding to the container
-	dirInodeNumber, err := mS.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, vContainerName)
-	if err != nil {
+	err = mS.volStruct.inodeVolumeHandle.PutStream(dirEntryInodeNumber, MiddlewareStream, newMetaData)
+	if nil != err {
+		heldLocks.free()
 		return
 	}
 
-	vObjectPathSegments := revSplitPath(vObjectPath)
-	vObjectBaseName := vObjectPathSegments[0]
-	dirs := vObjectPathSegments[1:]
+	// PutStream() implicitly flushed... so, if it was a FileInode, we don't need to track it anymore
 
-	// Find all existing directories, taking locks as we go.
-	//
-	// We want to find the lowest existing subdirectory for this PUT
-	// request. For example, if the FS tree has container/d1/d2, and a
-	// PUT request comes in for container/d1/d2/d3/d4/file.bin, then
-	// this loop will walk down to d2.
-	//
-	// We take locks as we go so that nobody can sneak d3 in ahead of
-	// us.
-	var dirEntInodeLock *dlm.RWLockStruct
-	callerID := dlm.GenerateCallerID()
-	dirInodeLock, err := mS.volStruct.inodeVolumeHandle.GetWriteLock(dirInodeNumber, callerID)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if dirInodeLock != nil {
-			dirInodeLock.Unlock()
-		}
-		if dirEntInodeLock != nil {
-			dirEntInodeLock.Unlock()
-		}
-	}()
+	mS.volStruct.untrackInFlightFileInodeData(dirEntryInodeNumber, false)
 
-	for len(dirs) > 0 {
-		thisDir := dirs[len(dirs)-1]
-		if thisDir == "." {
-			// Skip this early so we don't end up trying to write-lock
-			// it and deadlocking with ourselves.
-			dirs = dirs[0 : len(dirs)-1]
-			continue
-		}
-
-		dirEntInodeNumber, err1 := mS.volStruct.inodeVolumeHandle.Lookup(dirInodeNumber, thisDir)
-		if err1 != nil && blunder.Errno(err1) == int(blunder.NotFoundError) {
-			// NotFoundError just means that it's time to start making
-			// directories. We deliberately do not unlock dirInodeLock
-			// here.
-			break
-		} else if err1 != nil {
-			// Mysterious error; just bail
-			err = err1
-		} else {
-			// There's a directory entry there; let's go see what it is
-			dirs = dirs[0 : len(dirs)-1]
-			dirEntInodeLock, err1 = mS.volStruct.inodeVolumeHandle.GetWriteLock(dirEntInodeNumber, callerID)
-			if err1 != nil {
-				err = err1
-				return
-			}
-
-			dirEntInodeType, err1 := mS.volStruct.inodeVolumeHandle.GetType(dirEntInodeNumber)
-			if err1 != nil {
-				err = err1
-				return
-			}
-
-			if dirEntInodeType == inode.FileType {
-				// We're processing the directory portion of the
-				// object path, so if we run into a file, that's an
-				// error
-				err = blunder.NewError(blunder.NotDirError, "%s is a file, not a directory", thisDir)
-				return
-			} else if dirEntInodeType == inode.SymlinkType {
-				target, err1 := mS.volStruct.inodeVolumeHandle.GetSymlink(dirEntInodeNumber)
-				dirEntInodeLock.Unlock()
-				dirEntInodeLock = nil
-				if err1 != nil {
-					err = err1
-					return
-				}
-
-				if strings.HasPrefix(target, "/") {
-					// Absolute symlink: restart traversal from the
-					// root directory.
-					dirInodeLock.Unlock()
-					dirInodeNumber = inode.RootDirInodeNumber
-					dirInodeLock, err1 = mS.volStruct.inodeVolumeHandle.GetWriteLock(inode.RootDirInodeNumber, nil)
-					if err1 != nil {
-						err = err1
-						return
-					}
-				}
-				dirs = append(dirs, revSplitPath(target)...)
-			} else {
-				// There's actually a subdirectory here. Lock it
-				// before unlocking the current directory so there's
-				// no window for anyone else to sneak into.
-				dirInodeLock.Unlock()
-
-				dirInodeNumber = dirEntInodeNumber
-				dirInodeLock = dirEntInodeLock
-				dirEntInodeLock = nil // avoid double-cleanup in defer
-			}
-		}
-	}
-
-	// Now, dirInodeNumber is the inode of the lowest existing directory. Anything else is created by us and isn't part
-	// of the filesystem tree until we Link() it in, so we only need to hold this one lock. Call the inode-creator
-	// function and start linking stuff together.
-	fileInodeNumber, err = makeInodeFunc()
-	if err != nil {
-		return
-	}
-
-	highestUnlinkedInodeNumber := fileInodeNumber
-	highestUnlinkedName := vObjectBaseName
-	for i := 0; i < len(dirs); i++ {
-		newDirInodeNumber, err1 := mS.volStruct.inodeVolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
-		if err1 != nil {
-			logger.DebugfIDWithError(internalDebug, err1, "mount.CreateDir(): failed!")
-			err = err1
-			return
-		}
-
-		err = mS.volStruct.inodeVolumeHandle.Link(newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber, false)
-		if err != nil {
-			logger.DebugfIDWithError(internalDebug, err, "mount.Link(%v, %v, %v) failed",
-				newDirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
-			return
-		}
-		mS.volStruct.untrackInFlightFileInodeData(highestUnlinkedInodeNumber, false)
-
-		highestUnlinkedInodeNumber = newDirInodeNumber
-		highestUnlinkedName = dirs[i]
-	}
-
-	// Now we've got a pre-existing directory inode in dirInodeNumber,
-	// and highestUnlinked(Name,InodeNumber) indicate a thing we need
-	// to link into place. The last step is to make sure there's no
-	// obstacle to us doing that. Note that this is only required when
-	// all the necessary directories already exist; if we had to
-	// create any directories, then the bottom directory is empty
-	// because we just created it.
-	haveObstacle := false
-	var obstacleInodeNumber inode.InodeNumber
-	if 0 == len(dirs) {
-		var err1 error
-		obstacleInodeNumber, err1 = mS.volStruct.inodeVolumeHandle.Lookup(dirInodeNumber, vObjectBaseName)
-		if err1 != nil && blunder.Errno(err1) == int(blunder.NotFoundError) {
-			// File not found? Good!
-		} else if err1 != nil {
-			err = err1
-			return
-		} else {
-			haveObstacle = true
-			// Grab our own lock and call .getstatHelper() instead of
-			// letting Getstat() do it for us;
-			obstacleInodeLock, err1 := mS.volStruct.inodeVolumeHandle.GetWriteLock(obstacleInodeNumber, callerID)
-			if err1 != nil {
-				err = err1
-				return
-			}
-			defer obstacleInodeLock.Unlock()
-
-			err = mS.removeObstacleToObjectPut(callerID, dirInodeNumber, vObjectBaseName, obstacleInodeNumber)
-			if err != nil {
-				return
-			}
-			// We're now responsible for destroying obstacleInode, but
-			// we're not going to do it yet. We'll wait to actually
-			// destroy the data until after we've linked in its
-			// replacement.
-		}
-	}
-
-	// If we got here, then there's no obstacle (any more). Link the thing into place.
-	//
-	// Note that we don't have a lock on highestUnlinkedInodeNumber.
-	// That's because this inode was created in this function, so
-	// nobody else knows it exists, so we don't have to worry about
-	// anyone else accessing it.
-	err = mS.volStruct.inodeVolumeHandle.Link(dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber, false)
-	if err != nil {
-		logger.ErrorfWithError(err, "MiddlewarePutComplete: failed final Link(%v, %v, %v)", dirInodeNumber, highestUnlinkedName, highestUnlinkedInodeNumber)
-
-		// We can try to recover from a Link() failure here by putting
-		// the old thing back. We're still holding locks, so it's safe
-		// to try.
-		if haveObstacle {
-			relinkErr := mS.volStruct.inodeVolumeHandle.Link(dirInodeNumber, vObjectBaseName, obstacleInodeNumber, false)
-			// the rest of the relevant variables were logged in the previous error-logging call
-			logger.ErrorfWithError(relinkErr, "MiddlewarePutComplete: relink failed for inode=%v name=%v", obstacleInodeNumber, vObjectBaseName)
-		}
-
-		return
-	}
-
-	// Log errors from inode destruction, but don't let them cause the
-	// RPC call to fail. As far as this function's caller is
-	// concerned, everything worked as intended.
-	if haveObstacle {
-		destroyErr := mS.volStruct.inodeVolumeHandle.Destroy(obstacleInodeNumber)
-		if destroyErr != nil {
-			logger.ErrorfWithError(destroyErr, "MiddlewarePutComplete: error destroying inode %v", obstacleInodeNumber)
-		}
-	}
-
-	metadata, err := mS.volStruct.inodeVolumeHandle.GetMetadata(fileInodeNumber) // not getstat() since we're already holding a lock on this inode
-	if err != nil {
-		return
-	}
-
-	mtime = uint64(metadata.ModificationTime.UnixNano())
-	ctime = uint64(metadata.AttrChangeTime.UnixNano())
-	// fileInodeNumber set above
-	numWrites = metadata.NumWrites
+	heldLocks.free()
 	return
 }
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
-
-	startTime := time.Now()
-	defer func() {
-		var totalPutBytes uint64
-		for _, length := range pObjectLengths {
-			totalPutBytes += length
-		}
-
-		globals.MiddlewarePutCompleteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		globals.MiddlewarePutCompleteBytes.Add(uint64(totalPutBytes))
-		if err != nil {
-			globals.MiddlewarePutCompleteErrors.Add(1)
-		}
-	}()
-
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	reifyTheFile := func() (fileInodeNumber inode.InodeNumber, err error) {
-		// Reify the Swift object into a ProxyFS file by making a new,
-		// empty inode and then associating it with the log segment
-		// written by the middleware.
-		fileInodeNumber, err = mS.volStruct.inodeVolumeHandle.CreateFile(inode.PosixModePerm, 0, 0)
-		if err != nil {
-			logger.DebugfIDWithError(internalDebug, err, "fs.CreateFile(): vContainerName: %v failed!", vContainerName)
-			return
-		}
-
-		// Associate fileInodeNumber with log segments written by Swift
-		fileOffset := uint64(0) // Swift only writes whole files
-		pObjectOffset := uint64(0)
-		for i := 0; i < len(pObjectPaths); i++ {
-			err = mS.volStruct.inodeVolumeHandle.Wrote(fileInodeNumber, fileOffset, pObjectPaths[i], pObjectOffset, pObjectLengths[i], i > 0)
-			if err != nil {
-				logger.DebugfIDWithError(internalDebug, err, "mount.Wrote() fileInodeNumber: %v fileOffset: %v pOjectPaths: %v pObjectOffset: %v pObjectLengths: %v i: %v failed!",
-					fileInodeNumber, fileOffset, pObjectPaths, pObjectOffset, pObjectLengths, i)
-				return
-			}
-			fileOffset += pObjectLengths[i]
-		}
-
-		// Set the metadata on the file
-		err = mS.volStruct.inodeVolumeHandle.PutStream(fileInodeNumber, MiddlewareStream, pObjectMetadata)
-		if err != nil {
-			logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
-				fileInodeNumber, pObjectMetadata)
-			return
-		}
-		return
-	}
-
-	return putObjectHelper(mS, vContainerName, vObjectPath, reifyTheFile)
-}
-
-func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		fileOffset          uint64
+		heldLocks           *heldLocksStruct
+		inodeVolumeHandle   inode.VolumeHandle
+		numPObjects         int
+		pObjectIndex        int
+		restartBackoff      time.Duration
+		retryRequired       bool
+		stat                Stat
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -2371,28 +2650,176 @@ func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	// Validate (pObjectPaths,pObjectLengths) args
 
-	createTheDirectory := func() (dirInodeNumber inode.InodeNumber, err error) {
-		dirInodeNumber, err = mS.volStruct.inodeVolumeHandle.CreateDir(inode.PosixModePerm, 0, 0)
-		if err != nil {
-			logger.ErrorWithError(err)
-			return
-		}
+	numPObjects = len(pObjectPaths)
 
-		if len(metadata) > 0 {
-			err = mS.volStruct.inodeVolumeHandle.PutStream(dirInodeNumber, MiddlewareStream, metadata)
-			if err != nil {
-				logger.DebugfIDWithError(internalDebug, err, "mount.PutStream fileInodeNumber: %v metadata: %v failed",
-					dirInodeNumber, metadata)
-				return
-			}
-		}
+	if numPObjects != len(pObjectLengths) {
+		blunder.NewError(blunder.InvalidArgError, "MiddlewarePutComplete() expects len(pObjectPaths) == len(pObjectLengths)")
 		return
 	}
 
-	return putObjectHelper(mS, vContainerName, vObjectPath, createTheDirectory)
+	// Retry until done or failure (starting with ZERO backoff)
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			vContainerName+"/"+vObjectPath,
+			heldLocks,
+			resolvePathFollowDirEntrySymlinks|
+				resolvePathFollowDirSymlinks|
+				resolvePathCreateMissingPathElements|
+				resolvePathDirEntryInodeMustBeFile|
+				resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	// Apply (pObjectPaths,pObjectLengths) to (erased) FileInode
+
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+
+	fileOffset = 0
+
+	for pObjectIndex = 0; pObjectIndex < numPObjects; pObjectIndex++ {
+		err = inodeVolumeHandle.Wrote(
+			dirEntryInodeNumber,
+			fileOffset,
+			pObjectPaths[pObjectIndex],
+			0,
+			pObjectLengths[pObjectIndex],
+			pObjectIndex > 0) // Initial pObjectIndex == 0 case will implicitly SetSize(,0)
+		if nil != err {
+			heldLocks.free()
+			logger.DebugfIDWithError(internalDebug, err, "MiddlewarePutComplete(): failed Wrote() for dirEntryInodeNumber 0x%016X", dirEntryInodeNumber)
+			return
+		}
+
+		fileOffset += pObjectLengths[pObjectIndex]
+	}
+
+	// Apply pObjectMetadata to FileInode (this will flush it as well)
+
+	err = inodeVolumeHandle.PutStream(dirEntryInodeNumber, MiddlewareStream, pObjectMetadata)
+	if err != nil {
+		heldLocks.free()
+		logger.DebugfIDWithError(internalDebug, err, "MiddlewarePutComplete(): failed PutStream() for dirEntryInodeNumber 0x%016X (pObjectMetadata: %v)", dirEntryInodeNumber, pObjectMetadata)
+		return
+	}
+
+	stat, err = mS.getstatHelperWhileLocked(dirEntryInodeNumber)
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	mtime = stat[StatMTime]
+	ctime = stat[StatCTime]
+	fileInodeNumber = dirEntryInodeNumber
+	numWrites = stat[StatNumWrites]
+
+	heldLocks.free()
+	return
+}
+
+func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		heldLocks           *heldLocksStruct
+		restartBackoff      time.Duration
+		retryRequired       bool
+		stat                Stat
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.MiddlewareMkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MiddlewareMkdirErrors.Add(1)
+		}
+	}()
+
+	// Retry until done or failure (starting with ZERO backoff)
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			inode.RootDirInodeNumber,
+			vContainerName+"/"+vObjectPath,
+			heldLocks,
+			resolvePathFollowDirSymlinks|
+				resolvePathCreateMissingPathElements|
+				resolvePathDirEntryInodeMustBeDirectory|
+				resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	if len(metadata) > 0 {
+		err = mS.volStruct.inodeVolumeHandle.PutStream(dirEntryInodeNumber, MiddlewareStream, metadata)
+		if err != nil {
+			heldLocks.free()
+			logger.DebugfIDWithError(internalDebug, err, "MiddlewareHeadResponse(): failed PutStream() for for dirEntryInodeNumber 0x%016X (pObjectMetadata: %v)", dirEntryInodeNumber, metadata)
+			return
+		}
+	}
+
+	stat, err = mS.getstatHelperWhileLocked(dirEntryInodeNumber)
+	if nil != err {
+		heldLocks.free()
+		return
+	}
+
+	mtime = stat[StatMTime]
+	ctime = stat[StatCTime]
+	inodeNumber = dirEntryInodeNumber
+	numWrites = stat[StatNumWrites]
+
+	heldLocks.free()
+	return
 }
 
 func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata []byte, newMetadata []byte) (err error) {
@@ -2594,6 +3021,14 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
+	var (
+		dirEntryBasename    string
+		dirEntryInodeNumber inode.InodeNumber
+		dirInodeNumber      inode.InodeNumber
+		heldLocks           *heldLocksStruct
+		restartBackoff      time.Duration
+		retryRequired       bool
+	)
 
 	startTime := time.Now()
 	defer func() {
@@ -2607,98 +3042,128 @@ func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroup
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
 	err = validateBaseName(srcBasename)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
 	err = validateBaseName(dstBasename)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
-	// Flag to tell us if there's only one directory to be locked
-	srcAndDestDirsAreSame := srcDirInodeNumber == dstDirInodeNumber
+	// Retry until done or failure (starting with ZERO backoff)
 
-	// Generate our calling context ID, so that the locks will have the same callerID
-	callerID := dlm.GenerateCallerID()
+	restartBackoff = time.Duration(0)
 
-	// Allocate the source dir lock
-	srcDirLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(srcDirInodeNumber, callerID)
-	if err != nil {
+Restart:
+
+	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+
+	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	if nil != err {
+		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
+	}
+
+	// Construct fresh heldLocks for this restart
+
+	heldLocks = newHeldLocks()
+
+	// Acquire WriteLock on {srcDirInodeNumber,srcBasename} & perform Access Check
+
+	dirInodeNumber, _, dirEntryBasename, _, retryRequired, err =
+		mS.resolvePath(
+			srcDirInodeNumber,
+			srcBasename,
+			heldLocks,
+			resolvePathRequireExclusiveLockOnDirEntryInode|
+				resolvePathRequireExclusiveLockOnDirInode)
+
+	if nil != err {
+		heldLocks.free()
+		err = blunder.AddError(err, blunder.NotFoundError)
 		return
 	}
 
-	// Allocate the dest dir lock
-	dstDirLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(dstDirInodeNumber, callerID)
-	if err != nil {
-		return err
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
 	}
 
-retryLock:
-	// Get the source directory's lock
-	err = srcDirLock.WriteLock()
-	if err != nil {
+	if (dirInodeNumber != srcDirInodeNumber) || (dirEntryBasename != srcBasename) {
+		heldLocks.free()
+		err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
 		return
 	}
 
-	if !mS.volStruct.inodeVolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-
-		srcDirLock.Unlock()
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+	if !mS.volStruct.inodeVolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK, inode.NoOverride) {
+		heldLocks.free()
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
-	if !mS.volStruct.inodeVolumeHandle.Access(srcDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK,
-		inode.NoOverride) {
+	// Acquire WriteLock on dstDirInodeNumber & perform Access Check
 
-		srcDirLock.Unlock()
+	_, dirEntryInodeNumber, _, _, retryRequired, err =
+		mS.resolvePath(
+			dstDirInodeNumber,
+			".",
+			heldLocks,
+			resolvePathDirEntryInodeMustBeDirectory|
+				resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil != err {
+		heldLocks.free()
+		err = blunder.AddError(err, blunder.NotFoundError)
+		return
+	}
+
+	if retryRequired {
+		heldLocks.free()
+		goto Restart
+	}
+
+	if dirEntryInodeNumber != dstDirInodeNumber {
+		heldLocks.free()
+		err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
+		return
+	}
+
+	if !mS.volStruct.inodeVolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK|inode.X_OK, inode.NoOverride) {
+		heldLocks.free()
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	// Try to get the destination directory's lock. If we can't get it, drop the
-	// source dir lock and try the whole thing again.
-	if !srcAndDestDirsAreSame {
-		err = dstDirLock.TryWriteLock()
-		if blunder.Is(err, blunder.TryAgainError) {
-			srcDirLock.Unlock()
-			goto retryLock
-		} else if blunder.IsNotSuccess(err) {
-			// This shouldn't happen...
-			srcDirLock.Unlock()
-			return err
+	// Acquire WriteLock on dstBasename if it exists
+
+	dirInodeNumber, _, dirEntryBasename, _, retryRequired, err =
+		mS.resolvePath(
+			dstDirInodeNumber,
+			dstBasename,
+			heldLocks,
+			resolvePathRequireExclusiveLockOnDirEntryInode)
+
+	if nil == err {
+		if retryRequired {
+			heldLocks.free()
+			goto Restart
 		}
 
-		if !mS.volStruct.inodeVolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-			inode.NoOverride) {
-
-			srcDirLock.Unlock()
-			dstDirLock.Unlock()
-			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		if (dirInodeNumber != dstDirInodeNumber) || (dirEntryBasename != dstBasename) {
+			heldLocks.free()
+			err = blunder.NewError(blunder.InvalidArgError, "EINVAL")
 			return
 		}
-		if !mS.volStruct.inodeVolumeHandle.Access(dstDirInodeNumber, userID, groupID, otherGroupIDs,
-			inode.W_OK|inode.X_OK, inode.NoOverride) {
-
-			srcDirLock.Unlock()
-			dstDirLock.Unlock()
-			err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-			return
-		}
+	} else {
+		// This is actually OK... it means the target path of the Rename() isn't being potentially replaced
 	}
 
-	// Now we have the locks for both directories; we can do the move
+	// Locks held & Access Checks succeeded... time to do the Move
+
 	err = mS.volStruct.inodeVolumeHandle.Move(srcDirInodeNumber, srcBasename, dstDirInodeNumber, dstBasename)
 
-	// Release our locks and return
-	if !srcAndDestDirsAreSame {
-		dstDirLock.Unlock()
-	}
-	srcDirLock.Unlock()
+	heldLocks.free()
 
-	// TODO: Where is the lock on the potentially removed fileInode overwritten by the Move() call?
-
-	return err
+	return // err returned from inode.Move() suffices here
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
@@ -2760,8 +3225,94 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 	return buf, err
 }
 
-func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
+func (mS *mountStruct) readdirHelper(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, maxEntries uint64, prevReturned ...interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
+	var (
+		dirEntryIndex     uint64
+		dlmCallerID       dlm.CallerID
+		inodeLock         *dlm.RWLockStruct
+		inodeVolumeHandle inode.VolumeHandle
+		internalErr       error
+		restartBackoff    time.Duration
+	)
 
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
+
+	dlmCallerID = dlm.GenerateCallerID()
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+
+	restartBackoff = time.Duration(0)
+
+Restart:
+
+	restartBackoff, _ = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+
+	inodeLock, err = inodeVolumeHandle.AttemptReadLock(inodeNumber, dlmCallerID)
+	if nil != err {
+		goto Restart
+	}
+
+	if !inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK, inode.NoOverride) {
+		internalErr = inodeLock.Unlock()
+		if nil != internalErr {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+		}
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		return
+	}
+	if !inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK, inode.OwnerOverride) {
+		internalErr = inodeLock.Unlock()
+		if nil != internalErr {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+		}
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		return
+	}
+
+	dirEntries, areMoreEntries, err = inodeVolumeHandle.ReadDir(inodeNumber, maxEntries, 0, prevReturned...)
+
+	internalErr = inodeLock.Unlock()
+	if nil != internalErr {
+		logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+	}
+
+	if nil != err {
+		return
+	}
+
+	// Now go back and fill in (dirEntries.Type and) statEntries
+
+	numEntries = uint64(len(dirEntries))
+
+	statEntries = make([]Stat, numEntries, numEntries)
+
+	for dirEntryIndex = 0; dirEntryIndex < numEntries; dirEntryIndex++ {
+		inodeLock, err = inodeVolumeHandle.AttemptReadLock(dirEntries[dirEntryIndex].InodeNumber, dlmCallerID)
+		if nil != err {
+			goto Restart
+		}
+
+		statEntries[dirEntryIndex], err = mS.getstatHelperWhileLocked(dirEntries[dirEntryIndex].InodeNumber)
+		if nil != err {
+			internalErr = inodeLock.Unlock()
+			if nil != internalErr {
+				logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+			}
+			return
+		}
+
+		dirEntries[dirEntryIndex].Type = inode.InodeType(statEntries[dirEntryIndex][StatFType])
+
+		internalErr = inodeLock.Unlock()
+		if nil != internalErr {
+			logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+		}
+	}
+
+	return
+}
+
+func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, maxEntries uint64, prevReturned ...interface{}) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
 	startTime := time.Now()
 	defer func() {
 		globals.ReaddirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2771,84 +3322,12 @@ func (mS *mountStruct) Readdir(userID inode.InodeUserID, groupID inode.InodeGrou
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	entries, _, numEntries, areMoreEntries, err = mS.readdirHelper(userID, groupID, otherGroupIDs, inodeNumber, maxEntries, prevReturned...)
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
-	if err != nil {
-		return
-	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return
-	}
-	defer inodeLock.Unlock()
-
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
-		inode.OwnerOverride) {
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Call readdir helper function to do the work
-	return mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
+	return
 }
 
-func (mS *mountStruct) ReaddirOne(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (entries []inode.DirEntry, err error) {
-
-	startTime := time.Now()
-	defer func() {
-		globals.ReaddirOneUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		if err != nil {
-			globals.ReaddirOneErrors.Add(1)
-		}
-	}()
-
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
-	if err != nil {
-		return entries, err
-	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return entries, err
-	}
-	defer inodeLock.Unlock()
-
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
-		inode.OwnerOverride) {
-
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Call readdirOne helper function to do the work
-	entries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
-	if err != nil {
-		// When the client uses location-based readdir, it knows it is done when it reads beyond
-		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
-		if blunder.IsNot(err, blunder.NotFoundError) {
-			logger.ErrorWithError(err)
-		}
-	}
-	return entries, err
-}
-
-func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
-
+func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, maxEntries uint64, prevReturned ...interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
 	startTime := time.Now()
 	defer func() {
 		globals.ReaddirPlusUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2858,139 +3337,9 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 		}
 	}()
 
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
+	dirEntries, statEntries, numEntries, areMoreEntries, err = mS.readdirHelper(userID, groupID, otherGroupIDs, inodeNumber, maxEntries, prevReturned...)
 
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
-	if err != nil {
-		return
-	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return
-	}
-
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK|inode.X_OK,
-		inode.OwnerOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Get dir entries; Call readdir helper function to do the work
-	dirEntries, numEntries, areMoreEntries, err = mS.readdirHelper(inodeNumber, prevBasenameReturned, maxEntries, maxBufSize, inodeLock.GetCallerID())
-	inodeLock.Unlock()
-
-	if err != nil {
-		// Not logging here, since Readdir will have done that for us already.
-		return dirEntries, statEntries, numEntries, areMoreEntries, err
-	}
-
-	// Get stats
-	statEntries = make([]Stat, numEntries)
-	for i := range dirEntries {
-		entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(dirEntries[i].InodeNumber, nil)
-		if err = err1; err != nil {
-			return
-		}
-		err = entryInodeLock.ReadLock()
-		if err != nil {
-			return
-		}
-
-		// Fill in stats, calling getstat helper function to do the work
-		statEntries[i], err = mS.getstatHelper(dirEntries[i].InodeNumber, entryInodeLock.GetCallerID())
-		entryInodeLock.Unlock()
-
-		if err != nil {
-			logger.ErrorWithError(err)
-			return dirEntries, statEntries, numEntries, areMoreEntries, err
-		}
-	}
-
-	return dirEntries, statEntries, numEntries, areMoreEntries, err
-}
-
-func (mS *mountStruct) ReaddirOnePlus(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, prevDirMarker interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, err error) {
-
-	startTime := time.Now()
-	defer func() {
-		globals.ReaddirOnePlusUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		if err != nil {
-			globals.ReaddirOnePlusErrors.Add(1)
-		}
-	}()
-
-	mS.volStruct.jobRWMutex.RLock()
-	defer mS.volStruct.jobRWMutex.RUnlock()
-
-	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
-	if err != nil {
-		return
-	}
-	err = inodeLock.ReadLock()
-	if err != nil {
-		return
-	}
-
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
-		inode.NoOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
-		return
-	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK|inode.X_OK,
-		inode.OwnerOverride) {
-		inodeLock.Unlock()
-		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
-		return
-	}
-
-	// Get dir entries; Call readdirOne helper function to do the work
-	dirEntries, err = mS.readdirOneHelper(inodeNumber, prevDirMarker, inodeLock.GetCallerID())
-	inodeLock.Unlock()
-
-	if err != nil {
-		// When the client uses location-based readdir, it knows it is done when it reads beyond
-		// the last entry and gets a not found error. Because of this, we don't log not found as an error.
-		if blunder.IsNot(err, blunder.NotFoundError) {
-			logger.ErrorWithError(err)
-		}
-		return dirEntries, statEntries, err
-	}
-
-	// Always only one entry
-	numEntries := 1
-
-	// Get stats
-	statEntries = make([]Stat, numEntries)
-	for i := range dirEntries {
-		entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(dirEntries[i].InodeNumber, nil)
-		if err = err1; err != nil {
-			return
-		}
-		err = entryInodeLock.ReadLock()
-		if err != nil {
-			return
-		}
-
-		// Fill in stats, calling getstat helper function to do the work
-		statEntries[i], err = mS.getstatHelper(dirEntries[i].InodeNumber, entryInodeLock.GetCallerID())
-		entryInodeLock.Unlock()
-
-		if err != nil {
-			logger.ErrorWithError(err)
-			return dirEntries, statEntries, err
-		}
-	}
-
-	return dirEntries, statEntries, err
+	return
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
@@ -3249,8 +3598,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	// sanity checks for invalid/illegal values
 	if settingUserID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
-		if newUserID > math.MaxUint32 {
-			err = fmt.Errorf("%s: userID is too large - value is %d, max is %d.", utils.GetFnName(), newUserID, math.MaxUint32)
+		if newUserID > uint64(math.MaxUint32) {
+			err = fmt.Errorf("%s: userID is too large - value is %v, max is %v.", utils.GetFnName(), newUserID, uint64(math.MaxUint32))
 			err = blunder.AddError(err, blunder.InvalidUserIDError)
 			return
 		}
@@ -3258,8 +3607,8 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 
 	if settingGroupID {
 		// Since we are using a uint64 to convey a uint32 value, make sure we didn't get something too big
-		if newGroupID > math.MaxUint32 {
-			err = fmt.Errorf("%s: groupID is too large - value is %d, max is %d.", utils.GetFnName(), newGroupID, math.MaxUint32)
+		if newGroupID > uint64(math.MaxUint32) {
+			err = fmt.Errorf("%s: groupID is too large - value is %v, max is %v.", utils.GetFnName(), newGroupID, uint64(math.MaxUint32))
 			err = blunder.AddError(err, blunder.InvalidGroupIDError)
 			return
 		}
@@ -3269,7 +3618,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	if settingFilePerm {
 		// Since we are using a uint64 to convey a 12 bit value, make sure we didn't get something too big
 		if filePerm >= 1<<12 {
-			err = fmt.Errorf("%s: filePerm is too large - value is %d, max is %d.", utils.GetFnName(),
+			err = fmt.Errorf("%s: filePerm is too large - value is %v, max is %v.", utils.GetFnName(),
 				filePerm, 1<<12)
 			err = blunder.AddError(err, blunder.InvalidFileModeError)
 			return
@@ -3441,14 +3790,14 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 	statVFS = make(map[StatVFSKey]uint64)
 
 	statVFS[StatVFSFilesystemID] = mS.volStruct.inodeVolumeHandle.GetFSID()
-	statVFS[StatVFSBlockSize] = FsBlockSize
-	statVFS[StatVFSFragmentSize] = FsOptimalTransferSize
-	statVFS[StatVFSTotalBlocks] = VolFakeTotalBlocks
-	statVFS[StatVFSFreeBlocks] = VolFakeFreeBlocks
-	statVFS[StatVFSAvailBlocks] = VolFakeAvailBlocks
-	statVFS[StatVFSTotalInodes] = VolFakeTotalInodes
-	statVFS[StatVFSFreeInodes] = VolFakeAvailInodes
-	statVFS[StatVFSAvailInodes] = VolFakeAvailInodes
+	statVFS[StatVFSBlockSize] = mS.volStruct.reportedBlockSize
+	statVFS[StatVFSFragmentSize] = mS.volStruct.reportedFragmentSize
+	statVFS[StatVFSTotalBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSFreeBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSAvailBlocks] = mS.volStruct.reportedNumBlocks
+	statVFS[StatVFSTotalInodes] = mS.volStruct.reportedNumInodes
+	statVFS[StatVFSFreeInodes] = mS.volStruct.reportedNumInodes
+	statVFS[StatVFSAvailInodes] = mS.volStruct.reportedNumInodes
 	statVFS[StatVFSMountFlags] = 0
 	statVFS[StatVFSMaxFilenameLen] = FileNameMax
 
@@ -3632,7 +3981,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	logger.Tracef("fs.Write(): starting volume '%s' inode %d offset %d len %d",
+	logger.Tracef("fs.Write(): starting volume '%s' inode %v offset %v len %v",
 		mS.volStruct.volumeName, inodeNumber, offset, len(buf))
 
 	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
@@ -3664,7 +4013,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 		return 0, err
 	}
 
-	logger.Tracef("fs.Write(): tracking write volume '%s' inode %d", mS.volStruct.volumeName, inodeNumber)
+	logger.Tracef("fs.Write(): tracking write volume '%s' inode %v", mS.volStruct.volumeName, inodeNumber)
 	mS.volStruct.trackInFlightFileInodeData(inodeNumber)
 	size = uint64(len(buf))
 
@@ -3706,161 +4055,6 @@ func revSplitPath(fullpath string) []string {
 		segments[i], segments[slen-i-1] = segments[slen-i-1], segments[i]
 	}
 	return segments
-}
-
-// Helper function to look up a path and return its inode, inode type,
-// and a (locked) read lock for that inode.
-//
-// When the returned err is nil, the caller is responsible for
-// unlocking. If err is non-nil, this function will handle any
-// unlocking. This lets the caller return immediately on error, as Go
-// code likes to do.
-//
-// If the referenced entity is a symlink, then it will be followed.
-// Subsequent symlinks will also be followed until a terminal
-// non-symlink is reached, up to a limit of MaxSymlinks. A terminal
-// non-symlink may be a directory, a file, or something that does not
-// exist.
-func (mS *mountStruct) resolvePathForRead(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.inodeVolumeHandle.EnsureReadLock)
-}
-
-func (mS *mountStruct) resolvePathForWrite(fullpath string, callerID dlm.CallerID) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	return mS.resolvePath(fullpath, callerID, inode.RootDirInodeNumber, mS.volStruct.inodeVolumeHandle.EnsureWriteLock)
-}
-
-func (mS *mountStruct) resolvePath(fullpath string, callerID dlm.CallerID, startingInode inode.InodeNumber, getLock func(inode.InodeNumber, dlm.CallerID) (*dlm.RWLockStruct, error)) (inodeNumber inode.InodeNumber, inodeType inode.InodeType, inodeLock *dlm.RWLockStruct, err error) {
-	// pathSegments is the reversed split path. For example, if
-	// fullpath is "/etc/thing/default.conf", then pathSegments is
-	// ["default.conf", "thing", "etc"].
-	//
-	// The reversal is just because Go gives us append() but no
-	// prepend() for slices.
-	pathSegments := revSplitPath(fullpath)
-
-	// Our protection against symlink loops is a limit on the number
-	// of symlinks that we will follow.
-	followsRemaining := MaxSymlinks
-
-	var cursorInodeNumber inode.InodeNumber
-	var cursorInodeType inode.InodeType
-	var cursorInodeLock *dlm.RWLockStruct
-	dirInodeNumber := startingInode
-	dirInodeLock, err := getLock(dirInodeNumber, callerID)
-
-	// Use defer for cleanup so that we don't have to think as hard
-	// about every if-error-return block.
-	defer func() {
-		if dirInodeLock != nil {
-			dirInodeLock.Unlock()
-		}
-	}()
-	defer func() {
-		if cursorInodeLock != nil {
-			cursorInodeLock.Unlock()
-		}
-	}()
-
-	for len(pathSegments) > 0 {
-		segment := pathSegments[len(pathSegments)-1]
-		pathSegments = pathSegments[:len(pathSegments)-1]
-
-		if segment == "." {
-			continue
-		}
-
-		// Look up the entry in the directory.
-		//
-		// If we find a relative symlink (does not start with "/"),
-		// then we'll need to keep this lock around for our next pass
-		// through the loop.
-		cursorInodeNumber, err = mS.volStruct.inodeVolumeHandle.Lookup(dirInodeNumber, segment)
-		if err != nil {
-			return
-		}
-
-		cursorInodeLock, err = getLock(cursorInodeNumber, callerID)
-		if err != nil {
-			return
-		}
-		cursorInodeType, err = mS.volStruct.inodeVolumeHandle.GetType(cursorInodeNumber)
-		if err != nil {
-			return
-		}
-
-		if cursorInodeType == inode.SymlinkType {
-			// Dereference the symlink and continue path traversal
-			// from the appropriate location.
-			if followsRemaining == 0 {
-				err = blunder.NewError(blunder.TooManySymlinksError, "Too many symlinks while resolving %s", fullpath)
-				return
-			} else {
-				followsRemaining -= 1
-			}
-
-			target, err1 := mS.volStruct.inodeVolumeHandle.GetSymlink(cursorInodeNumber)
-			if cursorInodeLock != nil {
-				cursorInodeLock.Unlock() // done with this symlink, error or not
-				cursorInodeLock = nil
-			}
-			if err1 != nil {
-				err = err1
-				return
-			}
-
-			if strings.HasPrefix(target, "/") {
-				// Absolute symlink; we don't keep track of the
-				// current directory any more, but restart traversal
-				// from the root directory.
-				if dirInodeLock != nil {
-					dirInodeLock.Unlock()
-					dirInodeLock = nil
-				}
-				dirInodeNumber = inode.RootDirInodeNumber
-				dirInodeLock, err = getLock(inode.RootDirInodeNumber, callerID)
-				if err != nil {
-					return
-				}
-			}
-			newSegments := revSplitPath(target)
-			pathSegments = append(pathSegments, newSegments...)
-		} else if len(pathSegments) == 0 {
-			// This was the final path segment (and not a symlink), so
-			// return what we've found. File? Directory? Something
-			// else entirely? Doesn't matter; it's the caller's
-			// problem now.
-			inodeNumber = cursorInodeNumber
-			inodeType = cursorInodeType
-			// We're returning a held lock. This is intentional.
-			inodeLock = cursorInodeLock
-			cursorInodeLock = nil // prevent deferred cleanup
-			return
-		} else if cursorInodeType == inode.FileType {
-			// If we hit a file but there's still path segments
-			// left, then the path is invalid , e.g.
-			// "/stuff/so-far-so-good/kitten.png/you-cannot-have-this-part"
-			err = blunder.NewError(blunder.NotDirError, "%s is a file, not a directory", segment)
-			return
-		} else {
-			// Found a directory; continue traversal from therein
-			if dirInodeLock != nil {
-				dirInodeLock.Unlock()
-			}
-			dirInodeNumber = cursorInodeNumber
-			dirInodeLock = cursorInodeLock
-			cursorInodeLock = nil
-		}
-	}
-
-	// If we ever had any pathSegments at all, we exited via one of
-	// the return statements in the above loop. The only way to get
-	// here should be to have pathSegments be empty, which means the
-	// caller is resolving the path "/".
-	inodeNumber = dirInodeNumber
-	inodeType = inode.DirType
-	inodeLock = dirInodeLock
-	dirInodeLock = nil // prevent deferred cleanup
-	return
 }
 
 // Utility function to unlink, but not destroy, a particular file or empty subdirectory.
@@ -3915,58 +4109,6 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 	return nil
 }
 
-// Utility function to unlink, but not destroy, a particular file or empty subdirectory.
-//
-// This function checks that the directory is empty.
-//
-// The caller of this function must hold appropriate locks.
-//
-// obstacleInodeNumber must refer to an existing file or directory
-// that is (a) already part of the directory tree and (b) not the root
-// directory.
-func removeObstacleToObjectPut(mount *mountStruct, callerID dlm.CallerID, dirInodeNumber inode.InodeNumber, obstacleName string, obstacleInodeNumber inode.InodeNumber) error {
-	statResult, err := mount.getstatHelper(obstacleInodeNumber, callerID)
-	if err != nil {
-		return err
-	}
-
-	fileType := inode.InodeType(statResult[StatFType])
-	if fileType == inode.FileType || fileType == inode.SymlinkType {
-		// Files and symlinks can always, barring errors, be unlinked
-		err = mount.volStruct.inodeVolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
-		if err != nil {
-			return err
-		}
-	} else if fileType == inode.DirType {
-		numEntries, err := mount.volStruct.inodeVolumeHandle.NumDirEntries(obstacleInodeNumber)
-		if err != nil {
-			return err
-		}
-		if numEntries >= 3 {
-			// We're looking at a pre-existing, user-visible directory
-			// that's linked into the directory structure, so we've
-			// got at least two entries, namely "." and ".."
-			//
-			// If there's a third, then the directory is non-empty.
-			return blunder.NewError(blunder.IsDirError, "%s is a non-empty directory", obstacleName)
-		} else {
-			// We don't want to call Rmdir() here since
-			// that function (a) grabs locks, (b) checks
-			// that it's a directory and is empty, then
-			// (c) calls Unlink() and Destroy().
-			//
-			// We already have the locks and we've already
-			// checked that it's empty, so let's just get
-			// down to it.
-			err = mount.volStruct.inodeVolumeHandle.Unlink(dirInodeNumber, obstacleName, false)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // Utility function to append entries to reply
 func appendReadPlanEntries(readPlan []inode.ReadPlanStep, readRangeOut *[]inode.ReadPlanStep) (numEntries uint64) {
 	for i := range readPlan {
@@ -3975,87 +4117,4 @@ func appendReadPlanEntries(readPlan []inode.ReadPlanStep, readRangeOut *[]inode.
 		numEntries++
 	}
 	return
-}
-
-type dirToDescend struct {
-	name string
-	path string
-	ino  inode.InodeNumber
-}
-
-// readdir is a helper function to do the work of Readdir once we hold the lock.
-func (mS *mountStruct) readdirHelper(inodeNumber inode.InodeNumber, prevBasenameReturned string, maxEntries uint64, maxBufSize uint64, callerID dlm.CallerID) (entries []inode.DirEntry, numEntries uint64, areMoreEntries bool, err error) {
-	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
-	if err != nil {
-		return
-	}
-	if !dlm.IsLockHeld(lockID, callerID, dlm.ANYLOCK) {
-		err = fmt.Errorf("%s: inode %v lock must be held before calling.", utils.GetFnName(), inodeNumber)
-		return nil, 0, false, blunder.AddError(err, blunder.NotFoundError)
-	}
-
-	entries, areMoreEntries, err = mS.volStruct.inodeVolumeHandle.ReadDir(inodeNumber, maxEntries, maxBufSize, prevBasenameReturned)
-	if err != nil {
-		return entries, numEntries, areMoreEntries, err
-	}
-	numEntries = uint64(len(entries))
-
-	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
-	for i, dirEntry := range entries {
-		if ("." == dirEntry.Basename) || (".." == dirEntry.Basename) {
-			entries[i].Type = inode.DirType
-		} else {
-			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
-			if err = err1; err != nil {
-				return
-			}
-			err = entryInodeLock.ReadLock()
-			if err != nil {
-				return
-			}
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, entryInodeLock.GetCallerID())
-			entryInodeLock.Unlock()
-		}
-	}
-	return entries, numEntries, areMoreEntries, err
-}
-
-// readdirOne is a helper function to do the work of ReaddirOne once we hold the lock.
-func (mS *mountStruct) readdirOneHelper(inodeNumber inode.InodeNumber, prevDirMarker interface{}, callerID dlm.CallerID) (entries []inode.DirEntry, err error) {
-	lockID, err := mS.volStruct.inodeVolumeHandle.MakeLockID(inodeNumber)
-	if err != nil {
-		return
-	}
-	if !dlm.IsLockHeld(lockID, callerID, dlm.ANYLOCK) {
-		err = fmt.Errorf("%s: inode %v lock must be held before calling.", utils.GetFnName(), inodeNumber)
-		err = blunder.AddError(err, blunder.NotFoundError)
-		return
-	}
-
-	entries, _, err = mS.volStruct.inodeVolumeHandle.ReadDir(inodeNumber, 1, 0, prevDirMarker)
-	if err != nil {
-		// Note: by convention, we don't log errors in helper functions; the caller should
-		//       be the one to log or not given its use case.
-		return entries, err
-	}
-
-	// Tracker: 129872175: Directory entry must have the type, we should not be getting from inode, due to potential lock order issues.
-	for i, dirEntry := range entries {
-		if ("." == dirEntry.Basename) || (".." == dirEntry.Basename) {
-			entries[i].Type = inode.DirType
-		} else {
-			entryInodeLock, err1 := mS.volStruct.inodeVolumeHandle.InitInodeLock(entries[i].InodeNumber, callerID)
-			if err = err1; err != nil {
-				return
-			}
-			err = entryInodeLock.ReadLock()
-			if err != nil {
-				return
-			}
-			entries[i].Type, _ = mS.getTypeHelper(entries[i].InodeNumber, callerID)
-			entryInodeLock.Unlock()
-		}
-	}
-
-	return entries, err
 }

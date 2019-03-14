@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 func main() {
@@ -35,6 +36,11 @@ func main() {
 	confErr = confMap.UpdateFromStrings(args[1:])
 	if nil != confErr {
 		log.Fatalf("failed to load config overrides: %v", confErr)
+	}
+
+	confErr = transitions.UpgradeConfMapIfNeeded(confMap)
+	if nil != confErr {
+		log.Fatalf("failed to upgrade config: %v", confErr)
 	}
 
 	confMapJSONPacked, _ = json.Marshal(confMap)

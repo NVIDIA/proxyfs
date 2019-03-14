@@ -60,6 +60,28 @@ func (vS *volumeStruct) GetWriteLock(inodeNumber InodeNumber, callerID dlm.Calle
 	return lock, err
 }
 
+// AttemptReadLock is a convenience function to create and try to acquire an inode lock
+func (vS *volumeStruct) AttemptReadLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.InitInodeLock(inodeNumber, callerID)
+	if err != nil {
+		return nil, err
+	}
+
+	err = lock.TryReadLock()
+	return lock, err
+}
+
+// AttemptWriteLock is a convenience function to create and try to acquire an inode lock
+func (vS *volumeStruct) AttemptWriteLock(inodeNumber InodeNumber, callerID dlm.CallerID) (*dlm.RWLockStruct, error) {
+	lock, err := vS.InitInodeLock(inodeNumber, callerID)
+	if err != nil {
+		return nil, err
+	}
+
+	err = lock.TryWriteLock()
+	return lock, err
+}
+
 // EnsureReadLock ensures that a lock of the right type is held by the given callerID. If the lock is not held, it
 // acquires it. If the lock is held, it returns nil (so you don't unlock twice; even if that's not crashworthy, you'd
 // still release a lock that other code thinks it still holds).

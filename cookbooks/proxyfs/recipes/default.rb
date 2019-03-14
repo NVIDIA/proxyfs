@@ -1,9 +1,9 @@
 require 'json'
 
-tarfile_name = 'go1.10.linux-amd64.tar.gz'
+golang_tarfile_name = 'go1.11.4.linux-amd64.tar.gz'
 
-tarfile_path = "/tmp/#{tarfile_name}"
-tarfile_url  = "https://dl.google.com/go/#{tarfile_name}"
+golang_tarfile_path = "/tmp/#{golang_tarfile_name}"
+golang_tarfile_url  = "https://dl.google.com/go/#{golang_tarfile_name}"
 
 source_root = node['source_root']
 proxyfs_user = node['proxyfs_user']
@@ -27,8 +27,8 @@ JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
 SAMBA_PARENT_DIR = "#{VFS_SRC_DIR}"
 SAMBA_SRC_DIR = "#{SAMBA_PARENT_DIR}/samba"
 
-remote_file "#{tarfile_path}" do
-  source "#{tarfile_url}"
+remote_file "#{golang_tarfile_path}" do
+  source "#{golang_tarfile_url}"
   owner 'root'
   group 'root'
   mode '0400'
@@ -37,13 +37,17 @@ remote_file "#{tarfile_path}" do
 end
 
 execute 'untar_golang' do
-  command "tar -C /usr/local -xzf #{tarfile_path}"
+  command "tar -C /usr/local -xzf #{golang_tarfile_path}"
   not_if { ::File.exists?(GOROOT) }
 end
 
 file "/etc/profile.d/golang_path.sh" do
   content "export PATH=$PATH:#{GOROOT}/bin"
   mode '0644'
+end
+
+file "#{golang_tarfile_path}" do
+  action :delete
 end
 
 if node[:platform_family].include?("rhel") and ss_packages
@@ -169,6 +173,10 @@ execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
   command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
 end
 
+execute "Install awscli and awscli-plugin-endpoint" do
+  command "pip install awscli awscli-plugin-endpoint"
+end
+
 if is_dev
   ruby_block "fuse_user_allow_other" do
     block do
@@ -234,6 +242,26 @@ end
 
 execute "Provision unmount_and_stop_pfs" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/unmount_and_stop_pfs /usr/bin"
+end
+
+execute "Provision set_up_s3api" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_s3api /usr/bin"
+end
+
+execute "Provision set_up_swift3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/set_up_swift3 /usr/bin"
+end
+
+execute "Provision enable_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/enable_s3 /usr/bin"
+end
+
+execute "Provision disable_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/disable_s3 /usr/bin"
+end
+
+execute "Provision detect_s3" do
+  command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/cookbooks/proxyfs/files/default/usr/bin/detect_s3 /usr/bin"
 end
 
 execute "Provision pfs_stat" do
@@ -496,4 +524,54 @@ template "/root/.gdbinit" do
   variables({
     :proxyfs_user => "#{proxyfs_user}"
   })
+end
+
+bash 'Configure awscli for swift user' do
+    code <<-EOH
+    mkdir ~swift/.aws
+    cat > ~swift/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R swift:swift ~swift/.aws
+    EOH
+end
+
+bash 'Configure awscli for root user' do
+    code <<-EOH
+    mkdir ~root/.aws
+    cat > ~root/.aws/config << EOF
+[plugins]
+endpoint = awscli_plugin_endpoint
+
+[profile default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+EOF
+chown -R root:root ~root/.aws
+    EOH
+end
+
+execute 'set up s3api' do
+  command "/usr/bin/set_up_s3api"
+end
+
+execute 'set up swift3' do
+  command "/usr/bin/set_up_swift3"
+end
+
+execute 'enable s3api' do
+  command "/usr/bin/enable_s3 s3api"
 end

@@ -5,11 +5,11 @@ import (
 	"os"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -25,7 +25,7 @@ var (
 	measureDestroy  bool
 	measureStat     bool
 	perThreadDir    bool
-	rootDirMutex    sync.Mutex
+	rootDirMutex    trackedlock.Mutex
 	stepErrChan     chan error
 	threads         uint64
 	volumeHandle    inode.VolumeHandle

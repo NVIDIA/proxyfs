@@ -32,6 +32,8 @@ const testVerAccountName = testVer + testAccountName
 const testVerAccountContainerName = testVerAccountName + "/" + testContainerName
 const testAccountName2 = "AN_account2"
 
+const testRequireSlashesInPathsToProperlySort = false
+
 func testSetup() []func() {
 	var (
 		cleanupFuncs           []func()
@@ -52,6 +54,9 @@ func testSetup() []func() {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"FSGlobals.VolumeGroupList=JrpcfsTestVolumeGroup",
+		"FSGlobals.TryLockBackoffMin=100us",
+		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.SymlinkMax=8",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",
@@ -63,7 +68,7 @@ func testSetup() []func() {
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=45262",
+		"SwiftClient.NoAuthTCPPort=35262",
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=3",
 		"SwiftClient.RetryLimitObject=3",
@@ -258,7 +263,7 @@ func middlewarePutLocation(t *testing.T, server *Server, newPutPath string, expe
 func makeSomeFilesAndSuch() {
 	// we should have enough stuff up now that we can actually make
 	// some files and directories and such
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -363,7 +368,7 @@ func makeSomeFilesAndSuch() {
 	fsCreateFile(mountHandle, abcInode, "d-2")
 
 	// SomeVolume2 is set up for testing account listings
-	mountHandle2, err := fs.Mount("SomeVolume2", fs.MountOptions(0))
+	mountHandle2, err := fs.MountByVolumeName("SomeVolume2", fs.MountOptions(0))
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "alpha")
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "bravo")
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "charlie")
@@ -578,15 +583,27 @@ func TestRpcGetContainerNested(t *testing.T) {
 	assert.Equal(".git/logs/refs/heads/development", ents[19].Basename)
 	assert.Equal(".git/logs/refs/heads/stable", ents[20].Basename)
 	assert.Equal(".git/logs/refs/stash", ents[21].Basename)
-	assert.Equal("a", ents[22].Basename)
-	assert.Equal("a/b", ents[23].Basename)
-	assert.Equal("a/b-1", ents[24].Basename)
-	assert.Equal("a/b-2", ents[25].Basename)
-	assert.Equal("a/b/c", ents[26].Basename)
-	assert.Equal("a/b/c-1", ents[27].Basename)
-	assert.Equal("a/b/c-2", ents[28].Basename)
-	assert.Equal("a/b/c/d-1", ents[29].Basename)
-	assert.Equal("a/b/c/d-2", ents[30].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("a", ents[22].Basename)
+		assert.Equal("a/b", ents[23].Basename)
+		assert.Equal("a/b-1", ents[24].Basename)
+		assert.Equal("a/b-2", ents[25].Basename)
+		assert.Equal("a/b/c", ents[26].Basename)
+		assert.Equal("a/b/c-1", ents[27].Basename)
+		assert.Equal("a/b/c-2", ents[28].Basename)
+		assert.Equal("a/b/c/d-1", ents[29].Basename)
+		assert.Equal("a/b/c/d-2", ents[30].Basename)
+	} else {
+		assert.Equal("a", ents[22].Basename)
+		assert.Equal("a/b", ents[23].Basename)
+		assert.Equal("a/b/c", ents[24].Basename)
+		assert.Equal("a/b/c/d-1", ents[25].Basename)
+		assert.Equal("a/b/c/d-2", ents[26].Basename)
+		assert.Equal("a/b/c-1", ents[27].Basename)
+		assert.Equal("a/b/c-2", ents[28].Basename)
+		assert.Equal("a/b-1", ents[29].Basename)
+		assert.Equal("a/b-2", ents[30].Basename)
+	}
 }
 
 func TestRpcGetContainerPrefix(t *testing.T) {
@@ -648,11 +665,19 @@ func TestRpcGetContainerPrefix(t *testing.T) {
 	assert.Nil(err)
 	assert.Equal(5, len(response.ContainerEntries))
 	ents = response.ContainerEntries
-	assert.Equal("a/b/c", ents[0].Basename)
-	assert.Equal("a/b/c-1", ents[1].Basename)
-	assert.Equal("a/b/c-2", ents[2].Basename)
-	assert.Equal("a/b/c/d-1", ents[3].Basename)
-	assert.Equal("a/b/c/d-2", ents[4].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("a/b/c", ents[0].Basename)
+		assert.Equal("a/b/c-1", ents[1].Basename)
+		assert.Equal("a/b/c-2", ents[2].Basename)
+		assert.Equal("a/b/c/d-1", ents[3].Basename)
+		assert.Equal("a/b/c/d-2", ents[4].Basename)
+	} else {
+		assert.Equal("a/b/c", ents[0].Basename)
+		assert.Equal("a/b/c/d-1", ents[1].Basename)
+		assert.Equal("a/b/c/d-2", ents[2].Basename)
+		assert.Equal("a/b/c-1", ents[3].Basename)
+		assert.Equal("a/b/c-2", ents[4].Basename)
+	}
 }
 
 func TestRpcGetContainerPrefixAndMarkers(t *testing.T) {
@@ -828,24 +853,44 @@ func TestRpcGetContainerPaginated(t *testing.T) {
 	assert.Equal(8, len(response.ContainerEntries))
 
 	ents = response.ContainerEntries
-	assert.Equal("plants", ents[0].Basename)
-	assert.Equal("plants-README", ents[1].Basename)
-	assert.Equal("plants-symlink", ents[2].Basename)
-	assert.Equal("plants/aloe.txt", ents[3].Basename)
-	assert.Equal("plants/banana.txt", ents[4].Basename)
-	assert.Equal("plants/cherry.txt", ents[5].Basename)
-	assert.Equal("plants/eggplant.txt", ents[6].Basename)
-	assert.Equal("plants/eggplant.txt-symlink", ents[7].Basename)
+	if testRequireSlashesInPathsToProperlySort {
+		assert.Equal("plants", ents[0].Basename)
+		assert.Equal("plants-README", ents[1].Basename)
+		assert.Equal("plants-symlink", ents[2].Basename)
+		assert.Equal("plants/aloe.txt", ents[3].Basename)
+		assert.Equal("plants/banana.txt", ents[4].Basename)
+		assert.Equal("plants/cherry.txt", ents[5].Basename)
+		assert.Equal("plants/eggplant.txt", ents[6].Basename)
+		assert.Equal("plants/eggplant.txt-symlink", ents[7].Basename)
+	} else {
+		assert.Equal("plants", ents[0].Basename)
+		assert.Equal("plants/aloe.txt", ents[1].Basename)
+		assert.Equal("plants/banana.txt", ents[2].Basename)
+		assert.Equal("plants/cherry.txt", ents[3].Basename)
+		assert.Equal("plants/eggplant.txt", ents[4].Basename)
+		assert.Equal("plants/eggplant.txt-symlink", ents[5].Basename)
+		assert.Equal("plants-README", ents[6].Basename)
+		assert.Equal("plants-symlink", ents[7].Basename)
+	}
 
 	// Some Swift clients keep asking for container listings until
 	// they see an empty page, which will result in RpcGetContainer
 	// being called with a marker equal to the last object. This
 	// should simply return 0 results.
-	request = GetContainerReq{
-		VirtPath:   testVerAccountName + "/" + "c",
-		Marker:     "plants/eggplant.txt-symlink",
-		EndMarker:  "",
-		MaxEntries: 5,
+	if testRequireSlashesInPathsToProperlySort {
+		request = GetContainerReq{
+			VirtPath:   testVerAccountName + "/" + "c",
+			Marker:     "plants/eggplant.txt-symlink",
+			EndMarker:  "",
+			MaxEntries: 5,
+		}
+	} else {
+		request = GetContainerReq{
+			VirtPath:   testVerAccountName + "/" + "c",
+			Marker:     "plants-symlink",
+			EndMarker:  "",
+			MaxEntries: 5,
+		}
 	}
 	response = GetContainerReply{}
 	err = server.RpcGetContainer(&request, &response)
@@ -893,18 +938,17 @@ func TestRpcGetContainerSymlink(t *testing.T) {
 		VirtPath:   testVerAccountName + "/" + "c-symlink",
 		Marker:     "",
 		EndMarker:  "",
-		MaxEntries: 1,
+		MaxEntries: 3, // 1
 	}
 	response := GetContainerReply{}
 	err := server.RpcGetContainer(&request, &response)
 
-	assert.Nil(err)
-	assert.Equal(1, len(response.ContainerEntries))
-	ents := response.ContainerEntries
+	// Note: We are not supporting GetContainer *thru* a symlink
+	//       In other words, the Container itself cannot be a SymlinkInode
+	//       This aligns with GetAccount which will only return DirInode dir_entry's
 
-	assert.Equal("README", ents[0].Basename)
-	assert.Equal(uint64(37), ents[0].FileSize)
-	assert.Equal(false, ents[0].IsDir)
+	assert.NotNil(err)
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
 }
 
 func TestRpcGetAccount(t *testing.T) {
@@ -924,7 +968,7 @@ func TestRpcGetAccount(t *testing.T) {
 	assert.Equal(statResult[fs.StatMTime], response.ModificationTime)
 
 	assert.Nil(err)
-	assert.Equal(len(response.AccountEntries), 5)
+	assert.Equal(5, len(response.AccountEntries))
 	assert.Equal("alpha", response.AccountEntries[0].Basename)
 	statResult = fsStatPath("/v1/"+testAccountName2, "/alpha")
 	assert.Equal(statResult[fs.StatMTime], response.AccountEntries[0].ModificationTime)
@@ -1065,7 +1109,7 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	// d1/crackle
 	// d1/pop
 	// d1-symlink -> d1
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1251,7 +1295,7 @@ func testPutObjectSetup(t *testing.T) (*assert.Assertions, *Server, string, fs.M
 	// almost certainly okay.)
 	containerName := fmt.Sprintf("mware-TestPutObject-%d", time.Now().UnixNano())
 
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1404,25 +1448,7 @@ func TestPutObjectOverwriteFile(t *testing.T) {
 	assert.Equal(objData2, contents)
 }
 
-func TestPutObjectOverwriteEmptyDirectory(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
-
-	objName := "was-a-dir"
-	objData := []byte("sialemesis-pseudembryo")
-	objMetadata := []byte("I'm So Meta, Even This Acronym")
-	objVirtPath := testVerAccountName + "/" + containerName + "/" + objName
-
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
-	if err != nil {
-		panic(err)
-	}
-	_ = fsMkDir(mountHandle, containerInode, "was-a-dir")
-
-	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
-	assert.Nil(err) // sanity check
-}
-
-func TestPutObjectOverwriteNonEmptyDirectory(t *testing.T) {
+func TestPutObjectOverwriteDirectory(t *testing.T) {
 	assert, server, containerName, mountHandle := testPutObjectSetup(t)
 
 	objName := "dir-with-stuff-in-it"
@@ -1444,7 +1470,7 @@ func TestPutObjectOverwriteNonEmptyDirectory(t *testing.T) {
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.IsDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.InvalidArgError), err.Error())
 }
 
 func TestPutObjectSymlinkedDir(t *testing.T) {
@@ -1494,7 +1520,7 @@ func TestPutObjectOverwriteSymlink(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"thing.dat")
+	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"somewhere-else")
 	assert.Nil(err)
 	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
@@ -1524,7 +1550,7 @@ func TestPutObjectFileInDirPath(t *testing.T) {
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.PermDeniedError), err.Error())
 }
 
 func TestPutObjectCompound(t *testing.T) {
@@ -1666,7 +1692,7 @@ func TestRpcGetObjectMetadata(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1709,7 +1735,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1865,7 +1891,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 func TestRpcPutContainer(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1927,7 +1953,7 @@ func TestRpcPutContainer(t *testing.T) {
 func TestRpcPutContainerTooLong(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1949,7 +1975,7 @@ func TestRpcPutContainerTooLong(t *testing.T) {
 func TestRpcMiddlewareMkdir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1979,7 +2005,7 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	assert.True(headReply.IsDir)
 	oldInodeNumber := headReply.InodeNumber
 
-	// If the file exists, we just overwrite it, same as with RpcPutComplete
+	// If the dir exists, we just reuse it, so verify this happened
 	req = MiddlewareMkdirReq{
 		VirtPath: dirPath,
 		Metadata: dirMetadata,
@@ -1987,13 +2013,13 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 	reply = MiddlewareMkdirReply{}
 	err = server.RpcMiddlewareMkdir(&req, &reply)
 	assert.Nil(err)
-	assert.NotEqual(reply.InodeNumber, oldInodeNumber)
+	assert.Equal(reply.InodeNumber, oldInodeNumber)
 }
 
 func TestRpcMiddlewareMkdirNested(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2026,7 +2052,7 @@ func TestRpcMiddlewareMkdirNested(t *testing.T) {
 func TestRpcCoalesce(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2095,7 +2121,7 @@ func TestRpcCoalesce(t *testing.T) {
 func TestRpcCoalesceOverwrite(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2151,52 +2177,10 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 
 }
 
-func TestRpcCoalesceOverwriteEmptyDir(t *testing.T) {
+func TestRpcCoalesceOverwriteDir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
-	if nil != err {
-		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
-	}
-
-	containerName := "rpc-coalesce-brushwood-Batis"
-	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
-
-	destinationPath := containerPath + "/" + "combined"
-
-	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
-	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	fsMkDir(mountHandle, containerInode, "combined")
-
-	// Create the file
-	coalesceRequest := CoalesceReq{
-		VirtPath: destinationPath,
-		ElementAccountRelativePaths: []string{
-			"/" + containerName + "/red",
-			"/" + containerName + "/orange",
-			"/" + containerName + "/yellow",
-		},
-	}
-	coalesceReply := CoalesceReply{}
-	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
-	assert.Nil(err)
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
-	assert.Nil(err)
-	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
-}
-
-func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
-	server := &Server{}
-	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2217,7 +2201,6 @@ func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
 	}
 
 	combinedInode := fsMkDir(mountHandle, containerInode, "combined")
-	fsMkDir(mountHandle, combinedInode, "now-its-not-empty")
 
 	// Create the file
 	coalesceRequest := CoalesceReq{
@@ -2240,7 +2223,7 @@ func TestRpcCoalesceOverwriteNonEmptyDir(t *testing.T) {
 func TestRpcCoalesceMakesDirs(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2290,7 +2273,7 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 func TestRpcCoalesceSymlinks(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2342,7 +2325,7 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2356,8 +2339,6 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	// The directory structure partially exists, but not totally
 	aInode := fsMkDir(mountHandle, containerInode, "a")
 	fsCreateSymlink(mountHandle, aInode, "busted", "this-symlink-is-broken")
-	bInode := fsMkDir(mountHandle, aInode, "b")
-	fsMkDir(mountHandle, bInode, "c")
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
@@ -2379,14 +2360,21 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	}
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
-	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotFoundError), err.Error())
+	assert.Nil(err)
+
+	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/this-symlink-is-broken/c/combined")
+	assert.Nil(err)
+	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
+
+	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
+	assert.Nil(err)
+	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
 
 func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2422,5 +2410,5 @@ func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotDirError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.PermDeniedError), err.Error())
 }

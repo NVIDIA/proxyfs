@@ -19,6 +19,7 @@ import (
 	_ "github.com/swiftstack/ProxyFS/fuse"
 	_ "github.com/swiftstack/ProxyFS/jrpcfs"
 	_ "github.com/swiftstack/ProxyFS/statslogger"
+	"github.com/swiftstack/ProxyFS/trackedlock"
 )
 
 type ExtentMapElementStruct struct {
@@ -64,7 +65,7 @@ type JobStatusJSONPackedStruct struct {
 }
 
 type volumeStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	name                   string
 	fsMountHandle          fs.MountHandle
 	inodeVolumeHandle      inode.VolumeHandle
@@ -76,7 +77,7 @@ type volumeStruct struct {
 }
 
 type globalsStruct struct {
-	sync.Mutex
+	trackedlock.Mutex
 	active            bool
 	jobHistoryMaxSize uint32
 	whoAmI            string
@@ -176,7 +177,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 	}
 
-	volume.fsMountHandle, err = fs.Mount(volume.name, 0)
+	volume.fsMountHandle, err = fs.MountByVolumeName(volume.name, 0)
 	if nil != err {
 		return
 	}

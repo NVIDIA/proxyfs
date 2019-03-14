@@ -40,13 +40,13 @@ func TestStressMetaDataOpsWhileNotStarved(t *testing.T) {
 }
 
 func testStressMetaDataOps(t *testing.T, starvationMode bool) {
-	testSetupForStress(t, starvationMode)
-
-	globalSyncPt = make(chan testRequest)
-
 	if testing.Short() {
 		t.Skip("skipping stress test.")
 	}
+
+	globalSyncPt = make(chan testRequest)
+
+	testSetupForStress(t, starvationMode)
 	testTwoThreadsCreateUnlink(t)
 	testTeardown(t)
 	testSetupForStress(t, starvationMode)
@@ -61,20 +61,10 @@ func testStressMetaDataOps(t *testing.T, starvationMode bool) {
 	testMultiThreadCreateAndReaddir(t)
 	testTeardown(t)
 	testSetupForStress(t, starvationMode)
-
-	// Only run if we are not starved
-	//
-	// If we are starved, the test is killed because it uses too much memory
-	// since we do not drain the memory fast enough.
-	if !starvationMode {
-		testCreateReWriteNoFlush(t)
-		testTeardown(t)
-		testSetupForStress(t, starvationMode)
-		testCreateSeqWriteNoFlush(t)
-		testTeardown(t)
-		testSetupForStress(t, starvationMode)
-	}
-
+	testCreateReWriteNoFlush(t)
+	testTeardown(t)
+	testSetupForStress(t, starvationMode)
+	testCreateSeqWriteNoFlush(t)
 	testTeardown(t)
 }
 
@@ -202,7 +192,7 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 			maxEntries = 10
 			totalEntriesRead = 0 // Useful for debugging
 			for areMoreEntries {
-				dirEnts, numEntries, more, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, lastBasename, maxEntries, 0)
+				dirEnts, numEntries, more, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, maxEntries, lastBasename)
 				if nil != err {
 					return
 				}
@@ -609,7 +599,8 @@ func testMultiThreadCreateAndReaddir(t *testing.T) {
 func testCreateReWriteNoFlush(t *testing.T) {
 	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
 	// increasing numThreads, size of write buffer and number of overwrites.
-	var numThreads = 125
+	var numThreads = 50
+
 	fileInodes := make([]inode.InodeNumber, numThreads) // Map to store each inode created
 	nameOfTest := utils.GetFnName()
 
@@ -663,7 +654,8 @@ func testCreateReWriteNoFlush(t *testing.T) {
 func testCreateSeqWriteNoFlush(t *testing.T) {
 	// NOTE: This test uses a lot of memory and will cause a OOM.  Be careful
 	// increasing numThreads, size of write buffer and number of overwrites.
-	var numThreads = 50
+	var numThreads = 25
+
 	fileInodes := make([]inode.InodeNumber, numThreads) // Map to store each inode created
 	nameOfTest := utils.GetFnName()
 

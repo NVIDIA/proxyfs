@@ -18,8 +18,11 @@ func TestCoalesce(t *testing.T) {
 	// d1/file1b   (contents "efgh")
 	// d2/file2a   (contents "ijkl")
 	// d2/file2b   (contents "mnop")
+	// d2/file2c   (contents "\0\0st\0\0")
 	//
-	// and coalesce them into a single file (contents "abcdefghijklmnop").
+	// and coalesce them into a single file:
+	//
+	// d1/combined (contents "abcdefghijklmnop\0\0st\0\0")
 	//
 	// This will also unlink the constituent files from their directories.
 
@@ -117,31 +120,41 @@ func TestCoalesce(t *testing.T) {
 		return
 	}
 
+	// Now create destination file
+	combinedInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Link(d1InodeNumber, "combined", combinedInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
 	// test setup's done; now we can coalesce things
-	elements := make([]CoalesceElement, 0, 4)
-	elements = append(elements, CoalesceElement{
+	elements := make([]*CoalesceElement, 0, 5)
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d1InodeNumber,
 		ElementInodeNumber:             file1aInodeNumber,
 		ElementName:                    "file1a"})
-	elements = append(elements, CoalesceElement{
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d1InodeNumber,
 		ElementInodeNumber:             file1bInodeNumber,
 		ElementName:                    "file1b"})
-	elements = append(elements, CoalesceElement{
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d2InodeNumber,
 		ElementInodeNumber:             file2aInodeNumber,
 		ElementName:                    "file2a"})
-	elements = append(elements, CoalesceElement{
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d2InodeNumber,
 		ElementInodeNumber:             file2bInodeNumber,
 		ElementName:                    "file2b"})
-	elements = append(elements, CoalesceElement{
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d2InodeNumber,
 		ElementInodeNumber:             file2cInodeNumber,
 		ElementName:                    "file2c"})
 
-	// Coalesce the above 4 files into d1/combined
-	combinedInodeNumber, _, _, fileSize, err := vh.Coalesce(d1InodeNumber, "combined", elements)
+	// Coalesce the above 5 files into d1/combined
+	_, _, fileSize, err := vh.Coalesce(combinedInodeNumber, elements)
 	if !assert.Nil(err) {
 		return
 	}
@@ -179,6 +192,15 @@ func TestCoalesce(t *testing.T) {
 func TestCoalesceDir(t *testing.T) {
 	testSetup(t, false)
 
+	// We're going to take some files:
+	//
+	// d1/file1a   (contents "abcd")
+	// d1/file1b   (contents "efgh")
+	//
+	// and attempt to coalesce them into a directory:
+	//
+	// d1
+
 	assert := assert.New(t)
 	vh, err := FetchVolumeHandle("TestVolume")
 	if !assert.Nil(err) {
@@ -189,38 +211,52 @@ func TestCoalesceDir(t *testing.T) {
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-dir-d1", d1InodeNumber, false)
+	err = vh.Link(RootDirInodeNumber, "d1", d1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
 
-	fileInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	file1aInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(fileInodeNumber, 0, []byte("wroke-Charca"), nil)
+	err = vh.Write(file1aInodeNumber, 0, []byte("abcd"), nil)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(d1InodeNumber, "file", fileInodeNumber, false)
+	err = vh.Link(d1InodeNumber, "file1a", file1aInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
 
-	elements := make([]CoalesceElement, 0, 4)
-	elements = append(elements, CoalesceElement{
-		ContainingDirectoryInodeNumber: RootDirInodeNumber,
-		// can't do this: elements must be files
-		ElementInodeNumber: d1InodeNumber,
-		ElementName:        "d1"})
-	elements = append(elements, CoalesceElement{
+	file1bInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Write(file1bInodeNumber, 0, []byte("efgh"), nil)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Link(d1InodeNumber, "file1b", file1bInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// test setup's done; now we can coalesce things
+	elements := make([]*CoalesceElement, 0, 2)
+	elements = append(elements, &CoalesceElement{
 		ContainingDirectoryInodeNumber: d1InodeNumber,
-		ElementInodeNumber:             fileInodeNumber,
-		ElementName:                    "file"})
+		ElementInodeNumber:             file1aInodeNumber,
+		ElementName:                    "file1a"})
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1bInodeNumber,
+		ElementName:                    "file1b"})
 
-	_, _, _, _, err = vh.Coalesce(d1InodeNumber, "combined", elements)
+	// Coalesce the above 2 files into d1
+	_, _, _, err = vh.Coalesce(d1InodeNumber, elements)
 	assert.NotNil(err)
-	assert.True(blunder.Is(err, blunder.IsDirError))
+	assert.True(blunder.Is(err, blunder.PermDeniedError))
 
 	testTeardown(t)
 }
@@ -228,63 +264,72 @@ func TestCoalesceDir(t *testing.T) {
 func TestCoalesceMultipleLinks(t *testing.T) {
 	testSetup(t, false)
 
-	// You can't coalesce a file with a link count > 1, or else two inodes end up referring to the same log segment, and
-	// that's an illegal state (deleting one inode breaks the other).
+	// We're going to take hard-linked files:
+	//
+	// d1/file1a   (contents "abcd")
+	// d1/file1b   (hard-linked to d1/file1a)
+	//
+	// and attempt to coalesce them into a single file:
+	//
+	// d1/combined
+
 	assert := assert.New(t)
 	vh, err := FetchVolumeHandle("TestVolume")
 	if !assert.Nil(err) {
 		return
 	}
 
-	dirInodeNumber, err := vh.CreateDir(PosixModePerm, 0, 0)
+	d1InodeNumber, err := vh.CreateDir(PosixModePerm, 0, 0)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-multilink-dir", dirInodeNumber, false)
-	if !assert.Nil(err) {
-		return
-	}
-
-	file1InodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
-	if !assert.Nil(err) {
-		return
-	}
-	err = vh.Write(file1InodeNumber, 0, []byte("unsummerly-helictite"), nil)
-	if !assert.Nil(err) {
-		return
-	}
-	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber, false)
-	if !assert.Nil(err) {
-		return
-	}
-	err = vh.Link(dirInodeNumber, "also-file1", file1InodeNumber, false)
+	err = vh.Link(RootDirInodeNumber, "d1", d1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
 
-	file2InodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	file1aInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2InodeNumber, 0, []byte("loam-grantor"), nil)
+	err = vh.Write(file1aInodeNumber, 0, []byte("abcd"), nil)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber, false)
+	err = vh.Link(d1InodeNumber, "file1a", file1aInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
-	elements := make([]CoalesceElement, 0, 4)
-	elements = append(elements, CoalesceElement{
-		ContainingDirectoryInodeNumber: dirInodeNumber,
-		ElementInodeNumber:             file1InodeNumber,
-		ElementName:                    "file1"})
-	elements = append(elements, CoalesceElement{
-		ContainingDirectoryInodeNumber: dirInodeNumber,
-		ElementInodeNumber:             file2InodeNumber,
-		ElementName:                    "file2"})
 
-	_, _, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
+	file1bInodeNumber := file1aInodeNumber
+	err = vh.Link(d1InodeNumber, "file1b", file1bInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// Now create destination file
+	combinedInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Link(d1InodeNumber, "combined", combinedInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// test setup's done; now we can coalesce things
+	elements := make([]*CoalesceElement, 0, 2)
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1aInodeNumber,
+		ElementName:                    "file1a"})
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1bInodeNumber,
+		ElementName:                    "file1b"})
+
+	// Coalesce the above 2 files into d1/combined
+	_, _, _, err = vh.Coalesce(combinedInodeNumber, elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.TooManyLinksError))
 
@@ -294,62 +339,84 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 func TestCoalesceDuplicates(t *testing.T) {
 	testSetup(t, false)
 
-	// You can't coalesce the same file twice
+	// We're going to take hard-linked files:
+	//
+	// d1/file1a   (contents "abcd")
+	// d1/file1b   (contents "efgh")
+	// d1/file1a   (again)
+	//
+	// and attempt to coalesce them into a single file:
+	//
+	// d1/combined
+
 	assert := assert.New(t)
 	vh, err := FetchVolumeHandle("TestVolume")
 	if !assert.Nil(err) {
 		return
 	}
 
-	dirInodeNumber, err := vh.CreateDir(PosixModePerm, 0, 0)
+	d1InodeNumber, err := vh.CreateDir(PosixModePerm, 0, 0)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(RootDirInodeNumber, "coalesce-dupetest-dir", dirInodeNumber, false)
-	if !assert.Nil(err) {
-		return
-	}
-
-	file1InodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
-	if !assert.Nil(err) {
-		return
-	}
-	err = vh.Write(file1InodeNumber, 0, []byte("maeandrinoid-anicular"), nil)
-	if !assert.Nil(err) {
-		return
-	}
-	err = vh.Link(dirInodeNumber, "file1", file1InodeNumber, false)
+	err = vh.Link(RootDirInodeNumber, "d1", d1InodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
 
-	file2InodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	file1aInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Write(file2InodeNumber, 0, []byte("redive-caulopteris"), nil)
+	err = vh.Write(file1aInodeNumber, 0, []byte("abcd"), nil)
 	if !assert.Nil(err) {
 		return
 	}
-	err = vh.Link(dirInodeNumber, "file2", file2InodeNumber, false)
+	err = vh.Link(d1InodeNumber, "file1a", file1aInodeNumber, false)
 	if !assert.Nil(err) {
 		return
 	}
-	elements := make([]CoalesceElement, 0, 4)
-	elements = append(elements, CoalesceElement{
-		ContainingDirectoryInodeNumber: dirInodeNumber,
-		ElementInodeNumber:             file1InodeNumber,
-		ElementName:                    "file1"})
-	elements = append(elements, CoalesceElement{
-		ContainingDirectoryInodeNumber: dirInodeNumber,
-		ElementInodeNumber:             file2InodeNumber,
-		ElementName:                    "file2"})
-	elements = append(elements, CoalesceElement{ // dupe
-		ContainingDirectoryInodeNumber: dirInodeNumber,
-		ElementInodeNumber:             file1InodeNumber,
-		ElementName:                    "file1"})
 
-	_, _, _, _, err = vh.Coalesce(dirInodeNumber, "combined", elements)
+	file1bInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Write(file1bInodeNumber, 0, []byte("efgh"), nil)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Link(d1InodeNumber, "file1b", file1bInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// Now create destination file
+	combinedInodeNumber, err := vh.CreateFile(PosixModePerm, 0, 0)
+	if !assert.Nil(err) {
+		return
+	}
+	err = vh.Link(d1InodeNumber, "combined", combinedInodeNumber, false)
+	if !assert.Nil(err) {
+		return
+	}
+
+	// test setup's done; now we can coalesce things
+	elements := make([]*CoalesceElement, 0, 3)
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1aInodeNumber,
+		ElementName:                    "file1a"})
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1bInodeNumber,
+		ElementName:                    "file1b"})
+	elements = append(elements, &CoalesceElement{
+		ContainingDirectoryInodeNumber: d1InodeNumber,
+		ElementInodeNumber:             file1aInodeNumber,
+		ElementName:                    "file1a"})
+
+	// Coalesce the above 3 files into d1/combined
+	_, _, _, err = vh.Coalesce(combinedInodeNumber, elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.InvalidArgError))
 
