@@ -42,7 +42,7 @@ yum clean all
 
 # Install tools needed above what's in a minimal base box
 
-yum -y install wget git nfs-utils vim
+yum -y install wget git nfs-utils vim lsof
 
 # Install Golang
 

@@ -74,14 +74,14 @@ func performMount() {
 		logFatal(err)
 	}
 
+	go serveFuse()
+
 	<-globals.fuseConn.Ready
 	if nil != globals.fuseConn.MountError {
 		logFatal(globals.fuseConn.MountError)
 	}
 
-	logInfof("%s mounted", globals.config.FUSEMountPointPath)
-
-	go serveFuse()
+	logInfof("Now serving %s on %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
 }
 
 func fetchInodeDevice(pathTitle string, path string) (inodeDevice int64) {

@@ -24,6 +24,6 @@ Vagrant.configure(2) do |config|
   config.vm.synced_folder "../../../../../", "/vagrant", type: "virtualbox"
   config.vm.network "private_network", ip: "172.28.128.2", :name => 'vboxnet0', :adapter => 2
   config.vm.network "forwarded_port", guest: 15346, host: 25346
-  config.vm.network "forwarded_port", guest: 15432, host: 25432
+  config.vm.network "forwarded_port", guest: 8080, host: 28080
   config.vm.provision "shell", path: "vagrant_provision.sh"
 end
