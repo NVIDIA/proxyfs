@@ -14,14 +14,7 @@
 # limitations under the License.
 
 
-import os
 from setuptools import setup
-
-
-try:
-    import multiprocessing.util
-except ImportError:
-    pass
 
 
 setup(
@@ -35,7 +28,7 @@ setup(
     test_suite="nose.collector",
     tests_require=['nose'],
 
-    #TODO: classifiers and such
+    # TODO: classifiers and such
     entry_points={
         'paste.filter_factory': [
             'meta = meta_middleware.middleware:filter_factory',
