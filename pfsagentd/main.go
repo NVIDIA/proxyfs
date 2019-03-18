@@ -55,26 +55,59 @@ var globals globalsStruct
 
 func main() {
 	var (
+		args       []string
+		confMap    conf.ConfMap
+		err        error
 		signalChan chan os.Signal
 	)
 
-	initializeGlobals()
+	// Setup signal catcher for clean shutdown
 
 	signalChan = make(chan os.Signal, 1)
 
 	signal.Notify(signalChan, unix.SIGHUP, unix.SIGINT, unix.SIGTERM)
 
+	// Parse arguments (at this point, logging goes only to the console)
+
+	globals.logFile = nil
+	globals.config.LogFilePath = ""
+	globals.config.LogToConsole = true
+
+	args = os.Args[1:]
+
+	if 0 == len(args) {
+		logFatalf("no .conf file specified")
+	}
+
+	confMap, err = conf.MakeConfMapFromFile(args[0])
+	if nil != err {
+		logFatalf("failed to load config: %v", err)
+	}
+
+	err = confMap.UpdateFromStrings(args[1:])
+	if nil != err {
+		logFatalf("failed to load config overrides: %v", err)
+	}
+
+	// Initialize globals
+
+	initializeGlobals(confMap)
+
+	// Start serving FUSE mount point
+
 	performMount()
 
-	_ = <-signalChan // Await SIGHUP, SIGINT, or SIGTERM
+	// Await SIGHUP, SIGINT, or SIGTERM
+
+	_ = <-signalChan
+
+	// Perform clean shutdown
 
 	performUnmount()
 }
 
-func initializeGlobals() {
+func initializeGlobals(confMap conf.ConfMap) {
 	var (
-		args             []string
-		confMap          conf.ConfMap
 		configJSONified  string
 		customTransport  *http.Transport
 		defaultTransport *http.Transport
@@ -89,26 +122,6 @@ func initializeGlobals() {
 	globals.config.LogFilePath = ""
 	globals.config.LogToConsole = false
 	globals.logFile = nil
-
-	// Parse arguments
-
-	args = os.Args[1:]
-
-	// Read in the program's os.Arg[1]-specified (and required) .conf file
-	if 0 == len(args) {
-		logFatalf("no .conf file specified")
-	}
-
-	confMap, err = conf.MakeConfMapFromFile(args[0])
-	if nil != err {
-		logFatalf("failed to load config: %v", err)
-	}
-
-	// Update confMap with any extra os.Args supplied
-	err = confMap.UpdateFromStrings(args[1:])
-	if nil != err {
-		logFatalf("failed to load config overrides: %v", err)
-	}
 
 	// Process resultant confMap
 
