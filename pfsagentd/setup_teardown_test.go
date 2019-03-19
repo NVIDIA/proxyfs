@@ -26,14 +26,19 @@ func testSetup(t *testing.T) {
 		t.Fatalf("os.Chdir() failed: %v", err)
 	}
 
-	err = os.Mkdir("TestMountPointPath", 0777)
+	err = os.Mkdir("ProxyFSMountPointPath", 0777)
+	if nil != err {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+
+	err = os.Mkdir("PfsAgentMountPointPath", 0777)
 	if nil != err {
 		t.Fatalf("os.Mkdir() failed: %v", err)
 	}
 
 	testConfStrings = []string{
 		"Agent.FUSEVolumeName=TestVolumeName",
-		"Agent.FUSEMountPointPath=TestMountPointPath",
+		"Agent.FUSEMountPointPath=PfsAgentMountPointPath",
 		"Agent.FUSEUnMountRetryDelay=100ms",
 		"Agent.FUSEUnMountRetryCap=100",
 		"Agent.SwiftAuthURL=http://" + testSwiftProxyAddr + "/auth/v1.0",
