@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
@@ -30,30 +32,75 @@ type testContainerStruct struct {
 	object map[string]*testObjectStruct // key == testObjectStruct.name
 }
 
-type testGlobalsStruct struct {
+type testSwiftProxyEmulatorGlobalsStruct struct {
+	t                   *testing.T
+	ramswiftNoAuthURL   string
+	proxyfsdJrpcTCPAddr *net.TCPAddr
+
+	// UNDO: These should go away when I'm no longer emulating ramswift & proxyfsd here
 	sync.Mutex
 	sync.WaitGroup
-	t         *testing.T
 	server    *http.Server
 	container map[string]*testContainerStruct // key == testContainerStruct.name
 }
 
-var testGlobals testGlobalsStruct
+var testSwiftProxyEmulatorGlobals testSwiftProxyEmulatorGlobalsStruct
 
-func startSwiftProxyEmulator(t *testing.T) {
-	testGlobals.t = t
+func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
+	var (
+		err                      error
+		jrpcServerIPAddr         string
+		jrpcServerTCPPort        uint16
+		swiftClientNoAuthIPAddr  string
+		swiftClientNoAuthTCPPort uint16
+		whoAmI                   string
+	)
 
-	testGlobals.server = &http.Server{
-		Addr:    testSwiftProxyAddr,
-		Handler: &testGlobals,
+	testSwiftProxyEmulatorGlobals.t = t
+
+	swiftClientNoAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
+	if nil != err {
+		t.Fatal(err)
 	}
 
-	testGlobals.Add(1)
+	swiftClientNoAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL = "http://" + net.JoinHostPort(swiftClientNoAuthIPAddr, strconv.FormatUint(uint64(swiftClientNoAuthTCPPort), 10)) + "/"
+
+	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	jrpcServerIPAddr, err = confMap.FetchOptionValueString("Peer:"+whoAmI, "PrivateIPAddr")
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	jrpcServerTCPPort, err = confMap.FetchOptionValueUint16("JSONRPCServer", "TCPPort")
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	testSwiftProxyEmulatorGlobals.proxyfsdJrpcTCPAddr, err = net.ResolveTCPAddr("tcp", net.JoinHostPort(jrpcServerIPAddr, strconv.FormatUint(uint64(jrpcServerTCPPort), 10)))
+	if nil != err {
+		t.Fatal(err)
+	}
+
+	testSwiftProxyEmulatorGlobals.server = &http.Server{
+		Addr:    testSwiftProxyAddr,
+		Handler: &testSwiftProxyEmulatorGlobals,
+	}
+
+	testSwiftProxyEmulatorGlobals.Add(1)
 
 	go func() {
-		_ = testGlobals.server.ListenAndServe()
+		_ = testSwiftProxyEmulatorGlobals.server.ListenAndServe()
 
-		testGlobals.Done()
+		testSwiftProxyEmulatorGlobals.Done()
 	}()
 }
 
@@ -62,15 +109,15 @@ func stopSwiftProxyEmulator() {
 		err error
 	)
 
-	err = testGlobals.server.Shutdown(context.Background())
+	err = testSwiftProxyEmulatorGlobals.server.Shutdown(context.Background())
 	if nil != err {
-		testGlobals.t.Fatalf("testGlobals.server.Shutdown() failed: %v", err)
+		testSwiftProxyEmulatorGlobals.t.Fatalf("testSwiftProxyEmulatorGlobals.server.Shutdown() failed: %v", err)
 	}
 
-	testGlobals.Wait()
+	testSwiftProxyEmulatorGlobals.Wait()
 }
 
-func (dummy *testGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
+func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
 	// Handle the AuthURL case
 
 	if (http.MethodGet == request.Method) && ("/auth/v1.0" == request.URL.Path) {
@@ -106,11 +153,11 @@ func (dummy *testGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, re
 
 	switch request.Method {
 	case http.MethodGet:
-		doGet(responseWriter, request)
+		doGET(responseWriter, request)
 	case http.MethodPut:
-		doPut(responseWriter, request)
+		doPUT(responseWriter, request)
 	case "PROXYFS":
-		doRpc(responseWriter, request)
+		doRPC(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -134,7 +181,13 @@ func parsePath(path string) (containerName string, objectName string, ok bool) {
 	return
 }
 
-func doGet(responseWriter http.ResponseWriter, request *http.Request) {
+// doGET has a TODO to actually use testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL
+//
+// See ../ramswift/daemon_test.go::TestViaNoAuthClient() for a good example.
+//
+// Should use io.Copy() to pipeline GET Response payload.
+//
+func doGET(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		container             *testContainerStruct
 		containerName         string
@@ -161,17 +214,17 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	testGlobals.Lock()
+	testSwiftProxyEmulatorGlobals.Lock()
 
-	container, ok = testGlobals.container[containerName]
+	container, ok = testSwiftProxyEmulatorGlobals.container[containerName]
 	if !ok {
-		testGlobals.Unlock()
+		testSwiftProxyEmulatorGlobals.Unlock()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	container.Lock()
-	testGlobals.Unlock()
+	testSwiftProxyEmulatorGlobals.Unlock()
 
 	object, ok = container.object[objectName]
 	if !ok {
@@ -260,7 +313,13 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
-func doPut(responseWriter http.ResponseWriter, request *http.Request) {
+// doPUT has a TODO to actually use testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL
+//
+// See ../ramswift/daemon_test.go::TestViaNoAuthClient() for a good example.
+//
+// Should use io.Copy() to pipeline PUT Request payload.
+//
+func doPUT(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		container     *testContainerStruct
 		containerName string
@@ -289,17 +348,17 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	testGlobals.Lock()
+	testSwiftProxyEmulatorGlobals.Lock()
 
-	container, ok = testGlobals.container[containerName]
+	container, ok = testSwiftProxyEmulatorGlobals.container[containerName]
 	if !ok {
-		testGlobals.Unlock()
+		testSwiftProxyEmulatorGlobals.Unlock()
 		responseWriter.WriteHeader(http.StatusForbidden)
 		return
 	}
 
 	container.Lock()
-	testGlobals.Unlock()
+	testSwiftProxyEmulatorGlobals.Unlock()
 
 	object, ok = container.object[objectName]
 	if ok {
@@ -320,7 +379,15 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.WriteHeader(http.StatusCreated)
 }
 
-func doRpc(responseWriter http.ResponseWriter, request *http.Request) {
+// doRPC has a TODO to actually use testSwiftProxyEmulatorGlobals.proxyfsdJrpcTCPAddr
+//
+// See ../liveness/polling.go::livenessCheckServingPeer() for a good example.
+//
+// Note there is an issue with a seemingly unbounded JRPC Response.
+// The example above is for a planned Ping with a small/defined Message size.
+// Hence, for it, a 4KB Receive Buffer is sufficient.
+//
+func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		err            error
 		jrpcReplyBuf   []byte
