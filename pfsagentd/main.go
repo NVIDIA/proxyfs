@@ -49,6 +49,7 @@ type globalsStruct struct {
 	swiftAuthToken     string
 	swiftAccountURL    string // swiftStorageURL with AccountName forced to config.SwiftAccountName
 	fuseConn           *fuse.Conn
+	jrpcLastID         uint64
 }
 
 var globals globalsStruct
@@ -278,4 +279,6 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.swiftAccountURL = ""
 
 	updateAuthTokenAndAccountURL()
+
+	globals.jrpcLastID = 1
 }

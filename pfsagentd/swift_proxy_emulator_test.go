@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -72,23 +71,14 @@ func stopSwiftProxyEmulator() {
 }
 
 func (dummy *testGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		authKeyHeader   []string
-		authTokenHeader []string
-		authUserHeader  []string
-		ok              bool
-	)
-
 	// Handle the AuthURL case
 
 	if (http.MethodGet == request.Method) && ("/auth/v1.0" == request.URL.Path) {
-		authUserHeader, ok = request.Header["X-Auth-User"]
-		if !ok || (1 != len(authUserHeader)) || (globals.config.SwiftAuthUser != authUserHeader[0]) {
+		if request.Header.Get("X-Auth-User") != globals.config.SwiftAuthUser {
 			responseWriter.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		authKeyHeader, ok = request.Header["X-Auth-Key"]
-		if !ok || (1 != len(authKeyHeader)) || (globals.config.SwiftAuthKey != authKeyHeader[0]) {
+		if request.Header.Get("X-Auth-Key") != globals.config.SwiftAuthKey {
 			responseWriter.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -107,8 +97,7 @@ func (dummy *testGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, re
 
 	// Reject unauthorized requests
 
-	authTokenHeader, ok = request.Header["X-Auth-Token"]
-	if !ok || (1 != len(authTokenHeader)) || (testAuthToken != authTokenHeader[0]) {
+	if request.Header.Get("X-Auth-Token") != testAuthToken {
 		responseWriter.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -153,13 +142,18 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		object                *testObjectStruct
 		objectName            string
 		ok                    bool
-		rangeHeader           []string
+		rangeHeader           string
 		rangeHeaderBytesSplit []string
 		startOffset           uint64
 		startOffsetSupplied   bool
 		stopOffset            uint64
 		stopOffsetSupplied    bool
 	)
+
+	if request.Header.Get("X-Bypass-Proxyfs") != "true" {
+		responseWriter.WriteHeader(http.StatusForbidden)
+		return
+	}
 
 	containerName, objectName, ok = parsePath(request.URL.Path)
 	if !ok {
@@ -189,9 +183,9 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 	object.Lock()
 	container.Unlock()
 
-	rangeHeader, ok = request.Header["Range"]
+	rangeHeader = request.Header.Get("Range")
 
-	if !ok {
+	if "" == rangeHeader {
 		responseWriter.Header().Add("Content-Type", "application/octet-stream")
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write(object.contents)
@@ -199,13 +193,13 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	if (1 != len(rangeHeader)) || !strings.HasPrefix(rangeHeader[0], "bytes=") {
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		object.Unlock()
 		responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	rangeHeaderBytesSplit = strings.Split(rangeHeader[0][len("bytes="):], "-")
+	rangeHeaderBytesSplit = strings.Split(rangeHeader[len("bytes="):], "-")
 
 	if 2 != len(rangeHeaderBytesSplit) {
 		object.Unlock()
@@ -284,6 +278,11 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	if request.Header.Get("X-Bypass-Proxyfs") != "true" {
+		responseWriter.WriteHeader(http.StatusForbidden)
+		return
+	}
+
 	containerName, objectName, ok = parsePath(request.URL.Path)
 	if !ok {
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -323,14 +322,11 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doRpc(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		contentTypeHeader  []string
-		err                error
-		jrpcGenericRequest JrpcGenericRequestStruct
-		jrpcPingReply      *JrpcPingReplyStruct
-		jrpcPingReq        *JrpcPingReqStruct
-		jrpcReplyBuf       []byte
-		jrpcRequestBuf     []byte
-		ok                 bool
+		err            error
+		jrpcReplyBuf   []byte
+		jrpcRequestBuf []byte
+		requestID      uint64
+		requestMethod  string
 	)
 
 	jrpcRequestBuf, err = ioutil.ReadAll(request.Body)
@@ -340,46 +336,40 @@ func doRpc(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	contentTypeHeader, ok = request.Header["Content-Type"]
-	if !ok || (1 != len(contentTypeHeader)) || ("application/json" != contentTypeHeader[0]) {
+	if request.Header.Get("Content-Type") != "application/json" {
 		responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	err = json.Unmarshal(jrpcRequestBuf, &jrpcGenericRequest)
-	if (nil != err) || ("2.0" != jrpcGenericRequest.JSONrpc) {
+	requestMethod, requestID, err = jrpcUnmarshalRequestForMethodAndID(jrpcRequestBuf)
+	if nil != err {
 		responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	switch jrpcGenericRequest.Method {
+	switch requestMethod {
 	case "Server.RpcPing":
-		jrpcPingReq = &JrpcPingReqStruct{}
-		err = json.Unmarshal(jrpcRequestBuf, jrpcPingReq)
-		if (nil != err) || (1 != len(jrpcPingReq.Params)) {
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		jrpcPingReply = &JrpcPingReplyStruct{
-			ID:     jrpcPingReq.ID,
-			Error:  "",
-			Result: jrpcfs.PingReply{Message: jrpcPingReq.Params[0].Message},
-		}
-
-		jrpcReplyBuf, err = json.Marshal(jrpcPingReply)
+		pingReq := &jrpcfs.PingReq{}
+		err = jrpcUnmarshalRequest(requestID, jrpcRequestBuf, pingReq)
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		responseWriter.WriteHeader(http.StatusNotImplemented)
+		pingReply := &jrpcfs.PingReply{
+			Message: pingReq.Message,
+		}
+		jrpcReplyBuf, err = jrpcMarshalResponse(requestID, nil, pingReply)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
 	default:
 		responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	responseWriter.Header().Add("Content-Type", "application/json")
-	responseWriter.WriteHeader(http.StatusBadRequest)
+	responseWriter.WriteHeader(http.StatusOK)
 	_, _ = responseWriter.Write(jrpcReplyBuf)
 }
