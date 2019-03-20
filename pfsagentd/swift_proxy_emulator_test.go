@@ -19,30 +19,14 @@ const (
 	testJrpcResponseBufSize = 1024 * 1024
 )
 
-type testObjectStruct struct {
-	sync.Mutex
-	name     string
-	contents []byte
-}
-
-type testContainerStruct struct {
-	sync.Mutex
-	name   string
-	object map[string]*testObjectStruct // key == testObjectStruct.name
-}
-
 type testSwiftProxyEmulatorGlobalsStruct struct {
+	sync.WaitGroup
 	t                   *testing.T
 	ramswiftNoAuthURL   string
 	proxyfsdJrpcTCPAddr *net.TCPAddr
 	jrpcResponsePool    *sync.Pool
 	httpClient          *http.Client
 	httpServer          *http.Server
-
-	// UNDO: These should go away when I'm no longer emulating ramswift & proxyfsd here
-	sync.Mutex
-	sync.WaitGroup
-	container map[string]*testContainerStruct // key == testContainerStruct.name
 }
 
 var testSwiftProxyEmulatorGlobals testSwiftProxyEmulatorGlobalsStruct
@@ -137,21 +121,19 @@ func stopSwiftProxyEmulator() {
 }
 
 func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	// Handle the AuthURL case
+	// Handle the GET of/on info & AuthURL cases
 
-	if (http.MethodGet == request.Method) && ("/auth/v1.0" == request.URL.Path) {
-		if request.Header.Get("X-Auth-User") != globals.config.SwiftAuthUser {
-			responseWriter.WriteHeader(http.StatusUnauthorized)
+	if http.MethodGet == request.Method {
+		switch request.URL.Path {
+		case "/info":
+			doInfo(responseWriter)
 			return
-		}
-		if request.Header.Get("X-Auth-Key") != globals.config.SwiftAuthKey {
-			responseWriter.WriteHeader(http.StatusUnauthorized)
+		case "/auth/v1.0":
+			doAuth(responseWriter, request)
 			return
+		default:
+			// Fall through to normal processing
 		}
-		responseWriter.Header().Add("X-Auth-Token", testAuthToken)
-		responseWriter.Header().Add("X-Storage-Url", "http://"+testSwiftProxyAddr+"/v1/"+globals.config.SwiftAccountName)
-		responseWriter.WriteHeader(http.StatusOK)
-		return
 	}
 
 	// Exclude non-emulated paths
@@ -182,6 +164,50 @@ func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.
 	}
 }
 
+func doInfo(authResponseWriter http.ResponseWriter) {
+	var (
+		err            error
+		getBuf         []byte
+		noAuthResponse *http.Response
+	)
+
+	noAuthResponse, err = http.Get(testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL + "info")
+	if nil != err {
+		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info from ramswift failed: %v", err)
+	}
+
+	if http.StatusOK != noAuthResponse.StatusCode {
+		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info from ramswift returned bad status: %v (%v)", noAuthResponse.Status, noAuthResponse.StatusCode)
+	}
+
+	getBuf, err = ioutil.ReadAll(noAuthResponse.Body)
+	if nil != err {
+		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info returned unreadable Body: %v", err)
+	}
+
+	err = noAuthResponse.Body.Close()
+	if nil != err {
+		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info returned uncloseable Body: %v", err)
+	}
+
+	authResponseWriter.WriteHeader(http.StatusOK)
+	_, _ = authResponseWriter.Write(getBuf)
+}
+
+func doAuth(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
+	if authRequest.Header.Get("X-Auth-User") != globals.config.SwiftAuthUser {
+		authResponseWriter.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	if authRequest.Header.Get("X-Auth-Key") != globals.config.SwiftAuthKey {
+		authResponseWriter.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	authResponseWriter.Header().Add("X-Auth-Token", testAuthToken)
+	authResponseWriter.Header().Add("X-Storage-Url", "http://"+testSwiftProxyAddr+"/v1/"+globals.config.SwiftAccountName)
+	authResponseWriter.WriteHeader(http.StatusOK)
+}
+
 // doGET proxies the GET over to ramswift
 //
 func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
@@ -202,7 +228,7 @@ func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("GET", authRequest.URL.Path, nil)
+	noAuthRequest, err = http.NewRequest("GET", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+"v1"+authRequest.URL.Path, nil)
 	if nil != err {
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
@@ -276,7 +302,7 @@ func doPUT(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("PUT", authRequest.URL.Path, authRequest.Body)
+	noAuthRequest, err = http.NewRequest("PUT", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+"v1"+authRequest.URL.Path, authRequest.Body)
 	if nil != err {
 		_ = authRequest.Body.Close()
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
