@@ -53,7 +53,7 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 		t.Fatal(err)
 	}
 
-	testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL = "http://" + net.JoinHostPort(swiftClientNoAuthIPAddr, strconv.FormatUint(uint64(swiftClientNoAuthTCPPort), 10)) + "/"
+	testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL = "http://" + net.JoinHostPort(swiftClientNoAuthIPAddr, strconv.FormatUint(uint64(swiftClientNoAuthTCPPort), 10))
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -171,13 +171,13 @@ func doInfo(authResponseWriter http.ResponseWriter) {
 		noAuthResponse *http.Response
 	)
 
-	noAuthResponse, err = http.Get(testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL + "info")
+	noAuthResponse, err = http.Get(testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL + "/info")
 	if nil != err {
 		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info from ramswift failed: %v", err)
 	}
 
 	if http.StatusOK != noAuthResponse.StatusCode {
-		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info from ramswift returned bad status: %v (%v)", noAuthResponse.Status, noAuthResponse.StatusCode)
+		testSwiftProxyEmulatorGlobals.t.Fatalf("GET of /info from ramswift returned bad status: %v", noAuthResponse.Status)
 	}
 
 	getBuf, err = ioutil.ReadAll(noAuthResponse.Body)
@@ -228,7 +228,7 @@ func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("GET", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+"v1"+authRequest.URL.Path, nil)
+	noAuthRequest, err = http.NewRequest("GET", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+authRequest.URL.Path, nil)
 	if nil != err {
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
@@ -302,7 +302,7 @@ func doPUT(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("PUT", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+"v1"+authRequest.URL.Path, authRequest.Body)
+	noAuthRequest, err = http.NewRequest("PUT", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+authRequest.URL.Path, authRequest.Body)
 	if nil != err {
 		_ = authRequest.Body.Close()
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
