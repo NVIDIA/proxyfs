@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -37,6 +36,7 @@ type testSwiftProxyEmulatorGlobalsStruct struct {
 	ramswiftNoAuthURL   string
 	proxyfsdJrpcTCPAddr *net.TCPAddr
 	jrpcResponsePool    *sync.Pool
+	httpClient          *http.Client
 	httpServer          *http.Server
 
 	// UNDO: These should go away when I'm no longer emulating ramswift & proxyfsd here
@@ -90,6 +90,8 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 	if nil != err {
 		t.Fatal(err)
 	}
+
+	testSwiftProxyEmulatorGlobals.httpClient = &http.Client{}
 
 	testSwiftProxyEmulatorGlobals.httpServer = &http.Server{
 		Addr:    testSwiftProxyAddr,
@@ -180,220 +182,126 @@ func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.
 	}
 }
 
-func parsePath(path string) (containerName string, objectName string, ok bool) {
+// doGET proxies the GET over to ramswift
+//
+func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 	var (
-		pathSplit []string
+		contentRangeHeader string
+		contentTypeHeader  string
+		err                error
+		getBuf             []byte
+		hostHeader         string
+		noAuthRequest      *http.Request
+		noAuthResponse     *http.Response
+		noAuthStatusCode   int
+		rangeHeader        string
 	)
 
-	pathSplit = strings.Split(path, "/")
-
-	if 5 == len(pathSplit) {
-		containerName = pathSplit[3]
-		objectName = pathSplit[4]
-		ok = true
-	} else {
-		ok = false
-	}
-
-	return
-}
-
-// doGET has a TODO to actually use testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL
-//
-// See ../ramswift/daemon_test.go::TestViaNoAuthClient() for a good example.
-//
-// Should use io.Copy() to pipeline GET Response payload.
-//
-func doGET(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		container             *testContainerStruct
-		containerName         string
-		err                   error
-		object                *testObjectStruct
-		objectName            string
-		ok                    bool
-		rangeHeader           string
-		rangeHeaderBytesSplit []string
-		startOffset           uint64
-		startOffsetSupplied   bool
-		stopOffset            uint64
-		stopOffsetSupplied    bool
-	)
-
-	if request.Header.Get("X-Bypass-Proxyfs") != "true" {
-		responseWriter.WriteHeader(http.StatusForbidden)
+	if authRequest.Header.Get("X-Bypass-Proxyfs") != "true" {
+		authResponseWriter.WriteHeader(http.StatusForbidden)
 		return
 	}
 
-	containerName, objectName, ok = parsePath(request.URL.Path)
-	if !ok {
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	testSwiftProxyEmulatorGlobals.Lock()
-
-	container, ok = testSwiftProxyEmulatorGlobals.container[containerName]
-	if !ok {
-		testSwiftProxyEmulatorGlobals.Unlock()
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	container.Lock()
-	testSwiftProxyEmulatorGlobals.Unlock()
-
-	object, ok = container.object[objectName]
-	if !ok {
-		container.Unlock()
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	object.Lock()
-	container.Unlock()
-
-	rangeHeader = request.Header.Get("Range")
-
-	if "" == rangeHeader {
-		responseWriter.Header().Add("Content-Type", "application/octet-stream")
-		responseWriter.WriteHeader(http.StatusOK)
-		_, _ = responseWriter.Write(object.contents)
-		object.Unlock()
-		return
-	}
-
-	if !strings.HasPrefix(rangeHeader, "bytes=") {
-		object.Unlock()
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	rangeHeaderBytesSplit = strings.Split(rangeHeader[len("bytes="):], "-")
-
-	if 2 != len(rangeHeaderBytesSplit) {
-		object.Unlock()
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	if "" == rangeHeaderBytesSplit[0] {
-		startOffsetSupplied = false
-	} else {
-		startOffsetSupplied = true
-		startOffset, err = strconv.ParseUint(rangeHeaderBytesSplit[0], 10, 64)
-		if nil != err {
-			object.Unlock()
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	}
-
-	if "" == rangeHeaderBytesSplit[1] {
-		stopOffsetSupplied = false
-	} else {
-		stopOffsetSupplied = true
-		stopOffset, err = strconv.ParseUint(rangeHeaderBytesSplit[1], 10, 64)
-		if nil != err {
-			object.Unlock()
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	}
-
-	if startOffsetSupplied {
-		if stopOffsetSupplied {
-			if (stopOffset + 1) > uint64(len(object.contents)) {
-				stopOffset = uint64(len(object.contents)) - 1
-			}
-		} else {
-			stopOffset = uint64(len(object.contents)) - 1
-		}
-	} else {
-		if stopOffsetSupplied {
-			startOffset = uint64(len(object.contents)) - stopOffset
-			stopOffset = uint64(len(object.contents)) - 1
-		} else {
-			object.Unlock()
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	}
-
-	responseWriter.Header().Add("Content-Type", "application/octet-stream")
-	responseWriter.Header().Add("Content-Range", fmt.Sprintf("bytes %d-%d/%d", startOffset, stopOffset, len(object.contents)))
-	responseWriter.WriteHeader(http.StatusPartialContent)
-	_, _ = responseWriter.Write(object.contents)
-
-	object.Unlock()
-
-	return
-}
-
-// doPUT has a TODO to actually use testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL
-//
-// See ../ramswift/daemon_test.go::TestViaNoAuthClient() for a good example.
-//
-// Should use io.Copy() to pipeline PUT Request payload.
-//
-func doPUT(responseWriter http.ResponseWriter, request *http.Request) {
-	var (
-		container     *testContainerStruct
-		containerName string
-		contents      []byte
-		err           error
-		object        *testObjectStruct
-		objectName    string
-		ok            bool
-	)
-
-	contents, err = ioutil.ReadAll(request.Body)
-	_ = request.Body.Close()
+	noAuthRequest, err = http.NewRequest("GET", authRequest.URL.Path, nil)
 	if nil != err {
-		responseWriter.WriteHeader(http.StatusBadRequest)
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	if request.Header.Get("X-Bypass-Proxyfs") != "true" {
-		responseWriter.WriteHeader(http.StatusForbidden)
+	hostHeader = authRequest.Header.Get("Host")
+	if "" != hostHeader {
+		noAuthRequest.Header.Add("Host", hostHeader)
+	}
+
+	rangeHeader = authRequest.Header.Get("Range")
+	if "" != rangeHeader {
+		noAuthRequest.Header.Add("Range", rangeHeader)
+	}
+
+	noAuthResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(noAuthRequest)
+	if nil != err {
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	containerName, objectName, ok = parsePath(request.URL.Path)
-	if !ok {
-		responseWriter.WriteHeader(http.StatusNotFound)
+	noAuthStatusCode = noAuthResponse.StatusCode
+
+	if (http.StatusOK != noAuthStatusCode) && (http.StatusPartialContent != noAuthStatusCode) {
+		_ = noAuthResponse.Body.Close()
+		authResponseWriter.WriteHeader(noAuthStatusCode)
 		return
 	}
 
-	testSwiftProxyEmulatorGlobals.Lock()
-
-	container, ok = testSwiftProxyEmulatorGlobals.container[containerName]
-	if !ok {
-		testSwiftProxyEmulatorGlobals.Unlock()
-		responseWriter.WriteHeader(http.StatusForbidden)
+	getBuf, err = ioutil.ReadAll(noAuthResponse.Body)
+	if nil != err {
+		_ = noAuthResponse.Body.Close()
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	container.Lock()
-	testSwiftProxyEmulatorGlobals.Unlock()
-
-	object, ok = container.object[objectName]
-	if ok {
-		container.Unlock()
-		responseWriter.WriteHeader(http.StatusForbidden)
+	err = noAuthResponse.Body.Close()
+	if nil != err {
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	object = &testObjectStruct{
-		name:     objectName,
-		contents: contents,
+	contentTypeHeader = noAuthResponse.Header.Get("Content-Type")
+	if "" != contentTypeHeader {
+		authResponseWriter.Header().Add("Content-Type", contentTypeHeader)
 	}
 
-	container.object[objectName] = object
+	contentRangeHeader = noAuthResponse.Header.Get("Content-Range")
+	if "" != contentRangeHeader {
+		authResponseWriter.Header().Add("Content-Range", contentRangeHeader)
+	}
 
-	container.Unlock()
+	authResponseWriter.WriteHeader(noAuthStatusCode)
 
-	responseWriter.WriteHeader(http.StatusCreated)
+	_, _ = authResponseWriter.Write(getBuf)
+}
+
+// doPUT proxies the GET over to ramswift
+//
+func doPUT(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
+	var (
+		err            error
+		hostHeader     string
+		noAuthRequest  *http.Request
+		noAuthResponse *http.Response
+	)
+
+	if authRequest.Header.Get("X-Bypass-Proxyfs") != "true" {
+		_ = authRequest.Body.Close()
+		authResponseWriter.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	noAuthRequest, err = http.NewRequest("PUT", authRequest.URL.Path, authRequest.Body)
+	if nil != err {
+		_ = authRequest.Body.Close()
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	hostHeader = authRequest.Header.Get("Host")
+	if "" != hostHeader {
+		noAuthRequest.Header.Add("Host", hostHeader)
+	}
+
+	noAuthResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(noAuthRequest)
+	if nil != err {
+		_ = authRequest.Body.Close()
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = authRequest.Body.Close()
+	if nil != err {
+		authResponseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	authResponseWriter.WriteHeader(noAuthResponse.StatusCode)
 }
 
 // doRPC proxies the payload as a JSON RPC request over to proxyfsd
