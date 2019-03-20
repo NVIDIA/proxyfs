@@ -2,10 +2,61 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
+
+func TestSwiftProxyEmulation(t *testing.T) {
+	var (
+		authURL      string
+		err          error
+		infoBuf      []byte
+		infoResponse *http.Response
+		infoURL      string
+	)
+
+	testSetup(t)
+
+	infoURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "info"), "/")
+
+	infoResponse, err = http.Get(infoURL)
+	if nil != err {
+		t.Fatalf("GET /info failed: %v", err)
+	}
+	if http.StatusOK != infoResponse.StatusCode {
+		t.Fatalf("GET /info returned bad status: %v (%v)", infoResponse.Status, infoResponse.StatusCode)
+	}
+
+	infoBuf, err = ioutil.ReadAll(infoResponse.Body)
+	if nil != err {
+		t.Fatalf("GET /info returned unreadable Body: %v", err)
+	}
+
+	err = infoResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("GET /info returned uncloseable Body: %v", err)
+	}
+
+	t.Logf("GET /info returned: %v", string(infoBuf[:]))
+
+	authURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "auth", "v1.0"), "/")
+
+	fmt.Println("authURL ==", authURL) // TODO: Exercise AUTH
+
+	// TODO: Exercise PUT of a Container
+
+	// TODO: Exercise PUT of an Object
+
+	// TODO: Exercise Ranged GET of an Object
+
+	// TODO: Exercise JSON RPC Ping
+
+	testTeardown(t)
+}
 
 func TestJrpcMarshaling(t *testing.T) {
 	var (

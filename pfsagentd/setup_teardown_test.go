@@ -69,7 +69,7 @@ func testSetup(t *testing.T) {
 		"Agent.ReadPlanLineSize=1048576",
 		"Agent.ReadPlanLineCount=1000",
 		"Agent.LogFilePath=",
-		"Agent.LogToConsole=true",
+		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
 
 		"Stats.IPAddr=localhost",
