@@ -12,12 +12,12 @@ import (
 	"testing"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 const (
-	testAuthToken      = "AUTH_tkTestToken"
-	testSwiftProxyAddr = "localhost:38080"
+	testAuthToken           = "AUTH_tkTestToken"
+	testSwiftProxyAddr      = "localhost:38080"
+	testJrpcResponseBufSize = 1024 * 1024
 )
 
 type testObjectStruct struct {
@@ -36,11 +36,12 @@ type testSwiftProxyEmulatorGlobalsStruct struct {
 	t                   *testing.T
 	ramswiftNoAuthURL   string
 	proxyfsdJrpcTCPAddr *net.TCPAddr
+	jrpcResponsePool    *sync.Pool
+	httpServer          *http.Server
 
 	// UNDO: These should go away when I'm no longer emulating ramswift & proxyfsd here
 	sync.Mutex
 	sync.WaitGroup
-	server    *http.Server
 	container map[string]*testContainerStruct // key == testContainerStruct.name
 }
 
@@ -90,15 +91,29 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 		t.Fatal(err)
 	}
 
-	testSwiftProxyEmulatorGlobals.server = &http.Server{
+	testSwiftProxyEmulatorGlobals.httpServer = &http.Server{
 		Addr:    testSwiftProxyAddr,
 		Handler: &testSwiftProxyEmulatorGlobals,
+	}
+
+	testSwiftProxyEmulatorGlobals.jrpcResponsePool = &sync.Pool{
+		New: func() (bufAsInterface interface{}) {
+			var (
+				bufAsByteSlice []byte
+			)
+
+			bufAsByteSlice = make([]byte, testJrpcResponseBufSize)
+
+			bufAsInterface = bufAsByteSlice
+
+			return
+		},
 	}
 
 	testSwiftProxyEmulatorGlobals.Add(1)
 
 	go func() {
-		_ = testSwiftProxyEmulatorGlobals.server.ListenAndServe()
+		_ = testSwiftProxyEmulatorGlobals.httpServer.ListenAndServe()
 
 		testSwiftProxyEmulatorGlobals.Done()
 	}()
@@ -109,12 +124,14 @@ func stopSwiftProxyEmulator() {
 		err error
 	)
 
-	err = testSwiftProxyEmulatorGlobals.server.Shutdown(context.Background())
+	err = testSwiftProxyEmulatorGlobals.httpServer.Shutdown(context.Background())
 	if nil != err {
-		testSwiftProxyEmulatorGlobals.t.Fatalf("testSwiftProxyEmulatorGlobals.server.Shutdown() failed: %v", err)
+		testSwiftProxyEmulatorGlobals.t.Fatalf("testSwiftProxyEmulatorGlobals.httpServer.Shutdown() failed: %v", err)
 	}
 
 	testSwiftProxyEmulatorGlobals.Wait()
+
+	testSwiftProxyEmulatorGlobals.jrpcResponsePool = nil
 }
 
 func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
@@ -379,21 +396,15 @@ func doPUT(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.WriteHeader(http.StatusCreated)
 }
 
-// doRPC has a TODO to actually use testSwiftProxyEmulatorGlobals.proxyfsdJrpcTCPAddr
-//
-// See ../liveness/polling.go::livenessCheckServingPeer() for a good example.
-//
-// Note there is an issue with a seemingly unbounded JRPC Response.
-// The example above is for a planned Ping with a small/defined Message size.
-// Hence, for it, a 4KB Receive Buffer is sufficient.
+// doRPC proxies the payload as a JSON RPC request over to proxyfsd
 //
 func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		err            error
-		jrpcReplyBuf   []byte
-		jrpcRequestBuf []byte
-		requestID      uint64
-		requestMethod  string
+		err             error
+		jrpcResponseBuf []byte
+		jrpcResponseLen int
+		jrpcRequestBuf  []byte
+		tcpConn         *net.TCPConn
 	)
 
 	jrpcRequestBuf, err = ioutil.ReadAll(request.Body)
@@ -408,35 +419,39 @@ func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	requestMethod, requestID, err = jrpcUnmarshalRequestForMethodAndID(jrpcRequestBuf)
+	tcpConn, err = net.DialTCP("tcp", nil, testSwiftProxyEmulatorGlobals.proxyfsdJrpcTCPAddr)
 	if nil != err {
-		responseWriter.WriteHeader(http.StatusBadRequest)
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 
-	switch requestMethod {
-	case "Server.RpcPing":
-		pingReq := &jrpcfs.PingReq{}
-		err = jrpcUnmarshalRequest(requestID, jrpcRequestBuf, pingReq)
-		if nil != err {
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		pingReply := &jrpcfs.PingReply{
-			Message: pingReq.Message,
-		}
-		jrpcReplyBuf, err = jrpcMarshalResponse(requestID, nil, pingReply)
-		if nil != err {
-			responseWriter.WriteHeader(http.StatusBadRequest)
-			return
-		}
-	default:
-		responseWriter.WriteHeader(http.StatusBadRequest)
+	_, err = tcpConn.Write(jrpcRequestBuf)
+	if nil != err {
+		_ = tcpConn.Close()
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
+
+	jrpcResponseBuf = testSwiftProxyEmulatorGlobals.jrpcResponsePool.Get().([]byte)
+
+	jrpcResponseLen, err = tcpConn.Read(jrpcResponseBuf)
+	if nil != err {
+		_ = tcpConn.Close()
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	err = tcpConn.Close()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	jrpcResponseBuf = jrpcResponseBuf[:jrpcResponseLen]
 
 	responseWriter.Header().Add("Content-Type", "application/json")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(jrpcReplyBuf)
+	_, _ = responseWriter.Write(jrpcResponseBuf)
+
+	testSwiftProxyEmulatorGlobals.jrpcResponsePool.Put(jrpcResponseBuf)
 }
