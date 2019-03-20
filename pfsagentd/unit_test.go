@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -33,14 +34,21 @@ type testSwiftInfoOuterStruct struct {
 
 func TestSwiftProxyEmulation(t *testing.T) {
 	var (
-		authRequest  *http.Request
-		authResponse *http.Response
-		authURL      string
-		err          error
-		infoBuf      []byte
-		infoResponse *http.Response
-		infoURL      string
-		swiftInfo    *testSwiftInfoOuterStruct
+		authRequest          *http.Request
+		authResponse         *http.Response
+		authURL              string
+		err                  error
+		getBuf               []byte
+		getObjectRequest     *http.Request
+		getObjectResponse    *http.Response
+		infoBuf              []byte
+		infoResponse         *http.Response
+		infoURL              string
+		putContainerRequest  *http.Request
+		putContainerResponse *http.Response
+		putObjectRequest     *http.Request
+		putObjectResponse    *http.Response
+		swiftInfo            *testSwiftInfoOuterStruct
 	)
 
 	testSetup(t)
@@ -52,7 +60,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /info failed: %v", err)
 	}
 	if http.StatusOK != infoResponse.StatusCode {
-		t.Fatalf("GET /info returned bad status: %v (%v)", infoResponse.Status, infoResponse.StatusCode)
+		t.Fatalf("GET /info returned bad status: %v", infoResponse.Status)
 	}
 
 	infoBuf, err = ioutil.ReadAll(infoResponse.Body)
@@ -95,7 +103,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /auth/v1.0 failed: %v", err)
 	}
 	if http.StatusOK != authResponse.StatusCode {
-		t.Fatalf("GET /auth/v1.0 returned bad status: %v (%v)", authResponse.Status, authResponse.StatusCode)
+		t.Fatalf("GET /auth/v1.0 returned bad status: %v", authResponse.Status)
 	}
 
 	err = authResponse.Body.Close()
@@ -111,11 +119,72 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /auth/v1.0 returned incorrect X-Storage-Url")
 	}
 
-	// TODO: Exercise PUT of a Container
+	putContainerRequest, err = http.NewRequest("PUT", globals.swiftAccountURL+"/TestContainer", nil)
+	if nil != err {
+		t.Fatalf("Creating PUT .../TestContainer failed: %v", err)
+	}
 
-	// TODO: Exercise PUT of an Object
+	putContainerRequest.Header.Add("X-Auth-Token", testAuthToken)
+	putContainerRequest.Header.Add("X-Bypass-Proxyfs", "true")
 
-	// TODO: Exercise Ranged GET of an Object
+	putContainerResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(putContainerRequest)
+	if nil != err {
+		t.Fatalf("PUT .../TestContainer failed: %v", err)
+	}
+	if http.StatusCreated != putContainerResponse.StatusCode {
+		t.Fatalf("PUT .../TestContainer returned bad status: %v", putContainerResponse.Status)
+	}
+
+	putObjectRequest, err = http.NewRequest("PUT", globals.swiftAccountURL+"/TestContainer/TestObject", bytes.NewReader([]byte{0x00, 0x01, 0x02, 0x03, 0x04}))
+	if nil != err {
+		t.Fatalf("Creating PUT .../TestContainer/TestObject failed: %v", err)
+	}
+
+	putObjectRequest.Header.Add("X-Auth-Token", testAuthToken)
+	putObjectRequest.Header.Add("X-Bypass-Proxyfs", "true")
+
+	putObjectResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(putObjectRequest)
+	if nil != err {
+		t.Fatalf("PUT .../TestContainer/TestObject failed: %v", err)
+	}
+	if http.StatusCreated != putObjectResponse.StatusCode {
+		t.Fatalf("PUT .../TestContainer/TestObject returned bad status: %v", putObjectResponse.Status)
+	}
+
+	getObjectRequest, err = http.NewRequest("GET", globals.swiftAccountURL+"/TestContainer/TestObject", nil)
+	if nil != err {
+		t.Fatalf("Creating GET .../TestContainer/TestObject failed: %v", err)
+	}
+
+	getObjectRequest.Header.Add("X-Auth-Token", testAuthToken)
+	getObjectRequest.Header.Add("X-Bypass-Proxyfs", "true")
+
+	getObjectRequest.Header.Add("Range", "bytes=1-3")
+
+	getObjectResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(getObjectRequest)
+	if nil != err {
+		t.Fatalf("GET .../TestContainer/TestObject failed: %v", err)
+	}
+	if http.StatusPartialContent != getObjectResponse.StatusCode {
+		t.Fatalf("GET .../TestContainer/TestObject returned bad status: %v", getObjectResponse.Status)
+	}
+
+	getBuf, err = ioutil.ReadAll(getObjectResponse.Body)
+	if nil != err {
+		t.Fatalf("GET .../TestContainer/TestObject returned unreadable Body: %v", err)
+	}
+
+	err = getObjectResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("GET .../TestContainer/TestObject returned uncloseable Body: %v", err)
+	}
+
+	if (3 != len(getBuf)) ||
+		(0x01 != getBuf[0]) ||
+		(0x02 != getBuf[1]) ||
+		(0x03 != getBuf[2]) {
+		t.Fatalf("GET .../TestContainer/TestObject returned unexpected contents")
+	}
 
 	// TODO: Exercise JSON RPC Ping
 

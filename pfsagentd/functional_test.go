@@ -6,6 +6,6 @@ import (
 
 func TestFunctional(t *testing.T) {
 	testSetup(t)
-	// time.Sleep(10 * time.Second) // UNDO/TODO
+	// time.Sleep(10 * time.Second) // TODO
 	testTeardown(t)
 }

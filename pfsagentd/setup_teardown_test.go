@@ -124,7 +124,7 @@ func testSetup(t *testing.T) {
 		"Volume:CommonVolume.NFSExportName=CommonExport",
 		"Volume:CommonVolume.SMBShareName=CommonShare",
 		"Volume:CommonVolume.PrimaryPeer=Peer0",
-		"Volume:CommonVolume.AccountName=AUTH_CommonAccount",
+		"Volume:CommonVolume.AccountName=AUTH_test",
 		"Volume:CommonVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:CommonVolume.CheckpointInterval=10s",
