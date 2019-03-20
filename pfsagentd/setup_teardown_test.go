@@ -3,6 +3,7 @@ package main
 import (
 	"io/ioutil"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -164,13 +165,13 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
-
-		"RamSwiftInfo.MaxAccountNameLength=256",
-		"RamSwiftInfo.MaxContainerNameLength=256",
-		"RamSwiftInfo.MaxObjectNameLength=1024",
-		"RamSwiftInfo.AccountListingLimit=10000",
-		"RamSwiftInfo.ContainerListingLimit=10000",
 	}
+
+	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxAccountNameLength="+strconv.FormatUint(testMaxAccountNameLength, 10))
+	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxContainerNameLength="+strconv.FormatUint(testMaxContainerNameLength, 10))
+	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxObjectNameLength="+strconv.FormatUint(testMaxObjectNameLength, 10))
+	testConfStrings = append(testConfStrings, "RamSwiftInfo.AccountListingLimit="+strconv.FormatUint(testAccountListingLimit, 10))
+	testConfStrings = append(testConfStrings, "RamSwiftInfo.ContainerListingLimit="+strconv.FormatUint(testContainerListingLimit, 10))
 
 	ramswiftSignalHandlerIsArmedWG.Add(1)
 	testDaemonGlobals.ramswiftDoneChan = make(chan bool, 1)
