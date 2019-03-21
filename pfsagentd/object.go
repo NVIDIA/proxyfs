@@ -49,10 +49,11 @@ func rcTest() {
 		rc      *rcS
 	)
 
-	req, err = http.NewRequest(http.MethodGet, globals.swiftAccountURL+"/Container/ObjectGET", nil)
+	req, err = http.NewRequest(http.MethodGet, globals.swiftAccountURL+"/TestContainer/ObjectGET", nil)
 	fmt.Printf("req: %+v\n", req)
 	fmt.Printf("err: %v\n", err)
 	req.Header.Add("Range", "bytes=6-10")
+	req.Header.Add("X-Bypass-Proxyfs", "true")
 	res, resBody, ok = doHTTPRequest(req, http.StatusOK, http.StatusPartialContent)
 	fmt.Printf("res: %+v\n", res)
 	fmt.Printf("resBody: %v\n", string(resBody[:]))
@@ -60,15 +61,18 @@ func rcTest() {
 
 	rc = &rcS{open: false, fp: 0}
 
-	req, err = http.NewRequest(http.MethodPut, globals.swiftAccountURL+"/Container/ObjectPUT", rc)
+	req, err = http.NewRequest(http.MethodPut, globals.swiftAccountURL+"/TestContainer/ObjectPUT", rc)
 	fmt.Printf("req: %+v\n", req)
 	fmt.Printf("err: %v\n", err)
+	req.Header.Add("X-Bypass-Proxyfs", "true")
 	res, _, ok = doHTTPRequest(req, http.StatusOK, http.StatusCreated)
 	fmt.Printf("res: %+v\n", res)
 	fmt.Printf("ok: %v\n", ok)
 }
 
 func (rc *rcS) Read(p []byte) (n int, err error) {
+	fmt.Printf("rCS.Read() called with len(p) == %d\n", len(p))
+	defer func() { fmt.Printf("rCS.Read() returning n == %d err == %v\n", n, err) }()
 	if !rc.open {
 		rc.open = true
 		rc.fp = 0
@@ -95,7 +99,7 @@ func (rc *rcS) Read(p []byte) (n int, err error) {
 	return
 }
 
-func (rc *rcS) close() (err error) {
+func (rc *rcS) Close() (err error) {
 	rc.open = false
 	rc.fp = 0
 	return
