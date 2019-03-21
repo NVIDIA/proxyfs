@@ -3,10 +3,10 @@
     ["ss-samba", "4.6.2-3.el7"]
   ],
   "samba_deps": [
-    ["gcc", "4.8.5-36.el7"],
-    ["gcc-c++", "4.8.5-36.el7"],
+    ["gcc", "4.8.5-36.el7_6.1"],
+    ["gcc-c++", "4.8.5-36.el7_6.1"],
     ["python-devel", "2.7.5-76.el7"],
-    ["gnutls-devel", "3.3.29-8.el7"],
+    ["gnutls-devel", "3.3.29-9.el7_6"],
     ["libacl-devel", "2.2.51-14.el7"],
     ["openldap-devel", "2.4.44-21.el7_6"],
     ["cifs-utils", "6.2-10.el7"],
