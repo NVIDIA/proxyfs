@@ -44,11 +44,21 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		infoBuf              []byte
 		infoResponse         *http.Response
 		infoURL              string
+		pingReq              *jrpcfs.PingReq
+		pingReqBuf           []byte
+		pingReqMessageID     uint64
+		pingRequest          *http.Request
+		pingReply            *jrpcfs.PingReply
+		pingReplyBuf         []byte
+		pingReplyMessageID   uint64
+		pingResponse         *http.Response
 		putContainerRequest  *http.Request
 		putContainerResponse *http.Response
 		putObjectRequest     *http.Request
 		putObjectResponse    *http.Response
+		responseErr          error
 		swiftInfo            *testSwiftInfoOuterStruct
+		unmarshalErr         error
 	)
 
 	testSetup(t)
@@ -186,7 +196,61 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET .../TestContainer/TestObject returned unexpected contents")
 	}
 
-	// TODO: Exercise JSON RPC Ping
+	pingReq = &jrpcfs.PingReq{
+		Message: "TestMessage",
+	}
+
+	pingReqMessageID, pingReqBuf, err = jrpcMarshalRequest("Server.RpcPing", pingReq)
+	if nil != err {
+		t.Fatalf("Marshaling pingReq failed: %v", err)
+	}
+
+	pingRequest, err = http.NewRequest("PROXYFS", globals.swiftAccountURL, bytes.NewReader(pingReqBuf))
+	if nil != err {
+		t.Fatalf("Creating PROXYFS pingReq failed: %v", err)
+	}
+
+	pingRequest.Header.Add("X-Auth-Token", testAuthToken)
+	pingRequest.Header.Add("Content-Type", "application/json")
+
+	pingResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(pingRequest)
+	if nil != err {
+		t.Fatalf("PROXYFS pingReq failed: %v", err)
+	}
+	if http.StatusOK != pingResponse.StatusCode {
+		t.Fatalf("PROXYFS pingReq returned bad status: %v", pingResponse.Status)
+	}
+
+	pingReplyBuf, err = ioutil.ReadAll(pingResponse.Body)
+	if nil != err {
+		t.Fatalf("PROXYFS pingReq returned unreadable Body: %v", err)
+	}
+
+	err = pingResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("PROXYFS pingReq returned uncloseable Body: %v", err)
+	}
+
+	pingReplyMessageID, responseErr, unmarshalErr = jrpcUnmarshalResponseForIDAndError(pingReplyBuf)
+	if nil != unmarshalErr {
+		t.Fatalf("Unmarshaling ID & Error failed: %v", unmarshalErr)
+	}
+	if nil != responseErr {
+		t.Fatalf("Unmarshaling ID & Error returned unexpected Error")
+	}
+	if pingReqMessageID != pingReplyMessageID {
+		t.Fatal("Unmarshaling ID & Error returned unexpected ID")
+	}
+
+	pingReply = &jrpcfs.PingReply{}
+
+	err = jrpcUnmarshalResponse(pingReqMessageID, pingReplyBuf, pingReply)
+	if nil != err {
+		t.Fatalf("Unmarshaling pingReply failed: %v", err)
+	}
+	if fmt.Sprintf("pong %d bytes", len("TestMessage")) != pingReply.Message {
+		t.Fatalf("PROXYFS pingReply returned unexpected Message")
+	}
 
 	testTeardown(t)
 }
