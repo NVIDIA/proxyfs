@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
@@ -57,13 +58,21 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		putObjectRequest     *http.Request
 		putObjectResponse    *http.Response
 		responseErr          error
+		swiftAccountURLSplit []string
 		swiftInfo            *testSwiftInfoOuterStruct
 		unmarshalErr         error
 	)
 
 	testSetup(t)
 
-	infoURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "info"), "/")
+	for {
+		swiftAccountURLSplit = strings.Split(globals.swiftAccountURL, "/")
+		if len(swiftAccountURLSplit) >= 3 {
+			infoURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "info"), "/")
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	infoResponse, err = http.Get(infoURL)
 	if nil != err {
