@@ -97,6 +97,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	// Init listeners
 	globals.listeners = make([]net.Listener, 0, 2)
 	globals.connections = list.New()
+	globals.halting = false
 
 	// Init JSON RPC server stuff
 	jsonRpcServerUp(globals.ipAddr, globals.portString)
@@ -204,6 +205,13 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.bimodalMountMap)")
 		return
 	}
+
+	globals.halting = true
+
+	jsonRpcServerDown()
+	ioServerDown()
+
+	globals.listenersWG.Wait()
 
 	openGate() // In case we are restarted... Up() expects Gate to initially be open
 
