@@ -54,6 +54,12 @@ func jsonRpcServerUp(ipAddr string, portString string) {
 	go jrpcServerLoop()
 }
 
+func jsonRpcServerDown() {
+	_ = jrpcListener.Close()
+	DumpIfNecessary(jserver)
+	stopServerProfiling(jserver)
+}
+
 func jrpcServerLoop() {
 	for {
 		conn, err := jrpcListener.Accept()
@@ -83,11 +89,6 @@ func jrpcServerLoop() {
 			globals.connWG.Done()
 		}(conn, elm)
 	}
-}
-
-func jsonRpcServerDown() {
-	DumpIfNecessary(jserver)
-	stopServerProfiling(jserver)
 }
 
 // Enumeration of operations, used for stats-related things

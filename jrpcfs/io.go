@@ -42,6 +42,13 @@ func ioServerUp(ipAddr string, fastPortString string) {
 	go ioServerLoop()
 }
 
+func ioServerDown() {
+	_ = ioListener.Close()
+	DumpIfNecessary(qserver)
+	dumpRunningWorkers()
+	stopServerProfiling(qserver)
+}
+
 func ioServerLoop() {
 	for {
 		conn, err := ioListener.Accept()
@@ -71,12 +78,6 @@ func ioServerLoop() {
 			globals.connWG.Done()
 		}(conn, elm)
 	}
-}
-
-func ioServerDown() {
-	DumpIfNecessary(qserver)
-	dumpRunningWorkers()
-	stopServerProfiling(qserver)
 }
 
 var debugConcurrency = false
