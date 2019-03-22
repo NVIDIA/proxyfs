@@ -2,10 +2,11 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestFunctional(t *testing.T) {
 	testSetup(t)
-	// time.Sleep(10 * time.Second) // TODO
+	time.Sleep(2 * time.Second) // TODO
 	testTeardown(t)
 }

@@ -1,12 +1,62 @@
 package main
 
 import (
+	"bytes"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
+
+func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
+	var (
+		httpErr         error
+		httpRequest     *http.Request
+		jrpcRequest     []byte
+		jrpcRequestID   uint64
+		jrpcResponse    []byte
+		marshalErr      error
+		ok              bool
+		unmarshalErr    error
+		swiftAccountURL string
+	)
+
+	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
+	if nil != marshalErr {
+		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, marshalErr)
+	}
+
+	_, swiftAccountURL = fetchAuthTokenAndAccountURL()
+
+	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
+	if nil != httpErr {
+		logFatalf("unable to create PROXYFS http.Request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, httpErr)
+	}
+
+	httpRequest.Header["Content-Type"] = []string{"application/json"}
+
+	_, jrpcResponse, ok = doHTTPRequest(httpRequest, http.StatusOK)
+	if !ok {
+		logFatalf("unable to contact ProxyFS")
+	}
+
+	_, err, unmarshalErr = jrpcUnmarshalResponseForIDAndError(jrpcResponse)
+	if nil != unmarshalErr {
+		logFatalf("unable to unmarshal response [case 1] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+	}
+
+	if nil != err {
+		return
+	}
+
+	unmarshalErr = jrpcUnmarshalResponse(jrpcRequestID, jrpcResponse, jrpcResult)
+	if nil != unmarshalErr {
+		logFatalf("unable to unmarshal response [case 2] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+	}
+
+	return
+}
 
 func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.Response, responseBody []byte, ok bool) {
 	var (
@@ -27,7 +77,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	for {
 		swiftAuthToken, _ = fetchAuthTokenAndAccountURL()
 
-		request.Header.Add("X-Auth-Token", swiftAuthToken)
+		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
 		response, err = globals.httpClient.Do(request)
 		if nil != err {

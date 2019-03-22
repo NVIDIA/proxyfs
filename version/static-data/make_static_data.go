@@ -59,7 +59,7 @@ func main() {
 	proxyfsVersionString = os.Getenv("PROXYFS_VERSION")
 
 	if "" == proxyfsVersionString {
-		gitDescribeCmd = exec.Command("git", "describe")
+		gitDescribeCmd = exec.Command("git", "describe", "--tags")
 
 		gitDescribeOutput, err = gitDescribeCmd.Output()
 		if nil != err {
