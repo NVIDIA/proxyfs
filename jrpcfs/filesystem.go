@@ -100,6 +100,8 @@ const (
 	PingOp OpType = iota
 	ReadOp
 	WriteOp
+	WroteOp
+	FetchExtentMapChunkOp
 	FlushOp
 	LookupOp
 	LookupPathOp
@@ -118,6 +120,8 @@ var opTypeStrs = []string{
 	"Ping",
 	"Read",
 	"Write",
+	"Wrote",
+	"FetchExtentMapChunk",
 	"Flush",
 	"Lookup",
 	"LookupPath",
@@ -919,6 +923,48 @@ func UnixSec(t time.Time) (sec int64) {
 
 func UnixNanosec(t time.Time) (ns int64) {
 	return t.UnixNano() - t.Unix()*int64(time.Second)
+}
+
+func (s *Server) RpcWrote(in *WroteRequest, reply *WroteReply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil == err {
+		err = mountHandle.Wrote(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.ObjectPath, in.FileOffset, in.ObjectOffset, in.Length)
+	}
+
+	return
+}
+
+func (s *Server) RpcFetchExtentMapChunk(in *FetchExtentMapChunkRequest, reply *FetchExtentMapChunkReply) (err error) {
+	var (
+		extentMapChunk *inode.ExtentMapChunkStruct
+	)
+
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil == err {
+		extentMapChunk, err = mountHandle.FetchExtentMapChunk(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.FileOffset, in.MaxEntriesFromFileOffset, in.MaxEntriesBeforeFileOffset)
+		if nil == err {
+			reply.FileOffsetRangeStart = extentMapChunk.FileOffsetRangeStart
+			reply.FileOffsetRangeEnd = extentMapChunk.FileOffsetRangeEnd
+			reply.FileSize = extentMapChunk.FileSize
+			reply.ExtentMapEntry = extentMapChunk.ExtentMapEntry
+		}
+	}
+
+	return
 }
 
 func (s *Server) RpcFlush(in *FlushRequest, reply *Reply) (err error) {

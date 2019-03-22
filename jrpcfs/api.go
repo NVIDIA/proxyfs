@@ -230,6 +230,22 @@ type DirEntry struct {
 	NextDirLocation int64
 }
 
+// FetchExtentMapChunkRequest is the request object for RpcFetchExtentMapChunk.
+type FetchExtentMapChunkRequest struct {
+	InodeHandle
+	FileOffset                 uint64
+	MaxEntriesFromFileOffset   int64
+	MaxEntriesBeforeFileOffset int64
+}
+
+// FetchExtentMapChunkReply is the response object for RpcFetchExtentMapChunk.
+type FetchExtentMapChunkReply struct {
+	FileOffsetRangeStart uint64                       // Holes in [FileOffsetRangeStart:FileOffsetRangeEnd)
+	FileOffsetRangeEnd   uint64                       //   not covered in ExtentMapEntry slice should "read-as-zero"
+	FileSize             uint64                       //   up to the end-of-file as indicated by FileSize
+	ExtentMapEntry       []inode.ExtentMapEntryStruct // All will be in [FileOffsetRangeStart:FileOffsetRangeEnd)
+}
+
 // FlushRequest is the request object for RpcFlush.
 type FlushRequest struct {
 	InodeHandle
@@ -774,6 +790,17 @@ type CoalesceReply struct {
 	AttrChangeTime   uint64
 	InodeNumber      int64
 	NumWrites        uint64
+}
+
+type WroteRequest struct {
+	InodeHandle
+	ObjectPath   string
+	FileOffset   []uint64
+	ObjectOffset []uint64
+	Length       []uint64
+}
+
+type WroteReply struct {
 }
 
 type RenewLeaseReq struct {
