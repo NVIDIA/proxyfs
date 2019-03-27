@@ -118,14 +118,14 @@ allow_read_write = {
 
 def _encode_binary(data):
     if data:
-        return base64.b64encode(data)
+        return base64.b64encode(data.encode('ascii')).decode('ascii')
     else:
         return ""
 
 
 def _decode_binary(bindata):
     if bindata:
-        return base64.b64decode(bindata)
+        return base64.b64decode(bindata).decode('ascii')
     else:
         # None (happens sometimes) or empty-string (also happens sometimes)
         return ""

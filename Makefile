@@ -166,7 +166,7 @@ pre-generate:
 
 python-test:
 	cd meta_middleware && tox -e lint
-	cd pfs_middleware && tox -e py27,py27-old-swift,lint
+	cd pfs_middleware && tox -e py27-release,py27-minver,py36-release,lint
 
 test:
 	@set -e; \

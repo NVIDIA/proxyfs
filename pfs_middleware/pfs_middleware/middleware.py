@@ -81,7 +81,7 @@ import socket
 import time
 import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
-from StringIO import StringIO
+from io import BytesIO
 
 from swift.common.middleware.acl import parse_acl, format_acl
 from . import pfs_errno, rpc, swift_code, utils
@@ -322,6 +322,7 @@ def pop_and_restore(hsh, key, default=None):
 
 
 def deserialize_metadata(raw_metadata):
+    """Deserialize JSON-encoded metadata to WSGI strings"""
     if raw_metadata:
         try:
             metadata = json.loads(raw_metadata)
@@ -330,14 +331,25 @@ def deserialize_metadata(raw_metadata):
     else:
         metadata = {}
     encoded_metadata = {}
-    for k, v in metadata.iteritems():
-        key = unicode(k).encode("utf-8") if isinstance(k, basestring) else k
-        value = unicode(v).encode("utf-8") if isinstance(v, basestring) else v
+    for k, v in metadata.items():
+        if six.PY2:
+            key = k.encode('utf8') if isinstance(
+                k, six.text_type) else str(k)
+            value = v.encode('utf8') if isinstance(
+                v, six.text_type) else str(v)
+        else:
+            key = swift_code.str_to_wsgi(k) if isinstance(k, str) else str(k)
+            value = swift_code.str_to_wsgi(v) if isinstance(v, str) else str(v)
         encoded_metadata[key] = value
     return encoded_metadata
 
 
-serialize_metadata = json.dumps
+def serialize_metadata(wsgi_metadata):
+    return json.dumps({
+        swift_code.wsgi_to_str(key): (
+            swift_code.wsgi_to_str(value)
+            if isinstance(value, six.string_types) else value)
+        for key, value in wsgi_metadata.items()})
 
 
 def merge_container_metadata(old, new):
@@ -475,7 +487,7 @@ class ZeroFiller(object):
     Internal middleware to handle the zero-fill portions of sparse files for
     object GET responses.
     """
-    ZEROES = "\x00" * 4096
+    ZEROES = b"\x00" * 4096
 
     def __init__(self, app):
         self.app = app
@@ -537,7 +549,7 @@ class LimitedInput(object):
     after an object PUT completes.
     """
     def __init__(self, wsgi_input, limit):
-        self._peeked_data = ""
+        self._peeked_data = b""
         self.limit = self.orig_limit = limit
         self.bytes_read = 0
         self.wsgi_input = wsgi_input
@@ -551,7 +563,7 @@ class LimitedInput(object):
 
         chunk = self.wsgi_input.read(to_read, *args, **kwargs)
         chunk = self._peeked_data + chunk
-        self._peeked_data = ""
+        self._peeked_data = b""
 
         self.bytes_read += len(chunk)
         self.limit -= len(chunk)
@@ -566,7 +578,7 @@ class LimitedInput(object):
 
         line = self.wsgi_input.readline(to_read, *args, **kwargs)
         line = self._peeked_data + line
-        self._peeked_data = ""
+        self._peeked_data = b""
 
         self.bytes_read += len(line)
         self.limit -= len(line)
@@ -965,7 +977,7 @@ class PfsMiddleware(object):
 
             root_node.append(container_node)
 
-        buf = StringIO()
+        buf = BytesIO()
         ET.ElementTree(root_node).write(
             buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue()
@@ -1226,7 +1238,8 @@ class PfsMiddleware(object):
             last_modified = iso_timestamp_from_epoch_ns(ent.get(
                 "AttrChangeTime", ent["ModificationTime"]))
             obj_metadata = deserialize_metadata(ent["Metadata"])
-            content_type = obj_metadata.get("Content-Type")
+            content_type = swift_code.wsgi_to_str(
+                obj_metadata.get("Content-Type"))
             if content_type is None:
                 content_type = guess_content_type(ent["Basename"],
                                                   ent["IsDir"])
@@ -1247,7 +1260,7 @@ class PfsMiddleware(object):
             if delimiter != "" and "IsDir" in ent and ent["IsDir"]:
                 json_entries.append({"subdir": ent["Basename"] + delimiter})
 
-        return json.dumps(json_entries)
+        return json.dumps(json_entries).encode('ascii')
 
     # TODO: This method is usually non reachable, because at some point in the
     # pipeline, we convert JSON to XML. We should either remove this or update
@@ -1260,7 +1273,8 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
-            content_type = obj_metadata.get("Content-Type")
+            content_type = swift_code.wsgi_to_str(
+                obj_metadata.get("Content-Type"))
             if content_type is None:
                 content_type = guess_content_type(
                     container_entry["Basename"], container_entry["IsDir"])
@@ -1286,7 +1300,10 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = content_type.decode('utf-8')
+            if six.PY2:
+                ct_node.text = content_type.decode('utf-8')
+            else:
+                ct_node.text = content_type
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
@@ -1298,7 +1315,7 @@ class PfsMiddleware(object):
 
             root_node.append(container_node)
 
-        buf = StringIO()
+        buf = BytesIO()
         ET.ElementTree(root_node).write(
             buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue()
