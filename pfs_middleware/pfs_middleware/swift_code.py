@@ -1061,3 +1061,18 @@ def clean_acls(req):
                 except ValueError as err:
                     return HTTPBadRequest(request=req, body=str(err))
     return None
+
+
+# Taken from swift/common/swob.py, commit a5a6a27
+#
+# Modified to pass through Nones
+def wsgi_to_str(wsgi_str):
+    if six.PY2 or wsgi_str is None:
+        return wsgi_str
+    return wsgi_str.encode('latin1').decode('utf8', errors='surrogateescape')
+
+
+def str_to_wsgi(native_str):
+    if six.PY2 or native_str is None:
+        return native_str
+    return native_str.encode('utf8', errors='surrogateescape').decode('latin1')

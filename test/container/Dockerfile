@@ -86,6 +86,12 @@ RUN yum -y install \
     libtool-2.4.2-22.el7_3
 RUN yum -y install python-pip
 
+# Get a py3 runtime
+RUN yum -y install centos-release-scl
+RUN yum -y install rh-python36 && \
+    ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6 && \
+    ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
+
 # Pip install. Trying to do as much as possible at once.
 # Here's an explanation of why we need to install each package:
 ## Setup ProxyFS build environment
