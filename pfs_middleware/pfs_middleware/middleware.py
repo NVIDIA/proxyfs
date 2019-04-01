@@ -80,6 +80,7 @@ import six
 import socket
 import time
 import xml.etree.ElementTree as ET
+import traceback
 from six.moves.urllib import parse as urllib_parse
 from StringIO import StringIO
 
@@ -753,6 +754,13 @@ class PfsMiddleware(object):
                 elif method == 'DELETE' and obj:
                     resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
+                    self.logger.info(
+                        ("PfsMiddleware.__call__(): self.dict: %s") % self.__dict__)
+                    self.logger.info(
+                        ("PfsMiddleware.__call__(): req.dict: %s") % req.__dict__)
+                    self.logger.info(
+                        ("PfsMiddleware.__call__(): stack:\n%s") %
+                        (''.join(traceback.format_list(traceback.extract_stack())).replace("\n", "\\n")))   # --craig
                     resp = self.coalesce_object(ctx, auth_cb)
 
                 elif method == 'GET' and con:
