@@ -79,6 +79,7 @@ import re
 import six
 import socket
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
 from io import BytesIO
@@ -168,6 +169,7 @@ MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
 RPC_TIMEOUT_DEFAULT = 30.0
+MAX_RPC_BODY_SIZE = 2 ** 20
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -743,7 +745,7 @@ class PfsMiddleware(object):
                         req.environ.get('swift_owner'):
                     if self.bypass_mode == 'read-only' and method not in (
                             'GET', 'HEAD'):
-                        return swob.HTTPMethodNotAllowed()
+                        return swob.HTTPMethodNotAllowed(request=req)
                     # We needed to do a PFS-namespace container HEAD to get
                     # the "appropriate" ACL ahead of calling the authorize
                     # callback, but that almost certainly didn't exist and
@@ -782,6 +784,11 @@ class PfsMiddleware(object):
                     resp = self.get_account(ctx)
                 elif method == 'HEAD':
                     resp = self.head_account(ctx)
+                elif method == 'PROXYFS' and not con and not obj:
+                    if not (req.environ.get('swift_owner') and
+                            self.bypass_mode in ('read-only', 'read-write')):
+                        return swob.HTTPMethodNotAllowed(request=req)
+                    resp = self.proxy_rpc(ctx)
                 # account PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
@@ -854,6 +861,92 @@ class PfsMiddleware(object):
             return container_info['write_acl']
         else:
             return None
+
+    def proxy_rpc(self, ctx):
+        req = ctx.req
+        ct = req.headers.get('Content-Type')
+        if not ct or ct.split(';', 1)[0].strip() != 'application/json':
+            msg = 'RPC body must have Content-Type application/json'
+            if ct:
+                msg += ', not %s' % ct
+            return swob.Response(status=415, request=req, body=msg)
+
+        cl = req.content_length
+        if cl is None:
+            if req.headers.get('Transfer-Encoding') != 'chunked':
+                return swob.HTTPLengthRequired(request=req)
+            json_payloads = req.body_file.read(MAX_RPC_BODY_SIZE).split(b'\n')
+            if req.body_file.read(1):
+                return swob.HTTPRequestEntityTooLarge(request=req)
+        else:
+            if cl > MAX_RPC_BODY_SIZE:
+                return swob.HTTPRequestEntityTooLarge(request=req)
+            json_payloads = req.body.split(b'\n')
+
+        if self.bypass_mode == 'read-write':
+            allowed_methods = rpc.allow_read_write
+        else:
+            allowed_methods = rpc.allow_read_only
+
+        payloads = []
+        for i, json_payload in enumerate(x for x in json_payloads
+                                         if x.strip()):
+            try:
+                payload = json.loads(json_payload.decode('utf8'))
+                if payload['jsonrpc'] != '2.0':
+                    raise ValueError(
+                        'expected JSONRPC 2.0, got %s' % payload['jsonrpc'])
+                if not isinstance(payload['method'], six.string_types):
+                    raise ValueError(
+                        'expected string, got %s' % type(payload['method']))
+                if payload['method'] not in allowed_methods:
+                    raise ValueError(
+                        'method %s not allowed' % payload['method'])
+                if not (isinstance(payload['params'], list) and
+                        len(payload['params']) == 1 and
+                        isinstance(payload['params'][0], dict)):
+                    raise ValueError
+            except (TypeError, KeyError, ValueError) as err:
+                return swob.HTTPBadRequest(
+                    request=req,
+                    body=(b'Could not parse/validate JSON payload #%d %s: %s' %
+                          (i, json_payload, str(err).encode('utf8'))))
+            payloads.append(payload)
+
+        # TODO: consider allowing more than one payload per request
+        if len(payloads) != 1:
+            return swob.HTTPBadRequest(
+                request=req,
+                body='Expected exactly one JSON payload')
+
+        # Our basic validation is done; spin up a connection and send requests
+        client = utils.JsonRpcClient(ctx.proxyfsd_addrinfo)
+        payload = payloads[0]
+        try:
+            if 'id' not in payload:
+                payload['id'] = str(uuid.uuid4())
+            payload['params'][0]['AccountName'] = ctx.account_name
+            response = client.call(payload, self.proxyfsd_rpc_timeout,
+                                   raise_on_rpc_error=False)
+        except eventlet.Timeout:
+            self.logger.debug(
+                "Timeout (%.6fs) communicating with %s, calling %s",
+                self.proxyfsd_rpc_timeout, ctx.proxyfsd_addrinfo,
+                payloads[0]['method'])
+            return swob.HTTPBadGateway(request=req)
+        except socket.error as err:
+            self.logger.debug("Error communicating with %r: %s.",
+                              ctx.proxyfsd_addrinfo, err)
+            return swob.HTTPBadGateway(request=req)
+        else:
+            if response.get("error"):
+                return swob.HTTPUnprocessableEntity(
+                    request=req, body=json.dumps(response),
+                    headers={'Content-Type': 'application/json'})
+            else:
+                return swob.HTTPOk(
+                    request=req, body=json.dumps(response),
+                    headers={'Content-Type': 'application/json'})
 
     def get_account(self, ctx):
         req = ctx.req
