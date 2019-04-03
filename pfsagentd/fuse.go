@@ -19,7 +19,7 @@ const (
 	unmountRetryGap             = 100 * time.Millisecond
 )
 
-func performMount() {
+func performMountFUSE() {
 	var (
 		curRetryCount                 uint32
 		err                           error
@@ -113,7 +113,7 @@ func fetchInodeDevice(pathTitle string, path string) (inodeDevice int64) {
 	return
 }
 
-func performUnmount() {
+func performUnmountFUSE() {
 	var (
 		err error
 	)
@@ -203,7 +203,7 @@ func serveFuse() {
 		case *fuse.WriteRequest:
 			handleWriteRequest(request.(*fuse.WriteRequest))
 		default:
-			logWarnf("recieved unserviced %v", reflect.ValueOf(request).Type())
+			logWarnf("received unserviced %v", reflect.ValueOf(request).Type())
 			request.RespondError(fuse.ENOTSUP)
 		}
 	}

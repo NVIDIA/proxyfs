@@ -2,12 +2,42 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
+
+func doMountProxyFS() {
+	var (
+		err          error
+		mountReply   *jrpcfs.MountByAccountNameReply
+		mountRequest *jrpcfs.MountByAccountNameRequest
+	)
+
+	mountRequest = &jrpcfs.MountByAccountNameRequest{
+		AccountName:  globals.config.SwiftAccountName,
+		MountOptions: 0,
+		AuthUserID:   0,
+		AuthGroupID:  0,
+	}
+
+	mountReply = &jrpcfs.MountByAccountNameReply{}
+
+	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
+	fmt.Printf("UNDO: err=%v mountReply=%#v\n", err, mountReply)
+
+	if nil != err {
+		logFatalf("unable to mount PROXYFS SwiftAccount %v: %v", globals.config.SwiftAccountName, err)
+	}
+
+	globals.mountID = mountReply.MountID
+	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
+}
 
 func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
 	var (

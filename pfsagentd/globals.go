@@ -10,6 +10,7 @@ import (
 	"bazil.org/fuse"
 
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 type configStruct struct {
@@ -107,6 +108,8 @@ type globalsStruct struct {
 	swiftAuthWaitGroup              *sync.WaitGroup
 	swiftAuthToken                  string
 	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
+	mountID                         jrpcfs.MountIDAsString
+	rootDirInodeNumber              uint64
 	fuseConn                        *fuse.Conn
 	jrpcLastID                      uint64
 	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct

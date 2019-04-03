@@ -204,7 +204,9 @@ func testSetup(t *testing.T) {
 
 	initializeGlobals(testConfMap)
 
-	performMount()
+	doMountProxyFS()
+
+	performMountFUSE()
 }
 
 func testTeardown(t *testing.T) {
@@ -213,7 +215,7 @@ func testTeardown(t *testing.T) {
 		testDir string
 	)
 
-	performUnmount()
+	performUnmountFUSE()
 
 	uninitializeGlobals()
 

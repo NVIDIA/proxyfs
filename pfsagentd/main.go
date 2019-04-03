@@ -55,9 +55,13 @@ func main() {
 
 	initializeGlobals(confMap)
 
+	// Perform mount via ProxyFS
+
+	doMountProxyFS()
+
 	// Start serving FUSE mount point
 
-	performMount()
+	performMountFUSE()
 
 	// Await SIGHUP, SIGINT, or SIGTERM
 
@@ -65,7 +69,7 @@ func main() {
 
 	// Perform clean shutdown
 
-	performUnmount()
+	performUnmountFUSE()
 
 	// Uninitialize globals
 
