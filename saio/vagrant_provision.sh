@@ -71,6 +71,13 @@ chown vagrant:vagrant /home/vagrant/.gdbinit
 chmod 644 /home/vagrant/.gdbinit
 cp /home/vagrant/.gdbinit /root/.
 
+# Install Python 3.6
+
+yum -y install centos-release-scl
+yum -y install rh-python36
+ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6
+ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
+
 # Install Python pip
 
 yum -y install epel-release
