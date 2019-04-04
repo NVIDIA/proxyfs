@@ -1,12 +1,92 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
+
+func doMountProxyFS() {
+	var (
+		err          error
+		mountReply   *jrpcfs.MountByAccountNameReply
+		mountRequest *jrpcfs.MountByAccountNameRequest
+	)
+
+	mountRequest = &jrpcfs.MountByAccountNameRequest{
+		AccountName:  globals.config.SwiftAccountName,
+		MountOptions: 0,
+		AuthUserID:   0,
+		AuthGroupID:  0,
+	}
+
+	mountReply = &jrpcfs.MountByAccountNameReply{}
+
+	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
+	fmt.Printf("UNDO: err=%v mountReply=%#v\n", err, mountReply)
+
+	if nil != err {
+		logFatalf("unable to mount PROXYFS SwiftAccount %v: %v", globals.config.SwiftAccountName, err)
+	}
+
+	globals.mountID = mountReply.MountID
+	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
+}
+
+func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
+	var (
+		httpErr         error
+		httpRequest     *http.Request
+		jrpcRequest     []byte
+		jrpcRequestID   uint64
+		jrpcResponse    []byte
+		marshalErr      error
+		ok              bool
+		unmarshalErr    error
+		swiftAccountURL string
+	)
+
+	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
+	if nil != marshalErr {
+		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, marshalErr)
+	}
+
+	_, swiftAccountURL = fetchAuthTokenAndAccountURL()
+
+	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
+	if nil != httpErr {
+		logFatalf("unable to create PROXYFS http.Request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, httpErr)
+	}
+
+	httpRequest.Header["Content-Type"] = []string{"application/json"}
+
+	_, jrpcResponse, ok = doHTTPRequest(httpRequest, http.StatusOK)
+	if !ok {
+		logFatalf("unable to contact ProxyFS")
+	}
+
+	_, err, unmarshalErr = jrpcUnmarshalResponseForIDAndError(jrpcResponse)
+	if nil != unmarshalErr {
+		logFatalf("unable to unmarshal response [case 1] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+	}
+
+	if nil != err {
+		return
+	}
+
+	unmarshalErr = jrpcUnmarshalResponse(jrpcRequestID, jrpcResponse, jrpcResult)
+	if nil != unmarshalErr {
+		logFatalf("unable to unmarshal response [case 2] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+	}
+
+	return
+}
 
 func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.Response, responseBody []byte, ok bool) {
 	var (
@@ -27,7 +107,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	for {
 		swiftAuthToken, _ = fetchAuthTokenAndAccountURL()
 
-		request.Header.Add("X-Auth-Token", swiftAuthToken)
+		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
 		response, err = globals.httpClient.Do(request)
 		if nil != err {

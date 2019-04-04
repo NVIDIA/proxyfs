@@ -99,42 +99,42 @@ type globalsStruct struct {
 	WriteUsec          bucketstats.BucketLog2Round
 	WriteBytes         bucketstats.BucketLog2Round
 
-	CreateErrors         bucketstats.Total
-	FetchReadPlanErrors  bucketstats.Total
-	FlushErrors          bucketstats.Total
-	FlockOtherErrors     bucketstats.Total
-	FlockGetErrors       bucketstats.Total
-	FlockLockErrors      bucketstats.Total
-	FlockUnlockErrors    bucketstats.Total
-	GetstatErrors        bucketstats.Total
-	GetTypeErrors        bucketstats.Total
-	GetXAttrErrors       bucketstats.Total
-	IsDirErrors          bucketstats.Total
-	IsFileErrors         bucketstats.Total
-	IsSymlinkErrors      bucketstats.Total
-	LinkErrors           bucketstats.Total
-	ListXAttrErrors      bucketstats.Total
-	LookupErrors         bucketstats.Total
-	LookupPathErrors     bucketstats.Total
-	MkdirErrors          bucketstats.Total
-	RemoveXAttrErrors    bucketstats.Total
-	RenameErrors         bucketstats.Total
-	ReadErrors           bucketstats.Total
-	ReaddirErrors        bucketstats.Total
-	ReaddirOneErrors     bucketstats.Total
-	ReaddirOnePlusErrors bucketstats.Total
-	ReaddirPlusErrors    bucketstats.Total
-	ReadsymlinkErrors    bucketstats.Total
-	ResizeErrors         bucketstats.Total
-	RmdirErrors          bucketstats.Total
-	SetstatErrors        bucketstats.Total
-	SetXAttrErrors       bucketstats.Total
-	StatVfsErrors        bucketstats.Total
-	SymlinkErrors        bucketstats.Total
-	UnlinkErrors         bucketstats.Total
-	WriteErrors          bucketstats.Total
+	CreateErrors              bucketstats.Total
+	FetchExtentMapChunkErrors bucketstats.Total
+	FlushErrors               bucketstats.Total
+	FlockOtherErrors          bucketstats.Total
+	FlockGetErrors            bucketstats.Total
+	FlockLockErrors           bucketstats.Total
+	FlockUnlockErrors         bucketstats.Total
+	GetstatErrors             bucketstats.Total
+	GetTypeErrors             bucketstats.Total
+	GetXAttrErrors            bucketstats.Total
+	IsDirErrors               bucketstats.Total
+	IsFileErrors              bucketstats.Total
+	IsSymlinkErrors           bucketstats.Total
+	LinkErrors                bucketstats.Total
+	ListXAttrErrors           bucketstats.Total
+	LookupErrors              bucketstats.Total
+	LookupPathErrors          bucketstats.Total
+	MkdirErrors               bucketstats.Total
+	RemoveXAttrErrors         bucketstats.Total
+	RenameErrors              bucketstats.Total
+	ReadErrors                bucketstats.Total
+	ReaddirErrors             bucketstats.Total
+	ReaddirOneErrors          bucketstats.Total
+	ReaddirOnePlusErrors      bucketstats.Total
+	ReaddirPlusErrors         bucketstats.Total
+	ReadsymlinkErrors         bucketstats.Total
+	ResizeErrors              bucketstats.Total
+	RmdirErrors               bucketstats.Total
+	SetstatErrors             bucketstats.Total
+	SetXAttrErrors            bucketstats.Total
+	StatVfsErrors             bucketstats.Total
+	SymlinkErrors             bucketstats.Total
+	UnlinkErrors              bucketstats.Total
+	WriteErrors               bucketstats.Total
 
-	FetchReadPlanUsec              bucketstats.BucketLog2Round
+	FetchExtentMapChunkUsec        bucketstats.BucketLog2Round
 	CallInodeToProvisionObjectUsec bucketstats.BucketLog2Round
 	MiddlewareCoalesceUsec         bucketstats.BucketLog2Round
 	MiddlewareCoalesceBytes        bucketstats.BucketLog2Round

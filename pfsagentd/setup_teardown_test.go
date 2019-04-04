@@ -61,14 +61,16 @@ func testSetup(t *testing.T) {
 		"Agent.SwiftAuthKey=testing",
 		"Agent.SwiftAccountName=AUTH_test",
 		"Agent.SwiftTimeout=10s",
-		"Agent.SwiftRetryLimit=10",
+		"Agent.SwiftRetryLimit=2",
 		"Agent.SwiftRetryDelay=1s",
 		"Agent.SwiftRetryExpBackoff=1.4",
 		"Agent.SwiftConnectionPoolSize=100",
 		"Agent.ReadCacheLineSize=1048576",
 		"Agent.ReadCacheLineCount=1000",
-		"Agent.ReadPlanLineSize=1048576",
-		"Agent.ReadPlanLineCount=1000",
+		"Agent.SharedFileLimit=1000",
+		"Agent.ExclusiveFileLimit=100",
+		"Agent.MaxFlushSize=10485760",
+		"Agent.MaxFlushTime=10s",
 		"Agent.LogFilePath=",
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
@@ -202,7 +204,9 @@ func testSetup(t *testing.T) {
 
 	initializeGlobals(testConfMap)
 
-	performMount()
+	doMountProxyFS()
+
+	performMountFUSE()
 }
 
 func testTeardown(t *testing.T) {
@@ -211,7 +215,9 @@ func testTeardown(t *testing.T) {
 		testDir string
 	)
 
-	performUnmount()
+	performUnmountFUSE()
+
+	uninitializeGlobals()
 
 	unix.Kill(unix.Getpid(), unix.SIGUSR2)
 

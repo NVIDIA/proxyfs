@@ -877,14 +877,13 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		dirInodeNumber      inode.InodeNumber
 		err                 error
 		extentMap           []ExtentMapElementStruct
+		extentMapChunk      *inode.ExtentMapChunkStruct
+		extentMapEntry      inode.ExtentMapEntryStruct
 		extentMapJSONBuffer bytes.Buffer
 		extentMapJSONPacked []byte
-		fileOffset          uint64
 		path                string
 		pathDoubleQuoted    string
 		pathPartIndex       int
-		readPlan            []inode.ReadPlanStep
-		readPlanStep        inode.ReadPlanStep
 	)
 
 	if 3 > requestState.numPathParts {
@@ -927,7 +926,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		}
 	}
 
-	readPlan, err = requestState.volume.fsMountHandle.FetchReadPlan(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber, uint64(0), uint64(math.MaxUint64))
+	extentMapChunk, err = requestState.volume.fsMountHandle.FetchExtentMapChunk(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber, uint64(0), math.MaxInt64, int64(0))
 	if nil != err {
 		if requestState.formatResponseAsJSON {
 			responseWriter.WriteHeader(http.StatusNotFound)
@@ -941,20 +940,16 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		}
 	}
 
-	extentMap = make([]ExtentMapElementStruct, 0, len(readPlan))
+	extentMap = make([]ExtentMapElementStruct, 0, len(extentMapChunk.ExtentMapEntry))
 
-	fileOffset = uint64(0)
-
-	for _, readPlanStep = range readPlan {
+	for _, extentMapEntry = range extentMapChunk.ExtentMapEntry {
 		extentMap = append(extentMap, ExtentMapElementStruct{
-			FileOffset:    fileOffset,
-			ContainerName: readPlanStep.ContainerName,
-			ObjectName:    readPlanStep.ObjectName,
-			ObjectOffset:  readPlanStep.Offset,
-			Length:        readPlanStep.Length,
+			FileOffset:    extentMapEntry.FileOffset,
+			ContainerName: extentMapEntry.ContainerName,
+			ObjectName:    extentMapEntry.ObjectName,
+			ObjectOffset:  extentMapEntry.LogSegmentOffset,
+			Length:        extentMapEntry.Length,
 		})
-
-		fileOffset += readPlanStep.Length
 	}
 
 	extentMapJSONPacked, err = json.Marshal(extentMap)

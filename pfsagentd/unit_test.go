@@ -33,6 +33,33 @@ type testSwiftInfoOuterStruct struct {
 	Swift testSwiftInfoInnerStruct `json:"swift"`
 }
 
+func TestJRPCRequest(t *testing.T) {
+	var (
+		err       error
+		pingReply *jrpcfs.PingReply
+		pingReq   *jrpcfs.PingReq
+	)
+
+	testSetup(t)
+
+	pingReq = &jrpcfs.PingReq{
+		Message: "TestMessage",
+	}
+
+	pingReply = &jrpcfs.PingReply{}
+
+	err = doJRPCRequest("Server.RpcPing", pingReq, pingReply)
+
+	if nil != err {
+		t.Fatalf("doJRPCRequest(\"Server.RpcPing\",,) failed: %v", err)
+	}
+	if fmt.Sprintf("pong %d bytes", len("TestMessage")) != pingReply.Message {
+		t.Fatalf("doJRPCRequest(\"Server.RpcPing\",,) returned unexpected response: %s", pingReply.Message)
+	}
+
+	testTeardown(t)
+}
+
 func TestSwiftProxyEmulation(t *testing.T) {
 	var (
 		authRequest          *http.Request

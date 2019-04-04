@@ -1,58 +1,19 @@
 package main
 
 import (
+	"container/list"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 
-	"bazil.org/fuse"
-
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/utils"
 )
-
-type configStruct struct {
-	FUSEVolumeName          string
-	FUSEMountPointPath      string // Unless starting with '/', relative to $CWD
-	FUSEUnMountRetryDelay   time.Duration
-	FUSEUnMountRetryCap     uint64
-	SwiftAuthURL            string // If domain name is used, round-robin among all will be used
-	SwiftAuthUser           string
-	SwiftAuthKey            string
-	SwiftAccountName        string // Must be a bi-modal account
-	SwiftTimeout            time.Duration
-	SwiftRetryLimit         uint64
-	SwiftRetryDelay         time.Duration
-	SwiftRetryExpBackoff    float64
-	SwiftConnectionPoolSize uint64
-	ReadCacheLineSize       uint64 // Aligned chunk of a LogSegment
-	ReadCacheLineCount      uint64
-	ReadPlanLineSize        uint64 // ReadPlan covering an aligned chunk of File Data
-	ReadPlanLineCount       uint64
-	LogFilePath             string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole            bool
-	TraceEnabled            bool
-}
-
-type globalsStruct struct {
-	sync.Mutex
-	config             configStruct
-	logFile            *os.File // == nil if configStruct.LogFilePath == ""
-	httpClient         *http.Client
-	retryDelay         []time.Duration
-	swiftAuthWaitGroup *sync.WaitGroup
-	swiftAuthToken     string
-	swiftAccountURL    string // swiftStorageURL with AccountName forced to config.SwiftAccountName
-	fuseConn           *fuse.Conn
-	jrpcLastID         uint64
-}
-
-var globals globalsStruct
 
 func main() {
 	var (
@@ -94,9 +55,13 @@ func main() {
 
 	initializeGlobals(confMap)
 
+	// Perform mount via ProxyFS
+
+	doMountProxyFS()
+
 	// Start serving FUSE mount point
 
-	performMount()
+	performMountFUSE()
 
 	// Await SIGHUP, SIGINT, or SIGTERM
 
@@ -104,7 +69,11 @@ func main() {
 
 	// Perform clean shutdown
 
-	performUnmount()
+	performUnmountFUSE()
+
+	// Uninitialize globals
+
+	uninitializeGlobals()
 }
 
 func initializeGlobals(confMap conf.ConfMap) {
@@ -201,12 +170,22 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.ReadPlanLineSize, err = confMap.FetchOptionValueUint64("Agent", "ReadPlanLineSize")
+	globals.config.SharedFileLimit, err = confMap.FetchOptionValueUint64("Agent", "SharedFileLimit")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.ReadPlanLineCount, err = confMap.FetchOptionValueUint64("Agent", "ReadPlanLineCount")
+	globals.config.ExclusiveFileLimit, err = confMap.FetchOptionValueUint64("Agent", "ExclusiveFileLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.MaxFlushSize, err = confMap.FetchOptionValueUint64("Agent", "MaxFlushSize")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.MaxFlushTime, err = confMap.FetchOptionValueDuration("Agent", "MaxFlushTime")
 	if nil != err {
 		logFatal(err)
 	}
@@ -281,4 +260,43 @@ func initializeGlobals(confMap conf.ConfMap) {
 	updateAuthTokenAndAccountURL()
 
 	globals.jrpcLastID = 1
+
+	globals.fileInodeMap = make(map[inode.InodeNumber]*fileInodeStruct)
+
+	globals.leaseRequestChan = make(chan *fileInodeLeaseRequestStruct)
+
+	go leaseDaemon()
+
+	globals.unleasedFileInodeCacheLRU = list.New()
+	globals.sharedLeaseFileInodeCacheLRU = list.New()
+	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
+}
+
+func uninitializeGlobals() {
+	var (
+		leaseRequest *fileInodeLeaseRequestStruct
+	)
+
+	leaseRequest = &fileInodeLeaseRequestStruct{
+		fileInode:   nil,
+		requestType: fileInodeLeaseRequestShutdown,
+	}
+
+	leaseRequest.Add(1)
+	globals.leaseRequestChan <- leaseRequest
+	leaseRequest.Wait()
+
+	globals.logFile = nil
+	globals.httpClient = nil
+	globals.retryDelay = nil
+	globals.swiftAuthWaitGroup = nil
+	globals.swiftAuthToken = ""
+	globals.swiftAccountURL = ""
+	globals.fuseConn = nil
+	globals.jrpcLastID = 0
+	globals.fileInodeMap = nil
+	globals.leaseRequestChan = nil
+	globals.unleasedFileInodeCacheLRU = nil
+	globals.sharedLeaseFileInodeCacheLRU = nil
+	globals.exclusiveLeaseFileInodeCacheLRU = nil
 }
