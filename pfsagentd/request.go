@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -29,7 +28,6 @@ func doMountProxyFS() {
 	mountReply = &jrpcfs.MountByAccountNameReply{}
 
 	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
-	fmt.Printf("UNDO: err=%v mountReply=%#v\n", err, mountReply)
 
 	if nil != err {
 		logFatalf("unable to mount PROXYFS SwiftAccount %v: %v", globals.config.SwiftAccountName, err)
