@@ -9,13 +9,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 )
 
 const (
 	testAuthToken           = "AUTH_tkTestToken"
-	testSwiftProxyAddr      = "localhost:38080"
 	testJrpcResponseBufSize = 1024 * 1024
 )
 
@@ -34,6 +34,7 @@ var testSwiftProxyEmulatorGlobals testSwiftProxyEmulatorGlobalsStruct
 func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 	var (
 		err                      error
+		infoResponse             *http.Response
 		jrpcServerIPAddr         string
 		jrpcServerTCPPort        uint16
 		swiftClientNoAuthIPAddr  string
@@ -103,6 +104,18 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 
 		testSwiftProxyEmulatorGlobals.Done()
 	}()
+
+	for {
+		infoResponse, err = http.Get("http://" + testSwiftProxyAddr + "/info")
+		if nil == err {
+			break
+		}
+		time.Sleep(testDaemonStartPollInterval)
+	}
+
+	if http.StatusOK != infoResponse.StatusCode {
+		t.Fatalf("GET /info from ServeHTTP() failed")
+	}
 }
 
 func stopSwiftProxyEmulator() {
