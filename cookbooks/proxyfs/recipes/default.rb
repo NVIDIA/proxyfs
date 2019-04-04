@@ -454,6 +454,16 @@ ruby_block "Create exports entry" do
 end
 
 #
+# Enable user processes to do FUSE stuff
+#
+bash 'Enable UserMode FUSE' do
+  code <<-EOH
+  chmod +x /bin/fusermount
+  echo "user_allow_other" > /etc/fuse.conf
+  EOH
+end
+
+#
 # Build and install proxyfs
 #
 
