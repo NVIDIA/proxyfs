@@ -155,10 +155,40 @@
         - libxml2-devel
         - libxml2
         - libxslt-devel
+        - centos-release-scl
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
+  # rh-python36 must be installed after centos-release-scl, on a separate step
+  - name: yum install RedHat's Python 3.6
+    yum: name={{ item }} state=present
+    with_items:
+      - rh-python36
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Create symlink to Python 3's binary
+    file:
+      src: /opt/rh/rh-python36/root/bin/python3.6
+      path: /bin/python3.6
+      state: link
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Create symlink to Python 3's include dir
+    file:
+      src: /opt/rh/rh-python36/root/usr/include
+      path: /opt/rh/rh-python36/root/include
+      state: link
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  #  We are not installing py3 on Ubuntu! This should be fixed if we ever
+  #  decide to support Ubuntu.
   - name: apt install anticipated packages for building/running swift
     apt: name={{ item }} state=present
     with_items:

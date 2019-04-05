@@ -1,17 +1,29 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/proxyfsd"
 	"github.com/swiftstack/ProxyFS/ramswift"
+)
+
+const (
+	testDaemonStartPollInterval = 100 * time.Millisecond
+	testProxyFSDaemonHTTPPort   = "53461"
+	testProxyFSDaemonIPAddr     = "127.0.0.1"
+	testSwiftNoAuthIPAddr       = "127.0.0.1"
+	testSwiftNoAuthPort         = "35262"
+	testSwiftProxyAddr          = "localhost:38080"
 )
 
 type testDaemonGlobalsStruct struct {
@@ -25,10 +37,12 @@ var testDaemonGlobals testDaemonGlobalsStruct
 func testSetup(t *testing.T) {
 	var (
 		err                            error
+		infoResponse                   *http.Response
 		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
 		testConfMap                    conf.ConfMap
 		testConfStrings                []string
 		testDir                        string
+		versionResponse                *http.Response
 	)
 
 	testDir, err = ioutil.TempDir(os.TempDir(), "pfsagentd_test_")
@@ -85,8 +99,8 @@ func testSetup(t *testing.T) {
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
 
-		"Peer:Peer0.PublicIPAddr=127.0.0.1",
-		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
+		"Peer:Peer0.PublicIPAddr=" + testProxyFSDaemonIPAddr,
+		"Peer:Peer0.PrivateIPAddr=" + testProxyFSDaemonIPAddr,
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
 		"Cluster.WhoAmI=Peer0",
@@ -102,10 +116,10 @@ func testSetup(t *testing.T) {
 		"Cluster.MaxRequestDuration=1s",
 		"Cluster.LivenessCheckRedundancy=2",
 
-		"HTTPServer.TCPPort=53461",
+		"HTTPServer.TCPPort=" + testProxyFSDaemonHTTPPort,
 
-		"SwiftClient.NoAuthIPAddr=127.0.0.1",
-		"SwiftClient.NoAuthTCPPort=35262",
+		"SwiftClient.NoAuthIPAddr=" + testSwiftNoAuthIPAddr,
+		"SwiftClient.NoAuthTCPPort=" + testSwiftNoAuthPort,
 		"SwiftClient.Timeout=10s",
 		"SwiftClient.RetryLimit=1",
 		"SwiftClient.RetryLimitObject=1",
@@ -182,6 +196,18 @@ func testSetup(t *testing.T) {
 
 	ramswiftSignalHandlerIsArmedWG.Wait()
 
+	for {
+		infoResponse, err = http.Get("http://" + testSwiftNoAuthIPAddr + ":" + testSwiftNoAuthPort + "/info")
+		if nil == err {
+			break
+		}
+		time.Sleep(testDaemonStartPollInterval)
+	}
+
+	if http.StatusOK != infoResponse.StatusCode {
+		t.Fatalf("GET /info from ramswift.Daemon() failed")
+	}
+
 	testDaemonGlobals.proxyfsdErrChan = make(chan error, 1) // Must be buffered to avoid race
 
 	go proxyfsd.Daemon("/dev/null", testConfStrings, testDaemonGlobals.proxyfsdErrChan, &testDaemonGlobals.proxyfsdWG, []string{}, unix.SIGUSR2)
@@ -189,6 +215,18 @@ func testSetup(t *testing.T) {
 	err = <-testDaemonGlobals.proxyfsdErrChan
 	if nil != err {
 		t.Fatalf("proxyfsd.Daemon() startup failed: %v", err)
+	}
+
+	for {
+		versionResponse, err = http.Get("http://" + testProxyFSDaemonIPAddr + ":" + testProxyFSDaemonHTTPPort + "/version")
+		if nil == err {
+			break
+		}
+		fmt.Println(err)
+	}
+
+	if http.StatusOK != versionResponse.StatusCode {
+		t.Fatalf("GET /version from proxyfsd.Daemon() failed")
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)

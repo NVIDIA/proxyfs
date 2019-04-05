@@ -13,15 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-bash 'Install Python 3.6' do
-  code <<-EOH
-  yum -y install centos-release-scl
-  yum -y install rh-python36
-  ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6
-  ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
-  EOH
-end
-
 execute "Install PIP" do
   command "curl https://bootstrap.pypa.io/get-pip.py | python"
   not_if { system("pip --version") }
