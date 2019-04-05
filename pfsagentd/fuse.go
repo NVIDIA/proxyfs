@@ -11,6 +11,7 @@ import (
 
 	"bazil.org/fuse"
 
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -263,38 +264,58 @@ func handleFsyncRequest(request *fuse.FsyncRequest) {
 
 func handleGetattrRequest(request *fuse.GetattrRequest) {
 	var (
-		response *fuse.GetattrResponse
+		err            error
+		mode           os.FileMode
+		getStatRequest *jrpcfs.GetStatRequest
+		response       *fuse.GetattrResponse
+		statStruct     *jrpcfs.StatStruct
 	)
 
-	logInfof("TODO: handleGetattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	if fuse.RootID == request.Header.Node {
-		response = &fuse.GetattrResponse{
-			Attr: fuse.Attr{
-				Valid:     time.Duration(10 * time.Second),
-				Inode:     uint64(request.Header.Node),
-				Size:      uint64(0),
-				Blocks:    uint64(0),
-				Atime:     time.Now(),
-				Mtime:     time.Now(),
-				Ctime:     time.Now(),
-				Crtime:    time.Now(),
-				Mode:      os.ModeDir | syscall.S_IRWXU | syscall.S_IRWXG | syscall.S_IRWXO,
-				Nlink:     uint32(2),
-				Uid:       uint32(0),
-				Gid:       uint32(0),
-				Rdev:      uint32(0),
-				Flags:     uint32(0),
-				BlockSize: uint32(4096),
-			},
-		}
-		logInfof("resonding with:\n%s", utils.JSONify(response, true))
-		request.Respond(response)
-	} else {
-		logInfof("Responding with fuse.ENOTSUP")
-		request.RespondError(fuse.ENOTSUP)
+	getStatRequest = &jrpcfs.GetStatRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
 	}
+
+	statStruct = &jrpcfs.StatStruct{}
+
+	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
+	if nil != err {
+		request.RespondError(err)
+	}
+
+	switch inode.InodeMode(statStruct.FileMode) & inode.PosixModeType {
+	case inode.PosixModeDir:
+		mode = os.ModeDir | os.FileMode(statStruct.FileMode&uint32(inode.PosixModeType))
+	case inode.PosixModeFile:
+		mode = os.FileMode(statStruct.FileMode & uint32(inode.PosixModeType))
+	case inode.PosixModeSymlink:
+		mode = os.ModeSymlink | os.FileMode(statStruct.FileMode&uint32(inode.PosixModeType))
+	default:
+	}
+
+	response = &fuse.GetattrResponse{
+		Attr: fuse.Attr{
+			Valid:     globals.config.AttrDuration,
+			Inode:     uint64(request.Header.Node),
+			Size:      statStruct.Size,
+			Blocks:    statStruct.Size / globals.config.AttrBlockSize,
+			Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
+			Mtime:     time.Unix(0, int64(statStruct.MTimeNs)),
+			Ctime:     time.Unix(0, int64(statStruct.CTimeNs)),
+			Crtime:    time.Unix(0, int64(statStruct.CRTimeNs)),
+			Mode:      mode,
+			Nlink:     uint32(statStruct.NumLinks),
+			Uid:       statStruct.UserID,
+			Gid:       statStruct.GroupID,
+			Rdev:      uint32(0),
+			Flags:     uint32(0),
+			BlockSize: uint32(globals.config.AttrBlockSize),
+		},
+	}
+
+	request.Respond(response)
 }
 
 func handleGetxattrRequest(request *fuse.GetxattrRequest) {
@@ -444,20 +465,19 @@ func handleStatfsRequest(request *fuse.StatfsRequest) {
 	statVFS = &jrpcfs.StatVFS{}
 
 	err = doJRPCRequest("Server.RpcStatVFS", statVFSRequest, statVFS)
+	if nil != err {
+		request.RespondError(err)
+	}
 
-	if nil == err {
-		response = &fuse.StatfsResponse{
-			Blocks:  statVFS.TotalBlocks,
-			Bfree:   statVFS.FreeBlocks,
-			Bavail:  statVFS.AvailBlocks,
-			Files:   statVFS.TotalInodes,
-			Ffree:   statVFS.FreeInodes,
-			Bsize:   uint32(statVFS.BlockSize),
-			Namelen: uint32(statVFS.MaxFilenameLen),
-			Frsize:  uint32(statVFS.FragmentSize),
-		}
-	} else {
-		response = &fuse.StatfsResponse{}
+	response = &fuse.StatfsResponse{
+		Blocks:  statVFS.TotalBlocks,
+		Bfree:   statVFS.FreeBlocks,
+		Bavail:  statVFS.AvailBlocks,
+		Files:   statVFS.TotalInodes,
+		Ffree:   statVFS.FreeInodes,
+		Bsize:   uint32(statVFS.BlockSize),
+		Namelen: uint32(statVFS.MaxFilenameLen),
+		Frsize:  uint32(statVFS.FragmentSize),
 	}
 
 	request.Respond(response)

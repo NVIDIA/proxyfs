@@ -1542,16 +1542,6 @@ func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.T
 	return
 }
 
-// NOTE: Would have liked to use os.FileMode bitmask definitions here instead of creating our own,
-//       but unfortunately the bitmasks used by os.ModeDir and os.ModeSymlink (0x80000000 and 0x8000000)
-//       are not the same values as what is expected on the linux side (0x4000 and 0xa000).
-const (
-	PosixModeDir     InodeMode = 0x4000
-	PosixModeFile    InodeMode = 0x8000
-	PosixModeSymlink InodeMode = 0xa000
-	PosixModePerm    InodeMode = 0777
-)
-
 func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode, err error) {
 	// Caller should only be setting the file perm bits, but samba seems to send file type
 	// bits as well. Since we need to work with whatever samba does, let's just silently

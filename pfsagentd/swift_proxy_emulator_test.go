@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -98,6 +99,8 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 		},
 	}
 
+	fmt.Println("UNDO: Starting up ServeHTTP()")
+
 	testSwiftProxyEmulatorGlobals.Add(1)
 
 	go func() {
@@ -123,6 +126,8 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 	if http.StatusOK != infoResponse.StatusCode {
 		t.Fatalf("GET /info from ServeHTTP() got unexpected status %s", infoResponse.Status)
 	}
+
+	fmt.Println("UNDO: Start up of ServeHTTP() successful")
 }
 
 func stopSwiftProxyEmulator() {

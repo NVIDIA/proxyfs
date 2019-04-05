@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -18,7 +19,7 @@ import (
 
 const (
 	testDaemonStartPollInterval = 1 * time.Second
-	testDaemonStartPollLimit    = 30
+	testDaemonStartPollLimit    = 5
 	testProxyFSDaemonHTTPPort   = "53461"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
@@ -89,6 +90,8 @@ func testSetup(t *testing.T) {
 		"Agent.LogFilePath=",
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
+		"Agent.AttrDuration=10s",
+		"Agent.AttrBlockSize=4096",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
@@ -190,6 +193,8 @@ func testSetup(t *testing.T) {
 	testConfStrings = append(testConfStrings, "RamSwiftInfo.AccountListingLimit="+strconv.FormatUint(testAccountListingLimit, 10))
 	testConfStrings = append(testConfStrings, "RamSwiftInfo.ContainerListingLimit="+strconv.FormatUint(testContainerListingLimit, 10))
 
+	fmt.Println("UNDO: Starting up ramswift.Daemon()")
+
 	ramswiftSignalHandlerIsArmedWG.Add(1)
 	testDaemonGlobals.ramswiftDoneChan = make(chan bool, 1)
 
@@ -214,6 +219,10 @@ func testSetup(t *testing.T) {
 	if http.StatusOK != infoResponse.StatusCode {
 		t.Fatalf("GET /info from ramswift.Daemon() got unexpected status %s", infoResponse.Status)
 	}
+
+	fmt.Println("UNDO: Start up of ramswift.Daemon() successful")
+
+	fmt.Println("UNDO: Starting up proxyfsd.Daemon()")
 
 	testDaemonGlobals.proxyfsdErrChan = make(chan error, 1) // Must be buffered to avoid race
 
@@ -241,6 +250,8 @@ func testSetup(t *testing.T) {
 	if http.StatusOK != versionResponse.StatusCode {
 		t.Fatalf("GET /version from proxyfsd.Daemon() got unexpected status %s", versionResponse.Status)
 	}
+
+	fmt.Println("UNDO: Start up of proxyfsd.Daemon() successful")
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)
 	if nil != err {
