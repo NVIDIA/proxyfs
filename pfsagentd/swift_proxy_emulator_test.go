@@ -33,6 +33,7 @@ var testSwiftProxyEmulatorGlobals testSwiftProxyEmulatorGlobalsStruct
 
 func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 	var (
+		daemonPollAttempt        uint32
 		err                      error
 		infoResponse             *http.Response
 		jrpcServerIPAddr         string
@@ -105,16 +106,22 @@ func startSwiftProxyEmulator(t *testing.T, confMap conf.ConfMap) {
 		testSwiftProxyEmulatorGlobals.Done()
 	}()
 
+	daemonPollAttempt = 0
+
 	for {
 		infoResponse, err = http.Get("http://" + testSwiftProxyAddr + "/info")
 		if nil == err {
 			break
 		}
+		daemonPollAttempt++
+		if daemonPollAttempt == testDaemonStartPollLimit {
+			t.Fatalf("GET /info from ServeHTTP() failed to connect")
+		}
 		time.Sleep(testDaemonStartPollInterval)
 	}
 
 	if http.StatusOK != infoResponse.StatusCode {
-		t.Fatalf("GET /info from ServeHTTP() failed")
+		t.Fatalf("GET /info from ServeHTTP() got unexpected status %s", infoResponse.Status)
 	}
 }
 

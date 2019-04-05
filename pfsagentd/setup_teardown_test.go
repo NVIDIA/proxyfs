@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -18,7 +17,8 @@ import (
 )
 
 const (
-	testDaemonStartPollInterval = 100 * time.Millisecond
+	testDaemonStartPollInterval = 1 * time.Second
+	testDaemonStartPollLimit    = 30
 	testProxyFSDaemonHTTPPort   = "53461"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
@@ -36,6 +36,7 @@ var testDaemonGlobals testDaemonGlobalsStruct
 
 func testSetup(t *testing.T) {
 	var (
+		daemonPollAttempt              uint32
 		err                            error
 		infoResponse                   *http.Response
 		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
@@ -196,16 +197,22 @@ func testSetup(t *testing.T) {
 
 	ramswiftSignalHandlerIsArmedWG.Wait()
 
+	daemonPollAttempt = 0
+
 	for {
 		infoResponse, err = http.Get("http://" + testSwiftNoAuthIPAddr + ":" + testSwiftNoAuthPort + "/info")
 		if nil == err {
 			break
 		}
+		daemonPollAttempt++
+		if daemonPollAttempt == testDaemonStartPollLimit {
+			t.Fatalf("GET /info from ramswift.Daemon() failed to connect")
+		}
 		time.Sleep(testDaemonStartPollInterval)
 	}
 
 	if http.StatusOK != infoResponse.StatusCode {
-		t.Fatalf("GET /info from ramswift.Daemon() failed")
+		t.Fatalf("GET /info from ramswift.Daemon() got unexpected status %s", infoResponse.Status)
 	}
 
 	testDaemonGlobals.proxyfsdErrChan = make(chan error, 1) // Must be buffered to avoid race
@@ -217,16 +224,22 @@ func testSetup(t *testing.T) {
 		t.Fatalf("proxyfsd.Daemon() startup failed: %v", err)
 	}
 
+	daemonPollAttempt = 0
+
 	for {
 		versionResponse, err = http.Get("http://" + testProxyFSDaemonIPAddr + ":" + testProxyFSDaemonHTTPPort + "/version")
 		if nil == err {
 			break
 		}
-		fmt.Println(err)
+		daemonPollAttempt++
+		if daemonPollAttempt == testDaemonStartPollLimit {
+			t.Fatalf("GET /version from proxyfsd.Daemon() failed to connect")
+		}
+		time.Sleep(testDaemonStartPollInterval)
 	}
 
 	if http.StatusOK != versionResponse.StatusCode {
-		t.Fatalf("GET /version from proxyfsd.Daemon() failed")
+		t.Fatalf("GET /version from proxyfsd.Daemon() got unexpected status %s", versionResponse.Status)
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)
