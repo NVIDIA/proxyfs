@@ -32,6 +32,17 @@ const (
 	SymlinkType InodeType = unix.DT_LNK
 )
 
+// NOTE: Would have liked to use os.FileMode bitmask definitions here instead of creating our own,
+//       but unfortunately the bitmasks used by os.ModeDir and os.ModeSymlink (0x80000000 and 0x8000000)
+//       are not the same values as what is expected on the linux side (0x4000 and 0xa000).
+const (
+	PosixModeType    InodeMode = 0xE000
+	PosixModeDir     InodeMode = 0x4000
+	PosixModeFile    InodeMode = 0x8000
+	PosixModeSymlink InodeMode = 0xa000
+	PosixModePerm    InodeMode = 0777
+)
+
 // The following are used in calls to Access()... either F_OK or bitwise or of R_OK, W_OK, and X_OK
 const (
 	F_OK = InodeMode(unix.F_OK)                               //         check for existence
