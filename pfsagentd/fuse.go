@@ -11,6 +11,7 @@ import (
 
 	"bazil.org/fuse"
 
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -430,22 +431,35 @@ func handleSetxattrRequest(request *fuse.SetxattrRequest) {
 
 func handleStatfsRequest(request *fuse.StatfsRequest) {
 	var (
-		response *fuse.StatfsResponse
+		err            error
+		response       *fuse.StatfsResponse
+		statVFS        *jrpcfs.StatVFS
+		statVFSRequest *jrpcfs.StatVFSRequest
 	)
 
-	logInfof("TODO: handleStatfsRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	response = &fuse.StatfsResponse{
-		Blocks:  uint64(2 * 1024 * 1024 * 1024),
-		Bfree:   uint64(1024 * 1024 * 1024),
-		Bavail:  uint64(1024 * 1024 * 1024),
-		Files:   uint64(2 * 1024 * 1024),
-		Ffree:   uint64(1024 * 1024),
-		Bsize:   uint32(4096),
-		Namelen: uint32(4096),
-		Frsize:  uint32(4096),
+	statVFSRequest = &jrpcfs.StatVFSRequest{
+		MountID: globals.mountID,
 	}
-	logInfof("resonding with:\n%s", utils.JSONify(response, true))
+
+	statVFS = &jrpcfs.StatVFS{}
+
+	err = doJRPCRequest("Server.RpcStatVFS", statVFSRequest, statVFS)
+
+	if nil == err {
+		response = &fuse.StatfsResponse{
+			Blocks:  statVFS.TotalBlocks,
+			Bfree:   statVFS.FreeBlocks,
+			Bavail:  statVFS.AvailBlocks,
+			Files:   statVFS.TotalInodes,
+			Ffree:   statVFS.FreeInodes,
+			Bsize:   uint32(statVFS.BlockSize),
+			Namelen: uint32(statVFS.MaxFilenameLen),
+			Frsize:  uint32(statVFS.FragmentSize),
+		}
+	} else {
+		response = &fuse.StatfsResponse{}
+	}
+
 	request.Respond(response)
 }
 
