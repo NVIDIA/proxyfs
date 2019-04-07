@@ -42,6 +42,8 @@ type configStruct struct {
 	TraceEnabled            bool
 	AttrDuration            time.Duration
 	AttrBlockSize           uint64
+	LookupEntryDuration     time.Duration
+	ReaddirMaxEntries       uint64
 }
 
 type fileInodeLockRequestStruct struct {
@@ -105,6 +107,12 @@ type fileInodeStruct struct {
 	//                                                     fileInodeLeaseStateExclusiveGranted
 }
 
+type handleStruct struct {
+	inode.InodeNumber
+	prevDirEntLocation int64 // -1 is used if fuse.ReadRequest on DirInode specifies Offset == 0
+	//                          Otherwise, just assumes caller wants to keep going...
+}
+
 type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
@@ -123,6 +131,8 @@ type globalsStruct struct {
 	unleasedFileInodeCacheLRU       *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
 	sharedLeaseFileInodeCacheLRU    *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
 	exclusiveLeaseFileInodeCacheLRU *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
+	lastHandleID                    fuse.HandleID
+	handleTable                     map[fuse.HandleID]*handleStruct
 }
 
 var globals globalsStruct
@@ -279,6 +289,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatalf("AttrBlockSize must be non-zero and fit in a uint32")
 	}
 
+	globals.config.LookupEntryDuration, err = confMap.FetchOptionValueDuration("Agent", "LookupEntryDuration")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.ReaddirMaxEntries, err = confMap.FetchOptionValueUint64("Agent", "ReaddirMaxEntries")
+	if nil != err {
+		logFatal(err)
+	}
+
 	configJSONified = utils.JSONify(globals.config, true)
 
 	logInfof("\n%s", configJSONified)
@@ -339,6 +359,9 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.unleasedFileInodeCacheLRU = list.New()
 	globals.sharedLeaseFileInodeCacheLRU = list.New()
 	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
+
+	globals.lastHandleID = 0
+	globals.handleTable = make(map[fuse.HandleID]*handleStruct)
 }
 
 func uninitializeGlobals() {
@@ -368,4 +391,6 @@ func uninitializeGlobals() {
 	globals.unleasedFileInodeCacheLRU = nil
 	globals.sharedLeaseFileInodeCacheLRU = nil
 	globals.exclusiveLeaseFileInodeCacheLRU = nil
+	globals.lastHandleID = 0
+	globals.handleTable = nil
 }

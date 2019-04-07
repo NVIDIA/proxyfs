@@ -64,7 +64,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 
 	httpRequest.Header["Content-Type"] = []string{"application/json"}
 
-	_, jrpcResponse, ok = doHTTPRequest(httpRequest, http.StatusOK)
+	_, jrpcResponse, ok, _ = doHTTPRequest(httpRequest, http.StatusOK, http.StatusUnprocessableEntity)
 	if !ok {
 		logFatalf("unable to contact ProxyFS")
 	}
@@ -86,7 +86,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 	return
 }
 
-func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.Response, responseBody []byte, ok bool) {
+func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.Response, responseBody []byte, ok bool, statusCode int) {
 	var (
 		err              error
 		okStatusCode     int
@@ -133,6 +133,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		_, ok = okStatusCodesSet[response.StatusCode]
 		if ok {
+			statusCode = response.StatusCode
 			return
 		}
 

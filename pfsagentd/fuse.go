@@ -1,5 +1,9 @@
 package main
 
+// The following implements the Low Level FUSE upcalls for presenting a ProxyFS Volume locally.
+//
+// Documentation for the APIs and data structures is at: https://gowalker.org/bazil.org/fuse
+
 import (
 	"io"
 	"os"
@@ -287,18 +291,19 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 
 	switch inode.InodeMode(statStruct.FileMode) & inode.PosixModeType {
 	case inode.PosixModeDir:
-		mode = os.ModeDir | os.FileMode(statStruct.FileMode&uint32(inode.PosixModeType))
+		mode = os.ModeDir | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
 	case inode.PosixModeFile:
-		mode = os.FileMode(statStruct.FileMode & uint32(inode.PosixModeType))
+		mode = os.FileMode(statStruct.FileMode & uint32(inode.PosixModePerm))
 	case inode.PosixModeSymlink:
-		mode = os.ModeSymlink | os.FileMode(statStruct.FileMode&uint32(inode.PosixModeType))
+		mode = os.ModeSymlink | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
 	default:
+		logFatalf("Server.RpcGetStat returned unrecognized inode.InodeMode: 0x%08X", statStruct.FileMode)
 	}
 
 	response = &fuse.GetattrResponse{
 		Attr: fuse.Attr{
 			Valid:     globals.config.AttrDuration,
-			Inode:     uint64(request.Header.Node),
+			Inode:     uint64(request.Header.Node), // TODO: Check if SnapShot's work with this
 			Size:      statStruct.Size,
 			Blocks:    statStruct.Size / globals.config.AttrBlockSize,
 			Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
@@ -319,11 +324,39 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 }
 
 func handleGetxattrRequest(request *fuse.GetxattrRequest) {
-	logInfof("TODO: handleGetxattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		attrValueLenCap int
+		err             error
+		getXAttrReply   *jrpcfs.GetXAttrReply
+		getXAttrRequest *jrpcfs.GetXAttrRequest
+		response        *fuse.GetxattrResponse
+	)
+
+	getXAttrRequest = &jrpcfs.GetXAttrRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		AttrName: request.Name,
+	}
+
+	getXAttrReply = &jrpcfs.GetXAttrReply{}
+
+	err = doJRPCRequest("Server.RpcGetXAttr", getXAttrRequest, getXAttrReply)
+	if nil != err {
+		request.RespondError(fuseMissingXAttrErrno)
+	}
+
+	attrValueLenCap = len(getXAttrReply.AttrValue)
+	if attrValueLenCap > int(request.Size) {
+		attrValueLenCap = int(request.Size)
+	}
+
+	response = &fuse.GetxattrResponse{
+		Xattr: getXAttrReply.AttrValue[:attrValueLenCap],
+	}
+
+	request.Respond(response)
 }
 
 func handleInitRequest(request *fuse.InitRequest) {
@@ -355,11 +388,80 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 }
 
 func handleLookupRequest(request *fuse.LookupRequest) {
-	logInfof("TODO: handleLookupRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err            error
+		inodeReply     *jrpcfs.InodeReply
+		mode           os.FileMode
+		getStatRequest *jrpcfs.GetStatRequest
+		lookupRequest  *jrpcfs.LookupRequest
+		response       *fuse.LookupResponse
+		statStruct     *jrpcfs.StatStruct
+	)
+
+	lookupRequest = &jrpcfs.LookupRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename: request.Name,
+	}
+
+	inodeReply = &jrpcfs.InodeReply{}
+
+	err = doJRPCRequest("Server.RpcLookup", lookupRequest, inodeReply)
+	if nil != err {
+		request.RespondError(err)
+	}
+
+	getStatRequest = &jrpcfs.GetStatRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: inodeReply.InodeNumber,
+		},
+	}
+
+	statStruct = &jrpcfs.StatStruct{}
+
+	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
+	if nil != err {
+		request.RespondError(err)
+	}
+
+	switch inode.InodeMode(statStruct.FileMode) & inode.PosixModeType {
+	case inode.PosixModeDir:
+		mode = os.ModeDir | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
+	case inode.PosixModeFile:
+		mode = os.FileMode(statStruct.FileMode & uint32(inode.PosixModePerm))
+	case inode.PosixModeSymlink:
+		mode = os.ModeSymlink | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
+	default:
+		logFatalf("Server.RpcGetStat returned unrecognized inode.InodeMode: 0x%08X", statStruct.FileMode)
+	}
+
+	response = &fuse.LookupResponse{
+		Node:       fuse.NodeID(inodeReply.InodeNumber), // TODO: Check if SnapShot's work with this
+		Generation: 0,
+		EntryValid: globals.config.LookupEntryDuration,
+		Attr: fuse.Attr{
+			Valid:     globals.config.AttrDuration,
+			Inode:     uint64(inodeReply.InodeNumber), // TODO: Check if SnapShot's work with this
+			Size:      statStruct.Size,
+			Blocks:    statStruct.Size / globals.config.AttrBlockSize,
+			Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
+			Mtime:     time.Unix(0, int64(statStruct.MTimeNs)),
+			Ctime:     time.Unix(0, int64(statStruct.CTimeNs)),
+			Crtime:    time.Unix(0, int64(statStruct.CRTimeNs)),
+			Mode:      mode,
+			Nlink:     uint32(statStruct.NumLinks),
+			Uid:       statStruct.UserID,
+			Gid:       statStruct.GroupID,
+			Rdev:      uint32(0),
+			Flags:     uint32(0),
+			BlockSize: uint32(globals.config.AttrBlockSize),
+		},
+	}
+
+	request.Respond(response)
 }
 
 func handleMkdirRequest(request *fuse.MkdirRequest) {
@@ -379,35 +481,155 @@ func handleMknodRequest(request *fuse.MknodRequest) {
 }
 
 func handleOpenRequest(request *fuse.OpenRequest) {
-	logInfof("TODO: handleOpenRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		flags    fuse.OpenResponseFlags
+		handleID fuse.HandleID
+		response *fuse.OpenResponse
+	)
+
+	globals.Lock()
+
+	handleID = globals.lastHandleID + 1
+	globals.lastHandleID = handleID
+
+	globals.handleTable[handleID] = &handleStruct{
+		InodeNumber:        inode.InodeNumber(request.Node),
+		prevDirEntLocation: -1,
+	}
+
+	globals.Unlock()
+
+	if request.Dir {
+		flags = fuse.OpenResponseFlags(0)
+	} else {
+		flags = fuse.OpenDirectIO
+	}
+
+	response = &fuse.OpenResponse{
+		Handle: handleID,
+		Flags:  flags,
+	}
+
+	request.Respond(response)
 }
 
 func handleReadRequest(request *fuse.ReadRequest) {
-	logInfof("TODO: handleReadRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		dirent                      fuse.Dirent
+		direntType                  fuse.DirentType
+		dirEntry                    jrpcfs.DirEntry
+		err                         error
+		handle                      *handleStruct
+		ok                          bool
+		readdirByLocRequest         *jrpcfs.ReaddirByLocRequest
+		readdirReply                *jrpcfs.ReaddirReply
+		response                    *fuse.ReadResponse
+		responseDataLenBeforeAppend int
+	)
+
+	if request.Dir {
+		handle, ok = globals.handleTable[request.Handle]
+		if !ok {
+			request.RespondError(fuse.ESTALE)
+			return
+		}
+
+		if 0 == request.Offset {
+			handle.prevDirEntLocation = -1
+		}
+
+		readdirByLocRequest = &jrpcfs.ReaddirByLocRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+			MaxEntries:         globals.config.ReaddirMaxEntries,
+			PrevDirEntLocation: handle.prevDirEntLocation,
+		}
+
+		readdirReply = &jrpcfs.ReaddirReply{}
+
+		err = doJRPCRequest("Server.RpcReaddirByLoc", readdirByLocRequest, readdirReply)
+		if nil != err {
+			request.RespondError(err)
+		}
+
+		response = &fuse.ReadResponse{
+			Data: make([]byte, 0, request.Size),
+		}
+
+		for _, dirEntry = range readdirReply.DirEnts {
+			switch inode.InodeType(dirEntry.FileType) {
+			case inode.DirType:
+				direntType = fuse.DT_Dir
+			case inode.FileType:
+				direntType = fuse.DT_File
+			case inode.SymlinkType:
+				direntType = fuse.DT_Link
+			default:
+				direntType = fuse.DT_Unknown
+			}
+			dirent.Inode = uint64(dirEntry.InodeNumber) // TODO: Check if SnapShot's work with this
+			dirent.Type = direntType
+			dirent.Name = dirEntry.Basename
+
+			responseDataLenBeforeAppend = len(response.Data)
+
+			response.Data = fuse.AppendDirent(response.Data, dirent)
+			if len(response.Data) > request.Size {
+				response.Data = response.Data[:responseDataLenBeforeAppend]
+				break
+			}
+
+			handle.prevDirEntLocation++
+		}
+
+		request.Respond(response)
+	} else {
+		logInfof("TODO: handleReadRequest() for FileInode")
+		logInfof("Header:\n%s", utils.JSONify(request.Header, true))
+		logInfof("Payload\n%s", utils.JSONify(request, true))
+		logInfof("Responding with fuse.ENOTSUP")
+		request.RespondError(fuse.ENOTSUP)
+	}
 }
 
 func handleReadlinkRequest(request *fuse.ReadlinkRequest) {
-	logInfof("TODO: handleReadlinkRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err                error
+		readSymlinkReply   *jrpcfs.ReadSymlinkReply
+		readSymlinkRequest *jrpcfs.ReadSymlinkRequest
+	)
+
+	readSymlinkRequest = &jrpcfs.ReadSymlinkRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+	}
+
+	readSymlinkReply = &jrpcfs.ReadSymlinkReply{}
+
+	err = doJRPCRequest("Server.RpcReadSymlink", readSymlinkRequest, readSymlinkReply)
+	if nil != err {
+		request.RespondError(err)
+	}
+
+	request.Respond(readSymlinkReply.Target)
 }
 
 func handleReleaseRequest(request *fuse.ReleaseRequest) {
-	logInfof("TODO: handleReleaseRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	if !request.Dir && (0 != (request.ReleaseFlags & fuse.ReleaseFlush)) {
+		// TODO: perform Flush on FileInode if necessary
+	}
+
+	globals.Lock()
+
+	delete(globals.handleTable, request.Handle)
+
+	globals.Unlock()
+
+	request.Respond()
 }
 
 func handleRemoveRequest(request *fuse.RemoveRequest) {
