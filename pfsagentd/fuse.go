@@ -2,7 +2,10 @@ package main
 
 // The following implements the Low Level FUSE upcalls for presenting a ProxyFS Volume locally.
 //
-// Documentation for the APIs and data structures is at: https://gowalker.org/bazil.org/fuse
+// Useful URLs for understanding Bazil FUSE APIs and data structures:
+//
+//   https://gowalker.org/bazil.org/fuse          - specific to Bazil FUSE
+//   https://docs.racket-lang.org/fuse/index.html - generic to FUSE
 
 import (
 	"io"
@@ -63,19 +66,34 @@ func performMountFUSE() {
 		}
 	}
 
-	globals.fuseConn, err = fuse.Mount(
-		globals.config.FUSEMountPointPath,
-		fuse.AllowOther(),
-		fuse.AsyncRead(),
-		fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
-		fuse.ExclCreate(),
-		fuse.FSName(globals.config.FUSEVolumeName),
-		fuse.NoAppleDouble(),
-		fuse.NoAppleXattr(),
-		fuse.ReadOnly(),
-		fuse.Subtype("ProxyFS"),
-		fuse.VolumeName(globals.config.FUSEVolumeName),
-	)
+	if globals.config.ReadOnly {
+		globals.fuseConn, err = fuse.Mount(
+			globals.config.FUSEMountPointPath,
+			fuse.AllowOther(),
+			fuse.AsyncRead(),
+			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
+			fuse.ExclCreate(),
+			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.NoAppleDouble(),
+			fuse.NoAppleXattr(),
+			fuse.ReadOnly(),
+			fuse.Subtype("ProxyFS"),
+			fuse.VolumeName(globals.config.FUSEVolumeName),
+		)
+	} else {
+		globals.fuseConn, err = fuse.Mount(
+			globals.config.FUSEMountPointPath,
+			fuse.AllowOther(),
+			fuse.AsyncRead(),
+			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
+			fuse.ExclCreate(),
+			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.NoAppleDouble(),
+			fuse.NoAppleXattr(),
+			fuse.Subtype("ProxyFS"),
+			fuse.VolumeName(globals.config.FUSEVolumeName),
+		)
+	}
 	if nil != err {
 		logFatal(err)
 	}
@@ -209,7 +227,7 @@ func serveFuse() {
 		case *fuse.WriteRequest:
 			handleWriteRequest(request.(*fuse.WriteRequest))
 		default:
-			logWarnf("received unserviced %v", reflect.ValueOf(request).Type())
+			// Bazil FUSE punted the not-understood opCode... so just reject it
 			request.RespondError(fuse.ENOTSUP)
 		}
 	}
@@ -227,11 +245,11 @@ func handleCreateRequest(request *fuse.CreateRequest) {
 	request.RespondError(fuse.ENOTSUP)
 }
 
+// handleDestroyRequest is called just before an unmount. While we could enforce
+// that no subsequent upcalls will be made, this is not necessary.
+//
 func handleDestroyRequest(request *fuse.DestroyRequest) {
-	logInfof("TODO: handleDestroyRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	request.Respond()
 }
 
 func handleExchangeDataRequest(request *fuse.ExchangeDataRequest) {
@@ -242,28 +260,29 @@ func handleExchangeDataRequest(request *fuse.ExchangeDataRequest) {
 	request.RespondError(fuse.ENOTSUP)
 }
 
+// handleFlushRequest is called to sync/flush a previously opened FileInode or
+// DirInode at time of close. This is not to be confused with handleFsyncRequest
+// that is triggered at any time prior to close.
+//
 func handleFlushRequest(request *fuse.FlushRequest) {
-	logInfof("TODO: handleFlushRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	// TODO: For FileInode's, trigger necessary flushes
+	request.Respond()
 }
 
+// handleForgetRequest provides a "hint" to no longer cache info about an Inode.
+// As the InodeCache is managed with its own eviction logic, this becomes a no-op.
+//
 func handleForgetRequest(request *fuse.ForgetRequest) {
-	logInfof("TODO: handleForgetRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	request.Respond()
 }
 
+// handleFsyncRequest is called to sync/flush a previously opened FileInode or
+// DirInode. This is not to be confused with handleFlushRequest that is actually
+// the operation performced at time of close.
+//
 func handleFsyncRequest(request *fuse.FsyncRequest) {
-	logInfof("TODO: handleFsyncRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	// TODO: For FileInode's, trigger necessary flushes
+	request.Respond()
 }
 
 func handleGetattrRequest(request *fuse.GetattrRequest) {
@@ -287,6 +306,7 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
 	if nil != err {
 		request.RespondError(err)
+		return
 	}
 
 	switch inode.InodeMode(statStruct.FileMode) & inode.PosixModeType {
@@ -325,7 +345,6 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 
 func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 	var (
-		attrValueLenCap int
 		err             error
 		getXAttrReply   *jrpcfs.GetXAttrReply
 		getXAttrRequest *jrpcfs.GetXAttrRequest
@@ -347,13 +366,18 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 		request.RespondError(fuseMissingXAttrErrno)
 	}
 
-	attrValueLenCap = len(getXAttrReply.AttrValue)
-	if attrValueLenCap > int(request.Size) {
-		attrValueLenCap = int(request.Size)
-	}
-
-	response = &fuse.GetxattrResponse{
-		Xattr: getXAttrReply.AttrValue[:attrValueLenCap],
+	if int(request.Position) >= len(getXAttrReply.AttrValue) {
+		response = &fuse.GetxattrResponse{
+			Xattr: make([]byte, 0),
+		}
+	} else if int(request.Position+request.Size) < len(getXAttrReply.AttrValue) {
+		response = &fuse.GetxattrResponse{
+			Xattr: getXAttrReply.AttrValue[request.Position:(request.Position + request.Size)],
+		}
+	} else {
+		response = &fuse.GetxattrResponse{
+			Xattr: getXAttrReply.AttrValue[request.Position:],
+		}
 	}
 
 	request.Respond(response)
@@ -379,12 +403,62 @@ func handleLinkRequest(request *fuse.LinkRequest) {
 	request.RespondError(fuse.ENOTSUP)
 }
 
+// handleListxattrRequest makes the assumption that the Position parameter
+// refers to the byte offset from the beginning of the first byte of the
+// first attrName and that each attrName is followed by an ASCII NULL.
+// As a consequence, it seems reasonable that attrName's are likely all
+// ASCII characters. Alas, this does not explain the meaning of a value
+// for Position that does not land at the beginning of an attrName.
+//
 func handleListxattrRequest(request *fuse.ListxattrRequest) {
-	logInfof("TODO: handleListxattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		attrName         string
+		attrNamesBuf     []byte
+		err              error
+		listXAttrReply   *jrpcfs.ListXAttrReply
+		listXAttrRequest *jrpcfs.ListXAttrRequest
+		response         *fuse.ListxattrResponse
+	)
+
+	listXAttrRequest = &jrpcfs.ListXAttrRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+	}
+
+	listXAttrReply = &jrpcfs.ListXAttrReply{}
+
+	err = doJRPCRequest("Server.RpcGetXAttr", listXAttrRequest, listXAttrReply)
+
+	if nil == err {
+		attrNamesBuf = make([]byte, 0)
+
+		for _, attrName = range listXAttrReply.AttrNames {
+			attrNamesBuf = append(attrNamesBuf, []byte(attrName)...)
+			attrNamesBuf = append(attrNamesBuf, byte(0))
+		}
+
+		if int(request.Position) >= len(attrNamesBuf) {
+			response = &fuse.ListxattrResponse{
+				Xattr: make([]byte, 0),
+			}
+		} else if int(request.Position+request.Size) < len(attrNamesBuf) {
+			response = &fuse.ListxattrResponse{
+				Xattr: attrNamesBuf[request.Position:(request.Position + request.Size)],
+			}
+		} else {
+			response = &fuse.ListxattrResponse{
+				Xattr: attrNamesBuf[request.Position:],
+			}
+		}
+	} else {
+		response = &fuse.ListxattrResponse{
+			Xattr: make([]byte, 0),
+		}
+	}
+
+	request.Respond(response)
 }
 
 func handleLookupRequest(request *fuse.LookupRequest) {
@@ -411,6 +485,7 @@ func handleLookupRequest(request *fuse.LookupRequest) {
 	err = doJRPCRequest("Server.RpcLookup", lookupRequest, inodeReply)
 	if nil != err {
 		request.RespondError(err)
+		return
 	}
 
 	getStatRequest = &jrpcfs.GetStatRequest{
@@ -425,6 +500,7 @@ func handleLookupRequest(request *fuse.LookupRequest) {
 	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
 	if nil != err {
 		request.RespondError(err)
+		return
 	}
 
 	switch inode.InodeMode(statStruct.FileMode) & inode.PosixModeType {
@@ -552,6 +628,7 @@ func handleReadRequest(request *fuse.ReadRequest) {
 		err = doJRPCRequest("Server.RpcReaddirByLoc", readdirByLocRequest, readdirReply)
 		if nil != err {
 			request.RespondError(err)
+			return
 		}
 
 		response = &fuse.ReadResponse{
@@ -613,6 +690,7 @@ func handleReadlinkRequest(request *fuse.ReadlinkRequest) {
 	err = doJRPCRequest("Server.RpcReadSymlink", readSymlinkRequest, readSymlinkReply)
 	if nil != err {
 		request.RespondError(err)
+		return
 	}
 
 	request.Respond(readSymlinkReply.Target)
@@ -689,6 +767,7 @@ func handleStatfsRequest(request *fuse.StatfsRequest) {
 	err = doJRPCRequest("Server.RpcStatVFS", statVFSRequest, statVFS)
 	if nil != err {
 		request.RespondError(err)
+		return
 	}
 
 	response = &fuse.StatfsResponse{

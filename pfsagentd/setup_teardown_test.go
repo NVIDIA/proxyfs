@@ -86,6 +86,7 @@ func testSetup(t *testing.T) {
 		"Agent.ExclusiveFileLimit=100",
 		"Agent.MaxFlushSize=10485760",
 		"Agent.MaxFlushTime=10s",
+		"Agent.ReadOnly=false",
 		"Agent.LogFilePath=",
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
