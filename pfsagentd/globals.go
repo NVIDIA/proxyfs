@@ -37,6 +37,7 @@ type configStruct struct {
 	ExclusiveFileLimit      uint64
 	MaxFlushSize            uint64
 	MaxFlushTime            time.Duration
+	ReadOnly                bool
 	LogFilePath             string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole            bool
 	TraceEnabled            bool
@@ -247,6 +248,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.MaxFlushTime, err = confMap.FetchOptionValueDuration("Agent", "MaxFlushTime")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.ReadOnly, err = confMap.FetchOptionValueBool("Agent", "ReadOnly")
 	if nil != err {
 		logFatal(err)
 	}
