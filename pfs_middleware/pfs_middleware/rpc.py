@@ -104,6 +104,7 @@ allow_read_write = {
     "Server.RpcRename",
     "Server.RpcRenewLease",
     "Server.RpcResize",
+    "Server.RpcRmdir",
     "Server.RpcSetTimePath",
     "Server.RpcSetTime",
     "Server.RpcSetXAttrPath",

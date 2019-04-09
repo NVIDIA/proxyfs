@@ -154,7 +154,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			logInfof("doHTTPRequest() needs to call updateAuthTokenAndAccountURL()")
 			updateAuthTokenAndAccountURL()
 		} else {
-			logWarnf("doHTTPRequest() needs to retry due to unexpected http.Status %s (%d)", response.Status, response.StatusCode)
+			logWarnf("doHTTPRequest() needs to retry due to unexpected http.Status: %s", response.Status)
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])

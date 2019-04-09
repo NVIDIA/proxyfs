@@ -583,13 +583,13 @@ type TypeReply struct {
 	FileType uint16
 }
 
-// UnlinkRequest is the request object for RpcUnlinkPath.
+// UnlinkRequest is the request object for RpcUnlink & RpcRmdir.
 type UnlinkRequest struct {
 	InodeHandle
 	Basename string
 }
 
-// UnlinkPathRequest is the request object for RpcUnlinkPath.
+// UnlinkPathRequest is the request object for RpcUnlinkPath & RpcRmdirPath.
 type UnlinkPathRequest struct {
 	PathHandle
 }

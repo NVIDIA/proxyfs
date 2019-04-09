@@ -6,6 +6,17 @@ package main
 //
 //   https://gowalker.org/bazil.org/fuse          - specific to Bazil FUSE
 //   https://docs.racket-lang.org/fuse/index.html - generic to FUSE
+//
+// Bazil FUSE source provides insite into the mapping from FUSE ops to Request structs:
+//
+//   vendor/bazil.org/fuse/fuse_kernel.go         - FUSE op names
+//   vendor/bazil.org/fuse/fuse.go                - mapping from FUSE ops to Request structs
+//
+// JSON RPCs are implemented in packages fs, inode, & jrpcfs:
+//
+//   fs/api.go
+//   inode/api.go
+//   jrpcfs/api.go
 
 import (
 	"io"
@@ -711,11 +722,38 @@ func handleReleaseRequest(request *fuse.ReleaseRequest) {
 }
 
 func handleRemoveRequest(request *fuse.RemoveRequest) {
-	logInfof("TODO: handleRemoveRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err error
+		//rpcName       string
+		unlinkReply   *jrpcfs.Reply
+		unlinkRequest *jrpcfs.UnlinkRequest
+	)
+
+	unlinkRequest = &jrpcfs.UnlinkRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename: request.Name,
+	}
+
+	unlinkReply = &jrpcfs.Reply{}
+
+	if request.Dir {
+		// rpcName = "Server.RpcRmdir"
+		err = doJRPCRequest("Server.RpcRmdir", unlinkRequest, unlinkReply)
+	} else {
+		// rpcName = "Server.RpcUnlink"
+		err = doJRPCRequest("Server.RpcUnlink", unlinkRequest, unlinkReply)
+	}
+
+	// err = doJRPCRequest(rpcName, unlinkRequest, unlinkReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	request.Respond()
 }
 
 func handleRemovexattrRequest(request *fuse.RemovexattrRequest) {
