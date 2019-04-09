@@ -298,7 +298,6 @@ func mountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandl
 }
 
 func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.AccessUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -313,7 +312,6 @@ func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.CallInodeToProvisionObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -456,7 +454,6 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.FlushUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -729,7 +726,6 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 // Implements file locking conforming to fcntl(2) locking description. F_SETLKW is not implemented. Supports F_SETLW and F_GETLW.
 // whence: FS supports only SEEK_SET - starting from 0, since it does not manage file handles, caller is expected to supply the start and length relative to offset ZERO.
 func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlock *FlockStruct) (outFlock *FlockStruct, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		switch lockCmd {
@@ -874,7 +870,6 @@ func (mS *mountStruct) getstatHelperWhileLocked(inodeNumber inode.InodeNumber) (
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -921,7 +916,6 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeType inode.InodeType, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetTypeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -947,7 +941,6 @@ func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (value []byte, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -991,7 +984,6 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsDir bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsDirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1030,7 +1022,6 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsFile bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsFileUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1061,7 +1052,6 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsSymlink bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsSymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1092,7 +1082,6 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1192,7 +1181,6 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 }
 
 func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ListXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1239,7 +1227,6 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LookupUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1274,7 +1261,6 @@ func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LookupPathUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2896,7 +2882,6 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 }
 
 func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.MkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2964,7 +2949,6 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.RemoveXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3154,7 +3138,6 @@ Restart:
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ReadUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3330,7 +3313,6 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ReadsymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3371,7 +3353,6 @@ func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, newSize uint64) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ResizeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3413,7 +3394,6 @@ func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.RmdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3500,7 +3480,6 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3701,7 +3680,6 @@ const (
 )
 
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3762,7 +3740,6 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.StatVfsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3792,7 +3769,6 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 }
 
 func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3864,7 +3840,6 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.UnlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3946,7 +3921,6 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) VolumeName() (volumeName string) {
-
 	startTime := time.Now()
 
 	volumeName = mS.volStruct.volumeName
@@ -3955,7 +3929,6 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.WriteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
