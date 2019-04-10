@@ -78,7 +78,6 @@ allow_read_write = {
     "Server.RpcRmdir",
     "Server.RpcSetTime",
     "Server.RpcSetXAttr",
-    "Server.RpcSetstat",
     "Server.RpcStatVFS",
     "Server.RpcSymlink",
     "Server.RpcType",
