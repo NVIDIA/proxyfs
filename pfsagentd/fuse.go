@@ -335,19 +335,17 @@ func handleFsyncRequest(request *fuse.FsyncRequest) {
 	request.Respond()
 }
 
-func handleGetattrRequest(request *fuse.GetattrRequest) {
+func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 	var (
-		err            error
 		mode           os.FileMode
 		getStatRequest *jrpcfs.GetStatRequest
-		response       *fuse.GetattrResponse
 		statStruct     *jrpcfs.StatStruct
 	)
 
 	getStatRequest = &jrpcfs.GetStatRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(node), // TODO: Check if SnapShot's work with this
 		},
 	}
 
@@ -355,7 +353,6 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 
 	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
 	if nil != err {
-		request.RespondError(fuse.ENOENT)
 		return
 	}
 
@@ -370,24 +367,42 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 		logFatalf("Server.RpcGetStat returned unrecognized inode.InodeMode: 0x%08X", statStruct.FileMode)
 	}
 
+	attr = &fuse.Attr{
+		Valid:     globals.config.AttrDuration,
+		Inode:     uint64(node), // TODO: Check if SnapShot's work with this
+		Size:      statStruct.Size,
+		Blocks:    statStruct.Size / globals.config.AttrBlockSize,
+		Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
+		Mtime:     time.Unix(0, int64(statStruct.MTimeNs)),
+		Ctime:     time.Unix(0, int64(statStruct.CTimeNs)),
+		Crtime:    time.Unix(0, int64(statStruct.CRTimeNs)),
+		Mode:      mode,
+		Nlink:     uint32(statStruct.NumLinks),
+		Uid:       statStruct.UserID,
+		Gid:       statStruct.GroupID,
+		Rdev:      uint32(0),
+		Flags:     uint32(0),
+		BlockSize: uint32(globals.config.AttrBlockSize),
+	}
+
+	return
+}
+
+func handleGetattrRequest(request *fuse.GetattrRequest) {
+	var (
+		attr     *fuse.Attr
+		err      error
+		response *fuse.GetattrResponse
+	)
+
+	attr, err = getattrRequestHelper(request.Header.Node)
+	if nil != err {
+		request.RespondError(fuse.ENOENT)
+		return
+	}
+
 	response = &fuse.GetattrResponse{
-		Attr: fuse.Attr{
-			Valid:     globals.config.AttrDuration,
-			Inode:     uint64(request.Header.Node), // TODO: Check if SnapShot's work with this
-			Size:      statStruct.Size,
-			Blocks:    statStruct.Size / globals.config.AttrBlockSize,
-			Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
-			Mtime:     time.Unix(0, int64(statStruct.MTimeNs)),
-			Ctime:     time.Unix(0, int64(statStruct.CTimeNs)),
-			Crtime:    time.Unix(0, int64(statStruct.CRTimeNs)),
-			Mode:      mode,
-			Nlink:     uint32(statStruct.NumLinks),
-			Uid:       statStruct.UserID,
-			Gid:       statStruct.GroupID,
-			Rdev:      uint32(0),
-			Flags:     uint32(0),
-			BlockSize: uint32(globals.config.AttrBlockSize),
-		},
+		Attr: *attr,
 	}
 
 	request.Respond(response)
@@ -920,11 +935,134 @@ func handleRenameRequest(request *fuse.RenameRequest) {
 }
 
 func handleSetattrRequest(request *fuse.SetattrRequest) {
-	logInfof("TODO: handleSetattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		attr                 *fuse.Attr
+		chmodReply           *jrpcfs.Reply
+		chmodRequest         *jrpcfs.ChmodRequest
+		chownReply           *jrpcfs.Reply
+		chownRequest         *jrpcfs.ChownRequest
+		err                  error
+		response             *fuse.SetattrResponse
+		setTimeReply         *jrpcfs.Reply
+		setTimeRequest       *jrpcfs.SetTimeRequest
+		settingAtimeAndMtime bool
+		settingGid           bool
+		settingMode          bool
+		settingSize          bool
+		settingUid           bool
+	)
+
+	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime)) != request.Valid {
+		request.RespondError(fuse.ENOTSUP)
+		return
+	}
+
+	settingMode = (0 != (request.Valid & fuse.SetattrMode))
+
+	settingUid = (0 != (request.Valid & fuse.SetattrUid))
+	settingGid = (0 != (request.Valid & fuse.SetattrGid))
+
+	settingSize = (0 != (request.Valid & fuse.SetattrSize))
+
+	if 0 != (request.Valid & (fuse.SetattrAtime | fuse.SetattrMtime)) {
+		if (fuse.SetattrAtime | fuse.SetattrMtime) != (request.Valid & (fuse.SetattrAtime | fuse.SetattrMtime)) {
+			request.RespondError(fuse.ENOTSUP)
+			return
+		}
+		settingAtimeAndMtime = true
+	} else {
+		settingAtimeAndMtime = false
+	}
+
+	if settingMode {
+		if request.Mode != (request.Mode & os.FileMode(inode.PosixModePerm)) {
+			request.RespondError(fuse.ENOTSUP)
+			return
+		}
+
+		chmodRequest = &jrpcfs.ChmodRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+			FileMode: uint32(request.Mode),
+		}
+
+		chmodReply = &jrpcfs.Reply{}
+
+		err = doJRPCRequest("Server.RpcChmod", chmodRequest, chmodReply)
+		if nil != err {
+			request.RespondError(err)
+			return
+		}
+	}
+
+	if settingUid || settingGid {
+		chownRequest = &jrpcfs.ChownRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+		}
+
+		if settingUid {
+			chownRequest.UserID = int32(request.Uid)
+		} else {
+			chownRequest.UserID = -1
+		}
+
+		if settingGid {
+			chownRequest.GroupID = int32(request.Gid)
+		} else {
+			chownRequest.GroupID = -1
+		}
+
+		chownReply = &jrpcfs.Reply{}
+
+		err = doJRPCRequest("Server.RpcChown", chownRequest, chownReply)
+		if nil != err {
+			request.RespondError(err)
+			return
+		}
+	}
+
+	if settingSize {
+		request.RespondError(fuse.ENOTSUP) // TODO: can't call Server.RpcResize until handleWriteRequest() is implemented
+		return
+	}
+
+	if settingAtimeAndMtime {
+		setTimeRequest = &jrpcfs.SetTimeRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+			StatStruct: jrpcfs.StatStruct{
+				MTimeNs: 0, // TODO
+				ATimeNs: 0, // TODO
+			},
+		}
+
+		setTimeReply = &jrpcfs.Reply{}
+
+		err = doJRPCRequest("Server.RpcSetTime", setTimeRequest, setTimeReply)
+		if nil != err {
+			request.RespondError(err)
+			return
+		}
+	}
+
+	attr, err = getattrRequestHelper(request.Header.Node)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	response = &fuse.SetattrResponse{
+		Attr: *attr,
+	}
+
+	request.Respond(response)
 }
 
 func handleSetxattrRequest(request *fuse.SetxattrRequest) {
