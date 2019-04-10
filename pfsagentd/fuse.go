@@ -251,11 +251,48 @@ func handleAccessRequest(request *fuse.AccessRequest) {
 }
 
 func handleCreateRequest(request *fuse.CreateRequest) {
-	logInfof("TODO: handleCreateRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		embeddedLookupResponse *fuse.LookupResponse
+		embeddedOpenResponse   *fuse.OpenResponse
+		err                    error
+		createReply            *jrpcfs.Reply
+		createRequest          *jrpcfs.CreateRequest
+		response               *fuse.CreateResponse
+	)
+
+	createRequest = &jrpcfs.CreateRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename: request.Name,
+		UserID:   int32(request.Uid),
+		GroupID:  int32(request.Gid),
+		FileMode: uint32(request.Mode & os.ModePerm),
+	}
+
+	createReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcCreate", createRequest, createReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	embeddedLookupResponse, err = lookupRequestHelper(request.Node, request.Name)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	embeddedOpenResponse = openRequestHelper(embeddedLookupResponse.Node, false)
+
+	response = &fuse.CreateResponse{
+		LookupResponse: *embeddedLookupResponse,
+		OpenResponse:   *embeddedOpenResponse,
+	}
+
+	request.Respond(response)
 }
 
 // handleDestroyRequest is called just before an unmount. While we could enforce
@@ -377,6 +414,7 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 	err = doJRPCRequest("Server.RpcGetXAttr", getXAttrRequest, getXAttrReply)
 	if nil != err {
 		request.RespondError(fuseMissingXAttrErrno)
+		return
 	}
 
 	if int(request.Position) >= len(getXAttrReply.AttrValue) {
@@ -409,11 +447,37 @@ func handleInterruptRequest(request *fuse.InterruptRequest) {
 }
 
 func handleLinkRequest(request *fuse.LinkRequest) {
-	logInfof("TODO: handleLinkRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err         error
+		linkReply   *jrpcfs.Reply
+		linkRequest *jrpcfs.LinkRequest
+		response    *fuse.LookupResponse
+	)
+
+	linkRequest = &jrpcfs.LinkRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename:          request.NewName,
+		TargetInodeNumber: int64(request.OldNode), // TODO: Check if SnapShot's work with this
+	}
+
+	linkReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcLink", linkRequest, linkReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	response, err = lookupRequestHelper(request.Node, request.NewName)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	request.Respond(response)
 }
 
 // handleListxattrRequest makes the assumption that the Position parameter
@@ -606,18 +670,13 @@ func handleMkdirRequest(request *fuse.MkdirRequest) {
 }
 
 func handleMknodRequest(request *fuse.MknodRequest) {
-	logInfof("TODO: handleMknodRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
 	request.RespondError(fuse.ENOTSUP)
 }
 
-func handleOpenRequest(request *fuse.OpenRequest) {
+func openRequestHelper(node fuse.NodeID, dir bool) (response *fuse.OpenResponse) {
 	var (
 		flags    fuse.OpenResponseFlags
 		handleID fuse.HandleID
-		response *fuse.OpenResponse
 	)
 
 	globals.Lock()
@@ -626,13 +685,13 @@ func handleOpenRequest(request *fuse.OpenRequest) {
 	globals.lastHandleID = handleID
 
 	globals.handleTable[handleID] = &handleStruct{
-		InodeNumber:        inode.InodeNumber(request.Node),
+		InodeNumber:        inode.InodeNumber(node),
 		prevDirEntLocation: -1,
 	}
 
 	globals.Unlock()
 
-	if request.Dir {
+	if dir {
 		flags = fuse.OpenResponseFlags(0)
 	} else {
 		flags = fuse.OpenDirectIO
@@ -642,6 +701,16 @@ func handleOpenRequest(request *fuse.OpenRequest) {
 		Handle: handleID,
 		Flags:  flags,
 	}
+
+	return
+}
+
+func handleOpenRequest(request *fuse.OpenRequest) {
+	var (
+		response *fuse.OpenResponse
+	)
+
+	response = openRequestHelper(request.Node, request.Dir)
 
 	request.Respond(response)
 }
@@ -790,7 +859,6 @@ func handleRemoveRequest(request *fuse.RemoveRequest) {
 		err = doJRPCRequest("Server.RpcUnlink", unlinkRequest, unlinkReply)
 	}
 
-	// err = doJRPCRequest(rpcName, unlinkRequest, unlinkReply)
 	if nil != err {
 		request.RespondError(err)
 		return
@@ -800,19 +868,55 @@ func handleRemoveRequest(request *fuse.RemoveRequest) {
 }
 
 func handleRemovexattrRequest(request *fuse.RemovexattrRequest) {
-	logInfof("TODO: handleRemovexattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err                error
+		removeXAttrReply   *jrpcfs.Reply
+		removeXAttrRequest *jrpcfs.RemoveXAttrRequest
+	)
+
+	removeXAttrRequest = &jrpcfs.RemoveXAttrRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		AttrName: request.Name,
+	}
+
+	removeXAttrReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcRemoveXAttr", removeXAttrRequest, removeXAttrReply)
+	if nil != err {
+		request.RespondError(fuseMissingXAttrErrno)
+		return
+	}
+
+	request.Respond()
 }
 
 func handleRenameRequest(request *fuse.RenameRequest) {
-	logInfof("TODO: handleRenameRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		err           error
+		renameReply   *jrpcfs.Reply
+		renameRequest *jrpcfs.RenameRequest
+	)
+
+	renameRequest = &jrpcfs.RenameRequest{
+		MountID:           globals.mountID,
+		SrcDirInodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		SrcBasename:       request.OldName,
+		DstDirInodeNumber: int64(request.NewDir), // TODO: Check if SnapShot's work with this
+		DstBasename:       request.NewName,
+	}
+
+	renameReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcRename", renameRequest, renameReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	request.Respond()
 }
 
 func handleSetattrRequest(request *fuse.SetattrRequest) {
@@ -866,11 +970,44 @@ func handleStatfsRequest(request *fuse.StatfsRequest) {
 }
 
 func handleSymlinkRequest(request *fuse.SymlinkRequest) {
-	logInfof("TODO: handleSymlinkRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		embeddedLookupResponse *fuse.LookupResponse
+		err                    error
+		symlinkReply           *jrpcfs.Reply
+		symlinkRequest         *jrpcfs.SymlinkRequest
+		response               *fuse.SymlinkResponse
+	)
+
+	symlinkRequest = &jrpcfs.SymlinkRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename: request.NewName,
+		Target:   request.Target,
+		UserID:   int32(request.Uid),
+		GroupID:  int32(request.Gid),
+	}
+
+	symlinkReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcSymlink", symlinkRequest, symlinkReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	embeddedLookupResponse, err = lookupRequestHelper(request.Node, request.NewName)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	response = &fuse.SymlinkResponse{
+		LookupResponse: *embeddedLookupResponse,
+	}
+
+	request.Respond(response)
 }
 
 func handleWriteRequest(request *fuse.WriteRequest) {

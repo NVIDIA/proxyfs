@@ -313,14 +313,14 @@ type LookupPathRequest struct {
 	Fullpath string
 }
 
-// LinkRequest is the request object for RpcLinkPath.
+// LinkRequest is the request object for RpcLink.
 type LinkRequest struct {
 	InodeHandle
 	Basename          string
 	TargetInodeNumber int64
 }
 
-// LinkPathRequest is the request object for .
+// LinkPathRequest is the request object for RpcLinkPath.
 type LinkPathRequest struct {
 	PathHandle
 	TargetFullpath string
