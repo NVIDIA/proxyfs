@@ -179,7 +179,9 @@ func serveFuse() {
 			logErrorf("serveFuse() exiting due to err: %v", err)
 			return
 		}
+
 		logTracef("serveFuse() got %v", reflect.ValueOf(request).Type())
+
 		switch request.(type) {
 		case *fuse.AccessRequest:
 			handleAccessRequest(request.(*fuse.AccessRequest))
@@ -316,7 +318,7 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 
 	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
 	if nil != err {
-		request.RespondError(err)
+		request.RespondError(fuse.ENOENT)
 		return
 	}
 
@@ -472,30 +474,27 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 	request.Respond(response)
 }
 
-func handleLookupRequest(request *fuse.LookupRequest) {
+func lookupRequestHelper(node fuse.NodeID, name string) (response *fuse.LookupResponse, err error) {
 	var (
-		err            error
 		inodeReply     *jrpcfs.InodeReply
-		mode           os.FileMode
 		getStatRequest *jrpcfs.GetStatRequest
 		lookupRequest  *jrpcfs.LookupRequest
-		response       *fuse.LookupResponse
+		mode           os.FileMode
 		statStruct     *jrpcfs.StatStruct
 	)
 
 	lookupRequest = &jrpcfs.LookupRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(node), // TODO: Check if SnapShot's work with this
 		},
-		Basename: request.Name,
+		Basename: name,
 	}
 
 	inodeReply = &jrpcfs.InodeReply{}
 
 	err = doJRPCRequest("Server.RpcLookup", lookupRequest, inodeReply)
 	if nil != err {
-		request.RespondError(err)
 		return
 	}
 
@@ -510,7 +509,6 @@ func handleLookupRequest(request *fuse.LookupRequest) {
 
 	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, statStruct)
 	if nil != err {
-		request.RespondError(err)
 		return
 	}
 
@@ -548,15 +546,63 @@ func handleLookupRequest(request *fuse.LookupRequest) {
 		},
 	}
 
+	return
+}
+
+func handleLookupRequest(request *fuse.LookupRequest) {
+	var (
+		err      error
+		response *fuse.LookupResponse
+	)
+
+	response, err = lookupRequestHelper(request.Node, request.Name)
+	if nil != err {
+		request.RespondError(fuse.ENOENT)
+		return
+	}
+
 	request.Respond(response)
 }
 
 func handleMkdirRequest(request *fuse.MkdirRequest) {
-	logInfof("TODO: handleMkdirRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		embeddedLookupResponse *fuse.LookupResponse
+		err                    error
+		mkdirReply             *jrpcfs.Reply
+		mkdirRequest           *jrpcfs.MkdirRequest
+		response               *fuse.MkdirResponse
+	)
+
+	mkdirRequest = &jrpcfs.MkdirRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		Basename: request.Name,
+		UserID:   int32(request.Uid),
+		GroupID:  int32(request.Gid),
+		FileMode: uint32(request.Mode & os.ModePerm),
+	}
+
+	mkdirReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcMkdir", mkdirRequest, mkdirReply)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	embeddedLookupResponse, err = lookupRequestHelper(request.Node, request.Name)
+	if nil != err {
+		request.RespondError(err)
+		return
+	}
+
+	response = &fuse.MkdirResponse{
+		LookupResponse: *embeddedLookupResponse,
+	}
+
+	request.Respond(response)
 }
 
 func handleMknodRequest(request *fuse.MknodRequest) {
@@ -723,8 +769,7 @@ func handleReleaseRequest(request *fuse.ReleaseRequest) {
 
 func handleRemoveRequest(request *fuse.RemoveRequest) {
 	var (
-		err error
-		//rpcName       string
+		err           error
 		unlinkReply   *jrpcfs.Reply
 		unlinkRequest *jrpcfs.UnlinkRequest
 	)
@@ -740,10 +785,8 @@ func handleRemoveRequest(request *fuse.RemoveRequest) {
 	unlinkReply = &jrpcfs.Reply{}
 
 	if request.Dir {
-		// rpcName = "Server.RpcRmdir"
 		err = doJRPCRequest("Server.RpcRmdir", unlinkRequest, unlinkReply)
 	} else {
-		// rpcName = "Server.RpcUnlink"
 		err = doJRPCRequest("Server.RpcUnlink", unlinkRequest, unlinkReply)
 	}
 
