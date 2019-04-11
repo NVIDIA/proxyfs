@@ -82,6 +82,13 @@ const (
 	DefaultReportedNumInodes    uint64 = 100 * Gibi
 )
 
+// SetXAttr constants (Go should wrap these from /usr/include/attr/xattr.h>)
+const (
+	SetXAttrCreateOrReplace = 0
+	SetXAttrCreate          = 1
+	SetXAttrReplace         = 2
+)
+
 type FlockStruct struct {
 	Type   int32
 	Whence int32

@@ -1599,7 +1599,7 @@ func (s *Server) RpcReadSymlinkPath(in *ReadSymlinkPathRequest, reply *ReadSymli
 	return
 }
 
-func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err error) {
+func (s *Server) RpcRemoveXAttr(in *RemoveXAttrRequest, reply *Reply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1616,7 +1616,7 @@ func (s *Server) RpcRemovetXAttr(in *RemoveXAttrRequest, reply *Reply) (err erro
 	return
 }
 
-func (s *Server) RpcRemoveAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (err error) {
+func (s *Server) RpcRemoveXAttrPath(in *RemoveXAttrPathRequest, reply *Reply) (err error) {
 	enterGate()
 	defer leaveGate()
 
