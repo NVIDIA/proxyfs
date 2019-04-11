@@ -3673,12 +3673,6 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	return
 }
 
-// TODO: XATTR_* values are obtained from </usr/include/attr/xattr.h>, remove constants with go equivalent.
-const (
-	xattr_create  = 1
-	xattr_replace = 2
-)
-
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
 	startTime := time.Now()
 	defer func() {
@@ -3713,14 +3707,14 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 	}
 
 	switch flags {
-	case 0:
+	case SetXAttrCreateOrReplace:
 		break
-	case xattr_create:
+	case SetXAttrCreate:
 		_, err = mS.GetXAttr(userID, groupID, otherGroupIDs, inodeNumber, streamName)
 		if err == nil {
 			return blunder.AddError(err, blunder.FileExistsError)
 		}
-	case xattr_replace:
+	case SetXAttrReplace:
 		_, err = mS.GetXAttr(userID, groupID, otherGroupIDs, inodeNumber, streamName)
 		if err != nil {
 			return blunder.AddError(err, blunder.StreamNotFound)

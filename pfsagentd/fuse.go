@@ -29,6 +29,7 @@ import (
 
 	"bazil.org/fuse"
 
+	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -416,6 +417,11 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 		response        *fuse.GetxattrResponse
 	)
 
+	if (0 == request.Size) && (0 != request.Position) {
+		request.RespondError(fuse.ERANGE)
+		return
+	}
+
 	getXAttrRequest = &jrpcfs.GetXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
@@ -432,17 +438,23 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 		return
 	}
 
-	if int(request.Position) >= len(getXAttrReply.AttrValue) {
+	if 0 == request.Size {
 		response = &fuse.GetxattrResponse{
-			Xattr: make([]byte, 0),
-		}
-	} else if int(request.Position+request.Size) < len(getXAttrReply.AttrValue) {
-		response = &fuse.GetxattrResponse{
-			Xattr: getXAttrReply.AttrValue[request.Position:(request.Position + request.Size)],
+			Xattr: getXAttrReply.AttrValue,
 		}
 	} else {
-		response = &fuse.GetxattrResponse{
-			Xattr: getXAttrReply.AttrValue[request.Position:],
+		if int(request.Position) >= len(getXAttrReply.AttrValue) {
+			response = &fuse.GetxattrResponse{
+				Xattr: make([]byte, 0),
+			}
+		} else if int(request.Position+request.Size) < len(getXAttrReply.AttrValue) {
+			response = &fuse.GetxattrResponse{
+				Xattr: getXAttrReply.AttrValue[request.Position:(request.Position + request.Size)],
+			}
+		} else {
+			response = &fuse.GetxattrResponse{
+				Xattr: getXAttrReply.AttrValue[request.Position:],
+			}
 		}
 	}
 
@@ -512,6 +524,11 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 		response         *fuse.ListxattrResponse
 	)
 
+	if (0 == request.Size) && (0 != request.Position) {
+		request.RespondError(fuse.ERANGE)
+		return
+	}
+
 	listXAttrRequest = &jrpcfs.ListXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
@@ -521,7 +538,7 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 
 	listXAttrReply = &jrpcfs.ListXAttrReply{}
 
-	err = doJRPCRequest("Server.RpcGetXAttr", listXAttrRequest, listXAttrReply)
+	err = doJRPCRequest("Server.RpcListXAttr", listXAttrRequest, listXAttrReply)
 
 	if nil == err {
 		attrNamesBuf = make([]byte, 0)
@@ -531,17 +548,23 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 			attrNamesBuf = append(attrNamesBuf, byte(0))
 		}
 
-		if int(request.Position) >= len(attrNamesBuf) {
+		if 0 == request.Size {
 			response = &fuse.ListxattrResponse{
-				Xattr: make([]byte, 0),
-			}
-		} else if int(request.Position+request.Size) < len(attrNamesBuf) {
-			response = &fuse.ListxattrResponse{
-				Xattr: attrNamesBuf[request.Position:(request.Position + request.Size)],
+				Xattr: attrNamesBuf,
 			}
 		} else {
-			response = &fuse.ListxattrResponse{
-				Xattr: attrNamesBuf[request.Position:],
+			if int(request.Position) >= len(attrNamesBuf) {
+				response = &fuse.ListxattrResponse{
+					Xattr: make([]byte, 0),
+				}
+			} else if int(request.Position+request.Size) < len(attrNamesBuf) {
+				response = &fuse.ListxattrResponse{
+					Xattr: attrNamesBuf[request.Position:(request.Position + request.Size)],
+				}
+			} else {
+				response = &fuse.ListxattrResponse{
+					Xattr: attrNamesBuf[request.Position:],
+				}
 			}
 		}
 	} else {
@@ -1038,8 +1061,8 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
 			},
 			StatStruct: jrpcfs.StatStruct{
-				MTimeNs: 0, // TODO
-				ATimeNs: 0, // TODO
+				MTimeNs: uint64(request.Mtime.UnixNano()),
+				ATimeNs: uint64(request.Atime.UnixNano()),
 			},
 		}
 
@@ -1065,12 +1088,76 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 	request.Respond(response)
 }
 
+// handleSetxattrRequest supports creating and modifying an existing Extended Attribute.
+// This is a bit limited w.r.t. what FUSE allows, but Bazil FUSE has left support for
+// either requiring the Extended Attribute to previously not exist or to entirely replace
+// it. In any case, due to the support for modifying an existing Extended Attribute, this
+// func performs a Read-Modify-Write sequence. Note, also, that holes created from e.g.
+// out-of-order Extended Attribute fragment writes are written as zeroes. Finally, as there
+// is no way to discern between a modification starting at Position 0 and an entirely new
+// value, we will adopt the convention that a Position 0 request is explicitly a new
+// value (and, hence, avoid the Read-Modify-Write sequence).
+//
 func handleSetxattrRequest(request *fuse.SetxattrRequest) {
-	logInfof("TODO: handleSetxattrRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	var (
+		attrValue             []byte
+		err                   error
+		getXAttrReply         *jrpcfs.GetXAttrReply
+		getXAttrRequest       *jrpcfs.GetXAttrRequest
+		paddingNeeded         int
+		setXAttrReply         *jrpcfs.Reply
+		setXAttrRequest       *jrpcfs.SetXAttrRequest
+		xattrReplacementByte  byte
+		xattrReplacementIndex int
+	)
+
+	if 0 == request.Position {
+		attrValue = request.Xattr
+	} else {
+		getXAttrRequest = &jrpcfs.GetXAttrRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+			AttrName: request.Name,
+		}
+
+		getXAttrReply = &jrpcfs.GetXAttrReply{}
+
+		err = doJRPCRequest("Server.RpcGetXAttr", getXAttrRequest, getXAttrReply)
+		if nil == err {
+			attrValue = getXAttrReply.AttrValue
+			paddingNeeded = int(request.Position) + len(request.Xattr) - len(attrValue)
+			if 0 < paddingNeeded {
+				attrValue = append(attrValue, make([]byte, paddingNeeded)...)
+			}
+			for xattrReplacementIndex, xattrReplacementByte = range request.Xattr {
+				attrValue[xattrReplacementIndex+int(request.Position)] = xattrReplacementByte
+			}
+		} else {
+			attrValue = append(make([]byte, request.Position), request.Xattr...)
+		}
+	}
+
+	setXAttrRequest = &jrpcfs.SetXAttrRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		},
+		AttrName:  request.Name,
+		AttrValue: attrValue,
+		AttrFlags: fs.SetXAttrCreateOrReplace,
+	}
+
+	setXAttrReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcSetXAttr", setXAttrRequest, setXAttrReply)
+	if nil != err {
+		request.RespondError(fuseMissingXAttrErrno)
+		return
+	}
+
+	request.Respond()
 }
 
 func handleStatfsRequest(request *fuse.StatfsRequest) {
