@@ -24,7 +24,8 @@ from swift.common import swob
 from xml.etree import ElementTree
 
 import pfs_middleware.middleware as mware
-import pfs_middleware.bimodal_checker as bimodal_checker
+from pfs_middleware import rpc
+from pfs_middleware import bimodal_checker
 from . import helpers
 
 
@@ -4716,6 +4717,9 @@ class TestEtagHandling(unittest.TestCase):
 
 
 class TestProxyfsMethod(BaseMiddlewareTest):
+    allowed_rpc = next(method for method in rpc.allow_read_only
+                       if method != 'Server.RpcIsAccountBimodal')
+
     def test_non_swift_owner(self):
         req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS')
         status, _, _ = self.call_pfs(req)
@@ -4751,7 +4755,7 @@ class TestProxyfsMethod(BaseMiddlewareTest):
         expect_one_payload(b'\n')
         one_payload = json.dumps({
             'jsonrpc': '2.0',
-            'method': 'Server.RpcPing',
+            'method': self.allowed_rpc,
             'params': [{}],
         })
         expect_one_payload(one_payload + '\n' + one_payload)
@@ -4775,7 +4779,7 @@ class TestProxyfsMethod(BaseMiddlewareTest):
 
         expect_parse_error(json.dumps({
             'jsonrpc': '1.0',
-            'method': 'Server.PingReq',
+            'method': self.allowed_rpc,
             'params': [{}],
         }).encode('ascii'))
 
@@ -4787,27 +4791,27 @@ class TestProxyfsMethod(BaseMiddlewareTest):
 
         expect_parse_error(json.dumps({
             'jsonrpc': '2.0',
-            'method': 'Server.PingReq',
+            'method': self.allowed_rpc,
             'params': [{}, {}],
         }).encode('ascii'))
         expect_parse_error(json.dumps({
             'jsonrpc': '2.0',
-            'method': 'Server.PingReq',
+            'method': self.allowed_rpc,
             'params': [],
         }).encode('ascii'))
         expect_parse_error(json.dumps({
             'jsonrpc': '2.0',
-            'method': 'Server.PingReq',
+            'method': self.allowed_rpc,
             'params': [[]],
         }).encode('ascii'))
         expect_parse_error(json.dumps({
             'jsonrpc': '2.0',
-            'method': 'Server.PingReq',
+            'method': self.allowed_rpc,
             'params': {},
         }).encode('ascii'))
 
     def test_success(self):
-        def mock_RpcGetAccount(params):
+        def mock_rpc(params):
             self.assertEqual(params, {
                 "AccountName": "AUTH_test",
             })
@@ -4830,15 +4834,14 @@ class TestProxyfsMethod(BaseMiddlewareTest):
                     }],
                 }}
 
-        self.fake_rpc.register_handler(
-            "Server.RpcGetAccount", mock_RpcGetAccount)
+        self.fake_rpc.register_handler(self.allowed_rpc, mock_rpc)
 
         req = swob.Request.blank(
             "/v1/AUTH_test", method='PROXYFS',
             headers={'Content-Type': 'application/json'},
             environ={'swift_owner': True}, body=json.dumps({
                 'jsonrpc': '2.0',
-                'method': 'Server.RpcGetAccount',
+                'method': self.allowed_rpc,
                 'params': [{}],
             }))
         status, headers, body = self.call_pfs(req)
@@ -4867,22 +4870,21 @@ class TestProxyfsMethod(BaseMiddlewareTest):
         })
 
     def test_error(self):
-        def mock_RpcGetAccount(params):
+        def mock_rpc(params):
             self.assertEqual(params, {
                 "AccountName": "AUTH_test",
                 "some": "args",
             })
             return {"error": "errno 2"}
 
-        self.fake_rpc.register_handler(
-            "Server.RpcGetAccount", mock_RpcGetAccount)
+        self.fake_rpc.register_handler(self.allowed_rpc, mock_rpc)
 
         req = swob.Request.blank(
             "/v1/AUTH_test", method='PROXYFS',
             headers={'Content-Type': 'application/json'},
             environ={'swift_owner': True}, body=json.dumps({
                 'jsonrpc': '2.0',
-                'method': 'Server.RpcGetAccount',
+                'method': self.allowed_rpc,
                 'params': [{'some': 'args'}],
             }))
         status, headers, body = self.call_pfs(req)
