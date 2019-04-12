@@ -965,6 +965,10 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		chownReply           *jrpcfs.Reply
 		chownRequest         *jrpcfs.ChownRequest
 		err                  error
+		newAtime             *time.Time
+		newMtime             *time.Time
+		resizeReply          *jrpcfs.Reply
+		resizeRequest        *jrpcfs.ResizeRequest
 		response             *fuse.SetattrResponse
 		setTimeReply         *jrpcfs.Reply
 		setTimeRequest       *jrpcfs.SetTimeRequest
@@ -973,9 +977,33 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		settingMode          bool
 		settingSize          bool
 		settingUid           bool
+		timeNow              time.Time
 	)
 
-	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime)) != request.Valid {
+	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime | fuse.SetattrAtimeNow | fuse.SetattrMtimeNow)) != request.Valid {
+		// request.Valid contains non-supported bits
+		request.RespondError(fuse.ENOTSUP)
+		return
+	}
+	if (0 == (request.Valid & fuse.SetattrAtime)) && (0 != (request.Valid & fuse.SetattrAtimeNow)) {
+		// request.Valid cannot contain SetattrAtimeNow but not SetattrAtime
+		request.RespondError(fuse.ENOTSUP)
+		return
+	}
+	if (0 == (request.Valid & fuse.SetattrMtime)) && (0 != (request.Valid & fuse.SetattrMtimeNow)) {
+		// request.Valid cannot contain SetattrMtimeNow but not SetattrMtime
+		request.RespondError(fuse.ENOTSUP)
+		return
+	}
+	if (0 != (request.Valid & fuse.SetattrAtime)) &&
+		(0 == (request.Valid & fuse.SetattrMtime)) {
+		// request.Valid contains SetattrAtime{|Now} but not SetattrMtime{|Now}
+		request.RespondError(fuse.ENOTSUP)
+		return
+	}
+	if (0 == (request.Valid & fuse.SetattrAtime)) &&
+		(0 != (request.Valid & fuse.SetattrMtime)) {
+		// request.Valid contains SetattrMtime but not SetattrAtime
 		request.RespondError(fuse.ENOTSUP)
 		return
 	}
@@ -987,15 +1015,8 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 
 	settingSize = (0 != (request.Valid & fuse.SetattrSize))
 
-	if 0 != (request.Valid & (fuse.SetattrAtime | fuse.SetattrMtime)) {
-		if (fuse.SetattrAtime | fuse.SetattrMtime) != (request.Valid & (fuse.SetattrAtime | fuse.SetattrMtime)) {
-			request.RespondError(fuse.ENOTSUP)
-			return
-		}
-		settingAtimeAndMtime = true
-	} else {
-		settingAtimeAndMtime = false
-	}
+	// Note: we already know we'd get the same result if we included SetattrMtime
+	settingAtimeAndMtime = (0 != (request.Valid & fuse.SetattrAtime))
 
 	if settingMode {
 		if request.Mode != (request.Mode & os.FileMode(inode.PosixModePerm)) {
@@ -1050,19 +1071,49 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 	}
 
 	if settingSize {
-		request.RespondError(fuse.ENOTSUP) // TODO: can't call Server.RpcResize until handleWriteRequest() is implemented
-		return
+		resizeRequest = &jrpcfs.ResizeRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			},
+			NewSize: request.Size,
+		}
+
+		resizeReply = &jrpcfs.Reply{}
+
+		err = doJRPCRequest("Server.Resize", resizeRequest, resizeReply)
+		if nil != err {
+			request.RespondError(err)
+			return
+		}
 	}
 
 	if settingAtimeAndMtime {
+		timeNow = time.Now()
+
+		newAtime = nil
+		newMtime = nil
+
+		if 0 != (request.Valid & fuse.SetattrAtimeNow) {
+			newAtime = &timeNow
+		} else {
+			newAtime = &request.Atime
+		}
+
+		if 0 != (request.Valid & fuse.SetattrMtimeNow) {
+			newMtime = &timeNow
+		} else {
+			newMtime = &request.Mtime
+		}
+
 		setTimeRequest = &jrpcfs.SetTimeRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
 				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
 			},
 			StatStruct: jrpcfs.StatStruct{
-				MTimeNs: uint64(request.Mtime.UnixNano()),
-				ATimeNs: uint64(request.Atime.UnixNano()),
+				MTimeNs: uint64(newMtime.UnixNano()),
+				ATimeNs: uint64(newAtime.UnixNano()),
 			},
 		}
 
