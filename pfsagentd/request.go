@@ -59,14 +59,14 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 
 	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
 	if nil != marshalErr {
-		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, marshalErr)
+		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %#v", jrpcMethod, jrpcParam, marshalErr)
 	}
 
 	_, swiftAccountURL = fetchAuthTokenAndAccountURL()
 
 	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
 	if nil != httpErr {
-		logFatalf("unable to create PROXYFS http.Request (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, httpErr)
+		logFatalf("unable to create PROXYFS http.Request (jrpcMethod=%s jrpcParam=%#v): %v", jrpcMethod, jrpcParam, httpErr)
 	}
 
 	httpRequest.Header["Content-Type"] = []string{"application/json"}
@@ -78,7 +78,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 
 	_, err, unmarshalErr = jrpcUnmarshalResponseForIDAndError(jrpcResponse)
 	if nil != unmarshalErr {
-		logFatalf("unable to unmarshal response [case 1] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+		logFatalf("unable to unmarshal response [case 1] (jrpcMethod=%s jrpcParam=%#v): %v", jrpcMethod, jrpcParam, unmarshalErr)
 	}
 
 	if nil != err {
@@ -87,7 +87,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 
 	unmarshalErr = jrpcUnmarshalResponse(jrpcRequestID, jrpcResponse, jrpcResult)
 	if nil != unmarshalErr {
-		logFatalf("unable to unmarshal response [case 2] (jrpcMethod=%s jrpcParam=%v): %v", jrpcMethod, jrpcParam, unmarshalErr)
+		logFatalf("unable to unmarshal response [case 2] (jrpcMethod=%s jrpcParam=%#v): %v", jrpcMethod, jrpcParam, unmarshalErr)
 	}
 
 	return

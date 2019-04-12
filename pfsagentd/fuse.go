@@ -827,11 +827,7 @@ func handleReadRequest(request *fuse.ReadRequest) {
 
 		request.Respond(response)
 	} else {
-		logInfof("TODO: handleReadRequest() for FileInode")
-		logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-		logInfof("Payload\n%s", utils.JSONify(request, true))
-		logInfof("Responding with fuse.ENOTSUP")
-		request.RespondError(fuse.ENOTSUP)
+		handleReadRequestFileInodeCaseTODO(request)
 	}
 }
 
@@ -997,7 +993,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 	}
 	if (0 != (request.Valid & fuse.SetattrAtime)) &&
 		(0 == (request.Valid & fuse.SetattrMtime)) {
-		// request.Valid contains SetattrAtime{|Now} but not SetattrMtime{|Now}
+		// request.Valid contains SetattrAtime but not SetattrMtime
 		request.RespondError(fuse.ENOTSUP)
 		return
 	}
@@ -1287,9 +1283,5 @@ func handleSymlinkRequest(request *fuse.SymlinkRequest) {
 }
 
 func handleWriteRequest(request *fuse.WriteRequest) {
-	logInfof("TODO: handleWriteRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	handleWriteRequestTODO(request)
 }
