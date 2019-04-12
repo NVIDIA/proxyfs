@@ -18,7 +18,13 @@ import (
 // and the globals.fileInodeMap must, therefore, never "forget" a fileInodeStruct
 // for which a reference is still available.
 //
-// References occur in two cases:
+// References occur in three cases:
+//
+//   A Shared or Exclusive Lock is being requested or held for a FileInode:
+//
+//     The lock requestor must first reference a FileInode before makeing
+//     the Shared or Exclusive Lock request. After releasing the Lock, they
+//     dereference it.
 //
 //   A FileInode's ExtentMap is being fetched or maintained:
 //
@@ -43,6 +49,8 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 		ok                      bool
 	)
 
+	delayedLeaseRequestList = nil
+
 	globals.Lock()
 
 	fileInode, ok = globals.fileInodeMap[inodeNumber]
@@ -57,6 +65,9 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 			sharedLockHolders:   list.New(),
 			exclusiveLockHolder: nil,
 			lockWaiters:         list.New(),
+			extentMapFileSize:   0,
+			extentMap:           nil,
+			chunkedPutList:      list.New(),
 		}
 
 		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
@@ -68,7 +79,9 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 
 	globals.Unlock()
 
-	performDelayedLeaseRequestList(delayedLeaseRequestList)
+	if nil != delayedLeaseRequestList {
+		performDelayedLeaseRequestList(delayedLeaseRequestList)
+	}
 
 	return
 }
@@ -90,6 +103,8 @@ func (fileInode *fileInodeStruct) dereference() {
 		delayedLeaseRequestList *list.List
 	)
 
+	delayedLeaseRequestList = nil
+
 	globals.Lock()
 
 	fileInode.references--
@@ -100,7 +115,9 @@ func (fileInode *fileInodeStruct) dereference() {
 
 	globals.Unlock()
 
-	performDelayedLeaseRequestList(delayedLeaseRequestList)
+	if nil != delayedLeaseRequestList {
+		performDelayedLeaseRequestList(delayedLeaseRequestList)
+	}
 }
 
 // honorInodeCacheLimitsWhileLocked enforces the SharedFileLimit and ExclusiveFileLimit confMap
@@ -255,7 +272,7 @@ func (fileInode *fileInodeStruct) getSharedLock() (grantedLock *fileInodeLockReq
 			continue
 		}
 
-		if (nil != fileInode.exclusiveLockHolder) || (0 == fileInode.lockWaiters.Len()) {
+		if nil != fileInode.exclusiveLockHolder {
 			// Need to block awaiting a release() on a conflicting held or prior pending LockRequest
 			grantedLock.Add(1)
 			grantedLock.waitersElement = fileInode.lockWaiters.PushBack(grantedLock)
@@ -393,6 +410,7 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 	nextLockElement = fileInode.lockWaiters.Front()
 
 	if nil == nextLockElement {
+		globals.Unlock()
 		return
 	}
 
