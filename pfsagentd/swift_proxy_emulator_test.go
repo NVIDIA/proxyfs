@@ -401,11 +401,9 @@ func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	jrpcResponseBuf = jrpcResponseBuf[:jrpcResponseLen]
-
 	responseWriter.Header().Add("Content-Type", "application/json")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write(jrpcResponseBuf)
+	_, _ = responseWriter.Write(jrpcResponseBuf[:jrpcResponseLen])
 
 	testSwiftProxyEmulatorGlobals.jrpcResponsePool.Put(jrpcResponseBuf)
 }
