@@ -26,6 +26,9 @@ import uuid
 
 allow_read_only = {
     "Server.RpcFetchExtentMapChunk",
+    "Server.RpcGetAccount",
+    "Server.RpcGetContainer",
+    "Server.RpcGetObject",
     "Server.RpcGetStat",
     "Server.RpcGetXAttr",
     "Server.RpcListXAttr",
