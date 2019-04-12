@@ -11,6 +11,8 @@ import (
 
 	"bazil.org/fuse"
 
+	"github.com/swiftstack/sortedmap"
+
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -18,33 +20,35 @@ import (
 )
 
 type configStruct struct {
-	FUSEVolumeName          string
-	FUSEMountPointPath      string // Unless starting with '/', relative to $CWD
-	FUSEUnMountRetryDelay   time.Duration
-	FUSEUnMountRetryCap     uint64
-	SwiftAuthURL            string // If domain name is used, round-robin among all will be used
-	SwiftAuthUser           string
-	SwiftAuthKey            string
-	SwiftAccountName        string // Must be a bi-modal account
-	SwiftTimeout            time.Duration
-	SwiftRetryLimit         uint64
-	SwiftRetryDelay         time.Duration
-	SwiftRetryExpBackoff    float64
-	SwiftConnectionPoolSize uint64
-	ReadCacheLineSize       uint64 // Aligned chunk of a LogSegment
-	ReadCacheLineCount      uint64
-	SharedFileLimit         uint64
-	ExclusiveFileLimit      uint64
-	MaxFlushSize            uint64
-	MaxFlushTime            time.Duration
-	ReadOnly                bool
-	LogFilePath             string // Unless starting with '/', relative to $CWD; == "" means disabled
-	LogToConsole            bool
-	TraceEnabled            bool
-	AttrDuration            time.Duration
-	AttrBlockSize           uint64
-	LookupEntryDuration     time.Duration
-	ReaddirMaxEntries       uint64
+	FUSEVolumeName               string
+	FUSEMountPointPath           string // Unless starting with '/', relative to $CWD
+	FUSEUnMountRetryDelay        time.Duration
+	FUSEUnMountRetryCap          uint64
+	SwiftAuthURL                 string // If domain name is used, round-robin among all will be used
+	SwiftAuthUser                string
+	SwiftAuthKey                 string
+	SwiftAccountName             string // Must be a bi-modal account
+	SwiftTimeout                 time.Duration
+	SwiftRetryLimit              uint64
+	SwiftRetryDelay              time.Duration
+	SwiftRetryExpBackoff         float64
+	SwiftConnectionPoolSize      uint64
+	FetchExtentsFromFileOffset   uint64
+	FetchExtentsBeforeFileOffset uint64
+	ReadCacheLineSize            uint64 // Aligned chunk of a LogSegment
+	ReadCacheLineCount           uint64
+	SharedFileLimit              uint64
+	ExclusiveFileLimit           uint64
+	MaxFlushSize                 uint64
+	MaxFlushTime                 time.Duration
+	ReadOnly                     bool
+	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
+	LogToConsole                 bool
+	TraceEnabled                 bool
+	AttrDuration                 time.Duration
+	AttrBlockSize                uint64
+	LookupEntryDuration          time.Duration
+	ReaddirMaxEntries            uint64
 }
 
 type fileInodeLockRequestStruct struct {
@@ -86,7 +90,40 @@ type fileInodeLeaseRequestStruct struct {
 	delayedLeaseRequestListElement *list.Element
 }
 
+// singleObjectExtentStruct is used for both the chunkedPutContextStruct as well
+// as for representing a ReadPlanStep.
+//
+type singleObjectExtentStruct struct {
+	fileOffset   uint64 // Key
+	objectOffset uint64
+	length       uint64
+}
+
+// multiObjectExtentStruct is used for both the fileInodeStruct.extentMap as well
+// as for representing a ReadPlanStep. In this latter case, an objectName == ""
+// indicates a zero-filled extent rather than a read from a LogSegment.
+//
+type multiObjectExtentStruct struct {
+	fileOffset    uint64 // Key
+	containerName string
+	objectName    string
+	objectOffset  uint64
+	length        uint64
+}
+
+type chunkedPutContextStruct struct {
+	containerName string
+	objectName    string
+	extentMap     sortedmap.LLRBTree // Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
+	fileSize      uint64             // Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
+	//                                    updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
+	buf                   []byte
+	chunkedPutListElement *list.Element // FIFO Element of fileInodeStruct.chunkedPutList
+	open                  bool          // If last FIFO Element, may be "open" meaning not yet "closed"
+}
+
 type fileInodeStruct struct {
+	sync.Mutex
 	inode.InodeNumber
 	references          uint64
 	leaseState          fileInodeLeaseStateType
@@ -106,12 +143,38 @@ type fileInodeStruct struct {
 	//                                                     fileInodeLeaseStateSharedPromoting
 	//                                                     fileInodeLeaseStateExclusiveRequested
 	//                                                     fileInodeLeaseStateExclusiveGranted
+	extentMapFileSize uint64             //            FileSize covered by .extentMap (.chunkedPutList may extend)
+	extentMap         sortedmap.LLRBTree //            Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
+	chunkedPutList    *list.List         //            FIFO List of chunkedPutContextStruct's
 }
 
 type handleStruct struct {
 	inode.InodeNumber
 	prevDirEntLocation int64 // -1 is used if fuse.ReadRequest on DirInode specifies Offset == 0
 	//                          Otherwise, just assumes caller wants to keep going...
+}
+
+type logSegmentCacheElementStateType uint8
+
+const (
+	logSegmentCacheElementStateGetIssued logSegmentCacheElementStateType = iota
+	logSegmentCacheElementStateGetSuccessful
+	logSegmentCacheElementStateGetFailed // In which case it must not be in LLRBTree nor LRU
+)
+
+type logSegmentCacheElementKeyStruct struct {
+	logSegmentNumber uint64 // Converted from logSegmentCacheElementStruct.objectName
+	cacheLineTag     uint64 // == logSegmentCacheElementStruct.offset / globals.config.ReadCacheLineSize
+}
+
+type logSegmentCacheElementStruct struct {
+	sync.WaitGroup                                  // Used by those awaiting GET result
+	state           logSegmentCacheElementStateType //  if logSegmentCacheElementStateGetIssued
+	containerName   string
+	objectName      string
+	startingOffset  uint64
+	cacheLRUElement *list.Element // Element on globals.logSegmentCacheLRU
+	buf             []byte
 }
 
 type globalsStruct struct {
@@ -134,6 +197,8 @@ type globalsStruct struct {
 	exclusiveLeaseFileInodeCacheLRU *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
 	lastHandleID                    fuse.HandleID
 	handleTable                     map[fuse.HandleID]*handleStruct
+	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
+	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
 }
 
 var globals globalsStruct
@@ -218,6 +283,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.SwiftConnectionPoolSize, err = confMap.FetchOptionValueUint64("Agent", "SwiftConnectionPoolSize")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.FetchExtentsFromFileOffset, err = confMap.FetchOptionValueUint64("Agent", "FetchExtentsFromFileOffset")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.FetchExtentsBeforeFileOffset, err = confMap.FetchOptionValueUint64("Agent", "FetchExtentsBeforeFileOffset")
 	if nil != err {
 		logFatal(err)
 	}
@@ -368,6 +443,9 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.lastHandleID = 0
 	globals.handleTable = make(map[fuse.HandleID]*handleStruct)
+
+	globals.logSegmentCacheMap = make(map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct)
+	globals.logSegmentCacheLRU = list.New()
 }
 
 func uninitializeGlobals() {
@@ -399,4 +477,6 @@ func uninitializeGlobals() {
 	globals.exclusiveLeaseFileInodeCacheLRU = nil
 	globals.lastHandleID = 0
 	globals.handleTable = nil
+	globals.logSegmentCacheMap = nil
+	globals.logSegmentCacheLRU = nil
 }

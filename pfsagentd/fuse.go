@@ -32,7 +32,6 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -239,7 +238,7 @@ func serveFuse() {
 		case *fuse.SymlinkRequest:
 			handleSymlinkRequest(request.(*fuse.SymlinkRequest))
 		case *fuse.WriteRequest:
-			handleWriteRequest(request.(*fuse.WriteRequest))
+			handleWriteRequest(request.(*fuse.WriteRequest)) // See io.go
 		default:
 			// Bazil FUSE punted the not-understood opCode... so just reject it
 			request.RespondError(fuse.ENOTSUP)
@@ -264,7 +263,7 @@ func handleCreateRequest(request *fuse.CreateRequest) {
 	createRequest = &jrpcfs.CreateRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename: request.Name,
 		UserID:   int32(request.Uid),
@@ -304,10 +303,6 @@ func handleDestroyRequest(request *fuse.DestroyRequest) {
 }
 
 func handleExchangeDataRequest(request *fuse.ExchangeDataRequest) {
-	logInfof("TODO: handleExchangeDataRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
 	request.RespondError(fuse.ENOTSUP)
 }
 
@@ -346,7 +341,7 @@ func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 	getStatRequest = &jrpcfs.GetStatRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(node), // TOCHECK: If SnapShot's work with this
 		},
 	}
 
@@ -370,7 +365,7 @@ func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 
 	attr = &fuse.Attr{
 		Valid:     globals.config.AttrDuration,
-		Inode:     uint64(node), // TODO: Check if SnapShot's work with this
+		Inode:     uint64(node), // TOCHECK: If SnapShot's work with this
 		Size:      statStruct.Size,
 		Blocks:    statStruct.Size / globals.config.AttrBlockSize,
 		Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
@@ -425,7 +420,7 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 	getXAttrRequest = &jrpcfs.GetXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		AttrName: request.Name,
 	}
@@ -466,10 +461,6 @@ func handleInitRequest(request *fuse.InitRequest) {
 }
 
 func handleInterruptRequest(request *fuse.InterruptRequest) {
-	logInfof("TODO: handleInterruptRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
 	request.RespondError(fuse.ENOTSUP)
 }
 
@@ -484,10 +475,10 @@ func handleLinkRequest(request *fuse.LinkRequest) {
 	linkRequest = &jrpcfs.LinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename:          request.NewName,
-		TargetInodeNumber: int64(request.OldNode), // TODO: Check if SnapShot's work with this
+		TargetInodeNumber: int64(request.OldNode), // TOCHECK: If SnapShot's work with this
 	}
 
 	linkReply = &jrpcfs.Reply{}
@@ -532,7 +523,7 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 	listXAttrRequest = &jrpcfs.ListXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 	}
 
@@ -588,7 +579,7 @@ func lookupRequestHelper(node fuse.NodeID, name string) (response *fuse.LookupRe
 	lookupRequest = &jrpcfs.LookupRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename: name,
 	}
@@ -626,12 +617,12 @@ func lookupRequestHelper(node fuse.NodeID, name string) (response *fuse.LookupRe
 	}
 
 	response = &fuse.LookupResponse{
-		Node:       fuse.NodeID(inodeReply.InodeNumber), // TODO: Check if SnapShot's work with this
+		Node:       fuse.NodeID(inodeReply.InodeNumber), // TOCHECK: If SnapShot's work with this
 		Generation: 0,
 		EntryValid: globals.config.LookupEntryDuration,
 		Attr: fuse.Attr{
 			Valid:     globals.config.AttrDuration,
-			Inode:     uint64(inodeReply.InodeNumber), // TODO: Check if SnapShot's work with this
+			Inode:     uint64(inodeReply.InodeNumber), // TOCHECK: If SnapShot's work with this
 			Size:      statStruct.Size,
 			Blocks:    statStruct.Size / globals.config.AttrBlockSize,
 			Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
@@ -678,7 +669,7 @@ func handleMkdirRequest(request *fuse.MkdirRequest) {
 	mkdirRequest = &jrpcfs.MkdirRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename: request.Name,
 		UserID:   int32(request.Uid),
@@ -781,7 +772,7 @@ func handleReadRequest(request *fuse.ReadRequest) {
 		readdirByLocRequest = &jrpcfs.ReaddirByLocRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 			MaxEntries:         globals.config.ReaddirMaxEntries,
 			PrevDirEntLocation: handle.prevDirEntLocation,
@@ -810,7 +801,7 @@ func handleReadRequest(request *fuse.ReadRequest) {
 			default:
 				direntType = fuse.DT_Unknown
 			}
-			dirent.Inode = uint64(dirEntry.InodeNumber) // TODO: Check if SnapShot's work with this
+			dirent.Inode = uint64(dirEntry.InodeNumber) // TOCHECK: If SnapShot's work with this
 			dirent.Type = direntType
 			dirent.Name = dirEntry.Basename
 
@@ -827,7 +818,7 @@ func handleReadRequest(request *fuse.ReadRequest) {
 
 		request.Respond(response)
 	} else {
-		handleReadRequestFileInodeCaseTODO(request)
+		handleReadRequestFileInodeCase(request) // See io.go
 	}
 }
 
@@ -841,7 +832,7 @@ func handleReadlinkRequest(request *fuse.ReadlinkRequest) {
 	readSymlinkRequest = &jrpcfs.ReadSymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 	}
 
@@ -880,7 +871,7 @@ func handleRemoveRequest(request *fuse.RemoveRequest) {
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename: request.Name,
 	}
@@ -911,7 +902,7 @@ func handleRemovexattrRequest(request *fuse.RemovexattrRequest) {
 	removeXAttrRequest = &jrpcfs.RemoveXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		AttrName: request.Name,
 	}
@@ -936,9 +927,9 @@ func handleRenameRequest(request *fuse.RenameRequest) {
 
 	renameRequest = &jrpcfs.RenameRequest{
 		MountID:           globals.mountID,
-		SrcDirInodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+		SrcDirInodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		SrcBasename:       request.OldName,
-		DstDirInodeNumber: int64(request.NewDir), // TODO: Check if SnapShot's work with this
+		DstDirInodeNumber: int64(request.NewDir), // TOCHECK: If SnapShot's work with this
 		DstBasename:       request.NewName,
 	}
 
@@ -1023,7 +1014,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		chmodRequest = &jrpcfs.ChmodRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 			FileMode: uint32(request.Mode),
 		}
@@ -1041,7 +1032,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		chownRequest = &jrpcfs.ChownRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 		}
 
@@ -1070,7 +1061,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		resizeRequest = &jrpcfs.ResizeRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 			NewSize: request.Size,
 		}
@@ -1105,7 +1096,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		setTimeRequest = &jrpcfs.SetTimeRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 			StatStruct: jrpcfs.StatStruct{
 				MTimeNs: uint64(newMtime.UnixNano()),
@@ -1164,7 +1155,7 @@ func handleSetxattrRequest(request *fuse.SetxattrRequest) {
 		getXAttrRequest = &jrpcfs.GetXAttrRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
-				InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+				InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 			},
 			AttrName: request.Name,
 		}
@@ -1189,7 +1180,7 @@ func handleSetxattrRequest(request *fuse.SetxattrRequest) {
 	setXAttrRequest = &jrpcfs.SetXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		AttrName:  request.Name,
 		AttrValue: attrValue,
@@ -1253,7 +1244,7 @@ func handleSymlinkRequest(request *fuse.SymlinkRequest) {
 	symlinkRequest = &jrpcfs.SymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(request.Header.Node), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(request.Header.Node), // TOCHECK: If SnapShot's work with this
 		},
 		Basename: request.NewName,
 		Target:   request.Target,
@@ -1280,8 +1271,4 @@ func handleSymlinkRequest(request *fuse.SymlinkRequest) {
 	}
 
 	request.Respond(response)
-}
-
-func handleWriteRequest(request *fuse.WriteRequest) {
-	handleWriteRequestTODO(request)
 }

@@ -80,6 +80,8 @@ func testSetup(t *testing.T) {
 		"Agent.SwiftRetryDelay=1s",
 		"Agent.SwiftRetryExpBackoff=1.4",
 		"Agent.SwiftConnectionPoolSize=100",
+		"Agent.FetchExtentsFromFileOffset=32",
+		"Agent.FetchExtentsBeforeFileOffset=0",
 		"Agent.ReadCacheLineSize=1048576",
 		"Agent.ReadCacheLineCount=1000",
 		"Agent.SharedFileLimit=1000",
