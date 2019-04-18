@@ -3,14 +3,17 @@ package main
 import (
 	"container/list"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
 	"bazil.org/fuse"
 
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
-	"github.com/swiftstack/ProxyFS/utils"
 	"github.com/swiftstack/sortedmap"
 )
 
@@ -25,9 +28,11 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 		logSegmentCacheElementBufRemainingLen     uint64
 		logSegmentCacheElementBufSelectedLen      uint64
 		logSegmentCacheElementBufStartingPosition uint64
-		readPlan                                  []*multiObjectExtentStruct
+		readPlan                                  []interface{}
 		readPlanSpan                              uint64
-		readPlanStep                              *multiObjectExtentStruct
+		readPlanStepAsInterface                   interface{}
+		readPlanStepAsMultiObjectExtentStruct     *multiObjectExtentStruct
+		readPlanStepAsSingleObjectExtentWithLink  *singleObjectExtentWithLinkStruct
 		readPlanStepRemainingLength               uint64
 		response                                  *fuse.ReadResponse
 	)
@@ -55,43 +60,60 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 			Data: make([]byte, 0, readPlanSpan),
 		}
 
-		// TODO: Need to handle readPlanStep's that are either *multiObjectExtentStruct or *singleObjectExtentStruct
+		for _, readPlanStepAsInterface = range readPlan {
+			switch readPlanStepAsInterface.(type) {
+			case *multiObjectExtentStruct:
+				readPlanStepAsMultiObjectExtentStruct = readPlanStepAsInterface.(*multiObjectExtentStruct)
 
-		for _, readPlanStep = range readPlan {
-			if "" == readPlanStep.objectName {
-				// Zero-fill for readPlanStep.length
+				if "" == readPlanStepAsMultiObjectExtentStruct.objectName {
+					// Zero-fill for readPlanStep.length
 
-				response.Data = append(response.Data, make([]byte, readPlanStep.length)...)
-			} else {
-				// Fetch LogSegment data... possibly crossing LogSegmentCacheLine boundaries
+					response.Data = append(response.Data, make([]byte, readPlanStepAsMultiObjectExtentStruct.length)...)
+				} else {
+					// Fetch LogSegment data... possibly crossing LogSegmentCacheLine boundaries
 
-				curObjectOffset = readPlanStep.objectOffset
-				readPlanStepRemainingLength = readPlanStep.length
+					curObjectOffset = readPlanStepAsMultiObjectExtentStruct.objectOffset
+					readPlanStepRemainingLength = readPlanStepAsMultiObjectExtentStruct.length
 
-				for readPlanStepRemainingLength > 0 {
-					logSegmentCacheElement = fetchLogSegmentCacheLine(readPlanStep.containerName, readPlanStep.objectName, curObjectOffset)
+					for readPlanStepRemainingLength > 0 {
+						logSegmentCacheElement = fetchLogSegmentCacheLine(readPlanStepAsMultiObjectExtentStruct.containerName, readPlanStepAsMultiObjectExtentStruct.objectName, curObjectOffset)
 
-					if logSegmentCacheElementStateGetFailed == logSegmentCacheElement.state {
-						request.RespondError(fuse.EIO)
-						return
+						if logSegmentCacheElementStateGetFailed == logSegmentCacheElement.state {
+							request.RespondError(fuse.EIO)
+							return
+						}
+
+						logSegmentCacheElementBufStartingPosition = curObjectOffset - logSegmentCacheElement.startingOffset
+						logSegmentCacheElementBufRemainingLen = uint64(len(logSegmentCacheElement.buf)) - logSegmentCacheElementBufStartingPosition
+
+						if logSegmentCacheElementBufRemainingLen <= readPlanStepRemainingLength {
+							logSegmentCacheElementBufSelectedLen = logSegmentCacheElementBufRemainingLen
+						} else {
+							logSegmentCacheElementBufSelectedLen = readPlanStepRemainingLength
+						}
+
+						logSegmentCacheElementBufEndingPosition = logSegmentCacheElementBufStartingPosition + logSegmentCacheElementBufSelectedLen
+
+						response.Data = append(response.Data, logSegmentCacheElement.buf[logSegmentCacheElementBufStartingPosition:logSegmentCacheElementBufEndingPosition]...)
+
+						curObjectOffset += logSegmentCacheElementBufSelectedLen
+						readPlanStepRemainingLength -= logSegmentCacheElementBufSelectedLen
 					}
-
-					logSegmentCacheElementBufStartingPosition = curObjectOffset - logSegmentCacheElement.startingOffset
-					logSegmentCacheElementBufRemainingLen = uint64(len(logSegmentCacheElement.buf)) - logSegmentCacheElementBufStartingPosition
-
-					if logSegmentCacheElementBufRemainingLen <= readPlanStepRemainingLength {
-						logSegmentCacheElementBufSelectedLen = logSegmentCacheElementBufRemainingLen
-					} else {
-						logSegmentCacheElementBufSelectedLen = readPlanStepRemainingLength
-					}
-
-					logSegmentCacheElementBufEndingPosition = logSegmentCacheElementBufStartingPosition + logSegmentCacheElementBufSelectedLen
-
-					response.Data = append(response.Data, logSegmentCacheElement.buf[logSegmentCacheElementBufStartingPosition:logSegmentCacheElementBufEndingPosition]...)
-
-					curObjectOffset += logSegmentCacheElementBufSelectedLen
-					readPlanStepRemainingLength -= logSegmentCacheElementBufSelectedLen
 				}
+			case *singleObjectExtentWithLinkStruct:
+				readPlanStepAsSingleObjectExtentWithLink = readPlanStepAsInterface.(*singleObjectExtentWithLinkStruct)
+
+				if nil == readPlanStepAsSingleObjectExtentWithLink {
+					// Zero-fill for readPlanStep.length
+
+					response.Data = append(response.Data, make([]byte, readPlanStepAsSingleObjectExtentWithLink.length)...)
+				} else {
+					// Fetch LogSegment data... from readPlanStepAsSingleObjectExtentWithLink.chunkedPutContextStruct
+
+					response.Data = append(response.Data, readPlanStepAsSingleObjectExtentWithLink.chunkedPutContext.buf[readPlanStepAsSingleObjectExtentWithLink.objectOffset:readPlanStepAsSingleObjectExtentWithLink.objectOffset+readPlanStepAsSingleObjectExtentWithLink.length]...)
+				}
+			default:
+				logFatalf("getReadPlan() returned an invalid readPlanStep: %v", readPlanStepAsInterface)
 			}
 		}
 	}
@@ -101,21 +123,428 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 
 func handleWriteRequest(request *fuse.WriteRequest) {
 	var (
-		fileInode   *fileInodeStruct
-		grantedLock *fileInodeLockRequestStruct
+		chunk                    *chunkStruct
+		chunkedPutContext        *chunkedPutContextStruct
+		chunkedPutContextElement *list.Element
+		fileInode                *fileInodeStruct
+		grantedLock              *fileInodeLockRequestStruct
+		response                 *fuse.WriteResponse
+		singleObjectExtent       *singleObjectExtentStruct
 	)
 
 	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
-	defer fileInode.dereference()
+	grantedLock = fileInode.getExclusiveLock()
+
+	if 0 == fileInode.chunkedPutList.Len() {
+		// No chunkedPutContext is present (so none can be open), so open one
+
+		chunkedPutContext = &chunkedPutContextStruct{
+			fileSize:       fileInode.extentMapFileSize,
+			buf:            make([]byte, 0),
+			fileInode:      fileInode,
+			state:          chunkedPutContextStateOpen,
+			sendChan:       make(chan *chunkStruct, chunkedPutContextSendChanBufferSize),
+			wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
+			flushRequested: false,
+		}
+
+		chunkedPutContext.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
+		chunkedPutContext.chunkedPutListElement = fileInode.chunkedPutList.PushBack(chunkedPutContext)
+
+		fileInode.reference()
+
+		chunkedPutContext.fileInode.Add(1)
+		go chunkedPutContext.sendDaemon()
+	} else {
+		chunkedPutContextElement = fileInode.chunkedPutList.Back()
+		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+
+		if chunkedPutContextStateOpen == chunkedPutContext.state {
+			// Use this most recent (and open) chunkedPutContext
+		} else {
+			// Most recent chunkedPutContext is closed, so open a new one
+
+			chunkedPutContext = &chunkedPutContextStruct{
+				fileSize:       fileInode.extentMapFileSize,
+				buf:            make([]byte, 0),
+				fileInode:      fileInode,
+				state:          chunkedPutContextStateOpen,
+				sendChan:       make(chan *chunkStruct, chunkedPutContextSendChanBufferSize),
+				wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
+				flushRequested: false,
+			}
+
+			chunkedPutContext.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
+			chunkedPutContext.chunkedPutListElement = fileInode.chunkedPutList.PushBack(chunkedPutContext)
+
+			fileInode.reference()
+
+			chunkedPutContext.fileInode.Add(1)
+			go chunkedPutContext.sendDaemon()
+		}
+	}
+
+	singleObjectExtent = &singleObjectExtentStruct{
+		fileOffset:   uint64(request.Offset),
+		objectOffset: uint64(len(chunkedPutContext.buf)),
+		length:       uint64(len(request.Data)),
+	}
+
+	chunkedPutContext.mergeSingleObjectExtent(singleObjectExtent)
+
+	if (singleObjectExtent.fileOffset + singleObjectExtent.length) > chunkedPutContext.fileSize {
+		chunkedPutContext.fileSize = singleObjectExtent.fileOffset + singleObjectExtent.length
+	}
+
+	chunkedPutContext.buf = append(chunkedPutContext.buf, request.Data...)
+
+	chunk = &chunkStruct{
+		objectOffset: uint64(len(chunkedPutContext.buf)),
+		length:       uint64(len(request.Data)),
+	}
+
+	chunkedPutContext.sendChan <- chunk
+
+	grantedLock.release()
+	fileInode.dereference()
+
+	response = &fuse.WriteResponse{
+		Size: len(request.Data),
+	}
+
+	request.Respond(response)
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
+	var (
+		chunk                     *chunkStruct
+		expirationDelay           time.Duration
+		expirationTime            time.Time
+		fileInode                 *fileInodeStruct
+		flushWaiterListElement    *list.Element
+		grantedLock               *fileInodeLockRequestStruct
+		nextChunkedPutContext     *chunkedPutContextStruct
+		nextChunkedPutListElement *list.Element
+	)
+
+	fileInode = chunkedPutContext.fileInode
+
+	// Kick off Chunked PUT
+
+	chunkedPutContext.Add(1)
+	go chunkedPutContext.performChunkedPut()
+
+	// Start MaxFlushTime timer
+
+	expirationTime = time.Now().Add(globals.config.MaxFlushTime)
+
+	// Loop awaiting chunks (that could be explicit flushes) or expirationTime
+
+	for {
+		expirationDelay = expirationTime.Sub(time.Now())
+
+		select {
+		case <-time.After(expirationDelay):
+			// MaxFlushTime-triggered flush requested
+
+			grantedLock = fileInode.getExclusiveLock()
+			chunkedPutContext.state = chunkedPutContextStateClosing
+			grantedLock.release()
+
+			chunkedPutContext.drainSendChan()
+
+			goto PerformFlush
+		case chunk = <-chunkedPutContext.sendChan:
+			if 0 == chunk.length {
+				// Explicit flush requested
+
+				grantedLock = fileInode.getExclusiveLock()
+				chunkedPutContext.state = chunkedPutContextStateClosing
+				grantedLock.release()
+
+				chunkedPutContext.drainSendChan()
+
+				goto PerformFlush
+			} else {
+				// Send non-flushing chunk to *chunkedPutContextStruct.Read()
+
+				chunkedPutContext.wakeChan <- false
+
+				// Check to see if a MaxFlushSize-triggered flush is needed
+
+				if (chunk.objectOffset + chunk.length) >= globals.config.MaxFlushSize {
+					// MaxFlushSize-triggered flush requested
+
+					grantedLock = fileInode.getExclusiveLock()
+					chunkedPutContext.state = chunkedPutContextStateClosing
+					grantedLock.release()
+
+					chunkedPutContext.drainSendChan()
+
+					goto PerformFlush
+				}
+			}
+		}
+	}
+
+PerformFlush:
+
+	chunkedPutContext.wakeChan <- true
+	chunkedPutContext.Wait()
+
+	// Chunked PUT is complete... can we tell ProxyFS about it and dispose of it?
 
 	grantedLock = fileInode.getExclusiveLock()
-	defer grantedLock.release()
 
-	logInfof("TODO: handleWriteRequest()")
-	logInfof("Header:\n%s", utils.JSONify(request.Header, true))
-	logInfof("Payload\n%s", utils.JSONify(request, true))
-	logInfof("Responding with fuse.ENOTSUP")
-	request.RespondError(fuse.ENOTSUP)
+	chunkedPutContext.state = chunkedPutContextStateClosed
+
+	if nil == chunkedPutContext.chunkedPutListElement.Prev() {
+		// We can record this chunkedPutContext as having completed
+
+		chunkedPutContext.complete()
+
+		// Check to see subsequent chunkedPutContext's are also closed and able to be completed
+
+		nextChunkedPutContext = chunkedPutContext
+
+		for {
+			nextChunkedPutListElement = nextChunkedPutContext.chunkedPutListElement.Next()
+
+			if nil == nextChunkedPutListElement {
+				// We now know that all chunkedPutContext's are complete... so tell any flush waiters before exiting
+
+				fileInode.flushInProgress = false
+
+				for fileInode.chunkedPutFlushWaiterList.Len() > 0 {
+					flushWaiterListElement = fileInode.chunkedPutFlushWaiterList.Front()
+					flushWaiterListElement.Value.(*sync.WaitGroup).Done()
+					_ = fileInode.chunkedPutFlushWaiterList.Remove(flushWaiterListElement)
+				}
+
+				break
+			}
+
+			nextChunkedPutContext = nextChunkedPutListElement.Value.(*chunkedPutContextStruct)
+
+			if chunkedPutContextStateClosed == nextChunkedPutContext.state {
+				// This one was waiting for a predecessor to complete before completing... so it can not be completed
+
+				nextChunkedPutContext.complete()
+			} else {
+				// Ran into one that was not yet closed... so stop here
+
+				break
+			}
+		}
+	}
+
+	grantedLock.release()
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
+	var (
+		chunkedPutRequest            *http.Request
+		containerAndObjectNames      string
+		containerAndObjectNamesSplit []string
+		err                          error
+		ok                           bool
+		physPathSplit                []string
+		provisionObjectReply         *jrpcfs.ProvisionObjectReply
+		provisionObjectRequest       *jrpcfs.ProvisionObjectRequest
+		statusCode                   int
+	)
+
+	provisionObjectRequest = &jrpcfs.ProvisionObjectRequest{
+		MountID: globals.mountID,
+	}
+
+	provisionObjectReply = &jrpcfs.ProvisionObjectReply{}
+
+	err = doJRPCRequest("Server.RpcProvisionObject", provisionObjectRequest, provisionObjectReply)
+	if nil != err {
+		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to Server.RpcProvisionObject failed: %v", err)
+	}
+
+	physPathSplit = strings.SplitAfterN(provisionObjectReply.PhysPath, "/", 4)
+	containerAndObjectNames = physPathSplit[len(physPathSplit)-1]
+	containerAndObjectNamesSplit = strings.Split(containerAndObjectNames, "/")
+	chunkedPutContext.containerName = containerAndObjectNamesSplit[0]
+	chunkedPutContext.objectName = containerAndObjectNamesSplit[1]
+
+	chunkedPutRequest, err = http.NewRequest(http.MethodPut, globals.swiftAccountURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
+	if nil != err {
+		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to http.NewRequest() failed: %v", err)
+	}
+
+	chunkedPutRequest.Header.Add("X-Bypass-Proxyfs", "true")
+	chunkedPutRequest.Header.Add("Transfer-Encoding", "chunked")
+
+	chunkedPutContext.pos = 0
+
+	_, _, ok, statusCode = doHTTPRequest(chunkedPutRequest, http.StatusOK, http.StatusCreated)
+	if !ok {
+		logFatalf("*chunkedPutContextStruct.performChunkedPut() failed with unexpected statusCode: %v", statusCode)
+	}
+
+	chunkedPutContext.Done()
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) drainSendChan() {
+	var (
+		chunk *chunkStruct
+	)
+
+	for {
+		select {
+		case chunk = <-chunkedPutContext.sendChan:
+			if 0 < chunk.length {
+				// Send non-flushing chunk to *chunkedPutContextStruct.Read()
+
+				chunkedPutContext.wakeChan <- false
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) complete() {
+	var (
+		curExtentAsMultiObjectExtent  *multiObjectExtentStruct
+		curExtentAsSingleObjectExtent *singleObjectExtentStruct
+		curExtentAsValue              sortedmap.Value
+		curExtentIndex                int
+		err                           error
+		extentMapLen                  int
+		fileInode                     *fileInodeStruct
+		ok                            bool
+		wroteReply                    *jrpcfs.WroteReply
+		wroteRequest                  *jrpcfs.WroteRequest
+	)
+
+	fileInode = chunkedPutContext.fileInode
+
+	extentMapLen, err = chunkedPutContext.extentMap.Len()
+	if nil != err {
+		logFatalf("*chunkedPutContextStruct.complete() failed chunkedPutContext.extentMap.Len(): %v", err)
+	}
+
+	// Now that LogSegment Chunked PUT has completed, update FileInode in ProxyFS and our fileInode.extentMap
+
+	wroteRequest = &jrpcfs.WroteRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(fileInode.InodeNumber), // TOCHECK: If SnapShot's work with this
+		},
+		ObjectPath:   "/v1/" + globals.config.SwiftAccountName + "/" + chunkedPutContext.containerName + "/" + chunkedPutContext.objectName,
+		FileOffset:   make([]uint64, extentMapLen),
+		ObjectOffset: make([]uint64, extentMapLen),
+		Length:       make([]uint64, extentMapLen),
+	}
+
+	for curExtentIndex = 0; curExtentIndex < extentMapLen; curExtentIndex++ {
+		_, curExtentAsValue, ok, err = chunkedPutContext.extentMap.GetByIndex(curExtentIndex)
+		if nil != err {
+			logFatalf("*chunkedPutContextStruct.complete() failed chunkedPutContext.extentMap.GetByIndex(): %v", err)
+		}
+		if !ok {
+			logFatalf("*chunkedPutContextStruct.complete() chunkedPutContext.extentMap.GetByIndex() returned !ok")
+		}
+		curExtentAsSingleObjectExtent = curExtentAsValue.(*singleObjectExtentStruct)
+
+		wroteRequest.FileOffset[curExtentIndex] = curExtentAsSingleObjectExtent.fileOffset
+		wroteRequest.ObjectOffset[curExtentIndex] = curExtentAsSingleObjectExtent.objectOffset
+		wroteRequest.Length[curExtentIndex] = curExtentAsSingleObjectExtent.length
+
+		curExtentAsMultiObjectExtent = &multiObjectExtentStruct{
+			fileOffset:    curExtentAsSingleObjectExtent.fileOffset,
+			containerName: chunkedPutContext.containerName,
+			objectName:    chunkedPutContext.objectName,
+			objectOffset:  curExtentAsSingleObjectExtent.objectOffset,
+			length:        curExtentAsSingleObjectExtent.length,
+		}
+
+		fileInode.updateExtentMap(curExtentAsMultiObjectExtent)
+	}
+
+	wroteReply = &jrpcfs.WroteReply{}
+
+	err = doJRPCRequest("Server.RpcWrote", wroteRequest, wroteReply)
+	if nil != err {
+		logFatalf("*chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
+	}
+
+	// Remove this chunkedPutContext from fileInode.chunkedPutList and mark as Done()
+
+	_ = fileInode.chunkedPutList.Remove(chunkedPutContext.chunkedPutListElement)
+
+	fileInode.dereference()
+
+	chunkedPutContext.fileInode.Done()
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {
+	// Set default err based on having received a flush chunk
+
+	if chunkedPutContext.flushRequested {
+		err = io.EOF
+	} else {
+		err = nil
+	}
+
+	chunkedPutContext.Lock()
+
+	n = len(chunkedPutContext.buf) - chunkedPutContext.pos
+
+	if n < 0 {
+		logFatalf("*chunkedPutContextStruct.Read() called with pos past beyond len(chunkedPutContext.buf)")
+	}
+
+	if n > 0 {
+		// There is data to send... send what you can and return immediately
+
+		if n > len(p) {
+			// We need to truncate n... and disable EOF indication if set
+
+			n = len(p)
+			err = nil
+		}
+
+		copy(p, chunkedPutContext.buf[chunkedPutContext.pos:chunkedPutContext.pos+n])
+
+		chunkedPutContext.pos += n
+
+		chunkedPutContext.Unlock()
+
+		return
+	}
+
+	// At this point, n == 0... but we might just need to honor flushRequest
+
+	chunkedPutContext.Unlock()
+
+	if chunkedPutContext.flushRequested {
+		err = io.EOF
+		return
+	}
+
+	// So just wait to be awoken telling us there is a new chunk to send and/or flush request
+
+	chunkedPutContext.flushRequested = <-chunkedPutContext.wakeChan
+
+	// Now simply return and allow the subsequent call to re-check for new data to send and the flushRequest flag
+
+	err = nil
+	return
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
+	// To ensure retry resends all the data, reset pos
+
+	chunkedPutContext.pos = 0
+
+	err = nil
+	return
 }
 
 // populateExtentMap ensures that the range [fileOffset:fileOffset+length) is covered by
@@ -130,9 +559,6 @@ func (fileInode *fileInodeStruct) populateExtentMap(fileOffset uint64, length ui
 		curFileOffset    uint64
 		ok               bool
 	)
-
-	fileInode.Lock()
-	defer fileInode.Unlock()
 
 	if nil == fileInode.extentMap {
 		// Create an empty ExtentMap... and perform initial population
@@ -251,7 +677,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 	fetchExtentMapChunkRequest = &jrpcfs.FetchExtentMapChunkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(fileInode.InodeNumber), // TODO: Check if SnapShot's work with this
+			InodeNumber: int64(fileInode.InodeNumber), // TOCHECK: Check if SnapShot's work with this
 		},
 		FileOffset:                 fileOffset,
 		MaxEntriesFromFileOffset:   int64(globals.config.FetchExtentsFromFileOffset),
@@ -281,10 +707,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 				length:        extentMapEntry.FileOffset - curFileOffset,
 			}
 
-			_, err = fileInode.extentMap.Put(curExtent.fileOffset, curExtent)
-			if nil != err {
-				logFatalf("populateExtentMap() couldn't insert zero-fill extent [Case 1]: %v", err)
-			}
+			fileInode.updateExtentMap(curExtent)
 		}
 
 		// Insert the actual extent
@@ -297,10 +720,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 			length:        extentMapEntry.Length,
 		}
 
-		_, err = fileInode.extentMap.Put(curExtent.fileOffset, curExtent)
-		if nil != err {
-			logFatalf("populateExtentMap() couldn't insert extent: %v", err)
-		}
+		fileInode.updateExtentMap(curExtent)
 
 		curFileOffset = extentMapEntry.FileOffset + extentMapEntry.Length
 	}
@@ -333,6 +753,8 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 
 	for {
 		if 0 == extentMapLength {
+			// Handle case where we have no extents left at all
+
 			return
 		}
 
@@ -371,9 +793,10 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 	}
 }
 
-// updateExtentMap is called (while fileInode is locked) to update the Extent Map and,
-// as necessary, the File Size with the supplied multiObjectExtent. This func is used
-// both by populateExtentMapHelper() and TODO: fill in name of the eventual "merge" func upon Chunked PUT completion.
+// updateExtentMap is called to update the ExtentMap and, as necessary, the FileSize with
+// the supplied multiObjectExtent. This func is used during fetching of ExtentMap chunks
+// by *fileInodeStruct.populateExtentMapHelper() and at completion of a Chunked PUT
+// by *chunkedPutContextStruct.complete().
 //
 func (fileInode *fileInodeStruct) updateExtentMap(newExtent *multiObjectExtentStruct) {
 	var (
@@ -390,6 +813,14 @@ func (fileInode *fileInodeStruct) updateExtentMap(newExtent *multiObjectExtentSt
 		prevExtentNewLength uint64
 		splitExtent         *multiObjectExtentStruct
 	)
+
+	if nil == fileInode.extentMap {
+		// Create an empty ExtentMap... This counts as a reference, too
+
+		fileInode.reference()
+
+		fileInode.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, fileInode)
+	}
 
 	// Locate prevExtent (if any)
 
@@ -529,32 +960,39 @@ func (fileInode *fileInodeStruct) updateExtentMap(newExtent *multiObjectExtentSt
 	}
 }
 
-func (fileInode *fileInodeStruct) getReadPlan(fileOffset uint64, length uint64) (readPlan []*multiObjectExtentStruct, readPlanSpan uint64) {
+// getReadPlan returns a slice of extents and their span (to aid in the make([]byte,) call needed
+// by the caller to provision the slice into which they will copy the extents). Each extent will
+// be one of three types:
+//
+//   singleObjectExtentWithLinkStruct - a reference to a portion of a LogSegment being written by a chunkedPutContextStruct
+//   multiObjectExtentStruct          - a reference to a portion of a LogSegment described by a fileInodeStruct.extentMap
+//   multiObjectExtentStruct          - a description of a zero-filled extent (.objectName == "")
+//
+func (fileInode *fileInodeStruct) getReadPlan(fileOffset uint64, length uint64) (readPlan []interface{}, readPlanSpan uint64) {
 	var (
-		curExtent        *multiObjectExtentStruct
-		curExtentAsValue sortedmap.Value
-		curExtentIndex   int
-		curFileOffset    uint64
-		err              error
-		ok               bool
-		readPlanStep     *multiObjectExtentStruct
-		remainingLength  uint64
+		chunkedPutContext          *chunkedPutContextStruct
+		chunkedPutContextAsElement *list.Element
+		curExtentAsValue           sortedmap.Value
+		curExtentIndex             int
+		curFileOffset              uint64
+		curMultiObjectExtent       *multiObjectExtentStruct
+		err                        error
+		multiObjectReadPlanStep    *multiObjectExtentStruct
+		ok                         bool
+		remainingLength            uint64
 	)
 
-	fileInode.Lock()
-	defer fileInode.Unlock()
+	// First assemble readPlan based upon fileInode.extentMap
 
-	// TODO: When writes are supported, must pre-consult fileInode.chunkedPutList from Back() to Front()
+	readPlan = make([]interface{}, 0, 1)
+
+	curFileOffset = fileOffset
+	remainingLength = length
 
 	curExtentIndex, _, err = fileInode.extentMap.BisectLeft(fileOffset)
 	if nil != err {
 		logFatalf("getReadPlan() couldn't find curExtent: %v", err)
 	}
-
-	curFileOffset = fileOffset
-	remainingLength = length
-
-	readPlan = make([]*multiObjectExtentStruct, 0, 1)
 
 	for remainingLength > 0 {
 		_, curExtentAsValue, ok, err = fileInode.extentMap.GetByIndex(curExtentIndex)
@@ -563,50 +1001,405 @@ func (fileInode *fileInodeStruct) getReadPlan(fileOffset uint64, length uint64) 
 		}
 
 		if !ok {
-			// Crossed EOF - just return what we have in readPlan
+			// Crossed EOF - stop here
 
-			readPlanSpan = length - remainingLength
-			return
+			break
 		}
 
-		curExtent, ok = curExtentAsValue.(*multiObjectExtentStruct)
+		curMultiObjectExtent, ok = curExtentAsValue.(*multiObjectExtentStruct)
 		if !ok {
 			logFatalf("getReadPlan() couldn't find curExtent [Case 2]: %v", err)
 		}
 
-		readPlanStep = &multiObjectExtentStruct{
-			fileOffset:    curFileOffset,
-			containerName: curExtent.containerName,
-			objectName:    curExtent.objectName, // May be == 0
-			objectOffset:  curExtent.objectOffset + (curFileOffset - curExtent.fileOffset),
-			length:        curExtent.length - (curFileOffset - curExtent.fileOffset),
+		if (curMultiObjectExtent.fileOffset + curMultiObjectExtent.length) <= curFileOffset {
+			// curExtent ends at or before curFileOffset - stop here
+
+			break
 		}
 
-		if remainingLength < readPlanStep.length {
+		multiObjectReadPlanStep = &multiObjectExtentStruct{
+			fileOffset:    curFileOffset,
+			containerName: curMultiObjectExtent.containerName,
+			objectName:    curMultiObjectExtent.objectName, // May be == ""
+			objectOffset:  curMultiObjectExtent.objectOffset + (curFileOffset - curMultiObjectExtent.fileOffset),
+			length:        curMultiObjectExtent.length - (curFileOffset - curMultiObjectExtent.fileOffset),
+		}
+
+		if remainingLength < multiObjectReadPlanStep.length {
 			// This is the last readPlanStep and needs to be truncated
 
-			readPlanStep.length = remainingLength
+			multiObjectReadPlanStep.length = remainingLength
 		}
 
-		if 0 == readPlanStep.length {
-			// Reached EOF - just return what we have in readPlan
+		if 0 == multiObjectReadPlanStep.length {
+			// Reached EOF - stop here
 
-			readPlanSpan = length - remainingLength
-			return
+			break
 		}
 
-		readPlan = append(readPlan, readPlanStep)
+		readPlan = append(readPlan, multiObjectReadPlanStep)
 
-		curFileOffset += readPlanStep.length
-		remainingLength -= readPlanStep.length
+		curFileOffset += multiObjectReadPlanStep.length
+		remainingLength -= multiObjectReadPlanStep.length
 
 		curExtentIndex++
 	}
 
-	// If we got this far, readPlanSpan is what caller asked for
+	// Compute tentative readPlanSpan
 
-	readPlanSpan = length
+	if 0 == len(readPlan) {
+		readPlanSpan = 0
+	} else {
+		multiObjectReadPlanStep = readPlan[len(readPlan)-1].(*multiObjectExtentStruct)
+		readPlanSpan = (multiObjectReadPlanStep.fileOffset + multiObjectReadPlanStep.length) - fileOffset
+	}
+
+	// But we must apply, in order, any changes due to chunkedPutContextStruct's
+
+	chunkedPutContextAsElement = fileInode.chunkedPutList.Front()
+	for nil != chunkedPutContextAsElement {
+		chunkedPutContext = chunkedPutContextAsElement.Value.(*chunkedPutContextStruct)
+		readPlan, readPlanSpan = chunkedPutContext.getReadPlanHelper(fileOffset, length, readPlan)
+		chunkedPutContextAsElement = chunkedPutContextAsElement.Next()
+	}
+
+	// And we are done...
+
 	return
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset uint64, length uint64, inReadPlan []interface{}) (outReadPlan []interface{}, outReadPlanSpan uint64) {
+	var (
+		curFileOffset                       uint64
+		err                                 error
+		found                               bool
+		inReadPlanStepAsInterface           interface{}
+		inReadPlanStepAsMultiObjectExtent   *multiObjectExtentStruct
+		inReadPlanStepAsSingleObjectExtent  *singleObjectExtentWithLinkStruct
+		inReadPlanStepFileOffset            uint64
+		inReadPlanStepLength                uint64
+		ok                                  bool
+		outReadPlanStepAsInterface          interface{}
+		outReadPlanStepAsMultiObjectExtent  *multiObjectExtentStruct
+		outReadPlanStepAsSingleObjectExtent *singleObjectExtentWithLinkStruct
+		overlapExtent                       *singleObjectExtentStruct
+		overlapExtentAsValue                sortedmap.Value
+		overlapExtentWithLink               *singleObjectExtentWithLinkStruct
+		overlapExtentIndex                  int
+		postExtent                          *singleObjectExtentStruct
+		postExtentAsValue                   sortedmap.Value
+		postExtentIndex                     int
+		postOverlapLength                   uint64
+		preExtent                           *singleObjectExtentStruct
+		preExtentAsValue                    sortedmap.Value
+		preExtentIndex                      int
+		preOverlapLength                    uint64
+		remainingLength                     uint64
+		wasMultiObjectReadPlanStep          bool
+	)
+
+	outReadPlan = make([]interface{}, 0, len(inReadPlan))
+
+	for _, inReadPlanStepAsInterface = range inReadPlan {
+		// Compute overlap with chunkedPutContext.extentMap
+
+		inReadPlanStepAsMultiObjectExtent, wasMultiObjectReadPlanStep = inReadPlanStepAsInterface.(*multiObjectExtentStruct)
+		if wasMultiObjectReadPlanStep {
+			inReadPlanStepAsSingleObjectExtent = nil
+			inReadPlanStepFileOffset = inReadPlanStepAsMultiObjectExtent.fileOffset
+			inReadPlanStepLength = inReadPlanStepAsMultiObjectExtent.length
+		} else {
+			inReadPlanStepAsMultiObjectExtent = nil
+			inReadPlanStepAsSingleObjectExtent = inReadPlanStepAsInterface.(*singleObjectExtentWithLinkStruct)
+			inReadPlanStepFileOffset = inReadPlanStepAsSingleObjectExtent.fileOffset
+			inReadPlanStepLength = inReadPlanStepAsSingleObjectExtent.length
+		}
+
+		preExtentIndex, found, err = chunkedPutContext.extentMap.BisectLeft(fileOffset)
+		if nil != err {
+			logFatalf("getReadPlanHelper() couldn't find preExtentIndex: %v", err)
+		}
+		if found {
+			// Back up preExtentIndex... we know previous extent (if any) doesn't overlap
+			preExtentIndex--
+		} else {
+			// But preExtentIndex might point to extent overlapping
+			if 0 <= preExtentIndex {
+				_, preExtentAsValue, _, err = chunkedPutContext.extentMap.GetByIndex(preExtentIndex)
+				if nil != err {
+					logFatalf("getReadPlanHelper() couldn't fetch preExtent: %v", err)
+				}
+				preExtent = preExtentAsValue.(*singleObjectExtentStruct)
+				if (preExtent.fileOffset + preExtent.length) > inReadPlanStepFileOffset {
+					preExtentIndex--
+				}
+			}
+		}
+		postExtentIndex, _, err = chunkedPutContext.extentMap.BisectRight(fileOffset + inReadPlanStepLength)
+		if nil != err {
+			logFatalf("getReadPlanHelper() couldn't find postExtentIndex [Case 1]: %v", err)
+		}
+
+		if 1 == (postExtentIndex - preExtentIndex) {
+			// No overlap... replicate inReadPlanStep as is
+
+			outReadPlan = append(outReadPlan, inReadPlanStepAsInterface)
+
+			continue
+		}
+
+		// Apply overlapping extents from chunkedPutContext.extentMap with inReadPlanStep
+
+		curFileOffset = inReadPlanStepFileOffset
+		remainingLength = inReadPlanStepLength
+
+		for overlapExtentIndex = preExtentIndex + 1; overlapExtentIndex < postExtentIndex; overlapExtentIndex++ {
+			_, overlapExtentAsValue, _, err = chunkedPutContext.extentMap.GetByIndex(overlapExtentIndex)
+			if nil != err {
+				logFatalf("getReadPlanHelper() couldn't find overlapExtentIndex: %v", err)
+			}
+			overlapExtent = overlapExtentAsValue.(*singleObjectExtentStruct)
+
+			if overlapExtent.fileOffset < curFileOffset {
+				preOverlapLength = curFileOffset - overlapExtent.fileOffset
+			} else {
+				preOverlapLength = 0
+			}
+			if (overlapExtent.fileOffset + overlapExtent.length) > (curFileOffset + remainingLength) {
+				postOverlapLength = (overlapExtent.fileOffset + overlapExtent.length) - (curFileOffset + remainingLength)
+			} else {
+				postOverlapLength = 0
+			}
+
+			overlapExtentWithLink = &singleObjectExtentWithLinkStruct{
+				fileOffset:        overlapExtent.fileOffset + preOverlapLength,
+				objectOffset:      overlapExtent.objectOffset + preOverlapLength,
+				length:            overlapExtent.length - (preOverlapLength + postOverlapLength),
+				chunkedPutContext: chunkedPutContext,
+			}
+
+			if curFileOffset < overlapExtentWithLink.fileOffset {
+				// Append non-overlapped portion of inReadPlanStep preceeding overlapExtentWithLink
+
+				if wasMultiObjectReadPlanStep {
+					outReadPlanStepAsMultiObjectExtent = &multiObjectExtentStruct{
+						fileOffset:    curFileOffset,
+						containerName: inReadPlanStepAsMultiObjectExtent.containerName,
+						objectName:    inReadPlanStepAsMultiObjectExtent.objectName,
+						objectOffset:  inReadPlanStepAsMultiObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+						length:        overlapExtentWithLink.fileOffset - curFileOffset,
+					}
+
+					outReadPlan = append(outReadPlan, outReadPlanStepAsMultiObjectExtent)
+
+					curFileOffset += outReadPlanStepAsMultiObjectExtent.length
+					remainingLength -= outReadPlanStepAsMultiObjectExtent.length
+				} else {
+					outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+						fileOffset:        curFileOffset,
+						objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+						length:            overlapExtentWithLink.fileOffset - curFileOffset,
+						chunkedPutContext: chunkedPutContext,
+					}
+
+					outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+
+					curFileOffset += outReadPlanStepAsSingleObjectExtent.length
+					remainingLength -= outReadPlanStepAsSingleObjectExtent.length
+				}
+			}
+
+			// Append overlapExtentWithLink
+
+			outReadPlan = append(outReadPlan, overlapExtentWithLink)
+
+			curFileOffset += overlapExtentWithLink.length
+			remainingLength -= overlapExtentWithLink.length
+		}
+
+		if 0 < remainingLength {
+			// Append non-overlapped trailing portion of inReadPlanStep in outReadPlan
+
+			if wasMultiObjectReadPlanStep {
+				outReadPlanStepAsMultiObjectExtent = &multiObjectExtentStruct{
+					fileOffset:    curFileOffset,
+					containerName: inReadPlanStepAsMultiObjectExtent.containerName,
+					objectName:    inReadPlanStepAsMultiObjectExtent.objectName,
+					objectOffset:  inReadPlanStepAsMultiObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+					length:        remainingLength,
+				}
+
+				outReadPlan = append(outReadPlan, outReadPlanStepAsMultiObjectExtent)
+			} else {
+				outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+					fileOffset:        curFileOffset,
+					objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+					length:            remainingLength,
+					chunkedPutContext: chunkedPutContext,
+				}
+
+				outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+			}
+		}
+	}
+
+	// Compute tentative outReadPlanSpan
+
+	if 0 == len(inReadPlan) {
+		outReadPlanSpan = 0
+	} else {
+		outReadPlanStepAsInterface = outReadPlan[len(outReadPlan)-1]
+		outReadPlanStepAsMultiObjectExtent, wasMultiObjectReadPlanStep = outReadPlanStepAsInterface.(*multiObjectExtentStruct)
+		if wasMultiObjectReadPlanStep {
+			outReadPlanSpan = (outReadPlanStepAsMultiObjectExtent.fileOffset + outReadPlanStepAsMultiObjectExtent.length) - fileOffset
+		} else {
+			outReadPlanStepAsSingleObjectExtent = outReadPlanStepAsInterface.(*singleObjectExtentWithLinkStruct)
+			outReadPlanSpan = (outReadPlanStepAsSingleObjectExtent.fileOffset + outReadPlanStepAsSingleObjectExtent.length) - fileOffset
+		}
+	}
+
+	if outReadPlanSpan == length {
+		return
+	}
+
+	// inReadPlan was limited by incoming fileSize... can we extend it?
+
+	curFileOffset = fileOffset + outReadPlanSpan
+
+	postExtentIndex, found, err = chunkedPutContext.extentMap.BisectLeft(curFileOffset)
+	if nil != err {
+		logFatalf("getReadPlanHelper() couldn't find postExtentIndex [Case 2]: %v", err)
+	}
+	if found {
+		// We know this extent, if it exists, does not overlap
+
+		_, postExtentAsValue, ok, err = chunkedPutContext.extentMap.GetByIndex(postExtentIndex)
+		if nil != err {
+			logFatalf("getReadPlanHelper() couldn't find postExtent [Case 1]: %v", err)
+		}
+		if !ok {
+			return
+		}
+
+		postExtent = postExtentAsValue.(*singleObjectExtentStruct)
+	} else {
+		// So this extent, if it exists, must overlap... and possibly extend beyond
+
+		_, postExtentAsValue, ok, err = chunkedPutContext.extentMap.GetByIndex(postExtentIndex)
+		if nil != err {
+			logFatalf("getReadPlanHelper() couldn't find postExtent [Case 2]: %v", err)
+		}
+		if !ok {
+			return
+		}
+
+		overlapExtent = postExtentAsValue.(*singleObjectExtentStruct)
+
+		if (overlapExtent.fileOffset + overlapExtent.length) > curFileOffset {
+			// Create a postExtent equivalent to the non-overlapping tail of overlapExtent
+
+			postExtent = &singleObjectExtentStruct{
+				fileOffset:   curFileOffset,
+				objectOffset: overlapExtent.objectOffset + (curFileOffset - overlapExtent.fileOffset),
+				length:       overlapExtent.length - (curFileOffset - overlapExtent.fileOffset),
+			}
+		} else {
+			// Create a zero-length postExtent instead
+
+			postExtent = &singleObjectExtentStruct{
+				fileOffset:   curFileOffset,
+				objectOffset: 0,
+				length:       0,
+			}
+		}
+	}
+
+	// Now enter a loop until either outReadPlanSpan reaches length or we reach chunkedPutContext.fileSize
+	// Each loop iteration, postExtent either starts at or after curFileSize (requiring zero-fill)
+	// Note that the last chunkedPutContext.extentMap extent "ends" at chunkedPutContext.fileSize
+
+	for {
+		if 0 < postExtent.length {
+			if postExtent.fileOffset > curFileOffset {
+				// We must "zero-fill" to MIN(postExtent.fileOffset, chunkedPutContext.fileSize)
+
+				if postExtent.fileOffset >= (fileOffset + length) {
+					// postExtent starts beyond fileOffset+length, so just append zero-fill step & return
+					outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+						fileOffset:        curFileOffset,
+						objectOffset:      0,
+						length:            length - outReadPlanSpan,
+						chunkedPutContext: nil,
+					}
+
+					outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+					outReadPlanSpan = length
+
+					return
+				}
+
+				// postExtent starts after curFileOffset but before fileOffset+length, so insert zero-fill step first
+
+				outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+					fileOffset:        curFileOffset,
+					objectOffset:      0,
+					length:            postExtent.fileOffset - curFileOffset,
+					chunkedPutContext: nil,
+				}
+
+				outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+
+				curFileOffset += outReadPlanStepAsSingleObjectExtent.length
+				outReadPlanSpan += outReadPlanStepAsSingleObjectExtent.length
+			}
+
+			// Now append a step for some or all of postExtent
+
+			if (postExtent.fileOffset + postExtent.length) >= (fileOffset + length) {
+				// postExtent will take us to (and beyond) fileOffset+length, so insert proper portion & return
+
+				outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+					fileOffset:        postExtent.fileOffset,
+					objectOffset:      postExtent.objectOffset,
+					length:            (fileOffset + length) - postExtent.fileOffset,
+					chunkedPutContext: chunkedPutContext,
+				}
+
+				outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+				outReadPlanSpan = length
+
+				return
+			}
+
+			// The entire postExtent will "fit"... and not exhaust fileOffset+length
+
+			outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
+				fileOffset:        postExtent.fileOffset,
+				objectOffset:      postExtent.objectOffset,
+				length:            postExtent.length,
+				chunkedPutContext: chunkedPutContext,
+			}
+
+			outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
+
+			curFileOffset += outReadPlanStepAsSingleObjectExtent.length
+			outReadPlanSpan += outReadPlanStepAsSingleObjectExtent.length
+		}
+
+		// Index to next postExtent
+
+		postExtentIndex++
+
+		_, postExtentAsValue, ok, err = chunkedPutContext.extentMap.GetByIndex(postExtentIndex)
+		if nil != err {
+			logFatalf("getReadPlanHelper() couldn't find postExtent [Case 3]: %v", err)
+		}
+		if !ok {
+			return
+		}
+
+		postExtent = postExtentAsValue.(*singleObjectExtentStruct)
+	}
 }
 
 func fetchLogSegmentCacheLine(containerName string, objectName string, offset uint64) (logSegmentCacheElement *logSegmentCacheElementStruct) {
@@ -731,6 +1524,236 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 	logSegmentCacheElement.Done()
 
 	return
+}
+
+func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExtent *singleObjectExtentStruct) {
+	var (
+		curExtent        *singleObjectExtentStruct
+		curExtentAsValue sortedmap.Value
+		curExtentIndex   int
+		err              error
+		extentMapLen     int
+		found            bool
+		ok               bool
+		postLength       uint64
+		preLength        uint64
+		splitExtent      *singleObjectExtentStruct
+	)
+
+	// See if we can simply extend last element
+
+	extentMapLen, err = chunkedPutContext.extentMap.Len()
+	if nil != err {
+		logFatalf("mergeSingleObjectExtent() failed to Len(): %v", err)
+	}
+
+	if 0 < extentMapLen {
+		_, curExtentAsValue, _, err = chunkedPutContext.extentMap.GetByIndex(extentMapLen - 1)
+		if nil != err {
+			logFatalf("mergeSingleObjectExtent() failed to GetByIndex() [Case 1]: %v", err)
+		}
+		curExtent = curExtentAsValue.(*singleObjectExtentStruct)
+
+		if (curExtent.fileOffset + curExtent.length) == newExtent.fileOffset {
+			if (curExtent.objectOffset + curExtent.length) == newExtent.objectOffset {
+				// Simply extend curExtent (coalescing newExtent into it)
+
+				curExtent.length += newExtent.length
+
+				return
+			}
+		}
+	}
+
+	// See if newExtent collides with a first curExtent
+
+	curExtentIndex, found, err = chunkedPutContext.extentMap.BisectLeft(newExtent.fileOffset)
+	if nil != err {
+		logFatalf("mergeSingleObjectExtent() failed to BisectLeft(): %v", err)
+	}
+
+	if found {
+		// curExtent exists and starts precisely at newExtent.fileOffset... fully overlapped by newExtent?
+
+		_, curExtentAsValue, _, err = chunkedPutContext.extentMap.GetByIndex(curExtentIndex)
+		if nil != err {
+			logFatalf("mergeSingleObjectExtent() failed to GetByIndex() [Case 2]: %v", err)
+		}
+		curExtent = curExtentAsValue.(*singleObjectExtentStruct)
+
+		if (curExtent.fileOffset + curExtent.length) <= (newExtent.fileOffset + newExtent.length) {
+			// curExtent fully overlapped by newExtent... just drop it
+
+			_, err = chunkedPutContext.extentMap.DeleteByIndex(curExtentIndex)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to DeleteByIndex() [Case 1]: %v", err)
+			}
+
+			// curExtentIndex left pointing to subsequent extent (if any) for loop below
+		} else {
+			// curExtent is overlapped "on the left" by newExtent... so tuncate and move curExtent
+
+			postLength = (curExtent.fileOffset + curExtent.length) - (newExtent.fileOffset + newExtent.length)
+
+			_, err = chunkedPutContext.extentMap.DeleteByIndex(curExtentIndex)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to DeleteByIndex() curExtent [Case 2]: %v", err)
+			}
+
+			splitExtent = &singleObjectExtentStruct{
+				fileOffset:   newExtent.fileOffset + newExtent.length,
+				objectOffset: curExtent.objectOffset + preLength + newExtent.length,
+				length:       postLength,
+			}
+
+			_, err = chunkedPutContext.extentMap.Put(splitExtent.fileOffset, splitExtent)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to Put() splitExtent [Case 1]: %v", err)
+			}
+
+			// From here, we know we can just insert newExtent and we are done
+
+			_, err = chunkedPutContext.extentMap.Put(newExtent.fileOffset, newExtent)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to Put() newExtent [Case 1]: %v", err)
+			}
+
+			return
+		}
+	} else { // !found
+		if 0 > curExtentIndex {
+			// curExtent does not exist (so cannot overlap)... so set curExtentIndex to point to first extent (if any) for loop below
+
+			curExtentIndex = 0
+		} else { // 0 <= curExtentIndex
+			// curExtent exists and starts strictly before newExtent.fileOffset... any overlap with newExtent?
+
+			_, curExtentAsValue, _, err = chunkedPutContext.extentMap.GetByIndex(curExtentIndex)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to GetByIndex() [Case 3]: %v", err)
+			}
+			curExtent = curExtentAsValue.(*singleObjectExtentStruct)
+
+			if (curExtent.fileOffset + curExtent.length) > newExtent.fileOffset {
+				// curExtent definitely collides with newExtent... can we just truncate or do we need to split
+
+				preLength = newExtent.fileOffset - curExtent.fileOffset
+
+				if (curExtent.fileOffset + curExtent.length) <= (newExtent.fileOffset + newExtent.length) {
+					// curExtent ends at or before newExtent ends... so simply truncate curExtent
+
+					curExtent.length = preLength
+
+					// Set curExtentIndex to point to following extent (if any) for loop below
+
+					curExtentIndex++
+				} else {
+					// curExtent is overlapped "in the middle" by newExtent... so split curExtent "around" newExtent
+
+					curExtent.length = preLength
+
+					postLength = (curExtent.fileOffset + curExtent.length) - (newExtent.fileOffset + newExtent.length)
+
+					splitExtent = &singleObjectExtentStruct{
+						fileOffset:   newExtent.fileOffset + newExtent.length,
+						objectOffset: curExtent.objectOffset + preLength + newExtent.length,
+						length:       postLength,
+					}
+
+					_, err = chunkedPutContext.extentMap.Put(splitExtent.fileOffset, splitExtent)
+					if nil != err {
+						logFatalf("mergeSingleObjectExtent() failed to Put() splitExtent [Case 2]: %v", err)
+					}
+
+					// From here, we know we can just insert newExtent and we are done
+
+					_, err = chunkedPutContext.extentMap.Put(newExtent.fileOffset, newExtent)
+					if nil != err {
+						logFatalf("mergeSingleObjectExtent() failed to Put() newExtent [Case 2]: %v", err)
+					}
+
+					return
+				}
+			} else {
+				// curExtent does not overlap newExtent... set curExtentIndex to point to following extent (in any) for loop below
+
+				curExtentIndex++
+			}
+		}
+	}
+
+	// At this point, the special case of the first extent starting at or before newExtent has been
+	// cleared from oveerlapping with newExtent... so now we have to loop from curExtentIndex looking
+	// for additional extents to either delete entirely or truncate "on the left" in order to ensure
+	// that no other extents overlap with newExtent
+
+	for {
+		_, curExtentAsValue, ok, err = chunkedPutContext.extentMap.GetByIndex(curExtentIndex)
+		if nil != err {
+			logFatalf("mergeSingleObjectExtent() failed to GetByIndex() [Case 4]: %v", err)
+		}
+
+		if !ok {
+			// No more extents, so we know we are done removing overlapped extents
+
+			break
+		}
+
+		curExtent = curExtentAsValue.(*singleObjectExtentStruct)
+
+		if curExtent.fileOffset >= (newExtent.fileOffset + newExtent.length) {
+			// This and all subsequent extents are "beyond" newExtent so cannot overlap
+
+			break
+		}
+
+		if (curExtent.fileOffset + curExtent.length) < (newExtent.fileOffset + newExtent.length) {
+			// curExtent completely overlapped by newExtent... so simply delete it
+
+			_, err = chunkedPutContext.extentMap.DeleteByIndex(curExtentIndex)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to DeleteByIndex() [Case 3]: %v", err)
+			}
+
+			// curExtentIndex left pointing to subsequent extent (if any) for next loop iteration
+		} else {
+			// curExtent is overlapped "on the left" by newExtent... so tuncate and move curExtent
+
+			postLength = (curExtent.fileOffset + curExtent.length) - (newExtent.fileOffset + newExtent.length)
+
+			_, err = chunkedPutContext.extentMap.DeleteByIndex(curExtentIndex)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to DeleteByIndex() curExtent [Case 4]: %v", err)
+			}
+
+			splitExtent = &singleObjectExtentStruct{
+				fileOffset:   newExtent.fileOffset + newExtent.length,
+				objectOffset: curExtent.objectOffset + preLength + newExtent.length,
+				length:       postLength,
+			}
+
+			_, err = chunkedPutContext.extentMap.Put(splitExtent.fileOffset, splitExtent)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to Put() splitExtent [Case 3]: %v", err)
+			}
+
+			// From here, we know we can just insert newExtent and we are done
+
+			_, err = chunkedPutContext.extentMap.Put(newExtent.fileOffset, newExtent)
+			if nil != err {
+				logFatalf("mergeSingleObjectExtent() failed to Put() newExtent [Case 3]: %v", err)
+			}
+
+			return
+		}
+	}
+
+	// Having ensured there are no overlapping extents, it is safe to insert newExtent
+
+	_, err = chunkedPutContext.extentMap.Put(newExtent.fileOffset, newExtent)
+	if nil != err {
+		logFatalf("mergeSingleObjectExtent() failed to Put() newExtent [Case 4]: %v", err)
+	}
 }
 
 // DumpKey formats the Key (multiObjectExtentStruct.fileOffset) for fileInodeStruct.ExtentMap

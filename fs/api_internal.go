@@ -4003,7 +4003,7 @@ func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupI
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 	mS.doInlineCheckpointIfEnabled()
 
-	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, objectPath, fileOffset, objectOffset, length, false)
+	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, objectPath, fileOffset, objectOffset, length, true)
 
 	return // err, as set by inode.Wrote(), is sufficient
 }

@@ -90,40 +90,78 @@ type fileInodeLeaseRequestStruct struct {
 	delayedLeaseRequestListElement *list.Element
 }
 
-// singleObjectExtentStruct is used for both the chunkedPutContextStruct as well
-// as for representing a ReadPlanStep.
+// singleObjectExtentStruct is used for chunkedPutContextStruct.extentMap.
 //
 type singleObjectExtentStruct struct {
-	fileOffset   uint64 // Key
+	fileOffset   uint64 // Key in chunkedPutContextStruct.extentMap
 	objectOffset uint64
 	length       uint64
 }
 
+// singleObjectExtentWithLinkStruct is used to represent a ReadPlanStep. A chunkedPutContext == nil
+// indicates a zero-filled extent rather that a read from a LogSegment not yet persisted by Swift.
+//
+type singleObjectExtentWithLinkStruct struct {
+	fileOffset        uint64
+	objectOffset      uint64
+	length            uint64
+	chunkedPutContext *chunkedPutContextStruct // If == nil, implies a zero-filled extent/ReadPlanStep
+}
+
 // multiObjectExtentStruct is used for both the fileInodeStruct.extentMap as well
 // as for representing a ReadPlanStep. In this latter case, an objectName == ""
-// indicates a zero-filled extent rather than a read from a LogSegment.
+// indicates a zero-filled extent rather than a read from a LogSegment already
+// persisted by Swift.
 //
 type multiObjectExtentStruct struct {
-	fileOffset    uint64 // Key
+	fileOffset    uint64 // Key in fileInodeStruct.extentMap
 	containerName string
-	objectName    string
+	objectName    string // If == "", implies a zero-filled extent/ReadPlanStep
 	objectOffset  uint64
 	length        uint64
 }
 
-type chunkedPutContextStruct struct {
-	containerName string
-	objectName    string
-	extentMap     sortedmap.LLRBTree // Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
-	fileSize      uint64             // Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
-	//                                    updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
-	buf                   []byte
-	chunkedPutListElement *list.Element // FIFO Element of fileInodeStruct.chunkedPutList
-	open                  bool          // If last FIFO Element, may be "open" meaning not yet "closed"
+// chunkeStruct is used to tell sendDaemon to either flush (if length == 0) and/or
+// allow performChunkedPut to send a new chunk.
+//
+type chunkStruct struct {
+	objectOffset uint64
+	length       uint64
 }
 
+const (
+	chunkedPutContextStateOpen    uint8 = iota // Initial state indicating Chunked PUT is available to send a chunk
+	chunkedPutContextStateClosing              // After a zero-length chunk is sent to close the Chunked PUT... awaiting http.StatusCreated
+	chunkedPutContextStateClosed               // Chunked PUT received an http.StatusCreated...
+	//                                              but we cannot yet merge it's ExtentMap updates because
+	//                                              an as-yet un-closed Chunked PUT needs to do so first
+)
+
+type chunkedPutContextStruct struct {
+	sync.Mutex                        //          Used to avoid race in Read callback with writers
+	sync.WaitGroup                    //          Used to await completion of performChunkedPut goroutine
+	containerName  string             //
+	objectName     string             //
+	extentMap      sortedmap.LLRBTree //          Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
+	fileSize       uint64             //          Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
+	//                                              updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
+	buf                   []byte            //
+	chunkedPutListElement *list.Element     //    FIFO Element of fileInodeStruct.chunkedPutList
+	fileInode             *fileInodeStruct  //
+	state                 uint8             //    One of chunkedPutContextState{Open|Closing|Closed}
+	pos                   int               //    ObjectOffset just after last sent chunk
+	sendChan              chan *chunkStruct //    Wake-up sendDaemon with a new chunk or to explicitly flush
+	wakeChan              chan bool         //    Wake-up Read callback to respond with a chunk and/or return EOF
+	flushRequested        bool              //    Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
+}
+
+const (
+	chunkedPutContextSendChanBufferSize = 16
+	chunkedPutContextWakeChanBufferSize = 16
+)
+
 type fileInodeStruct struct {
-	sync.Mutex
+	sync.WaitGroup //                                  Used to await completion of all chunkedPutContext's
 	inode.InodeNumber
 	references          uint64
 	leaseState          fileInodeLeaseStateType
@@ -143,9 +181,12 @@ type fileInodeStruct struct {
 	//                                                     fileInodeLeaseStateSharedPromoting
 	//                                                     fileInodeLeaseStateExclusiveRequested
 	//                                                     fileInodeLeaseStateExclusiveGranted
-	extentMapFileSize uint64             //            FileSize covered by .extentMap (.chunkedPutList may extend)
-	extentMap         sortedmap.LLRBTree //            Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
-	chunkedPutList    *list.List         //            FIFO List of chunkedPutContextStruct's
+	extentMapFileSize         uint64             //        FileSize covered by .extentMap (.chunkedPutList may extend)
+	extentMap                 sortedmap.LLRBTree //    Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
+	chunkedPutList            *list.List         //    FIFO List of chunkedPutContextStruct's
+	flushInProgress           bool               //    Serializes (& singularizes) explicit Flush requests
+	chunkedPutFlushWaiterList *list.List         //    List of *sync.WaitGroup's for those awaiting an explicit Flush
+	//                                                   Note: These waiters cannot be holding fileInodeStruct.Lock
 }
 
 type handleStruct struct {
@@ -395,15 +436,15 @@ func initializeGlobals(confMap conf.ConfMap) {
 		Dial:                   defaultTransport.Dial,
 		DialTLS:                defaultTransport.DialTLS,
 		TLSClientConfig:        defaultTransport.TLSClientConfig,
-		TLSHandshakeTimeout:    defaultTransport.TLSHandshakeTimeout,
+		TLSHandshakeTimeout:    globals.config.SwiftTimeout,
 		DisableKeepAlives:      false,
 		DisableCompression:     defaultTransport.DisableCompression,
 		MaxIdleConns:           int(globals.config.SwiftConnectionPoolSize),
 		MaxIdleConnsPerHost:    int(globals.config.SwiftConnectionPoolSize),
 		MaxConnsPerHost:        int(globals.config.SwiftConnectionPoolSize),
-		IdleConnTimeout:        defaultTransport.IdleConnTimeout,
-		ResponseHeaderTimeout:  defaultTransport.ResponseHeaderTimeout,
-		ExpectContinueTimeout:  defaultTransport.ExpectContinueTimeout,
+		IdleConnTimeout:        globals.config.SwiftTimeout,
+		ResponseHeaderTimeout:  globals.config.SwiftTimeout,
+		ExpectContinueTimeout:  globals.config.SwiftTimeout,
 		TLSNextProto:           defaultTransport.TLSNextProto,
 		ProxyConnectHeader:     defaultTransport.ProxyConnectHeader,
 		MaxResponseHeaderBytes: defaultTransport.MaxResponseHeaderBytes,

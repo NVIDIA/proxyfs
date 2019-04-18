@@ -68,6 +68,8 @@ allow_read_write = {
     "Server.RpcMountByAccountName",
     "Server.RpcMountByVolumeName",
     "Server.RpcPing",
+    "Server.RpcProvisionObject",
+    "Server.RpcPutLocation",
     "Server.RpcReadSymlink",
     "Server.RpcReaddirByLoc",
     "Server.RpcReaddirPlusByLoc",

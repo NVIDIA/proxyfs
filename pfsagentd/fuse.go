@@ -19,6 +19,7 @@ package main
 //   jrpcfs/api.go
 
 import (
+	"container/list"
 	"io"
 	"os"
 	"os/exec"
@@ -333,9 +334,13 @@ func handleFsyncRequest(request *fuse.FsyncRequest) {
 
 func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 	var (
-		mode           os.FileMode
-		getStatRequest *jrpcfs.GetStatRequest
-		statStruct     *jrpcfs.StatStruct
+		chunkedPutContext        *chunkedPutContextStruct
+		chunkedPutContextElement *list.Element
+		fileInode                *fileInodeStruct
+		getStatRequest           *jrpcfs.GetStatRequest
+		mode                     os.FileMode
+		ok                       bool
+		statStruct               *jrpcfs.StatStruct
 	)
 
 	getStatRequest = &jrpcfs.GetStatRequest{
@@ -357,6 +362,19 @@ func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 		mode = os.ModeDir | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
 	case inode.PosixModeFile:
 		mode = os.FileMode(statStruct.FileMode & uint32(inode.PosixModePerm))
+
+		// Potentially need to override statStruct.Size if being locally modified
+
+		globals.Lock()
+		fileInode, ok = globals.fileInodeMap[inode.InodeNumber(node)]
+		if ok {
+			if 0 < fileInode.chunkedPutList.Len() {
+				chunkedPutContextElement = fileInode.chunkedPutList.Back()
+				chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+				statStruct.Size = chunkedPutContext.fileSize
+			}
+		}
+		globals.Unlock()
 	case inode.PosixModeSymlink:
 		mode = os.ModeSymlink | os.FileMode(statStruct.FileMode&uint32(inode.PosixModePerm))
 	default:
@@ -365,7 +383,7 @@ func getattrRequestHelper(node fuse.NodeID) (attr *fuse.Attr, err error) {
 
 	attr = &fuse.Attr{
 		Valid:     globals.config.AttrDuration,
-		Inode:     uint64(node), // TOCHECK: If SnapShot's work with this
+		Inode:     uint64(node),
 		Size:      statStruct.Size,
 		Blocks:    statStruct.Size / globals.config.AttrBlockSize,
 		Atime:     time.Unix(0, int64(statStruct.ATimeNs)),
@@ -967,7 +985,9 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		timeNow              time.Time
 	)
 
-	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime | fuse.SetattrAtimeNow | fuse.SetattrMtimeNow)) != request.Valid {
+	// TODO: Verify it is ok to accept but ignore fuse.SetattrHandle in request.Valid
+
+	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime | fuse.SetattrHandle | fuse.SetattrAtimeNow | fuse.SetattrMtimeNow)) != request.Valid {
 		// request.Valid contains non-supported bits
 		request.RespondError(fuse.ENOTSUP)
 		return
@@ -1068,7 +1088,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 
 		resizeReply = &jrpcfs.Reply{}
 
-		err = doJRPCRequest("Server.Resize", resizeRequest, resizeReply)
+		err = doJRPCRequest("Server.RpcResize", resizeRequest, resizeReply)
 		if nil != err {
 			request.RespondError(err)
 			return

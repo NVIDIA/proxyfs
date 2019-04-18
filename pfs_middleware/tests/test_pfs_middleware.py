@@ -4641,7 +4641,7 @@ class TestProxyfsMethod(BaseMiddlewareTest):
                 'params': [{'some': 'args'}],
             }))
         status, headers, body = self.call_pfs(req)
-        self.assertEqual(status, '422 Unprocessable Entity', body)
+        self.assertEqual(status, '200 OK', body)
         self.assertEqual(headers.get('content-type'), 'application/json')
         resp = json.loads(body)
         self.assertIsNotNone(resp.pop('id', None))
