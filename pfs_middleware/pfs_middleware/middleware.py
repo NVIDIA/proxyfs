@@ -939,14 +939,9 @@ class PfsMiddleware(object):
                               ctx.proxyfsd_addrinfo, err)
             return swob.HTTPBadGateway(request=req)
         else:
-            if response.get("error"):
-                return swob.HTTPUnprocessableEntity(
-                    request=req, body=json.dumps(response),
-                    headers={'Content-Type': 'application/json'})
-            else:
-                return swob.HTTPOk(
-                    request=req, body=json.dumps(response),
-                    headers={'Content-Type': 'application/json'})
+            return swob.HTTPOk(
+                request=req, body=json.dumps(response),
+                headers={'Content-Type': 'application/json'})
 
     def get_account(self, ctx):
         req = ctx.req

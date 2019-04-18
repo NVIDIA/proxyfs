@@ -100,6 +100,7 @@ const (
 	PingOp OpType = iota
 	ReadOp
 	WriteOp
+	ProvisionObjectOp
 	WroteOp
 	FetchExtentMapChunkOp
 	FlushOp
@@ -120,6 +121,7 @@ var opTypeStrs = []string{
 	"Ping",
 	"Read",
 	"Write",
+	"ProvisionObject",
 	"Wrote",
 	"FetchExtentMapChunk",
 	"Flush",
@@ -923,6 +925,22 @@ func UnixSec(t time.Time) (sec int64) {
 
 func UnixNanosec(t time.Time) (ns int64) {
 	return t.UnixNano() - t.Unix()*int64(time.Second)
+}
+
+func (s *Server) RpcProvisionObject(in *ProvisionObjectRequest, reply *ProvisionObjectReply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil == err {
+		reply.PhysPath, err = mountHandle.CallInodeToProvisionObject()
+	}
+
+	return
 }
 
 func (s *Server) RpcWrote(in *WroteRequest, reply *WroteReply) (err error) {

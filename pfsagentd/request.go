@@ -121,15 +121,6 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			return
 		}
 
-		if nil != request.Body {
-			err = request.Body.Close()
-			if nil != err {
-				logErrorf("doHTTPRequest() failed to close body: %v", err)
-				ok = false
-				return
-			}
-		}
-
 		responseBody, err = ioutil.ReadAll(response.Body)
 		response.Body.Close()
 		if nil != err {

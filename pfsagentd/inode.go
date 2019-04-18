@@ -59,22 +59,24 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 		fileInode.references++
 	} else {
 		fileInode = &fileInodeStruct{
-			InodeNumber:         inodeNumber,
-			references:          1,
-			leaseState:          fileInodeLeaseStateNone,
-			sharedLockHolders:   list.New(),
-			exclusiveLockHolder: nil,
-			lockWaiters:         list.New(),
-			extentMapFileSize:   0,
-			extentMap:           nil,
-			chunkedPutList:      list.New(),
+			InodeNumber:               inodeNumber,
+			references:                1,
+			leaseState:                fileInodeLeaseStateNone,
+			sharedLockHolders:         list.New(),
+			exclusiveLockHolder:       nil,
+			lockWaiters:               list.New(),
+			extentMapFileSize:         0,
+			extentMap:                 nil,
+			chunkedPutList:            list.New(),
+			flushInProgress:           false,
+			chunkedPutFlushWaiterList: list.New(),
 		}
 
 		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
 
 		globals.fileInodeMap[inodeNumber] = fileInode
 
-		delayedLeaseRequestList = honorInodeCacheLimitsWhileLocked()
+		delayedLeaseRequestList = honorInodeCacheLimits()
 	}
 
 	globals.Unlock()
@@ -110,7 +112,7 @@ func (fileInode *fileInodeStruct) dereference() {
 	fileInode.references--
 
 	if 0 == fileInode.references {
-		delayedLeaseRequestList = honorInodeCacheLimitsWhileLocked()
+		delayedLeaseRequestList = honorInodeCacheLimits()
 	}
 
 	globals.Unlock()
@@ -120,11 +122,11 @@ func (fileInode *fileInodeStruct) dereference() {
 	}
 }
 
-// honorInodeCacheLimitsWhileLocked enforces the SharedFileLimit and ExclusiveFileLimit confMap
-// parameters. Since it is called while globals Lock is held, it simply assembles a list of
-// fileInodeLeaseRequestStruct's to be issued once the globals Lock is released.
+// honorInodeCacheLimits enforces the SharedFileLimit and ExclusiveFileLimit confMap
+// parameters. Since it is called while globals Lock is held, it simply assembles a
+// list of fileInodeLeaseRequestStruct's to be issued once the globals Lock is released.
 //
-func honorInodeCacheLimitsWhileLocked() (delayedLeaseRequestList *list.List) {
+func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 	var (
 		cacheLimitToEnforce      int
 		delayedLeaseRequest      *fileInodeLeaseRequestStruct
@@ -197,7 +199,7 @@ func honorInodeCacheLimitsWhileLocked() (delayedLeaseRequestList *list.List) {
 	return
 }
 
-// performDelayedLeaseRequestList is the companion to honorInodeCacheLimitsWhileLocked and is
+// performDelayedLeaseRequestList is the companion to honorInodeCacheLimits and is
 // invoked once the globals Lock has been released.
 //
 func performDelayedLeaseRequestList(delayedLeaseRequestList *list.List) {

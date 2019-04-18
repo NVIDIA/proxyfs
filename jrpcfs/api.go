@@ -792,6 +792,14 @@ type CoalesceReply struct {
 	NumWrites        uint64
 }
 
+type ProvisionObjectRequest struct {
+	MountID MountIDAsString
+}
+
+type ProvisionObjectReply struct {
+	PhysPath string
+}
+
 type WroteRequest struct {
 	InodeHandle
 	ObjectPath   string
