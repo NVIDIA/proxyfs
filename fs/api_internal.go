@@ -1313,7 +1313,9 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 	return cursorInodeNumber, nil
 }
 
-func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+func (mS *mountStruct) MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (
+	ino uint64, numWrites uint64, modificationTime uint64, err error) {
+
 	var (
 		coalesceElementList      []*inode.CoalesceElement
 		coalesceElementListIndex int
@@ -1411,7 +1413,8 @@ Restart:
 	// Invoke package inode to actually perform the Coalesce operation
 
 	destFileInodeNumber = dirEntryInodeNumber
-	coalesceTime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(destFileInodeNumber, coalesceElementList)
+	coalesceTime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(
+		destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
 
 	// We can now release all the WriteLocks we are currently holding
 

@@ -227,7 +227,7 @@ type VolumeHandle interface {
 	Wrote(fileInodeNumber InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error)
 	SetSize(fileInodeNumber InodeNumber, Size uint64) (err error)
 	Flush(fileInodeNumber InodeNumber, andPurge bool) (err error)
-	Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
+	Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
 
 	// Symlink Inode specific methods, implemented in symlink.go
 

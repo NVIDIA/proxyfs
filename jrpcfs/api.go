@@ -784,6 +784,8 @@ type PutContainerReply struct {
 type CoalesceReq struct {
 	VirtPath                    string
 	ElementAccountRelativePaths []string
+	// New or updated HTTP metadata to be stored
+	NewMetaData []byte
 }
 
 type CoalesceReply struct {

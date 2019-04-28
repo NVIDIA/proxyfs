@@ -121,6 +121,7 @@ ZERO_FILL_PATH = "/0"
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+S3API_ETAG_HEADER = "X-Object-Sysmeta-S3Api-Etag"
 LISTING_ETAG_OVERRIDE_HEADER = \
     "X-Object-Sysmeta-Container-Update-Override-Etag"
 
@@ -438,30 +439,111 @@ def extract_container_metadata_from_headers(req):
     return meta_headers
 
 
-def best_possible_etag(obj_metadata, account_name, ino, num_writes,
-                       is_dir=False, container_listing=False):
-    if is_dir:
-        return EMPTY_OBJECT_ETAG
-    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+def mung_etags(obj_metadata, etag, num_writes):
+    '''Mung the ETag headers that will be stored with an object.  The
+    goal is to preserve ETag metadata passed down by other filters but
+    to do so in such a way that it will be invalidated if there is a
+    write to or truncate of the object via the ProxyFS file API.
+
+    The mechanism is to prepend a counter to the ETag header values
+    that is incremented each time the object is modified is modified.
+    When the object is read, if the value for the counter has changed,
+    the ETag is assumed to be invalid.  The counter is typically the
+    number of writes to the object.
+
+    etag is either None or the value that should be returned as the
+    ETag for the object (in the absence of other considerations).
+
+    This assumes that all headers have been converted to "titlecase",
+    which means, among other things, that "ETag" will show up as
+    "Etag".
+
+    This ignores SLO headers because it assumes they have already been
+    stripped.
+    '''
+    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
+            num_writes, obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
+
+    if S3API_ETAG_HEADER in obj_metadata:
+        obj_metadata[S3API_ETAG_HEADER] = "%d:%s" % (
+            num_writes, obj_metadata[S3API_ETAG_HEADER])
+
+    if etag is not None:
+        obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (num_writes, etag)
+
+    return
+
+
+def unmung_etags_and_return_best(obj_metadata, account_name, inum, num_writes,
+                                 is_dir=False, container_listing=False):
+    '''Unmung the ETag headers associated with an object to return
+    them to the state they were in when passed to pfs_middleware or
+    delete them if the object has changed.
+
+    Return the ETag that is most likely to be correct for the query,
+    but leave other valid ETags values in the metadata, in case a
+    higher layer filter wants to use them to override the value
+    returned here.
+
+    If the ETags in the metadata are invalid, construct and return a
+    new ProxyFS ETag based on the account name, inode number, and
+    number of writes.
+    '''
+
+    # purge headers made invalid by subsequent writes/truncates from
+    # the returned headers
+    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
         val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
         try:
             stored_num_writes, rest = val.split(':', 1)
             if int(stored_num_writes) == num_writes:
-                return rest
+                obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = rest
+            else:
+                del obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
         except ValueError:
+            del obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
             pass
-    elif ORIGINAL_MD5_HEADER in obj_metadata:
-        val = obj_metadata[ORIGINAL_MD5_HEADER]
+
+    if S3API_ETAG_HEADER in obj_metadata:
+        val = obj_metadata[S3API_ETAG_HEADER]
         try:
-            stored_num_writes, md5sum = val.split(':', 1)
+            stored_num_writes, rest = val.split(':', 1)
             if int(stored_num_writes) == num_writes:
-                return md5sum
+                obj_metadata[S3API_ETAG_HEADER] = rest
+            else:
+                del obj_metadata[S3API_ETAG_HEADER]
         except ValueError:
+            del obj_metadata[S3API_ETAG_HEADER]
             pass
-    return construct_etag(account_name, ino, num_writes)
+
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        val = obj_metadata[ORIGINAL_MD5_HEADER]
+
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                obj_metadata[ORIGINAL_MD5_HEADER] = rest
+            else:
+                del obj_metadata[ORIGINAL_MD5_HEADER]
+        except ValueError:
+            del obj_metadata[ORIGINAL_MD5_HEADER]
+            pass
+
+    # decide the best possible ETag to return
+    if is_dir:
+        return EMPTY_OBJECT_ETAG
+
+    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        return obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        return obj_metadata[ORIGINAL_MD5_HEADER]
+
+    return construct_etag(account_name, inum, num_writes)
 
 
-def construct_etag(account_name, ino, num_writes):
+def construct_etag(account_name, inum, num_writes):
     # We append -32 in an attempt to placate S3 clients. In S3, the ETag of
     # a multipart object looks like "hash-N" where <hash> is the MD5 of the
     # MD5s of the segments and <N> is the number of segments.
@@ -473,7 +555,7 @@ def construct_etag(account_name, ino, num_writes):
     # 32 was chosen because it was the ticket number of the author's lunch
     # order on the day this code was written. It has no significance.
     return '"pfsv2/{}/{:08X}/{:08X}-32"'.format(
-        urllib_parse.quote(account_name), ino, num_writes)
+        urllib_parse.quote(account_name), inum, num_writes)
 
 
 def iterator_posthook(iterable, posthook, *posthook_args, **posthook_kwargs):
@@ -768,7 +850,6 @@ class PfsMiddleware(object):
                     resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
                     resp = self.coalesce_object(ctx, auth_cb)
-
                 elif method == 'GET' and con:
                     resp = self.get_container(ctx)
                 elif method == 'HEAD' and con:
@@ -1333,10 +1414,11 @@ class PfsMiddleware(object):
                                                   ent["IsDir"])
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
-            etag = best_possible_etag(
-                obj_metadata, account_name,
-                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
-                container_listing=True)
+
+            etag = unmung_etags_and_return_best(
+                obj_metadata,
+                account_name, ent["InodeNumber"], ent["NumWrites"],
+                is_dir=ent["IsDir"], container_listing=True)
             json_entry = {
                 "name": name,
                 "bytes": int(swift_bytes or size),
@@ -1368,7 +1450,8 @@ class PfsMiddleware(object):
                     container_entry["Basename"], container_entry["IsDir"])
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
-            etag = best_possible_etag(
+
+            etag = unmung_etags_and_return_best(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
                 container_entry["NumWrites"],
@@ -1471,9 +1554,11 @@ class PfsMiddleware(object):
             rpc_resp)
 
         resp_headers = {
-            "Etag": construct_etag(ctx.account_name, inode, num_writes),
             "Content-Type": DIRECTORY_CONTENT_TYPE,
             "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
+        resp_headers["Etag"] = unmung_etags_and_return_best(
+            resp_headers, ctx.account_name, inode, num_writes)
+
         return swob.HTTPCreated(request=req, headers=resp_headers, body="")
 
     def put_object_as_file(self, ctx):
@@ -1563,19 +1648,14 @@ class PfsMiddleware(object):
                 hasher.hexdigest() != request_etag:
             return swob.HTTPUnprocessableEntity(request=req)
 
-        # All the data is now in Swift; we just have to tell proxyfsd about
-        # it. We save off the original MD5 checksum and the number of log
-        # segments (this later becomes the NumWrites value) so that we can
-        # provide an ETag that's an MD5 checksum unless the file has been
-        # subsequently written.
+        # All the data is now in Swift; we just have to tell proxyfsd
+        # about it.  Mung any passed ETags values to include the
+        # number of writes to the file (basically, the object's update
+        # count) and supply the MD5 hash computed here which is the
+        # objects future ETag value if it is not subsequently updated.
         obj_metadata = extract_object_metadata_from_headers(req.headers)
-        obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
-                                                       hasher.hexdigest())
-        # Add a similar prefix to any container-update-override etag, to
-        # similarly verify that there wasn't a subsequent write.
-        if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
-            obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
-                len(log_segments), obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
+
+        mung_etags(obj_metadata, hasher.hexdigest(), len(log_segments))
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
@@ -1681,8 +1761,8 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
-        headers["Etag"] = best_possible_etag(headers, ctx.account_name,
-                                             ino, num_writes)
+        headers["Etag"] = unmung_etags_and_return_best(
+            headers, ctx.account_name, ino, num_writes)
 
         get_read_plan = req.params.get("get-read-plan", "no")
         if get_read_plan == "":
@@ -1837,7 +1917,7 @@ class PfsMiddleware(object):
                 ';swift_bytes=')[0]
 
         headers["Content-Length"] = file_size
-        headers["ETag"] = best_possible_etag(
+        headers["ETag"] = unmung_etags_and_return_best(
             headers, ctx.account_name, ino, num_writes, is_dir=is_dir)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
@@ -1853,6 +1933,8 @@ class PfsMiddleware(object):
         return resp
 
     def coalesce_object(self, ctx, auth_cb):
+
+        # extract and verify the object list for the new object
         req = ctx.req
         object_path = urllib_parse.unquote(req.path)
 
@@ -1906,10 +1988,48 @@ class PfsMiddleware(object):
                         return denial_response
                 authed_containers.add(elem_container_path)
 
+        # treat the number of objects as the number of writes
+        num_writes = len(decoded_json["elements"])
+
+        # validate the metadata for the new object (further munging
+        # of ETags will be done later)
+        err = constraints.check_metadata(req, 'object')
+        if err:
+            return err
+
+        # retrieve the ETag (or etag) value in the request (or None)
+        req_etag = req.headers.get('Etag', None)
+        if req_etag is None:
+            req_etag = req.headers.get('ETag', None)
+        if req_etag is None:
+            req_etag = req.headers.get('ETAG', None)
+        if req_etag is None:
+            req_etag = req.headers.get('etag', None)
+
+        # strip out user supplied and other unwanted headers
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
+
+        # strip out headers that apply only to SLO objects
+        unwanted_headers = ['X-Static-Large-Object']
+        for header in obj_metadata.keys():
+            if header.startswith("X-Object-Sysmeta-Slo-"):
+                unwanted_headers.append(header)
+        for header in unwanted_headers:
+            if header in obj_metadata:
+                del obj_metadata[header]
+
+        # Now that we know the number of writes (really number of objects) we
+        # can mung the sundry ETag headers.
+        mung_etags(obj_metadata, req_etag, num_writes)
+
+        raw_obj_metadata = serialize_metadata(obj_metadata)
+
+        # now get proxyfs to coalesce the objects and set initial headers
         try:
             coalesce_response = self.rpc_call(
                 ctx, rpc.coalesce_object_request(
-                    object_path, decoded_json["elements"]))
+                    object_path, decoded_json["elements"], raw_obj_metadata))
+
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(
@@ -1930,11 +2050,12 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        last_modified_ns, ino, num_writes = \
+        last_modified_ns, inum, num_writes = \
             rpc.parse_coalesce_object_response(coalesce_response)
 
         headers = {}
-        headers["Etag"] = construct_etag(ctx.account_name, ino, num_writes)
+        headers["Etag"] = unmung_etags_and_return_best(
+            headers, ctx.account_name, inum, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

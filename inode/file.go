@@ -915,6 +915,9 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 		return
 	}
 
+	// changing the file's size is just like a write
+	fileInode.NumWrites++
+
 	err = fileInode.volume.flushInode(fileInode)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -1010,7 +1013,9 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	return
 }
 
-func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (coalesceTime time.Time, numWrites uint64, fileSize uint64, err error) {
+func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (
+	coalesceTime time.Time, numWrites uint64, fileSize uint64, err error) {
+
 	var (
 		alreadyInInodeMap                  bool
 		destInode                          *inMemoryInodeStruct
@@ -1131,7 +1136,7 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 
 	for _, element = range elements {
 		elementInode = inodeMap[element.ElementInodeNumber]
-		destInode.NumWrites += elementInode.NumWrites
+		destInode.NumWrites += 1
 		elementInodeExtentMap = elementInode.payload.(sortedmap.BPlusTree)
 		elementInodeExtentMapLen, err = elementInodeExtentMap.Len()
 		for elementInodeExtentMapIndex = 0; elementInodeExtentMapIndex < elementInodeExtentMapLen; elementInodeExtentMapIndex++ {
@@ -1187,15 +1192,18 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 	}
 
 	// Now, destInode is fully assembled... update its metadata & assemble remaining results
-
 	coalesceTime = time.Now()
-
 	destInode.CreationTime = coalesceTime
 	destInode.AttrChangeTime = coalesceTime
 	destInode.ModificationTime = coalesceTime
 
-	numWrites = destInode.NumWrites
+	// attach new middleware headers (why are we making a copy?)
+	inodeStreamBuf := make([]byte, len(metaData))
+	copy(inodeStreamBuf, metaData)
+	destInode.StreamMap[metaDataName] = inodeStreamBuf
 
+	// collect the NumberOfWrites value while locked (important for Etag)
+	numWrites = destInode.NumWrites
 	fileSize = destInode.Size
 
 	// Now, destInode is fully assembled... need to remove all elements references to currently shared LogSegments

@@ -4020,22 +4020,84 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                     "NumWrites": 893,
                 }}
 
+        # this handler gets overwritten by the first test that
+        # registers a "Server.RpcHead"
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
 
     def test_success(self):
-        def mock_RpcCoalesce(coalese_req):
+
+        # a map from an object's "virtual path" to its metadata
+        self.obj_metadata = {}
+
+        def mock_RpcHead(head_req):
+            '''Return the object informattion for the new coalesced object.  This
+            assumes that COALESCE operation has already created it.
+            '''
+
+            resp = {
+                "error": None,
+                "result": {
+                    "Metadata": "",
+                    "ModificationTime": 1488323796002909000,
+                    "FileSize": 80 * 1024 * 1024,
+                    "IsDir": False,
+                    "InodeNumber": 283253,
+                    "NumWrites": 5,
+                }
+            }
+            virt_path = head_req['VirtPath']
+            if self.obj_metadata[virt_path] is not None:
+                resp['result']['Metadata'] = self.obj_metadata[virt_path]
+            return resp
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        def mock_RpcCoalesce(coalesce_req):
+
+            # if there's metadata for the new object, save it to return later
+            if coalesce_req['NewMetaData'] != "":
+                virt_path = coalesce_req['VirtPath']
+                self.obj_metadata[virt_path] = coalesce_req['NewMetaData']
+
+            numWrites = len(coalesce_req['ElementAccountRelativePaths'])
             return {
                 "error": None,
                 "result": {
                     "ModificationTime": 1488323796002909000,
                     "InodeNumber": 283253,
-                    "NumWrites": 6,
+                    "NumWrites": numWrites,
                 }}
 
         self.fake_rpc.register_handler(
             "Server.RpcCoalesce", mock_RpcCoalesce)
 
+        # have the coalesce request suppply the headers that would
+        # come from s3api for a "complete multi-part upload" request
+        request_headers = {
+            'X-Object-Sysmeta-S3Api-Acl':
+                '{"Owner":"fc",' +
+                '"Grant":[{"Grantee":"fc","Permission":"FULL_CONTROL"}]}',
+            'X-Object-Sysmeta-S3Api-Etag':
+                'cb45770d6cf51effdfb2ea35322459c3-205',
+            'X-Object-Sysmeta-Slo-Etag': '363d958f0f4c8501a50408a728ba5599',
+            'X-Object-Sysmeta-Slo-Size': '1073741824',
+            'X-Object-Sysmeta-Container-Update-Override-Etag':
+                '10340ab593ac8c32290a278e36d1f8df; ' +
+                's3_etag=cb45770d6cf51effdfb2ea35322459c3-205; ' +
+                'slo_etag=363d958f0f4c8501a50408a728ba5599',
+            'X-Static-Large-Object': 'True',
+            'Content-Type':
+                'application/x-www-form-urlencoded; ' +
+                'charset=utf-8;swift_bytes=1073741824',
+            'Etag': '10340ab593ac8c32290a278e36d1f8df',
+            'Date': 'Mon, 01 Apr 2019 22:53:31 GMT',
+            'Host': 'sm-p1.swiftstack.org',
+            'Accept': 'application/json',
+            'Content-Length': '18356',
+            'X-Auth-Token': None,
+        }
         request_body = json.dumps({
             "elements": [
                 "c1/seg1a",
@@ -4046,12 +4108,14 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
+            headers=request_headers,
             environ={"REQUEST_METHOD": "COALESCE",
                      "wsgi.input": BytesIO(request_body)})
+
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
         self.assertEqual(headers["Etag"],
-                         '"pfsv2/AUTH_test/00045275/00000006-32"')
+                         '"pfsv2/AUTH_test/00045275/00000005-32"')
 
         # The first call is a call to RpcIsAccountBimodal, the last is the one
         # we care about: RpcCoalesce. There *could* be some intervening calls
@@ -4071,6 +4135,26 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             "c2/seg space 2b",
             "c3/seg3",
         ])
+
+        # verify that the metadata was munged correctly
+        # (SLO headers stripped out, etc.)
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, b'')
+        self.assertEqual(headers["Etag"],
+                         '10340ab593ac8c32290a278e36d1f8df')
+        self.assertIn('X-Object-Sysmeta-S3Api-Acl', headers)
+        self.assertIn('X-Object-Sysmeta-S3Api-Etag', headers)
+        self.assertIn('X-Object-Sysmeta-Container-Update-Override-Etag',
+                      headers)
+        self.assertNotIn('X-Static-Large-Object', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Etag', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Size', headers)
+
+        print("test_success(): headers: '%s'\n" % (headers))
 
     def test_not_authed(self):
         def mock_RpcHead(get_container_req):
@@ -4438,33 +4522,33 @@ class TestBestPossibleEtag(unittest.TestCase):
 
     def test_md5_good(self):
         self.assertEqual(
-            mware.best_possible_etag(
+            mware.unmung_etags_and_return_best(
                 {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
                 "AUTH_test", 6676743, 1),
             '5484c2634aa61c69fc02ef5400a61c94')
 
     def test_modified(self):
         self.assertEqual(
-            mware.best_possible_etag(
+            mware.unmung_etags_and_return_best(
                 {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
                 "AUTH_test", 0x16497360, 2),
             '"pfsv2/AUTH_test/16497360/00000002-32"')
 
     def test_missing(self):
         self.assertEqual(
-            mware.best_possible_etag(
+            mware.unmung_etags_and_return_best(
                 {}, "AUTH_test", 0x01740209, 1),
             '"pfsv2/AUTH_test/01740209/00000001-32"')
 
     def test_bogus(self):
         self.assertEqual(
-            mware.best_possible_etag(
+            mware.unmung_etags_and_return_best(
                 {self.HEADER: "counterfact-preformative"},
                 "AUTH_test", 0x707301, 2),
             '"pfsv2/AUTH_test/00707301/00000002-32"')
 
         self.assertEqual(
-            mware.best_possible_etag(
+            mware.unmung_etags_and_return_best(
                 {self.HEADER: "magpie:interfollicular"},
                 "AUTH_test", 0x707301, 2),
             '"pfsv2/AUTH_test/00707301/00000002-32"')
