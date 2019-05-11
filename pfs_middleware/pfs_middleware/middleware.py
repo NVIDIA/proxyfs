@@ -1565,7 +1565,7 @@ class PfsMiddleware(object):
 
     def put_object_as_directory(self, ctx):
         """
-        Create an object as a directory.
+        Create or update an object as a directory.
         """
         req = ctx.req
 

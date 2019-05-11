@@ -215,7 +215,7 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	var ino uint64
+	var ino inode.InodeNumber
 	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		return err

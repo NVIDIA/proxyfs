@@ -2295,7 +2295,11 @@ Restart:
 	return
 }
 
-func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
+func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string,
+	readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (
+	fileSize uint64, lastModified uint64, lastChanged uint64, inum inode.InodeNumber,
+	numWrites uint64, serializedMetadata []byte, err error) {
+
 	var (
 		dirEntryInodeNumber   inode.InodeNumber
 		fileOffset            uint64
@@ -2365,7 +2369,7 @@ Restart:
 	fileSize = stat[StatSize]
 	lastModified = stat[StatMTime]
 	lastChanged = stat[StatCTime]
-	ino = uint64(dirEntryInodeNumber)
+	inum = dirEntryInodeNumber
 	numWrites = stat[StatNumWrites]
 
 	serializedMetadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
@@ -2379,8 +2383,15 @@ Restart:
 		}
 	}
 
-	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+	// The only thing left is to construct a read plan and only regular
+	// files have read plans.  If this is not a regular file then we're
+	// done.
+	if stat[StatFType] != uint64(inode.FileType) {
+		heldLocks.free()
+		return
+	}
 
+	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
 	if len(readRangeIn) == 0 {
 		// Get ReadPlan for entire file
 
@@ -2589,10 +2600,13 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
+		dirInodeNumber        inode.InodeNumber
 		dirEntryInodeNumber   inode.InodeNumber
+		dirEntryBasename      string
+		dirEntryInodeType     inode.InodeType
 		fileOffset            uint64
 		heldLocks             *heldLocksStruct
-		inodeVolumeHandle     inode.VolumeHandle
+		inodeVolumeHandle     inode.VolumeHandle = mS.volStruct.inodeVolumeHandle
 		numPObjects           int
 		pObjectIndex          int
 		retryRequired         bool
@@ -2602,9 +2616,9 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 
 	startTime := time.Now()
 	defer func() {
-		globals.MiddlewareMkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.MiddlewarePutCompleteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 		if err != nil {
-			globals.MiddlewareMkdirErrors.Add(1)
+			globals.MiddlewarePutCompleteErrors.Add(1)
 		}
 	}()
 
@@ -2631,7 +2645,7 @@ Restart:
 
 	heldLocks = newHeldLocks()
 
-	_, dirEntryInodeNumber, _, _, retryRequired, err =
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		mS.resolvePath(
 			inode.RootDirInodeNumber,
 			vContainerName+"/"+vObjectPath,
@@ -2639,22 +2653,69 @@ Restart:
 			resolvePathFollowDirEntrySymlinks|
 				resolvePathFollowDirSymlinks|
 				resolvePathCreateMissingPathElements|
-				resolvePathDirEntryInodeMustBeFile|
+				resolvePathRequireExclusiveLockOnDirInode|
 				resolvePathRequireExclusiveLockOnDirEntryInode)
-
 	if nil != err {
 		heldLocks.free()
 		return
 	}
-
 	if retryRequired {
 		heldLocks.free()
 		goto Restart
 	}
 
-	// Apply (pObjectPaths,pObjectLengths) to (erased) FileInode
+	// The semantics of PUT mean that the existing object is discarded; with
+	// a file we can just overwrite it, but symlinks or directories must be
+	// removed (if possible).
+	if dirEntryInodeType != inode.FileType {
 
-	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+		if dirEntryInodeType == inode.DirType {
+
+			// try to unlink the directory (rmdir flushes the inodes)
+			err = mS.rmdirActual(dirInodeNumber, dirEntryBasename, dirEntryInodeNumber)
+			if err != nil {
+				// the directory was probably not empty
+				heldLocks.free()
+				return
+
+			}
+
+		} else {
+			// unlink the symlink (unlink flushes the inodes)
+			err = mS.unlinkActual(dirInodeNumber, dirEntryBasename, dirEntryInodeNumber)
+			if err != nil {
+
+				// ReadOnlyError is my best guess for the failure
+				err = blunder.NewError(blunder.ReadOnlyError,
+					"MiddlewareMkdir(): vol '%s' failed to unlink '%s': %v",
+					mS.volStruct.volumeName, vContainerName+"/"+vObjectPath, err)
+				heldLocks.free()
+				return
+			}
+		}
+
+		// let resolvePath() create the file
+		dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
+			mS.resolvePath(
+				inode.RootDirInodeNumber,
+				vContainerName+"/"+vObjectPath,
+				heldLocks,
+				resolvePathFollowDirSymlinks|
+					resolvePathCreateMissingPathElements|
+					resolvePathDirEntryInodeMustBeFile|
+					resolvePathRequireExclusiveLockOnDirInode|
+					resolvePathRequireExclusiveLockOnDirEntryInode)
+		if nil != err {
+			heldLocks.free()
+			return
+		}
+		if retryRequired {
+			heldLocks.free()
+			goto Restart
+		}
+	}
+
+	// Apply (pObjectPaths,pObjectLengths) to (erased) FileInode
 
 	fileOffset = 0
 
@@ -2701,7 +2762,10 @@ Restart:
 
 func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
+		dirInodeNumber        inode.InodeNumber
 		dirEntryInodeNumber   inode.InodeNumber
+		dirEntryBasename      string
+		dirEntryInodeType     inode.InodeType
 		heldLocks             *heldLocksStruct
 		retryRequired         bool
 		stat                  Stat
@@ -2730,33 +2794,68 @@ Restart:
 
 	heldLocks = newHeldLocks()
 
-	_, dirEntryInodeNumber, _, _, retryRequired, err =
+	// Resolve the object, locking it and its parent directory exclusive
+	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
 		mS.resolvePath(
 			inode.RootDirInodeNumber,
 			vContainerName+"/"+vObjectPath,
 			heldLocks,
 			resolvePathFollowDirSymlinks|
 				resolvePathCreateMissingPathElements|
-				resolvePathDirEntryInodeMustBeDirectory|
+				resolvePathRequireExclusiveLockOnDirInode|
 				resolvePathRequireExclusiveLockOnDirEntryInode)
-
 	if nil != err {
 		heldLocks.free()
 		return
 	}
-
 	if retryRequired {
 		heldLocks.free()
 		goto Restart
 	}
 
-	if len(metadata) > 0 {
-		err = mS.volStruct.inodeVolumeHandle.PutStream(dirEntryInodeNumber, MiddlewareStream, metadata)
+	// The semantics of PUT for a directory object require that an existing
+	// file or symlink be discarded and be replaced with a directory (an
+	// existing directory is fine; it just has its headers overwritten).
+	if dirEntryInodeType != inode.DirType {
+
+		// unlink the file or symlink (unlink flushes the inodes)
+		err = mS.unlinkActual(dirInodeNumber, dirEntryBasename, dirEntryInodeNumber)
 		if err != nil {
+
+			// ReadOnlyError is my best guess for the failure
+			err = blunder.NewError(blunder.ReadOnlyError,
+				"MiddlewareMkdir(): vol '%s' failed to unlink '%s': %v",
+				mS.volStruct.volumeName, vContainerName+"/"+vObjectPath, err)
 			heldLocks.free()
-			logger.DebugfIDWithError(internalDebug, err, "MiddlewareHeadResponse(): failed PutStream() for for dirEntryInodeNumber 0x%016X (pObjectMetadata: %v)", dirEntryInodeNumber, metadata)
 			return
 		}
+
+		// let resolvePath() make the directory
+		dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
+			mS.resolvePath(
+				inode.RootDirInodeNumber,
+				vContainerName+"/"+vObjectPath,
+				heldLocks,
+				resolvePathFollowDirSymlinks|
+					resolvePathCreateMissingPathElements|
+					resolvePathDirEntryInodeMustBeDirectory|
+					resolvePathRequireExclusiveLockOnDirInode|
+					resolvePathRequireExclusiveLockOnDirEntryInode)
+		if nil != err {
+			heldLocks.free()
+			return
+		}
+		if retryRequired {
+			heldLocks.free()
+			goto Restart
+		}
+	}
+
+	err = mS.volStruct.inodeVolumeHandle.PutStream(dirEntryInodeNumber, MiddlewareStream, metadata)
+	if err != nil {
+		heldLocks.free()
+		logger.DebugfIDWithError(internalDebug, err, "MiddlewareHeadResponse(): failed PutStream() for for dirEntryInodeNumber 0x%016X (pObjectMetadata: %v)", dirEntryInodeNumber, metadata)
+		return
 	}
 
 	stat, err = mS.getstatHelperWhileLocked(dirEntryInodeNumber)
@@ -3420,6 +3519,13 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 
 	// no permissions are required on the target directory
 
+	err = mS.rmdirActual(inodeNumber, basename, basenameInodeNumber)
+	return
+}
+
+func (mS *mountStruct) rmdirActual(inodeNumber inode.InodeNumber,
+	basename string, basenameInodeNumber inode.InodeNumber) (err error) {
+
 	basenameInodeType, err := mS.volStruct.inodeVolumeHandle.GetType(basenameInodeNumber)
 	if nil != err {
 		return
@@ -3858,6 +3964,13 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 	}
 	defer basenameInodeLock.Unlock()
 
+	err = mS.unlinkActual(inodeNumber, basename, basenameInodeNumber)
+	return
+}
+
+func (mS *mountStruct) unlinkActual(inodeNumber inode.InodeNumber,
+	basename string, basenameInodeNumber inode.InodeNumber) (err error) {
+
 	basenameInodeType, err := mS.volStruct.inodeVolumeHandle.GetType(basenameInodeNumber)
 	if nil != err {
 		return
@@ -4054,7 +4167,8 @@ func (mS *mountStruct) removeObstacleToObjectPut(callerID dlm.CallerID, dirInode
 			// got at least two entries, namely "." and ".."
 			//
 			// If there's a third, then the directory is non-empty.
-			return blunder.NewError(blunder.IsDirError, "%s is a non-empty directory", obstacleName)
+			return blunder.NewError(blunder.NotEmptyError, "%s is a non-empty directory", obstacleName)
+
 		} else {
 			// We don't want to call Rmdir() here since
 			// that function (a) grabs locks, (b) checks

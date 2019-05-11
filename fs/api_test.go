@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/inode"
 )
@@ -430,7 +432,53 @@ func TestMkdir(t *testing.T) {
 		t.Fatalf("GetStat() returned error: %v", err)
 	}
 
+	// trying to make the directory a second time should fail with EEXIST
+	_, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		testDirInode, longButLegalFilename, inode.PosixModePerm)
+	if err == nil {
+		t.Fatalf("Mkdir() of existing entry returned success")
+	}
+	if blunder.IsNot(err, blunder.FileExistsError) {
+		t.Fatalf("Mkdir() of existing entry should return FileExistsError, but got %v", err)
+	}
+
 	testTeardown(t)
+}
+
+func TestRmdir(t *testing.T) {
+	testSetup(t, false)
+	defer testTeardown(t)
+
+	testDirInode := createTestDirectory(t, "Rmdir")
+
+	_, err := testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		testDirInode, "test1", inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Mkdir(\"test1\") returned error: %v", err)
+	}
+
+	// the test directory can't be removed until its empty
+	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		inode.RootDirInodeNumber, "Rmdir")
+	if err == nil {
+		t.Fatalf("Rmdir() [#0] should have failed")
+	}
+	if blunder.IsNot(err, blunder.NotEmptyError) {
+		t.Fatalf("Rmdir() [#0] should have returned 'NotEmptyError', err: %v", err)
+	}
+
+	// empty the test directory
+	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		testDirInode, "test1")
+	if err != nil {
+		t.Fatalf("Rmdir() [#1] returned error: %v", err)
+	}
+
+	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		inode.RootDirInodeNumber, "Rmdir")
+	if err != nil {
+		t.Fatalf("Rmdir() [#2] returned error: %v", err)
+	}
 }
 
 // TODO: flesh this out with other boundary condition testing for Rename
@@ -1077,4 +1125,226 @@ func TestMiddlewareGetContainer(t *testing.T) {
 	}
 
 	testTeardown(t)
+}
+
+// Verify that the metadata for the object at containerObjPath, as returned by
+// MiddlewareHeadResponse(), matches the metadata in opMetdata.  opMetadata is
+// presumably returned by some middleware operation named opName, but it could
+// come from somewhere else.
+//
+// Throw testing errors if anything doesn't match.  stepName and opName are used
+// in the error strings.
+func verifyMetadata(t *testing.T, containerObjPath string,
+	stepName string, opName string, opMeta *HeadResponse) {
+
+	// how to print time stamps (the date is dropped)
+	timeFormat := "15:04:05.000000000"
+
+	var (
+		headMeta HeadResponse
+		err      error
+	)
+
+	// fetch the current metadata (implicit and explicit)
+	headMeta, err = testMountStruct.MiddlewareHeadResponse(containerObjPath)
+	if err != nil {
+		t.Errorf("MiddlewareHeadResponse() for '%s' op %s '%s' failed: %v",
+			containerObjPath, opName, stepName, err)
+		return
+	}
+
+	// validate the "explicit" metadata
+	if !bytes.Equal(opMeta.Metadata, headMeta.Metadata) {
+		t.Errorf("object '%s' op %s '%s' op metadata '%s' does not match stat metadata '%s'",
+			containerObjPath, opName, stepName, opMeta.Metadata, headMeta.Metadata)
+	}
+
+	// check the rest of the attributes and quit after the first mismatch
+	if opMeta.IsDir != headMeta.IsDir {
+		t.Errorf("object '%s' op %s '%s' op IsDir '%v' does not match stat IsDir '%v'",
+			containerObjPath, opName, stepName, opMeta.IsDir, headMeta.IsDir)
+		return
+	}
+	if opMeta.FileSize != headMeta.FileSize {
+		t.Errorf("object '%s' op %s '%s' op FileSize '%d' does not match stat FileSize '%d'",
+			containerObjPath, opName, stepName, opMeta.FileSize, headMeta.FileSize)
+		return
+	}
+	if opMeta.NumWrites != headMeta.NumWrites {
+		t.Errorf("object '%s' op %s '%s' op NumWrites '%d' does not match stat NumWrites '%d'",
+			containerObjPath, opName, stepName, opMeta.NumWrites, headMeta.NumWrites)
+		return
+	}
+	if opMeta.InodeNumber != headMeta.InodeNumber {
+		t.Errorf("object '%s' op %s '%s' op InodeNumber '%d' does not match stat InodeNumber '%d'",
+			containerObjPath, opName, stepName, opMeta.InodeNumber, headMeta.InodeNumber)
+		return
+	}
+
+	if opMeta.AttrChangeTime != headMeta.AttrChangeTime {
+		t.Errorf("object '%s' op %s '%s' op AttrChangeTime '%s' does not match stat AttrChangeTime '%s'",
+			containerObjPath, opName, stepName,
+			time.Unix(0, int64(opMeta.AttrChangeTime)).Format(timeFormat),
+			time.Unix(0, int64(headMeta.AttrChangeTime)).Format(timeFormat))
+		return
+	}
+	if opMeta.ModificationTime != headMeta.ModificationTime {
+		t.Errorf("object '%s' op %s '%s' op ModificationTime '%s' does not match stat ModificationTime '%s'",
+			containerObjPath, opName, stepName,
+			time.Unix(0, int64(opMeta.ModificationTime)).Format(timeFormat),
+			time.Unix(0, int64(headMeta.ModificationTime)).Format(timeFormat))
+		return
+	}
+	return
+}
+
+// Test MiddlewareMkdir() and MiddlewarePutComplete().
+//
+// A Swift PUT operation can create a file or a directory, depending on the
+// arguments.  Further, in Swift a PUT on an object deletes the object and
+// replaces it with a new object with the new metadata.
+//
+// We interpret the "replacement rule" to mean that a PUT can delete a file and
+// replace it with a directory or vice versa, but it cannot cause the delete of
+// a directory that is not empty.  (Its not clear how symlinks figure into this,
+// but they should probably follow the same rule.)
+//
+// The code in pfs_middleware determines whether a PUT request intends to
+// create a file or a directory.
+//
+// Test other behaviors, like automatically creating a path to the specified
+// object.  This does not test concatenating 1 or more objects to make up the
+// contents of the file.
+func TestMiddlewarePuts(t *testing.T) {
+
+	testSetup(t, false)
+	defer testTeardown(t)
+
+	initialMetadata := []byte("initial metadata")
+	updatedMetadata := []byte("updated metadata")
+	updatedMetadata2 := []byte("really new metadata")
+	containerName := "MiddlewarePuts"
+	objectPath := "dir0/dir1/dir2/file0"
+	containerObjectPath := containerName + "/" + objectPath
+
+	var (
+		opMeta HeadResponse
+		err    error
+	)
+
+	// make a container for testing and verify the explicit metadata
+	err = testMountStruct.MiddlewarePutContainer(containerName, []byte(""), initialMetadata)
+	if err != nil {
+		t.Fatalf("MiddlewarePutContainer() failed: %v", err)
+	}
+	opMeta, err = testMountStruct.MiddlewareHeadResponse(containerName)
+	if err != nil {
+		t.Fatalf("MiddlewareHeadResponse() for container '%s' failed: %v", containerName, err)
+	}
+	if !bytes.Equal(opMeta.Metadata, initialMetadata) {
+		t.Errorf("MiddlewareHeadResponse() for container '%s' metadata '%s' does not match '%s'",
+			containerName, opMeta.Metadata, initialMetadata)
+	}
+
+	// create a file object and then verify the explicit metadata and
+	// returned attributes are correct
+	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
+		testMountStruct.MiddlewarePutComplete(containerName, objectPath, nil, nil, initialMetadata)
+	if err != nil {
+		t.Errorf("MiddlewarePutComplete() for container '%s' object '%s' failed: %v",
+			containerName, objectPath, err)
+	} else {
+		opMeta.IsDir = false
+		opMeta.FileSize = 0
+		opMeta.Metadata = initialMetadata
+
+		verifyMetadata(t, containerObjectPath, "step 0", "MiddlewarePutComplete", &opMeta)
+	}
+
+	// replace the file object with a directory object then verify the
+	// explicit metadata and returned attributes
+	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
+		testMountStruct.MiddlewareMkdir(containerName, objectPath, updatedMetadata)
+	if err != nil {
+		t.Errorf("MiddlewareMkdir() for container '%s' object '%s' failed: %v",
+			containerName, objectPath, err)
+	} else {
+		opMeta.IsDir = true
+		opMeta.FileSize = 0
+		opMeta.Metadata = updatedMetadata
+
+		verifyMetadata(t, containerObjectPath, "step 1", "MiddlewareMkdir", &opMeta)
+	}
+
+	// change the directory object back to a file object and verify the
+	// explicit metadata and returned attributes
+	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
+		testMountStruct.MiddlewarePutComplete(containerName, objectPath, nil, nil, updatedMetadata2)
+	if err != nil {
+		t.Errorf("MiddlewarePutComplete() for container '%s' object '%s' failed: %v",
+			containerName, objectPath, err)
+	} else {
+		opMeta.IsDir = false
+		opMeta.FileSize = 0
+		opMeta.Metadata = updatedMetadata2
+
+		verifyMetadata(t, containerObjectPath, "step 2", "MiddlewarePutComplete", &opMeta)
+	}
+
+	// verify the metadata (explicit and implicit) returned by
+	// MiddlewareGetObject() matches MiddlewareHeadResponse()
+	// (MiddlewareGetObject() only works on file objects so we must test
+	// against a file object)
+	opMeta.FileSize, opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites,
+		opMeta.Metadata, err =
+		testMountStruct.MiddlewareGetObject(containerObjectPath,
+			[]ReadRangeIn{}, &[]inode.ReadPlanStep{})
+	if err != nil {
+		t.Errorf("MiddlewareGetObject() for object '%s' failed: %v", containerObjectPath, err)
+	} else {
+		opMeta.IsDir = false
+
+		verifyMetadata(t, containerObjectPath, "step 3", "MiddlewareGetObject", &opMeta)
+	}
+
+	// save the file's metadata for later validation
+	file0Meta := opMeta
+
+	// a "file" PUT to a directory object that is not empty should fail
+	// (because we cannot convert a non-empty directory to a file object)
+	pathComponents := strings.Split(objectPath, "/")
+	dirPath := strings.Join(pathComponents[:len(pathComponents)-1], "/")
+	containerDirPath := containerName + "/" + dirPath
+
+	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
+		testMountStruct.MiddlewarePutComplete(containerName, dirPath, nil, nil, initialMetadata)
+	if err == nil {
+		t.Errorf("MiddlewarePutComplete() for container '%s' non-empty object '%s' should have failed",
+			containerName, objectPath)
+	} else if blunder.IsNot(err, blunder.NotEmptyError) {
+		t.Errorf("MiddlewarePutComplete() for container '%s' non-empty object '%s' should have failed "+
+			"with error '%s' but failed with error '%s' (%s)",
+			containerName, objectPath,
+			blunder.FsError(int(unix.ENOTEMPTY)),
+			blunder.FsError(blunder.Errno(err)),
+			blunder.ErrorString(err))
+	}
+
+	// a "directory PUT" to a directory object that is not empty should
+	// succeed and update the explicit metadata (but should not delete
+	// existing directory entries)
+	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
+		testMountStruct.MiddlewareMkdir(containerName, dirPath, updatedMetadata)
+	if err != nil {
+		t.Errorf("MiddlewareMkdir() for object '%s' failed: %v", containerDirPath, err)
+	} else {
+		opMeta.IsDir = true
+		opMeta.FileSize = 0
+		opMeta.Metadata = updatedMetadata
+
+		verifyMetadata(t, containerDirPath, "step 4", "MiddlewareMkdir", &opMeta)
+	}
+
+	// verify that the file (child of the directory) is unchanged
+	verifyMetadata(t, containerObjectPath, "step 5", "verify", &file0Meta)
 }

@@ -1878,8 +1878,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	req = GetObjectReq{VirtPath: "/v1/AN_account/c3/symlink-c2"}
 	reply = GetObjectReply{}
 	err = server.RpcGetObject(&req, &reply)
-	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.IsDirError.Value()), err.Error())
+	assert.Nil(err)
 
 	// Test following a path where some directory components are symlinks
 	req = GetObjectReq{VirtPath: "/v1/AN_account/c4/symlink-d1/symlink-d2/symlink-kitten.png"}

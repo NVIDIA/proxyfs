@@ -8,21 +8,26 @@ import (
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/utils"
 )
+
+type resolvePathOption uint32
 
 const (
-	resolvePathFollowDirEntrySymlinks              uint32 = 1 << iota //
-	resolvePathFollowDirSymlinks                                      //
-	resolvePathCreateMissingPathElements                              // Defaults created DirEntry to be a File
-	resolvePathDirEntryInodeMustBeDirectory                           //
-	resolvePathDirEntryInodeMustBeFile                                //
-	resolvePathDirEntryInodeMustBeSymlink                             //
-	resolvePathRequireExclusiveLockOnDirEntryInode                    //
-	resolvePathRequireExclusiveLockOnDirInode                         // Presumably only useful if resolvePathRequireExclusiveLockOnDirEntryInode also specified
-	resolvePathRequireSharedLockOnDirInode                            // Not valid if resolvePathRequireExclusiveLockOnDirInode also specified
+	resolvePathFollowDirEntrySymlinks              resolvePathOption = 1 << iota
+	resolvePathFollowDirSymlinks                                     //
+	resolvePathCreateMissingPathElements                             // Defaults created DirEntry to be a File
+	resolvePathDirEntryInodeMustBeDirectory                          //
+	resolvePathDirEntryInodeMustBeFile                               //
+	resolvePathDirEntryInodeMustBeSymlink                            //
+	resolvePathRequireExclusiveLockOnDirEntryInode                   //
+	resolvePathRequireExclusiveLockOnDirInode                        // Presumably only useful if resolvePathRequireExclusiveLockOnDirEntryInode also specified
+	resolvePathRequireSharedLockOnDirInode                           // Not valid if resolvePathRequireExclusiveLockOnDirInode also specified
 )
 
-func resolvePathOptionsCheck(optionsRequested uint32, optionsToCheckFor uint32) (optionsRequestedIncludesCheckFor bool) {
+func resolvePathOptionsCheck(optionsRequested resolvePathOption, optionsToCheckFor resolvePathOption) (
+	optionsRequestedIncludesCheckFor bool) {
+
 	optionsRequestedIncludesCheckFor = (optionsToCheckFor == (optionsToCheckFor & optionsRequested))
 	return
 }
@@ -187,7 +192,7 @@ func (heldLocks *heldLocksStruct) free() {
 //
 //     heldLocks.free()
 //
-func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options uint32) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, dirEntryInodeType inode.InodeType, retryRequired bool, err error) {
+func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options resolvePathOption) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, dirEntryInodeType inode.InodeType, retryRequired bool, err error) {
 	var (
 		dirEntryInodeLock                 *dlm.RWLockStruct
 		dirEntryInodeLockAlreadyExclusive bool
@@ -508,7 +513,11 @@ RestartAfterFollowingSymlink:
 								}
 							}
 
-							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find DirInode", path)
+							err = blunder.NewError(blunder.InvalidArgError,
+								"resolvePath(,\"%s\",,) '%s' is not a directory "+
+									"stack:\n%s",
+								path, pathSplitPart, utils.MyStackTrace())
+
 							return
 						} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) {
 							if !dirEntryInodeLockAlreadyHeld {
@@ -550,7 +559,10 @@ RestartAfterFollowingSymlink:
 								}
 							}
 
-							err = blunder.NewError(blunder.InvalidArgError, "resolvePath(,\"%s\",,) did not find DirInode", path)
+							err = blunder.NewError(blunder.InvalidArgError,
+								"resolvePath(,\"%s\",,) '%s' is not a directory "+
+									"stack:\n%s",
+								path, pathSplitPart, utils.MyStackTrace())
 							return
 						}
 					} else if resolvePathOptionsCheck(options, resolvePathDirEntryInodeMustBeFile) {
