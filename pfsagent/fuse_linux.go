@@ -1,4 +1,4 @@
-package main
+package pfsagent
 
 import (
 	"bazil.org/fuse"

@@ -1,4 +1,4 @@
-package main
+package pfsagent
 
 // The following implements the Low Level FUSE upcalls for presenting a ProxyFS Volume locally.
 //
