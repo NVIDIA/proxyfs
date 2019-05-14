@@ -1,4 +1,4 @@
-package main
+package pfsagent
 
 import (
 	"io/ioutil"
