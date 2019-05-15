@@ -1,4 +1,4 @@
-package pfsagent
+package main
 
 import (
 	"container/list"
@@ -434,7 +434,7 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 	wroteRequest = &jrpcfs.WroteRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(fileInode.InodeNumber), // TOCHECK: If SnapShot's work with this
+			InodeNumber: int64(fileInode.InodeNumber),
 		},
 		ObjectPath:   "/v1/" + globals.config.SwiftAccountName + "/" + chunkedPutContext.containerName + "/" + chunkedPutContext.objectName,
 		FileOffset:   make([]uint64, extentMapLen),
@@ -677,7 +677,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 	fetchExtentMapChunkRequest = &jrpcfs.FetchExtentMapChunkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
-			InodeNumber: int64(fileInode.InodeNumber), // TOCHECK: Check if SnapShot's work with this
+			InodeNumber: int64(fileInode.InodeNumber),
 		},
 		FileOffset:                 fileOffset,
 		MaxEntriesFromFileOffset:   int64(globals.config.FetchExtentsFromFileOffset),
