@@ -17,7 +17,6 @@ gopkgsubdirs = \
 	liveness \
 	logger \
 	mkproxyfs \
-	pfsagent \
 	platform \
 	proxyfsd \
 	ramswift \
@@ -36,7 +35,7 @@ gobinsubdirs = \
 	pfs-crash \
 	pfs-stress \
 	pfs-swift-load \
-	pfsagent/pfsagentd \
+	pfsagentd \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	pfsworkout \
