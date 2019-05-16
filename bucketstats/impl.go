@@ -90,7 +90,7 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 		}
 		names[statNameValue.String()] = struct{}{}
 
-		// initialize the statistic (all fields are already zero)
+		// initialize the statistic (all fields are already zero - unless relaunched in test sequence)
 		switch v := (fieldAsValue.Addr().Interface()).(type) {
 		case *Total:
 		case *Average:
@@ -124,10 +124,12 @@ func register(pkgName string, statsGroupName string, statsStruct interface{}) {
 		pkgNameToGroupName[pkgName] = make(map[string]interface{})
 	}
 
-	if pkgNameToGroupName[pkgName][statsGroupName] != nil {
-		panic(fmt.Sprintf("pkgName '%s' with statsGroupName '%s' is already registered",
-			pkgName, statsGroupName))
-	}
+	// as tests might cause reregistrations, we need not check for pre-existence
+	// if pkgNameToGroupName[pkgName][statsGroupName] != nil {
+	// 	panic(fmt.Sprintf("pkgName '%s' with statsGroupName '%s' is already registered",
+	// 		pkgName, statsGroupName))
+	// }
+
 	pkgNameToGroupName[pkgName][statsGroupName] = statsStruct
 
 	return
