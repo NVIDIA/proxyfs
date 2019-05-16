@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/utils"
@@ -2017,5 +2018,131 @@ func (s *Server) RpcUnlinkPath(in *UnlinkPathRequest, reply *Reply) (err error) 
 
 	// Do the unlink
 	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, basename)
+	return
+}
+
+func (s *Server) RpcSnapShotCreate(in *SnapShotCreateRequest, reply *SnapShotCreateReply) (err error) {
+	var (
+		fsMountHandle     fs.MountHandle
+		inodeVolumeHandle inode.VolumeHandle
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	inodeVolumeHandle, err = inode.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	reply.SnapShotID, err = inodeVolumeHandle.SnapShotCreate(in.Name)
+
+	return
+}
+
+func (s *Server) RpcSnapShotDelete(in *SnapShotDeleteRequest, reply *SnapShotDeleteReply) (err error) {
+	var (
+		fsMountHandle     fs.MountHandle
+		inodeVolumeHandle inode.VolumeHandle
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	inodeVolumeHandle, err = inode.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	err = inodeVolumeHandle.SnapShotDelete(in.SnapShotID)
+
+	return
+}
+
+func (s *Server) RpcSnapShotListByID(in *SnapShotListRequest, reply *SnapShotListReply) (err error) {
+	var (
+		fsMountHandle          fs.MountHandle
+		headhunterVolumeHandle headhunter.VolumeHandle
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	reply.List = headhunterVolumeHandle.SnapShotListByID(in.Reversed)
+
+	return
+}
+
+func (s *Server) RpcSnapShotListByName(in *SnapShotListRequest, reply *SnapShotListReply) (err error) {
+	var (
+		fsMountHandle          fs.MountHandle
+		headhunterVolumeHandle headhunter.VolumeHandle
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	reply.List = headhunterVolumeHandle.SnapShotListByName(in.Reversed)
+
+	return
+}
+
+func (s *Server) RpcSnapShotListByTime(in *SnapShotListRequest, reply *SnapShotListReply) (err error) {
+	var (
+		fsMountHandle          fs.MountHandle
+		headhunterVolumeHandle headhunter.VolumeHandle
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	reply.List = headhunterVolumeHandle.SnapShotListByTime(in.Reversed)
+
+	return
+}
+
+func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply *SnapShotLookupByNameReply) (err error) {
+	var (
+		fsMountHandle          fs.MountHandle
+		headhunterVolumeHandle headhunter.VolumeHandle
+		ok                     bool
+	)
+
+	fsMountHandle, err = lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+	headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(fsMountHandle.VolumeName())
+	if nil != err {
+		return
+	}
+
+	reply.SnapShot, ok = headhunterVolumeHandle.SnapShotLookupByName(in.Name)
+	if ok {
+		err = nil
+	} else {
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+	}
+
 	return
 }
