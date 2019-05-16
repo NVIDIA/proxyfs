@@ -148,6 +148,7 @@ package jrpcfs
 
 import (
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
 )
 
@@ -820,3 +821,45 @@ type ReleaseLeaseReq struct {
 	LeaseId string
 }
 type ReleaseLeaseReply struct{}
+
+// SnapShotCreateRequest is the request object for RpcSnapShotCreate
+type SnapShotCreateRequest struct {
+	MountID MountIDAsString
+	Name    string
+}
+
+// SnapShotCreateReply is the reply object for RpcSnapShotCreate
+type SnapShotCreateReply struct {
+	SnapShotID uint64
+}
+
+// SnapShotDeleteRequest is the request object for RpcSnapShotDelete
+type SnapShotDeleteRequest struct {
+	MountID    MountIDAsString
+	SnapShotID uint64
+}
+
+// SnapShotDeleteReply is the reply object for RpcSnapShotDelete
+type SnapShotDeleteReply struct{}
+
+// SnapShotListRequest is the request object for RpcSnapShotListBy{ID|Name|Time}
+type SnapShotListRequest struct {
+	MountID  MountIDAsString
+	Reversed bool
+}
+
+// SnapShotListReply is the reply object for RpcSnapShotListBy{ID|Name|Time}
+type SnapShotListReply struct {
+	List []headhunter.SnapShotStruct
+}
+
+// SnapShotLookupByNameRequest is the request object for RpcSnapShotLookupByName
+type SnapShotLookupByNameRequest struct {
+	MountID MountIDAsString
+	Name    string
+}
+
+// SnapShotLookupByNameReply is the reply object for RpcSnapShotLookupByName
+type SnapShotLookupByNameReply struct {
+	SnapShot headhunter.SnapShotStruct
+}
