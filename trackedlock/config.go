@@ -52,7 +52,7 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 // at the appropriate times and config changes.
 //
 func init() {
-	transitions.Register("swiftclient", &globals)
+	transitions.Register("trackedlock", &globals)
 }
 
 // Up() initializes the package.  It must be called and successfully return

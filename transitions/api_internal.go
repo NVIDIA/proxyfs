@@ -3,6 +3,7 @@ package transitions
 import (
 	"container/list"
 	"fmt"
+	"sync"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -13,7 +14,7 @@ type loggerCallbacksInterfaceStruct struct {
 
 var loggerCallbacksInterface loggerCallbacksInterfaceStruct
 
-type registrationListElementValueStruct struct {
+type registrationItemStruct struct {
 	packageName string
 	callbacks   Callbacks
 }
@@ -33,39 +34,57 @@ type volumeGroupStruct struct {
 }
 
 type globalsStruct struct {
+	sync.Mutex               //                                    Used only for protecting insertions into registration{List|Set} during init() phase
 	registrationList         *list.List
-	currentVolumeGroupList   map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	servedVolumeGroupList    map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	remoteVolumeGroupList    map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	createdVolumeGroupList   map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	movedVolumeGroupList     map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	destroyedVolumeGroupList map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
-	currentVolumeList        map[string]*volumeStruct      // Key: volumeStruct.name
-	servedVolumeList         map[string]*volumeStruct      // Key: volumeStruct.name
-	remoteVolumeList         map[string]*volumeStruct      // Key: volumeStruct.name
-	createdVolumeList        map[string]*volumeStruct      // Key: volumeStruct.name
-	movedVolumeList          map[string]*volumeStruct      // Key: volumeStruct.name
-	destroyedVolumeList      map[string]*volumeStruct      // Key: volumeStruct.name
-	toStopServingVolumeList  map[string]*volumeStruct      // Key: volumeStruct.name
-	toStartServingVolumeList map[string]*volumeStruct      // Key: volumeStruct.name
+	registrationSet          map[string]*registrationItemStruct // Key: registrationItemStruct.packageName
+	currentVolumeGroupList   map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	servedVolumeGroupList    map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	remoteVolumeGroupList    map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	createdVolumeGroupList   map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	movedVolumeGroupList     map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	destroyedVolumeGroupList map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
+	currentVolumeList        map[string]*volumeStruct           // Key: volumeStruct.name
+	servedVolumeList         map[string]*volumeStruct           // Key: volumeStruct.name
+	remoteVolumeList         map[string]*volumeStruct           // Key: volumeStruct.name
+	createdVolumeList        map[string]*volumeStruct           // Key: volumeStruct.name
+	movedVolumeList          map[string]*volumeStruct           // Key: volumeStruct.name
+	destroyedVolumeList      map[string]*volumeStruct           // Key: volumeStruct.name
+	toStopServingVolumeList  map[string]*volumeStruct           // Key: volumeStruct.name
+	toStartServingVolumeList map[string]*volumeStruct           // Key: volumeStruct.name
 }
 
 var globals globalsStruct
 
 func init() {
+	globals.Lock()
 	globals.registrationList = list.New()
+	globals.registrationSet = make(map[string]*registrationItemStruct)
+	globals.Unlock()
 
 	Register("logger", &loggerCallbacksInterface)
 }
 
 func register(packageName string, callbacks Callbacks) {
-	_ = globals.registrationList.PushBack(&registrationListElementValueStruct{packageName, callbacks})
+	var (
+		alreadyRegisted  bool
+		registrationItem *registrationItemStruct
+	)
+
+	globals.Lock()
+	_, alreadyRegisted = globals.registrationSet[packageName]
+	if alreadyRegisted {
+		logger.Fatalf("transitions.Register(%s,) called twice", packageName)
+	}
+	registrationItem = &registrationItemStruct{packageName, callbacks}
+	_ = globals.registrationList.PushBack(registrationItem)
+	globals.registrationSet[packageName] = registrationItem
+	globals.Unlock()
 }
 
 func up(confMap conf.ConfMap) (err error) {
 	var (
+		registrationItem                       *registrationItemStruct
 		registrationListElement                *list.Element
-		registrationListElementValue           *registrationListElementValueStruct
 		registrationListPackageNameStringSlice []string
 		volume                                 *volumeStruct
 		volumeGroup                            *volumeGroupStruct
@@ -117,12 +136,12 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Up() calling %s.Up()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.Up(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.Up() calling %s.Up()", registrationItem.packageName)
+		err = registrationItem.callbacks.Up(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Up() call to %s.Up() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.Up() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Up() call to %s.Up() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.Up() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Next()
@@ -135,8 +154,8 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		registrationListPackageNameStringSlice = append(registrationListPackageNameStringSlice, registrationListElementValue.packageName)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		registrationListPackageNameStringSlice = append(registrationListPackageNameStringSlice, registrationItem.packageName)
 		registrationListElement = registrationListElement.Next()
 	}
 
@@ -147,13 +166,13 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeGroupName, volumeGroup = range globals.createdVolumeGroupList {
-			logger.Tracef("transitions.Up() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
-			err = registrationListElementValue.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			logger.Tracef("transitions.Up() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			err = registrationItem.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
-				logger.Errorf("transitions.Up() call to %s.VolumeGroupCreated(,%s,%s,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
-				err = fmt.Errorf("%s.VolumeGroupCreated(,%s,,) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
+				logger.Errorf("transitions.Up() call to %s.VolumeGroupCreated(,%s,%s,%s) failed: %v", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
+				err = fmt.Errorf("%s.VolumeGroupCreated(,%s,,) failed: %v", registrationItem.packageName, volumeGroupName, err)
 				return
 			}
 		}
@@ -165,13 +184,13 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.createdVolumeList {
-			logger.Tracef("transitions.Up() calling %s.VolumeCreated(,%s,%s)", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name)
-			err = registrationListElementValue.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
+			logger.Tracef("transitions.Up() calling %s.VolumeCreated(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
+			err = registrationItem.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
-				logger.Errorf("transitions.Up() call to %s.VolumeCreated(,%s,%s) failed: %v", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name, err)
-				err = fmt.Errorf("%s.VolumeCreated(,%s,) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Up() call to %s.VolumeCreated(,%s,%s) failed: %v", registrationItem.packageName, volumeName, volume.volumeGroup.name, err)
+				err = fmt.Errorf("%s.VolumeCreated(,%s,) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -183,13 +202,13 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.servedVolumeList {
-			logger.Tracef("transitions.Up() calling %s.ServeVolume(,%s)", registrationListElementValue.packageName, volumeName)
-			err = registrationListElementValue.callbacks.ServeVolume(confMap, volumeName)
+			logger.Tracef("transitions.Up() calling %s.ServeVolume(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.ServeVolume(confMap, volumeName)
 			if nil != err {
-				logger.Errorf("transitions.Up() call to %s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Up() call to %s.ServeVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.ServeVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -201,12 +220,12 @@ func up(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.SignaledFinish() calling %s.SignaledFinish()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.SignaledFinish(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.SignaledFinish() calling %s.SignaledFinish()", registrationItem.packageName)
+		err = registrationItem.callbacks.SignaledFinish(confMap)
 		if nil != err {
-			logger.Errorf("transitions.SignaledFinish() call to %s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.SignaledFinish() call to %s.SignaledFinish() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Next()
@@ -217,12 +236,12 @@ func up(confMap conf.ConfMap) (err error) {
 
 func signaled(confMap conf.ConfMap) (err error) {
 	var (
-		registrationListElement      *list.Element
-		registrationListElementValue *registrationListElementValueStruct
-		volume                       *volumeStruct
-		volumeGroup                  *volumeGroupStruct
-		volumeGroupName              string
-		volumeName                   string
+		registrationItem        *registrationItemStruct
+		registrationListElement *list.Element
+		volume                  *volumeStruct
+		volumeGroup             *volumeGroupStruct
+		volumeGroupName         string
+		volumeName              string
 	)
 
 	logger.Infof("transitions.Signaled() called")
@@ -244,12 +263,12 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Signaled() calling %s.SignaledStart()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.SignaledStart(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.Signaled() calling %s.SignaledStart()", registrationItem.packageName)
+		err = registrationItem.callbacks.SignaledStart(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Signaled() call to %s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Signaled() call to %s.SignaledStart() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Prev()
@@ -260,13 +279,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName = range globals.toStopServingVolumeList {
-			logger.Tracef("transitions.Signaled() calling %s.UnserveVolume(,%s)", registrationListElementValue.packageName, volumeName)
-			err = registrationListElementValue.callbacks.UnserveVolume(confMap, volumeName)
+			logger.Tracef("transitions.Signaled() calling %s.UnserveVolume(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.UnserveVolume(confMap, volumeName)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.UnserveVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.UnserveVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.UnserveVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.UnserveVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -278,13 +297,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeGroupName, volumeGroup = range globals.createdVolumeGroupList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
-			err = registrationListElementValue.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			err = registrationItem.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupCreated(,%s,%s,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
-				err = fmt.Errorf("%s.VolumeGroupCreated(,%s,,) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupCreated(,%s,%s,%s) failed: %v", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
+				err = fmt.Errorf("%s.VolumeGroupCreated(,%s,,) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -296,13 +315,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.createdVolumeList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeCreated(,%s,%s)", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name)
-			err = registrationListElementValue.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeCreated(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
+			err = registrationItem.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeCreated(,%s,%s) failed: %v", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name, err)
-				err = fmt.Errorf("%s.VolumeCreated(,%s,) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeCreated(,%s,%s) failed: %v", registrationItem.packageName, volumeName, volume.volumeGroup.name, err)
+				err = fmt.Errorf("%s.VolumeCreated(,%s,) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -314,13 +333,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeGroupName, volumeGroup = range globals.movedVolumeGroupList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupMoved(,%s,%s,%s)", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
-			err = registrationListElementValue.callbacks.VolumeGroupMoved(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupMoved(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
+			err = registrationItem.callbacks.VolumeGroupMoved(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupMoved(,%s,%s,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
-				err = fmt.Errorf("%s.VolumeGroupMoved(,%s,,) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupMoved(,%s,%s,%s) failed: %v", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr, err)
+				err = fmt.Errorf("%s.VolumeGroupMoved(,%s,,) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -332,13 +351,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.movedVolumeList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeMoved(,%s,%s)", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name)
-			err = registrationListElementValue.callbacks.VolumeMoved(confMap, volumeName, volume.volumeGroup.name)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeMoved(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
+			err = registrationItem.callbacks.VolumeMoved(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeMoved(,%s,%s) failed: %v", registrationListElementValue.packageName, volumeName, volume.volumeGroup.name, err)
-				err = fmt.Errorf("%s.VolumeMoved(,%s,) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeMoved(,%s,%s) failed: %v", registrationItem.packageName, volumeName, volume.volumeGroup.name, err)
+				err = fmt.Errorf("%s.VolumeMoved(,%s,) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -350,13 +369,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.destroyedVolumeList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeDestroyed(,%s)", registrationListElementValue.packageName, volumeName)
-			err = registrationListElementValue.callbacks.VolumeDestroyed(confMap, volumeName)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeDestroyed(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.VolumeDestroyed(confMap, volumeName)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.VolumeDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeDestroyed(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.VolumeDestroyed(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -368,13 +387,13 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeGroupName = range globals.destroyedVolumeGroupList {
-			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupDestroyed(,%s)", registrationListElementValue.packageName, volumeGroupName)
-			err = registrationListElementValue.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
+			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupDestroyed(,%s)", registrationItem.packageName, volumeGroupName)
+			err = registrationItem.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
 			if nil != err {
-				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
-				err = fmt.Errorf("%s.VolumeGroupDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
+				logger.Errorf("transitions.Signaled() call to %s.VolumeGroupDestroyed(,%s) failed: %v", registrationItem.packageName, volumeGroupName, err)
+				err = fmt.Errorf("%s.VolumeGroupDestroyed(,%s) failed: %v", registrationItem.packageName, volumeGroupName, err)
 				return
 			}
 		}
@@ -386,14 +405,14 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName, volume = range globals.toStartServingVolumeList {
 			if volume.served {
-				logger.Tracef("transitions.Signaled() calling %s.ServeVolume(,%s)", registrationListElementValue.packageName, volumeGroupName)
-				err = registrationListElementValue.callbacks.ServeVolume(confMap, volumeName)
+				logger.Tracef("transitions.Signaled() calling %s.ServeVolume(,%s)", registrationItem.packageName, volumeGroupName)
+				err = registrationItem.callbacks.ServeVolume(confMap, volumeName)
 				if nil != err {
-					logger.Errorf("transitions.Signaled() call to %s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
-					err = fmt.Errorf("%s.ServeVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+					logger.Errorf("transitions.Signaled() call to %s.ServeVolume(,%s) failed: %v", registrationItem.packageName, volumeGroupName, err)
+					err = fmt.Errorf("%s.ServeVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 					return
 				}
 			}
@@ -406,12 +425,12 @@ func signaled(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Front()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Signaled() calling %s.SignaledFinish()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.SignaledFinish(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.Signaled() calling %s.SignaledFinish()", registrationItem.packageName)
+		err = registrationItem.callbacks.SignaledFinish(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Signaled() call to %s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Signaled() call to %s.SignaledFinish() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.SignaledFinish() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Next()
@@ -422,10 +441,10 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 func down(confMap conf.ConfMap) (err error) {
 	var (
-		registrationListElement      *list.Element
-		registrationListElementValue *registrationListElementValueStruct
-		volumeGroupName              string
-		volumeName                   string
+		registrationItem        *registrationItemStruct
+		registrationListElement *list.Element
+		volumeGroupName         string
+		volumeName              string
 	)
 
 	logger.Infof("transitions.Down() called")
@@ -471,12 +490,12 @@ func down(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Down() calling %s.SignaledStart()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.SignaledStart(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.Down() calling %s.SignaledStart()", registrationItem.packageName)
+		err = registrationItem.callbacks.SignaledStart(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Down() call to %s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Down() call to %s.SignaledStart() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.SignaledStart() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Prev()
@@ -487,13 +506,13 @@ func down(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName = range globals.servedVolumeList {
-			logger.Tracef("transitions.Down() calling %s.UnserveVolume(,%s)", registrationListElementValue.packageName, volumeName)
-			err = registrationListElementValue.callbacks.UnserveVolume(confMap, volumeName)
+			logger.Tracef("transitions.Down() calling %s.UnserveVolume(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.UnserveVolume(confMap, volumeName)
 			if nil != err {
-				logger.Errorf("transitions.Down() call to %s.UnserveVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.UnserveVolume(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Down() call to %s.UnserveVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.UnserveVolume(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -505,13 +524,13 @@ func down(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeName = range globals.currentVolumeList {
-			logger.Tracef("transitions.Down() calling %s.VolumeDestroyed(,%s)", registrationListElementValue.packageName, volumeName)
-			err = registrationListElementValue.callbacks.VolumeDestroyed(confMap, volumeName)
+			logger.Tracef("transitions.Down() calling %s.VolumeDestroyed(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.VolumeDestroyed(confMap, volumeName)
 			if nil != err {
-				logger.Errorf("transitions.Down() call to %s.VolumeDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
-				err = fmt.Errorf("%s.VolumeDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeName, err)
+				logger.Errorf("transitions.Down() call to %s.VolumeDestroyed(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.VolumeDestroyed(,%s) failed: %v", registrationItem.packageName, volumeName, err)
 				return
 			}
 		}
@@ -523,13 +542,13 @@ func down(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
 		for volumeGroupName = range globals.currentVolumeGroupList {
-			logger.Tracef("transitions.Down() calling %s.VolumeGroupDestroyed(,%s)", registrationListElementValue.packageName, volumeGroupName)
-			err = registrationListElementValue.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
+			logger.Tracef("transitions.Down() calling %s.VolumeGroupDestroyed(,%s)", registrationItem.packageName, volumeGroupName)
+			err = registrationItem.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
 			if nil != err {
-				logger.Errorf("transitions.Down() call to %s.VolumeGroupDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
-				err = fmt.Errorf("%s.VolumeGroupDestroyed(,%s) failed: %v", registrationListElementValue.packageName, volumeGroupName, err)
+				logger.Errorf("transitions.Down() call to %s.VolumeGroupDestroyed(,%s) failed: %v", registrationItem.packageName, volumeGroupName, err)
+				err = fmt.Errorf("%s.VolumeGroupDestroyed(,%s) failed: %v", registrationItem.packageName, volumeGroupName, err)
 				return
 			}
 		}
@@ -541,12 +560,12 @@ func down(confMap conf.ConfMap) (err error) {
 	registrationListElement = globals.registrationList.Back()
 
 	for nil != registrationListElement {
-		registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-		logger.Tracef("transitions.Down() calling %s.Down()", registrationListElementValue.packageName)
-		err = registrationListElementValue.callbacks.Down(confMap)
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		logger.Tracef("transitions.Down() calling %s.Down()", registrationItem.packageName)
+		err = registrationItem.callbacks.Down(confMap)
 		if nil != err {
-			logger.Errorf("transitions.Down() call to %s.Down() failed: %v", registrationListElementValue.packageName, err)
-			err = fmt.Errorf("%s.Down() failed: %v", registrationListElementValue.packageName, err)
+			logger.Errorf("transitions.Down() call to %s.Down() failed: %v", registrationItem.packageName, err)
+			err = fmt.Errorf("%s.Down() failed: %v", registrationItem.packageName, err)
 			return
 		}
 		registrationListElement = registrationListElement.Prev()
@@ -1016,12 +1035,12 @@ func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) Down(confMap con
 
 func dumpGlobals(indent string) {
 	var (
-		registrationListElement      *list.Element
-		registrationListElementValue *registrationListElementValueStruct
-		volume                       *volumeStruct
-		volumeGroup                  *volumeGroupStruct
-		volumeGroupName              string
-		volumeName                   string
+		registrationItem        *registrationItemStruct
+		registrationListElement *list.Element
+		volume                  *volumeStruct
+		volumeGroup             *volumeGroupStruct
+		volumeGroupName         string
+		volumeName              string
 	)
 
 	registrationListElement = globals.registrationList.Front()
@@ -1031,8 +1050,8 @@ func dumpGlobals(indent string) {
 	} else {
 		fmt.Printf("%sregistrationList:", indent)
 		for nil != registrationListElement {
-			registrationListElementValue = registrationListElement.Value.(*registrationListElementValueStruct)
-			fmt.Printf(" %s", registrationListElementValue.packageName)
+			registrationItem = registrationListElement.Value.(*registrationItemStruct)
+			fmt.Printf(" %s", registrationItem.packageName)
 			registrationListElement = registrationListElement.Next()
 		}
 		fmt.Println()
