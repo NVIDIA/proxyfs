@@ -204,15 +204,11 @@ func testSetup(t *testing.T) {
 
 	for {
 		infoResponse, err = http.Get("http://" + testSwiftNoAuthIPAddr + ":" + testSwiftNoAuthPort + "/info")
-		if nil == err {
+		if (nil == err) && (http.StatusOK == infoResponse.StatusCode) {
 			break
 		}
 
 		time.Sleep(testDaemonStartPollInterval)
-	}
-
-	if http.StatusOK != infoResponse.StatusCode {
-		t.Fatalf("GET /info from ramswift.Daemon() got unexpected status %s", infoResponse.Status)
 	}
 
 	testDaemonGlobals.proxyfsdErrChan = make(chan error, 1) // Must be buffered to avoid race
@@ -226,15 +222,11 @@ func testSetup(t *testing.T) {
 
 	for {
 		versionResponse, err = http.Get("http://" + testProxyFSDaemonIPAddr + ":" + testProxyFSDaemonHTTPPort + "/version")
-		if nil == err {
+		if (nil == err) && (http.StatusOK == versionResponse.StatusCode) {
 			break
 		}
 
 		time.Sleep(testDaemonStartPollInterval)
-	}
-
-	if http.StatusOK != versionResponse.StatusCode {
-		t.Fatalf("GET /version from proxyfsd.Daemon() got unexpected status %s", versionResponse.Status)
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)
