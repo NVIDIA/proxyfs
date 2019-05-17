@@ -87,15 +87,15 @@ func TestRegister(t *testing.T) {
 	// its also OK to unregister stats that don't exist
 	UnRegister("main", "neverStats")
 
-	// but registering it twice should panic... but, for now, will not
-	// testFunc = func() {
-	// 	Register("main", "myStats", &myStats)
-	// }
-	// panicStr = catchAPanic(testFunc)
-	// if panicStr == "" {
-	// 	t.Errorf("Register() of \"main\", \"myStats\" twice should have paniced")
-	// }
-	// UnRegister("main", "myStats")
+	// but registering it twice should panic
+	testFunc = func() {
+		Register("main", "myStats", &myStats)
+	}
+	panicStr = catchAPanic(testFunc)
+	if panicStr == "" {
+		t.Errorf("Register() of \"main\", \"myStats\" twice should have paniced")
+	}
+	UnRegister("main", "myStats")
 
 	// a statistics group must have at least one of package and group name
 	UnRegister("main", "myStats")
