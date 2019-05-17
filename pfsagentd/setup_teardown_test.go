@@ -18,7 +18,6 @@ import (
 
 const (
 	testDaemonStartPollInterval = 1 * time.Second
-	testDaemonStartPollLimit    = 5
 	testProxyFSDaemonHTTPPort   = "53461"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
@@ -36,7 +35,6 @@ var testDaemonGlobals testDaemonGlobalsStruct
 
 func testSetup(t *testing.T) {
 	var (
-		daemonPollAttempt              uint32
 		err                            error
 		infoResponse                   *http.Response
 		ramswiftSignalHandlerIsArmedWG sync.WaitGroup
@@ -204,17 +202,12 @@ func testSetup(t *testing.T) {
 
 	ramswiftSignalHandlerIsArmedWG.Wait()
 
-	daemonPollAttempt = 0
-
 	for {
 		infoResponse, err = http.Get("http://" + testSwiftNoAuthIPAddr + ":" + testSwiftNoAuthPort + "/info")
 		if nil == err {
 			break
 		}
-		daemonPollAttempt++
-		if daemonPollAttempt == testDaemonStartPollLimit {
-			t.Fatalf("GET /info from ramswift.Daemon() failed to connect")
-		}
+
 		time.Sleep(testDaemonStartPollInterval)
 	}
 
@@ -231,17 +224,12 @@ func testSetup(t *testing.T) {
 		t.Fatalf("proxyfsd.Daemon() startup failed: %v", err)
 	}
 
-	daemonPollAttempt = 0
-
 	for {
 		versionResponse, err = http.Get("http://" + testProxyFSDaemonIPAddr + ":" + testProxyFSDaemonHTTPPort + "/version")
 		if nil == err {
 			break
 		}
-		daemonPollAttempt++
-		if daemonPollAttempt == testDaemonStartPollLimit {
-			t.Fatalf("GET /version from proxyfsd.Daemon() failed to connect")
-		}
+
 		time.Sleep(testDaemonStartPollInterval)
 	}
 
