@@ -122,7 +122,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		}
 
 		responseBody, err = ioutil.ReadAll(response.Body)
-		response.Body.Close()
+		_ = response.Body.Close()
 		if nil != err {
 			logErrorf("doHTTPRequest() failed to read responseBody: %v", err)
 			ok = false
@@ -217,7 +217,7 @@ func updateAuthTokenAndAccountURL() {
 		swiftAccountURL = ""
 	} else {
 		_, err = ioutil.ReadAll(getResponse.Body)
-		getResponse.Body.Close()
+		_ = getResponse.Body.Close()
 		if nil != err {
 			logErrorf("updateAuthTokenAndAccountURL() failed to read responseBody: %v", err)
 			swiftAuthToken = ""

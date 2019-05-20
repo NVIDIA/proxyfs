@@ -1810,9 +1810,16 @@ func (s *Server) RpcSetTime(in *SetTimeRequest, reply *Reply) (err error) {
 	}
 
 	stat := make(fs.Stat)
-	stat[fs.StatMTime] = in.MTimeNs
-	stat[fs.StatATime] = in.ATimeNs
+
+	if uint64(0) != in.MTimeNs {
+		stat[fs.StatMTime] = in.MTimeNs
+	}
+	if uint64(0) != in.ATimeNs {
+		stat[fs.StatATime] = in.ATimeNs
+	}
+
 	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
+
 	return
 }
 
@@ -1836,9 +1843,16 @@ func (s *Server) RpcSetTimePath(in *SetTimePathRequest, reply *Reply) (err error
 	}
 
 	stat := make(fs.Stat)
-	stat[fs.StatMTime] = in.MTimeNs
-	stat[fs.StatATime] = in.ATimeNs
+
+	if uint64(0) != in.MTimeNs {
+		stat[fs.StatMTime] = in.MTimeNs
+	}
+	if uint64(0) != in.ATimeNs {
+		stat[fs.StatATime] = in.ATimeNs
+	}
+
 	err = mountHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, stat)
+
 	return
 }
 

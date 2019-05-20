@@ -312,7 +312,14 @@ func handleExchangeDataRequest(request *fuse.ExchangeDataRequest) {
 // that is triggered at any time prior to close.
 //
 func handleFlushRequest(request *fuse.FlushRequest) {
-	// TODO: For FileInode's, trigger necessary flushes
+	var (
+		fileInode *fileInodeStruct
+	)
+
+	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
+	fileInode.doFlushIfNecessary()
+	fileInode.dereference()
+
 	request.Respond()
 }
 
@@ -328,7 +335,14 @@ func handleForgetRequest(request *fuse.ForgetRequest) {
 // the operation performced at time of close.
 //
 func handleFsyncRequest(request *fuse.FsyncRequest) {
-	// TODO: For FileInode's, trigger necessary flushes
+	var (
+		fileInode *fileInodeStruct
+	)
+
+	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
+	fileInode.doFlushIfNecessary()
+	fileInode.dereference()
+
 	request.Respond()
 }
 
@@ -867,8 +881,14 @@ func handleReadlinkRequest(request *fuse.ReadlinkRequest) {
 }
 
 func handleReleaseRequest(request *fuse.ReleaseRequest) {
+	var (
+		fileInode *fileInodeStruct
+	)
+
 	if !request.Dir && (0 != (request.ReleaseFlags & fuse.ReleaseFlush)) {
-		// TODO: perform Flush on FileInode if necessary
+		fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
+		fileInode.doFlushIfNecessary()
+		fileInode.dereference()
 	}
 
 	globals.Lock()
@@ -965,53 +985,34 @@ func handleRenameRequest(request *fuse.RenameRequest) {
 
 func handleSetattrRequest(request *fuse.SetattrRequest) {
 	var (
-		attr                 *fuse.Attr
-		chmodReply           *jrpcfs.Reply
-		chmodRequest         *jrpcfs.ChmodRequest
-		chownReply           *jrpcfs.Reply
-		chownRequest         *jrpcfs.ChownRequest
-		err                  error
-		newAtime             *time.Time
-		newMtime             *time.Time
-		resizeReply          *jrpcfs.Reply
-		resizeRequest        *jrpcfs.ResizeRequest
-		response             *fuse.SetattrResponse
-		setTimeReply         *jrpcfs.Reply
-		setTimeRequest       *jrpcfs.SetTimeRequest
-		settingAtimeAndMtime bool
-		settingGid           bool
-		settingMode          bool
-		settingSize          bool
-		settingUid           bool
-		timeNow              time.Time
+		attr                   *fuse.Attr
+		chmodReply             *jrpcfs.Reply
+		chmodRequest           *jrpcfs.ChmodRequest
+		chownReply             *jrpcfs.Reply
+		chownRequest           *jrpcfs.ChownRequest
+		err                    error
+		newAtime               *time.Time
+		newMtime               *time.Time
+		resizeReply            *jrpcfs.Reply
+		resizeRequest          *jrpcfs.ResizeRequest
+		response               *fuse.SetattrResponse
+		setTimeReply           *jrpcfs.Reply
+		setTimeRequest         *jrpcfs.SetTimeRequest
+		settingAtime           bool
+		settingAtimeAndOrMtime bool
+		settingGid             bool
+		settingMode            bool
+		settingMtime           bool
+		settingSize            bool
+		settingUid             bool
+		timeNow                time.Time
 	)
 
-	// TODO: Verify it is ok to accept but ignore fuse.SetattrHandle in request.Valid
+	// TODO: Verify it is ok to accept but ignore fuse.SetattrHandle    in request.Valid
+	// TODO: Verify it is ok to accept but ignore fuse.SetattrLockOwner in request.Valid
 
-	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime | fuse.SetattrHandle | fuse.SetattrAtimeNow | fuse.SetattrMtimeNow)) != request.Valid {
+	if (request.Valid & (fuse.SetattrMode | fuse.SetattrUid | fuse.SetattrGid | fuse.SetattrSize | fuse.SetattrAtime | fuse.SetattrMtime | fuse.SetattrHandle | fuse.SetattrAtimeNow | fuse.SetattrMtimeNow | fuse.SetattrLockOwner)) != request.Valid {
 		// request.Valid contains non-supported bits
-		request.RespondError(fuse.ENOTSUP)
-		return
-	}
-	if (0 == (request.Valid & fuse.SetattrAtime)) && (0 != (request.Valid & fuse.SetattrAtimeNow)) {
-		// request.Valid cannot contain SetattrAtimeNow but not SetattrAtime
-		request.RespondError(fuse.ENOTSUP)
-		return
-	}
-	if (0 == (request.Valid & fuse.SetattrMtime)) && (0 != (request.Valid & fuse.SetattrMtimeNow)) {
-		// request.Valid cannot contain SetattrMtimeNow but not SetattrMtime
-		request.RespondError(fuse.ENOTSUP)
-		return
-	}
-	if (0 != (request.Valid & fuse.SetattrAtime)) &&
-		(0 == (request.Valid & fuse.SetattrMtime)) {
-		// request.Valid contains SetattrAtime but not SetattrMtime
-		request.RespondError(fuse.ENOTSUP)
-		return
-	}
-	if (0 == (request.Valid & fuse.SetattrAtime)) &&
-		(0 != (request.Valid & fuse.SetattrMtime)) {
-		// request.Valid contains SetattrMtime but not SetattrAtime
 		request.RespondError(fuse.ENOTSUP)
 		return
 	}
@@ -1023,8 +1024,10 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 
 	settingSize = (0 != (request.Valid & fuse.SetattrSize))
 
-	// Note: we already know we'd get the same result if we included SetattrMtime
-	settingAtimeAndMtime = (0 != (request.Valid & fuse.SetattrAtime))
+	settingAtime = (0 != (request.Valid & fuse.SetattrAtime)) || (0 != (request.Valid & fuse.SetattrAtimeNow))
+	settingMtime = (0 != (request.Valid & fuse.SetattrMtime)) || (0 != (request.Valid & fuse.SetattrMtimeNow))
+
+	settingAtimeAndOrMtime = settingAtime || settingMtime
 
 	if settingMode {
 		if request.Mode != (request.Mode & os.FileMode(inode.PosixModePerm)) {
@@ -1096,23 +1099,8 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		}
 	}
 
-	if settingAtimeAndMtime {
+	if settingAtimeAndOrMtime {
 		timeNow = time.Now()
-
-		newAtime = nil
-		newMtime = nil
-
-		if 0 != (request.Valid & fuse.SetattrAtimeNow) {
-			newAtime = &timeNow
-		} else {
-			newAtime = &request.Atime
-		}
-
-		if 0 != (request.Valid & fuse.SetattrMtimeNow) {
-			newMtime = &timeNow
-		} else {
-			newMtime = &request.Mtime
-		}
 
 		setTimeRequest = &jrpcfs.SetTimeRequest{
 			InodeHandle: jrpcfs.InodeHandle{
@@ -1120,9 +1108,26 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 				InodeNumber: int64(request.Header.Node),
 			},
 			StatStruct: jrpcfs.StatStruct{
-				MTimeNs: uint64(newMtime.UnixNano()),
-				ATimeNs: uint64(newAtime.UnixNano()),
+				MTimeNs: uint64(0), // Updated below if settingMtime
+				ATimeNs: uint64(0), // Updated below if settingAtime
 			},
+		}
+
+		if settingMtime {
+			if 0 != (request.Valid & fuse.SetattrMtimeNow) {
+				newMtime = &timeNow
+			} else {
+				newMtime = &request.Mtime
+			}
+			setTimeRequest.MTimeNs = uint64(newMtime.UnixNano())
+		}
+		if settingAtime {
+			if 0 != (request.Valid & fuse.SetattrAtimeNow) {
+				newAtime = &timeNow
+			} else {
+				newAtime = &request.Atime
+			}
+			setTimeRequest.ATimeNs = uint64(newAtime.UnixNano())
 		}
 
 		setTimeReply = &jrpcfs.Reply{}
