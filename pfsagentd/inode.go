@@ -70,6 +70,7 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 			chunkedPutList:            list.New(),
 			flushInProgress:           false,
 			chunkedPutFlushWaiterList: list.New(),
+			dirtyListElement:          nil,
 		}
 
 		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
@@ -237,7 +238,7 @@ func performDelayedLeaseRequestList(delayedLeaseRequestList *list.List) {
 // Note, however, that it is expected Locks are actually held for very short intervals
 // (e.g. in the servicing of a FUSE upcall).
 
-// getSharedLock returns a granted Shared Lock if possible. If it fails, nil is returned.
+// getSharedLock returns a granted Shared Lock.
 func (fileInode *fileInodeStruct) getSharedLock() (grantedLock *fileInodeLockRequestStruct) {
 	var (
 		leaseRequest *fileInodeLeaseRequestStruct
@@ -293,7 +294,7 @@ func (fileInode *fileInodeStruct) getSharedLock() (grantedLock *fileInodeLockReq
 	}
 }
 
-// getExclusiveLock returns a granted Exclusive Lock if possible, If it fails, nil is returned.
+// getExclusiveLock returns a granted Exclusive Lock.
 func (fileInode *fileInodeStruct) getExclusiveLock() (grantedLock *fileInodeLockRequestStruct) {
 	var (
 		leaseRequest *fileInodeLeaseRequestStruct

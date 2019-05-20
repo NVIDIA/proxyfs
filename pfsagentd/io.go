@@ -123,12 +123,12 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 
 func handleWriteRequest(request *fuse.WriteRequest) {
 	var (
-		chunk                    *chunkStruct
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
 		fileInode                *fileInodeStruct
 		grantedLock              *fileInodeLockRequestStruct
 		response                 *fuse.WriteResponse
+		sendChanFlushFlag        bool
 		singleObjectExtent       *singleObjectExtentStruct
 	)
 
@@ -143,7 +143,7 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 			buf:            make([]byte, 0),
 			fileInode:      fileInode,
 			state:          chunkedPutContextStateOpen,
-			sendChan:       make(chan *chunkStruct, chunkedPutContextSendChanBufferSize),
+			sendChan:       make(chan bool, chunkedPutContextSendChanBufferSize),
 			wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
 			flushRequested: false,
 		}
@@ -153,9 +153,19 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 
 		fileInode.reference()
 
+		pruneFileInodeDirtyListIfNecessary()
+
+		globals.Lock()
+		fileInode.dirtyListElement = globals.fileInodeDirtyList.PushBack(fileInode)
+		globals.Unlock()
+
 		chunkedPutContext.fileInode.Add(1)
 		go chunkedPutContext.sendDaemon()
 	} else {
+		globals.Lock()
+		globals.fileInodeDirtyList.MoveToBack(fileInode.dirtyListElement)
+		globals.Unlock()
+
 		chunkedPutContextElement = fileInode.chunkedPutList.Back()
 		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
 
@@ -169,7 +179,7 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 				buf:            make([]byte, 0),
 				fileInode:      fileInode,
 				state:          chunkedPutContextStateOpen,
-				sendChan:       make(chan *chunkStruct, chunkedPutContextSendChanBufferSize),
+				sendChan:       make(chan bool, chunkedPutContextSendChanBufferSize),
 				wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
 				flushRequested: false,
 			}
@@ -198,14 +208,16 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 
 	chunkedPutContext.buf = append(chunkedPutContext.buf, request.Data...)
 
-	chunk = &chunkStruct{
-		objectOffset: uint64(len(chunkedPutContext.buf)),
-		length:       uint64(len(request.Data)),
+	sendChanFlushFlag = (uint64(len(chunkedPutContext.buf)) >= globals.config.MaxFlushSize)
+
+	if sendChanFlushFlag {
+		chunkedPutContext.state = chunkedPutContextStateClosing
 	}
 
-	chunkedPutContext.sendChan <- chunk
-
 	grantedLock.release()
+
+	chunkedPutContext.sendChan <- sendChanFlushFlag
+
 	fileInode.dereference()
 
 	response = &fuse.WriteResponse{
@@ -215,12 +227,110 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 	request.Respond(response)
 }
 
+func (fileInode *fileInodeStruct) doFlushIfNecessary() {
+	var (
+		chunkedPutContext        *chunkedPutContextStruct
+		chunkedPutContextElement *list.Element
+		flushWG                  sync.WaitGroup
+		grantedLock              *fileInodeLockRequestStruct
+		sendChanFlushFlag        bool
+	)
+
+	grantedLock = fileInode.getExclusiveLock()
+
+	if 0 == fileInode.chunkedPutList.Len() {
+		// No Chunked PUTs in flight... so we can just exit
+		grantedLock.release()
+		return
+	}
+
+	// At lease one Chunked PUT is in flight... so we know we'll have to block later
+
+	flushWG.Add(1)
+	_ = fileInode.chunkedPutFlushWaiterList.PushBack(&flushWG)
+
+	// Now see if we need to initiate the flush
+
+	if fileInode.flushInProgress {
+		// We do not need to send a flush
+
+		sendChanFlushFlag = false
+	} else {
+		// No explicit flush is in progress... so make it appear so
+
+		fileInode.flushInProgress = true
+
+		// See if the last Chunked PUT is already flushing anyway
+
+		chunkedPutContextElement = fileInode.chunkedPutList.Back()
+		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+
+		sendChanFlushFlag = (chunkedPutContextStateOpen == chunkedPutContext.state)
+
+		if sendChanFlushFlag {
+			chunkedPutContext.state = chunkedPutContextStateClosing
+		}
+	}
+
+	grantedLock.release()
+
+	if sendChanFlushFlag {
+		// We earlier determined that we'll be issuing the flush
+
+		chunkedPutContext.sendChan <- true
+	}
+
+	// Finally, wait for the flush to complete
+
+	flushWG.Wait()
+}
+
+func pruneFileInodeDirtyListIfNecessary() {
+	var (
+		fileInode        *fileInodeStruct
+		fileInodeElement *list.Element
+	)
+
+	for {
+		globals.Lock()
+		if uint64(globals.fileInodeDirtyList.Len()) < globals.config.DirtyFileLimit {
+			// There is room for fileInode about to be added to the list
+			globals.Unlock()
+			return
+		}
+		fileInodeElement = globals.fileInodeDirtyList.Front()
+		globals.Unlock()
+		fileInode = fileInodeElement.Value.(*fileInodeStruct)
+		fileInode.doFlushIfNecessary()
+	}
+}
+
+func emptyFileInodeDirtyList() {
+	var (
+		fileInode        *fileInodeStruct
+		fileInodeElement *list.Element
+	)
+
+	for {
+		globals.Lock()
+		if 0 == globals.fileInodeDirtyList.Len() {
+			// The list is now empty
+			globals.Unlock()
+			return
+		}
+		fileInodeElement = globals.fileInodeDirtyList.Front()
+		globals.Unlock()
+		fileInode = fileInodeElement.Value.(*fileInodeStruct)
+		fileInode.doFlushIfNecessary()
+	}
+}
+
 func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 	var (
-		chunk                     *chunkStruct
 		expirationDelay           time.Duration
 		expirationTime            time.Time
 		fileInode                 *fileInodeStruct
+		flushRequested            bool
 		flushWaiterListElement    *list.Element
 		grantedLock               *fileInodeLockRequestStruct
 		nextChunkedPutContext     *chunkedPutContextStruct
@@ -251,43 +361,21 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 			chunkedPutContext.state = chunkedPutContextStateClosing
 			grantedLock.release()
 
-			chunkedPutContext.drainSendChan()
-
 			goto PerformFlush
-		case chunk = <-chunkedPutContext.sendChan:
-			if 0 == chunk.length {
-				// Explicit flush requested
+		case flushRequested = <-chunkedPutContext.sendChan:
+			// Send non-flushing chunk to *chunkedPutContextStruct.Read()
 
-				grantedLock = fileInode.getExclusiveLock()
-				chunkedPutContext.state = chunkedPutContextStateClosing
-				grantedLock.release()
+			chunkedPutContext.wakeChan <- false
 
-				chunkedPutContext.drainSendChan()
-
+			if flushRequested {
 				goto PerformFlush
-			} else {
-				// Send non-flushing chunk to *chunkedPutContextStruct.Read()
-
-				chunkedPutContext.wakeChan <- false
-
-				// Check to see if a MaxFlushSize-triggered flush is needed
-
-				if (chunk.objectOffset + chunk.length) >= globals.config.MaxFlushSize {
-					// MaxFlushSize-triggered flush requested
-
-					grantedLock = fileInode.getExclusiveLock()
-					chunkedPutContext.state = chunkedPutContextStateClosing
-					grantedLock.release()
-
-					chunkedPutContext.drainSendChan()
-
-					goto PerformFlush
-				}
 			}
 		}
 	}
 
 PerformFlush:
+
+	// Send flushing chunk to *chunkedPutContextStruct.Read() & wait for it to finish
 
 	chunkedPutContext.wakeChan <- true
 	chunkedPutContext.Wait()
@@ -317,8 +405,8 @@ PerformFlush:
 
 				for fileInode.chunkedPutFlushWaiterList.Len() > 0 {
 					flushWaiterListElement = fileInode.chunkedPutFlushWaiterList.Front()
-					flushWaiterListElement.Value.(*sync.WaitGroup).Done()
 					_ = fileInode.chunkedPutFlushWaiterList.Remove(flushWaiterListElement)
+					flushWaiterListElement.Value.(*sync.WaitGroup).Done()
 				}
 
 				break
@@ -336,6 +424,15 @@ PerformFlush:
 				break
 			}
 		}
+	}
+
+	if 0 == fileInode.chunkedPutList.Len() {
+		// We can remove globals.fileInode
+
+		globals.Lock()
+		globals.fileInodeDirtyList.Remove(fileInode.dirtyListElement)
+		fileInode.dirtyListElement = nil
+		globals.Unlock()
 	}
 
 	grantedLock.release()
@@ -387,25 +484,6 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 	}
 
 	chunkedPutContext.Done()
-}
-
-func (chunkedPutContext *chunkedPutContextStruct) drainSendChan() {
-	var (
-		chunk *chunkStruct
-	)
-
-	for {
-		select {
-		case chunk = <-chunkedPutContext.sendChan:
-			if 0 < chunk.length {
-				// Send non-flushing chunk to *chunkedPutContextStruct.Read()
-
-				chunkedPutContext.wakeChan <- false
-			}
-		default:
-			return
-		}
-	}
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) complete() {
@@ -484,15 +562,11 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {
-	// Set default err based on having received a flush chunk
+	var (
+		grantedLock *fileInodeLockRequestStruct
+	)
 
-	if chunkedPutContext.flushRequested {
-		err = io.EOF
-	} else {
-		err = nil
-	}
-
-	chunkedPutContext.Lock()
+	grantedLock = chunkedPutContext.fileInode.getExclusiveLock()
 
 	n = len(chunkedPutContext.buf) - chunkedPutContext.pos
 
@@ -501,38 +575,37 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err err
 	}
 
 	if n > 0 {
-		// There is data to send... send what you can and return immediately
+		// Return any unsent data in buf that will fit in p immediately
 
 		if n > len(p) {
-			// We need to truncate n... and disable EOF indication if set
-
 			n = len(p)
-			err = nil
 		}
 
 		copy(p, chunkedPutContext.buf[chunkedPutContext.pos:chunkedPutContext.pos+n])
 
 		chunkedPutContext.pos += n
 
-		chunkedPutContext.Unlock()
+		grantedLock.release()
 
+		err = nil
 		return
 	}
 
-	// At this point, n == 0... but we might just need to honor flushRequest
-
-	chunkedPutContext.Unlock()
+	grantedLock.release()
 
 	if chunkedPutContext.flushRequested {
+		// Return io.EOF to indicate all chunks have been sent and to close this Chunked PUT
+
 		err = io.EOF
 		return
 	}
 
-	// So just wait to be awoken telling us there is a new chunk to send and/or flush request
+	// At this point:
+	//   There was no data in buf to send
+	//   We need to wait for sendDaemon() to wake us up
+	//   Then simply return (n == 0; err == nil) to cause us to be re-entered
 
 	chunkedPutContext.flushRequested = <-chunkedPutContext.wakeChan
-
-	// Now simply return and allow the subsequent call to re-check for new data to send and the flushRequest flag
 
 	err = nil
 	return

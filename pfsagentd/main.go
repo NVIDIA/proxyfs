@@ -62,9 +62,13 @@ func main() {
 
 	_ = <-signalChan
 
-	// Perform clean shutdown
+	// Stop serving FUSE mount point
 
 	performUnmountFUSE()
+
+	// Flush all dirty fileInode's
+
+	emptyFileInodeDirtyList()
 
 	// Uninitialize globals
 

@@ -39,6 +39,7 @@ type configStruct struct {
 	ReadCacheLineCount           uint64
 	SharedFileLimit              uint64
 	ExclusiveFileLimit           uint64
+	DirtyFileLimit               uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
 	ReadOnly                     bool
@@ -121,14 +122,6 @@ type multiObjectExtentStruct struct {
 	length        uint64
 }
 
-// chunkeStruct is used to tell sendDaemon to either flush (if length == 0) and/or
-// allow performChunkedPut to send a new chunk.
-//
-type chunkStruct struct {
-	objectOffset uint64
-	length       uint64
-}
-
 const (
 	chunkedPutContextStateOpen    uint8 = iota // Initial state indicating Chunked PUT is available to send a chunk
 	chunkedPutContextStateClosing              // After a zero-length chunk is sent to close the Chunked PUT... awaiting http.StatusCreated
@@ -138,21 +131,20 @@ const (
 )
 
 type chunkedPutContextStruct struct {
-	sync.Mutex                        //          Used to avoid race in Read callback with writers
 	sync.WaitGroup                    //          Used to await completion of performChunkedPut goroutine
 	containerName  string             //
 	objectName     string             //
 	extentMap      sortedmap.LLRBTree //          Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
 	fileSize       uint64             //          Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
 	//                                              updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
-	buf                   []byte            //
-	chunkedPutListElement *list.Element     //    FIFO Element of fileInodeStruct.chunkedPutList
-	fileInode             *fileInodeStruct  //
-	state                 uint8             //    One of chunkedPutContextState{Open|Closing|Closed}
-	pos                   int               //    ObjectOffset just after last sent chunk
-	sendChan              chan *chunkStruct //    Wake-up sendDaemon with a new chunk or to explicitly flush
-	wakeChan              chan bool         //    Wake-up Read callback to respond with a chunk and/or return EOF
-	flushRequested        bool              //    Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
+	buf                   []byte           //
+	chunkedPutListElement *list.Element    //     FIFO Element of fileInodeStruct.chunkedPutList
+	fileInode             *fileInodeStruct //
+	state                 uint8            //     One of chunkedPutContextState{Open|Closing|Closed}
+	pos                   int              //     ObjectOffset just after last sent chunk
+	sendChan              chan bool        //     Wake-up sendDaemon with a new chunk or to flush
+	wakeChan              chan bool        //     Wake-up Read callback to respond with a chunk and/or return EOF
+	flushRequested        bool             //     Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 const (
@@ -187,6 +179,7 @@ type fileInodeStruct struct {
 	flushInProgress           bool               //    Serializes (& singularizes) explicit Flush requests
 	chunkedPutFlushWaiterList *list.List         //    List of *sync.WaitGroup's for those awaiting an explicit Flush
 	//                                                   Note: These waiters cannot be holding fileInodeStruct.Lock
+	dirtyListElement *list.Element //                  Element on globals.fileInodeDirtyList (or nil)
 }
 
 type handleStruct struct {
@@ -232,6 +225,7 @@ type globalsStruct struct {
 	fuseConn                        *fuse.Conn
 	jrpcLastID                      uint64
 	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
+	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
 	leaseRequestChan                chan *fileInodeLeaseRequestStruct
 	unleasedFileInodeCacheLRU       *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
 	sharedLeaseFileInodeCacheLRU    *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
@@ -358,6 +352,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.DirtyFileLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyFileLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.MaxFlushSize, err = confMap.FetchOptionValueUint64("Agent", "MaxFlushSize")
 	if nil != err {
 		logFatal(err)
@@ -474,6 +473,8 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.fileInodeMap = make(map[inode.InodeNumber]*fileInodeStruct)
 
+	globals.fileInodeDirtyList = list.New()
+
 	globals.leaseRequestChan = make(chan *fileInodeLeaseRequestStruct)
 
 	go leaseDaemon()
@@ -512,6 +513,7 @@ func uninitializeGlobals() {
 	globals.fuseConn = nil
 	globals.jrpcLastID = 0
 	globals.fileInodeMap = nil
+	globals.fileInodeDirtyList = nil
 	globals.leaseRequestChan = nil
 	globals.unleasedFileInodeCacheLRU = nil
 	globals.sharedLeaseFileInodeCacheLRU = nil
