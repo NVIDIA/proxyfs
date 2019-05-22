@@ -475,12 +475,47 @@ def mung_etags(obj_metadata, etag, num_writes):
     return
 
 
-def unmung_etags_and_return_best(obj_metadata, account_name, inum, num_writes,
-                                 is_dir=False, container_listing=False):
-    '''Unmung the ETag headers associated with an object to return
-    them to the state they were in when passed to pfs_middleware or
-    delete them if the object has changed.
+def unmung_etags(obj_metadata, num_writes):
+    '''
+    Unmung the ETag headers associated with an object to return
+    them to the state they were in when passed to pfs_middleware.
 
+    Delete them if the object has changed or the header value
+    does not parse correctly.
+    '''
+
+    # if the header is invalid or stale it is not added back after the pop
+    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        val = obj_metadata.pop(LISTING_ETAG_OVERRIDE_HEADER)
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = rest
+        except ValueError:
+            pass
+
+    if S3API_ETAG_HEADER in obj_metadata:
+        val = obj_metadata.pop(S3API_ETAG_HEADER)
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                obj_metadata[S3API_ETAG_HEADER] = rest
+        except ValueError:
+            pass
+
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        val = obj_metadata.pop(ORIGINAL_MD5_HEADER)
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                obj_metadata[ORIGINAL_MD5_HEADER] = rest
+        except ValueError:
+            pass
+
+
+def best_possible_etag(obj_metadata, account_name, inum, num_writes,
+                       is_dir=False, container_listing=False):
+    '''
     Return the ETag that is most likely to be correct for the query,
     but leave other valid ETags values in the metadata, in case a
     higher layer filter wants to use them to override the value
@@ -490,47 +525,6 @@ def unmung_etags_and_return_best(obj_metadata, account_name, inum, num_writes,
     new ProxyFS ETag based on the account name, inode number, and
     number of writes.
     '''
-
-    # purge headers made invalid by subsequent writes/truncates from
-    # the returned headers
-    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
-        val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
-        try:
-            stored_num_writes, rest = val.split(':', 1)
-            if int(stored_num_writes) == num_writes:
-                obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = rest
-            else:
-                del obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
-        except ValueError:
-            del obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
-            pass
-
-    if S3API_ETAG_HEADER in obj_metadata:
-        val = obj_metadata[S3API_ETAG_HEADER]
-        try:
-            stored_num_writes, rest = val.split(':', 1)
-            if int(stored_num_writes) == num_writes:
-                obj_metadata[S3API_ETAG_HEADER] = rest
-            else:
-                del obj_metadata[S3API_ETAG_HEADER]
-        except ValueError:
-            del obj_metadata[S3API_ETAG_HEADER]
-            pass
-
-    if ORIGINAL_MD5_HEADER in obj_metadata:
-        val = obj_metadata[ORIGINAL_MD5_HEADER]
-
-        try:
-            stored_num_writes, rest = val.split(':', 1)
-            if int(stored_num_writes) == num_writes:
-                obj_metadata[ORIGINAL_MD5_HEADER] = rest
-            else:
-                del obj_metadata[ORIGINAL_MD5_HEADER]
-        except ValueError:
-            del obj_metadata[ORIGINAL_MD5_HEADER]
-            pass
-
-    # decide the best possible ETag to return
     if is_dir:
         return EMPTY_OBJECT_ETAG
 
@@ -1407,6 +1401,8 @@ class PfsMiddleware(object):
             last_modified = iso_timestamp_from_epoch_ns(ent.get(
                 "AttrChangeTime", ent["ModificationTime"]))
             obj_metadata = deserialize_metadata(ent["Metadata"])
+            unmung_etags(obj_metadata, ent["NumWrites"])
+
             content_type = swift_code.wsgi_to_str(
                 obj_metadata.get("Content-Type"))
             if content_type is None:
@@ -1415,10 +1411,10 @@ class PfsMiddleware(object):
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
 
-            etag = unmung_etags_and_return_best(
-                obj_metadata,
-                account_name, ent["InodeNumber"], ent["NumWrites"],
-                is_dir=ent["IsDir"], container_listing=True)
+            etag = best_possible_etag(
+                obj_metadata, account_name,
+                ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
+                container_listing=True)
             json_entry = {
                 "name": name,
                 "bytes": int(swift_bytes or size),
@@ -1443,6 +1439,8 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
+            unmung_etags(obj_metadata, container_entry["NumWrites"])
+
             content_type = swift_code.wsgi_to_str(
                 obj_metadata.get("Content-Type"))
             if content_type is None:
@@ -1451,7 +1449,7 @@ class PfsMiddleware(object):
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
 
-            etag = unmung_etags_and_return_best(
+            etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
                 container_entry["NumWrites"],
@@ -1545,19 +1543,28 @@ class PfsMiddleware(object):
             return swob.HTTPUnprocessableEntity(request=req)
 
         path = urllib_parse.unquote(req.path)
-        obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
-            req.headers))
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
 
-        rpc_req = rpc.middleware_mkdir_request(path, obj_metadata)
+        # mung the passed etags, if any (NumWrites for a directory is
+        # always zero)
+        mung_etags(obj_metadata, request_etag, 0)
+
+        rpc_req = rpc.middleware_mkdir_request(
+            path, serialize_metadata(obj_metadata))
         rpc_resp = self.rpc_call(ctx, rpc_req)
         mtime_ns, inode, num_writes = rpc.parse_middleware_mkdir_response(
             rpc_resp)
 
+        # currently best_possible_etag() returns EMPTY_OBJECT_ETAG for
+        # all directories, but that might change in the future.
+        # unmung the obj_metadata so best_possible_etag() can use it
+        # if its behavior changes (note that num_writes is forced to 0).
+        unmung_etags(obj_metadata, 0)
         resp_headers = {
             "Content-Type": DIRECTORY_CONTENT_TYPE,
             "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
-        resp_headers["Etag"] = unmung_etags_and_return_best(
-            resp_headers, ctx.account_name, inode, num_writes)
+        resp_headers["ETag"] = best_possible_etag(
+            obj_metadata, ctx.account_name, inode, 0, is_dir=True)
 
         return swob.HTTPCreated(request=req, headers=resp_headers, body="")
 
@@ -1654,7 +1661,6 @@ class PfsMiddleware(object):
         # count) and supply the MD5 hash computed here which is the
         # objects future ETag value if it is not subsequently updated.
         obj_metadata = extract_object_metadata_from_headers(req.headers)
-
         mung_etags(obj_metadata, hasher.hexdigest(), len(log_segments))
 
         put_complete_req = rpc.put_complete_request(
@@ -1715,8 +1721,22 @@ class PfsMiddleware(object):
             else:
                 raise
 
+        # We need to unmung and then mung the headers because the POST may
+        # supply a value S3API_ETAG_HEADER or LISTING_ETAG_OVERRIDE_HEADER
+        # (or ORIGINAL_MD5_HEADER?).  While merge_object_metadata() will
+        # not let these overwrite an existing header, they can be added to
+        # an object that doesn't have such a header.
+        #
+        # Note that if an ETag header is stale (because NumWrites has
+        # changed) then unmung_etags() will strip it and it will not be
+        # put back by mung_etags().
         old_metadata = deserialize_metadata(raw_old_metadata)
+        unmung_etags(old_metadata, num_writes)
+
+        etag = old_metadata.get(ORIGINAL_MD5_HEADER)
+
         merged_metadata = merge_object_metadata(old_metadata, new_metadata)
+        mung_etags(merged_metadata, etag, num_writes)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
         self.rpc_call(ctx, rpc.post_request(
@@ -1747,7 +1767,10 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
+
+        metadata = deserialize_metadata(raw_metadata)
+        unmung_etags(metadata, num_writes)
+        headers = swob.HeaderKeyDict(metadata)
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path,
@@ -1761,7 +1784,7 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
-        headers["Etag"] = unmung_etags_and_return_best(
+        headers["Etag"] = best_possible_etag(
             headers, ctx.account_name, ino, num_writes)
 
         get_read_plan = req.params.get("get-read-plan", "no")
@@ -1909,6 +1932,7 @@ class PfsMiddleware(object):
             rpc.parse_head_response(head_response)
 
         headers = swob.HeaderKeyDict(deserialize_metadata(raw_md))
+        unmung_etags(headers, num_writes)
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
@@ -1917,7 +1941,7 @@ class PfsMiddleware(object):
                 ';swift_bytes=')[0]
 
         headers["Content-Length"] = file_size
-        headers["ETag"] = unmung_etags_and_return_best(
+        headers["ETag"] = best_possible_etag(
             headers, ctx.account_name, ino, num_writes, is_dir=is_dir)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
@@ -1988,7 +2012,7 @@ class PfsMiddleware(object):
                         return denial_response
                 authed_containers.add(elem_container_path)
 
-        # treat the number of objects as the number of writes
+        # proxyfs treats the number of objects as the number of writes
         num_writes = len(decoded_json["elements"])
 
         # validate the metadata for the new object (further munging
@@ -1997,14 +2021,8 @@ class PfsMiddleware(object):
         if err:
             return err
 
-        # retrieve the ETag (or etag) value in the request (or None)
-        req_etag = req.headers.get('Etag', None)
-        if req_etag is None:
-            req_etag = req.headers.get('ETag', None)
-        if req_etag is None:
-            req_etag = req.headers.get('ETAG', None)
-        if req_etag is None:
-            req_etag = req.headers.get('etag', None)
+        # retrieve the ETag value in the request, or None
+        req_etag = req.headers.get('ETag')
 
         # strip out user supplied and other unwanted headers
         obj_metadata = extract_object_metadata_from_headers(req.headers)
@@ -2054,7 +2072,7 @@ class PfsMiddleware(object):
             rpc.parse_coalesce_object_response(coalesce_response)
 
         headers = {}
-        headers["Etag"] = unmung_etags_and_return_best(
+        headers["Etag"] = best_possible_etag(
             headers, ctx.account_name, inum, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
