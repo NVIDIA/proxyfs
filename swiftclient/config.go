@@ -222,47 +222,21 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
-	if nil != err {
-		return
-	}
-	globals.retryLimitObject, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimitObject")
+	err = fetchRetrySettings(confMap)
 	if nil != err {
 		return
 	}
 
-	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
-	if nil != err {
-		return
-	}
-	globals.retryDelayObject, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelayObject")
-	if nil != err {
-		return
-	}
-
-	globals.retryExpBackoff, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoff")
-	if nil != err {
-		return
-	}
-	globals.retryExpBackoffObject, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoffObject")
-	if nil != err {
-		return
-	}
 	globals.checksumChunkedPutChunks, err = confMap.FetchOptionValueBool("SwiftClient", "ChecksumChunkedPutChunks")
 	if nil != err {
 		globals.checksumChunkedPutChunks = false
 	}
 
-	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
-		globals.retryLimit, float64(globals.retryDelay)/float64(time.Second), globals.retryExpBackoff)
-	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
-		globals.retryLimitObject, float64(globals.retryDelayObject)/float64(time.Second),
-		globals.retryExpBackoffObject)
-
 	checksums := "disabled"
 	if globals.checksumChunkedPutChunks {
 		checksums = "enabled"
 	}
+
 	logger.Infof("SwiftClient.ChecksumChunkedPutChunks %s\n", checksums)
 
 	globals.connectionNonce = 0
@@ -344,8 +318,10 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	drainConnections()
 	globals.connectionNonce++
-	err = nil
-	return
+
+	err = fetchRetrySettings(confMap)
+
+	return // Return from fetchRetrySettings() is sufficient here
 }
 
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
@@ -358,5 +334,45 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	bucketstats.UnRegister("proxyfs.swiftclient", "")
 
 	err = nil
+	return
+}
+
+func fetchRetrySettings(confMap conf.ConfMap) (err error) {
+	globals.retryLimit, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimit")
+	if nil != err {
+		return
+	}
+	globals.retryLimitObject, err = confMap.FetchOptionValueUint16("SwiftClient", "RetryLimitObject")
+	if nil != err {
+		return
+	}
+
+	globals.retryDelay, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelay")
+	if nil != err {
+		return
+	}
+	globals.retryDelayObject, err = confMap.FetchOptionValueDuration("SwiftClient", "RetryDelayObject")
+	if nil != err {
+		return
+	}
+
+	globals.retryExpBackoff, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoff")
+	if nil != err {
+		return
+	}
+	globals.retryExpBackoffObject, err = confMap.FetchOptionValueFloat64("SwiftClient", "RetryExpBackoffObject")
+	if nil != err {
+		return
+	}
+
+	logger.Infof("SwiftClient.RetryLimit %d, SwiftClient.RetryDelay %4.3f sec, SwiftClient.RetryExpBackoff %2.1f",
+		globals.retryLimit,
+		float64(globals.retryDelay)/float64(time.Second),
+		globals.retryExpBackoff)
+	logger.Infof("SwiftClient.RetryLimitObject %d, SwiftClient.RetryDelayObject %4.3f sec, SwiftClient.RetryExpBackoffObject %2.1f",
+		globals.retryLimitObject,
+		float64(globals.retryDelayObject)/float64(time.Second),
+		globals.retryExpBackoffObject)
+
 	return
 }
