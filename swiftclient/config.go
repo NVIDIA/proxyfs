@@ -64,7 +64,6 @@ type requestFailureStatistic struct {
 type globalsStruct struct {
 	noAuthStringAddr                string
 	noAuthTCPAddr                   *net.TCPAddr
-	timeout                         time.Duration // TODO: Currently not enforced
 	retryLimit                      uint16        // maximum retries
 	retryLimitObject                uint16        // maximum retries for object ops
 	retryDelay                      time.Duration // delay before first retry
@@ -219,11 +218,6 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.noAuthStringAddr = noAuthIPAddr + ":" + strconv.Itoa(int(noAuthTCPPort))
 
 	globals.noAuthTCPAddr, err = net.ResolveTCPAddr("tcp4", globals.noAuthStringAddr)
-	if nil != err {
-		return
-	}
-
-	globals.timeout, err = confMap.FetchOptionValueDuration("SwiftClient", "Timeout")
 	if nil != err {
 		return
 	}
