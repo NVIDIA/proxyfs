@@ -1,7 +1,7 @@
 ProxyFS: A write-journaled, extent-based filesystem
 ===================================================
 
-ProxyFS is a write-journaled, extend-based filesystem that utilizes
+ProxyFS is a write-journaled, extent-based filesystem that utilizes
 properties of an object storage backend. In this section we will cover
 the motivation and rationale behind the ProxyFS architecture.
 
