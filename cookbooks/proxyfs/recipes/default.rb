@@ -431,7 +431,6 @@ end
 #
 execute "Create SMB mount point" do
   command "mkdir /mnt/smb_proxyfs_mount"
-  cwd "#{VFS_SRC_DIR}"
   not_if { ::Dir.exists?("/mnt/smb_proxyfs_mount") }
 end
 
@@ -512,12 +511,19 @@ if ss_packages
   end
 
   # Creating link to vfs' libs into the new /opt/ss path
-  bash 'Link VFS' do
-    code <<-EOH
-    /usr/bin/install -c -d /opt/ss/lib64/samba/vfs
-    /usr/bin/install -c -m 755 proxyfs.so /opt/ss/lib64/samba/vfs
-    EOH
-    cwd VFS_SRC_DIR
+  directory '/opt/ss/lib64/samba/vfs' do
+    owner 'root'
+    group 'root'
+    mode '0755'
+    action :create
+  end
+
+  link '/opt/ss/lib64/samba/vfs/proxyfs.so' do
+    to "#{VFS_SRC_DIR}/proxyfs.so"
+    link_type :symbolic
+    owner "root"
+    group "root"
+    mode '0755'
   end
 end
 
