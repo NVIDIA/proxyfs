@@ -1894,7 +1894,9 @@ class PfsMiddleware(object):
                 # Gotta check auth for all of the segments, too
                 bimodal_checker = ctx.req.environ[utils.ENV_BIMODAL_CHECKER]
                 acl_env = ctx.req.environ.copy()
-                acl_env['PATH_INFO'] = elem_container_path
+                acl_env['PATH_INFO'] = swift_code.bytes_to_wsgi(
+                    elem_container_path.encode(
+                        'utf8', errors='surrogateescape'))
                 container_info = get_container_info(
                     acl_env, bimodal_checker,
                     swift_source="PFS")

@@ -1076,3 +1076,9 @@ def str_to_wsgi(native_str):
     if six.PY2 or native_str is None:
         return native_str
     return native_str.encode('utf8', errors='surrogateescape').decode('latin1')
+
+
+def bytes_to_wsgi(byte_str):
+    if six.PY2:
+        return byte_str
+    return byte_str.decode('latin1')
