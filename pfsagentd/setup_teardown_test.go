@@ -171,8 +171,9 @@ func testSetup(t *testing.T) {
 		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
 
 		"FSGlobals.VolumeGroupList=CommonVolumeGroup",
-		"FSGlobals.TryLockBackoffMin=100us",
-		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.TryLockBackoffMin=10ms",
+		"FSGlobals.TryLockBackoffMax=50ms",
+		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
