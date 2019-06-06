@@ -1325,8 +1325,8 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 		dirInodeNumber           inode.InodeNumber
 		elementPath              string
 		heldLocks                *heldLocksStruct
-		restartBackoff           time.Duration
 		retryRequired            bool
+		tryLockBackoffContext    *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -1343,16 +1343,13 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1430,17 +1427,17 @@ Restart:
 
 func (mS *mountStruct) MiddlewareDelete(parentDir string, basename string) (err error) {
 	var (
-		dirEntryBasename    string
-		dirEntryInodeNumber inode.InodeNumber
-		dirInodeNumber      inode.InodeNumber
-		doDestroy           bool
-		heldLocks           *heldLocksStruct
-		inodeType           inode.InodeType
-		inodeVolumeHandle   inode.VolumeHandle
-		linkCount           uint64
-		numDirEntries       uint64
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryBasename      string
+		dirEntryInodeNumber   inode.InodeNumber
+		dirInodeNumber        inode.InodeNumber
+		doDestroy             bool
+		heldLocks             *heldLocksStruct
+		inodeType             inode.InodeType
+		inodeVolumeHandle     inode.VolumeHandle
+		linkCount             uint64
+		numDirEntries         uint64
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -1453,16 +1450,13 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, basename string) (err 
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareDelete(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1549,22 +1543,19 @@ func (mS *mountStruct) middlewareReadDirHelper(path string, maxEntries uint64, p
 		dirEntrySliceElement  inode.DirEntry
 		heldLocks             *heldLocksStruct
 		internalDirEntrySlice []inode.DirEntry
-		restartBackoff        time.Duration
 		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1740,8 +1731,8 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 		prefixPathDirInodeIndex       int
 		prevReturned                  string
 		remainingMaxEntries           uint64
-		restartBackoff                time.Duration
 		retryRequired                 bool
+		tryLockBackoffContext         *tryLockBackoffContextStruct
 	)
 
 	// Validate marker, endmarker, and prefix
@@ -1943,14 +1934,11 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 	// Compute initial response
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	heldLocks = newHeldLocks()
 
@@ -2197,14 +2185,11 @@ Restart:
 
 		// Ok... so we actually want to append this entry to containerEnts
 
-		restartBackoff = time.Duration(0)
+		tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 	Retry:
 
-		restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-		if nil != err {
-			logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
-		}
+		tryLockBackoffContext.backoff()
 
 		dirEntryInodeLock, err = inodeVolumeHandle.AttemptReadLock(dirEntrySliceElement.InodeNumber, dlmCallerID)
 		if nil != err {
@@ -2303,15 +2288,15 @@ Restart:
 
 func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		fileOffset          uint64
-		heldLocks           *heldLocksStruct
-		inodeVolumeHandle   inode.VolumeHandle
-		readPlan            []inode.ReadPlanStep
-		readRangeInIndex    int
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		fileOffset            uint64
+		heldLocks             *heldLocksStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		readPlan              []inode.ReadPlanStep
+		readRangeInIndex      int
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2330,16 +2315,13 @@ func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRange
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2424,11 +2406,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2441,16 +2423,13 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2509,11 +2488,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		existingStreamData  []byte
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryInodeNumber   inode.InodeNumber
+		existingStreamData    []byte
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2527,16 +2506,13 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2604,15 +2580,15 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		fileOffset          uint64
-		heldLocks           *heldLocksStruct
-		inodeVolumeHandle   inode.VolumeHandle
-		numPObjects         int
-		pObjectIndex        int
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		fileOffset            uint64
+		heldLocks             *heldLocksStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		numPObjects           int
+		pObjectIndex          int
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2634,16 +2610,13 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2719,11 +2692,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2736,16 +2709,13 @@ func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2993,12 +2963,12 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
 	var (
-		dirEntryBasename    string
-		dirEntryInodeNumber inode.InodeNumber
-		dirInodeNumber      inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryBasename      string
+		dirEntryInodeNumber   inode.InodeNumber
+		dirInodeNumber        inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -3024,16 +2994,13 @@ func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroup
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -3197,12 +3164,12 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 
 func (mS *mountStruct) readdirHelper(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, maxEntries uint64, prevReturned ...interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
 	var (
-		dirEntryIndex     uint64
-		dlmCallerID       dlm.CallerID
-		inodeLock         *dlm.RWLockStruct
-		inodeVolumeHandle inode.VolumeHandle
-		internalErr       error
-		restartBackoff    time.Duration
+		dirEntryIndex         uint64
+		dlmCallerID           dlm.CallerID
+		inodeLock             *dlm.RWLockStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		internalErr           error
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	mS.volStruct.jobRWMutex.RLock()
@@ -3211,11 +3178,11 @@ func (mS *mountStruct) readdirHelper(userID inode.InodeUserID, groupID inode.Ino
 	dlmCallerID = dlm.GenerateCallerID()
 	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
-	restartBackoff, _ = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	tryLockBackoffContext.backoff()
 
 	inodeLock, err = inodeVolumeHandle.AttemptReadLock(inodeNumber, dlmCallerID)
 	if nil != err {

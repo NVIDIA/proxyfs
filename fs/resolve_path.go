@@ -3,13 +3,11 @@ package fs
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/dlm"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 )
 
 const (
@@ -169,11 +167,11 @@ func (heldLocks *heldLocksStruct) free() {
 //
 // The pattern should look something like this:
 //
-//     restartBackoff = time.Duration(0)
+//     tryLockBackoffContext = &tryLockBackoffContextStruct{}
 //
 // Restart:
 //
-//     restartBackoff, _ = utils.PerformDelayAndComputeNextDelay(restartBackoff, backoffMin, backoffMax)
+//     tryLockBackoffContext.backoff()
 //
 //     heldLocks = newHeldLocks()
 //
@@ -957,10 +955,10 @@ func reCanonicalizePathForSymlink(canonicalizedPathSplit []string, symlinkIndex 
 //
 func (mS *mountStruct) canonicalizePathAndLocateLeafDirInode(path string) (canonicalizedPathSplit []string, dirInodeIndex int, err error) {
 	var (
-		dirEntryInodeType inode.InodeType
-		heldLocks         *heldLocksStruct
-		restartBackoff    time.Duration
-		retryRequired     bool
+		dirEntryInodeType     inode.InodeType
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	canonicalizedPathSplit, err = canonicalizePath(path)
@@ -972,14 +970,11 @@ func (mS *mountStruct) canonicalizePathAndLocateLeafDirInode(path string) (canon
 		return
 	}
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	heldLocks = newHeldLocks()
 

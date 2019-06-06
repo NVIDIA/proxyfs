@@ -28,8 +28,9 @@ func TestViaNoAuthClient(t *testing.T) {
 
 			"Cluster.WhoAmI=Peer0",
 			"FSGlobals.VolumeGroupList=",
-			"FSGlobals.TryLockBackoffMin=100us",
-			"FSGlobals.TryLockBackoffMax=300us",
+			"FSGlobals.TryLockBackoffMin=10ms",
+			"FSGlobals.TryLockBackoffMax=50ms",
+			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
 			"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 			"RamSwiftInfo.MaxAccountNameLength=256",
