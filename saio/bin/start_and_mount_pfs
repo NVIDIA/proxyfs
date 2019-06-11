@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 # A simple script to start the services and mount the sample mount point
 # The PATH, etc should already be setup by systemctl environment
 
