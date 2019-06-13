@@ -101,6 +101,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
     file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
+    file.insert_line_if_no_match(/ST_AUTH/, "export ST_AUTH=http://localhost:8080/auth/v1.0")
+    file.insert_line_if_no_match(/ST_USER/, "export ST_USER=test:tester")
+    file.insert_line_if_no_match(/ST_KEY/, "export ST_KEY=testing")
     file.write_file
 
     unless File.exist?(ROOT_DOT_BASH_PROFILE)
@@ -133,6 +136,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
     file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
+    file.insert_line_if_no_match(/ST_AUTH/, "export ST_AUTH=http://localhost:8080/auth/v1.0")
+    file.insert_line_if_no_match(/ST_USER/, "export ST_USER=test:tester")
+    file.insert_line_if_no_match(/ST_KEY/, "export ST_KEY=testing")
     file.write_file
 
   end
