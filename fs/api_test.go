@@ -1034,3 +1034,47 @@ func TestStaleInodes(t *testing.T) {
 
 	testTeardown(t)
 }
+
+func TestMiddleware(t *testing.T) {
+	var ents []ContainerEntry
+	testSetup(t, false)
+
+	testDirInode := createTestDirectory(t, "container")
+
+	marker1 := "a_marker"
+	_, err := testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, marker1, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	marker2 := "b_marker"
+	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, marker2, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "a", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 2 != len(ents) {
+		t.Fatalf("marker a gave wrong number of entries: %v", ents)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "b", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 1 != len(ents) {
+		t.Fatalf("marker b gave wrong number of entries: %v", ents)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "a_marker", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 1 != len(ents) {
+		t.Fatalf("marker a_marker gave wrong number of entries: %v", ents)
+	}
+
+	testTeardown(t)
+}
