@@ -235,10 +235,14 @@ git clone -b master --single-branch --depth 1 https://github.com/openstack/pytho
 cd python-swiftclient
 python setup.py develop
 
+echo "export ST_AUTH=http://localhost:8080/auth/v1.0" >> ~vagrant/.bash_profile
+echo "export ST_USER=test:tester" >> ~vagrant/.bash_profile
+echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
+
 cd ~swift
-git clone https://github.com/openstack/swift.git
+git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout e611f9e481a585f16e07de785e586c097336dd30
+git checkout ss-release-2.21.0.4
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
@@ -378,6 +382,10 @@ yum -y install sshpass-1.06-2.el7
 # Install dstat
 
 yum -y install dstat
+
+# Install tree
+
+yum -y install tree
 
 # All done
 
