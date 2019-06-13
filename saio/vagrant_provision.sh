@@ -306,6 +306,10 @@ s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
 EOF
 chown -R vagrant:vagrant ~vagrant/.aws
 
