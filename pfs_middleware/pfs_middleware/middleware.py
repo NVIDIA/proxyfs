@@ -372,7 +372,7 @@ def merge_object_metadata(old, new):
     old_ct = old.get("Content-Type")
     new_ct = new.get("Content-Type")
     if old_ct is not None:
-        if new_ct is None:
+        if not new_ct:
             merged["Content-Type"] = old_ct
         elif ';swift_bytes=' in old_ct:
             merged["Content-Type"] = '%s;swift_bytes=%s' % (
