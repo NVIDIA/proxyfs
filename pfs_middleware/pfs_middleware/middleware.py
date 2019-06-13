@@ -120,6 +120,9 @@ ZERO_FILL_PATH = "/0"
 
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
+# Beware: ORIGINAL_MD5_HEADER is random case, not title case, but is
+# stored on-disk just as defined here.  Care must be taken when comparing
+# it to incoming headers which are title case.
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 S3API_ETAG_HEADER = "X-Object-Sysmeta-S3Api-Etag"
 LISTING_ETAG_OVERRIDE_HEADER = \
@@ -363,7 +366,18 @@ def merge_container_metadata(old, new):
 
 
 def merge_object_metadata(old, new):
+    '''
+    Merge the existing metadata for an object with new metadata passed
+    in as a result of a POST operation.  X-Object-Sysmeta- and similar
+    metadata cannot be changed by a POST.
+    '''
+
     merged = new.copy()
+
+    for header, value in merged.items():
+        if (header.startswith("X-Object-Sysmeta-") or
+                header in STICKY_OBJECT_METADATA_HEADERS):
+            del merged[header]
 
     for header, value in old.items():
         if (header.startswith("X-Object-Sysmeta-") or
@@ -393,7 +407,8 @@ def extract_object_metadata_from_headers(headers):
 
     :param headers: request headers (a dictionary)
 
-    :returns: dictionary containing object-metadata headers
+    :returns: dictionary containing object-metadata headers (and not a
+    swob.HeaderKeyDict or similar object)
     """
     meta_headers = {}
     for header, value in headers.items():
@@ -402,7 +417,12 @@ def extract_object_metadata_from_headers(headers):
         if (header.startswith("X-Object-Meta-") or
                 header.startswith("X-Object-Sysmeta-") or
                 header in SPECIAL_OBJECT_METADATA_HEADERS):
-            meta_headers[header] = value
+
+            # do not let a client pass in ORIGINAL_MD5_HEADER
+            if header not in (ORIGINAL_MD5_HEADER,
+                              ORIGINAL_MD5_HEADER.title()):
+                meta_headers[header] = value
+
     return meta_headers
 
 
@@ -429,6 +449,7 @@ def extract_container_metadata_from_headers(req):
                 (req.environ.get('swift_owner', False) or
                  header not in SWIFT_OWNER_HEADERS)):
             meta_headers[header] = value
+
         if header.startswith("X-Remove-"):
             header = header.replace("-Remove", "", 1)
             if ((header.startswith("X-Container-Meta-") or
@@ -440,7 +461,8 @@ def extract_container_metadata_from_headers(req):
 
 
 def mung_etags(obj_metadata, etag, num_writes):
-    '''Mung the ETag headers that will be stored with an object.  The
+    '''
+    Mung the ETag headers that will be stored with an object.  The
     goal is to preserve ETag metadata passed down by other filters but
     to do so in such a way that it will be invalidated if there is a
     write to or truncate of the object via the ProxyFS file API.
@@ -455,8 +477,8 @@ def mung_etags(obj_metadata, etag, num_writes):
     ETag for the object (in the absence of other considerations).
 
     This assumes that all headers have been converted to "titlecase",
-    which means, among other things, that "ETag" will show up as
-    "Etag".
+    except ORIGINAL_MD5_HEADER which is the random case string
+    "X-Object-Sysmeta-ProxyFS-Initial-MD5".
 
     This ignores SLO headers because it assumes they have already been
     stripped.
@@ -482,6 +504,10 @@ def unmung_etags(obj_metadata, num_writes):
 
     Delete them if the object has changed or the header value
     does not parse correctly.
+
+    This assumes that all headers have been converted to "titlecase",
+    which means, among other things, that "ETag" will show up as
+    "Etag".
     '''
 
     # if the header is invalid or stale it is not added back after the pop
@@ -524,6 +550,12 @@ def best_possible_etag(obj_metadata, account_name, inum, num_writes,
     If the ETags in the metadata are invalid, construct and return a
     new ProxyFS ETag based on the account name, inode number, and
     number of writes.
+
+    obj_metadata may be a Python dictionary, a swob.HeaderKeyDict, or a
+    swob.HeaderEnvironProxy.  ORIGINAL_MD5_HEADER is random case, not
+    title case, but if obj_metadata is a Python dictionary it will
+    preserve the same random case.  The other two types do case folding so
+    we don't need to map ORIGINAL_MD5_HEADER to title case.
     '''
     if is_dir:
         return EMPTY_OBJECT_ETAG
@@ -1658,15 +1690,15 @@ class PfsMiddleware(object):
         # All the data is now in Swift; we just have to tell proxyfsd
         # about it.  Mung any passed ETags values to include the
         # number of writes to the file (basically, the object's update
-        # count) and supply the MD5 hash computed here which is the
-        # objects future ETag value if it is not subsequently updated.
+        # count) and supply the MD5 hash computed here which becomes
+        # object's future ETag value until the object updated.
         obj_metadata = extract_object_metadata_from_headers(req.headers)
         mung_etags(obj_metadata, hasher.hexdigest(), len(log_segments))
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
         try:
-            mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
+            mtime_ns, inode, __writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
         except utils.RpcError as err:
             # We deliberately don't try to clean up our log segments on
@@ -1713,7 +1745,7 @@ class PfsMiddleware(object):
 
         try:
             head_response = self.rpc_call(ctx, rpc.head_request(path))
-            raw_old_metadata, mtime, _, _, inode_number, num_writes = \
+            raw_old_metadata, mtime, _, _, inode_number, _ = \
                 rpc.parse_head_response(head_response)
         except utils.RpcError as err:
             if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
@@ -1721,22 +1753,15 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        # We need to unmung and then mung the headers because the POST may
-        # supply a value S3API_ETAG_HEADER or LISTING_ETAG_OVERRIDE_HEADER
-        # (or ORIGINAL_MD5_HEADER?).  While merge_object_metadata() will
-        # not let these overwrite an existing header, they can be added to
-        # an object that doesn't have such a header.
+        # There is no need to call unmung_etags() before the merge and
+        # mung_etags() after because the merge cannot change the several
+        # possible ETag headers.
         #
-        # Note that if an ETag header is stale (because NumWrites has
-        # changed) then unmung_etags() will strip it and it will not be
-        # put back by mung_etags().
+        # This might be an opportunity to drop an ETAG header that has
+        # become stale due to num_writes changing, but that does not
+        # seem important to address.
         old_metadata = deserialize_metadata(raw_old_metadata)
-        unmung_etags(old_metadata, num_writes)
-
-        etag = old_metadata.get(ORIGINAL_MD5_HEADER)
-
         merged_metadata = merge_object_metadata(old_metadata, new_metadata)
-        mung_etags(merged_metadata, etag, num_writes)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
         self.rpc_call(ctx, rpc.post_request(
@@ -1931,8 +1956,9 @@ class PfsMiddleware(object):
         raw_md, last_modified_ns, file_size, is_dir, ino, num_writes = \
             rpc.parse_head_response(head_response)
 
-        headers = swob.HeaderKeyDict(deserialize_metadata(raw_md))
-        unmung_etags(headers, num_writes)
+        metadata = deserialize_metadata(raw_md)
+        unmung_etags(metadata, num_writes)
+        headers = swob.HeaderKeyDict(metadata)
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
@@ -2071,9 +2097,10 @@ class PfsMiddleware(object):
         last_modified_ns, inum, num_writes = \
             rpc.parse_coalesce_object_response(coalesce_response)
 
+        unmung_etags(obj_metadata, num_writes)
         headers = {}
         headers["Etag"] = best_possible_etag(
-            headers, ctx.account_name, inum, num_writes)
+            obj_metadata, ctx.account_name, inum, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

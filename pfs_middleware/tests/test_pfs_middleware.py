@@ -4114,8 +4114,7 @@ class TestObjectCoalesce(BaseMiddlewareTest):
 
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
-        self.assertEqual(headers["Etag"],
-                         '"pfsv2/AUTH_test/00045275/00000005-32"')
+        self.assertEqual(headers["Etag"], '10340ab593ac8c32290a278e36d1f8df')
 
         # The first call is a call to RpcIsAccountBimodal, the last is the one
         # we care about: RpcCoalesce. There *could* be some intervening calls
