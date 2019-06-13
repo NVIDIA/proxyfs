@@ -428,8 +428,9 @@ def make_subrequest(env, method=None, path=None, body=None, headers=None,
     path = path or ''
     if path and '?' in path:
         path, query_string = path.split('?', 1)
-    newenv = make_env(env, method, path=unquote(path), agent=agent,
-                      query_string=query_string, swift_source=swift_source)
+    newenv = make_env(env, method, path=text_to_wsgi(unquote(path)),
+                      agent=agent, query_string=query_string,
+                      swift_source=swift_source)
     if not headers:
         headers = {}
     if body:
@@ -1082,3 +1083,10 @@ def bytes_to_wsgi(byte_str):
     if six.PY2:
         return byte_str
     return byte_str.decode('latin1')
+
+
+# this isn't in swift
+def text_to_wsgi(text):
+    if six.PY2 and isinstance(text, six.text_type):
+        return text.encode('utf-8')
+    return text
