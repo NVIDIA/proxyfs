@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -711,40 +710,39 @@ func (p *Profiler) Dump() {
 
 func FetchRandomBool() (randBool bool) {
 	var (
-		err         error
-		randByteBuf []byte
+		randByteSlice []byte
 	)
 
-	randByteBuf = make([]byte, 1)
+	randByteSlice = FetchRandomByteSlice(1)
 
-	_, err = rand.Read(randByteBuf)
-	if nil != err {
-		err = fmt.Errorf("rand.Read(randByteBuf) failed: %v", err)
-		panic(err)
-	}
-
-	randBool = (randByteBuf[0] < 0x80)
+	randBool = (randByteSlice[0] < 0x80)
 
 	return
 }
 
-func PerformDelayAndComputeNextDelay(thisDelay time.Duration, nextDelayMin time.Duration, nextDelayMax time.Duration) (nextDelay time.Duration, err error) {
+func FetchRandomUint64() (randUint64 uint64) {
 	var (
-		randomBigInt *big.Int
+		randByteSlice []byte
 	)
 
-	// Sleep for thisDelay first
+	randByteSlice = FetchRandomByteSlice(8)
 
-	time.Sleep(thisDelay)
+	randUint64 = binary.LittleEndian.Uint64(randByteSlice)
 
-	// Now compute nextDelay (between nextDelayMin & nextDelayMax)
+	return
+}
 
-	randomBigInt, err = rand.Int(rand.Reader, big.NewInt(int64(nextDelayMax)-int64(nextDelayMin)))
+func FetchRandomByteSlice(len int) (randByteSlice []byte) {
+	var (
+		err error
+	)
 
-	if nil == err {
-		nextDelay = time.Duration(int64(nextDelayMin) + randomBigInt.Int64())
-	} else {
-		err = fmt.Errorf("utils.retryBackup() failed in call to rand.Int(): %v", err)
+	randByteSlice = make([]byte, len)
+
+	_, err = rand.Read(randByteSlice)
+	if nil != err {
+		err = fmt.Errorf("rand.Read(randByteSlice) failed: %v", err)
+		panic(err)
 	}
 
 	return

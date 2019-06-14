@@ -127,30 +127,30 @@ func TestGetstat(t *testing.T) {
 
 // TestAllAPIPositiveCases() follows the following "positive" test steps:
 //
-//    Mount             A                                    : mount the specified test Volume (must be empty)
-//    Mkdir             A/B/                                 : create a subdirectory within Volume directory
-//    Create         #1 A/C                                  : create and open a normal file within Volume directory
-//    Lookup         #1 A/C                                  : fetch the inode name of the just created normal file
-//    Write             A/C                                  : write something to normal file
-//    Read              A/C                                  : read back what was just written to normal file
-//    FetchReadPlan     A/C                                  : fetch readPlan for entire file
-//    Getstat        #1 A/C                                  : check the current size of the normal file
-//    Resize            A/C                                  : truncate the file
-//    Getstat        #2 A/C                                  : verify the size of the normal file is now zero
-//    Symlink           A/D->A/C                             : create a symlink to the normal file
-//    Lookup         #2 A/D                                  : fetch the inode name of the just created symlink
-//    Readsymlink       A/D                                  : read the symlink to ensure it points to the normal file
-//    Lookup         #3 A/B/                                 : fetch the inode name of the subdirectory
-//    Create         #2 A/B/E                                : create a normal file within subdirectory
-//    Readdir        #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
-//    Statfs            A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
-//    Unlink         #1 A/B/E                                : delete the normal file within the subdirectory
-//    Readdir        #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
-//    Readdir        #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
-//    Unlink         #2 A/D                                  : delete the symlink
-//    Unlink         #3 A/C                                  : delete the normal file
-//    Unlink         #4 A/B                                  : delete the subdirectory
-//    Unmount           A                                    : unmount the Volume
+//    Mount                   A                                    : mount the specified test Volume (must be empty)
+//    Mkdir                   A/B/                                 : create a subdirectory within Volume directory
+//    Create               #1 A/C                                  : create and open a normal file within Volume directory
+//    Lookup               #1 A/C                                  : fetch the inode name of the just created normal file
+//    Write                   A/C                                  : write something to normal file
+//    Read                    A/C                                  : read back what was just written to normal file
+//    FetchExtentMapChunk     A/C                                  : fetch extentMapChunk for entire file
+//    Getstat              #1 A/C                                  : check the current size of the normal file
+//    Resize                  A/C                                  : truncate the file
+//    Getstat              #2 A/C                                  : verify the size of the normal file is now zero
+//    Symlink                 A/D->A/C                             : create a symlink to the normal file
+//    Lookup               #2 A/D                                  : fetch the inode name of the just created symlink
+//    Readsymlink             A/D                                  : read the symlink to ensure it points to the normal file
+//    Lookup               #3 A/B/                                 : fetch the inode name of the subdirectory
+//    Create               #2 A/B/E                                : create a normal file within subdirectory
+//    Readdir              #1 A/B/ (prev == "",  max_entries == 0) : ensure we get only ".", "..", and "E"
+//    Statfs                  A                                    : should report A has 4 "files" (normal & symlink) and 1 directory "ideally"
+//    Unlink               #1 A/B/E                                : delete the normal file within the subdirectory
+//    Readdir              #2 A/   (prev == "",  max_entries == 3) : ensure we get only ".", ".." & "B"
+//    Readdir              #3 A/   (prev == "B", max_entries == 3) : ensure we get only "C" & "D"
+//    Unlink               #2 A/D                                  : delete the symlink
+//    Unlink               #3 A/C                                  : delete the normal file
+//    Unlink               #4 A/B                                  : delete the subdirectory
+//    Unmount                 A                                    : unmount the Volume
 //
 // TODO: Rename(), Link() tests
 
@@ -217,18 +217,30 @@ func TestAllAPIPositiveCases(t *testing.T) {
 		t.Fatalf("Read() returned data different from what was written")
 	}
 
-	read_plan, err := testMountStruct.FetchReadPlan(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, uint64(0), uint64(len(bufToWrite)))
+	extent_map_chunk, err := testMountStruct.FetchExtentMapChunk(inode.InodeRootUserID, inode.InodeGroupID(0), nil, createdFileInodeNumber, uint64(0), int64(1), int64(0))
 	if nil != err {
-		t.Fatalf("FetchReadPlan() returned error: %v", err)
+		t.Fatalf("FetchExtentMapChunk() returned error: %v", err)
 	}
-	if 1 != len(read_plan) {
-		t.Fatalf("FetchReadPlan() returned unexpected len(read_plan): %v (should be 1)", len(read_plan))
+	if 0 != extent_map_chunk.FileOffsetRangeStart {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected FileOffsetRangeStart: %v (should be 0)", extent_map_chunk.FileOffsetRangeStart)
 	}
-	if uint64(0) != read_plan[0].Offset {
-		t.Fatalf("FetchReadPlan() returned unexpected read_plan[0].Offset: %v (should be 0)", read_plan[0].Offset)
+	if uint64(len(bufToWrite)) != extent_map_chunk.FileOffsetRangeEnd {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected FileOffsetRangeEnd: %v (should be %v)", len(bufToWrite), extent_map_chunk.FileOffsetRangeEnd)
 	}
-	if uint64(len(bufToWrite)) != read_plan[0].Length {
-		t.Fatalf("FetchReadPlan() returned unexpected read_plan[0].Length: %v (should be %v)", read_plan[0].Length, uint64(len(bufToWrite)))
+	if uint64(len(bufToWrite)) != extent_map_chunk.FileSize {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected FileSize: %v (should be %v)", len(bufToWrite), extent_map_chunk.FileSize)
+	}
+	if 1 != len(extent_map_chunk.ExtentMapEntry) {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected len(ExtentMapEntry slice): %v (should be 1)", len(extent_map_chunk.ExtentMapEntry))
+	}
+	if uint64(0) != extent_map_chunk.ExtentMapEntry[0].FileOffset {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected ExtentMapEntry[0].FileOffset: %v (should be 0)", extent_map_chunk.ExtentMapEntry[0].FileOffset)
+	}
+	if uint64(len(bufToWrite)) != extent_map_chunk.ExtentMapEntry[0].Length {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected ExtentMapEntry[0].Length: %v (should be %v)", extent_map_chunk.ExtentMapEntry[0].Length, uint64(len(bufToWrite)))
+	}
+	if uint64(0) != extent_map_chunk.ExtentMapEntry[0].LogSegmentOffset {
+		t.Fatalf("FetchExtentMapChunk() returned unexpected ExtentMapEntry[0].LogSegmentOffset: %v (should be 0)", extent_map_chunk.ExtentMapEntry[0].LogSegmentOffset)
 	}
 
 	//    Getstat     #1 A/C                                  : check the current size of the normal file
@@ -1018,6 +1030,50 @@ func TestStaleInodes(t *testing.T) {
 		rootDirInodeNumber, testDirname)
 	if nil != err {
 		t.Fatalf("Rmdir() of '%s' returned error: %v", testDirname, err)
+	}
+
+	testTeardown(t)
+}
+
+func TestMiddlewareGetContainer(t *testing.T) {
+	var ents []ContainerEntry
+	testSetup(t, false)
+
+	testDirInode := createTestDirectory(t, "container")
+
+	marker1 := "a_marker"
+	_, err := testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, marker1, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	marker2 := "b_marker"
+	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testDirInode, marker2, inode.PosixModePerm)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "a", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 2 != len(ents) {
+		t.Fatalf("marker a gave wrong number of entries: %v", ents)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "b", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 1 != len(ents) {
+		t.Fatalf("marker b gave wrong number of entries: %v", ents)
+	}
+
+	ents, err = testMountStruct.MiddlewareGetContainer("container", 10, "a_marker", "", "", "")
+	if nil != err {
+		t.Fatalf("got some error: %v", err)
+	}
+	if 1 != len(ents) {
+		t.Fatalf("marker a_marker gave wrong number of entries: %v", ents)
 	}
 
 	testTeardown(t)

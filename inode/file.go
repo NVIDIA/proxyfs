@@ -387,6 +387,174 @@ func (vS *volumeStruct) getReadPlanHelper(snapShotID uint64, fileInode *inMemory
 	return
 }
 
+func (vS *volumeStruct) FetchExtentMapChunk(fileInodeNumber InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *ExtentMapChunkStruct, err error) {
+	var (
+		containerName               string
+		encodedLogSegmentNumber     uint64
+		extentMap                   sortedmap.BPlusTree
+		extentMapLen                int
+		extentMapIndex              int
+		extentMapIndexAtOffset      int
+		extentMapIndexAtOffsetFound bool
+		extentMapIndexEnd           int
+		extentMapIndexStart         int
+		fileExtent                  *fileExtentStruct
+		fileExtentAsValue           sortedmap.Value
+		fileInode                   *inMemoryInodeStruct
+		objectName                  string
+		snapShotID                  uint64
+	)
+
+	// Validate args
+
+	if maxEntriesFromFileOffset < 1 {
+		err = fmt.Errorf("inode.FetchExtentMap() requires maxEntriesFromOffset (%d) >= 1", maxEntriesFromFileOffset)
+		return
+	}
+	if maxEntriesBeforeFileOffset < 0 {
+		err = fmt.Errorf("inode.FetchExtentMap() requires maxEntriesBeforeOffset (%d) >= 0", maxEntriesBeforeFileOffset)
+		return
+	}
+
+	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
+	if nil != err {
+		return
+	}
+
+	// Ensure in-flight LogSegments are flushed
+
+	if fileInode.dirty {
+		err = flush(fileInode, false)
+		if nil != err {
+			logger.ErrorWithError(err)
+			return
+		}
+	}
+
+	// Locate extent that either contains fileOffset,
+	//   or if no extent does, that we select the one just after fileOffset
+
+	extentMap = fileInode.payload.(sortedmap.BPlusTree)
+
+	extentMapLen, err = extentMap.Len()
+	if nil != err {
+		panic(err)
+	}
+
+	if 0 == extentMapLen {
+		// In the absence of any extents, just describe entire fileInode as zero-filled
+
+		extentMapChunk = &ExtentMapChunkStruct{
+			FileOffsetRangeStart: 0,
+			FileOffsetRangeEnd:   fileInode.Size,
+			FileSize:             fileInode.Size,
+			ExtentMapEntry:       make([]ExtentMapEntryStruct, 0),
+		}
+		return
+	}
+
+	extentMapIndexAtOffset, extentMapIndexAtOffsetFound, err = extentMap.BisectLeft(fileOffset)
+	if nil != err {
+		panic(err)
+	}
+
+	if !extentMapIndexAtOffsetFound {
+		if extentMapIndexAtOffset >= 0 {
+			_, fileExtentAsValue, _, err = extentMap.GetByIndex(extentMapIndexAtOffset)
+			if nil != err {
+				panic(err)
+			}
+
+			fileExtent = fileExtentAsValue.(*fileExtentStruct)
+
+			if (fileExtent.FileOffset + fileExtent.Length) <= fileOffset {
+				extentMapIndexAtOffset++
+			}
+		} else {
+			extentMapIndexAtOffset = 0
+		}
+	}
+
+	// Compute extent indices surrounding fileOffset that are also requested
+
+	if int64(extentMapIndexAtOffset) > maxEntriesBeforeFileOffset {
+		extentMapIndexStart = extentMapIndexAtOffset - int(maxEntriesBeforeFileOffset)
+	} else {
+		extentMapIndexStart = 0
+	}
+
+	if int64(extentMapLen-extentMapIndexAtOffset) <= maxEntriesFromFileOffset {
+		extentMapIndexEnd = extentMapLen - 1
+	} else {
+		extentMapIndexEnd = extentMapIndexAtOffset + int(maxEntriesFromFileOffset) - 1
+	}
+
+	// Populate extentMapChunk with selected extents
+
+	_, snapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
+
+	extentMapChunk = &ExtentMapChunkStruct{
+		FileSize:       fileInode.Size,
+		ExtentMapEntry: make([]ExtentMapEntryStruct, 0, extentMapIndexEnd-extentMapIndexStart+1),
+	}
+
+	// Fill in FileOffsetRangeStart to include zero-filled (non-)extent just before first returned extent
+
+	if extentMapIndexStart > 0 {
+		_, fileExtentAsValue, _, err = extentMap.GetByIndex(extentMapIndexStart - 1)
+		if nil != err {
+			panic(err)
+		}
+
+		fileExtent = fileExtentAsValue.(*fileExtentStruct)
+
+		extentMapChunk.FileOffsetRangeStart = fileExtent.FileOffset + fileExtent.Length
+	} else {
+		extentMapChunk.FileOffsetRangeStart = 0
+	}
+
+	for extentMapIndex = extentMapIndexStart; extentMapIndex <= extentMapIndexEnd; extentMapIndex++ {
+		_, fileExtentAsValue, _, err = extentMap.GetByIndex(extentMapIndex)
+		if nil != err {
+			panic(err)
+		}
+
+		fileExtent = fileExtentAsValue.(*fileExtentStruct)
+
+		encodedLogSegmentNumber = vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(snapShotID, fileExtent.LogSegmentNumber)
+
+		containerName, objectName, _, err = vS.getObjectLocationFromLogSegmentNumber(encodedLogSegmentNumber)
+		if nil != err {
+			panic(err)
+		}
+
+		extentMapChunk.ExtentMapEntry = append(extentMapChunk.ExtentMapEntry, ExtentMapEntryStruct{
+			FileOffset:       fileExtent.FileOffset,
+			LogSegmentOffset: fileExtent.LogSegmentOffset,
+			Length:           fileExtent.Length,
+			ContainerName:    containerName,
+			ObjectName:       objectName,
+		})
+	}
+
+	// Fill in FileOffsetRangeEnd to included zero-filled (non-)extent just after last returned extent
+
+	if (extentMapIndexEnd + 1) == extentMapLen {
+		extentMapChunk.FileOffsetRangeEnd = fileInode.Size
+	} else {
+		_, fileExtentAsValue, _, err = extentMap.GetByIndex(extentMapIndexEnd + 1)
+		if nil != err {
+			panic(err)
+		}
+
+		fileExtent = fileExtentAsValue.(*fileExtentStruct)
+
+		extentMapChunk.FileOffsetRangeEnd = fileExtent.FileOffset
+	}
+
+	return
+}
+
 func incrementLogSegmentMapFileData(fileInode *inMemoryInodeStruct, logSegmentNumber uint64, incrementAmount uint64) {
 	logSegmentRecord, ok := fileInode.LogSegmentMap[logSegmentNumber]
 	if ok {
@@ -583,6 +751,10 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 		}
 	}
 
+	if (fileOffset + length) > fileInode.Size {
+		fileInode.Size = fileOffset + length
+	}
+
 	incrementLogSegmentMapFileData(fileInode, logSegmentNumber, length)
 
 	return nil
@@ -615,19 +787,12 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	}
 
 	length := uint64(len(buf))
+	startingSize := fileInode.Size
 
 	err = recordWrite(fileInode, offset, length, logSegmentNumber, logSegmentOffset)
 	if nil != err {
 		logger.ErrorWithError(err)
 		return
-	}
-
-	startingSize := fileInode.Size
-
-	offsetJustAfterWhereBufLogicallyWritten := offset + length
-
-	if offsetJustAfterWhereBufLogicallyWritten > startingSize {
-		fileInode.Size = offsetJustAfterWhereBufLogicallyWritten
 	}
 
 	appendedBytes := fileInode.Size - startingSize
@@ -643,7 +808,12 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	return
 }
 
-func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, objectPath string, objectOffset uint64, length uint64, patchOnly bool) (err error) {
+func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
+	if (len(fileOffset) != len(objectOffset)) || (len(objectOffset) != len(length)) {
+		err = fmt.Errorf("Wrote() called with unequal # of fileOffset's (%d), objectOffset's (%d), and length's (%d)", len(fileOffset), len(objectOffset), len(length))
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("Wrote() on non-LiveView fileInodeNumber not allowed")
@@ -659,14 +829,6 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 	if fileInode.dirty {
 		err = flush(fileInode, false)
 		if nil != err {
-			logger.ErrorWithError(err)
-			return
-		}
-	}
-
-	if !patchOnly {
-		if 0 != fileOffset || 0 != objectOffset {
-			err = fmt.Errorf("non-patch calls to Wrote() with non-zero offsets not supported")
 			logger.ErrorWithError(err)
 			return
 		}
@@ -693,40 +855,42 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, fileOffset uint64, ob
 
 	fileInode.dirty = true
 
-	err = recordWrite(fileInode, fileOffset, length, logSegmentNumber, objectOffset)
-	if err != nil {
-		logger.ErrorWithError(err)
-		return
-	}
-
-	if patchOnly {
-		if (fileOffset + length) > fileInode.Size {
-			fileInode.Size = fileOffset + length
-		}
-
-		updateTime := time.Now()
-		fileInode.ModificationTime = updateTime
-		fileInode.AttrChangeTime = updateTime
-
-		fileInode.NumWrites++
-	} else {
-		err = setSizeInMemory(fileInode, length)
+	if !patchOnly {
+		err = setSizeInMemory(fileInode, 0)
 		if err != nil {
 			logger.ErrorWithError(err)
 			return
 		}
+	}
+
+	bytesWritten := uint64(0)
+
+	for i, thisLength := range length {
+		if 0 < thisLength {
+			err = recordWrite(fileInode, fileOffset[i], thisLength, logSegmentNumber, objectOffset[i])
+			if err != nil {
+				logger.ErrorWithError(err)
+				return
+			}
+
+			fileInode.NumWrites++
+			bytesWritten += thisLength
+		}
+	}
+
+	if !patchOnly {
+		// For this case only, make it appear we did precisely one write
 
 		fileInode.NumWrites = 1
 	}
 
-	fileInode.dirty = true
 	err = fileInode.volume.flushInode(fileInode)
 	if err != nil {
 		logger.ErrorWithError(err)
 		return
 	}
 
-	stats.IncrementOperationsAndBucketedBytes(stats.FileWrote, length)
+	stats.IncrementOperationsAndBucketedBytes(stats.FileWrote, bytesWritten)
 
 	return
 }
@@ -750,6 +914,9 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 		logger.ErrorWithError(err)
 		return
 	}
+
+	// changing the file's size is just like a write
+	fileInode.NumWrites++
 
 	err = fileInode.volume.flushInode(fileInode)
 	if nil != err {
@@ -826,7 +993,6 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	)
 
 	fileInode.dirty = true
-
 	fileInodeExtentMap = fileInode.payload.(sortedmap.BPlusTree)
 
 	ok = true
@@ -846,9 +1012,13 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	return
 }
 
-func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (coalesceTime time.Time, numWrites uint64, fileSize uint64, err error) {
+func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string,
+	metaData []byte, elements []*CoalesceElement) (
+	attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error) {
+
 	var (
 		alreadyInInodeMap                  bool
+		coalesceTime                       time.Time
 		destInode                          *inMemoryInodeStruct
 		destInodeExtentMap                 sortedmap.BPlusTree
 		destInodeOffsetBeforeElementAppend uint64
@@ -967,7 +1137,7 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 
 	for _, element = range elements {
 		elementInode = inodeMap[element.ElementInodeNumber]
-		destInode.NumWrites += elementInode.NumWrites
+		destInode.NumWrites += 1
 		elementInodeExtentMap = elementInode.payload.(sortedmap.BPlusTree)
 		elementInodeExtentMapLen, err = elementInodeExtentMap.Len()
 		for elementInodeExtentMapIndex = 0; elementInodeExtentMapIndex < elementInodeExtentMapLen; elementInodeExtentMapIndex++ {
@@ -1023,16 +1193,21 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, elements []*Coales
 	}
 
 	// Now, destInode is fully assembled... update its metadata & assemble remaining results
-
 	coalesceTime = time.Now()
-
 	destInode.CreationTime = coalesceTime
 	destInode.AttrChangeTime = coalesceTime
 	destInode.ModificationTime = coalesceTime
 
-	numWrites = destInode.NumWrites
+	// attach new middleware headers (why are we making a copy?)
+	inodeStreamBuf := make([]byte, len(metaData))
+	copy(inodeStreamBuf, metaData)
+	destInode.StreamMap[metaDataName] = inodeStreamBuf
 
+	// collect the NumberOfWrites value while locked (important for Etag)
+	numWrites = destInode.NumWrites
 	fileSize = destInode.Size
+	attrChangeTime = destInode.AttrChangeTime
+	modificationTime = destInode.ModificationTime
 
 	// Now, destInode is fully assembled... need to remove all elements references to currently shared LogSegments
 

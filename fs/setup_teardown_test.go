@@ -92,8 +92,9 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"VolumeGroup:TestVolumeGroup.ReadCacheLineSize=1000000",
 		"VolumeGroup:TestVolumeGroup.ReadCacheWeight=100",
 		"FSGlobals.VolumeGroupList=TestVolumeGroup",
-		"FSGlobals.TryLockBackoffMin=100us",
-		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.TryLockBackoffMin=10ms",
+		"FSGlobals.TryLockBackoffMax=50ms",
+		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
@@ -145,7 +146,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("transitions.Up() failed: %v", err)
 	}
 
-	mountHandle, err = Mount("TestVolume", MountOptions(0))
+	mountHandle, err = MountByVolumeName("TestVolume", MountOptions(0))
 	if nil != err {
 		t.Fatalf("fs.Mount() failed: %v", err)
 	}

@@ -88,6 +88,10 @@ var (
 
 	DirFileBPlusTreeNodeFaults = "proxyfs.inode.payload.node.fault.operations"
 
+	InodeTryLockBackoffOps           = "proxyfs.fs.trylock.backoff.operations"
+	InodeTryLockDelayedBackoffOps    = "proxyfs.fs.trylock.delayed.backoff.operations"
+	InodeTryLockSerializedBackoffOps = "proxyfs.fs.trylock.serialized.backoff.operations"
+
 	InodeRecCacheHits                = "proxyfs.headhunter.inode.rec.cache.hit.operations"
 	InodeRecCacheMisses              = "proxyfs.headhunter.inode.rec.cache.miss.operations"
 	LogSegmentRecCacheHits           = "proxyfs.headhunter.log.segment.rec.cache.hit.operations"

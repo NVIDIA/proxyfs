@@ -39,8 +39,9 @@ func TestAPI(t *testing.T) {
 		"Logging.LogToConsole=false",
 		"Cluster.WhoAmI=nobody",
 		"FSGlobals.VolumeGroupList=",
-		"FSGlobals.TryLockBackoffMin=100us",
-		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.TryLockBackoffMin=10ms",
+		"FSGlobals.TryLockBackoffMax=50ms",
+		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
 		"EventLog.Enabled=true",
 		"EventLog.BufferKey=9876",     // Don't conflict with a running instance

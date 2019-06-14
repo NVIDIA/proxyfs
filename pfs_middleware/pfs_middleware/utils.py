@@ -81,7 +81,7 @@ class JsonRpcClient(object):
     def __init__(self, addrinfo):
         self.addrinfo = addrinfo
 
-    def call(self, rpc_request, timeout):
+    def call(self, rpc_request, timeout, raise_on_rpc_error=True):
         """
         Call a remote procedure using JSON-RPC.
 
@@ -93,7 +93,9 @@ class JsonRpcClient(object):
 
         :raises: socket.error if the TCP connection breaks
         :raises: RpcTimeout if the RPC takes too long
-        :raises: RpcError if the RPC returns an error
+        :raises: ValueError if the response is not valid JSON
+        :raises: RpcError if the RPC returns an error and raise_on_rpc_error
+                 is True
         """
         serialized_req = json.dumps(rpc_request).encode("utf-8")
 
@@ -133,7 +135,7 @@ class JsonRpcClient(object):
                             % (err, line))
 
                 errstr = response.get("error")
-                if errstr:
+                if errstr and raise_on_rpc_error:
                     errno = extract_errno(errstr)
                     raise RpcError(errno, "Error in %s: %s" % (
                         rpc_request.get("method", "<unknown method>"),

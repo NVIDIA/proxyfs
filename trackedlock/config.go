@@ -41,6 +41,9 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 		globals.lockCheckPeriod = 0
 	}
 
+	logger.Infof("trackedlock pkg: LockHoldTimeLimit %d sec  LockCheckPeriod %d sec",
+		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
+
 	// log information upto 16 locks
 	globals.lockWatcherLocksLogged = 16
 
@@ -52,7 +55,7 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 // at the appropriate times and config changes.
 //
 func init() {
-	transitions.Register("swiftclient", &globals)
+	transitions.Register("trackedlock", &globals)
 }
 
 // Up() initializes the package.  It must be called and successfully return
@@ -67,9 +70,6 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		// parseConfMap() has logged an error
 		return
 	}
-	logger.Infof("trackedlock.Up(): LockHoldTimeLimit %d sec  LockCheckPeriod %d sec",
-		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
-
 	globals.mutexMap = make(map[*MutexTrack]interface{}, 128)
 	globals.rwMutexMap = make(map[*RWMutexTrack]interface{}, 128)
 	globals.stopChan = make(chan struct{})
@@ -125,7 +125,7 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 		return
 	}
 
-	logger.Infof("trackedlock lock hold time limit/lock check period changing from %d/%d sec to %d/%d sec",
+	logger.Infof("trackedlock pkg: LockHoldTimeLimit / LockCheckPeriod changed from %d/%d sec to %d/%d sec",
 		oldTimeLimit/time.Second, oldCheckPeriod/time.Second,
 		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
 

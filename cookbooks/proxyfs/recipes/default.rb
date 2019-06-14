@@ -101,6 +101,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
     file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
+    file.insert_line_if_no_match(/ST_AUTH/, "export ST_AUTH=http://localhost:8080/auth/v1.0")
+    file.insert_line_if_no_match(/ST_USER/, "export ST_USER=test:tester")
+    file.insert_line_if_no_match(/ST_KEY/, "export ST_KEY=testing")
     file.write_file
 
     unless File.exist?(ROOT_DOT_BASH_PROFILE)
@@ -133,6 +136,9 @@ ruby_block "update_profile_and_bashrc" do
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
     file.insert_line_if_no_match(/statmnt/, "alias statmnt='stat /mnt/*'")
+    file.insert_line_if_no_match(/ST_AUTH/, "export ST_AUTH=http://localhost:8080/auth/v1.0")
+    file.insert_line_if_no_match(/ST_USER/, "export ST_USER=test:tester")
+    file.insert_line_if_no_match(/ST_KEY/, "export ST_KEY=testing")
     file.write_file
 
   end
@@ -431,7 +437,6 @@ end
 #
 execute "Create SMB mount point" do
   command "mkdir /mnt/smb_proxyfs_mount"
-  cwd "#{VFS_SRC_DIR}"
   not_if { ::Dir.exists?("/mnt/smb_proxyfs_mount") }
 end
 
@@ -451,6 +456,16 @@ ruby_block "Create exports entry" do
     editor.insert_line_if_no_match("CommonMountPoint", "/CommonMountPoint 127.0.0.1(rw,sync,fsid=1000,no_subtree_check,no_root_squash)")
     editor.write_file
   end
+end
+
+#
+# Enable user processes to do FUSE stuff
+#
+bash 'Enable UserMode FUSE' do
+  code <<-EOH
+  chmod +x /bin/fusermount
+  echo "user_allow_other" > /etc/fuse.conf
+  EOH
 end
 
 #
@@ -502,12 +517,19 @@ if ss_packages
   end
 
   # Creating link to vfs' libs into the new /opt/ss path
-  bash 'Link VFS' do
-    code <<-EOH
-    /usr/bin/install -c -d /opt/ss/lib64/samba/vfs
-    /usr/bin/install -c -m 755 proxyfs.so /opt/ss/lib64/samba/vfs
-    EOH
-    cwd VFS_SRC_DIR
+  directory '/opt/ss/lib64/samba/vfs' do
+    owner 'root'
+    group 'root'
+    mode '0755'
+    action :create
+  end
+
+  link '/opt/ss/lib64/samba/vfs/proxyfs.so' do
+    to "#{VFS_SRC_DIR}/proxyfs.so"
+    link_type :symbolic
+    owner "root"
+    group "root"
+    mode '0755'
   end
 end
 
@@ -540,6 +562,10 @@ s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
 EOF
 chown -R swift:swift ~swift/.aws
     EOH
@@ -556,6 +582,10 @@ endpoint = awscli_plugin_endpoint
 aws_access_key_id = test:tester
 aws_secret_access_key = testing
 s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB

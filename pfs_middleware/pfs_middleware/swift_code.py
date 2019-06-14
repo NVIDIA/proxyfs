@@ -428,8 +428,9 @@ def make_subrequest(env, method=None, path=None, body=None, headers=None,
     path = path or ''
     if path and '?' in path:
         path, query_string = path.split('?', 1)
-    newenv = make_env(env, method, path=unquote(path), agent=agent,
-                      query_string=query_string, swift_source=swift_source)
+    newenv = make_env(env, method, path=text_to_wsgi(unquote(path)),
+                      agent=agent, query_string=query_string,
+                      swift_source=swift_source)
     if not headers:
         headers = {}
     if body:
@@ -1061,3 +1062,31 @@ def clean_acls(req):
                 except ValueError as err:
                     return HTTPBadRequest(request=req, body=str(err))
     return None
+
+
+# Taken from swift/common/swob.py, commit a5a6a27
+#
+# Modified to pass through Nones
+def wsgi_to_str(wsgi_str):
+    if six.PY2 or wsgi_str is None:
+        return wsgi_str
+    return wsgi_str.encode('latin1').decode('utf8', errors='surrogateescape')
+
+
+def str_to_wsgi(native_str):
+    if six.PY2 or native_str is None:
+        return native_str
+    return native_str.encode('utf8', errors='surrogateescape').decode('latin1')
+
+
+def bytes_to_wsgi(byte_str):
+    if six.PY2:
+        return byte_str
+    return byte_str.decode('latin1')
+
+
+# this isn't in swift
+def text_to_wsgi(text):
+    if six.PY2 and isinstance(text, six.text_type):
+        return text.encode('utf-8')
+    return text

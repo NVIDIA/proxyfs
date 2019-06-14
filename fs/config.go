@@ -50,15 +50,24 @@ type volumeStruct struct {
 	headhunterVolumeHandle   headhunter.VolumeHandle
 }
 
+type tryLockBackoffContextStruct struct {
+	sync.WaitGroup
+	backoffsCompleted uint64 // Note that tryLockBackoffContextStruct{} sets this to zero
+}
+
 type globalsStruct struct {
 	trackedlock.Mutex
+
+	tryLockBackoffMin              time.Duration
+	tryLockBackoffMax              time.Duration
+	tryLockSerializationThreshhold uint64
+	symlinkMax                     uint16
+
 	volumeMap                 map[string]*volumeStruct // key == volumeStruct.volumeName
 	mountMap                  map[MountID]*mountStruct
 	lastMountID               MountID
 	inFlightFileInodeDataList *list.List
-	tryLockBackoffMin         time.Duration
-	tryLockBackoffMax         time.Duration
-	symlinkMax                uint16
+	serializedBackoffList     *list.List
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
@@ -99,42 +108,42 @@ type globalsStruct struct {
 	WriteUsec          bucketstats.BucketLog2Round
 	WriteBytes         bucketstats.BucketLog2Round
 
-	CreateErrors         bucketstats.Total
-	FetchReadPlanErrors  bucketstats.Total
-	FlushErrors          bucketstats.Total
-	FlockOtherErrors     bucketstats.Total
-	FlockGetErrors       bucketstats.Total
-	FlockLockErrors      bucketstats.Total
-	FlockUnlockErrors    bucketstats.Total
-	GetstatErrors        bucketstats.Total
-	GetTypeErrors        bucketstats.Total
-	GetXAttrErrors       bucketstats.Total
-	IsDirErrors          bucketstats.Total
-	IsFileErrors         bucketstats.Total
-	IsSymlinkErrors      bucketstats.Total
-	LinkErrors           bucketstats.Total
-	ListXAttrErrors      bucketstats.Total
-	LookupErrors         bucketstats.Total
-	LookupPathErrors     bucketstats.Total
-	MkdirErrors          bucketstats.Total
-	RemoveXAttrErrors    bucketstats.Total
-	RenameErrors         bucketstats.Total
-	ReadErrors           bucketstats.Total
-	ReaddirErrors        bucketstats.Total
-	ReaddirOneErrors     bucketstats.Total
-	ReaddirOnePlusErrors bucketstats.Total
-	ReaddirPlusErrors    bucketstats.Total
-	ReadsymlinkErrors    bucketstats.Total
-	ResizeErrors         bucketstats.Total
-	RmdirErrors          bucketstats.Total
-	SetstatErrors        bucketstats.Total
-	SetXAttrErrors       bucketstats.Total
-	StatVfsErrors        bucketstats.Total
-	SymlinkErrors        bucketstats.Total
-	UnlinkErrors         bucketstats.Total
-	WriteErrors          bucketstats.Total
+	CreateErrors              bucketstats.Total
+	FetchExtentMapChunkErrors bucketstats.Total
+	FlushErrors               bucketstats.Total
+	FlockOtherErrors          bucketstats.Total
+	FlockGetErrors            bucketstats.Total
+	FlockLockErrors           bucketstats.Total
+	FlockUnlockErrors         bucketstats.Total
+	GetstatErrors             bucketstats.Total
+	GetTypeErrors             bucketstats.Total
+	GetXAttrErrors            bucketstats.Total
+	IsDirErrors               bucketstats.Total
+	IsFileErrors              bucketstats.Total
+	IsSymlinkErrors           bucketstats.Total
+	LinkErrors                bucketstats.Total
+	ListXAttrErrors           bucketstats.Total
+	LookupErrors              bucketstats.Total
+	LookupPathErrors          bucketstats.Total
+	MkdirErrors               bucketstats.Total
+	RemoveXAttrErrors         bucketstats.Total
+	RenameErrors              bucketstats.Total
+	ReadErrors                bucketstats.Total
+	ReaddirErrors             bucketstats.Total
+	ReaddirOneErrors          bucketstats.Total
+	ReaddirOnePlusErrors      bucketstats.Total
+	ReaddirPlusErrors         bucketstats.Total
+	ReadsymlinkErrors         bucketstats.Total
+	ResizeErrors              bucketstats.Total
+	RmdirErrors               bucketstats.Total
+	SetstatErrors             bucketstats.Total
+	SetXAttrErrors            bucketstats.Total
+	StatVfsErrors             bucketstats.Total
+	SymlinkErrors             bucketstats.Total
+	UnlinkErrors              bucketstats.Total
+	WriteErrors               bucketstats.Total
 
-	FetchReadPlanUsec              bucketstats.BucketLog2Round
+	FetchExtentMapChunkUsec        bucketstats.BucketLog2Round
 	CallInodeToProvisionObjectUsec bucketstats.BucketLog2Round
 	MiddlewareCoalesceUsec         bucketstats.BucketLog2Round
 	MiddlewareCoalesceBytes        bucketstats.BucketLog2Round
@@ -183,25 +192,30 @@ func init() {
 }
 
 func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
-	bucketstats.Register("proxyfs.fs", "", &globals)
-
-	globals.volumeMap = make(map[string]*volumeStruct)
-	globals.mountMap = make(map[MountID]*mountStruct)
-	globals.lastMountID = MountID(0)
-	globals.inFlightFileInodeDataList = list.New()
-
 	globals.tryLockBackoffMin, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMin")
 	if nil != err {
-		globals.tryLockBackoffMin = time.Duration(100 * time.Microsecond) // TODO: Eventually, just return
+		globals.tryLockBackoffMin = time.Duration(10 * time.Millisecond) // TODO: Eventually, just return
 	}
 	globals.tryLockBackoffMax, err = confMap.FetchOptionValueDuration("FSGlobals", "TryLockBackoffMax")
 	if nil != err {
-		globals.tryLockBackoffMax = time.Duration(300 * time.Microsecond) // TODO: Eventually, just return
+		globals.tryLockBackoffMax = time.Duration(50 * time.Millisecond) // TODO: Eventually, just return
+	}
+	globals.tryLockSerializationThreshhold, err = confMap.FetchOptionValueUint64("FSGlobals", "TryLockSerializationThreshhold")
+	if nil != err {
+		globals.tryLockSerializationThreshhold = 5 // TODO: Eventually, just return
 	}
 	globals.symlinkMax, err = confMap.FetchOptionValueUint16("FSGlobals", "SymlinkMax")
 	if nil != err {
 		globals.symlinkMax = 32 // TODO: Eventually, just return
 	}
+
+	globals.volumeMap = make(map[string]*volumeStruct)
+	globals.mountMap = make(map[MountID]*mountStruct)
+	globals.lastMountID = MountID(0)
+	globals.inFlightFileInodeDataList = list.New()
+	globals.serializedBackoffList = list.New()
+
+	bucketstats.Register("proxyfs.fs", "", &globals)
 
 	err = nil
 	return

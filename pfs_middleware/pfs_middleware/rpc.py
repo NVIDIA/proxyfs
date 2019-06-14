@@ -24,16 +24,89 @@ import base64
 import uuid
 
 
+allow_read_only = {
+    "Server.RpcFetchExtentMapChunk",
+    "Server.RpcGetAccount",
+    "Server.RpcGetContainer",
+    "Server.RpcGetObject",
+    "Server.RpcGetStat",
+    "Server.RpcGetXAttr",
+    "Server.RpcListXAttr",
+    "Server.RpcLookup",
+    "Server.RpcMountByAccountName",
+    "Server.RpcMountByVolumeName",
+    "Server.RpcPing",
+    "Server.RpcReadSymlink",
+    "Server.RpcReaddirByLoc",
+    "Server.RpcReaddirPlusByLoc",
+    "Server.RpcReaddirPlus",
+    "Server.RpcReaddir",
+    "Server.RpcStatVFS",
+    "Server.RpcType",
+}
+
+allow_read_write = {
+    "Server.RpcChmod",
+    "Server.RpcChown",
+    "Server.RpcCreate",
+    "Server.RpcDelete",
+    "Server.RpcFetchExtentMapChunk",
+    "Server.RpcFlock",
+    "Server.RpcFlush",
+    "Server.RpcGetAccount",
+    "Server.RpcGetContainer",
+    "Server.RpcGetObject",
+    "Server.RpcGetStat",
+    "Server.RpcGetXAttr",
+    "Server.RpcLink",
+    "Server.RpcListXAttr",
+    "Server.RpcLog",
+    "Server.RpcLookup",
+    "Server.RpcMiddlewareMkdir",
+    "Server.RpcMiddlewarePost",
+    "Server.RpcMkdir",
+    "Server.RpcMountByAccountName",
+    "Server.RpcMountByVolumeName",
+    "Server.RpcPing",
+    "Server.RpcProvisionObject",
+    "Server.RpcPutLocation",
+    "Server.RpcReadSymlink",
+    "Server.RpcReaddirByLoc",
+    "Server.RpcReaddirPlusByLoc",
+    "Server.RpcReaddirPlus",
+    "Server.RpcReaddir",
+    "Server.RpcReleaseLease",
+    "Server.RpcRemoveXAttr",
+    "Server.RpcRename",
+    "Server.RpcRenewLease",
+    "Server.RpcResize",
+    "Server.RpcRmdir",
+    "Server.RpcSetTime",
+    "Server.RpcSetXAttr",
+    "Server.RpcSnapShotCreate",
+    "Server.RpcSnapShotDelete",
+    "Server.RpcSnapShotListByID",
+    "Server.RpcSnapShotListByName",
+    "Server.RpcSnapShotListByTime",
+    "Server.RpcSnapShotLookupByName",
+    "Server.RpcStatVFS",
+    "Server.RpcSymlink",
+    "Server.RpcType",
+    "Server.RpcUnlink",
+    "Server.RpcWrote",
+}
+
+
 def _encode_binary(data):
     if data:
-        return base64.b64encode(data)
+        return base64.b64encode(data.encode('ascii')).decode('ascii')
     else:
         return ""
 
 
 def _decode_binary(bindata):
     if bindata:
-        return base64.b64decode(bindata)
+        return base64.b64decode(bindata).decode('ascii')
     else:
         # None (happens sometimes) or empty-string (also happens sometimes)
         return ""
@@ -155,7 +228,7 @@ def parse_get_object_response(read_plan_response):
             read_plan_response["LeaseId"])
 
 
-def coalesce_object_request(destination, elements):
+def coalesce_object_request(destination, elements, new_metadata):
     """
     Return a JSON-RPC request to get a read plan and other info for a
     particular object.
@@ -167,7 +240,8 @@ def coalesce_object_request(destination, elements):
     """
     return jsonrpc_request("Server.RpcCoalesce",
                            [{"VirtPath": destination,
-                             "ElementAccountRelativePaths": elements}])
+                             "ElementAccountRelativePaths": elements,
+                             "NewMetaData": _encode_binary(new_metadata)}])
 
 
 def parse_coalesce_object_response(coalesce_object_response):

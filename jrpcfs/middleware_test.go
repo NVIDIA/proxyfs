@@ -54,8 +54,9 @@ func testSetup() []func() {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"FSGlobals.VolumeGroupList=JrpcfsTestVolumeGroup",
-		"FSGlobals.TryLockBackoffMin=100us",
-		"FSGlobals.TryLockBackoffMax=300us",
+		"FSGlobals.TryLockBackoffMin=10ms",
+		"FSGlobals.TryLockBackoffMax=50ms",
+		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=8",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
@@ -263,7 +264,7 @@ func middlewarePutLocation(t *testing.T, server *Server, newPutPath string, expe
 func makeSomeFilesAndSuch() {
 	// we should have enough stuff up now that we can actually make
 	// some files and directories and such
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -368,7 +369,7 @@ func makeSomeFilesAndSuch() {
 	fsCreateFile(mountHandle, abcInode, "d-2")
 
 	// SomeVolume2 is set up for testing account listings
-	mountHandle2, err := fs.Mount("SomeVolume2", fs.MountOptions(0))
+	mountHandle2, err := fs.MountByVolumeName("SomeVolume2", fs.MountOptions(0))
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "alpha")
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "bravo")
 	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "charlie")
@@ -1109,7 +1110,7 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	// d1/crackle
 	// d1/pop
 	// d1-symlink -> d1
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1295,7 +1296,7 @@ func testPutObjectSetup(t *testing.T) (*assert.Assertions, *Server, string, fs.M
 	// almost certainly okay.)
 	containerName := fmt.Sprintf("mware-TestPutObject-%d", time.Now().UnixNano())
 
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1692,7 +1693,7 @@ func TestRpcGetObjectMetadata(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1735,7 +1736,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1891,7 +1892,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 func TestRpcPutContainer(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1953,7 +1954,7 @@ func TestRpcPutContainer(t *testing.T) {
 func TestRpcPutContainerTooLong(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1975,7 +1976,7 @@ func TestRpcPutContainerTooLong(t *testing.T) {
 func TestRpcMiddlewareMkdir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2019,7 +2020,7 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 func TestRpcMiddlewareMkdirNested(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2052,7 +2053,7 @@ func TestRpcMiddlewareMkdirNested(t *testing.T) {
 func TestRpcCoalesce(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2112,6 +2113,7 @@ func TestRpcCoalesce(t *testing.T) {
 	assert.True(coalesceReply.NumWrites > 0)
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)
+	assert.True(coalesceReply.ModificationTime == coalesceReply.AttrChangeTime)
 
 	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, combinedInode, 0, 99999, nil)
 	assert.Nil(err)
@@ -2121,7 +2123,7 @@ func TestRpcCoalesce(t *testing.T) {
 func TestRpcCoalesceOverwrite(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2180,7 +2182,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 func TestRpcCoalesceOverwriteDir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2223,7 +2225,7 @@ func TestRpcCoalesceOverwriteDir(t *testing.T) {
 func TestRpcCoalesceMakesDirs(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2273,7 +2275,7 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 func TestRpcCoalesceSymlinks(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2325,7 +2327,7 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2374,7 +2376,7 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.Mount("SomeVolume", fs.MountOptions(0))
+	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}

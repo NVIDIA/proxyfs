@@ -194,7 +194,63 @@ func (inFlightFileInodeData *inFlightFileInodeDataStruct) inFlightFileInodeDataT
 	inFlightFileInodeData.wg.Done()
 }
 
-func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+func mountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	var (
+		mS         *mountStruct
+		ok         bool
+		volStruct  *volumeStruct
+		volumeName string
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.MountUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.MountErrors.Add(1)
+		}
+	}()
+
+	globals.Lock()
+
+	volumeName, ok = inode.AccountNameToVolumeName(accountName)
+	if !ok {
+		err = fmt.Errorf("Unknown accountName passed to mountByAccountName(): \"%s\"", accountName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	volStruct, ok = globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("Unknown volumeName computed by mountByAccountName(): \"%s\"", volumeName)
+		err = blunder.AddError(err, blunder.NotFoundError)
+		globals.Unlock()
+		return
+	}
+
+	globals.lastMountID++
+
+	mS = &mountStruct{
+		id:        globals.lastMountID,
+		options:   mountOptions,
+		volStruct: volStruct,
+	}
+
+	globals.mountMap[mS.id] = mS
+
+	volStruct.dataMutex.Lock()
+	volStruct.mountList = append(volStruct.mountList, mS.id)
+	volStruct.dataMutex.Unlock()
+
+	globals.Unlock()
+
+	mountHandle = mS
+	err = nil
+
+	return
+}
+
+func mountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
 	var (
 		mS        *mountStruct
 		ok        bool
@@ -213,7 +269,7 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 
 	volStruct, ok = globals.volumeMap[volumeName]
 	if !ok {
-		err = fmt.Errorf("Unknown volumeName passed to mount(): \"%s\"", volumeName)
+		err = fmt.Errorf("Unknown volumeName passed to mountByVolumeName(): \"%s\"", volumeName)
 		err = blunder.AddError(err, blunder.NotFoundError)
 		globals.Unlock()
 		return
@@ -242,7 +298,6 @@ func mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandl
 }
 
 func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.AccessUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -257,7 +312,6 @@ func (mS *mountStruct) Access(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) CallInodeToProvisionObject() (pPath string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.CallInodeToProvisionObjectUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -328,26 +382,24 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
-func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64) (readPlan []inode.ReadPlanStep, err error) {
+func (mS *mountStruct) FetchExtentMapChunk(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *inode.ExtentMapChunkStruct, err error) {
 	var (
-		inodeLock   *dlm.RWLockStruct
-		inodeType   inode.InodeType
-		localLength uint64
-		localOffset uint64
+		inodeLock *dlm.RWLockStruct
+		inodeType inode.InodeType
 	)
 
 	startTime := time.Now()
 	defer func() {
-		globals.FetchReadPlanUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.FetchExtentMapChunkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 		if err != nil {
-			globals.FetchReadPlanErrors.Add(1)
+			globals.FetchExtentMapChunkErrors.Add(1)
 		}
 	}()
 
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
-	inodeLock, err = mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	inodeLock, err = mS.volStruct.inodeVolumeHandle.InitInodeLock(fileInodeNumber, nil)
 	if nil != err {
 		return
 	}
@@ -357,42 +409,31 @@ func (mS *mountStruct) FetchReadPlan(userID inode.InodeUserID, groupID inode.Ino
 	}
 	defer inodeLock.Unlock()
 
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
+	if !mS.volStruct.inodeVolumeHandle.Access(fileInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
 		inode.NoOverride) {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 		return
 	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
+	if !mS.volStruct.inodeVolumeHandle.Access(fileInodeNumber, userID, groupID, otherGroupIDs, inode.R_OK,
 		inode.OwnerOverride) {
 		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
 		return
 	}
 
-	inodeType, err = mS.volStruct.inodeVolumeHandle.GetType(inodeNumber)
+	inodeType, err = mS.volStruct.inodeVolumeHandle.GetType(fileInodeNumber)
 	if nil != err {
-		logger.ErrorfWithError(err, "couldn't get type for inode %v", inodeNumber)
+		logger.ErrorfWithError(err, "couldn't get type for inode %v", fileInodeNumber)
 		return
 	}
 	// Make sure the inode number is for a file inode
 	if inodeType != inode.FileType {
-		err = fmt.Errorf("%s: expected inode %v to be a file inode, got %v", utils.GetFnName(), inodeNumber, inodeType)
+		err = fmt.Errorf("%s: expected inode %v to be a file inode, got %v", utils.GetFnName(), fileInodeNumber, inodeType)
 		logger.ErrorWithError(err)
 		err = blunder.AddError(err, blunder.NotFileError)
 		return
 	}
 
-	localOffset = offset
-	localLength = length
-
-	readPlan, err = mS.volStruct.inodeVolumeHandle.GetReadPlan(inodeNumber, &localOffset, &localLength)
-	if err != nil {
-		return
-	}
-
-	if localOffset != offset {
-		err = blunder.NewError(blunder.BadSeekError, "supplied offset (0x%016X) could not be honored", offset)
-		return
-	}
+	extentMapChunk, err = mS.volStruct.inodeVolumeHandle.FetchExtentMapChunk(fileInodeNumber, fileOffset, maxEntriesFromFileOffset, maxEntriesBeforeFileOffset)
 
 	return
 }
@@ -413,7 +454,6 @@ func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 }
 
 func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.FlushUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -686,7 +726,6 @@ func (mS *mountStruct) fileUnlock(inodeNumber inode.InodeNumber, inFlock *FlockS
 // Implements file locking conforming to fcntl(2) locking description. F_SETLKW is not implemented. Supports F_SETLW and F_GETLW.
 // whence: FS supports only SEEK_SET - starting from 0, since it does not manage file handles, caller is expected to supply the start and length relative to offset ZERO.
 func (mS *mountStruct) Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlock *FlockStruct) (outFlock *FlockStruct, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		switch lockCmd {
@@ -831,7 +870,6 @@ func (mS *mountStruct) getstatHelperWhileLocked(inodeNumber inode.InodeNumber) (
 }
 
 func (mS *mountStruct) Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -878,7 +916,6 @@ func (mS *mountStruct) getTypeHelper(inodeNumber inode.InodeNumber, callerID dlm
 }
 
 func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeType inode.InodeType, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetTypeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -904,7 +941,6 @@ func (mS *mountStruct) GetType(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (value []byte, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.GetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -948,7 +984,6 @@ func (mS *mountStruct) GetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsDir bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsDirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -987,7 +1022,6 @@ func (mS *mountStruct) IsDir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsFile bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsFileUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1018,7 +1052,6 @@ func (mS *mountStruct) IsFile(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (inodeIsSymlink bool, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.IsSymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1049,7 +1082,6 @@ func (mS *mountStruct) IsSymlink(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, targetInodeNumber inode.InodeNumber) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1149,7 +1181,6 @@ func (mS *mountStruct) Link(userID inode.InodeUserID, groupID inode.InodeGroupID
 }
 
 func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ListXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1196,7 +1227,6 @@ func (mS *mountStruct) ListXAttr(userID inode.InodeUserID, groupID inode.InodeGr
 }
 
 func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LookupUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1231,7 +1261,6 @@ func (mS *mountStruct) Lookup(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.LookupPathUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -1284,20 +1313,23 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 	return cursorInodeNumber, nil
 }
 
-func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+func (mS *mountStruct) MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (
+	ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error) {
+
 	var (
 		coalesceElementList      []*inode.CoalesceElement
 		coalesceElementListIndex int
 		coalesceSize             uint64
-		coalesceTime             time.Time
+		ctime                    time.Time
+		mtime                    time.Time
 		destFileInodeNumber      inode.InodeNumber
 		dirEntryBasename         string
 		dirEntryInodeNumber      inode.InodeNumber
 		dirInodeNumber           inode.InodeNumber
 		elementPath              string
 		heldLocks                *heldLocksStruct
-		restartBackoff           time.Duration
 		retryRequired            bool
+		tryLockBackoffContext    *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -1314,16 +1346,13 @@ func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1385,7 +1414,8 @@ Restart:
 	// Invoke package inode to actually perform the Coalesce operation
 
 	destFileInodeNumber = dirEntryInodeNumber
-	coalesceTime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(destFileInodeNumber, coalesceElementList)
+	ctime, mtime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(
+		destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
 
 	// We can now release all the WriteLocks we are currently holding
 
@@ -1394,24 +1424,25 @@ Restart:
 	// Regardless of err return, fill in other return values
 
 	ino = uint64(destFileInodeNumber)
-	modificationTime = uint64(coalesceTime.UnixNano())
+	attrChangeTime = uint64(ctime.UnixNano())
+	modificationTime = uint64(mtime.UnixNano())
 
 	return
 }
 
 func (mS *mountStruct) MiddlewareDelete(parentDir string, basename string) (err error) {
 	var (
-		dirEntryBasename    string
-		dirEntryInodeNumber inode.InodeNumber
-		dirInodeNumber      inode.InodeNumber
-		doDestroy           bool
-		heldLocks           *heldLocksStruct
-		inodeType           inode.InodeType
-		inodeVolumeHandle   inode.VolumeHandle
-		linkCount           uint64
-		numDirEntries       uint64
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryBasename      string
+		dirEntryInodeNumber   inode.InodeNumber
+		dirInodeNumber        inode.InodeNumber
+		doDestroy             bool
+		heldLocks             *heldLocksStruct
+		inodeType             inode.InodeType
+		inodeVolumeHandle     inode.VolumeHandle
+		linkCount             uint64
+		numDirEntries         uint64
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -1424,16 +1455,13 @@ func (mS *mountStruct) MiddlewareDelete(parentDir string, basename string) (err 
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareDelete(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1520,22 +1548,19 @@ func (mS *mountStruct) middlewareReadDirHelper(path string, maxEntries uint64, p
 		dirEntrySliceElement  inode.DirEntry
 		heldLocks             *heldLocksStruct
 		internalDirEntrySlice []inode.DirEntry
-		restartBackoff        time.Duration
 		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -1711,8 +1736,8 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 		prefixPathDirInodeIndex       int
 		prevReturned                  string
 		remainingMaxEntries           uint64
-		restartBackoff                time.Duration
 		retryRequired                 bool
+		tryLockBackoffContext         *tryLockBackoffContextStruct
 	)
 
 	// Validate marker, endmarker, and prefix
@@ -1808,6 +1833,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				} else {
 					prevReturned = markerPath[markerPathDirInodeIndex+1]
 				}
+				initialDirEntryToMatch = ""
 			} else {
 				// Handle four remaining cases:
 				//   marker & prefix both specified directories
@@ -1825,23 +1851,26 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 						prevReturned = prefixPath[prefixPathDirInodeIndex+1]
 					}
+					initialDirEntryToMatch = prevReturned
 				} else { // (markerPathDirInodeIndex + 1) != len(markerPath)
 					if (prefixPathDirInodeIndex + 1) == len(prefixPath) {
 						// Case where prefix specified a directory, marker did not
 
 						prevReturned = markerPath[markerPathDirInodeIndex+1]
+						initialDirEntryToMatch = ""
 					} else {
 						// Case where neither marker nor prefix specified a directory
 
 						if strings.Compare(prefixPath[prefixPathDirInodeIndex+1], markerPath[markerPathDirInodeIndex+1]) <= 0 {
 							prevReturned = markerPath[markerPathDirInodeIndex+1]
+							initialDirEntryToMatch = ""
 						} else {
 							prevReturned = prefixPath[prefixPathDirInodeIndex+1]
+							initialDirEntryToMatch = prevReturned
 						}
 					}
 				}
 			}
-			initialDirEntryToMatch = prevReturned
 			break
 		}
 
@@ -1914,14 +1943,11 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 	// Compute initial response
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	heldLocks = newHeldLocks()
 
@@ -2168,14 +2194,11 @@ Restart:
 
 		// Ok... so we actually want to append this entry to containerEnts
 
-		restartBackoff = time.Duration(0)
+		tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 	Retry:
 
-		restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-		if nil != err {
-			logger.Fatalf("MiddlewareGetContainer(): failed in restartBackoff: %v", err)
-		}
+		tryLockBackoffContext.backoff()
 
 		dirEntryInodeLock, err = inodeVolumeHandle.AttemptReadLock(dirEntrySliceElement.InodeNumber, dlmCallerID)
 		if nil != err {
@@ -2274,15 +2297,15 @@ Restart:
 
 func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (fileSize uint64, lastModified uint64, lastChanged uint64, ino uint64, numWrites uint64, serializedMetadata []byte, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		fileOffset          uint64
-		heldLocks           *heldLocksStruct
-		inodeVolumeHandle   inode.VolumeHandle
-		readPlan            []inode.ReadPlanStep
-		readRangeInIndex    int
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		fileOffset            uint64
+		heldLocks             *heldLocksStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		readPlan              []inode.ReadPlanStep
+		readRangeInIndex      int
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2301,16 +2324,13 @@ func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string, readRange
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareGetObject(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2395,11 +2415,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2412,16 +2432,13 @@ func (mS *mountStruct) MiddlewareHeadResponse(entityPath string) (response HeadR
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2480,11 +2497,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		existingStreamData  []byte
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryInodeNumber   inode.InodeNumber
+		existingStreamData    []byte
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2498,16 +2515,13 @@ func (mS *mountStruct) MiddlewarePost(parentDir string, baseName string, newMeta
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2575,15 +2589,15 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		fileOffset          uint64
-		heldLocks           *heldLocksStruct
-		inodeVolumeHandle   inode.VolumeHandle
-		numPObjects         int
-		pObjectIndex        int
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		fileOffset            uint64
+		heldLocks             *heldLocksStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		numPObjects           int
+		pObjectIndex          int
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2605,16 +2619,13 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2650,10 +2661,10 @@ Restart:
 	for pObjectIndex = 0; pObjectIndex < numPObjects; pObjectIndex++ {
 		err = inodeVolumeHandle.Wrote(
 			dirEntryInodeNumber,
-			fileOffset,
 			pObjectPaths[pObjectIndex],
-			0,
-			pObjectLengths[pObjectIndex],
+			[]uint64{fileOffset},
+			[]uint64{0},
+			[]uint64{pObjectLengths[pObjectIndex]},
 			pObjectIndex > 0) // Initial pObjectIndex == 0 case will implicitly SetSize(,0)
 		if nil != err {
 			heldLocks.free()
@@ -2690,11 +2701,11 @@ Restart:
 
 func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
-		stat                Stat
+		dirEntryInodeNumber   inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		stat                  Stat
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2707,16 +2718,13 @@ func (mS *mountStruct) MiddlewareMkdir(vContainerName string, vObjectPath string
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareHeadResponse(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -2853,7 +2861,6 @@ func (mS *mountStruct) MiddlewarePutContainer(containerName string, oldMetadata 
 }
 
 func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.MkdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2921,7 +2928,6 @@ func (mS *mountStruct) Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.RemoveXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -2966,12 +2972,12 @@ func (mS *mountStruct) RemoveXAttr(userID inode.InodeUserID, groupID inode.Inode
 
 func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error) {
 	var (
-		dirEntryBasename    string
-		dirEntryInodeNumber inode.InodeNumber
-		dirInodeNumber      inode.InodeNumber
-		heldLocks           *heldLocksStruct
-		restartBackoff      time.Duration
-		retryRequired       bool
+		dirEntryBasename      string
+		dirEntryInodeNumber   inode.InodeNumber
+		dirInodeNumber        inode.InodeNumber
+		heldLocks             *heldLocksStruct
+		retryRequired         bool
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -2997,16 +3003,13 @@ func (mS *mountStruct) Rename(userID inode.InodeUserID, groupID inode.InodeGroup
 
 	// Retry until done or failure (starting with ZERO backoff)
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
 	// Perform backoff and update for each restart (starting with ZERO backoff of course)
 
-	restartBackoff, err = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
-	if nil != err {
-		logger.Fatalf("MiddlewareCoalesce(): failed in restartBackoff: %v", err)
-	}
+	tryLockBackoffContext.backoff()
 
 	// Construct fresh heldLocks for this restart
 
@@ -3111,7 +3114,6 @@ Restart:
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ReadUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3171,12 +3173,12 @@ func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID
 
 func (mS *mountStruct) readdirHelper(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, maxEntries uint64, prevReturned ...interface{}) (dirEntries []inode.DirEntry, statEntries []Stat, numEntries uint64, areMoreEntries bool, err error) {
 	var (
-		dirEntryIndex     uint64
-		dlmCallerID       dlm.CallerID
-		inodeLock         *dlm.RWLockStruct
-		inodeVolumeHandle inode.VolumeHandle
-		internalErr       error
-		restartBackoff    time.Duration
+		dirEntryIndex         uint64
+		dlmCallerID           dlm.CallerID
+		inodeLock             *dlm.RWLockStruct
+		inodeVolumeHandle     inode.VolumeHandle
+		internalErr           error
+		tryLockBackoffContext *tryLockBackoffContextStruct
 	)
 
 	mS.volStruct.jobRWMutex.RLock()
@@ -3185,11 +3187,11 @@ func (mS *mountStruct) readdirHelper(userID inode.InodeUserID, groupID inode.Ino
 	dlmCallerID = dlm.GenerateCallerID()
 	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
 
-	restartBackoff = time.Duration(0)
+	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
 Restart:
 
-	restartBackoff, _ = utils.PerformDelayAndComputeNextDelay(restartBackoff, globals.tryLockBackoffMin, globals.tryLockBackoffMax)
+	tryLockBackoffContext.backoff()
 
 	inodeLock, err = inodeVolumeHandle.AttemptReadLock(inodeNumber, dlmCallerID)
 	if nil != err {
@@ -3287,7 +3289,6 @@ func (mS *mountStruct) ReaddirPlus(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (target string, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ReadsymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3328,7 +3329,6 @@ func (mS *mountStruct) Readsymlink(userID inode.InodeUserID, groupID inode.Inode
 }
 
 func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, newSize uint64) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.ResizeUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3370,7 +3370,6 @@ func (mS *mountStruct) Resize(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.RmdirUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3457,7 +3456,6 @@ func (mS *mountStruct) Rmdir(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, stat Stat) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SetstatUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3651,14 +3649,7 @@ func (mS *mountStruct) Setstat(userID inode.InodeUserID, groupID inode.InodeGrou
 	return
 }
 
-// TODO: XATTR_* values are obtained from </usr/include/attr/xattr.h>, remove constants with go equivalent.
-const (
-	xattr_create  = 1
-	xattr_replace = 2
-)
-
 func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string, value []byte, flags int) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SetXAttrUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3692,14 +3683,14 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 	}
 
 	switch flags {
-	case 0:
+	case SetXAttrCreateOrReplace:
 		break
-	case xattr_create:
+	case SetXAttrCreate:
 		_, err = mS.GetXAttr(userID, groupID, otherGroupIDs, inodeNumber, streamName)
 		if err == nil {
 			return blunder.AddError(err, blunder.FileExistsError)
 		}
-	case xattr_replace:
+	case SetXAttrReplace:
 		_, err = mS.GetXAttr(userID, groupID, otherGroupIDs, inodeNumber, streamName)
 		if err != nil {
 			return blunder.AddError(err, blunder.StreamNotFound)
@@ -3719,7 +3710,6 @@ func (mS *mountStruct) SetXAttr(userID inode.InodeUserID, groupID inode.InodeGro
 }
 
 func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.StatVfsUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3749,7 +3739,6 @@ func (mS *mountStruct) StatVfs() (statVFS StatVFS, err error) {
 }
 
 func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, target string) (symlinkInodeNumber inode.InodeNumber, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.SymlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3821,7 +3810,6 @@ func (mS *mountStruct) Symlink(userID inode.InodeUserID, groupID inode.InodeGrou
 }
 
 func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.UnlinkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3903,7 +3891,6 @@ func (mS *mountStruct) Unlink(userID inode.InodeUserID, groupID inode.InodeGroup
 }
 
 func (mS *mountStruct) VolumeName() (volumeName string) {
-
 	startTime := time.Now()
 
 	volumeName = mS.volStruct.volumeName
@@ -3912,7 +3899,6 @@ func (mS *mountStruct) VolumeName() (volumeName string) {
 }
 
 func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error) {
-
 	startTime := time.Now()
 	defer func() {
 		globals.WriteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -3962,6 +3948,40 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	size = uint64(len(buf))
 
 	return
+}
+
+func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error) {
+	mS.volStruct.jobRWMutex.RLock()
+	defer mS.volStruct.jobRWMutex.RUnlock()
+
+	inodeLock, err := mS.volStruct.inodeVolumeHandle.InitInodeLock(inodeNumber, nil)
+	if err != nil {
+		return
+	}
+	err = inodeLock.WriteLock()
+	if err != nil {
+		return
+	}
+	defer inodeLock.Unlock()
+
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
+		inode.NoOverride) {
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		return
+	}
+	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK,
+		inode.OwnerOverride) {
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		return
+	}
+
+	err = mS.volStruct.inodeVolumeHandle.Flush(inodeNumber, false)
+	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
+	mS.doInlineCheckpointIfEnabled()
+
+	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, objectPath, fileOffset, objectOffset, length, true)
+
+	return // err, as set by inode.Wrote(), is sufficient
 }
 
 func validateBaseName(baseName string) (err error) {

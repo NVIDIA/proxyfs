@@ -64,7 +64,7 @@ func (vS *volumeStruct) loadSnapShotPolicy(confMap conf.ConfMap) (err error) {
 
 	snapShotPolicyName, err = confMap.FetchOptionValueString(volumeSectionName, "SnapShotPolicy")
 	if nil != err {
-		// For now, we will default to setting snapShotPolicy to nil and returning success
+		// Default to setting snapShotPolicy to nil and returning success
 		err = nil
 		return
 	}

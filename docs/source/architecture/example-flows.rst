@@ -18,7 +18,7 @@ Client initiates a write
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 After a client has mounted a filesystem volume, the client initiates a
-read request which is received by the ProxyFS process.
+write request which is received by the ProxyFS process.
 
 Pick a unique object for “strong read-your writes” consistency
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -31,9 +31,9 @@ writes” property of the object storage backend.
 Pool connections and writes to object storage connection
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-How the writes are managed is with a pool of maintained connections to
-an object API endpoint. One of these connections is chosen and the data
-for this write is streamed to the backend storage.
+Writes are managed with a pool of maintained connections to an object
+API endpoint. One of these connections is chosen and the data for this
+write is streamed to the backend storage.
 
 This allows ProxyFS to mediate the comparatively small write sizes to
 the larger object sizes by streaming multiple filesystem writes into a
@@ -77,9 +77,9 @@ node. This means that the log-structured filesystems are updating the
 Persisting filesystem metadata
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The filesystem metadata is persisted inthe back-end object storage.
+The filesystem metadata is persisted in the back-end object storage.
 ProxyFS utilizes the same tricks of creating unique objects using a
-*noonce* so that any persistence of the filesystem metadata also can
+*nonce* so that any persistence of the filesystem metadata also can
 take advantage of “strong read your writes for new data”
 
 Checkpoints of the filesystem tree are created and “snapshotted” into
@@ -92,7 +92,7 @@ metadata should be stored in the back-end object storage.
 
 One method is time-based. A checkpoint can be initiated and stored in
 the back-end object storage at a configured interval. The default
-conjuration is 10 seconds.
+configuration is 10 seconds.
 
 Additionally a checkpoint can be triggered when the filesystem client
 asks for one. For example, if the client unmounts the filesystem the

@@ -596,12 +596,6 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		return
 	}
 
-	err = volume.loadSnapShotPolicy(confMap)
-	if nil != err {
-		globals.Unlock()
-		return
-	}
-
 	volume.headhunterVolumeHandle, err = headhunter.FetchVolumeHandle(volume.volumeName)
 	if nil != err {
 		globals.Unlock()
@@ -627,10 +621,6 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.volumeGroup.numServed++
 
 	volume.volumeGroup.Unlock()
-
-	if nil != volume.snapShotPolicy {
-		volume.snapShotPolicy.up()
-	}
 
 	globals.Unlock()
 
@@ -659,10 +649,6 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		return
 	}
 
-	if nil != volume.snapShotPolicy {
-		volume.snapShotPolicy.down()
-	}
-
 	stopInodeCacheDiscard(volume)
 
 	volume.inodeCache = nil
@@ -686,10 +672,40 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
-	return nil
+	var (
+		volume *volumeStruct
+	)
+
+	for _, volume = range globals.volumeMap {
+		if volume.served && (nil != volume.snapShotPolicy) {
+			volume.snapShotPolicy.down()
+			volume.snapShotPolicy = nil
+		}
+	}
+
+	err = nil
+	return
 }
+
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
-	return nil
+	var (
+		volume *volumeStruct
+	)
+
+	for _, volume = range globals.volumeMap {
+		if volume.served {
+			err = volume.loadSnapShotPolicy(confMap)
+			if nil != err {
+				return
+			}
+			if nil != volume.snapShotPolicy {
+				volume.snapShotPolicy.up()
+			}
+		}
+	}
+
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {

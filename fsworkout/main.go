@@ -193,9 +193,9 @@ func main() {
 
 	volumeName = volumeList[0]
 
-	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "fs.Mount(\"%value\",) failed: %v\n", volumeName, err)
+		fmt.Fprintf(os.Stderr, "fs.MountByVolumeName(\"%value\",) failed: %v\n", volumeName, err)
 		os.Exit(1)
 	}
 

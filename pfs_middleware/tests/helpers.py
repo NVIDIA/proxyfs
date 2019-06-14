@@ -67,7 +67,7 @@ class FakeProxy(object):
         if method in ('PUT', 'COALESCE'):
             bytes_read = 0
             # consume the whole request body, just like a PUT would
-            for chunk in iter(env['wsgi.input'].read, ''):
+            for chunk in iter(env['wsgi.input'].read, b''):
                 bytes_read += len(chunk)
             cl = req.headers.get('Content-Length')
 
@@ -118,7 +118,7 @@ class FakeJsonRpc(object):
         """
         self._rpc_handlers[method] = handler
 
-    def call(self, rpc_request, _timeout):
+    def call(self, rpc_request, _timeout, raise_on_rpc_error=True):
         # Note: rpc_request here is a JSON-RPC request object. In Python
         # terms, it's a dictionary with a particular format.
 

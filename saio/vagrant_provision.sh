@@ -42,7 +42,7 @@ yum clean all
 
 # Install tools needed above what's in a minimal base box
 
-yum -y install wget git nfs-utils vim
+yum -y install wget git nfs-utils vim lsof
 
 # Install Golang
 
@@ -70,6 +70,13 @@ echo "set pagination off" >> /home/vagrant/.gdbinit
 chown vagrant:vagrant /home/vagrant/.gdbinit
 chmod 644 /home/vagrant/.gdbinit
 cp /home/vagrant/.gdbinit /root/.
+
+# Install Python 3.6
+
+yum -y install centos-release-scl
+yum -y install rh-python36
+ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6
+ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 # Install Python pip
 
@@ -228,10 +235,14 @@ git clone -b master --single-branch --depth 1 https://github.com/openstack/pytho
 cd python-swiftclient
 python setup.py develop
 
+echo "export ST_AUTH=http://localhost:8080/auth/v1.0" >> ~vagrant/.bash_profile
+echo "export ST_USER=test:tester" >> ~vagrant/.bash_profile
+echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
+
 cd ~swift
-git clone https://github.com/openstack/swift.git
+git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout 64e5fd364ae044ebfda541fd90bb3551bab36dcb
+git checkout ss-release-2.21.0.4
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
@@ -296,6 +307,10 @@ endpoint = awscli_plugin_endpoint
 aws_access_key_id = test:tester
 aws_secret_access_key = testing
 s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
@@ -367,6 +382,10 @@ yum -y install sshpass-1.06-2.el7
 # Install dstat
 
 yum -y install dstat
+
+# Install tree
+
+yum -y install tree
 
 # All done
 

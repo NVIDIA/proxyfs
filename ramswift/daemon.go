@@ -22,13 +22,12 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
-	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
 type swiftAccountStruct struct {
-	trackedlock.Mutex  //                    protects swiftAccountStruct.headers & swiftContainerTree
+	sync.Mutex         //                    protects swiftAccountStruct.headers & swiftContainerTree
 	name               string
 	headers            http.Header
 	swiftContainerTree sortedmap.LLRBTree // key is swiftContainerStruct.name, value is *swiftContainerStruct
@@ -39,11 +38,11 @@ type swiftAccountContext struct {
 }
 
 type swiftContainerStruct struct {
-	trackedlock.Mutex //                     protects swiftContainerStruct.headers & swiftContainerStruct.swiftObjectTree
-	name              string
-	swiftAccount      *swiftAccountStruct // back-reference to swiftAccountStruct
-	headers           http.Header
-	swiftObjectTree   sortedmap.LLRBTree //  key is swiftObjectStruct.name, value is *swiftObjectStruct
+	sync.Mutex      //                     protects swiftContainerStruct.headers & swiftContainerStruct.swiftObjectTree
+	name            string
+	swiftAccount    *swiftAccountStruct // back-reference to swiftAccountStruct
+	headers         http.Header
+	swiftObjectTree sortedmap.LLRBTree //  key is swiftObjectStruct.name, value is *swiftObjectStruct
 }
 
 type swiftContainerContext struct {
@@ -51,10 +50,10 @@ type swiftContainerContext struct {
 }
 
 type swiftObjectStruct struct {
-	trackedlock.Mutex //                       protects swiftObjectStruct.contents
-	name              string
-	swiftContainer    *swiftContainerStruct // back-reference to swiftContainerStruct
-	contents          []byte
+	sync.Mutex     //                       protects swiftObjectStruct.contents
+	name           string
+	swiftContainer *swiftContainerStruct // back-reference to swiftContainerStruct
+	contents       []byte
 }
 
 type methodStruct struct {
@@ -66,7 +65,7 @@ type methodStruct struct {
 }
 
 type globalsStruct struct {
-	trackedlock.Mutex               // protects globalsStruct.swiftAccountMap
+	sync.Mutex                      // protects globalsStruct.swiftAccountMap
 	whoAmI                          string
 	noAuthTCPPort                   uint16
 	noAuthAddr                      string

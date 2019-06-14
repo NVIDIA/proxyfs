@@ -50,7 +50,7 @@ func mountIfNotMounted(virtPath string) (accountName string, containerName strin
 
 	// We have not already mounted it, mount it now and store result in bimodalMountMap
 	// TODO - add proper mountOpts
-	mountHandle, err = fs.Mount(volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.Mount() of acct: %v container: %v failed!", accountName, containerName)
 		return accountName, containerName, objectName, volumeName, nil, err
@@ -362,7 +362,9 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 	_, destContainer, destObject, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
 
 	var ino uint64
-	ino, reply.NumWrites, reply.ModificationTime, err = mountHandle.MiddlewareCoalesce(destContainer+"/"+destObject, in.ElementAccountRelativePaths)
+	ino, reply.NumWrites, reply.AttrChangeTime, reply.ModificationTime, err =
+		mountHandle.MiddlewareCoalesce(
+			destContainer+"/"+destObject, in.NewMetaData, in.ElementAccountRelativePaths)
 	reply.InodeNumber = int64(ino)
 	return
 }

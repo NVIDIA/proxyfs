@@ -1039,9 +1039,9 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,true)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, 1, fileInodeObjectPath, 0, 3, true)
+	err = testVolumeHandle.Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{1}, []uint64{0}, []uint64{3}, true)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, 1, fileInodeObjectPath, 0, 3, true) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{1}, []uint64{0}, []uint64{3}, true) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
@@ -1065,10 +1065,43 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetReadPlan(fileInodeNumber, 0, 5) failed: %v", err)
 	}
 	if 3 != len(testReadPlan) {
-		t.Fatalf("GetReadPlan(fileInodeNumber, 0, 5) should have returned postMetadata.InodeStreamNameSlice with 3 elements")
+		t.Fatalf("GetReadPlan(fileInodeNumber, 0, 5) should have returned testReadPlan with 3 elements")
 	}
 	if (1 != testReadPlan[0].Length) || (fileInodeObjectPath != testReadPlan[1].ObjectPath) || (0 != testReadPlan[1].Offset) || (3 != testReadPlan[1].Length) || (1 != testReadPlan[2].Length) {
 		t.Fatalf("GetReadPlan(fileInodeNumber, 0, 5) returned unexpected testReadPlan")
+	}
+
+	testExtentMapChunk, err := testVolumeHandle.FetchExtentMapChunk(fileInodeNumber, uint64(2), 2, 1)
+	if nil != err {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) failed: %v", err)
+	}
+	if 0 != testExtentMapChunk.FileOffsetRangeStart {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) should have returned testExtentMapChunk.FileOffsetRangeStart == 0")
+	}
+	if 5 != testExtentMapChunk.FileOffsetRangeEnd {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) should have returned testExtentMapChunk.FileOffsetRangeEnd == 5")
+	}
+	if 5 != testExtentMapChunk.FileSize {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) should have returned testExtentMapChunk.FileSize == 5")
+	}
+	if 3 != len(testExtentMapChunk.ExtentMapEntry) {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) should have returned testExtentMapChunk.ExtentMapEntry slice with 3 elements")
+	}
+	fileInodeObjectPathSplit := strings.Split(fileInodeObjectPath, "/")
+	fileInodeObjectPathContainerName := fileInodeObjectPathSplit[len(fileInodeObjectPathSplit)-2]
+	fileInodeObjectPathObjectName := fileInodeObjectPathSplit[len(fileInodeObjectPathSplit)-1]
+	if (0 != testExtentMapChunk.ExtentMapEntry[0].FileOffset) ||
+		(0 != testExtentMapChunk.ExtentMapEntry[0].LogSegmentOffset) ||
+		(1 != testExtentMapChunk.ExtentMapEntry[0].Length) ||
+		(1 != testExtentMapChunk.ExtentMapEntry[1].FileOffset) ||
+		(0 != testExtentMapChunk.ExtentMapEntry[1].LogSegmentOffset) ||
+		(3 != testExtentMapChunk.ExtentMapEntry[1].Length) ||
+		(fileInodeObjectPathContainerName != testExtentMapChunk.ExtentMapEntry[1].ContainerName) ||
+		(fileInodeObjectPathObjectName != testExtentMapChunk.ExtentMapEntry[1].ObjectName) ||
+		(4 != testExtentMapChunk.ExtentMapEntry[2].FileOffset) ||
+		(4 != testExtentMapChunk.ExtentMapEntry[2].LogSegmentOffset) ||
+		(1 != testExtentMapChunk.ExtentMapEntry[2].Length) {
+		t.Fatalf("FetchExtentMap(fileInodeNumber, uint64(2), 2, 1) returned unexpected testExtentMapChunk.ExtentMapEntry slice")
 	}
 
 	// Suffix byte range query, like "Range: bytes=-2"
@@ -1193,9 +1226,9 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,false)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, 0, fileInodeObjectPath, 0, 2, false)
+	err = testVolumeHandle.Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{0}, []uint64{0}, []uint64{2}, false)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, 0, fileInodeObjectPath, 0, 2, false) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
@@ -2132,9 +2165,9 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("ProvisionObject() failed: %v", err)
 	}
-	err = testVolumeHandle.Wrote(fileInode, uint64(0), objectPath, uint64(0), uint64(2), false)
+	err = testVolumeHandle.Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, false)
 	if nil != err {
-		t.Fatalf("Wrote(fileInode, uint64(0), objectPath, uint64(0), uint64(2), false) failed: %v", err)
+		t.Fatalf("Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)

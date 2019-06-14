@@ -82,6 +82,13 @@ const (
 	DefaultReportedNumInodes    uint64 = 100 * Gibi
 )
 
+// SetXAttr constants (Go should wrap these from /usr/include/attr/xattr.h>)
+const (
+	SetXAttrCreateOrReplace = 0
+	SetXAttrCreate          = 1
+	SetXAttrReplace         = 2
+)
+
 type FlockStruct struct {
 	Type   int32
 	Whence int32
@@ -148,8 +155,13 @@ type JobHandle interface {
 
 // Mount handle interface
 
-func Mount(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
-	mountHandle, err = mount(volumeName, mountOptions)
+func MountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	mountHandle, err = mountByAccountName(accountName, mountOptions)
+	return
+}
+
+func MountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
+	mountHandle, err = mountByVolumeName(volumeName, mountOptions)
 	return
 }
 
@@ -157,7 +169,7 @@ type MountHandle interface {
 	Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool)
 	CallInodeToProvisionObject() (pPath string, err error)
 	Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error)
-	FetchReadPlan(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64) (readPlan []inode.ReadPlanStep, err error)
+	FetchExtentMapChunk(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *inode.ExtentMapChunkStruct, err error)
 	Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error)
 	Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlockStruct *FlockStruct) (outFlockStruct *FlockStruct, err error)
 	Getstat(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (stat Stat, err error)
@@ -170,7 +182,7 @@ type MountHandle interface {
 	ListXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (streamNames []string, err error)
 	Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error)
 	LookupPath(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fullpath string) (inodeNumber inode.InodeNumber, err error)
-	MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error)
+	MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error)
 	MiddlewareDelete(parentDir string, baseName string) (err error)
 	MiddlewareGetAccount(maxEntries uint64, marker string, endmarker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
 	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, endmarker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error)
@@ -196,6 +208,7 @@ type MountHandle interface {
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
 	VolumeName() (volumeName string)
 	Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error)
+	Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error)
 }
 
 // ValidateVolume performs an "FSCK" on the specified volumeName.

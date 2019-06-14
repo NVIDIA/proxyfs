@@ -14,9 +14,19 @@ with open(json_path, "r") as json_file:
 
 everything_ok = True
 for section, packages in versions_data.items():
-    for package, pinned_version in packages:
-        yum_versions = subprocess.check_output(
-            "repoquery {} --queryformat '%{{vr}}'".format(package), shell=True)
+    for package_info in packages:
+        if len(package_info) == 1:
+            continue
+        package, pinned_version = package_info
+        try:
+            yum_versions = subprocess.check_output(
+                "repoquery {} --queryformat '%{{vr}}'".format(package),
+                shell=True, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print("! Error checking {}: {}".format(
+                package, e.output.strip()))
+            everything_ok = False
+            continue
         yum_versions = yum_versions.strip().split("\n")
         if pinned_version not in yum_versions:
             print("{} not ok! pinned: {} | found in yum: {}".format(

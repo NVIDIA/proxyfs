@@ -262,7 +262,7 @@ func performMount(volume *volumeStruct) (err error) {
 		return
 	}
 
-	mountHandle, err = fs.Mount(volume.volumeName, fs.MountOptions(0))
+	mountHandle, err = fs.MountByVolumeName(volume.volumeName, fs.MountOptions(0))
 	if nil != err {
 		return
 	}

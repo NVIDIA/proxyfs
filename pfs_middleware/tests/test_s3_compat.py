@@ -37,7 +37,7 @@ class TestS3Compat(unittest.TestCase):
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj?multipart-manifest=put",
             environ={'REQUEST_METHOD': 'PUT',
-                     'wsgi.input': swob.WsgiBytesIO("")},
+                     'wsgi.input': swob.WsgiBytesIO(b"")},
             headers={'Content-Length': '0'})
 
         resp = req.get_response(self.s3_compat)
@@ -47,7 +47,7 @@ class TestS3Compat(unittest.TestCase):
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj?multipart-manifest=put",
             environ={'REQUEST_METHOD': 'PUT',
-                     'wsgi.input': swob.WsgiBytesIO(""),
+                     'wsgi.input': swob.WsgiBytesIO(b""),
                      utils.ENV_IS_BIMODAL: True},
             headers={'Content-Length': '0'})
 

@@ -32,6 +32,17 @@ const (
 	SymlinkType InodeType = unix.DT_LNK
 )
 
+// NOTE: Would have liked to use os.FileMode bitmask definitions here instead of creating our own,
+//       but unfortunately the bitmasks used by os.ModeDir and os.ModeSymlink (0x80000000 and 0x8000000)
+//       are not the same values as what is expected on the linux side (0x4000 and 0xa000).
+const (
+	PosixModeType    InodeMode = 0xE000
+	PosixModeDir     InodeMode = 0x4000
+	PosixModeFile    InodeMode = 0x8000
+	PosixModeSymlink InodeMode = 0xa000
+	PosixModePerm    InodeMode = 0777
+)
+
 // The following are used in calls to Access()... either F_OK or bitwise or of R_OK, W_OK, and X_OK
 const (
 	F_OK = InodeMode(unix.F_OK)                               //         check for existence
@@ -89,13 +100,28 @@ type CoalesceElement struct {
 }
 
 type ReadPlanStep struct {
-	LogSegmentNumber uint64 // If == 0, Length specifies zero-file size
+	LogSegmentNumber uint64 // If == 0, Length specifies zero-fill size
 	Offset           uint64 // If zero-fill case, == 0
 	Length           uint64 // Must != 0
 	AccountName      string // If == "", Length specifies a zero-fill size
 	ContainerName    string // If == "", Length specifies a zero-fill size
 	ObjectName       string // If == "", Length specifies a zero-fill size
 	ObjectPath       string // If == "", Length specifies a zero-fill size
+}
+
+type ExtentMapEntryStruct struct {
+	FileOffset       uint64
+	LogSegmentOffset uint64
+	Length           uint64
+	ContainerName    string // While "read-as-zero" entries in ExtentMapShunkStruct
+	ObjectName       string //   are not present, {Container|Object}Name would be == ""
+}
+
+type ExtentMapChunkStruct struct {
+	FileOffsetRangeStart uint64                 // Holes in [FileOffsetRangeStart:FileOffsetRangeEnd)
+	FileOffsetRangeEnd   uint64                 //   not covered in ExtentMapEntry slice should "read-as-zero"
+	FileSize             uint64                 //   up to the end-of-file as indicated by FileSize
+	ExtentMapEntry       []ExtentMapEntryStruct // All will be in [FileOffsetRangeStart:FileOffsetRangeEnd)
 }
 
 const (
@@ -114,6 +140,12 @@ func (de *DirEntry) Size() int {
 // AccountNameToVolumeName returns the corresponding volumeName for the supplied accountName (if any).
 func AccountNameToVolumeName(accountName string) (volumeName string, ok bool) {
 	volumeName, ok = accountNameToVolumeName(accountName)
+	return
+}
+
+// VolumeNameToAccountName returns the corresponding accountName for the supplied volumeName (if any).
+func VolumeNameToAccountName(volumeName string) (accountName string, ok bool) {
+	accountName, ok = volumeNameToAccountName(volumeName)
 	return
 }
 
@@ -189,12 +221,13 @@ type VolumeHandle interface {
 	CreateFile(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (fileInodeNumber InodeNumber, err error)
 	Read(inodeNumber InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error)
 	GetReadPlan(fileInodeNumber InodeNumber, offset *uint64, length *uint64) (readPlan []ReadPlanStep, err error)
+	FetchExtentMapChunk(fileInodeNumber InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *ExtentMapChunkStruct, err error)
 	Write(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error)
 	ProvisionObject() (objectPath string, err error)
-	Wrote(fileInodeNumber InodeNumber, fileOffset uint64, objectPath string, objectOffset uint64, length uint64, patchOnly bool) (err error)
+	Wrote(fileInodeNumber InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error)
 	SetSize(fileInodeNumber InodeNumber, Size uint64) (err error)
 	Flush(fileInodeNumber InodeNumber, andPurge bool) (err error)
-	Coalesce(destInodeNumber InodeNumber, elements []*CoalesceElement) (modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
+	Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
 
 	// Symlink Inode specific methods, implemented in symlink.go
 

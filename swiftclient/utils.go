@@ -898,17 +898,14 @@ func parseConnection(headers map[string][]string) (connectionStillOpen bool) {
 	return
 }
 
-func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (lines []string, err error) {
+func readHTTPPayloadAsByteSlice(tcpConn *net.TCPConn, headers map[string][]string) (payloadAsByteSlice []byte, err error) {
 	var (
-		buf                  []byte
-		bufCurrentPosition   int
-		bufLineStartPosition int
-		chunk                []byte
-		contentLength        int
+		chunk         []byte
+		contentLength int
 	)
 
 	if parseTransferEncoding(headers) {
-		buf = make([]byte, 0)
+		payloadAsByteSlice = make([]byte, 0)
 		for {
 			chunk, err = readHTTPChunk(tcpConn)
 			if nil != err {
@@ -919,10 +916,8 @@ func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (li
 				break
 			}
 
-			buf = append(buf, chunk...)
+			payloadAsByteSlice = append(payloadAsByteSlice, chunk...)
 		}
-
-		contentLength = len(buf)
 	} else {
 		contentLength, err = parseContentLength(headers)
 		if nil != err {
@@ -930,14 +925,47 @@ func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (li
 		}
 
 		if 0 == contentLength {
-			buf = make([]byte, 0)
+			payloadAsByteSlice = make([]byte, 0)
 		} else {
-			buf, err = readBytesFromTCPConn(tcpConn, contentLength)
+			payloadAsByteSlice, err = readBytesFromTCPConn(tcpConn, contentLength)
 			if nil != err {
 				return
 			}
 		}
 	}
+
+	return
+}
+
+func readHTTPPayloadAsString(tcpConn *net.TCPConn, headers map[string][]string) (payloadString string, err error) {
+	var (
+		payloadByteSlice []byte
+	)
+
+	payloadByteSlice, err = readHTTPPayloadAsByteSlice(tcpConn, headers)
+	if nil != err {
+		return
+	}
+
+	payloadString = string(payloadByteSlice[:])
+
+	return
+}
+
+func readHTTPPayloadLines(tcpConn *net.TCPConn, headers map[string][]string) (lines []string, err error) {
+	var (
+		buf                  []byte
+		bufCurrentPosition   int
+		bufLineStartPosition int
+		contentLength        int
+	)
+
+	buf, err = readHTTPPayloadAsByteSlice(tcpConn, headers)
+	if nil != err {
+		return
+	}
+
+	contentLength = len(buf)
 
 	lines = make([]string, 0)
 

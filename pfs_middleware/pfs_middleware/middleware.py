@@ -79,9 +79,10 @@ import re
 import six
 import socket
 import time
+import uuid
 import xml.etree.ElementTree as ET
 from six.moves.urllib import parse as urllib_parse
-from StringIO import StringIO
+from io import BytesIO
 
 from swift.common.middleware.acl import parse_acl, format_acl
 from . import pfs_errno, rpc, swift_code, utils
@@ -119,7 +120,11 @@ ZERO_FILL_PATH = "/0"
 
 LEASE_RENEWAL_INTERVAL = 5  # seconds
 
+# Beware: ORIGINAL_MD5_HEADER is random case, not title case, but is
+# stored on-disk just as defined here.  Care must be taken when comparing
+# it to incoming headers which are title case.
 ORIGINAL_MD5_HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
+S3API_ETAG_HEADER = "X-Object-Sysmeta-S3Api-Etag"
 LISTING_ETAG_OVERRIDE_HEADER = \
     "X-Object-Sysmeta-Container-Update-Override-Etag"
 
@@ -168,6 +173,7 @@ MD5_ETAG_RE = re.compile("^[a-f0-9]{32}$")
 EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
 RPC_TIMEOUT_DEFAULT = 30.0
+MAX_RPC_BODY_SIZE = 2 ** 20
 
 
 def listing_iter_from_read_plan(read_plan):
@@ -322,6 +328,7 @@ def pop_and_restore(hsh, key, default=None):
 
 
 def deserialize_metadata(raw_metadata):
+    """Deserialize JSON-encoded metadata to WSGI strings"""
     if raw_metadata:
         try:
             metadata = json.loads(raw_metadata)
@@ -330,14 +337,25 @@ def deserialize_metadata(raw_metadata):
     else:
         metadata = {}
     encoded_metadata = {}
-    for k, v in metadata.iteritems():
-        key = unicode(k).encode("utf-8") if isinstance(k, basestring) else k
-        value = unicode(v).encode("utf-8") if isinstance(v, basestring) else v
+    for k, v in metadata.items():
+        if six.PY2:
+            key = k.encode('utf8') if isinstance(
+                k, six.text_type) else str(k)
+            value = v.encode('utf8') if isinstance(
+                v, six.text_type) else str(v)
+        else:
+            key = swift_code.str_to_wsgi(k) if isinstance(k, str) else str(k)
+            value = swift_code.str_to_wsgi(v) if isinstance(v, str) else str(v)
         encoded_metadata[key] = value
     return encoded_metadata
 
 
-serialize_metadata = json.dumps
+def serialize_metadata(wsgi_metadata):
+    return json.dumps({
+        swift_code.wsgi_to_str(key): (
+            swift_code.wsgi_to_str(value)
+            if isinstance(value, six.string_types) else value)
+        for key, value in wsgi_metadata.items()})
 
 
 def merge_container_metadata(old, new):
@@ -348,7 +366,18 @@ def merge_container_metadata(old, new):
 
 
 def merge_object_metadata(old, new):
+    '''
+    Merge the existing metadata for an object with new metadata passed
+    in as a result of a POST operation.  X-Object-Sysmeta- and similar
+    metadata cannot be changed by a POST.
+    '''
+
     merged = new.copy()
+
+    for header, value in merged.items():
+        if (header.startswith("X-Object-Sysmeta-") or
+                header in STICKY_OBJECT_METADATA_HEADERS):
+            del merged[header]
 
     for header, value in old.items():
         if (header.startswith("X-Object-Sysmeta-") or
@@ -358,7 +387,7 @@ def merge_object_metadata(old, new):
     old_ct = old.get("Content-Type")
     new_ct = new.get("Content-Type")
     if old_ct is not None:
-        if new_ct is None:
+        if not new_ct:
             merged["Content-Type"] = old_ct
         elif ';swift_bytes=' in old_ct:
             merged["Content-Type"] = '%s;swift_bytes=%s' % (
@@ -378,7 +407,8 @@ def extract_object_metadata_from_headers(headers):
 
     :param headers: request headers (a dictionary)
 
-    :returns: dictionary containing object-metadata headers
+    :returns: dictionary containing object-metadata headers (and not a
+    swob.HeaderKeyDict or similar object)
     """
     meta_headers = {}
     for header, value in headers.items():
@@ -387,7 +417,12 @@ def extract_object_metadata_from_headers(headers):
         if (header.startswith("X-Object-Meta-") or
                 header.startswith("X-Object-Sysmeta-") or
                 header in SPECIAL_OBJECT_METADATA_HEADERS):
-            meta_headers[header] = value
+
+            # do not let a client pass in ORIGINAL_MD5_HEADER
+            if header not in (ORIGINAL_MD5_HEADER,
+                              ORIGINAL_MD5_HEADER.title()):
+                meta_headers[header] = value
+
     return meta_headers
 
 
@@ -414,6 +449,7 @@ def extract_container_metadata_from_headers(req):
                 (req.environ.get('swift_owner', False) or
                  header not in SWIFT_OWNER_HEADERS)):
             meta_headers[header] = value
+
         if header.startswith("X-Remove-"):
             header = header.replace("-Remove", "", 1)
             if ((header.startswith("X-Container-Meta-") or
@@ -424,30 +460,116 @@ def extract_container_metadata_from_headers(req):
     return meta_headers
 
 
-def best_possible_etag(obj_metadata, account_name, ino, num_writes,
-                       is_dir=False, container_listing=False):
-    if is_dir:
-        return EMPTY_OBJECT_ETAG
-    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
-        val = obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+def mung_etags(obj_metadata, etag, num_writes):
+    '''
+    Mung the ETag headers that will be stored with an object.  The
+    goal is to preserve ETag metadata passed down by other filters but
+    to do so in such a way that it will be invalidated if there is a
+    write to or truncate of the object via the ProxyFS file API.
+
+    The mechanism is to prepend a counter to the ETag header values
+    that is incremented each time the object is modified is modified.
+    When the object is read, if the value for the counter has changed,
+    the ETag is assumed to be invalid.  The counter is typically the
+    number of writes to the object.
+
+    etag is either None or the value that should be returned as the
+    ETag for the object (in the absence of other considerations).
+
+    This assumes that all headers have been converted to "titlecase",
+    except ORIGINAL_MD5_HEADER which is the random case string
+    "X-Object-Sysmeta-ProxyFS-Initial-MD5".
+
+    This ignores SLO headers because it assumes they have already been
+    stripped.
+    '''
+    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
+            num_writes, obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
+
+    if S3API_ETAG_HEADER in obj_metadata:
+        obj_metadata[S3API_ETAG_HEADER] = "%d:%s" % (
+            num_writes, obj_metadata[S3API_ETAG_HEADER])
+
+    if etag is not None:
+        obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (num_writes, etag)
+
+    return
+
+
+def unmung_etags(obj_metadata, num_writes):
+    '''
+    Unmung the ETag headers associated with an object to return
+    them to the state they were in when passed to pfs_middleware.
+
+    Delete them if the object has changed or the header value
+    does not parse correctly.
+
+    This assumes that all headers have been converted to "titlecase",
+    which means, among other things, that "ETag" will show up as
+    "Etag".
+    '''
+
+    # if the header is invalid or stale it is not added back after the pop
+    if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        val = obj_metadata.pop(LISTING_ETAG_OVERRIDE_HEADER)
         try:
             stored_num_writes, rest = val.split(':', 1)
             if int(stored_num_writes) == num_writes:
-                return rest
+                obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = rest
         except ValueError:
             pass
-    elif ORIGINAL_MD5_HEADER in obj_metadata:
-        val = obj_metadata[ORIGINAL_MD5_HEADER]
+
+    if S3API_ETAG_HEADER in obj_metadata:
+        val = obj_metadata.pop(S3API_ETAG_HEADER)
         try:
-            stored_num_writes, md5sum = val.split(':', 1)
+            stored_num_writes, rest = val.split(':', 1)
             if int(stored_num_writes) == num_writes:
-                return md5sum
+                obj_metadata[S3API_ETAG_HEADER] = rest
         except ValueError:
             pass
-    return construct_etag(account_name, ino, num_writes)
+
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        val = obj_metadata.pop(ORIGINAL_MD5_HEADER)
+        try:
+            stored_num_writes, rest = val.split(':', 1)
+            if int(stored_num_writes) == num_writes:
+                obj_metadata[ORIGINAL_MD5_HEADER] = rest
+        except ValueError:
+            pass
 
 
-def construct_etag(account_name, ino, num_writes):
+def best_possible_etag(obj_metadata, account_name, inum, num_writes,
+                       is_dir=False, container_listing=False):
+    '''
+    Return the ETag that is most likely to be correct for the query,
+    but leave other valid ETags values in the metadata, in case a
+    higher layer filter wants to use them to override the value
+    returned here.
+
+    If the ETags in the metadata are invalid, construct and return a
+    new ProxyFS ETag based on the account name, inode number, and
+    number of writes.
+
+    obj_metadata may be a Python dictionary, a swob.HeaderKeyDict, or a
+    swob.HeaderEnvironProxy.  ORIGINAL_MD5_HEADER is random case, not
+    title case, but if obj_metadata is a Python dictionary it will
+    preserve the same random case.  The other two types do case folding so
+    we don't need to map ORIGINAL_MD5_HEADER to title case.
+    '''
+    if is_dir:
+        return EMPTY_OBJECT_ETAG
+
+    if container_listing and LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
+        return obj_metadata[LISTING_ETAG_OVERRIDE_HEADER]
+
+    if ORIGINAL_MD5_HEADER in obj_metadata:
+        return obj_metadata[ORIGINAL_MD5_HEADER]
+
+    return construct_etag(account_name, inum, num_writes)
+
+
+def construct_etag(account_name, inum, num_writes):
     # We append -32 in an attempt to placate S3 clients. In S3, the ETag of
     # a multipart object looks like "hash-N" where <hash> is the MD5 of the
     # MD5s of the segments and <N> is the number of segments.
@@ -459,7 +581,7 @@ def construct_etag(account_name, ino, num_writes):
     # 32 was chosen because it was the ticket number of the author's lunch
     # order on the day this code was written. It has no significance.
     return '"pfsv2/{}/{:08X}/{:08X}-32"'.format(
-        urllib_parse.quote(account_name), ino, num_writes)
+        urllib_parse.quote(account_name), inum, num_writes)
 
 
 def iterator_posthook(iterable, posthook, *posthook_args, **posthook_kwargs):
@@ -475,7 +597,7 @@ class ZeroFiller(object):
     Internal middleware to handle the zero-fill portions of sparse files for
     object GET responses.
     """
-    ZEROES = "\x00" * 4096
+    ZEROES = b"\x00" * 4096
 
     def __init__(self, app):
         self.app = app
@@ -537,7 +659,7 @@ class LimitedInput(object):
     after an object PUT completes.
     """
     def __init__(self, wsgi_input, limit):
-        self._peeked_data = ""
+        self._peeked_data = b""
         self.limit = self.orig_limit = limit
         self.bytes_read = 0
         self.wsgi_input = wsgi_input
@@ -551,7 +673,7 @@ class LimitedInput(object):
 
         chunk = self.wsgi_input.read(to_read, *args, **kwargs)
         chunk = self._peeked_data + chunk
-        self._peeked_data = ""
+        self._peeked_data = b""
 
         self.bytes_read += len(chunk)
         self.limit -= len(chunk)
@@ -566,7 +688,7 @@ class LimitedInput(object):
 
         line = self.wsgi_input.readline(to_read, *args, **kwargs)
         line = self._peeked_data + line
-        self._peeked_data = ""
+        self._peeked_data = b""
 
         self.bytes_read += len(line)
         self.limit -= len(line)
@@ -731,7 +853,7 @@ class PfsMiddleware(object):
                         req.environ.get('swift_owner'):
                     if self.bypass_mode == 'read-only' and method not in (
                             'GET', 'HEAD'):
-                        return swob.HTTPMethodNotAllowed()
+                        return swob.HTTPMethodNotAllowed(request=req)
                     # We needed to do a PFS-namespace container HEAD to get
                     # the "appropriate" ACL ahead of calling the authorize
                     # callback, but that almost certainly didn't exist and
@@ -754,7 +876,6 @@ class PfsMiddleware(object):
                     resp = self.delete_object(ctx)
                 elif method == 'COALESCE' and obj:
                     resp = self.coalesce_object(ctx, auth_cb)
-
                 elif method == 'GET' and con:
                     resp = self.get_container(ctx)
                 elif method == 'HEAD' and con:
@@ -770,6 +891,11 @@ class PfsMiddleware(object):
                     resp = self.get_account(ctx)
                 elif method == 'HEAD':
                     resp = self.head_account(ctx)
+                elif method == 'PROXYFS' and not con and not obj:
+                    if not (req.environ.get('swift_owner') and
+                            self.bypass_mode in ('read-only', 'read-write')):
+                        return swob.HTTPMethodNotAllowed(request=req)
+                    resp = self.proxy_rpc(ctx)
                 # account PUT, POST, and DELETE are just passed
                 # through to Swift
                 else:
@@ -842,6 +968,87 @@ class PfsMiddleware(object):
             return container_info['write_acl']
         else:
             return None
+
+    def proxy_rpc(self, ctx):
+        req = ctx.req
+        ct = req.headers.get('Content-Type')
+        if not ct or ct.split(';', 1)[0].strip() != 'application/json':
+            msg = 'RPC body must have Content-Type application/json'
+            if ct:
+                msg += ', not %s' % ct
+            return swob.Response(status=415, request=req, body=msg)
+
+        cl = req.content_length
+        if cl is None:
+            if req.headers.get('Transfer-Encoding') != 'chunked':
+                return swob.HTTPLengthRequired(request=req)
+            json_payloads = req.body_file.read(MAX_RPC_BODY_SIZE).split(b'\n')
+            if req.body_file.read(1):
+                return swob.HTTPRequestEntityTooLarge(request=req)
+        else:
+            if cl > MAX_RPC_BODY_SIZE:
+                return swob.HTTPRequestEntityTooLarge(request=req)
+            json_payloads = req.body.split(b'\n')
+
+        if self.bypass_mode == 'read-write':
+            allowed_methods = rpc.allow_read_write
+        else:
+            allowed_methods = rpc.allow_read_only
+
+        payloads = []
+        for i, json_payload in enumerate(x for x in json_payloads
+                                         if x.strip()):
+            try:
+                payload = json.loads(json_payload.decode('utf8'))
+                if payload['jsonrpc'] != '2.0':
+                    raise ValueError(
+                        'expected JSONRPC 2.0, got %s' % payload['jsonrpc'])
+                if not isinstance(payload['method'], six.string_types):
+                    raise ValueError(
+                        'expected string, got %s' % type(payload['method']))
+                if payload['method'] not in allowed_methods:
+                    raise ValueError(
+                        'method %s not allowed' % payload['method'])
+                if not (isinstance(payload['params'], list) and
+                        len(payload['params']) == 1 and
+                        isinstance(payload['params'][0], dict)):
+                    raise ValueError
+            except (TypeError, KeyError, ValueError) as err:
+                return swob.HTTPBadRequest(
+                    request=req,
+                    body=(b'Could not parse/validate JSON payload #%d %s: %s' %
+                          (i, json_payload, str(err).encode('utf8'))))
+            payloads.append(payload)
+
+        # TODO: consider allowing more than one payload per request
+        if len(payloads) != 1:
+            return swob.HTTPBadRequest(
+                request=req,
+                body='Expected exactly one JSON payload')
+
+        # Our basic validation is done; spin up a connection and send requests
+        client = utils.JsonRpcClient(ctx.proxyfsd_addrinfo)
+        payload = payloads[0]
+        try:
+            if 'id' not in payload:
+                payload['id'] = str(uuid.uuid4())
+            payload['params'][0]['AccountName'] = ctx.account_name
+            response = client.call(payload, self.proxyfsd_rpc_timeout,
+                                   raise_on_rpc_error=False)
+        except eventlet.Timeout:
+            self.logger.debug(
+                "Timeout (%.6fs) communicating with %s, calling %s",
+                self.proxyfsd_rpc_timeout, ctx.proxyfsd_addrinfo,
+                payloads[0]['method'])
+            return swob.HTTPBadGateway(request=req)
+        except socket.error as err:
+            self.logger.debug("Error communicating with %r: %s.",
+                              ctx.proxyfsd_addrinfo, err)
+            return swob.HTTPBadGateway(request=req)
+        else:
+            return swob.HTTPOk(
+                request=req, body=json.dumps(response),
+                headers={'Content-Type': 'application/json'})
 
     def get_account(self, ctx):
         req = ctx.req
@@ -965,7 +1172,7 @@ class PfsMiddleware(object):
 
             root_node.append(container_node)
 
-        buf = StringIO()
+        buf = BytesIO()
         ET.ElementTree(root_node).write(
             buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue()
@@ -1226,12 +1433,16 @@ class PfsMiddleware(object):
             last_modified = iso_timestamp_from_epoch_ns(ent.get(
                 "AttrChangeTime", ent["ModificationTime"]))
             obj_metadata = deserialize_metadata(ent["Metadata"])
-            content_type = obj_metadata.get("Content-Type")
+            unmung_etags(obj_metadata, ent["NumWrites"])
+
+            content_type = swift_code.wsgi_to_str(
+                obj_metadata.get("Content-Type"))
             if content_type is None:
                 content_type = guess_content_type(ent["Basename"],
                                                   ent["IsDir"])
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
+
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 ent["InodeNumber"], ent["NumWrites"], is_dir=ent["IsDir"],
@@ -1247,7 +1458,7 @@ class PfsMiddleware(object):
             if delimiter != "" and "IsDir" in ent and ent["IsDir"]:
                 json_entries.append({"subdir": ent["Basename"] + delimiter})
 
-        return json.dumps(json_entries)
+        return json.dumps(json_entries).encode('ascii')
 
     # TODO: This method is usually non reachable, because at some point in the
     # pipeline, we convert JSON to XML. We should either remove this or update
@@ -1260,12 +1471,16 @@ class PfsMiddleware(object):
         for container_entry in container_entries:
             obj_name = container_entry['Basename']
             obj_metadata = deserialize_metadata(container_entry["Metadata"])
-            content_type = obj_metadata.get("Content-Type")
+            unmung_etags(obj_metadata, container_entry["NumWrites"])
+
+            content_type = swift_code.wsgi_to_str(
+                obj_metadata.get("Content-Type"))
             if content_type is None:
                 content_type = guess_content_type(
                     container_entry["Basename"], container_entry["IsDir"])
             content_type, swift_bytes = content_type.partition(
                 ';swift_bytes=')[::2]
+
             etag = best_possible_etag(
                 obj_metadata, account_name,
                 container_entry["InodeNumber"],
@@ -1286,7 +1501,10 @@ class PfsMiddleware(object):
             container_node.append(bytes_node)
 
             ct_node = ET.Element('content_type')
-            ct_node.text = content_type.decode('utf-8')
+            if six.PY2:
+                ct_node.text = content_type.decode('utf-8')
+            else:
+                ct_node.text = content_type
             container_node.append(ct_node)
 
             lm_node = ET.Element('last_modified')
@@ -1298,7 +1516,7 @@ class PfsMiddleware(object):
 
             root_node.append(container_node)
 
-        buf = StringIO()
+        buf = BytesIO()
         ET.ElementTree(root_node).write(
             buf, encoding="utf-8", xml_declaration=True)
         return buf.getvalue()
@@ -1357,18 +1575,29 @@ class PfsMiddleware(object):
             return swob.HTTPUnprocessableEntity(request=req)
 
         path = urllib_parse.unquote(req.path)
-        obj_metadata = serialize_metadata(extract_object_metadata_from_headers(
-            req.headers))
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
 
-        rpc_req = rpc.middleware_mkdir_request(path, obj_metadata)
+        # mung the passed etags, if any (NumWrites for a directory is
+        # always zero)
+        mung_etags(obj_metadata, request_etag, 0)
+
+        rpc_req = rpc.middleware_mkdir_request(
+            path, serialize_metadata(obj_metadata))
         rpc_resp = self.rpc_call(ctx, rpc_req)
         mtime_ns, inode, num_writes = rpc.parse_middleware_mkdir_response(
             rpc_resp)
 
+        # currently best_possible_etag() returns EMPTY_OBJECT_ETAG for
+        # all directories, but that might change in the future.
+        # unmung the obj_metadata so best_possible_etag() can use it
+        # if its behavior changes (note that num_writes is forced to 0).
+        unmung_etags(obj_metadata, 0)
         resp_headers = {
-            "Etag": construct_etag(ctx.account_name, inode, num_writes),
             "Content-Type": DIRECTORY_CONTENT_TYPE,
             "Last-Modified": last_modified_from_epoch_ns(mtime_ns)}
+        resp_headers["ETag"] = best_possible_etag(
+            obj_metadata, ctx.account_name, inode, 0, is_dir=True)
+
         return swob.HTTPCreated(request=req, headers=resp_headers, body="")
 
     def put_object_as_file(self, ctx):
@@ -1458,24 +1687,18 @@ class PfsMiddleware(object):
                 hasher.hexdigest() != request_etag:
             return swob.HTTPUnprocessableEntity(request=req)
 
-        # All the data is now in Swift; we just have to tell proxyfsd about
-        # it. We save off the original MD5 checksum and the number of log
-        # segments (this later becomes the NumWrites value) so that we can
-        # provide an ETag that's an MD5 checksum unless the file has been
-        # subsequently written.
+        # All the data is now in Swift; we just have to tell proxyfsd
+        # about it.  Mung any passed ETags values to include the
+        # number of writes to the file (basically, the object's update
+        # count) and supply the MD5 hash computed here which becomes
+        # object's future ETag value until the object updated.
         obj_metadata = extract_object_metadata_from_headers(req.headers)
-        obj_metadata[ORIGINAL_MD5_HEADER] = "%d:%s" % (len(log_segments),
-                                                       hasher.hexdigest())
-        # Add a similar prefix to any container-update-override etag, to
-        # similarly verify that there wasn't a subsequent write.
-        if LISTING_ETAG_OVERRIDE_HEADER in obj_metadata:
-            obj_metadata[LISTING_ETAG_OVERRIDE_HEADER] = "%d:%s" % (
-                len(log_segments), obj_metadata[LISTING_ETAG_OVERRIDE_HEADER])
+        mung_etags(obj_metadata, hasher.hexdigest(), len(log_segments))
 
         put_complete_req = rpc.put_complete_request(
             virtual_path, log_segments, serialize_metadata(obj_metadata))
         try:
-            mtime_ns, inode, num_writes = rpc.parse_put_complete_response(
+            mtime_ns, inode, __writes = rpc.parse_put_complete_response(
                 self.rpc_call(ctx, put_complete_req))
         except utils.RpcError as err:
             # We deliberately don't try to clean up our log segments on
@@ -1522,7 +1745,7 @@ class PfsMiddleware(object):
 
         try:
             head_response = self.rpc_call(ctx, rpc.head_request(path))
-            raw_old_metadata, mtime, _, _, inode_number, num_writes = \
+            raw_old_metadata, mtime, _, _, inode_number, _ = \
                 rpc.parse_head_response(head_response)
         except utils.RpcError as err:
             if err.errno in (pfs_errno.NotFoundError, pfs_errno.NotDirError):
@@ -1530,6 +1753,13 @@ class PfsMiddleware(object):
             else:
                 raise
 
+        # There is no need to call unmung_etags() before the merge and
+        # mung_etags() after because the merge cannot change the several
+        # possible ETag headers.
+        #
+        # This might be an opportunity to drop an ETAG header that has
+        # become stale due to num_writes changing, but that does not
+        # seem important to address.
         old_metadata = deserialize_metadata(raw_old_metadata)
         merged_metadata = merge_object_metadata(old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
@@ -1562,7 +1792,10 @@ class PfsMiddleware(object):
 
         read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
             rpc.parse_get_object_response(object_response)
-        headers = swob.HeaderKeyDict(deserialize_metadata(raw_metadata))
+
+        metadata = deserialize_metadata(raw_metadata)
+        unmung_etags(metadata, num_writes)
+        headers = swob.HeaderKeyDict(metadata)
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path,
@@ -1576,8 +1809,8 @@ class PfsMiddleware(object):
             mtime_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
-        headers["Etag"] = best_possible_etag(headers, ctx.account_name,
-                                             ino, num_writes)
+        headers["Etag"] = best_possible_etag(
+            headers, ctx.account_name, ino, num_writes)
 
         get_read_plan = req.params.get("get-read-plan", "no")
         if get_read_plan == "":
@@ -1723,7 +1956,9 @@ class PfsMiddleware(object):
         raw_md, last_modified_ns, file_size, is_dir, ino, num_writes = \
             rpc.parse_head_response(head_response)
 
-        headers = swob.HeaderKeyDict(deserialize_metadata(raw_md))
+        metadata = deserialize_metadata(raw_md)
+        unmung_etags(metadata, num_writes)
+        headers = swob.HeaderKeyDict(metadata)
 
         if "Content-Type" not in headers:
             headers["Content-Type"] = guess_content_type(req.path, is_dir)
@@ -1748,6 +1983,8 @@ class PfsMiddleware(object):
         return resp
 
     def coalesce_object(self, ctx, auth_cb):
+
+        # extract and verify the object list for the new object
         req = ctx.req
         object_path = urllib_parse.unquote(req.path)
 
@@ -1789,7 +2026,8 @@ class PfsMiddleware(object):
                 # Gotta check auth for all of the segments, too
                 bimodal_checker = ctx.req.environ[utils.ENV_BIMODAL_CHECKER]
                 acl_env = ctx.req.environ.copy()
-                acl_env['PATH_INFO'] = elem_container_path
+                acl_env['PATH_INFO'] = swift_code.text_to_wsgi(
+                    elem_container_path)
                 container_info = get_container_info(
                     acl_env, bimodal_checker,
                     swift_source="PFS")
@@ -1800,10 +2038,42 @@ class PfsMiddleware(object):
                         return denial_response
                 authed_containers.add(elem_container_path)
 
+        # proxyfs treats the number of objects as the number of writes
+        num_writes = len(decoded_json["elements"])
+
+        # validate the metadata for the new object (further munging
+        # of ETags will be done later)
+        err = constraints.check_metadata(req, 'object')
+        if err:
+            return err
+
+        # retrieve the ETag value in the request, or None
+        req_etag = req.headers.get('ETag')
+
+        # strip out user supplied and other unwanted headers
+        obj_metadata = extract_object_metadata_from_headers(req.headers)
+
+        # strip out headers that apply only to SLO objects
+        unwanted_headers = ['X-Static-Large-Object']
+        for header in obj_metadata.keys():
+            if header.startswith("X-Object-Sysmeta-Slo-"):
+                unwanted_headers.append(header)
+        for header in unwanted_headers:
+            if header in obj_metadata:
+                del obj_metadata[header]
+
+        # Now that we know the number of writes (really number of objects) we
+        # can mung the sundry ETag headers.
+        mung_etags(obj_metadata, req_etag, num_writes)
+
+        raw_obj_metadata = serialize_metadata(obj_metadata)
+
+        # now get proxyfs to coalesce the objects and set initial headers
         try:
             coalesce_response = self.rpc_call(
                 ctx, rpc.coalesce_object_request(
-                    object_path, decoded_json["elements"]))
+                    object_path, decoded_json["elements"], raw_obj_metadata))
+
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
                 return swob.HTTPNotFound(
@@ -1824,11 +2094,13 @@ class PfsMiddleware(object):
             else:
                 raise
 
-        last_modified_ns, ino, num_writes = \
+        last_modified_ns, inum, num_writes = \
             rpc.parse_coalesce_object_response(coalesce_response)
 
+        unmung_etags(obj_metadata, num_writes)
         headers = {}
-        headers["Etag"] = construct_etag(ctx.account_name, ino, num_writes)
+        headers["Etag"] = best_possible_etag(
+            obj_metadata, ctx.account_name, inum, num_writes)
         headers["Last-Modified"] = last_modified_from_epoch_ns(
             last_modified_ns)
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(

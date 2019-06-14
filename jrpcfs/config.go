@@ -13,7 +13,7 @@ import (
 )
 
 type globalsStruct struct {
-	mapsLock sync.Mutex   // protects volumeMap/mountIDMap/lastMountID/bimodalMountMap
+	mapsLock sync.Mutex   // protects volumeMap/mountIDMap/bimodalMountMap
 	gate     sync.RWMutex // API Requests RLock()/RUnlock()
 	//                       confMap changes Lock()/Unlock()
 
@@ -28,8 +28,8 @@ type globalsStruct struct {
 
 	// Map used to store volumes by ID already mounted for bimodal support
 	// TODO: These never get purged !!!
-	mountIDMap  map[uint64]fs.MountHandle // key == mountID
-	lastMountID uint64
+	mountIDAsByteArrayMap map[MountIDAsByteArray]fs.MountHandle
+	mountIDAsStringMap    map[MountIDAsString]fs.MountHandle
 
 	// Map used to store volumes by name already mounted for bimodal support
 	bimodalMountMap map[string]fs.MountHandle // key == volumeName
@@ -51,8 +51,8 @@ func init() {
 
 func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.volumeMap = make(map[string]bool)
-	globals.mountIDMap = make(map[uint64]fs.MountHandle)
-	globals.lastMountID = uint64(0) // The only invalid MountID
+	globals.mountIDAsByteArrayMap = make(map[MountIDAsByteArray]fs.MountHandle)
+	globals.mountIDAsStringMap = make(map[MountIDAsString]fs.MountHandle)
 	globals.bimodalMountMap = make(map[string]fs.MountHandle)
 
 	// Fetch IPAddr from config file
@@ -97,6 +97,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	// Init listeners
 	globals.listeners = make([]net.Listener, 0, 2)
 	globals.connections = list.New()
+	globals.halting = false
 
 	// Init JSON RPC server stuff
 	jsonRpcServerUp(globals.ipAddr, globals.portString)
@@ -135,22 +136,35 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		mountHandle        fs.MountHandle
-		mountID            uint64
-		removedMountID     uint64
-		removedMountIDList []uint64
+		mountHandle                    fs.MountHandle
+		mountIDAsByteArray             MountIDAsByteArray
+		mountIDAsString                MountIDAsString
+		toRemoveMountIDAsByteArrayList []MountIDAsByteArray
+		toRemoveMountIDAsStringList    []MountIDAsString
 	)
 
-	removedMountIDList = make([]uint64, 0, len(globals.mountIDMap))
+	toRemoveMountIDAsByteArrayList = make([]MountIDAsByteArray, 0, len(globals.mountIDAsByteArrayMap))
 
-	for mountID, mountHandle = range globals.mountIDMap {
+	for mountIDAsByteArray, mountHandle = range globals.mountIDAsByteArrayMap {
 		if mountHandle.VolumeName() == volumeName {
-			removedMountIDList = append(removedMountIDList, mountID)
+			toRemoveMountIDAsByteArrayList = append(toRemoveMountIDAsByteArrayList, mountIDAsByteArray)
 		}
 	}
 
-	for _, removedMountID = range removedMountIDList {
-		delete(globals.mountIDMap, removedMountID)
+	for _, mountIDAsByteArray = range toRemoveMountIDAsByteArrayList {
+		delete(globals.mountIDAsByteArrayMap, mountIDAsByteArray)
+	}
+
+	toRemoveMountIDAsStringList = make([]MountIDAsString, 0, len(globals.mountIDAsStringMap))
+
+	for mountIDAsString, mountHandle = range globals.mountIDAsStringMap {
+		if mountHandle.VolumeName() == volumeName {
+			toRemoveMountIDAsStringList = append(toRemoveMountIDAsStringList, mountIDAsString)
+		}
+	}
+
+	for _, mountIDAsString = range toRemoveMountIDAsStringList {
+		delete(globals.mountIDAsStringMap, mountIDAsString)
 	}
 
 	delete(globals.volumeMap, volumeName)
@@ -176,17 +190,28 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	if 0 != len(globals.volumeMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.volumeMap")
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.volumeMap)")
 		return
 	}
-	if 0 != len(globals.mountIDMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountIDMap")
+	if 0 != len(globals.mountIDAsByteArrayMap) {
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountIDAsByteArrayMap)")
+		return
+	}
+	if 0 != len(globals.mountIDAsStringMap) {
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountIDAsStringMap)")
 		return
 	}
 	if 0 != len(globals.bimodalMountMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.bimodalMountMap")
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.bimodalMountMap)")
 		return
 	}
+
+	globals.halting = true
+
+	jsonRpcServerDown()
+	ioServerDown()
+
+	globals.listenersWG.Wait()
 
 	openGate() // In case we are restarted... Up() expects Gate to initially be open
 

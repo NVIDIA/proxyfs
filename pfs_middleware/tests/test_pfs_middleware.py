@@ -19,7 +19,7 @@ import hashlib
 import json
 import mock
 import unittest
-from StringIO import StringIO
+from io import BytesIO
 from swift.common import swob
 from xml.etree import ElementTree
 
@@ -44,8 +44,33 @@ class FakeLogger(object):
     def info(fmt, *args):
         pass
 
-    def debug(fmt, *args):
+    def debug(fmt, *args, **kwargs):
         pass
+
+
+class TestHelpers(unittest.TestCase):
+    def test_deserialize_metadata(self):
+        self.assertEqual(mware.deserialize_metadata(None), {})
+        self.assertEqual(mware.deserialize_metadata(''), {})
+        self.assertEqual(mware.deserialize_metadata('{}'), {})
+        self.assertEqual(mware.deserialize_metadata('{"foo": "bar"}'),
+                         {"foo": "bar"})
+        self.assertEqual(mware.deserialize_metadata(
+            '{"unicode-\\u1234":"meta \\ud83c\\udf34"}'
+        ), {
+            # NB: WSGI strings
+            'unicode-\xe1\x88\xb4': 'meta \xf0\x9f\x8c\xb4',
+        })
+
+    def test_serialize_metadata(self):
+        self.assertEqual(mware.serialize_metadata({}), '{}')
+        self.assertEqual(
+            mware.serialize_metadata({
+                # NB: WSGI strings
+                'unicode-\xe1\x88\xb4': 'meta \xf0\x9f\x8c\xb4',
+            }),
+            # But it comes out as good Unicode
+            '{"unicode-\\u1234": "meta \\ud83c\\udf34"}')
 
 
 class BaseMiddlewareTest(unittest.TestCase):
@@ -148,7 +173,7 @@ class BaseMiddlewareTest(unittest.TestCase):
             headers[0] = swob.HeaderKeyDict(h)
 
         body_iter = app(req.environ, start_response)
-        body = ''
+        body = b''
         caught_exc = None
         try:
             try:
@@ -242,13 +267,13 @@ class TestAccountGet(BaseMiddlewareTest):
             "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
         status, _, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, '000000000000DACA\n000000000000DACC\n')
+        self.assertEqual(body, b'000000000000DACA\n000000000000DACC\n')
 
         req = swob.Request.blank("/v1/AUTH_test", environ={
             'swift_owner': True})
         status, _, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+        self.assertEqual(body, b'chickens\ncows\ngoats\npigs\n')
 
         req = swob.Request.blank("/v1/AUTH_test", method='PUT', headers={
             "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
@@ -259,13 +284,13 @@ class TestAccountGet(BaseMiddlewareTest):
             "X-Bypass-ProxyFS": "true"})
         status, _, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'chickens\ncows\ngoats\npigs\n')
+        self.assertEqual(body, b'chickens\ncows\ngoats\npigs\n')
 
     def test_text(self):
         req = swob.Request.blank("/v1/AUTH_test")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, "chickens\ncows\ngoats\npigs\n")
+        self.assertEqual(body, b"chickens\ncows\ngoats\npigs\n")
 
     def test_json(self):
         self.maxDiff = None
@@ -302,18 +327,18 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "application/xml; charset=utf-8")
         self.assertTrue(body.startswith(
-            """<?xml version='1.0' encoding='utf-8'?>"""))
+            b"""<?xml version='1.0' encoding='utf-8'?>"""))
 
         root_node = ElementTree.fromstring(body)
         self.assertEqual(root_node.tag, 'account')
         self.assertEqual(root_node.attrib["name"], 'AUTH_test')
 
-        containers = root_node.getchildren()
+        containers = list(root_node)
         self.assertEqual(containers[0].tag, 'container')
 
         # The XML account listing doesn't use XML attributes for data, but
         # rather a sequence of tags like <name>X</name> <bytes>Y</bytes> ...
-        con_attr_tags = containers[0].getchildren()
+        con_attr_tags = list(containers[0])
         self.assertEqual(len(con_attr_tags), 4)
 
         name_node = con_attr_tags[0]
@@ -435,7 +460,7 @@ class TestAccountGet(BaseMiddlewareTest):
         req = swob.Request.blank("/v1/AUTH_test?marker=zzz")
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
-        self.assertEqual(body, '')
+        self.assertEqual(body, b'')
 
     def test_spaces(self):
         self.bimodal_accounts.add('AUTH_test with spaces')
@@ -480,7 +505,7 @@ class TestAccountHead(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '204 No Content')
         self.assertEqual(headers.get("ProxyFS-Enabled"), "yes")
-        self.assertEqual(body, '')
+        self.assertEqual(body, b'')
 
     def test_in_transit(self):
 
@@ -516,7 +541,7 @@ class TestObjectGet(BaseMiddlewareTest):
         req = swob.Request.blank('/info')
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, '{"stuff": "yes"}')
+        self.assertEqual(body, b'{"stuff": "yes"}')
 
     def test_non_bimodal_account(self):
         self.app.register(
@@ -527,7 +552,7 @@ class TestObjectGet(BaseMiddlewareTest):
         req = swob.Request.blank('/v1/AUTH_unimodal/c/o')
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'squirrel')
+        self.assertEqual(body, b'squirrel')
 
     def test_GET_basic(self):
         # ProxyFS log segments look a lot like actual file contents followed
@@ -572,7 +597,7 @@ class TestObjectGet(BaseMiddlewareTest):
                          "Wed, 07 Dec 2016 23:08:55 GMT")
         self.assertEqual(headers["ETag"],
                          mware.construct_etag("AUTH_test", 1245, 2424))
-        self.assertEqual(body, 'burritos')
+        self.assertEqual(body, b'burritos')
 
         req = swob.Request.blank('/v1/AUTH_test/notes/lunch?get-read-plan=on',
                                  environ={'swift_owner': True})
@@ -597,7 +622,7 @@ class TestObjectGet(BaseMiddlewareTest):
                                  environ={'swift_owner': True})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'burritos')
+        self.assertEqual(body, b'burritos')
 
         # Can handle Range requests, too
         def mock_RpcGetObject(get_object_req):
@@ -681,7 +706,7 @@ class TestObjectGet(BaseMiddlewareTest):
                             'X-Object-Sysmeta-Slo-Etag': 'some etag',
                             'X-Object-Sysmeta-Slo-Size': '0',
                             'Content-Type': 'text/plain;swift_bytes=0',
-                        })),
+                        }).encode('ascii')).decode('ascii'),
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
@@ -711,7 +736,7 @@ class TestObjectGet(BaseMiddlewareTest):
             'X-Timestamp': '1481152134.33186',
             'Last-Modified': 'Wed, 07 Dec 2016 23:08:55 GMT',
         })
-        self.assertEqual(body, '[]')
+        self.assertEqual(body, b'[]')
 
     def test_GET_authed(self):
         self.app.register(
@@ -777,7 +802,7 @@ class TestObjectGet(BaseMiddlewareTest):
                          "Wed, 07 Dec 2016 23:08:55 GMT")
         self.assertEqual(headers["ETag"],
                          mware.construct_etag("AUTH_test", 1245, 2424))
-        self.assertEqual(body, 'burritos')
+        self.assertEqual(body, b'burritos')
 
     def test_GET_sparse(self):
         # This log segment, except for the obvious fake metadata at the end,
@@ -831,7 +856,7 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, "200 OK")
-        self.assertEqual(body, "sparse" + ("\x00" * 10000) + "file")
+        self.assertEqual(body, b"sparse" + (b"\x00" * 10000) + b"file")
 
     def test_GET_multiple_segments(self):
         # Typically, a GET request will include data from multiple log
@@ -907,15 +932,15 @@ class TestObjectGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(body, (
-            "There once was an X from place B,\n"
-            "That satisfied predicate P.\n"
-            "He or she did thing A,\n"
-            "In an adjective way,\n"
-            "Resulting in circumstance C."))
+            b"There once was an X from place B,\n"
+            b"That satisfied predicate P.\n"
+            b"He or she did thing A,\n"
+            b"In an adjective way,\n"
+            b"Resulting in circumstance C."))
 
     def test_GET_conditional_if_match(self):
         obj_etag = "42d0f073592cdef8f602cda59fbb270e"
-        obj_body = "annet-pentahydric-nuculoid-defiber"
+        obj_body = b"annet-pentahydric-nuculoid-defiber"
 
         self.app.register(
             'GET', '/v1/AUTH_test/InternalContainerName/000000000097830c',
@@ -930,7 +955,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "Metadata": base64.b64encode(
                         json.dumps({
                             mware.ORIGINAL_MD5_HEADER: "123:%s" % obj_etag,
-                        })),
+                        }).encode('ascii')).decode('ascii'),
                     "InodeNumber": 1245,
                     "NumWrites": 123,
                     "ModificationTime": 1511222561631497000,
@@ -1015,7 +1040,7 @@ class TestObjectGet(BaseMiddlewareTest):
         self.assertEqual(status, '206 Partial Content')
         self.assertEqual(headers.get('Content-Range'), "bytes 21-69/94")
         self.assertEqual(
-            body, 'Cheshire, Duddleswell, Dunlop, Coquetdale, Derby')
+            body, b'Cheshire, Duddleswell, Dunlop, Coquetdale, Derby')
 
     def test_GET_range_suffix(self):
         self.app.register(
@@ -1057,7 +1082,7 @@ class TestObjectGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '206 Partial Content')
         self.assertEqual(headers.get('Content-Range'), "bytes 84-93/94")
-        self.assertEqual(body, "nitrogen, ")
+        self.assertEqual(body, b"nitrogen, ")
 
     def test_GET_range_prefix(self):
         self.app.register(
@@ -1099,7 +1124,7 @@ class TestObjectGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '206 Partial Content')
         self.assertEqual(headers.get('Content-Range'), "bytes 40-61/62")
-        self.assertEqual(body, "ron, carbon, nitrogen, ")
+        self.assertEqual(body, b"ron, carbon, nitrogen, ")
 
     def test_GET_range_unsatisfiable(self):
         self.app.register(
@@ -1201,22 +1226,22 @@ class TestObjectGet(BaseMiddlewareTest):
             'multipart/byteranges;boundary=f0a9157cb1757bfb124aef22fee31051')
         self.assertEqual(
             body,
-            ('--f0a9157cb1757bfb124aef22fee31051\r\n'
-             'Content-Type: application/octet-stream\r\n'
-             'Content-Range: bytes 2-4/16\r\n'
-             '\r\n'
-             'cd1\r\n'
-             '--f0a9157cb1757bfb124aef22fee31051\r\n'
-             'Content-Type: application/octet-stream\r\n'
-             'Content-Range: bytes 6-8/16\r\n'
-             '\r\n'
-             '34e\r\n'
-             '--f0a9157cb1757bfb124aef22fee31051\r\n'
-             'Content-Type: application/octet-stream\r\n'
-             'Content-Range: bytes 10-12/16\r\n'
-             '\r\n'
-             'gh5\r\n'
-             '--f0a9157cb1757bfb124aef22fee31051--'))
+            (b'--f0a9157cb1757bfb124aef22fee31051\r\n'
+             b'Content-Type: application/octet-stream\r\n'
+             b'Content-Range: bytes 2-4/16\r\n'
+             b'\r\n'
+             b'cd1\r\n'
+             b'--f0a9157cb1757bfb124aef22fee31051\r\n'
+             b'Content-Type: application/octet-stream\r\n'
+             b'Content-Range: bytes 6-8/16\r\n'
+             b'\r\n'
+             b'34e\r\n'
+             b'--f0a9157cb1757bfb124aef22fee31051\r\n'
+             b'Content-Type: application/octet-stream\r\n'
+             b'Content-Range: bytes 10-12/16\r\n'
+             b'\r\n'
+             b'gh5\r\n'
+             b'--f0a9157cb1757bfb124aef22fee31051--'))
 
     def test_GET_metadata(self):
         self.app.register(
@@ -1231,8 +1256,9 @@ class TestObjectGet(BaseMiddlewareTest):
                 "error": None,
                 "result": {
                     "FileSize": 16,
-                    "Metadata": base64.b64encode(
-                        json.dumps({"X-Object-Meta-Cow": "moo"})),
+                    "Metadata": base64.b64encode(json.dumps({
+                        "X-Object-Meta-Cow": "moo",
+                    }).encode('ascii')).decode('ascii'),
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
@@ -1251,7 +1277,7 @@ class TestObjectGet(BaseMiddlewareTest):
 
         self.assertEqual(status, '200 OK')
         self.assertEqual(headers.get("X-Object-Meta-Cow"), "moo")
-        self.assertEqual(body, 'abcd1234efgh5678')
+        self.assertEqual(body, b'abcd1234efgh5678')
 
     def test_GET_bad_path(self):
         bad_paths = [
@@ -1398,7 +1424,7 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'abcd1234efgh5678')
+        self.assertEqual(body, b'abcd1234efgh5678')
         self.assertEqual(self.fake_rpc.calls[1][1][0]['VirtPath'],
                          '/v1/AUTH_test/c o n/o b j')
 
@@ -1414,7 +1440,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "Metadata": base64.b64encode(json.dumps({
                         mware.ORIGINAL_MD5_HEADER:
                         "3:25152b9f7ca24b61eec895be4e89a950",
-                    })),
+                    }).encode('ascii')).decode('ascii'),
                     "ModificationTime": 1506039770222591000,
                     "FileSize": 17,
                     "IsDir": False,
@@ -1465,7 +1491,7 @@ class TestObjectGet(BaseMiddlewareTest):
         status, headers, body = self.call_pfs(req)
 
         self.assertEqual(status, '200 OK')
-        self.assertEqual(body, 'some contents')
+        self.assertEqual(body, b'some contents')
 
         called_rpcs = [c[0] for c in self.fake_rpc.calls]
 
@@ -1495,7 +1521,7 @@ class TestContainerHead(BaseMiddlewareTest):
                 "error": None,
                 "result": {
                     "Metadata": base64.b64encode(
-                        self.serialized_container_metadata),
+                        self.serialized_container_metadata.encode('ascii')),
                     "ModificationTime": 1479240397189581131,
                     "FileSize": 0,
                     "IsDir": True,
@@ -1651,7 +1677,7 @@ class TestContainerGet(BaseMiddlewareTest):
                 "error": None,
                 "result": {
                     "Metadata": base64.b64encode(
-                        self.serialized_container_metadata),
+                        self.serialized_container_metadata.encode('ascii')),
                     "ModificationTime": 1510790796076041000,
                     "ContainerEntries": [{
                         "Basename": "images",
@@ -1670,7 +1696,8 @@ class TestContainerGet(BaseMiddlewareTest):
                         "NumWrites": 2,
                         "Metadata": base64.b64encode(json.dumps({
                             "Content-Type": u"snack/m\xEDllenial" +
-                                            u";swift_bytes=3503770"})),
+                                            u";swift_bytes=3503770",
+                        }).encode('ascii')),
                     }, {
                         "Basename": "images/banana.png",
                         "FileSize": 2189865,
@@ -1692,7 +1719,8 @@ class TestContainerGet(BaseMiddlewareTest):
                         # used.
                         "Metadata": base64.b64encode(json.dumps({
                             mware.ORIGINAL_MD5_HEADER:
-                            "1:552528fbf2366f8a4711ac0a3875188b"})),
+                            "1:552528fbf2366f8a4711ac0a3875188b",
+                        }).encode('ascii')),
                     }, {
                         "Basename": "images/durian.png",
                         "FileSize": 8414281,
@@ -1702,7 +1730,8 @@ class TestContainerGet(BaseMiddlewareTest):
                         "NumWrites": 3,
                         "Metadata": base64.b64encode(json.dumps({
                             mware.ORIGINAL_MD5_HEADER:
-                            "3:34f99f7784c573541e11e5ad66f065c8"})),
+                            "3:34f99f7784c573541e11e5ad66f065c8",
+                        }).encode('ascii')),
                     }, {
                         "Basename": "images/elderberry.png",
                         "FileSize": 3178293,
@@ -1937,13 +1966,13 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "text/xml; charset=utf-8")
         self.assertTrue(body.startswith(
-            """<?xml version='1.0' encoding='utf-8'?>"""))
+            b"""<?xml version='1.0' encoding='utf-8'?>"""))
 
         root_node = ElementTree.fromstring(body)
         self.assertEqual(root_node.tag, 'container')
         self.assertEqual(root_node.attrib["name"], 'a-container')
 
-        objects = root_node.getchildren()
+        objects = list(root_node)
         self.assertEqual(6, len(objects))
         self.assertEqual(objects[0].tag, 'object')
 
@@ -1952,7 +1981,7 @@ class TestContainerGet(BaseMiddlewareTest):
         #
         # We do an exhaustive check of one object's attributes, then
         # spot-check the rest of the listing for brevity's sake.
-        obj_attr_tags = objects[1].getchildren()
+        obj_attr_tags = list(objects[1])
         self.assertEqual(len(obj_attr_tags), 5)
 
         name_node = obj_attr_tags[0]
@@ -1982,7 +2011,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(last_modified_node.attrib, {})
 
         # Make sure the directory has the right type
-        obj_attr_tags = objects[0].getchildren()
+        obj_attr_tags = list(objects[0])
         self.assertEqual(len(obj_attr_tags), 5)
 
         name_node = obj_attr_tags[0]
@@ -1999,7 +2028,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(content_type_node.text, 'application/directory')
 
         # Check the names are correct
-        all_names = [tag.getchildren()[0].text for tag in objects]
+        all_names = [list(tag)[0].text for tag in objects]
         self.assertEqual(
             ["images", u"images/\xE1vocado.png", "images/banana.png",
              "images/cherimoya.png", "images/durian.png",
@@ -2015,7 +2044,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "application/xml; charset=utf-8")
         self.assertTrue(body.startswith(
-            """<?xml version='1.0' encoding='utf-8'?>"""))
+            b"""<?xml version='1.0' encoding='utf-8'?>"""))
 
     def test_xml_query_param(self):
         req = swob.Request.blank('/v1/AUTH_test/a-container?format=xml')
@@ -2025,7 +2054,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "application/xml; charset=utf-8")
         self.assertTrue(body.startswith(
-            """<?xml version='1.0' encoding='utf-8'?>"""))
+            b"""<?xml version='1.0' encoding='utf-8'?>"""))
 
     def test_xml_special_chars(self):
         req = swob.Request.blank('/v1/AUTH_test/c o n',
@@ -2036,7 +2065,7 @@ class TestContainerGet(BaseMiddlewareTest):
         self.assertEqual(headers["Content-Type"],
                          "text/xml; charset=utf-8")
         self.assertTrue(body.startswith(
-            """<?xml version='1.0' encoding='utf-8'?>"""))
+            b"""<?xml version='1.0' encoding='utf-8'?>"""))
 
         root_node = ElementTree.fromstring(body)
         self.assertEqual(root_node.tag, 'container')
@@ -2242,7 +2271,7 @@ class TestContainerGetDelimiter(BaseMiddlewareTest):
             "error": None,
             "result": {
                 "Metadata": base64.b64encode(
-                    self.serialized_container_metadata),
+                    self.serialized_container_metadata.encode('ascii')),
                 "ModificationTime": 1510790796076041000,
                 "ContainerEntries": [{
                     "Basename": "images",
@@ -2260,7 +2289,7 @@ class TestContainerGetDelimiter(BaseMiddlewareTest):
             "error": None,
             "result": {
                 "Metadata": base64.b64encode(
-                    self.serialized_container_metadata),
+                    self.serialized_container_metadata.encode('ascii')),
                 "ModificationTime": 1510790796076041000,
                 "ContainerEntries": [{
                     "Basename": "images/avocado.png",
@@ -2271,7 +2300,8 @@ class TestContainerGetDelimiter(BaseMiddlewareTest):
                     "NumWrites": 2,
                     "Metadata": base64.b64encode(json.dumps({
                         "Content-Type": "snack/millenial" +
-                                        ";swift_bytes=3503770"})),
+                                        ";swift_bytes=3503770",
+                    }).encode('ascii')),
                 }, {
                     "Basename": "images/banana.png",
                     "FileSize": 2189865,
@@ -2293,7 +2323,8 @@ class TestContainerGetDelimiter(BaseMiddlewareTest):
                     # used.
                     "Metadata": base64.b64encode(json.dumps({
                         mware.ORIGINAL_MD5_HEADER:
-                        "1:552528fbf2366f8a4711ac0a3875188b"})),
+                        "1:552528fbf2366f8a4711ac0a3875188b",
+                    }).encode('ascii')),
                 }, {
                     "Basename": "images/durian.png",
                     "FileSize": 8414281,
@@ -2303,7 +2334,8 @@ class TestContainerGetDelimiter(BaseMiddlewareTest):
                     "NumWrites": 3,
                     "Metadata": base64.b64encode(json.dumps({
                         mware.ORIGINAL_MD5_HEADER:
-                        "3:34f99f7784c573541e11e5ad66f065c8"})),
+                        "3:34f99f7784c573541e11e5ad66f065c8",
+                    }).encode('ascii')),
                 }, {
                     "Basename": "images/elderberry.png",
                     "FileSize": 3178293,
@@ -2426,7 +2458,8 @@ class TestContainerPost(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1482280565956671142,
                     "FileSize": 0,
                     "IsDir": True,
@@ -2462,7 +2495,8 @@ class TestContainerPost(BaseMiddlewareTest):
         method, args = rpc_calls[2]
         self.assertEqual(method, "Server.RpcPost")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
-        self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetaData"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertEqual(new_meta["X-Container-Meta-One-Fish"], "two fish")
         self.assertEqual(new_meta["X-Container-Read"], "xcr")
@@ -2511,7 +2545,7 @@ class TestContainerPut(BaseMiddlewareTest):
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
         self.assertEqual(args[0]["OldMetadata"], "")
         self.assertEqual(
-            base64.b64decode(args[0]["NewMetadata"]),
+            base64.b64decode(args[0]["NewMetadata"]).decode('ascii'),
             json.dumps({"X-Container-Meta-Red-Fish": "blue fish"}))
 
     def test_PUT_bad_path(self):
@@ -2523,7 +2557,7 @@ class TestContainerPut(BaseMiddlewareTest):
         for path in bad_container_paths:
             req = swob.Request.blank(path,
                                      environ={"REQUEST_METHOD": "PUT",
-                                              "wsgi.input": StringIO(""),
+                                              "wsgi.input": BytesIO(b""),
                                               "CONTENT_LENGTH": "0"})
             status, headers, body = self.call_pfs(req)
             self.assertEqual(status, '400 Bad Request',
@@ -2604,7 +2638,8 @@ class TestContainerPut(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1482270529646747881,
                     "FileSize": 0,
                     "IsDir": True,
@@ -2637,7 +2672,8 @@ class TestContainerPut(BaseMiddlewareTest):
         method, args = rpc_calls[2]
         self.assertEqual(method, "Server.RpcPutContainer")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
-        self.assertEqual(base64.b64decode(args[0]["OldMetadata"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetadata"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetadata"]))
         self.assertEqual(expected_meta, new_meta)
 
@@ -2693,7 +2729,8 @@ class TestContainerPut(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1511224700123739000,
                     "FileSize": 0,
                     "IsDir": True,
@@ -2714,7 +2751,8 @@ class TestContainerPut(BaseMiddlewareTest):
         method, args = rpc_calls[-1]
         self.assertEqual(method, "Server.RpcPutContainer")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/new-con")
-        self.assertEqual(base64.b64decode(args[0]["OldMetadata"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetadata"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetadata"]))
         self.assertEqual(expected_meta, new_meta)
 
@@ -2861,7 +2899,8 @@ class TestObjectPut(BaseMiddlewareTest):
             # Give a different sequence of physical paths for each object
             # name
             virt_path = put_location_req["VirtPath"]
-            obj_name = hashlib.sha1(virt_path).hexdigest().upper()
+            obj_name = hashlib.sha1(
+                virt_path.encode('utf8')).hexdigest().upper()
             phys_path = "/v1/AUTH_test/PhysContainer_1/" + obj_name
             if put_loc_count[virt_path] > 0:
                 phys_path += "-%02x" % put_loc_count[virt_path]
@@ -2899,7 +2938,7 @@ class TestObjectPut(BaseMiddlewareTest):
             "Server.RpcMiddlewareMkdir", mock_RpcMiddlewareMkdir)
 
     def test_basic(self):
-        wsgi_input = StringIO("sparkleberry-displeasurably")
+        wsgi_input = BytesIO(b"sparkleberry-displeasurably")
         cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
@@ -2945,10 +2984,10 @@ class TestObjectPut(BaseMiddlewareTest):
                      "X-Object-Sysmeta-Abc": "DEF"},
             body="")
 
+        # directories always return the hard coded value for EMPTY_OBJECT_ETAG
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
-        self.assertEqual(headers["ETag"],
-                         mware.construct_etag("AUTH_test", 9268022, 0))
+        self.assertEqual(headers["ETag"], "d41d8cd98f00b204e9800998ecf8427e")
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(len(rpc_calls), 3)
@@ -2972,7 +3011,7 @@ class TestObjectPut(BaseMiddlewareTest):
         self.fake_rpc.register_handler(
             "Server.RpcPutComplete", mock_RpcPutComplete)
 
-        wsgi_input = StringIO("Rhodothece-cholesterinuria")
+        wsgi_input = BytesIO(b"Rhodothece-cholesterinuria")
         cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
@@ -2985,7 +3024,7 @@ class TestObjectPut(BaseMiddlewareTest):
                          "Fri, 09 Dec 2016 19:20:46 GMT")
 
     def test_special_chars(self):
-        wsgi_input = StringIO("pancreas-mystagogically")
+        wsgi_input = BytesIO(b"pancreas-mystagogically")
         cl = str(len(wsgi_input.getvalue()))
 
         req = swob.Request.blank("/v1/AUTH_test/c o n/o b j",
@@ -3026,7 +3065,7 @@ class TestObjectPut(BaseMiddlewareTest):
         for path in bad_container_paths:
             req = swob.Request.blank(path,
                                      environ={"REQUEST_METHOD": "PUT",
-                                              "wsgi.input": StringIO(""),
+                                              "wsgi.input": BytesIO(b""),
                                               "CONTENT_LENGTH": "0"})
             status, headers, body = self.call_pfs(req)
             self.assertEqual(status, '404 Not Found',
@@ -3057,7 +3096,7 @@ class TestObjectPut(BaseMiddlewareTest):
         for path in bad_paths:
             req = swob.Request.blank(path,
                                      environ={"REQUEST_METHOD": "PUT",
-                                              "wsgi.input": StringIO(""),
+                                              "wsgi.input": BytesIO(b""),
                                               "CONTENT_LENGTH": "0"})
             status, headers, body = self.call_pfs(req)
             self.assertEqual(status, '400 Bad Request',
@@ -3074,7 +3113,7 @@ class TestObjectPut(BaseMiddlewareTest):
                              'Got %s for %s' % (status, path))
 
     def test_big(self):
-        wsgi_input = StringIO('A' * 100 + 'B' * 100 + 'C' * 75)
+        wsgi_input = BytesIO(b'A' * 100 + b'B' * 100 + b'C' * 75)
         self.pfs.max_log_segment_size = 100
 
         req = swob.Request.blank("/v1/AUTH_test/con/obj",
@@ -3143,7 +3182,7 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertNotIn("Content-Length", put_calls[2][2])  # 3rd PUT
 
     def test_big_exact_multiple(self):
-        wsgi_input = StringIO('A' * 100 + 'B' * 100)
+        wsgi_input = BytesIO(b'A' * 100 + b'B' * 100)
         cl = str(len(wsgi_input.getvalue()))
         self.pfs.max_log_segment_size = 100
 
@@ -3201,7 +3240,7 @@ class TestObjectPut(BaseMiddlewareTest):
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead_not_found)
 
-        wsgi_input = StringIO("toxicum-brickcroft")
+        wsgi_input = BytesIO(b"toxicum-brickcroft")
 
         req = swob.Request.blank("/v1/AUTH_test/a-container/an-object",
                                  environ={"REQUEST_METHOD": "PUT",
@@ -3210,7 +3249,7 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertEqual(status, "404 Not Found")
 
     def test_metadata(self):
-        wsgi_input = StringIO("extranean-paleophysiology")
+        wsgi_input = BytesIO(b"extranean-paleophysiology")
         cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {
@@ -3253,7 +3292,7 @@ class TestObjectPut(BaseMiddlewareTest):
     def test_directory_in_the_way(self):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
-        wsgi_input = StringIO("Celestine-malleal")
+        wsgi_input = BytesIO(b"Celestine-malleal")
         cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_isdir(head_container_req):
@@ -3276,7 +3315,7 @@ class TestObjectPut(BaseMiddlewareTest):
     def test_file_in_the_way(self):
         # If "thing.txt" is a nonempty directory, we get an error that the
         # middleware turns into a 409 Conflict response.
-        wsgi_input = StringIO("Celestine-malleal")
+        wsgi_input = BytesIO(b"Celestine-malleal")
         cl = str(len(wsgi_input.getvalue()))
 
         def mock_RpcPutComplete_notdir(head_container_req):
@@ -3307,7 +3346,7 @@ class TestObjectPut(BaseMiddlewareTest):
         # then any user-supplied ETag will be wrong. Also, this makes
         # POST-as-COPY work despite ProxyFS's ETag values not being MD5
         # checksums.
-        wsgi_input = StringIO("extranean-paleophysiology")
+        wsgi_input = BytesIO(b"extranean-paleophysiology")
         cl = str(len(wsgi_input.getvalue()))
 
         headers_in = {"X-Delete-After": 86400,
@@ -3336,9 +3375,9 @@ class TestObjectPut(BaseMiddlewareTest):
         self.assertNotIn("ETag", put_headers)
 
     def test_etag_checking(self):
-        wsgi_input = StringIO("unsplashed-comprest")
+        wsgi_input = BytesIO(b"unsplashed-comprest")
         right_etag = hashlib.md5(wsgi_input.getvalue()).hexdigest()
-        wrong_etag = hashlib.md5(wsgi_input.getvalue() + "abc").hexdigest()
+        wrong_etag = hashlib.md5(wsgi_input.getvalue() + b"abc").hexdigest()
         non_checksum_etag = "pfsv2/AUTH_test/2226116/4341333-32"
         cl = str(len(wsgi_input.getvalue()))
 
@@ -3373,7 +3412,7 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank(
             "/v1/AUTH_test/a-container/a-dir-object",
             environ={"REQUEST_METHOD": "PUT"},
-            headers={"ETag": hashlib.md5("x").hexdigest(),
+            headers={"ETag": hashlib.md5(b"x").hexdigest(),
                      "Content-Length": 0,
                      "Content-Type": "application/directory"})
         status, headers, body = self.call_pfs(req)
@@ -3382,7 +3421,7 @@ class TestObjectPut(BaseMiddlewareTest):
         req = swob.Request.blank(
             "/v1/AUTH_test/a-container/a-dir-object",
             environ={"REQUEST_METHOD": "PUT"},
-            headers={"ETag": hashlib.md5("").hexdigest(),
+            headers={"ETag": hashlib.md5(b"").hexdigest(),
                      "Content-Length": 0,
                      "Content-Type": "application/directory"})
         status, headers, body = self.call_pfs(req)
@@ -3451,7 +3490,8 @@ class TestObjectPost(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1482345542483719281,
                     "FileSize": 551155,
                     "IsDir": False,
@@ -3501,7 +3541,8 @@ class TestObjectPost(BaseMiddlewareTest):
         method, args = rpc_calls[2]
         self.assertEqual(method, "Server.RpcPost")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
-        self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetaData"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertEqual(new_meta["X-Object-Meta-Red-Fish"], "blue fish")
         self.assertEqual(new_meta["Content-Type"], "application/fishy")
@@ -3520,7 +3561,8 @@ class TestObjectPost(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1510873171878460000,
                     "FileSize": 7748115,
                     "IsDir": False,
@@ -3556,7 +3598,8 @@ class TestObjectPost(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1482345542483719281,
                     "FileSize": 551155,
                     "IsDir": False,
@@ -3581,7 +3624,8 @@ class TestObjectPost(BaseMiddlewareTest):
         method, args = rpc_calls[2]
         self.assertEqual(method, "Server.RpcPost")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
-        self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetaData"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertEqual(new_meta["Content-Type"], "new/type")
 
@@ -3592,7 +3636,8 @@ class TestObjectPost(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {
-                    "Metadata": base64.b64encode(old_meta),
+                    "Metadata": base64.b64encode(
+                        old_meta.encode('ascii')).decode('ascii'),
                     "ModificationTime": 1482345542483719281,
                     "FileSize": 551155,
                     "IsDir": False,
@@ -3617,7 +3662,8 @@ class TestObjectPost(BaseMiddlewareTest):
         method, args = rpc_calls[2]
         self.assertEqual(method, "Server.RpcPost")
         self.assertEqual(args[0]["VirtPath"], "/v1/AUTH_test/con/obj")
-        self.assertEqual(base64.b64decode(args[0]["OldMetaData"]), old_meta)
+        self.assertEqual(
+            base64.b64decode(args[0]["OldMetaData"]).decode('ascii'), old_meta)
         new_meta = json.loads(base64.b64decode(args[0]["NewMetaData"]))
         self.assertNotIn("X-Object-Meta-Color", new_meta)
 
@@ -3705,7 +3751,9 @@ class TestObjectHead(BaseMiddlewareTest):
                              '/v1/AUTH_test/c/an-object.png')
 
             if self.serialized_object_metadata:
-                md = base64.b64encode(self.serialized_object_metadata)
+                md = base64.b64encode(
+                    self.serialized_object_metadata.encode('ascii')
+                ).decode('ascii')
             else:
                 md = ""
 
@@ -3863,7 +3911,9 @@ class TestObjectHead(BaseMiddlewareTest):
         })
 
         def mock_RpcHead(head_object_req):
-            md = base64.b64encode(self.serialized_object_metadata)
+            md = base64.b64encode(
+                self.serialized_object_metadata.encode('ascii')
+            ).decode('ascii')
             return {
                 "error": None,
                 "result": {
@@ -3892,7 +3942,9 @@ class TestObjectHead(BaseMiddlewareTest):
         })
 
         def mock_RpcHead(head_object_req):
-            md = base64.b64encode(self.serialized_object_metadata)
+            md = base64.b64encode(
+                self.serialized_object_metadata.encode('ascii')
+            ).decode('ascii')
             return {
                 "error": None,
                 "result": {
@@ -3968,22 +4020,84 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                     "NumWrites": 893,
                 }}
 
+        # this handler gets overwritten by the first test that
+        # registers a "Server.RpcHead"
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
 
     def test_success(self):
-        def mock_RpcCoalesce(coalese_req):
+
+        # a map from an object's "virtual path" to its metadata
+        self.obj_metadata = {}
+
+        def mock_RpcHead(head_req):
+            '''Return the object informattion for the new coalesced object.  This
+            assumes that COALESCE operation has already created it.
+            '''
+
+            resp = {
+                "error": None,
+                "result": {
+                    "Metadata": "",
+                    "ModificationTime": 1488323796002909000,
+                    "FileSize": 80 * 1024 * 1024,
+                    "IsDir": False,
+                    "InodeNumber": 283253,
+                    "NumWrites": 5,
+                }
+            }
+            virt_path = head_req['VirtPath']
+            if self.obj_metadata[virt_path] is not None:
+                resp['result']['Metadata'] = self.obj_metadata[virt_path]
+            return resp
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        def mock_RpcCoalesce(coalesce_req):
+
+            # if there's metadata for the new object, save it to return later
+            if coalesce_req['NewMetaData'] != "":
+                virt_path = coalesce_req['VirtPath']
+                self.obj_metadata[virt_path] = coalesce_req['NewMetaData']
+
+            numWrites = len(coalesce_req['ElementAccountRelativePaths'])
             return {
                 "error": None,
                 "result": {
                     "ModificationTime": 1488323796002909000,
                     "InodeNumber": 283253,
-                    "NumWrites": 6,
+                    "NumWrites": numWrites,
                 }}
 
         self.fake_rpc.register_handler(
             "Server.RpcCoalesce", mock_RpcCoalesce)
 
+        # have the coalesce request suppply the headers that would
+        # come from s3api for a "complete multi-part upload" request
+        request_headers = {
+            'X-Object-Sysmeta-S3Api-Acl':
+                '{"Owner":"fc",' +
+                '"Grant":[{"Grantee":"fc","Permission":"FULL_CONTROL"}]}',
+            'X-Object-Sysmeta-S3Api-Etag':
+                'cb45770d6cf51effdfb2ea35322459c3-205',
+            'X-Object-Sysmeta-Slo-Etag': '363d958f0f4c8501a50408a728ba5599',
+            'X-Object-Sysmeta-Slo-Size': '1073741824',
+            'X-Object-Sysmeta-Container-Update-Override-Etag':
+                '10340ab593ac8c32290a278e36d1f8df; ' +
+                's3_etag=cb45770d6cf51effdfb2ea35322459c3-205; ' +
+                'slo_etag=363d958f0f4c8501a50408a728ba5599',
+            'X-Static-Large-Object': 'True',
+            'Content-Type':
+                'application/x-www-form-urlencoded; ' +
+                'charset=utf-8;swift_bytes=1073741824',
+            'Etag': '10340ab593ac8c32290a278e36d1f8df',
+            'Date': 'Mon, 01 Apr 2019 22:53:31 GMT',
+            'Host': 'sm-p1.swiftstack.org',
+            'Accept': 'application/json',
+            'Content-Length': '18356',
+            'X-Auth-Token': None,
+        }
         request_body = json.dumps({
             "elements": [
                 "c1/seg1a",
@@ -3991,15 +4105,16 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                 "c2/seg space 2a",
                 "c2/seg space 2b",
                 "c3/seg3",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
+            headers=request_headers,
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
+
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
-        self.assertEqual(headers["Etag"],
-                         '"pfsv2/AUTH_test/00045275/00000006-32"')
+        self.assertEqual(headers["Etag"], '10340ab593ac8c32290a278e36d1f8df')
 
         # The first call is a call to RpcIsAccountBimodal, the last is the one
         # we care about: RpcCoalesce. There *could* be some intervening calls
@@ -4020,6 +4135,24 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             "c3/seg3",
         ])
 
+        # verify that the metadata was munged correctly
+        # (SLO headers stripped out, etc.)
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, b'')
+        self.assertEqual(headers["Etag"],
+                         '10340ab593ac8c32290a278e36d1f8df')
+        self.assertIn('X-Object-Sysmeta-S3Api-Acl', headers)
+        self.assertIn('X-Object-Sysmeta-S3Api-Etag', headers)
+        self.assertIn('X-Object-Sysmeta-Container-Update-Override-Etag',
+                      headers)
+        self.assertNotIn('X-Static-Large-Object', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Etag', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Size', headers)
+
     def test_not_authed(self):
         def mock_RpcHead(get_container_req):
             path = get_container_req['VirtPath']
@@ -4028,7 +4161,8 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                 "result": {
                     "Metadata": base64.b64encode(json.dumps({
                         "X-Container-Read": path + '\x00read-acl',
-                        "X-Container-Write": path + '\x00write-acl'})),
+                        "X-Container-Write": path + '\x00write-acl',
+                    }).encode('ascii')).decode('ascii'),
                     "ModificationTime": 1479240451156825194,
                     "FileSize": 0,
                     "IsDir": True,
@@ -4055,11 +4189,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                 "c2/seg space 2a",
                 "c2/seg space 2b",
                 "c3/seg3",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body),
+                     "wsgi.input": BytesIO(request_body),
                      "swift.authorize": auth_cb})
         status, headers, body = self.call_pfs(req)
         # The first call is a call to RpcIsAccountBimodal, then a bunch of
@@ -4092,75 +4226,76 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         ])
 
     def test_malformed_json(self):
-        request_body = "{{{[[[((("
+        request_body = b"{{{[[[((("
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_incorrect_json(self):
-        request_body = "{}"
+        request_body = b"{}"
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_incorrect_json_wrong_type(self):
-        request_body = "[]"
+        request_body = b"[]"
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_incorrect_json_wrong_elements_type(self):
-        request_body = json.dumps({"elements": {1: 2}})
+        request_body = json.dumps({"elements": {1: 2}}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_incorrect_json_wrong_element_type(self):
-        request_body = json.dumps({"elements": [1, "two", {}]})
+        request_body = json.dumps({"elements": [1, "two", {}]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_incorrect_json_subtle(self):
-        request_body = '["elements"]'
+        request_body = b'["elements"]'
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '400 Bad Request')
 
     def test_too_big(self):
-        request_body = '{' * (self.pfs.max_coalesce_request_size + 1)
+        request_body = b'{' * (self.pfs.max_coalesce_request_size + 1)
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '413 Request Entity Too Large')
 
     def test_too_many_elements(self):
         request_body = json.dumps({
-            "elements": ["/c/o"] * (self.pfs.max_coalesce + 1)})
+            "elements": ["/c/o"] * (self.pfs.max_coalesce + 1),
+        }).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '413 Request Entity Too Large')
 
@@ -4182,11 +4317,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         request_body = json.dumps({
             "elements": [
                 "some/stuff",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '404 Not Found')
 
@@ -4204,11 +4339,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         request_body = json.dumps({
             "elements": [
                 "some/stuff",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -4227,11 +4362,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         request_body = json.dumps({
             "elements": [
                 "some/stuff",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -4250,11 +4385,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
         request_body = json.dumps({
             "elements": [
                 "some/stuff",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '409 Conflict')
 
@@ -4274,11 +4409,11 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             "elements": [
                 "thing/one",
                 "thing/two",
-            ]})
+            ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
             environ={"REQUEST_METHOD": "COALESCE",
-                     "wsgi.input": StringIO(request_body)})
+                     "wsgi.input": BytesIO(request_body)})
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '500 Internal Error')
 
@@ -4293,7 +4428,8 @@ class TestAuth(BaseMiddlewareTest):
                 "result": {
                     "Metadata": base64.b64encode(json.dumps({
                         "X-Container-Read": "the-x-con-read",
-                        "X-Container-Write": "the-x-con-write"})),
+                        "X-Container-Write": "the-x-con-write",
+                    }).encode('ascii')).decode('ascii'),
                     "ModificationTime": 1479240451156825194,
                     "FileSize": 0,
                     "IsDir": True,
@@ -4376,40 +4512,354 @@ class TestAuth(BaseMiddlewareTest):
         self.assertEqual(status, '204 No Content')
 
 
-class TestBestPossibleEtag(unittest.TestCase):
-    # Duplicated here so we can't accidentally change it. If we change this
-    # header or its value, we have to consider handling old data.
+class TestEtagHandling(unittest.TestCase):
+    '''Test that mung_etags()/unmung_etags() are inverse functions (more
+    or less), that the unmung_etags() correctly unmungs the current
+    disk layout for the header, and that best_possible_etag() returns
+    the correct etag value.
+    '''
+
+    # Both the header names and the way the values are calculated and
+    # the way they are formatted are part of the "disk layout".  If we
+    # change them, we have to consider handling old data.
+    #
+    # Names and values duplicated here so this test will break if they
+    # are changed.
     HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 
-    def test_md5_good(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
-                "AUTH_test", 6676743, 1),
-            '5484c2634aa61c69fc02ef5400a61c94')
+    ETAG_HEADERS = {
+        "ORIGINAL_MD5": {
+            "name": "X-Object-Sysmeta-ProxyFS-Initial-MD5",
+            "value": "5484c2634aa61c69fc02ef5400a61c94",
+            "num_writes": 7,
+            "munged_value": "7:5484c2634aa61c69fc02ef5400a61c94"
+        },
+        "S3API_ETAG": {
+            "name": "X-Object-Sysmeta-S3Api-Etag",
+            "value": "cb0dc66d591395cdf93555dafd4145ad",
+            "num_writes": 3,
+            "munged_value": "3:cb0dc66d591395cdf93555dafd4145ad"
+        },
+        "LISTING_ETAG_OVERRIDE": {
+            "name": "X-Object-Sysmeta-Container-Update-Override-Etag",
+            "value": "dbca19e0c46aa9b10e8de2f5856abc86",
+            "num_writes": 9,
+            "munged_value": "9:dbca19e0c46aa9b10e8de2f5856abc86"
+        },
+    }
 
-    def test_modified(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
-                "AUTH_test", 0x16497360, 2),
-            '"pfsv2/AUTH_test/16497360/00000002-32"')
+    EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
-    def test_missing(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {}, "AUTH_test", 0x01740209, 1),
-            '"pfsv2/AUTH_test/01740209/00000001-32"')
+    def test_mung_etags(self):
+        '''Verify that mung_etags() mungs each of the etag header values to
+        the correct on-disk version with num_writes and unmung_etags()
+        recovers the original value.
+        '''
+        for header in self.ETAG_HEADERS.keys():
 
-    def test_bogus(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "counterfact-preformative"},
-                "AUTH_test", 0x707301, 2),
-            '"pfsv2/AUTH_test/00707301/00000002-32"')
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            num_writes = self.ETAG_HEADERS[header]["num_writes"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
 
+            obj_metadata = {name: value}
+            mware.mung_etags(obj_metadata, None, num_writes)
+
+            # The handling of ORIGINAL_MD5_HEADER is a bit strange.
+            # If an etag value is passed to mung_etags() as the 2nd
+            # argument then the header is created and assigned the
+            # munged version of that etag value.  But if its None than
+            # an ORIGINAL_MD5_HEADER, if present, is passed through
+            # unmolested (but will be dropped by the unmung code if
+            # the format is wrong or num_writes does not match, which
+            # is likely).
+            if header == "ORIGINAL_MD5":
+                self.assertEqual(obj_metadata[name], value)
+            else:
+                self.assertEqual(obj_metadata[name], munged_value)
+
+            # same test but with an etag value passed to mung_etags()
+            # instead of None
+            md5_etag_value = self.ETAG_HEADERS["ORIGINAL_MD5"]["value"]
+
+            obj_metadata = {name: value}
+            mware.mung_etags(obj_metadata, md5_etag_value, num_writes)
+            self.assertEqual(obj_metadata[name], munged_value)
+
+            # and verify that it gets unmunged to the original value
+            mware.unmung_etags(obj_metadata, num_writes)
+            self.assertEqual(obj_metadata[name], value)
+
+    def test_unmung_etags(self):
+        '''Verify that unmung_etags() recovers the correct value for
+        each ETag header and discards header values where num_writes
+        is incorrect or the value is corrupt.
+        '''
+        # build metadata with all of the etag headers
+        orig_obj_metadata = {}
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
+            orig_obj_metadata[name] = munged_value
+
+        # unmung_etags() should strip out headers with stale
+        # num_writes so only the one for header remains
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            num_writes = self.ETAG_HEADERS[header]["num_writes"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
+
+            obj_metadata = orig_obj_metadata.copy()
+            mware.unmung_etags(obj_metadata, num_writes)
+
+            # header should be the only one left
+            for hdr2 in self.ETAG_HEADERS.keys():
+
+                if hdr2 == header:
+                    self.assertEqual(obj_metadata[name], value)
+                else:
+                    self.assertTrue(
+                        self.ETAG_HEADERS[hdr2]["name"] not in obj_metadata)
+
+            # verify mung_etags() takes it back to the munged value
+            if header != "ORIGINAL_MD5":
+                mware.mung_etags(obj_metadata, None, num_writes)
+                self.assertEqual(obj_metadata[name], munged_value)
+
+        # Try to unmung on-disk headers with corrupt values. Instead
+        # of a panic it should simply elide the headers (and possibly
+        # log the corrupt value, which it doesn't currently do).
+        for bad_value in ("counterfact-preformative",
+                          "magpie:interfollicular"):
+
+            obj_metadata = {}
+            for header in self.ETAG_HEADERS.keys():
+
+                name = self.ETAG_HEADERS[header]["name"]
+                obj_metadata[name] = bad_value
+
+            mware.unmung_etags(obj_metadata, 0)
+            self.assertEqual(obj_metadata, {})
+
+    def test_best_possible_etag(self):
+        '''Test that best_possible_etag() returns the best ETag.
+        '''
+
+        # Start with metadata that consists of all possible ETag
+        # headers and verify that best_possible_headers() chooses the
+        # right ETag based on the circumstance.
+        obj_metadata = {}
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            obj_metadata[name] = value
+
+        # directories always return the same etag
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7,
+                                        is_dir=True)
+        self.assertEqual(etag, self.EMPTY_OBJECT_ETAG)
+
+        # a container listing should return the Container Listing Override ETag
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7,
+                                        container_listing=True)
+        self.assertEqual(etag,
+                         self.ETAG_HEADERS["LISTING_ETAG_OVERRIDE"]["value"])
+
+        # if its not a directory and its not a container list, then
+        # the function should return the original MD5 ETag (the
+        # S3API_ETAG is returned as a header, but not as an ETag).
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7)
+        self.assertEqual(etag,
+                         self.ETAG_HEADERS["ORIGINAL_MD5"]["value"])
+
+        # if none of the headers provide the correct ETag then
+        # best_possible_etag() will construct a unique one (which also
+        # should not be changed without handling "old data", i.e.
+        # its part of the "disk layout").
+        del obj_metadata[self.ETAG_HEADERS["ORIGINAL_MD5"]["name"]]
+
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7)
+        self.assertEqual(etag,
+                         '"pfsv2/AUTH_test/0000002A/00000007-32"')
+
+
+class TestProxyfsMethod(BaseMiddlewareTest):
+    def test_non_swift_owner(self):
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS')
+        status, _, _ = self.call_pfs(req)
+        self.assertEqual(status, '405 Method Not Allowed')
+
+    def test_bad_content_type(self):
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS',
+                                 environ={'swift_owner': True}, body=b'')
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '415 Unsupported Media Type')
         self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "magpie:interfollicular"},
-                "AUTH_test", 0x707301, 2),
-            '"pfsv2/AUTH_test/00707301/00000002-32"')
+            body, b'RPC body must have Content-Type application/json')
+
+        req = swob.Request.blank("/v1/AUTH_test", method='PROXYFS',
+                                 headers={'Content-Type': 'text/plain'},
+                                 environ={'swift_owner': True}, body=b'')
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '415 Unsupported Media Type')
+        self.assertEqual(body, (b'RPC body must have Content-Type '
+                                b'application/json, not text/plain'))
+
+    def test_exactly_one_payload(self):
+        def expect_one_payload(body):
+            req = swob.Request.blank(
+                "/v1/AUTH_test", method='PROXYFS',
+                headers={'Content-Type': 'application/json'},
+                environ={'swift_owner': True}, body=body)
+            status, _, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request')
+            self.assertEqual(body, b'Expected exactly one JSON payload')
+
+        expect_one_payload(b'')
+        expect_one_payload(b'\n')
+        one_payload = json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.RpcPing',
+            'params': [{}],
+        })
+        expect_one_payload(one_payload + '\n' + one_payload)
+
+    def test_bad_body(self):
+        def expect_parse_error(req_body):
+            req = swob.Request.blank(
+                "/v1/AUTH_test", method='PROXYFS',
+                headers={'Content-Type': 'application/json'},
+                environ={'swift_owner': True}, body=req_body)
+            status, _, body = self.call_pfs(req)
+            self.assertEqual(status, '400 Bad Request')
+            exp_start = (b'Could not parse/validate JSON payload #0 '
+                         b'%s:' % req_body)
+            self.assertEqual(body[:len(exp_start)], exp_start)
+
+        expect_parse_error(b'[')
+        expect_parse_error(b'{')
+        expect_parse_error(b'[]')
+        expect_parse_error(b'{}')
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '1.0',
+            'method': 'Server.PingReq',
+            'params': [{}],
+        }).encode('ascii'))
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'asdf',
+            'params': [{}],
+        }).encode('ascii'))
+
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [{}, {}],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': [[]],
+        }).encode('ascii'))
+        expect_parse_error(json.dumps({
+            'jsonrpc': '2.0',
+            'method': 'Server.PingReq',
+            'params': {},
+        }).encode('ascii'))
+
+    def test_success(self):
+        def mock_RpcGetAccount(params):
+            self.assertEqual(params, {
+                "AccountName": "AUTH_test",
+            })
+            return {
+                "error": None,
+                "result": {
+                    "ModificationTime": 1498766381451119000,
+                    "AccountEntries": [{
+                        "Basename": "chickens",
+                        "ModificationTime": 1510958440808682000,
+                    }, {
+                        "Basename": "cows",
+                        "ModificationTime": 1510958450657045000,
+                    }, {
+                        "Basename": "goats",
+                        "ModificationTime": 1510958452544251000,
+                    }, {
+                        "Basename": "pigs",
+                        "ModificationTime": 1510958459200130000,
+                    }],
+                }}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test", method='PROXYFS',
+            headers={'Content-Type': 'application/json'},
+            environ={'swift_owner': True}, body=json.dumps({
+                'jsonrpc': '2.0',
+                'method': 'Server.RpcGetAccount',
+                'params': [{}],
+            }))
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK', body)
+        self.assertEqual(headers.get('content-type'), 'application/json')
+        resp = json.loads(body)
+        self.assertIsNotNone(resp.pop('id', None))
+        self.assertEqual(resp, {
+            "error": None,
+            "result": {
+                "ModificationTime": 1498766381451119000,
+                "AccountEntries": [{
+                    "Basename": "chickens",
+                    "ModificationTime": 1510958440808682000,
+                }, {
+                    "Basename": "cows",
+                    "ModificationTime": 1510958450657045000,
+                }, {
+                    "Basename": "goats",
+                    "ModificationTime": 1510958452544251000,
+                }, {
+                    "Basename": "pigs",
+                    "ModificationTime": 1510958459200130000,
+                }]
+            }
+        })
+
+    def test_error(self):
+        def mock_RpcGetAccount(params):
+            self.assertEqual(params, {
+                "AccountName": "AUTH_test",
+                "some": "args",
+            })
+            return {"error": "errno 2"}
+
+        self.fake_rpc.register_handler(
+            "Server.RpcGetAccount", mock_RpcGetAccount)
+
+        req = swob.Request.blank(
+            "/v1/AUTH_test", method='PROXYFS',
+            headers={'Content-Type': 'application/json'},
+            environ={'swift_owner': True}, body=json.dumps({
+                'jsonrpc': '2.0',
+                'method': 'Server.RpcGetAccount',
+                'params': [{'some': 'args'}],
+            }))
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK', body)
+        self.assertEqual(headers.get('content-type'), 'application/json')
+        resp = json.loads(body)
+        self.assertIsNotNone(resp.pop('id', None))
+        self.assertEqual(resp, {"error": "errno 2"})

@@ -18,4 +18,4 @@ before_install:
 - git submodule update --init --recursive
 
 script:
-- docker run -it -v `pwd`:/gopathroot/src/github.com/swiftstack/ProxyFS swiftstack/proxyfs_unit_tests
+- docker run --cap-add SYS_ADMIN --device /dev/fuse -it -v `pwd`:/gopathroot/src/github.com/swiftstack/ProxyFS swiftstack/proxyfs_unit_tests
