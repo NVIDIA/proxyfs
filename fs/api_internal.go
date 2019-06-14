@@ -1833,6 +1833,7 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 				} else {
 					prevReturned = markerPath[markerPathDirInodeIndex+1]
 				}
+				initialDirEntryToMatch = ""
 			} else {
 				// Handle four remaining cases:
 				//   marker & prefix both specified directories
@@ -1850,23 +1851,26 @@ func (mS *mountStruct) MiddlewareGetContainer(vContainerName string, maxEntries 
 
 						prevReturned = prefixPath[prefixPathDirInodeIndex+1]
 					}
+					initialDirEntryToMatch = prevReturned
 				} else { // (markerPathDirInodeIndex + 1) != len(markerPath)
 					if (prefixPathDirInodeIndex + 1) == len(prefixPath) {
 						// Case where prefix specified a directory, marker did not
 
 						prevReturned = markerPath[markerPathDirInodeIndex+1]
+						initialDirEntryToMatch = ""
 					} else {
 						// Case where neither marker nor prefix specified a directory
 
 						if strings.Compare(prefixPath[prefixPathDirInodeIndex+1], markerPath[markerPathDirInodeIndex+1]) <= 0 {
 							prevReturned = markerPath[markerPathDirInodeIndex+1]
+							initialDirEntryToMatch = ""
 						} else {
 							prevReturned = prefixPath[prefixPathDirInodeIndex+1]
+							initialDirEntryToMatch = prevReturned
 						}
 					}
 				}
 			}
-			initialDirEntryToMatch = prevReturned
 			break
 		}
 
