@@ -2113,6 +2113,7 @@ func TestRpcCoalesce(t *testing.T) {
 	assert.True(coalesceReply.NumWrites > 0)
 	assert.True(coalesceReply.ModificationTime > 0)
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)
+	assert.True(coalesceReply.ModificationTime == coalesceReply.AttrChangeTime)
 
 	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, combinedInode, 0, 99999, nil)
 	assert.Nil(err)

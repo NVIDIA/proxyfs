@@ -2,6 +2,7 @@ package inode
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/blunder"
@@ -153,12 +154,19 @@ func TestCoalesce(t *testing.T) {
 		ElementInodeNumber:             file2cInodeNumber,
 		ElementName:                    "file2c"})
 
-	// Coalesce the above 5 files into d1/combined
-	_, _, fileSize, err := vh.Coalesce(combinedInodeNumber, elements)
+	newMetaData := []byte("The quick brown fox jumped over the lazy dog.")
+
+	// Coalesce the above 5 files and metadata into d1/combined
+	startTime := time.Now()
+	attrChangeTime, modificationTime, numWrites, fileSize, err := vh.Coalesce(
+		combinedInodeNumber, "MetaDataStream", newMetaData, elements)
 	if !assert.Nil(err) {
 		return
 	}
-	assert.Equal(fileSize, uint64(22))
+	assert.Equal(uint64(22), fileSize)
+	assert.Equal(uint64(5), numWrites)
+	assert.Equal(attrChangeTime, modificationTime)
+	assert.True(attrChangeTime.After(startTime))
 
 	// The new file has the contents of the old files combined
 	contents, err := vh.Read(combinedInodeNumber, 0, 22, nil)
@@ -185,6 +193,12 @@ func TestCoalesce(t *testing.T) {
 		return
 	}
 	assert.Equal(combinedInodeNumber, foundInodeNumber)
+
+	// Verify the new file has the new metadata
+	buf, err := vh.GetStream(combinedInodeNumber, "MetaDataStream")
+	if assert.Nil(err) {
+		assert.Equal(buf, newMetaData)
+	}
 
 	testTeardown(t)
 }
@@ -254,7 +268,7 @@ func TestCoalesceDir(t *testing.T) {
 		ElementName:                    "file1b"})
 
 	// Coalesce the above 2 files into d1
-	_, _, _, err = vh.Coalesce(d1InodeNumber, elements)
+	_, _, _, _, err = vh.Coalesce(d1InodeNumber, "MetaDataStream", nil, elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.PermDeniedError))
 
@@ -329,7 +343,7 @@ func TestCoalesceMultipleLinks(t *testing.T) {
 		ElementName:                    "file1b"})
 
 	// Coalesce the above 2 files into d1/combined
-	_, _, _, err = vh.Coalesce(combinedInodeNumber, elements)
+	_, _, _, _, err = vh.Coalesce(combinedInodeNumber, "MetaDataStream", nil, elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.TooManyLinksError))
 
@@ -416,7 +430,7 @@ func TestCoalesceDuplicates(t *testing.T) {
 		ElementName:                    "file1a"})
 
 	// Coalesce the above 3 files into d1/combined
-	_, _, _, err = vh.Coalesce(combinedInodeNumber, elements)
+	_, _, _, _, err = vh.Coalesce(combinedInodeNumber, "MetaDataStream", nil, elements)
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.InvalidArgError))
 

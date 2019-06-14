@@ -228,7 +228,7 @@ def parse_get_object_response(read_plan_response):
             read_plan_response["LeaseId"])
 
 
-def coalesce_object_request(destination, elements):
+def coalesce_object_request(destination, elements, new_metadata):
     """
     Return a JSON-RPC request to get a read plan and other info for a
     particular object.
@@ -240,7 +240,8 @@ def coalesce_object_request(destination, elements):
     """
     return jsonrpc_request("Server.RpcCoalesce",
                            [{"VirtPath": destination,
-                             "ElementAccountRelativePaths": elements}])
+                             "ElementAccountRelativePaths": elements,
+                             "NewMetaData": _encode_binary(new_metadata)}])
 
 
 def parse_coalesce_object_response(coalesce_object_response):

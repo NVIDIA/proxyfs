@@ -1313,12 +1313,15 @@ func (mS *mountStruct) LookupPath(userID inode.InodeUserID, groupID inode.InodeG
 	return cursorInodeNumber, nil
 }
 
-func (mS *mountStruct) MiddlewareCoalesce(destPath string, elementPaths []string) (ino uint64, numWrites uint64, modificationTime uint64, err error) {
+func (mS *mountStruct) MiddlewareCoalesce(destPath string, metaData []byte, elementPaths []string) (
+	ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error) {
+
 	var (
 		coalesceElementList      []*inode.CoalesceElement
 		coalesceElementListIndex int
 		coalesceSize             uint64
-		coalesceTime             time.Time
+		ctime                    time.Time
+		mtime                    time.Time
 		destFileInodeNumber      inode.InodeNumber
 		dirEntryBasename         string
 		dirEntryInodeNumber      inode.InodeNumber
@@ -1411,7 +1414,8 @@ Restart:
 	// Invoke package inode to actually perform the Coalesce operation
 
 	destFileInodeNumber = dirEntryInodeNumber
-	coalesceTime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(destFileInodeNumber, coalesceElementList)
+	ctime, mtime, numWrites, _, err = mS.volStruct.inodeVolumeHandle.Coalesce(
+		destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
 
 	// We can now release all the WriteLocks we are currently holding
 
@@ -1420,7 +1424,8 @@ Restart:
 	// Regardless of err return, fill in other return values
 
 	ino = uint64(destFileInodeNumber)
-	modificationTime = uint64(coalesceTime.UnixNano())
+	attrChangeTime = uint64(ctime.UnixNano())
+	modificationTime = uint64(mtime.UnixNano())
 
 	return
 }

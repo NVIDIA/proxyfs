@@ -2984,10 +2984,10 @@ class TestObjectPut(BaseMiddlewareTest):
                      "X-Object-Sysmeta-Abc": "DEF"},
             body="")
 
+        # directories always return the hard coded value for EMPTY_OBJECT_ETAG
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
-        self.assertEqual(headers["ETag"],
-                         mware.construct_etag("AUTH_test", 9268022, 0))
+        self.assertEqual(headers["ETag"], "d41d8cd98f00b204e9800998ecf8427e")
 
         rpc_calls = self.fake_rpc.calls
         self.assertEqual(len(rpc_calls), 3)
@@ -4020,22 +4020,84 @@ class TestObjectCoalesce(BaseMiddlewareTest):
                     "NumWrites": 893,
                 }}
 
+        # this handler gets overwritten by the first test that
+        # registers a "Server.RpcHead"
         self.fake_rpc.register_handler(
             "Server.RpcHead", mock_RpcHead)
 
     def test_success(self):
-        def mock_RpcCoalesce(coalese_req):
+
+        # a map from an object's "virtual path" to its metadata
+        self.obj_metadata = {}
+
+        def mock_RpcHead(head_req):
+            '''Return the object informattion for the new coalesced object.  This
+            assumes that COALESCE operation has already created it.
+            '''
+
+            resp = {
+                "error": None,
+                "result": {
+                    "Metadata": "",
+                    "ModificationTime": 1488323796002909000,
+                    "FileSize": 80 * 1024 * 1024,
+                    "IsDir": False,
+                    "InodeNumber": 283253,
+                    "NumWrites": 5,
+                }
+            }
+            virt_path = head_req['VirtPath']
+            if self.obj_metadata[virt_path] is not None:
+                resp['result']['Metadata'] = self.obj_metadata[virt_path]
+            return resp
+
+        self.fake_rpc.register_handler(
+            "Server.RpcHead", mock_RpcHead)
+
+        def mock_RpcCoalesce(coalesce_req):
+
+            # if there's metadata for the new object, save it to return later
+            if coalesce_req['NewMetaData'] != "":
+                virt_path = coalesce_req['VirtPath']
+                self.obj_metadata[virt_path] = coalesce_req['NewMetaData']
+
+            numWrites = len(coalesce_req['ElementAccountRelativePaths'])
             return {
                 "error": None,
                 "result": {
                     "ModificationTime": 1488323796002909000,
                     "InodeNumber": 283253,
-                    "NumWrites": 6,
+                    "NumWrites": numWrites,
                 }}
 
         self.fake_rpc.register_handler(
             "Server.RpcCoalesce", mock_RpcCoalesce)
 
+        # have the coalesce request suppply the headers that would
+        # come from s3api for a "complete multi-part upload" request
+        request_headers = {
+            'X-Object-Sysmeta-S3Api-Acl':
+                '{"Owner":"fc",' +
+                '"Grant":[{"Grantee":"fc","Permission":"FULL_CONTROL"}]}',
+            'X-Object-Sysmeta-S3Api-Etag':
+                'cb45770d6cf51effdfb2ea35322459c3-205',
+            'X-Object-Sysmeta-Slo-Etag': '363d958f0f4c8501a50408a728ba5599',
+            'X-Object-Sysmeta-Slo-Size': '1073741824',
+            'X-Object-Sysmeta-Container-Update-Override-Etag':
+                '10340ab593ac8c32290a278e36d1f8df; ' +
+                's3_etag=cb45770d6cf51effdfb2ea35322459c3-205; ' +
+                'slo_etag=363d958f0f4c8501a50408a728ba5599',
+            'X-Static-Large-Object': 'True',
+            'Content-Type':
+                'application/x-www-form-urlencoded; ' +
+                'charset=utf-8;swift_bytes=1073741824',
+            'Etag': '10340ab593ac8c32290a278e36d1f8df',
+            'Date': 'Mon, 01 Apr 2019 22:53:31 GMT',
+            'Host': 'sm-p1.swiftstack.org',
+            'Accept': 'application/json',
+            'Content-Length': '18356',
+            'X-Auth-Token': None,
+        }
         request_body = json.dumps({
             "elements": [
                 "c1/seg1a",
@@ -4046,12 +4108,13 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             ]}).encode('ascii')
         req = swob.Request.blank(
             "/v1/AUTH_test/con/obj",
+            headers=request_headers,
             environ={"REQUEST_METHOD": "COALESCE",
                      "wsgi.input": BytesIO(request_body)})
+
         status, headers, body = self.call_pfs(req)
         self.assertEqual(status, '201 Created')
-        self.assertEqual(headers["Etag"],
-                         '"pfsv2/AUTH_test/00045275/00000006-32"')
+        self.assertEqual(headers["Etag"], '10340ab593ac8c32290a278e36d1f8df')
 
         # The first call is a call to RpcIsAccountBimodal, the last is the one
         # we care about: RpcCoalesce. There *could* be some intervening calls
@@ -4071,6 +4134,24 @@ class TestObjectCoalesce(BaseMiddlewareTest):
             "c2/seg space 2b",
             "c3/seg3",
         ])
+
+        # verify that the metadata was munged correctly
+        # (SLO headers stripped out, etc.)
+        req = swob.Request.blank(
+            "/v1/AUTH_test/con/obj",
+            environ={"REQUEST_METHOD": "HEAD"})
+        status, headers, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, b'')
+        self.assertEqual(headers["Etag"],
+                         '10340ab593ac8c32290a278e36d1f8df')
+        self.assertIn('X-Object-Sysmeta-S3Api-Acl', headers)
+        self.assertIn('X-Object-Sysmeta-S3Api-Etag', headers)
+        self.assertIn('X-Object-Sysmeta-Container-Update-Override-Etag',
+                      headers)
+        self.assertNotIn('X-Static-Large-Object', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Etag', headers)
+        self.assertNotIn('X-Object-Sysmeta-Slo-Size', headers)
 
     def test_not_authed(self):
         def mock_RpcHead(get_container_req):
@@ -4431,43 +4512,179 @@ class TestAuth(BaseMiddlewareTest):
         self.assertEqual(status, '204 No Content')
 
 
-class TestBestPossibleEtag(unittest.TestCase):
-    # Duplicated here so we can't accidentally change it. If we change this
-    # header or its value, we have to consider handling old data.
+class TestEtagHandling(unittest.TestCase):
+    '''Test that mung_etags()/unmung_etags() are inverse functions (more
+    or less), that the unmung_etags() correctly unmungs the current
+    disk layout for the header, and that best_possible_etag() returns
+    the correct etag value.
+    '''
+
+    # Both the header names and the way the values are calculated and
+    # the way they are formatted are part of the "disk layout".  If we
+    # change them, we have to consider handling old data.
+    #
+    # Names and values duplicated here so this test will break if they
+    # are changed.
     HEADER = "X-Object-Sysmeta-ProxyFS-Initial-MD5"
 
-    def test_md5_good(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
-                "AUTH_test", 6676743, 1),
-            '5484c2634aa61c69fc02ef5400a61c94')
+    ETAG_HEADERS = {
+        "ORIGINAL_MD5": {
+            "name": "X-Object-Sysmeta-ProxyFS-Initial-MD5",
+            "value": "5484c2634aa61c69fc02ef5400a61c94",
+            "num_writes": 7,
+            "munged_value": "7:5484c2634aa61c69fc02ef5400a61c94"
+        },
+        "S3API_ETAG": {
+            "name": "X-Object-Sysmeta-S3Api-Etag",
+            "value": "cb0dc66d591395cdf93555dafd4145ad",
+            "num_writes": 3,
+            "munged_value": "3:cb0dc66d591395cdf93555dafd4145ad"
+        },
+        "LISTING_ETAG_OVERRIDE": {
+            "name": "X-Object-Sysmeta-Container-Update-Override-Etag",
+            "value": "dbca19e0c46aa9b10e8de2f5856abc86",
+            "num_writes": 9,
+            "munged_value": "9:dbca19e0c46aa9b10e8de2f5856abc86"
+        },
+    }
 
-    def test_modified(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "1:5484c2634aa61c69fc02ef5400a61c94"},
-                "AUTH_test", 0x16497360, 2),
-            '"pfsv2/AUTH_test/16497360/00000002-32"')
+    EMPTY_OBJECT_ETAG = "d41d8cd98f00b204e9800998ecf8427e"
 
-    def test_missing(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {}, "AUTH_test", 0x01740209, 1),
-            '"pfsv2/AUTH_test/01740209/00000001-32"')
+    def test_mung_etags(self):
+        '''Verify that mung_etags() mungs each of the etag header values to
+        the correct on-disk version with num_writes and unmung_etags()
+        recovers the original value.
+        '''
+        for header in self.ETAG_HEADERS.keys():
 
-    def test_bogus(self):
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "counterfact-preformative"},
-                "AUTH_test", 0x707301, 2),
-            '"pfsv2/AUTH_test/00707301/00000002-32"')
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            num_writes = self.ETAG_HEADERS[header]["num_writes"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
 
-        self.assertEqual(
-            mware.best_possible_etag(
-                {self.HEADER: "magpie:interfollicular"},
-                "AUTH_test", 0x707301, 2),
-            '"pfsv2/AUTH_test/00707301/00000002-32"')
+            obj_metadata = {name: value}
+            mware.mung_etags(obj_metadata, None, num_writes)
+
+            # The handling of ORIGINAL_MD5_HEADER is a bit strange.
+            # If an etag value is passed to mung_etags() as the 2nd
+            # argument then the header is created and assigned the
+            # munged version of that etag value.  But if its None than
+            # an ORIGINAL_MD5_HEADER, if present, is passed through
+            # unmolested (but will be dropped by the unmung code if
+            # the format is wrong or num_writes does not match, which
+            # is likely).
+            if header == "ORIGINAL_MD5":
+                self.assertEqual(obj_metadata[name], value)
+            else:
+                self.assertEqual(obj_metadata[name], munged_value)
+
+            # same test but with an etag value passed to mung_etags()
+            # instead of None
+            md5_etag_value = self.ETAG_HEADERS["ORIGINAL_MD5"]["value"]
+
+            obj_metadata = {name: value}
+            mware.mung_etags(obj_metadata, md5_etag_value, num_writes)
+            self.assertEqual(obj_metadata[name], munged_value)
+
+            # and verify that it gets unmunged to the original value
+            mware.unmung_etags(obj_metadata, num_writes)
+            self.assertEqual(obj_metadata[name], value)
+
+    def test_unmung_etags(self):
+        '''Verify that unmung_etags() recovers the correct value for
+        each ETag header and discards header values where num_writes
+        is incorrect or the value is corrupt.
+        '''
+        # build metadata with all of the etag headers
+        orig_obj_metadata = {}
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
+            orig_obj_metadata[name] = munged_value
+
+        # unmung_etags() should strip out headers with stale
+        # num_writes so only the one for header remains
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            num_writes = self.ETAG_HEADERS[header]["num_writes"]
+            munged_value = self.ETAG_HEADERS[header]["munged_value"]
+
+            obj_metadata = orig_obj_metadata.copy()
+            mware.unmung_etags(obj_metadata, num_writes)
+
+            # header should be the only one left
+            for hdr2 in self.ETAG_HEADERS.keys():
+
+                if hdr2 == header:
+                    self.assertEqual(obj_metadata[name], value)
+                else:
+                    self.assertTrue(
+                        self.ETAG_HEADERS[hdr2]["name"] not in obj_metadata)
+
+            # verify mung_etags() takes it back to the munged value
+            if header != "ORIGINAL_MD5":
+                mware.mung_etags(obj_metadata, None, num_writes)
+                self.assertEqual(obj_metadata[name], munged_value)
+
+        # Try to unmung on-disk headers with corrupt values. Instead
+        # of a panic it should simply elide the headers (and possibly
+        # log the corrupt value, which it doesn't currently do).
+        for bad_value in ("counterfact-preformative",
+                          "magpie:interfollicular"):
+
+            obj_metadata = {}
+            for header in self.ETAG_HEADERS.keys():
+
+                name = self.ETAG_HEADERS[header]["name"]
+                obj_metadata[name] = bad_value
+
+            mware.unmung_etags(obj_metadata, 0)
+            self.assertEqual(obj_metadata, {})
+
+    def test_best_possible_etag(self):
+        '''Test that best_possible_etag() returns the best ETag.
+        '''
+
+        # Start with metadata that consists of all possible ETag
+        # headers and verify that best_possible_headers() chooses the
+        # right ETag based on the circumstance.
+        obj_metadata = {}
+        for header in self.ETAG_HEADERS.keys():
+
+            name = self.ETAG_HEADERS[header]["name"]
+            value = self.ETAG_HEADERS[header]["value"]
+            obj_metadata[name] = value
+
+        # directories always return the same etag
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7,
+                                        is_dir=True)
+        self.assertEqual(etag, self.EMPTY_OBJECT_ETAG)
+
+        # a container listing should return the Container Listing Override ETag
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7,
+                                        container_listing=True)
+        self.assertEqual(etag,
+                         self.ETAG_HEADERS["LISTING_ETAG_OVERRIDE"]["value"])
+
+        # if its not a directory and its not a container list, then
+        # the function should return the original MD5 ETag (the
+        # S3API_ETAG is returned as a header, but not as an ETag).
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7)
+        self.assertEqual(etag,
+                         self.ETAG_HEADERS["ORIGINAL_MD5"]["value"])
+
+        # if none of the headers provide the correct ETag then
+        # best_possible_etag() will construct a unique one (which also
+        # should not be changed without handling "old data", i.e.
+        # its part of the "disk layout").
+        del obj_metadata[self.ETAG_HEADERS["ORIGINAL_MD5"]["name"]]
+
+        etag = mware.best_possible_etag(obj_metadata, "AUTH_test", 42, 7)
+        self.assertEqual(etag,
+                         '"pfsv2/AUTH_test/0000002A/00000007-32"')
 
 
 class TestProxyfsMethod(BaseMiddlewareTest):
