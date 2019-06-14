@@ -1,5 +1,38 @@
 # ProxyFS Release Notes
 
+## 1.11.0 (June 13, 2019)
+
+### Features:
+
+Adapted to latest (2.24) version of Swift.
+
+Alpha version of PFSAgent is now available. This tool presents a FUSE mount point
+of a Volume served by a ProxyFS instance by using the new PROXYFS HTTP Method of
+(pfs_middleware in) Swift.
+
+### Bug Fixes:
+
+The COALESCE HTTP method used by S3 Multi-Part Upload had a number of deficiencies.
+Most visibly, when COALESCE was issued to overwrite an existing object, metadata
+was not applied correctly.
+
+Objects formed via COALESCE now have a correctly set non-MD5 ETAG.
+
+GET issued to a Container specifying a marker now returns the objects in the
+Container following the marker. Previously, if the marker indicated an Object
+in the Container's directory (i.e. rather than a subdirectory of the Container),
+the list of following Objects would be empty.
+
+SnapShotPolicy changes now picked up during SIGHUP.
+
+### Notes:
+
+ProxyFS typically should not expect errors coming from Swift. Indeed, the only
+expected errors are during Volume/Account formatting as the "mkproxyfs" tool
+attempts to verify that the underlying Account is, indeed, pristine. But other
+unexpected errors were logged along with being retried. This release ensures
+that any payload returned by Swift with bad HTTP Status is also logged.
+
 ## 1.10.0 (March 12, 2019)
 
 ### Bug Fixes:
