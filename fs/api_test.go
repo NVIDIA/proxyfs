@@ -1035,7 +1035,7 @@ func TestStaleInodes(t *testing.T) {
 	testTeardown(t)
 }
 
-func TestMiddleware(t *testing.T) {
+func TestMiddlewareGetContainer(t *testing.T) {
 	var ents []ContainerEntry
 	testSetup(t, false)
 
