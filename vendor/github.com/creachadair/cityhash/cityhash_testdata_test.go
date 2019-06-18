@@ -1,9 +1,10 @@
 // Generated code, do not edit.
 // To re-generate this file, run: ./convert_tests
 
-package cityhash
+package cityhash_test
 
 const (
+	k0       = uint64(0xc3a5c85c97cb3127)
 	dataSize = 1 << 20
 	seed0    = 1234567
 	seed1    = k0

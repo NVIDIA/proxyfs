@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 ##
 ## Convert test vectors for the CityHash algorithm from the C++ implementation
 ## into Go.
@@ -10,7 +10,7 @@
 ##
 from __future__ import print_function
 import subprocess as proc
-import os, re, sys
+import io, os, re, sys
 
 CITYHASH_REPO = 'https://github.com/google/cityhash.git'
 REPO_MIRROR   = 'cityhash-mirror'
@@ -28,7 +28,7 @@ def cleanup(dir):
 
 def extract_testdata(path):
     """Extract and return the testdata vectors from the given test source."""
-    data = proc.check_output(['gcc', '-E', path])
+    data = proc.check_output(['gcc', '-E', path]).decode('utf-8')
     testdata = {
         'k0':        findconst(data, 'k0').rstrip('UL'),
         'kSeed0':    findconst(data, 'kSeed0'),
@@ -62,22 +62,32 @@ def findconst(data, name):
 
 def write_testdata(testdata, path):
     """Write the testdata values in rows to the file named by path."""
-    with file(path, 'wt') as ofp:
-        p = proc.Popen(['gofmt'], stdin=proc.PIPE, stdout=ofp)
-        p.stdin.write('// Generated code, do not edit.\n')
-        p.stdin.write('// To re-generate this file, run: %s\n\n' % ' '.join(sys.argv))
-        p.stdin.write('package cityhash\n')
-        p.stdin.write('const (\n')
-        p.stdin.write('dataSize=%s\n' % testdata['kDataSize'])
-        p.stdin.write('seed0=%s\n' % testdata['kSeed0'])
-        p.stdin.write('seed1=%s\n' % testdata['kSeed1'])
-        p.stdin.write(')\n')
-        p.stdin.write('var testData = [][]uint64{\n')
+    v = dict(testdata)
+    v['args'] = ' '.join(sys.argv)
+    with open(path, 'wt') as ofp:
+        buf = io.StringIO()
+        buf.write('''// Generated code, do not edit.
+// To re-generate this file, run: {args}
+
+package cityhash_test
+
+const (
+    k0=uint64({k0})
+    dataSize={kDataSize}
+    seed0={kSeed0}
+    seed1={kSeed1}
+)
+
+var testData = [][]uint64{{
+'''.format_map(v))
         for row in testdata['testdata']:
-            p.stdin.write('{')
-            p.stdin.write(', '.join(row))
-            p.stdin.write('},\n')
-        p.stdin.write('}\n')
+            buf.write('{')
+            buf.write(', '.join(row))
+            buf.write('},\n')
+        buf.write('}\n')
+        p = proc.Popen(['gofmt'], stdin=proc.PIPE, stdout=ofp)
+        src = buf.getvalue().encode('utf-8')
+        p.stdin.write(src)
         p.stdin.close()
         return p.wait()
 

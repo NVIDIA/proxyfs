@@ -8,8 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"bitbucket.org/creachadair/cityhash"
-
+	"github.com/creachadair/cityhash"
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/blunder"

@@ -1,15 +1,15 @@
-hash: c66dedd28a2cbff751b9ca72f9343c4cdbce719a746e443fb9af0d3371b4fcc3
-updated: 2018-09-27T12:17:03.160658-07:00
+hash: 392887e5ddca3ad2b171197eb935528df9efc8a65c150dbe1aa2eef5ce909966
+updated: 2019-06-17T19:29:42.222608-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
   - fs
   - fuseutil
-- name: bitbucket.org/creachadair/cityhash
-  version: 0d1506f40c89df1b983c65d94162627c41a330a4
 - name: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
+- name: github.com/creachadair/cityhash
+  version: 3b32d67a45902637ba0bae69f96a90e1681aac77
 - name: github.com/droundy/goopt
   version: 0b8effe182da161d81b011aba271507324ecb7ab
 - name: github.com/go-errors/errors
