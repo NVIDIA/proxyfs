@@ -1,0 +1,15 @@
+#!/bin/bash
+
+sudo systemctl start proxyfs-etcd
+
+# To access from cmdline:
+#
+#   ETCDCTL_API=3 etcdctl --endpoints=http://localhost:2379 put foo bar
+#   ETCDCTL_API=3 etcdctl --endpoints=http://localhost:2379 get foo
+#   ETCDCTL_API=3 etcdctl --endpoints=http://localhost:2379 txn -i
+#     value("foo") = "bar"
+#
+#     put foo cat
+#
+#     put foo dog
+#
