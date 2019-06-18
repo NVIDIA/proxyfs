@@ -1,6 +1,10 @@
-package cityhash
+package cityhash_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/creachadair/cityhash"
+)
 
 var data = make([]byte, dataSize)
 
@@ -39,25 +43,25 @@ func TestCityHash(t *testing.T) {
 		end := pos + i
 		bits := data[pos:end]
 
-		if got, want := Hash64(bits), testData[i][ch64]; got != want {
+		if got, want := cityhash.Hash64(bits), testData[i][ch64]; got != want {
 			t.Errorf("[%d] Hash64 %+v: got %x, want %x", i, bits, got, want)
 		}
 
-		if got, want := Hash32(bits), uint32(testData[i][ch32]); got != want {
+		if got, want := cityhash.Hash32(bits), uint32(testData[i][ch32]); got != want {
 			t.Errorf("[%d] Hash32 %+v: got %x, want %x", i, bits, got, want)
 		}
 
-		if got, want := Hash64WithSeed(bits, seed0), testData[i][ch64Seed]; got != want {
+		if got, want := cityhash.Hash64WithSeed(bits, seed0), testData[i][ch64Seed]; got != want {
 			t.Errorf("[%d] Hash64WithSeed %+v %x: got %x, want %x", i, bits, seed0, got, want)
 		}
 
-		if got, want := Hash64WithSeeds(bits, seed0, seed1), testData[i][ch64Seeds]; got != want {
+		if got, want := cityhash.Hash64WithSeeds(bits, seed0, seed1), testData[i][ch64Seeds]; got != want {
 			t.Errorf("[%d] Hash64WithSeeds %+v %x|%x: got %x, want %x",
 				i, bits, seed0, seed1, got, want)
 		}
 
 		{
-			lo, hi := Hash128(bits)
+			lo, hi := cityhash.Hash128(bits)
 			wantLo := testData[i][ch128Lo]
 			wantHi := testData[i][ch128Hi]
 			if lo != wantLo || hi != wantHi {
@@ -66,7 +70,7 @@ func TestCityHash(t *testing.T) {
 			}
 		}
 		{
-			lo, hi := Hash128WithSeed(bits, seed0, seed1)
+			lo, hi := cityhash.Hash128WithSeed(bits, seed0, seed1)
 			wantLo := testData[i][ch128SeedLo]
 			wantHi := testData[i][ch128SeedHi]
 			if lo != wantLo || hi != wantHi {
