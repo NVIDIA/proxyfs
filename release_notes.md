@@ -4,7 +4,7 @@
 
 ### Features:
 
-Adapted to latest (2.24) version of Swift.
+Adapted to latest (2.21.0.4) version of Swift.
 
 Alpha version of PFSAgent is now available. This tool presents a FUSE mount point
 of a Volume served by a ProxyFS instance by using the new PROXYFS HTTP Method of
