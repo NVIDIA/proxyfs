@@ -186,6 +186,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
 		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
 		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
