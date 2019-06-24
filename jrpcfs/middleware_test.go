@@ -68,6 +68,7 @@ func testSetup() []func() {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=35262",
 		"SwiftClient.Timeout=10s",

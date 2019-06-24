@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	etcd "go.etcd.io/etcd/clientv3"
+
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
@@ -176,6 +178,13 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 
+	etcdEnabled          bool
+	etcdEndpoints        []string
+	etcdAutoSyncInterval time.Duration
+	etcdDialTimeout      time.Duration
+
+	etcdClient *etcd.Client
+
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
 
@@ -337,6 +346,37 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	globals.createdDeletedObjectsCachePriorCacheHits = 0
 	globals.createdDeletedObjectsCachePriorCacheMisses = 0
+
+	// Record etcd parameters
+
+	globals.etcdEnabled, err = confMap.FetchOptionValueBool("FSGlobals", "EtcdEnabled")
+	if nil != err {
+		globals.etcdEnabled = false // Current default
+	}
+
+	if globals.etcdEnabled {
+		globals.etcdEndpoints, err = confMap.FetchOptionValueStringSlice("FSGlobals", "EtcdEndpoints")
+		if nil != err {
+			return
+		}
+		globals.etcdAutoSyncInterval, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdAutoSyncInterval")
+		if nil != err {
+			return
+		}
+		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
+		if nil != err {
+			return
+		}
+
+		_, err = etcd.New(etcd.Config{
+			Endpoints:        globals.etcdEndpoints,
+			AutoSyncInterval: globals.etcdAutoSyncInterval,
+			DialTimeout:      globals.etcdDialTimeout,
+		})
+		if nil != err {
+			return
+		}
+	}
 
 	err = nil
 	return
@@ -528,6 +568,13 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	if globals.etcdEnabled {
+		err = globals.etcdClient.Close()
+		if nil != err {
+			return
+		}
+	}
+
 	if 0 != len(globals.volumeGroupMap) {
 		err = fmt.Errorf("headhunter.Down() called with 0 != len(globals.volumeGroupMap")
 		return
