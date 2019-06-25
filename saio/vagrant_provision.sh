@@ -76,6 +76,7 @@ cp /home/vagrant/.gdbinit /root/.
 yum -y install centos-release-scl
 yum -y install rh-python36
 ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6
+ln -s /bin/python3.6 /bin/python3
 ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 # Install Python pip
