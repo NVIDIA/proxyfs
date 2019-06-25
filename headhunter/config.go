@@ -183,6 +183,7 @@ type globalsStruct struct {
 	etcdEndpoints        []string
 	etcdAutoSyncInterval time.Duration
 	etcdDialTimeout      time.Duration
+	etcdOpTimeout        time.Duration
 
 	etcdClient *etcd.Client
 	etcdKV     etcd.KV
@@ -366,6 +367,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
+		if nil != err {
+			return
+		}
+		globals.etcdOpTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdOpTimeout")
 		if nil != err {
 			return
 		}
