@@ -1704,11 +1704,11 @@ class PfsMiddleware(object):
             # We deliberately don't try to clean up our log segments on
             # failure. ProxyFS is responsible for cleaning up unreferenced
             # log segments.
-            if err.errno == pfs_errno.IsDirError:
+            if err.errno == pfs_errno.NotEmptyError:
                 return swob.HTTPConflict(
                     request=req,
                     headers={"Content-Type": "text/plain"},
-                    body="This is a directory")
+                    body="This is a non-empty directory")
             elif err.errno == pfs_errno.NotDirError:
                 return swob.HTTPConflict(
                     request=req,
@@ -1790,7 +1790,8 @@ class PfsMiddleware(object):
                 # punt to top-level exception handler
                 raise
 
-        read_plan, raw_metadata, size, mtime_ns, ino, num_writes, lease_id = \
+        (read_plan, raw_metadata, size, mtime_ns,
+         is_dir, ino, num_writes, lease_id) = \
             rpc.parse_get_object_response(object_response)
 
         metadata = deserialize_metadata(raw_metadata)
@@ -1798,8 +1799,7 @@ class PfsMiddleware(object):
         headers = swob.HeaderKeyDict(metadata)
 
         if "Content-Type" not in headers:
-            headers["Content-Type"] = guess_content_type(req.path,
-                                                         is_dir=False)
+            headers["Content-Type"] = guess_content_type(req.path, is_dir)
         else:
             headers['Content-Type'] = headers['Content-Type'].split(
                 ';swift_bytes=')[0]
@@ -1810,7 +1810,7 @@ class PfsMiddleware(object):
         headers["X-Timestamp"] = x_timestamp_from_epoch_ns(
             mtime_ns)
         headers["Etag"] = best_possible_etag(
-            headers, ctx.account_name, ino, num_writes)
+            headers, ctx.account_name, ino, num_writes, is_dir=is_dir)
 
         get_read_plan = req.params.get("get-read-plan", "no")
         if get_read_plan == "":

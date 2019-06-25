@@ -52,17 +52,26 @@ class TestResponseParsing(unittest.TestCase):
             "FileSize": 'c',
             "ModificationTime": 'd',
             "AttrChangeTime": 'e',
-            "InodeNumber": 'f',
-            "NumWrites": 'g',
-            "LeaseId": 'h',
+            "IsDir": 'f',
+            "InodeNumber": 'g',
+            "NumWrites": 'h',
+            "LeaseId": 'i',
         }
         self.assertEqual(rpc.parse_get_object_response(resp), (
-            'a', 'b', 'c', 'e', 'f', 'g', 'h'))
+            'a', 'b', 'c', 'e', 'f', 'g', 'h', 'i'))
+
+        # older proxyfsd didn't send IsDir, so it will not be present in
+        # older responses, but older GET would fail on a directory object
+        # so False is correct if IsDir is not present.
+        del resp["IsDir"]
+        self.assertEqual(rpc.parse_get_object_response(resp), (
+            'a', 'b', 'c', 'e', False, 'g', 'h', 'i'))
+
         # Old proxyfsd didn't send AttrChangeTime, but we've always had
         # ModificationTime available, which is the next-best option
         del resp["AttrChangeTime"]
         self.assertEqual(rpc.parse_get_object_response(resp), (
-            'a', 'b', 'c', 'd', 'f', 'g', 'h'))
+            'a', 'b', 'c', 'd', False, 'g', 'h', 'i'))
 
     def test_coalesce_object(self):
         resp = {
@@ -140,6 +149,7 @@ class TestResponseParsing(unittest.TestCase):
         }
         self.assertEqual(rpc.parse_head_response(resp), (
             'a', 'c', 'd', 'e', 'f', 'g'))
+
         # Old proxyfsd didn't send AttrChangeTime, but we've always had
         # ModificationTime available, which is the next-best option
         del resp["AttrChangeTime"]

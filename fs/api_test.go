@@ -1276,6 +1276,17 @@ func TestMiddlewarePuts(t *testing.T) {
 		verifyMetadata(t, containerObjectPath, "step 1", "MiddlewareMkdir", &opMeta)
 	}
 
+	// verify the metadata (explicit and implicit) returned by
+	// MiddlewareGetObject() matches MiddlewareHeadResponse() for a
+	// directory
+	opMeta, err = testMountStruct.MiddlewareGetObject(containerObjectPath,
+		[]ReadRangeIn{}, &[]inode.ReadPlanStep{})
+	if err != nil {
+		t.Errorf("MiddlewareGetObject() for object '%s' failed: %v", containerObjectPath, err)
+	} else {
+		verifyMetadata(t, containerObjectPath, "step 1.5", "MiddlewareGetObject", &opMeta)
+	}
+
 	// change the directory object back to a file object and verify the
 	// explicit metadata and returned attributes
 	opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites, err =
@@ -1293,17 +1304,11 @@ func TestMiddlewarePuts(t *testing.T) {
 
 	// verify the metadata (explicit and implicit) returned by
 	// MiddlewareGetObject() matches MiddlewareHeadResponse()
-	// (MiddlewareGetObject() only works on file objects so we must test
-	// against a file object)
-	opMeta.FileSize, opMeta.ModificationTime, opMeta.AttrChangeTime, opMeta.InodeNumber, opMeta.NumWrites,
-		opMeta.Metadata, err =
-		testMountStruct.MiddlewareGetObject(containerObjectPath,
-			[]ReadRangeIn{}, &[]inode.ReadPlanStep{})
+	opMeta, err = testMountStruct.MiddlewareGetObject(containerObjectPath,
+		[]ReadRangeIn{}, &[]inode.ReadPlanStep{})
 	if err != nil {
 		t.Errorf("MiddlewareGetObject() for object '%s' failed: %v", containerObjectPath, err)
 	} else {
-		opMeta.IsDir = false
-
 		verifyMetadata(t, containerObjectPath, "step 3", "MiddlewareGetObject", &opMeta)
 	}
 

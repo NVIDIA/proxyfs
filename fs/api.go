@@ -187,8 +187,7 @@ type MountHandle interface {
 	MiddlewareGetAccount(maxEntries uint64, marker string, endmarker string) (accountEnts []AccountEntry, mtime uint64, ctime uint64, err error)
 	MiddlewareGetContainer(vContainerName string, maxEntries uint64, marker string, endmarker string, prefix string, delimiter string) (containerEnts []ContainerEntry, err error)
 	MiddlewareGetObject(containerObjectPath string, readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (
-		fileSize uint64, lastModified uint64, lastChanged uint64, ino inode.InodeNumber,
-		numWrites uint64, serializedMetadata []byte, err error)
+		response HeadResponse, err error)
 	MiddlewareHeadResponse(entityPath string) (response HeadResponse, err error)
 	MiddlewareMkdir(vContainerName string, vObjectPath string, metadata []byte) (mtime uint64, ctime uint64, inodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePost(parentDir string, baseName string, newMetaData []byte, oldMetaData []byte) (err error)

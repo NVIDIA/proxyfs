@@ -578,6 +578,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "prominority-sarcocyst",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -639,6 +640,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "prominority-sarcocyst",
                     "ReadEntsOut": [
                         {
@@ -710,6 +712,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "prominority-sarcocyst",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -773,6 +776,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "a65b5591b90fe6035e669f1f216502d2",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -833,6 +837,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "6840595b3370f109dc8ed388b41800a4",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -896,6 +901,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "who cares",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -959,6 +965,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 123,
                     "ModificationTime": 1511222561631497000,
+                    "IsDir": False,
                     "LeaseId": "dontcare",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1013,6 +1020,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "982938",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1066,6 +1074,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "fc00:752b:5cca:a544:2d41:3177:2c71:85ae",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1108,6 +1117,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1150,6 +1160,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2426,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "borkbork",
                     "ReadEntsOut": None}}
 
@@ -1191,6 +1202,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "e1885b511fa445d18b1d447a5606a06d",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1262,6 +1274,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "fe57a6ed-758a-23fb-f7d4-9683aee07c0e",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1366,6 +1379,7 @@ class TestObjectGet(BaseMiddlewareTest):
             return {
                 "error": None,
                 "result": {"FileSize": 0, "ReadEntsOut": None, "Metadata": "",
+                           "IsDir": False,
                            "LeaseId": "3d73d2bcf39224df00d5ccd912d92c82",
                            "InodeNumber": 1245, "NumWrites": 2424,
                            "ModificationTime": 1481152134331862558}}
@@ -1383,8 +1397,17 @@ class TestObjectGet(BaseMiddlewareTest):
             self.assertEqual(get_object_req['VirtPath'],
                              "/v1/AUTH_test/c/a-dir")
             return {
-                "error": "errno: 21",  # EISDIR
-                "result": None}
+                "error": None,
+                "result": {
+                    "Metadata": "",
+                    "ModificationTime": 1479173168018879490,
+                    "FileSize": 0,
+                    "IsDir": True,
+                    "InodeNumber": 1254,
+                    "NumWrites": 896,
+                    "ReadEntsOut": None,
+                    "LeaseId": "borkbork",
+                }}
 
         self.fake_rpc.register_handler(
             "Server.RpcGetObject", mock_RpcGetObject)
@@ -1410,6 +1433,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 1245,
                     "NumWrites": 2424,
                     "ModificationTime": 1481152134331862558,
+                    "IsDir": False,
                     "LeaseId": "a7ec296d3f3c39ef95407789c436f5f8",
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1442,6 +1466,7 @@ class TestObjectGet(BaseMiddlewareTest):
                         "3:25152b9f7ca24b61eec895be4e89a950",
                     }).encode('ascii')).decode('ascii'),
                     "ModificationTime": 1506039770222591000,
+                    "IsDir": False,
                     "FileSize": 17,
                     "IsDir": False,
                     "InodeNumber": 1433230,
@@ -1477,6 +1502,7 @@ class TestObjectGet(BaseMiddlewareTest):
                     "InodeNumber": 7677424,
                     "NumWrites": 2325461,
                     "ModificationTime": 1488841810471415000,
+                    "IsDir": False,
                     "LeaseId": expected_lease_id,
                     "ReadEntsOut": [{
                         "ObjectPath": ("/v1/AUTH_test/InternalContainer"
@@ -1523,8 +1549,8 @@ class TestContainerHead(BaseMiddlewareTest):
                     "Metadata": base64.b64encode(
                         self.serialized_container_metadata.encode('ascii')),
                     "ModificationTime": 1479240397189581131,
+                    "IsDir": False,
                     "FileSize": 0,
-                    "IsDir": True,
                     "InodeNumber": 2718,
                     "NumWrites": 0,
                 }}
@@ -3299,7 +3325,7 @@ class TestObjectPut(BaseMiddlewareTest):
             # This is what you get when there's a nonempty directory in
             # place of your file.
             return {
-                "error": "errno: 21",
+                "error": "errno: 39",
                 "result": None}
 
         self.fake_rpc.register_handler(

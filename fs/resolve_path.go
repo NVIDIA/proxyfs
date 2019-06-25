@@ -15,7 +15,7 @@ type resolvePathOption uint32
 
 const (
 	resolvePathFollowDirEntrySymlinks              resolvePathOption = 1 << iota
-	resolvePathFollowDirSymlinks                                     //
+	resolvePathFollowDirSymlinks                                     // Follow symlink in final pathanme component
 	resolvePathCreateMissingPathElements                             // Defaults created DirEntry to be a File
 	resolvePathDirEntryInodeMustBeDirectory                          //
 	resolvePathDirEntryInodeMustBeFile                               //

@@ -2297,8 +2297,7 @@ Restart:
 
 func (mS *mountStruct) MiddlewareGetObject(containerObjectPath string,
 	readRangeIn []ReadRangeIn, readRangeOut *[]inode.ReadPlanStep) (
-	fileSize uint64, lastModified uint64, lastChanged uint64, inum inode.InodeNumber,
-	numWrites uint64, serializedMetadata []byte, err error) {
+	response HeadResponse, err error) {
 
 	var (
 		dirEntryInodeNumber   inode.InodeNumber
@@ -2366,16 +2365,22 @@ Restart:
 		return
 	}
 
-	fileSize = stat[StatSize]
-	lastModified = stat[StatMTime]
-	lastChanged = stat[StatCTime]
-	inum = dirEntryInodeNumber
-	numWrites = stat[StatNumWrites]
+	response.FileSize = stat[StatSize]
+	response.ModificationTime = stat[StatMTime]
+	response.AttrChangeTime = stat[StatCTime]
+	response.IsDir = (stat[StatFType] == uint64(inode.DirType))
+	response.InodeNumber = dirEntryInodeNumber
+	response.NumWrites = stat[StatNumWrites]
 
-	serializedMetadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
+	// Swift thinks all directories have a size of 0 (and symlinks as well)
+	if stat[StatFType] != uint64(inode.FileType) {
+		response.FileSize = 0
+	}
+
+	response.Metadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
 	if nil != err {
 		if blunder.Is(err, blunder.StreamNotFound) {
-			serializedMetadata = []byte{}
+			response.Metadata = []byte{}
 			err = nil
 		} else {
 			heldLocks.free()
@@ -2397,7 +2402,7 @@ Restart:
 
 		fileOffset = 0
 
-		readPlan, err = inodeVolumeHandle.GetReadPlan(dirEntryInodeNumber, &fileOffset, &fileSize)
+		readPlan, err = inodeVolumeHandle.GetReadPlan(dirEntryInodeNumber, &fileOffset, &response.FileSize)
 		if nil != err {
 			heldLocks.free()
 			return
@@ -2481,12 +2486,19 @@ Restart:
 		return
 	}
 
+	// since resolvePathFollowDirEntrySymlinks is set on the call to
+	// resolvePath(), above, we'll never see a symlink returned
 	response.ModificationTime = stat[StatMTime]
 	response.AttrChangeTime = stat[StatCTime]
 	response.FileSize = stat[StatSize]
 	response.IsDir = (stat[StatFType] == uint64(inode.DirType))
 	response.InodeNumber = dirEntryInodeNumber
 	response.NumWrites = stat[StatNumWrites]
+
+	// Swift thinks all directories have a size of 0 (and symlinks as well)
+	if stat[StatFType] != uint64(inode.FileType) {
+		response.FileSize = 0
+	}
 
 	response.Metadata, err = mS.volStruct.inodeVolumeHandle.GetStream(dirEntryInodeNumber, MiddlewareStream)
 	if nil != err {
