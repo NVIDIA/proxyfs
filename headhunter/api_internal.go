@@ -2,6 +2,7 @@ package headhunter
 
 import (
 	"container/list"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -71,24 +72,41 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		checkpointContainerHeaders map[string][]string
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
-		newReservedToNonce         uint64
+		newCheckpointHeader        *checkpointHeaderStruct
+		newCheckpointHeaderBuf     []byte
 	)
 
 	if volume.nextNonce >= volume.maxNonce {
 		logger.Fatalf("Nonces have been exhausted !!!")
 	}
 
-	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
-		newReservedToNonce = volume.checkpointHeader.reservedToNonce + uint64(volume.nonceValuesToReserve)
+	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
+		newCheckpointHeader = &checkpointHeaderStruct{
+			CheckpointVersion:                         volume.checkpointHeader.CheckpointVersion,
+			CheckpointObjectTrailerStructObjectNumber: volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			CheckpointObjectTrailerStructObjectLength: volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+			ReservedToNonce:                           volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve),
+		}
 
 		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
-		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newCheckpointHeader.ReservedToNonce-1)
+
+		if globals.etcdEnabled {
+			newCheckpointHeaderBuf, err = json.MarshalIndent(newCheckpointHeader, "", "  ")
+			if nil != err {
+				logger.Fatalf("Failed to json.MarshalIndent(newCheckpointHeader): %v", err)
+			}
+
+			// TODO
+
+			fmt.Printf("newCheckpointHeaderBuf:\n%s\n", string(newCheckpointHeaderBuf[:]))
+		}
 
 		checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-			volume.checkpointHeader.checkpointVersion,
-			volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber,
-			volume.checkpointHeader.checkpointObjectTrailerStructObjectLength,
-			newReservedToNonce,
+			newCheckpointHeader.CheckpointVersion,
+			newCheckpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			newCheckpointHeader.CheckpointObjectTrailerStructObjectLength,
+			newCheckpointHeader.ReservedToNonce,
 		)
 
 		checkpointHeaderValues = []string{checkpointHeaderValue}
@@ -102,7 +120,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 			return
 		}
 
-		volume.checkpointHeader.reservedToNonce = newReservedToNonce
+		volume.checkpointHeader = newCheckpointHeader
 	}
 
 	nonce = volume.nextNonce

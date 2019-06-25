@@ -117,6 +117,7 @@ type volumeStruct struct {
 	maxLogSegmentsPerMetadataNode           uint64
 	maxDirFileNodesPerMetadataNode          uint64
 	maxCreatedDeletedObjectsPerMetadataNode uint64
+	checkpointEtcdKeyName                   string
 	checkpointContainerName                 string
 	checkpointContainerStoragePolicy        string
 	checkpointInterval                      time.Duration
@@ -184,6 +185,7 @@ type globalsStruct struct {
 	etcdDialTimeout      time.Duration
 
 	etcdClient *etcd.Client
+	etcdKV     etcd.KV
 
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
@@ -368,7 +370,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
-		_, err = etcd.New(etcd.Config{
+		globals.etcdClient, err = etcd.New(etcd.Config{
 			Endpoints:        globals.etcdEndpoints,
 			AutoSyncInterval: globals.etcdAutoSyncInterval,
 			DialTimeout:      globals.etcdDialTimeout,
@@ -376,6 +378,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		if nil != err {
 			return
 		}
+
+		globals.etcdKV = etcd.NewKV(globals.etcdClient)
 	}
 
 	err = nil
@@ -569,6 +573,8 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 	if globals.etcdEnabled {
+		globals.etcdKV = nil
+
 		err = globals.etcdClient.Close()
 		if nil != err {
 			return
@@ -639,6 +645,13 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	volume.maxCreatedDeletedObjectsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxCreatedDeletedObjectsPerMetadataNode")
 	if nil != err {
 		volume.maxCreatedDeletedObjectsPerMetadataNode = volume.maxLogSegmentsPerMetadataNode // TODO: Eventually just return
+	}
+
+	if globals.etcdEnabled {
+		volume.checkpointEtcdKeyName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointEtcdKeyName")
+		if nil != err {
+			return
+		}
 	}
 
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")

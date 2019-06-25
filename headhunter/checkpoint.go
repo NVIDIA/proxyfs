@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	LittleEndian = cstruct.LittleEndian // All data cstructs to be serialized in LittleEndian form
+	LittleEndian = cstruct.LittleEndian // All data cstruct's to be serialized in LittleEndian form
 )
 
 type uint64Struct struct {
@@ -45,10 +45,10 @@ const (
 )
 
 type checkpointHeaderStruct struct {
-	checkpointVersion                         uint64 // either checkpointVersion2 or checkpointVersion3
-	checkpointObjectTrailerStructObjectNumber uint64 // checkpointObjectTrailerV?Struct found at "tail" of object
-	checkpointObjectTrailerStructObjectLength uint64 // this length includes appended non-fixed sized arrays
-	reservedToNonce                           uint64 // highest nonce value reserved
+	CheckpointVersion                         uint64 // either checkpointVersion2 or checkpointVersion3
+	CheckpointObjectTrailerStructObjectNumber uint64 // checkpointObjectTrailerV?Struct found at "tail" of object
+	CheckpointObjectTrailerStructObjectLength uint64 // this length includes appended non-fixed sized arrays
+	ReservedToNonce                           uint64 // highest nonce value reserved
 }
 
 type checkpointObjectTrailerV2Struct struct {
@@ -344,7 +344,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 
 	// Fill in last checkpoint's checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 
-	packedUint64, err = cstruct.Pack(volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber, LittleEndian)
+	packedUint64, err = cstruct.Pack(volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, LittleEndian)
 	if nil != err {
 		logger.Fatalf("cstruct.Pack() unexpectedly returned error: %v", err)
 	}
@@ -668,18 +668,18 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		if (autoFormat) && (404 == blunder.HTTPCode(err)) {
 			// Checkpoint Container not found... so try to create it with some initial values...
 
-			checkpointHeader.checkpointVersion = checkpointVersion3
+			checkpointHeader.CheckpointVersion = checkpointVersion3
 
-			checkpointHeader.checkpointObjectTrailerStructObjectNumber = 0
-			checkpointHeader.checkpointObjectTrailerStructObjectLength = 0
+			checkpointHeader.CheckpointObjectTrailerStructObjectNumber = 0
+			checkpointHeader.CheckpointObjectTrailerStructObjectLength = 0
 
-			checkpointHeader.reservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
+			checkpointHeader.ReservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
 
 			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-				checkpointHeader.checkpointVersion,
-				checkpointHeader.checkpointObjectTrailerStructObjectNumber,
-				checkpointHeader.checkpointObjectTrailerStructObjectLength,
-				checkpointHeader.reservedToNonce,
+				checkpointHeader.CheckpointVersion,
+				checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+				checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+				checkpointHeader.ReservedToNonce,
 			)
 
 			checkpointHeaderValues = []string{checkpointHeaderValue}
@@ -724,24 +724,24 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 	volume.checkpointHeader = &checkpointHeaderStruct{}
 
-	volume.checkpointHeader.checkpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
+	volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
 	if nil != err {
 		return
 	}
 
-	volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
+	volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
 	if nil != err {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
 		return
 	}
 
-	volume.checkpointHeader.checkpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
+	volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
 	if nil != err {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
 		return
 	}
 
-	volume.checkpointHeader.reservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
+	volume.checkpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
 	if nil != err {
 		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
 		return
@@ -749,8 +749,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 	volume.liveView = &volumeViewStruct{volume: volume}
 
-	if checkpointVersion2 == volume.checkpointHeader.checkpointVersion {
-		if 0 == volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber {
+	if checkpointVersion2 == volume.checkpointHeader.CheckpointVersion {
+		if 0 == volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber {
 			// Initialize based on zero-filled checkpointObjectTrailerV2Struct
 
 			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{
@@ -849,8 +849,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				swiftclient.ObjectTail(
 					volume.accountName,
 					volume.checkpointContainerName,
-					utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber),
-					volume.checkpointHeader.checkpointObjectTrailerStructObjectLength)
+					utils.Uint64ToHexStr(volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber),
+					volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength)
 			if nil != err {
 				return
 			}
@@ -1066,8 +1066,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		for snapShotID = uint64(1); snapShotID < volume.dotSnapShotDirSnapShotID; snapShotID++ {
 			volume.availableSnapShotIDList.PushBack(snapShotID)
 		}
-	} else if checkpointVersion3 == volume.checkpointHeader.checkpointVersion {
-		if 0 == volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber {
+	} else if checkpointVersion3 == volume.checkpointHeader.CheckpointVersion {
+		if 0 == volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber {
 			// Initialize based on zero-filled checkpointObjectTrailerV3Struct
 
 			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{
@@ -1189,8 +1189,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				swiftclient.ObjectTail(
 					volume.accountName,
 					volume.checkpointContainerName,
-					utils.Uint64ToHexStr(volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber),
-					volume.checkpointHeader.checkpointObjectTrailerStructObjectLength)
+					utils.Uint64ToHexStr(volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber),
+					volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength)
 			if nil != err {
 				return
 			}
@@ -1876,12 +1876,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, volume.checkpointHeader.checkpointVersion)
+		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, volume.checkpointHeader.CheckpointVersion)
 		return
 	}
 
 	volume.maxNonce = (1 << (64 - volume.snapShotIDNumBits)) - 1
-	volume.nextNonce = volume.checkpointHeader.reservedToNonce
+	volume.nextNonce = volume.checkpointHeader.ReservedToNonce
 
 	// Check for the need to process a Replay Log
 
@@ -2608,22 +2608,22 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	combinedBPlusTreeLayout = make(sortedmap.LayoutReport)
 
-	if 0 != volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber {
-		combinedBPlusTreeLayout[volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber] = 0
+	if 0 != volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber {
+		combinedBPlusTreeLayout[volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber] = 0
 	}
 
 	// Now update checkpointHeader atomically indicating checkpoint is complete
 
-	volume.checkpointHeader.checkpointVersion = checkpointVersion3
+	volume.checkpointHeader.CheckpointVersion = checkpointVersion3
 
-	volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
-	volume.checkpointHeader.checkpointObjectTrailerStructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
+	volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
+	volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
 
 	checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-		volume.checkpointHeader.checkpointVersion,
-		volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber,
-		volume.checkpointHeader.checkpointObjectTrailerStructObjectLength,
-		volume.checkpointHeader.reservedToNonce,
+		volume.checkpointHeader.CheckpointVersion,
+		volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+		volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+		volume.checkpointHeader.ReservedToNonce,
 	)
 
 	checkpointHeaderValues = []string{checkpointHeaderValue}
