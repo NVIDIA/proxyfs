@@ -2,13 +2,9 @@ package headhunter
 
 import (
 	"container/list"
-	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
-
-	etcd "go.etcd.io/etcd/clientv3"
 
 	"github.com/swiftstack/sortedmap"
 
@@ -76,7 +72,6 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
 		newCheckpointHeader        *checkpointHeaderStruct
-		newCheckpointHeaderBuf     []byte
 	)
 
 	if volume.nextNonce >= volume.maxNonce {
@@ -95,34 +90,15 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newCheckpointHeader.ReservedToNonce-1)
 
 		if globals.etcdEnabled {
-			newCheckpointHeaderBuf, err = json.MarshalIndent(newCheckpointHeader, "", "  ")
-			if nil != err {
-				logger.Fatalf("Failed to json.MarshalIndent(newCheckpointHeader): %v", err)
-			}
-
-			// TODO
-
-			fmt.Printf("newCheckpointHeaderBuf:\n%s\n", string(newCheckpointHeaderBuf[:]))
-
-			ctx, cancel := context.WithTimeout(context.Background(), globals.etcdOpTimeout)
-			resp, err := globals.etcdKV.Put(ctx, volume.checkpointEtcdKeyName, string(newCheckpointHeaderBuf[:]))
-			cancel()
-			fmt.Printf("PutResponse: #%#v Header: %#v Revision: %v err: %v\n", resp, resp.Header, resp.Header.Revision, err)
-
-			ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
-			resp2, err := globals.etcdKV.Get(ctx, "foo")
-			cancel()
-			fmt.Printf("GetResponse(1): %#v err: %v\n", resp2, err)
-
-			ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
-			resp3, err := globals.etcdKV.Get(ctx, volume.checkpointEtcdKeyName)
-			cancel()
-			fmt.Printf("GetResponse(2): %#v Header: %#v Kvs[0].Key: %s Kvs[0].Value: %s err: %v\n", resp3, resp3.Header, string(resp3.Kvs[0].Key[:]), string(resp3.Kvs[0].Value[:]), err)
-
-			ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
-			resp4, err := globals.etcdKV.Txn(ctx).If(etcd.Compare(etcd.ModRevision(volume.checkpointEtcdKeyName), "=", 18)).Then(etcd.OpPut("cat", "dog")).Commit()
-			cancel()
-			fmt.Printf("TxnResponse: %#v err: %v\n", resp4, err)
+			// TODO: This is just for demonstration purposes...
+			putInitialRev, e := volume.putEtcdCheckpointHeader(newCheckpointHeader, 0)
+			fmt.Printf("putInitialRev: %v e: %v\n", putInitialRev, e)
+			getHdr, getHdrRev, e := volume.getEtcdCheckpointHeader()
+			fmt.Printf("getHdr: %#v getHdrRev: %v e: %v\n", getHdr, getHdrRev, e)
+			putUpdateBadRev, e := volume.putEtcdCheckpointHeader(newCheckpointHeader, putInitialRev-1)
+			fmt.Printf("putUpdateBadRev: %v e: %v\n", putUpdateBadRev, e)
+			putUpdateGoodRev, e := volume.putEtcdCheckpointHeader(newCheckpointHeader, putInitialRev)
+			fmt.Printf("putUpdateGoodRev: %v e: %v\n", putUpdateGoodRev, e)
 		}
 
 		checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",

@@ -2,6 +2,8 @@ package headhunter
 
 import (
 	"container/list"
+	"context"
+	"encoding/json"
 	"fmt"
 	"hash/crc64"
 	"io"
@@ -11,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	etcd "go.etcd.io/etcd/clientv3"
 
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
@@ -525,6 +529,89 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 	_, err = volume.replayLogFile.Write(replayLogWriteBuffer)
 	if nil != err {
 		logger.Fatalf("os.Write() unexpectedly returned error: %v", err)
+	}
+
+	return
+}
+
+// getEtcdCheckpointHeader gets the JSON-encoded checkpointHeader from etcd returning also its revision.
+//
+func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpointHeaderStruct, checkpointHeaderEtcdRevision int64, err error) {
+	var (
+		cancel      context.CancelFunc
+		ctx         context.Context
+		getResponse *etcd.GetResponse
+	)
+
+	ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
+	getResponse, err = globals.etcdKV.Get(ctx, volume.checkpointEtcdKeyName)
+	cancel()
+	if nil != err {
+		err = fmt.Errorf("Error contacting etcd: %v", err)
+		return
+	}
+
+	if 1 != getResponse.Count {
+		err = fmt.Errorf("Could not find %s in etcd", volume.checkpointEtcdKeyName)
+		return
+	}
+
+	checkpointHeader = &checkpointHeaderStruct{}
+
+	err = json.Unmarshal(getResponse.Kvs[0].Value, checkpointHeader)
+	if nil != err {
+		err = fmt.Errorf("Error unmarshalling %s's Value (%s): %v", volume.checkpointEtcdKeyName, string(getResponse.Kvs[0].Value[:]), err)
+		return
+	}
+
+	checkpointHeaderEtcdRevision = getResponse.Kvs[0].ModRevision
+
+	return
+}
+
+// putEtcdCheckpointHeader puts the JSON-encoding of the supplied checkpointHeader in etcd.
+// If a non-zero oldCheckpointHeaderEtcdRevision, it must match the current revision of the checkpointHeader.
+//
+func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *checkpointHeaderStruct, oldCheckpointHeaderEtcdRevision int64) (newCheckpointHeaderEtcdRevision int64, err error) {
+	var (
+		cancel              context.CancelFunc
+		checkpointHeaderBuf []byte
+		ctx                 context.Context
+		putResponse         *etcd.PutResponse
+		txnResponse         *etcd.TxnResponse
+	)
+
+	checkpointHeaderBuf, err = json.MarshalIndent(checkpointHeader, "", "  ")
+	if nil != err {
+		err = fmt.Errorf("Error marshalling checkpointHeader (%#v): %v", checkpointHeader, err)
+		return
+	}
+
+	if 0 == oldCheckpointHeaderEtcdRevision {
+		ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
+		putResponse, err = globals.etcdKV.Put(ctx, volume.checkpointEtcdKeyName, string(checkpointHeaderBuf[:]))
+		cancel()
+		if nil != err {
+			err = fmt.Errorf("Error contacting etcd: %v", err)
+			return
+		}
+
+		newCheckpointHeaderEtcdRevision = putResponse.Header.Revision
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
+		txnResponse, err = globals.etcdKV.Txn(ctx).If(etcd.Compare(etcd.ModRevision(volume.checkpointEtcdKeyName), "=", oldCheckpointHeaderEtcdRevision)).Then(etcd.OpPut(volume.checkpointEtcdKeyName, string(checkpointHeaderBuf[:]))).Commit()
+		cancel()
+		if nil != err {
+			err = fmt.Errorf("Error contacting etcd: %v", err)
+			return
+		}
+
+		if !txnResponse.Succeeded {
+			err = fmt.Errorf("Transaction to update %s failed", volume.checkpointEtcdKeyName)
+			return
+		}
+
+		newCheckpointHeaderEtcdRevision = txnResponse.Responses[0].GetResponsePut().Header.Revision
 	}
 
 	return
