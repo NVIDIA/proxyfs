@@ -141,6 +141,7 @@ type volumeStruct struct {
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
 	checkpointHeader                        *checkpointHeaderStruct
+	checkpointHeaderEtcdRevision            int64
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
 	postponePriorViewCreatedObjectsPuts     bool
