@@ -375,6 +375,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			return
 		}
 
+		// Initialize etcd Client & KV objects
+
 		globals.etcdClient, err = etcd.New(etcd.Config{
 			Endpoints:        globals.etcdEndpoints,
 			AutoSyncInterval: globals.etcdAutoSyncInterval,

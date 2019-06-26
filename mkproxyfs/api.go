@@ -1,10 +1,14 @@
 package mkproxyfs
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	etcd "go.etcd.io/etcd/clientv3"
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
@@ -25,15 +29,26 @@ const (
 
 func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings []string, execArgs []string) (err error) {
 	var (
-		accountName       string
-		confMap           conf.ConfMap
-		containerList     []string
-		containerName     string
-		isEmpty           bool
-		objectList        []string
-		objectName        string
-		replayLogFileName string
-		whoAmI            string
+		accountName           string
+		cancel                context.CancelFunc
+		checkpointEtcdKeyName string
+		confMap               conf.ConfMap
+		containerList         []string
+		containerName         string
+		ctx                   context.Context
+		etcdAutoSyncInterval  time.Duration
+		etcdClient            *etcd.Client
+		etcdDialTimeout       time.Duration
+		etcdEnabled           bool
+		etcdEndpoints         []string
+		etcdKV                etcd.KV
+		etcdOpTimeout         time.Duration
+		getResponse           *etcd.GetResponse
+		isEmpty               bool
+		objectList            []string
+		objectName            string
+		replayLogFileName     string
+		whoAmI                string
 	)
 
 	// Valid mode?
@@ -85,6 +100,48 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		return
 	}
 
+	etcdEnabled, err = confMap.FetchOptionValueBool("FSGlobals", "EtcdEnabled")
+	if nil != err {
+		etcdEnabled = false // Current default
+	}
+
+	if etcdEnabled {
+		etcdEndpoints, err = confMap.FetchOptionValueStringSlice("FSGlobals", "EtcdEndpoints")
+		if nil != err {
+			return
+		}
+		etcdAutoSyncInterval, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdAutoSyncInterval")
+		if nil != err {
+			return
+		}
+		etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
+		if nil != err {
+			return
+		}
+		etcdOpTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdOpTimeout")
+		if nil != err {
+			return
+		}
+
+		checkpointEtcdKeyName, err = confMap.FetchOptionValueString("Volume:"+volumeNameToFormat, "CheckpointEtcdKeyName")
+		if nil != err {
+			return
+		}
+
+		// Initialize etcd Client & KV objects
+
+		etcdClient, err = etcd.New(etcd.Config{
+			Endpoints:        etcdEndpoints,
+			AutoSyncInterval: etcdAutoSyncInterval,
+			DialTimeout:      etcdDialTimeout,
+		})
+		if nil != err {
+			return
+		}
+
+		etcdKV = etcd.NewKV(etcdClient)
+	}
+
 	// Call transitions.Up() with empty FSGlobals.VolumeGroupList
 
 	err = transitions.Up(confMap)
@@ -109,6 +166,22 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 			_ = transitions.Down(confMap)
 			err = fmt.Errorf("failed to GET %v: %v", accountName, err)
 			return
+		}
+	}
+
+	// Adjust isEmpty based on etcd
+
+	if isEmpty && etcdEnabled {
+		ctx, cancel = context.WithTimeout(context.Background(), etcdOpTimeout)
+		getResponse, err = etcdKV.Get(ctx, checkpointEtcdKeyName)
+		cancel()
+		if nil != err {
+			err = fmt.Errorf("Error contacting etcd [Case 1]: %v", err)
+			return
+		}
+
+		if 0 < getResponse.Count {
+			isEmpty = false
 		}
 	}
 
@@ -178,6 +251,18 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 				isEmpty = (0 == len(containerList))
 			}
 
+			// Clear etcd if it exists...
+
+			if etcdEnabled {
+				ctx, cancel = context.WithTimeout(context.Background(), etcdOpTimeout)
+				_, err = etcdKV.Delete(ctx, checkpointEtcdKeyName)
+				cancel()
+				if nil != err {
+					err = fmt.Errorf("Error contacting etcd [Case 2]: %v", err)
+					return
+				}
+			}
+
 			replayLogFileName, err = confMap.FetchOptionValueString("Volume:"+volumeNameToFormat, "ReplayLogFileName")
 			if nil == err {
 				if "" != replayLogFileName {
@@ -233,9 +318,23 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		return
 	}
 
-	// With format complete, we can shutdown for good... return code set appropriately by Down()
+	// With format complete, we can shutdown for good
 
 	err = transitions.Down(confMap)
+	if nil != err {
+		return
+	}
+
+	// Close down etcd
+
+	if etcdEnabled {
+		etcdKV = nil
+
+		err = etcdClient.Close()
+		if nil != err {
+			return
+		}
+	}
 
 	return
 }

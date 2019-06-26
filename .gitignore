@@ -15,6 +15,9 @@ dist/
 CommonMountPoint
 MountPoint0
 
+# Default etcd database
+default.etcd/
+
 # Replay Logs
 CommonVolume.rlog
 

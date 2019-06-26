@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -790,7 +791,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 			} else {
-				if 404 != blunder.HTTPCode(err) {
+				if http.StatusNotFound != blunder.HTTPCode(err) {
 					err = fmt.Errorf("Error fetching checkpointHeader from Swift vor volume %s: %v", volume.volumeName, err)
 					return
 				}
@@ -866,7 +867,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 			checkpointHeaderValue = checkpointHeaderValues[0]
 		} else {
-			if (autoFormat) && (404 == blunder.HTTPCode(err)) {
+			if (autoFormat) && (http.StatusNotFound == blunder.HTTPCode(err)) {
 				// Checkpoint Container not found... so try to create it with some initial values...
 
 				checkpointHeader.CheckpointVersion = checkpointVersion3
