@@ -761,11 +761,7 @@ func dirWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64) {
 }
 
 func fuseWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64) {
-	nonce, err := headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		stepErrChan <- fmt.Errorf("headhunter.FetchNonce() failed: %v\n", err)
-		return
-	}
+	nonce := headhunterVolumeHandle.FetchNonce()
 
 	fileName := fmt.Sprintf("%s/%s%016X", mountPointName, basenamePrefix, nonce)
 
@@ -836,11 +832,7 @@ func createFsFile() (err error, mountHandle fs.MountHandle, fileInodeNumber inod
 		return
 	}
 
-	nonce, err := headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		stepErrChan <- fmt.Errorf("headhunter.FetchNonce() failed: %v\n", err)
-		return
-	}
+	nonce := headhunterVolumeHandle.FetchNonce()
 
 	fileName = fmt.Sprintf("%s%016X", basenamePrefix, nonce)
 

@@ -54,10 +54,7 @@ func testDirStress(t *testing.T, starvationMode bool) {
 		t.Fatalf("headhunter.FetchVolumeHandle(\"%s\") failed: %v", testDirStressVolumeName, err)
 	}
 
-	testDirStressGlobals.nonce, err = headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		t.Fatalf("headhunter.FetchNonce(\"%s\") failed: %v", testDirStressVolumeName, err)
-	}
+	testDirStressGlobals.nonce = headhunterVolumeHandle.FetchNonce()
 
 	testDirStressGlobals.waitGroup.Add(int(testDirStressNumThreads))
 

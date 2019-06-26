@@ -224,7 +224,6 @@ type globalsStruct struct {
 	SnapShotIDAndNonceEncodeUsec              bucketstats.BucketLog2Round
 	SnapShotTypeDotSnapShotAndNonceEncodeUsec bucketstats.BucketLog2Round
 
-	FetchNonceErrors                   bucketstats.BucketLog2Round
 	GetInodeRecErrors                  bucketstats.BucketLog2Round
 	PutInodeRecErrors                  bucketstats.BucketLog2Round
 	PutInodeRecsErrors                 bucketstats.BucketLog2Round

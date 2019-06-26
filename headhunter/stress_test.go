@@ -239,10 +239,7 @@ func TestHeadHunterStress(t *testing.T) {
 	// Stress FetchNonce()
 
 	for fetchNonceIndex = uint64(0); fetchNonceIndex < testNumFetchNonceCalls; fetchNonceIndex++ {
-		_, err = volumeHandle.FetchNonce()
-		if nil != err {
-			t.Fatalf("headhunter.FetchNonce() returned error: %v", err)
-		}
+		_ = volumeHandle.FetchNonce()
 	}
 
 	// Stress *InodeRec[|s]()
