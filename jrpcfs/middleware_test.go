@@ -1471,7 +1471,24 @@ func TestPutObjectOverwriteDirectory(t *testing.T) {
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.InvalidArgError), err.Error())
+	assert.Equal(fmt.Sprintf("errno: %d", blunder.NotEmptyError), err.Error())
+
+	// remove the file in the directory and the put should succeed,
+	// replacing the directory with a file
+	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		dirInodeNumber, "stuff.txt")
+	assert.Nil(err)
+
+	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
+	assert.Nil(err)
+
+	dirInodeNumber, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+		containerName+"/"+objName)
+	assert.Nil(err)
+
+	statResult, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber)
+	assert.Nil(err)
+	assert.Equal(statResult[fs.StatFType], uint64(inode.FileType))
 }
 
 func TestPutObjectSymlinkedDir(t *testing.T) {
@@ -1878,8 +1895,8 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	req = GetObjectReq{VirtPath: "/v1/AN_account/c3/symlink-c2"}
 	reply = GetObjectReply{}
 	err = server.RpcGetObject(&req, &reply)
-	assert.NotNil(err)
-	assert.Equal(fmt.Sprintf("errno: %d", blunder.IsDirError.Value()), err.Error())
+	assert.Nil(err)
+	assert.True(reply.IsDir)
 
 	// Test following a path where some directory components are symlinks
 	req = GetObjectReq{VirtPath: "/v1/AN_account/c4/symlink-d1/symlink-d2/symlink-kitten.png"}

@@ -669,8 +669,9 @@ type GetAccountReq struct {
 // GetObjectReply is the response object for RpcGetObject
 type GetObjectReply struct {
 	FileSize         uint64               // size of the file, in bytes
+	IsDir            bool                 // true if directory
 	ReadEntsOut      []inode.ReadPlanStep // object/length/offset triples where the data is found
-	InodeNumber      int64
+	InodeNumber      uint64
 	NumWrites        uint64
 	Metadata         []byte // serialized object metadata (previously set by middleware empty if absent)
 	ModificationTime uint64 // file's mtime in nanoseconds since the epoch
