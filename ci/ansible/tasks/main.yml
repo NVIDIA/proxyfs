@@ -169,10 +169,19 @@
     become_user: root
     when: ansible_os_family == 'RedHat'
 
-  - name: Create symlink to Python 3's binary
+  - name: Create symlink (python3.6) to Python 3's binary
     file:
       src: /opt/rh/rh-python36/root/bin/python3.6
       path: /bin/python3.6
+      state: link
+    become: yes
+    become_user: root
+    when: ansible_os_family == 'RedHat'
+
+  - name: Create symlink (python3) to Python 3's binary
+    file:
+      src: /bin/python3.6
+      path: /bin/python3
       state: link
     become: yes
     become_user: root
