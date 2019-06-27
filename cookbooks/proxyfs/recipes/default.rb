@@ -97,6 +97,7 @@ ruby_block "update_profile_and_bashrc" do
       file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     end
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
+    file.insert_line_if_no_match(/cdfun/, "alias cdfun='cd $HOME_DIR/code/functional-tests'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
@@ -132,6 +133,7 @@ ruby_block "update_profile_and_bashrc" do
       file.insert_line_if_no_match(%r{usr/local/go/bin}, "export PATH=$GOPATH/bin:$PATH:/usr/local/go/bin")
     end
     file.insert_line_if_no_match(/cdpfs/, "alias cdpfs='cd $GOPATH/src/github.com/swiftstack/ProxyFS'")
+    file.insert_line_if_no_match(/cdfun/, "alias cdfun='cd $HOME_DIR/code/functional-tests'")
     file.insert_line_if_no_match(/cdsamba/, "alias cdsamba='cd #{SAMBA_SRC_DIR}'")
     file.insert_line_if_no_match(/ls -lha/, "alias la='ls -lha'")
     file.insert_line_if_no_match(/ls -liha/, "alias li='ls -liha'")
