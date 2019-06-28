@@ -42,7 +42,7 @@ type VolumeHandle interface {
 	RegisterForEvents(listener VolumeEventListener)
 	UnregisterForEvents(listener VolumeEventListener)
 	FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string)
-	FetchNonce() (nonce uint64, err error)
+	FetchNonce() (nonce uint64)
 	GetInodeRec(inodeNumber uint64) (value []byte, ok bool, err error)
 	PutInodeRec(inodeNumber uint64, value []byte) (err error)
 	PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error)

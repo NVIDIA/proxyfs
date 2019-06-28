@@ -76,6 +76,7 @@ cp /home/vagrant/.gdbinit /root/.
 yum -y install centos-release-scl
 yum -y install rh-python36
 ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6
+ln -s /bin/python3.6 /bin/python3
 ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 # Install Python pip
@@ -386,6 +387,29 @@ yum -y install dstat
 # Install tree
 
 yum -y install tree
+
+# Install and configure a localhost-only one-node etcd cluster
+
+yum -y install etcd
+
+mkdir /etcd
+
+cat > /etc/systemd/system/proxyfs-etcd.service << EOF
+[Unit]
+Description=ProxyFS etcd instance
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=root
+ExecStart=/usr/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --initial-advertise-peer-urls http://localhost:2380 --listen-peer-urls http://localhost:2380 --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379 --initial-cluster-token etcd-cluster --initial-cluster default=http://localhost:2380 --initial-cluster-state new
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 # All done
 

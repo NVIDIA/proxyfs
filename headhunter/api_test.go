@@ -149,6 +149,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
 		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
 		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
@@ -225,10 +226,7 @@ func TestHeadHunterAPI(t *testing.T) {
 	volume.RegisterForEvents(nil)
 	volume.UnregisterForEvents(nil)
 
-	firstUpNonce, err = volume.FetchNonce()
-	if nil != err {
-		t.Fatalf("FetchNonce() [case 1] returned error: %v", err)
-	}
+	firstUpNonce = volume.FetchNonce()
 
 	err = transitions.Down(confMap)
 	if nil != err {
@@ -245,10 +243,7 @@ func TestHeadHunterAPI(t *testing.T) {
 		t.Fatalf("FetchVolumeHandle(\"TestVolume\") [case 2] returned error: %v", err)
 	}
 
-	secondUpNonce, err = volume.FetchNonce()
-	if nil != err {
-		t.Fatalf("FetchNonce() [case 2] returned error: %v", err)
-	}
+	secondUpNonce = volume.FetchNonce()
 	if firstUpNonce >= secondUpNonce {
 		t.Fatalf("FetchNonce() [case 2] returned unexpected nonce: %v (should have been > %v)", secondUpNonce, firstUpNonce)
 	}

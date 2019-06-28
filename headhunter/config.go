@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	etcd "go.etcd.io/etcd/clientv3"
+
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
@@ -115,6 +117,7 @@ type volumeStruct struct {
 	maxLogSegmentsPerMetadataNode           uint64
 	maxDirFileNodesPerMetadataNode          uint64
 	maxCreatedDeletedObjectsPerMetadataNode uint64
+	checkpointEtcdKeyName                   string
 	checkpointContainerName                 string
 	checkpointContainerStoragePolicy        string
 	checkpointInterval                      time.Duration
@@ -138,6 +141,7 @@ type volumeStruct struct {
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
 	checkpointHeader                        *checkpointHeaderStruct
+	checkpointHeaderEtcdRevision            int64
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
 	postponePriorViewCreatedObjectsPuts     bool
@@ -176,6 +180,15 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 
+	etcdEnabled          bool
+	etcdEndpoints        []string
+	etcdAutoSyncInterval time.Duration
+	etcdDialTimeout      time.Duration
+	etcdOpTimeout        time.Duration
+
+	etcdClient *etcd.Client
+	etcdKV     etcd.KV
+
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
 
@@ -211,7 +224,6 @@ type globalsStruct struct {
 	SnapShotIDAndNonceEncodeUsec              bucketstats.BucketLog2Round
 	SnapShotTypeDotSnapShotAndNonceEncodeUsec bucketstats.BucketLog2Round
 
-	FetchNonceErrors                   bucketstats.BucketLog2Round
 	GetInodeRecErrors                  bucketstats.BucketLog2Round
 	PutInodeRecErrors                  bucketstats.BucketLog2Round
 	PutInodeRecsErrors                 bucketstats.BucketLog2Round
@@ -337,6 +349,45 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	globals.createdDeletedObjectsCachePriorCacheHits = 0
 	globals.createdDeletedObjectsCachePriorCacheMisses = 0
+
+	// Record etcd parameters
+
+	globals.etcdEnabled, err = confMap.FetchOptionValueBool("FSGlobals", "EtcdEnabled")
+	if nil != err {
+		globals.etcdEnabled = false // Current default
+	}
+
+	if globals.etcdEnabled {
+		globals.etcdEndpoints, err = confMap.FetchOptionValueStringSlice("FSGlobals", "EtcdEndpoints")
+		if nil != err {
+			return
+		}
+		globals.etcdAutoSyncInterval, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdAutoSyncInterval")
+		if nil != err {
+			return
+		}
+		globals.etcdDialTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdDialTimeout")
+		if nil != err {
+			return
+		}
+		globals.etcdOpTimeout, err = confMap.FetchOptionValueDuration("FSGlobals", "EtcdOpTimeout")
+		if nil != err {
+			return
+		}
+
+		// Initialize etcd Client & KV objects
+
+		globals.etcdClient, err = etcd.New(etcd.Config{
+			Endpoints:        globals.etcdEndpoints,
+			AutoSyncInterval: globals.etcdAutoSyncInterval,
+			DialTimeout:      globals.etcdDialTimeout,
+		})
+		if nil != err {
+			return
+		}
+
+		globals.etcdKV = etcd.NewKV(globals.etcdClient)
+	}
 
 	err = nil
 	return
@@ -528,6 +579,15 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	if globals.etcdEnabled {
+		globals.etcdKV = nil
+
+		err = globals.etcdClient.Close()
+		if nil != err {
+			return
+		}
+	}
+
 	if 0 != len(globals.volumeGroupMap) {
 		err = fmt.Errorf("headhunter.Down() called with 0 != len(globals.volumeGroupMap")
 		return
@@ -592,6 +652,13 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	volume.maxCreatedDeletedObjectsPerMetadataNode, err = confMap.FetchOptionValueUint64(volumeSectionName, "MaxCreatedDeletedObjectsPerMetadataNode")
 	if nil != err {
 		volume.maxCreatedDeletedObjectsPerMetadataNode = volume.maxLogSegmentsPerMetadataNode // TODO: Eventually just return
+	}
+
+	if globals.etcdEnabled {
+		volume.checkpointEtcdKeyName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointEtcdKeyName")
+		if nil != err {
+			return
+		}
 	}
 
 	volume.checkpointContainerName, err = confMap.FetchOptionValueString(volumeSectionName, "CheckpointContainerName")

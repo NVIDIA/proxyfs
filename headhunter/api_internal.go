@@ -66,29 +66,44 @@ func (volume *volumeStruct) fetchNextCheckPointDoneWaitGroupWhileLocked() (wg *s
 	return
 }
 
-func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
+func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 	var (
 		checkpointContainerHeaders map[string][]string
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
-		newReservedToNonce         uint64
+		err                        error
+		newCheckpointHeader        *checkpointHeaderStruct
 	)
 
 	if volume.nextNonce >= volume.maxNonce {
 		logger.Fatalf("Nonces have been exhausted !!!")
 	}
 
-	if volume.nextNonce == volume.checkpointHeader.reservedToNonce {
-		newReservedToNonce = volume.checkpointHeader.reservedToNonce + uint64(volume.nonceValuesToReserve)
+	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
+		newCheckpointHeader = &checkpointHeaderStruct{
+			CheckpointVersion:                         volume.checkpointHeader.CheckpointVersion,
+			CheckpointObjectTrailerStructObjectNumber: volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			CheckpointObjectTrailerStructObjectLength: volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+			ReservedToNonce:                           volume.checkpointHeader.ReservedToNonce + uint64(volume.nonceValuesToReserve),
+		}
+
+		volume.checkpointHeader = newCheckpointHeader
 
 		// TODO: Move this inside recordTransaction() once it is a, uh, transaction :-)
-		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, newReservedToNonce-1)
+		evtlog.Record(evtlog.FormatHeadhunterRecordTransactionNonceRangeReserve, volume.volumeName, volume.nextNonce, volume.checkpointHeader.ReservedToNonce-1)
+
+		if globals.etcdEnabled {
+			volume.checkpointHeaderEtcdRevision, err = volume.putEtcdCheckpointHeader(volume.checkpointHeader, volume.checkpointHeaderEtcdRevision)
+			if nil != err {
+				logger.Fatalf("Unable to persist checkpointHeader in etcd: %v", err)
+			}
+		}
 
 		checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-			volume.checkpointHeader.checkpointVersion,
-			volume.checkpointHeader.checkpointObjectTrailerStructObjectNumber,
-			volume.checkpointHeader.checkpointObjectTrailerStructObjectLength,
-			newReservedToNonce,
+			volume.checkpointHeader.CheckpointVersion,
+			volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+			volume.checkpointHeader.ReservedToNonce,
 		)
 
 		checkpointHeaderValues = []string{checkpointHeaderValue}
@@ -99,31 +114,24 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64, err error) {
 
 		err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 		if nil != err {
-			return
+			logger.Fatalf("Unable to persist checkpointHeader in Swift: %v", err)
 		}
-
-		volume.checkpointHeader.reservedToNonce = newReservedToNonce
 	}
 
 	nonce = volume.nextNonce
 	volume.nextNonce++
 
-	err = nil
 	return
 }
 
-func (volume *volumeStruct) FetchNonce() (nonce uint64, err error) {
-
+func (volume *volumeStruct) FetchNonce() (nonce uint64) {
 	startTime := time.Now()
 	defer func() {
 		globals.FetchNonceUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
-		if err != nil {
-			globals.FetchNonceErrors.Add(1)
-		}
 	}()
 
 	volume.Lock()
-	nonce, err = volume.fetchNonceWhileLocked()
+	nonce = volume.fetchNonceWhileLocked()
 	volume.Unlock()
 
 	return
@@ -914,11 +922,7 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		return
 	}
 
-	snapShotNonce, err = volume.fetchNonceWhileLocked()
-	if nil != err {
-		volume.Unlock()
-		return
-	}
+	snapShotNonce = volume.fetchNonceWhileLocked()
 
 	availableSnapShotIDListElement = volume.availableSnapShotIDList.Front()
 	id, ok = availableSnapShotIDListElement.Value.(uint64)

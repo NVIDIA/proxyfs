@@ -142,7 +142,7 @@ func (s *Server) RpcGetAccount(in *GetAccountReq, reply *GetAccountReply) (err e
 	return nil
 }
 
-// RpcHead is used by Middleware to issue a GET on a container or object and return the results.
+// RpcHead is used by Middleware to issue a HEAD on a container or object and return the results.
 func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
@@ -173,7 +173,6 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	reply.AttrChangeTime = resp.AttrChangeTime
 	reply.InodeNumber = int64(uint64(resp.InodeNumber))
 	reply.NumWrites = resp.NumWrites
-
 	reply.IsDir = resp.IsDir
 
 	return nil
@@ -207,6 +206,7 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 
 // RpcGetObject is used by GET HTTP request to retrieve the read plan for an object.
 func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err error) {
+
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
@@ -215,12 +215,21 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	var ino uint64
-	reply.FileSize, reply.ModificationTime, reply.AttrChangeTime, ino, reply.NumWrites, reply.Metadata, err = mountHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	resp, err := mountHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
+		if !blunder.Is(err, blunder.NotFoundError) {
+			logger.ErrorfWithError(err, "RpcGetObject(): error retrieving metadata for %s", in.VirtPath)
+		}
 		return err
 	}
-	reply.InodeNumber = int64(ino)
+
+	reply.Metadata = resp.Metadata
+	reply.FileSize = resp.FileSize
+	reply.ModificationTime = resp.ModificationTime
+	reply.AttrChangeTime = resp.AttrChangeTime
+	reply.InodeNumber = uint64(resp.InodeNumber)
+	reply.NumWrites = resp.NumWrites
+	reply.IsDir = resp.IsDir
 
 	return err
 }

@@ -106,6 +106,7 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",

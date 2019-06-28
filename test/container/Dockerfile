@@ -90,6 +90,7 @@ RUN yum -y install python-pip
 RUN yum -y install centos-release-scl
 RUN yum -y install rh-python36 && \
     ln -s /opt/rh/rh-python36/root/bin/python3.6 /bin/python3.6 && \
+    ln -s /bin/python3.6 /bin/python3 && \
     ln -s /opt/rh/rh-python36/root/usr/include /opt/rh/rh-python36/root/include
 
 # Pip install. Trying to do as much as possible at once.

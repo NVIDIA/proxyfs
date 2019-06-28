@@ -52,10 +52,7 @@ func (tnl *treeNodeLoadable) GetNode(objectNumber uint64, objectOffset uint64, o
 }
 
 func (tnl *treeNodeLoadable) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
-	objectNumber, err = tnl.inode.volume.headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		return
-	}
+	objectNumber = tnl.inode.volume.headhunterVolumeHandle.FetchNonce()
 
 	objectOffset = 0
 

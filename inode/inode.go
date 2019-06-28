@@ -583,11 +583,7 @@ func (vS *volumeStruct) makeInMemoryInodeWithThisInodeNumber(inodeType InodeType
 }
 
 func (vS *volumeStruct) makeInMemoryInode(inodeType InodeType, fileMode InodeMode, userID InodeUserID, groupID InodeGroupID) (inMemoryInode *inMemoryInodeStruct, err error) {
-	inodeNumberAsUint64, err := vS.headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		err = fmt.Errorf("headhunter.FetchNonce() returned error: %v", err)
-		return
-	}
+	inodeNumberAsUint64 := vS.headhunterVolumeHandle.FetchNonce()
 
 	inMemoryInode = vS.makeInMemoryInodeWithThisInodeNumber(inodeType, fileMode, userID, groupID, InodeNumber(inodeNumberAsUint64), false)
 
@@ -923,10 +919,7 @@ func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *phys
 	if 0 == (physicalContainerLayout.containerNameSliceLoopCount % physicalContainerLayout.maxObjectsPerContainer) {
 		// We need to provision a new PhysicalContainer in this PhysicalContainerLayout
 
-		physicalContainerNameSuffix, nonShadowingErr := vS.headhunterVolumeHandle.FetchNonce()
-		if nil != nonShadowingErr {
-			return
-		}
+		physicalContainerNameSuffix := vS.headhunterVolumeHandle.FetchNonce()
 
 		newContainerName := fmt.Sprintf("%s%s", physicalContainerLayout.containerNamePrefix, utils.Uint64ToHexStr(physicalContainerNameSuffix))
 
@@ -947,10 +940,7 @@ func (vS *volumeStruct) provisionPhysicalContainer(physicalContainerLayout *phys
 }
 
 func (vS *volumeStruct) provisionObject() (containerName string, objectNumber uint64, err error) {
-	objectNumber, err = vS.headhunterVolumeHandle.FetchNonce()
-	if nil != err {
-		return
-	}
+	objectNumber = vS.headhunterVolumeHandle.FetchNonce()
 
 	vS.Lock()
 

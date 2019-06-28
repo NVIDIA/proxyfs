@@ -186,6 +186,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"FSGlobals.LogSegmentRecCacheEvictHighLimit=10010",
 		"FSGlobals.BPlusTreeObjectCacheEvictLowLimit=10000",
 		"FSGlobals.BPlusTreeObjectCacheEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",
@@ -238,10 +239,7 @@ func TestHeadHunterStress(t *testing.T) {
 	// Stress FetchNonce()
 
 	for fetchNonceIndex = uint64(0); fetchNonceIndex < testNumFetchNonceCalls; fetchNonceIndex++ {
-		_, err = volumeHandle.FetchNonce()
-		if nil != err {
-			t.Fatalf("headhunter.FetchNonce() returned error: %v", err)
-		}
+		_ = volumeHandle.FetchNonce()
 	}
 
 	// Stress *InodeRec[|s]()

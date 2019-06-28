@@ -1597,10 +1597,7 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			startTime: time.Now(),
 		}
 
-		job.id, err = volume.headhunterVolumeHandle.FetchNonce()
-		if nil != err {
-			logger.Fatalf("HTTP Server Logic Error: %v", err)
-		}
+		job.id = volume.headhunterVolumeHandle.FetchNonce()
 
 		switch jobType {
 		case fsckJobType:

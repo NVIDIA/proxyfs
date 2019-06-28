@@ -1,19 +1,43 @@
-hash: c66dedd28a2cbff751b9ca72f9343c4cdbce719a746e443fb9af0d3371b4fcc3
-updated: 2018-09-27T12:17:03.160658-07:00
+hash: c5ac04ce9566b16201bf24ef7226ed042859aae6c9af1323b56576cc784ed9a3
+updated: 2019-06-24T16:32:14.193651-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:
   - fs
   - fuseutil
-- name: bitbucket.org/creachadair/cityhash
-  version: 0d1506f40c89df1b983c65d94162627c41a330a4
 - name: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
+- name: github.com/coreos/go-systemd
+  version: e64a0ec8b42a61e2a9801dc1d0abe539dea79197
+  subpackages:
+  - journal
+- name: github.com/coreos/pkg
+  version: 399ea9e2e55f791b6e3d920860dbecb99c3692f0
+  subpackages:
+  - capnslog
+- name: github.com/creachadair/cityhash
+  version: 3b32d67a45902637ba0bae69f96a90e1681aac77
 - name: github.com/droundy/goopt
   version: 0b8effe182da161d81b011aba271507324ecb7ab
 - name: github.com/go-errors/errors
   version: 3afebba5a48dbc89b574d890b6b34d9ee10b4785
+- name: github.com/gogo/protobuf
+  version: dadb625850898f31a8e40e83492f4a7132e520a2
+  subpackages:
+  - gogoproto
+  - proto
+  - protoc-gen-gogo/descriptor
+- name: github.com/golang/protobuf
+  version: b285ee9cfc6c881bb20c0d8dc73370ea9b9ec90f
+  subpackages:
+  - proto
+  - ptypes
+  - ptypes/any
+  - ptypes/duration
+  - ptypes/timestamp
+- name: github.com/google/uuid
+  version: c2e93f3ae59f2904160ceaab466009f965df46d6
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/sirupsen/logrus
@@ -26,6 +50,36 @@ imports:
   version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
 - name: github.com/swiftstack/sortedmap
   version: 6e4702794171e38765cbd736930bbc45298aa512
+- name: go.etcd.io/etcd
+  version: 948e276ca73d3eb09391829d8ac317dbda8c07a1
+  subpackages:
+  - auth/authpb
+  - clientv3
+  - clientv3/balancer
+  - clientv3/balancer/picker
+  - clientv3/balancer/resolver/endpoint
+  - etcdserver/api/v3rpc/rpctypes
+  - etcdserver/etcdserverpb
+  - mvcc/mvccpb
+  - pkg/logutil
+  - pkg/systemd
+  - pkg/types
+  - raft
+  - raft/quorum
+  - raft/raftpb
+  - raft/tracker
+- name: go.uber.org/atomic
+  version: df976f2515e274675050de7b3f42545de80594fd
+- name: go.uber.org/multierr
+  version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
+- name: go.uber.org/zap
+  version: 853ac185800f276677ad5ffa70fd7eda356c8d46
+  subpackages:
+  - buffer
+  - internal/bufferpool
+  - internal/color
+  - internal/exit
+  - zapcore
 - name: golang.org/x/crypto
   version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
   subpackages:
@@ -34,15 +88,68 @@ imports:
   version: 49e6db1c9ed2b2fdbc57fd579f0ca8f6082350be
   subpackages:
   - context
+  - http2
+  - http2/hpack
+  - idna
+  - internal/timeseries
+  - lex/httplex
+  - trace
 - name: golang.org/x/sys
   version: 95c6576299259db960f6c5b9b69ea52422860fce
   subpackages:
   - unix
   - windows
+- name: golang.org/x/text
+  version: 342b2e1fbaa52c93f31447ad2c6abc048c63e475
+  subpackages:
+  - secure/bidirule
+  - transform
+  - unicode/bidi
+  - unicode/norm
 - name: golang.org/x/tools
   version: 9b61fcc4c548d69663d915801fc4b42a43b6cd9c
   subpackages:
   - cmd/stringer
+- name: google.golang.org/genproto
+  version: 6af8c5fc6601ab6b41cd32742a65ce2f5bd9db57
+  subpackages:
+  - googleapis/rpc/status
+- name: google.golang.org/grpc
+  version: 70e8b380527e63d26e65f8b588edfa4b4ea239f5
+  subpackages:
+  - balancer
+  - balancer/base
+  - balancer/roundrobin
+  - binarylog/grpc_binarylog_v1
+  - codes
+  - connectivity
+  - credentials
+  - credentials/internal
+  - encoding
+  - encoding/proto
+  - grpclog
+  - health/grpc_health_v1
+  - internal
+  - internal/backoff
+  - internal/balancerload
+  - internal/binarylog
+  - internal/channelz
+  - internal/envconfig
+  - internal/grpcrand
+  - internal/grpcsync
+  - internal/syscall
+  - internal/transport
+  - keepalive
+  - metadata
+  - naming
+  - peer
+  - resolver
+  - resolver/dns
+  - resolver/passthrough
+  - serviceconfig
+  - stats
+  - status
+  - tap
 testImports:
 - name: github.com/davecgh/go-spew
   version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9

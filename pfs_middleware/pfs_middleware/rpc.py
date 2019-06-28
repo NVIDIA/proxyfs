@@ -23,7 +23,6 @@ These functions do not perform any network IO.
 import base64
 import uuid
 
-
 allow_read_only = {
     "Server.RpcFetchExtentMapChunk",
     "Server.RpcGetAccount",
@@ -212,17 +211,23 @@ def parse_get_object_response(read_plan_response):
     """
     Parse a response from RpcGetObject.
 
-    Returns (read_plan, metadata, file_size, inode number, number of writes,
-    lease ID).
+    Returns (read_plan, metadata, file_size, modification time,
+    IsDir, inode number, number of writes, lease ID)
 
     The read plan is a list of dictionaries with keys "Length", "Offset",
     and "ObjectPath". One gets the object data by reading <Length> bytes
     from <ObjectPath> starting at byte <Offset>.
+
+    IsDir was added to GET response later so it may not be present in a rolling
+    upgrade scenario.  But if its not present and the GET returned success then
+    its not a directory because GET used to fail on a directory object.
     """
+    is_dir = read_plan_response.get("IsDir") or False
     return (read_plan_response["ReadEntsOut"],
             _decode_binary(read_plan_response["Metadata"]),
             read_plan_response["FileSize"],
             _ctime_or_mtime(read_plan_response),
+            is_dir,
             read_plan_response["InodeNumber"],
             read_plan_response["NumWrites"],
             read_plan_response["LeaseId"])

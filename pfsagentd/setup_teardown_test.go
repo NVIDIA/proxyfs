@@ -185,6 +185,7 @@ func testSetup(t *testing.T) {
 		"FSGlobals.DirEntryCacheEvictHighLimit=10010",
 		"FSGlobals.FileExtentMapEvictLowLimit=10000",
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
+		"FSGlobals.EtcdEnabled=false",
 
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
