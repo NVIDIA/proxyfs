@@ -1,5 +1,19 @@
 # ProxyFS Release Notes
 
+## 1.11.1 (June 28, 2019)
+
+### Features:
+
+Support for storing Volume Checkpoints in an ETCD instance are now supported.
+This feature is enabled by setting an optional key to true along with other
+keys specifying the endpoints of the ETCD instance and the name of the key to
+use for each Volume's Checkpoint.
+
+### Bug Fixes:
+
+Object PUTs over existing file system directories behavior has been corrected.
+For instance, now a PUT over an empty directory will replace it.
+
 ## 1.11.0 (June 13, 2019)
 
 ### Features:
