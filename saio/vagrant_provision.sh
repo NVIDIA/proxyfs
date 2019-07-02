@@ -5,6 +5,8 @@
 set -e
 set -x
 
+: <<"UNDO"
+
 # Install yum-utils to deal with yum repos
 
 yum -y install yum-utils
@@ -348,6 +350,58 @@ cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/exports /etc/exports
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/samba/smb.conf /etc/samba/smb.conf
 echo -e "swift\nswift" | smbpasswd -a swift
 
+# Install Kerberos Client to SDOM{1|2|3|4}.LOCAL hosted by sdc{1|2|3|4}.sdom{1|2|3|4}.local
+
+yum -y install krb5-workstation
+
+cat >> /etc/hosts << EOF
+172.28.128.11 sdc1 sdc1.sdom1.local
+172.28.128.12 sdc2 sdc2.sdom2.local
+172.28.128.13 sdc3 sdc3.sdom3.local
+172.28.128.14 sdc4 sdc4.sdom4.local
+172.28.128.21 saio1 saio1.sdom1.local
+172.28.128.22 saio2 saio2.sdom2.local
+172.28.128.23 saio3 saio3.sdom3.local
+172.28.128.24 saio4 saio4.sdom4.local
+EOF
+
+cat > /etc/krb5.conf.d/SambaDCs << EOF
+[libdefaults]
+dns_lookup_kdc = false
+
+[realms]
+SDOM1.LOCAL = {
+ admin_server = sdc1.sdom1.local
+ kdc = sdc1.sdom1.local
+ default_domain = SDOM1
+}
+SDOM2.LOCAL = {
+ admin_server = sdc2.sdom2.local
+ kdc=sdc2.sdom2.local
+ default_domain = SDOM2
+}
+SDOM3.LOCAL = {
+ admin_server = sdc3.sdom3.local
+ kdc=sdc3.sdom3.local
+ default_domain = SDOM3
+}
+SDOM4.LOCAL = {
+ admin_server = sdc4.sdom4.local
+ kdc=sdc4.sdom4.local
+ default_domain = SDOM4
+}
+
+[domain_realm]
+.sdom1.local = SDOM1.LOCAL
+sdom1.local = SDOM1.LOCAL
+.sdom2.local = SDOM2.LOCAL
+sdom2.local = SDOM2.LOCAL
+.sdom3.local = SDOM3.LOCAL
+sdom3.local = SDOM3.LOCAL
+.sdom4.local = SDOM4.LOCAL
+sdom4.local = SDOM4.LOCAL
+EOF
+
 # Install systemd .service files for ProxyFS
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
@@ -420,3 +474,9 @@ EOF
 # All done
 
 echo "SAIO for ProxyFS provisioned"
+
+ip addr add dev enp0s8 172.28.128.21/24
+ip addr add dev enp0s8 172.28.128.22/24
+ip addr add dev enp0s8 172.28.128.23/24
+ip addr add dev enp0s8 172.28.128.24/24
+UNDO
