@@ -3,7 +3,7 @@
 # Notes:
 #   1) This script assumes it is being run as root
 #   2) This script assumes the 1st arg is to be the hostname
-#   3) This script assumes the 2nd arg is to be the ip addr
+#   3) This script assumes the 2nd arg is to be the IP Addr exposed by DC
 #   4) This script assumes the 3rd arg is to be the domain & netbios name
 
 set -e
@@ -17,9 +17,13 @@ hostnameUC=`echo $1 | tr a-z A-Z`
 domainLC=`echo $3 | tr A-Z a-z`
 domainUC=`echo $3 | tr a-z A-Z`
 
-# Preserve IP Addr
+# Preserve IP Addr exposed by DC
 
 ipAddr=$2
+
+# Preserve current nameserver
+
+currentNameserver=`nmcli dev show | grep DNS | awk '{print $2}'`
 
 # Set hostname and update /etc/hosts
 
@@ -28,16 +32,17 @@ echo "$ipAddr $hostnameLC $hostnameLC.$domainLC.local" >> /etc/hosts
 
 # Fixup /etc/resolv.conf & prevent NetworkManager from modifying it
 
-sed "/nameserver/ i nameserver $ipAddr" /etc/resolv.conf > /etc/resolv.conf_MODIFIED
-
-cat /etc/resolv.conf
-cat /etc/resolv.conf_MODIFIED
-
 mv /etc/resolv.conf /etc/resolv.conf_ORIGINAL
+
+cat > /etc/resolv.conf_MODIFIED <<EOF
+# Provisioned by Vagrant launching vagrant_provision.sh
+nameserver $ipAddr
+nameserver $currentNameserver
+EOF
+
 ln -s /etc/resolv.conf_MODIFIED /etc/resolv.conf
 
-cat /etc/resolv.conf
-
+exit 0
 # Install Development Tools
 
 yum -y --disableexcludes=all group install "Development Tools"
@@ -102,9 +107,15 @@ rm -rf samba-4.8.3*
 rm -rf /run/samba /etc/samba/smb.conf
 mkdir -p /run/samba /etc/samba
 
-samba-tool domain provision --domain=SDOM1 --realm=SDOM1.LOCAL --adminpass=ProxyFS-Samba-DC
+samba-tool domain provision --domain=$domainUC --realm=$domainUC.LOCAL --host-ip=$ipAddr --adminpass=ProxyFS$
 
 mv /etc/samba/krb5.conf /etc/krb5.conf
+
+# Adjust dns-forwarder to be currentNameserver in smb.conf
+
+mv /etc/samba/smb.conf /etc/samba/smb.conf_ORIGINAL
+
+sed "s/$ipAddr/$currentNameserver/" /etc/samba/smb.conf_ORIGINAL > /etc/samba/smb.conf
 
 # Configure systemd to manage Samba DC
 
@@ -133,6 +144,22 @@ EOF
 
 systemctl start samba
 systemctl enable samba
+
+# TODO: Add an AD User (needed for other samba-tool commands)
+
+# samba-tool user create user1 ProxyFS$
+
+# TODO: List Zones
+
+# samba-tool dns zonelist $hostnameLC.$domainLC.local --username user1 --password=ProxyFS$
+
+# TODO: Add a Zone
+
+# samba-tool dns zonecreate $hostnameLC.$domainLC.local 128.28.172.in-addr-arpa --username user1 --password ProxyFS$
+
+# TODO: Add an A Record
+
+# samba-tool dns add $hostnameLC.$domainLC.local $domainLC.local machine1 A 172.28.128.21 --username user1 --password ProxyFS$
 
 # All done
 
