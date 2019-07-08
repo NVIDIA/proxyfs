@@ -42,7 +42,6 @@ EOF
 
 ln -s /etc/resolv.conf_MODIFIED /etc/resolv.conf
 
-exit 0
 # Install Development Tools
 
 yum -y --disableexcludes=all group install "Development Tools"
@@ -108,6 +107,7 @@ rm -rf /run/samba /etc/samba/smb.conf
 mkdir -p /run/samba /etc/samba
 
 samba-tool domain provision --domain=$domainUC --realm=$domainUC.LOCAL --host-ip=$ipAddr --adminpass=ProxyFS$
+samba-tool user setexpiry --noexpiry Administrator
 
 mv /etc/samba/krb5.conf /etc/krb5.conf
 
@@ -144,6 +144,10 @@ EOF
 
 systemctl start samba
 systemctl enable samba
+
+# TODO: List existing zones
+
+# samba-tool dns zonelist $hostnameLC.$domainLC.local --username Administrator --password=ProxyFS$
 
 # TODO: Add an AD User (needed for other samba-tool commands)
 
