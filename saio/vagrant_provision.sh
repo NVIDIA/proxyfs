@@ -5,6 +5,8 @@
 set -e
 set -x
 
+: <<"UNDO"
+
 # Install yum-utils to deal with yum repos
 
 yum -y install yum-utils
@@ -357,6 +359,10 @@ cat >> /etc/hosts << EOF
 172.28.128.12 sdc2 sdc2.sdom2.local
 172.28.128.13 sdc3 sdc3.sdom3.local
 172.28.128.14 sdc4 sdc4.sdom4.local
+172.28.128.21 saio1 saio1.sdom1.local
+172.28.128.22 saio2 saio2.sdom2.local
+172.28.128.23 saio3 saio3.sdom3.local
+172.28.128.24 saio4 saio4.sdom4.local
 EOF
 
 cat > /etc/krb5.conf.d/SambaDCs << EOF
@@ -462,3 +468,9 @@ EOF
 # All done
 
 echo "SAIO for ProxyFS provisioned"
+
+ip addr add dev enp0s8 172.28.128.21/24
+ip addr add dev enp0s8 172.28.128.22/24
+ip addr add dev enp0s8 172.28.128.23/24
+ip addr add dev enp0s8 172.28.128.24/24
+UNDO
