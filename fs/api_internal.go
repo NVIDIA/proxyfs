@@ -479,10 +479,12 @@ func (mS *mountStruct) Flush(userID inode.InodeUserID, groupID inode.InodeGroupI
 		inode.NoOverride) {
 		return blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
-	if !mS.volStruct.inodeVolumeHandle.Access(inodeNumber, userID, groupID, otherGroupIDs, inode.W_OK,
-		inode.OwnerOverride) {
-		return blunder.NewError(blunder.PermDeniedError, "EACCES")
-	}
+
+	// Note: We'd normally check EACCES here...but there are paths in FUSE (e.g. when files are
+	//       closed) that end up calling Flush()...even though the file was "opened" ReadOnly.
+	//       This is presumably to support updated of ATime and such. In any event, an EACCESS
+	//       check would fail if the caller actually only had ReadOnly access to the Inode, so
+	//       we won't be doing the check here.
 
 	err = mS.volStruct.inodeVolumeHandle.Flush(inodeNumber, false)
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
