@@ -38,7 +38,8 @@ func (s Symlink) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		return
 	}
 
-	attr.Inode = uint64(s.inodeNumber) // or stat[fs.StatINum]
+	attr.Valid = time.Duration(time.Microsecond) // TODO: Make this settable if FUSE inside ProxyFS endures
+	attr.Inode = uint64(s.inodeNumber)           // or stat[fs.StatINum]
 	attr.Size = stat[fs.StatSize]
 	attr.Atime = time.Unix(0, int64(stat[fs.StatATime]))
 	attr.Mtime = time.Unix(0, int64(stat[fs.StatMTime]))
