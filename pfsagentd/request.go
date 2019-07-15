@@ -237,6 +237,10 @@ func updateAuthTokenAndAccountURL() {
 				} else {
 					swiftStorageAccountURLSplit[len(swiftStorageAccountURLSplit)-1] = globals.config.SwiftAccountName
 					swiftAccountURL = strings.Join(swiftStorageAccountURLSplit, "/")
+
+					if strings.HasPrefix(swiftAccountURL, "http:") && strings.HasPrefix(getRequest.URL.String(), "https:") {
+						swiftAccountURL = strings.Replace(swiftAccountURL, "http:", "https:", 1)
+					}
 				}
 			}
 		}

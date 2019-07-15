@@ -2,10 +2,12 @@ package main
 
 import (
 	"container/list"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -252,7 +254,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 	// Default logging related globals
 
 	globals.config.LogFilePath = ""
-	globals.config.LogToConsole = false
+	globals.config.LogToConsole = true
 	globals.logFile = nil
 
 	// Process resultant confMap
@@ -279,6 +281,10 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.config.SwiftAuthURL, err = confMap.FetchOptionValueString("Agent", "SwiftAuthURL")
 	if nil != err {
+		logFatal(err)
+	}
+	if !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "http:") && !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "https:") {
+		err = fmt.Errorf("[Agent]SwiftAuthURL (\"%s\") must start with either \"http:\" or \"https:\"", globals.config.SwiftAuthURL)
 		logFatal(err)
 	}
 
