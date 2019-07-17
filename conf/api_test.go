@@ -2,6 +2,7 @@ package conf
 
 import (
 	"bytes"
+	"encoding/base64"
 	"io"
 	"io/ioutil"
 	"os"
@@ -326,9 +327,18 @@ func TestFromFileConstructorNonexistentFile(t *testing.T) {
 }
 
 func TestFetch(t *testing.T) {
-	var confMap = MakeConfMap()
-
-	var err error
+	const (
+		base64DecodedString              = "Now is the time"
+		base64DecodedStringSliceElement0 = "for all good men"
+		base64DecodedStringSliceElement1 = "to come to the aid of their country."
+	)
+	var (
+		base64EncodedString              = base64.StdEncoding.EncodeToString([]byte(base64DecodedString))
+		base64EncodedStringSliceElement0 = base64.StdEncoding.EncodeToString([]byte(base64DecodedStringSliceElement0))
+		base64EncodedStringSliceElement1 = base64.StdEncoding.EncodeToString([]byte(base64DecodedStringSliceElement1))
+		confMap                          = MakeConfMap()
+		err                              error
+	)
 
 	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1=")
 	if nil != err {
@@ -341,6 +351,14 @@ func TestFetch(t *testing.T) {
 	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionString=TestString3")
 	if nil != err {
 		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionString=TestString3: %v", err)
+	}
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionBase64String=" + base64EncodedString)
+	if nil != err {
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionBase64String=" + base64EncodedString)
+	}
+	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionBase64StringSlice=" + base64EncodedStringSliceElement0 + "," + base64EncodedStringSliceElement1)
+	if nil != err {
+		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionBase64StringSlice=" + base64EncodedStringSliceElement0 + "," + base64EncodedStringSliceElement1)
 	}
 	err = confMap.UpdateFromString("TestNamespace:Test_-_Section.Test_-_OptionBool=true")
 	if nil != err {
@@ -400,6 +418,14 @@ func TestFetch(t *testing.T) {
 	if nil != err {
 		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionString: %v", err)
 	}
+	testBase64String, err := confMap.FetchOptionValueBase64String("TestNamespace:Test_-_Section", "Test_-_OptionBase64String")
+	if nil != err {
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionBase64String: %v", err)
+	}
+	testBase64StringSlice, err := confMap.FetchOptionValueBase64StringSlice("TestNamespace:Test_-_Section", "Test_-_OptionBase64StringSlice")
+	if nil != err {
+		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionBase64StringSlice: %v", err)
+	}
 	testBool, err := confMap.FetchOptionValueBool("TestNamespace:Test_-_Section", "Test_-_OptionBool")
 	if err != nil {
 		t.Fatalf("Couldn't fetch TestNamespace:Test_-_Section.Test_-_OptionBool: %v", err)
@@ -453,6 +479,12 @@ func TestFetch(t *testing.T) {
 	}
 	if "TestString3" != testString {
 		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionString contained unexpected value")
+	}
+	if base64DecodedString != testBase64String {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionBase64String contained unexpected value")
+	}
+	if (2 != len(testBase64StringSlice)) || (base64DecodedStringSliceElement0 != base64DecodedStringSliceElement0) || (base64DecodedStringSliceElement1 != base64DecodedStringSliceElement1) {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionBase64StringSlice contained unexpected value(s)")
 	}
 	if testBool != true {
 		t.Fatalf("TestNamespace:Test_-_Section.TestBool contained unexpected value")
