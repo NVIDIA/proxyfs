@@ -2,6 +2,7 @@ package conf
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -55,8 +56,8 @@ const leftBracket = "(\\[)"
 const rightBracket = "(\\])"
 const sectionName = "([0-9A-Za-z_\\-/:\\.]+)"
 const separator = "([ \t]+|([ \t]*,[ \t]*))"
-
 const token = "(([0-9A-Za-z_\\*\\-/:\\.\\[\\]]+)\\$?)"
+const value = "(([0-9A-Za-z_=\\*\\-\\+/:\\.\\[\\]]+)\\$?)"
 const whiteSpace = "([ \t]+)"
 
 // A string to load looks like:
@@ -69,7 +70,7 @@ const whiteSpace = "([ \t]+)"
 //     or
 //   <section_name_3>.<option_name_3> : <value_4> <value_5>,<value_6>
 
-var stringRE = regexp.MustCompile("\\A" + token + dot + token + assignment + "(" + token + "(" + separator + token + ")*)?\\z")
+var stringRE = regexp.MustCompile("\\A" + token + dot + token + assignment + "(" + value + "(" + separator + value + ")*)?\\z")
 var sectionNameOptionNameSeparatorRE = regexp.MustCompile(dot)
 
 // A .INI/.conf file to load typically looks like:
@@ -103,7 +104,7 @@ var sectionNameRE = regexp.MustCompile(sectionName)
 
 // Option Name:Value lines are of the form:
 
-var optionLineRE = regexp.MustCompile("\\A" + token + assignment + "(" + token + "(" + separator + token + ")*)?\\z")
+var optionLineRE = regexp.MustCompile("\\A" + token + assignment + "(" + value + "(" + separator + value + ")*)?\\z")
 
 var optionNameOptionValuesSeparatorRE = regexp.MustCompile(assignment)
 var optionValueSeparatorRE = regexp.MustCompile(separator)
@@ -361,7 +362,7 @@ func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName s
 	return
 }
 
-// FetchOptionValueStringSlice returns [sectionName]valueName's string values as a (non-emptry) []string
+// FetchOptionValueStringSlice returns [sectionName]valueName's string values as a []string
 func (confMap ConfMap) FetchOptionValueStringSlice(sectionName string, optionName string) (optionValue []string, err error) {
 	optionValue = []string{}
 
@@ -399,6 +400,56 @@ func (confMap ConfMap) FetchOptionValueString(sectionName string, optionName str
 	optionValue = optionValueSlice[0]
 
 	err = nil
+	return
+}
+
+// FetchOptionValueBase64String returns [sectionName]valueName's single string value Base64-decoded
+func (confMap ConfMap) FetchOptionValueBase64String(sectionName string, optionName string) (optionValue string, err error) {
+	var (
+		base64DecodedOptionValue []byte
+		base64EncodedOptionValue string
+	)
+
+	base64EncodedOptionValue, err = confMap.FetchOptionValueString(sectionName, optionName)
+	if nil != err {
+		return
+	}
+
+	base64DecodedOptionValue, err = base64.StdEncoding.DecodeString(base64EncodedOptionValue)
+	if nil != err {
+		return
+	}
+
+	optionValue = string(base64DecodedOptionValue[:])
+
+	return
+}
+
+// FetchOptionValueBase64StringSlice returns [sectionName]valueName's string values as a []string each element Base64-decoded
+func (confMap ConfMap) FetchOptionValueBase64StringSlice(sectionName string, optionName string) (optionValue []string, err error) {
+	var (
+		base64DecodedOptionValueElement []byte
+		base64EncodedOptionValue        []string
+		base64EncodedOptionValueElement string
+		i                               int
+	)
+
+	base64EncodedOptionValue, err = confMap.FetchOptionValueStringSlice(sectionName, optionName)
+	if nil != err {
+		return
+	}
+
+	optionValue = make([]string, len(base64EncodedOptionValue))
+
+	for i, base64EncodedOptionValueElement = range base64EncodedOptionValue {
+		base64DecodedOptionValueElement, err = base64.StdEncoding.DecodeString(base64EncodedOptionValueElement)
+		if nil != err {
+			return
+		}
+
+		optionValue[i] = string(base64DecodedOptionValueElement[:])
+	}
+
 	return
 }
 
