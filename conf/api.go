@@ -339,6 +339,46 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 	return
 }
 
+// Dump returns a single string that, if passed written to a file used as
+// input to MakeConfMapFromFile() would result in an identical ConfMap
+func (confMap ConfMap) Dump() (buf string) {
+	var (
+		confOption       ConfMapOption
+		confOptionName   string
+		confOptionValue  string
+		confSection      ConfMapSection
+		confSectionName  string
+		firstOptionValue bool
+		firstSection     bool
+	)
+
+	buf = ""
+	firstSection = true
+	for confSectionName, confSection = range confMap {
+		if firstSection {
+			firstSection = false
+		} else {
+			buf += "\n"
+		}
+		buf += "[" + confSectionName + "]\n"
+		for confOptionName, confOption = range confSection {
+			buf += confOptionName + " :"
+			firstOptionValue = true
+			for _, confOptionValue = range confOption {
+				if firstOptionValue {
+					buf += " " + confOptionValue
+					firstOptionValue = false
+				} else {
+					buf += ", " + confOptionValue
+				}
+			}
+			buf += "\n"
+		}
+	}
+
+	return
+}
+
 // VerifyOptionValueIsEmpty returns an error if [sectionName]valueName's string value is not empty
 func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName string) (err error) {
 	section, ok := confMap[sectionName]
