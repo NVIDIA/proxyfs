@@ -104,8 +104,6 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		volume         *volumeStruct
 	)
 
-	err = nil // default return
-
 	volume, ok = globals.volumeMap[volumeName]
 
 	if ok {
@@ -128,7 +126,8 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		delete(globals.mountPointMap, volume.mountPointName)
 	}
 
-	return // return err as set from above
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
@@ -254,6 +253,8 @@ func performMount(volume *volumeStruct) (err error) {
 		// OS X specific—
 		fuselib.LocalVolume(),
 		fuselib.VolumeName(volume.mountPointName),
+		fuselib.NoAppleDouble(),
+		fuselib.NoAppleXattr(),
 	)
 
 	if nil != err {

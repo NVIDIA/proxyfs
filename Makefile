@@ -33,6 +33,7 @@ gobinsubdirs = \
 	fsworkout \
 	inodeworkout \
 	pfs-crash \
+	pfs-fsck \
 	pfs-stress \
 	pfs-swift-load \
 	pfsagentd \
