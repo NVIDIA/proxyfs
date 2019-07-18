@@ -33,6 +33,7 @@
   ],
   "utils_packages": [
     ["atop"],
-    ["vim-common"]
+    ["vim-common"],
+    ["python36-pip"]
   ]
 }
