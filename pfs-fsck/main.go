@@ -17,42 +17,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var (
-	usageStringSlice = [...]string{
-		"%v <numLoops> <numCopies> <numOverwrites> <skipWrites> <dirPath> <confFile> [<confOverride>]*",
-		"  where:",
-		"    <numLoops>      number (>=1) of iterations to perform",
-		"    <numCopies>     number (>=1) of copies of <dirPath> to perform each iteration",
-		"    <numOverwrites> number (>=0, <=<numCopies>) of copies of <dirPath> that are overwrites each iteration",
-		"    <skipWrites>    if true, every other iteration skips the copy step",
-		"    <dirPath>       identifies the source directory tree to copy/compare",
-		"    <confFile>      identifies the ConfFile to use",
-		"    <confOverride>  command line overrides for what is in ConfFile",
-	}
-)
-
-func usage(toLog bool) {
-	var (
-		usageString      string
-		usageStringIndex int
-	)
-
-	for usageStringIndex, usageString = range usageStringSlice {
-		if 0 == usageStringIndex {
-			if toLog {
-				log.Printf(usageString, os.Args[0])
-			} else {
-				fmt.Printf(usageString+"\n", os.Args[0])
-			}
-		} else {
-			if toLog {
-				log.Println(usageString)
-			} else {
-				fmt.Println(usageString)
-			}
-		}
-	}
-}
+/*
+[FSCK]
+UseRamSwift:     false # If true, ramswift will be launched; if false, running Swift NoAuth Proxy is used
+NumLoops:          100 # Number (>=1) of iterations to perform
+NumCopies:           3 # Number (>=1) of copies of <DirPath> to perform each iteration
+NumOverwrites:       2 # Number (>=0, <=<NumCopies>) of copies of <DirPath> that are overwrites each iteration
+SkipWrites:       true # If true, every other iteration skips the copy step
+DirPath:       ../test # Identifies the source directory tree to copy/compare
+*/
 
 const (
 	compareChunkSize    = 65536
@@ -62,13 +35,12 @@ const (
 )
 
 type argsStruct struct {
+	UseRAMSwift   bool
 	NumLoops      uint64
 	NumCopies     uint64
 	NumOverwrites uint64
 	SkipWrites    bool
 	DirPath       string
-	ConfFile      string
-	ConfOverrides []string
 }
 
 var (
@@ -92,6 +64,7 @@ func main() {
 	dirIndexAdvancePerNonSkippedLoop = args.NumCopies - args.NumOverwrites
 
 	for loopIndex = 0; loopIndex < args.NumLoops; loopIndex++ {
+		log.Printf("Loop # %d\n", loopIndex)
 		doMount()
 		if 0 < loopIndex {
 			doCompares(loopIndex)
@@ -106,6 +79,7 @@ func main() {
 	}
 
 	if !args.SkipWrites || (0 != args.NumLoops%2) {
+		log.Printf("Final Compare\n")
 		doMount()
 		doCompares(args.NumLoops)
 		doUnmount()
@@ -116,11 +90,12 @@ func main() {
 
 func setup() {
 	var (
+		confFile                string
 		confOverride            string
+		confOverrides           []string
 		err                     error
 		getInfoResponse         *http.Response
 		getInfoURL              string
-		lenArgs                 int
 		mkproxyfsCmd            *exec.Cmd
 		noAuthTCPPort           uint16
 		primaryPeerSlice        []string
@@ -138,64 +113,66 @@ func setup() {
 
 	// Parse arguments
 
-	lenArgs = len(os.Args)
-	if 1 == lenArgs {
-		usage(false)
-		os.Exit(0)
-	}
-	if 7 > lenArgs {
-		usage(true)
+	if 2 > len(os.Args) {
+		fmt.Printf("%v <confFile> [<confOverride>]*\n", os.Args[0])
 		os.Exit(1)
 	}
 
-	args.NumLoops, err = strconv.ParseUint(os.Args[1], 10, 64)
+	confFile = os.Args[1]
+	confOverrides = os.Args[2:]
+
+	testConfMap, err = conf.MakeConfMapFromFile(confFile)
 	if nil != err {
-		log.Fatalf("numLoops (\"%s\") not parseable: %v", os.Args[1], err)
-	}
-	if 0 == args.NumLoops {
-		log.Fatalf("numLoops (%v) not valid", args.NumLoops)
+		log.Fatalf("confFile (\"%s\") not parseable: %v", confFile, err)
 	}
 
-	args.NumCopies, err = strconv.ParseUint(os.Args[2], 10, 64)
-	if nil != err {
-		log.Fatalf("numCopies (\"%s\") not parseable: %v", os.Args[2], err)
-	}
-	if 0 == args.NumCopies {
-		log.Fatalf("numCopies (%v) not valid", args.NumCopies)
-	}
-
-	args.NumOverwrites, err = strconv.ParseUint(os.Args[3], 10, 64)
-	if nil != err {
-		log.Fatalf("numOverwrites (\"%s\") not parseable: %v", os.Args[3], err)
-	}
-	if args.NumCopies < args.NumOverwrites {
-		log.Fatalf("numOverwrites (%v) must be <= numCopies (%v)", args.NumOverwrites, args.NumCopies)
-	}
-
-	args.SkipWrites, err = strconv.ParseBool(os.Args[4])
-	if nil != err {
-		log.Fatalf("skipWrites (\"%s\") not parseable: %v", os.Args[4], err)
-	}
-
-	args.DirPath = os.Args[5]
-	args.ConfFile = os.Args[6]
-	args.ConfOverrides = os.Args[7:]
-
-	// Construct ConfMap
-
-	testConfMap, err = conf.MakeConfMapFromFile(args.ConfFile)
-	if nil != err {
-		log.Fatalf("confFile (\"%s\") not parseable: %v", args.ConfFile, err)
-	}
-
-	for _, confOverride = range args.ConfOverrides {
+	for _, confOverride = range confOverrides {
 		err = testConfMap.UpdateFromString(confOverride)
 		if nil != err {
 			log.Fatalf("confOverride (\"%s\") not parseable: %v", confOverride, err)
 		}
 	}
 
-	// Fetch values from testConfMap
+	args.UseRAMSwift, err = testConfMap.FetchOptionValueBool("FSCK", "UseRAMSwift")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.UseRAMSwift: %v", err)
+	}
+
+	args.NumLoops, err = testConfMap.FetchOptionValueUint64("FSCK", "NumLoops")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.NumLoops: %v", err)
+	}
+	if 0 == args.NumLoops {
+		log.Fatalf("FSCK.NumLoops (%v) not valid", args.NumLoops)
+	}
+
+	args.NumCopies, err = testConfMap.FetchOptionValueUint64("FSCK", "NumCopies")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.NumCopies: %v", err)
+	}
+	if 0 == args.NumCopies {
+		log.Fatalf("FSCK.NumCopies (%v) not valid", args.NumCopies)
+	}
+
+	args.NumOverwrites, err = testConfMap.FetchOptionValueUint64("FSCK", "NumOverwrites")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.NumOverwrites: %v", err)
+	}
+	if args.NumCopies < args.NumOverwrites {
+		log.Fatalf("FSCK.NumOverwrites (%v) must be <= FSCK.NumCopies (%v)", args.NumOverwrites, args.NumCopies)
+	}
+
+	args.SkipWrites, err = testConfMap.FetchOptionValueBool("FSCK", "SkipWrites")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.SkipWrites: %v", err)
+	}
+
+	args.DirPath, err = testConfMap.FetchOptionValueString("FSCK", "DirPath")
+	if nil != err {
+		log.Fatalf("unable to fetch FSCK.DirPath: %v", err)
+	}
+
+	// Fetch (RAMSwift &) ProxyFS values from testConfMap
 	//
 	// Scan FSGlobals.VolumeGroupList for the 1st VolumeGroup that has
 	// a Volume who's PrimaryPeer is Cluster.WhoAmI and prune confMap
@@ -272,38 +249,40 @@ FoundVolume:
 		log.Fatalf("unable to close testConfFile (\"%s\"): %v", testConfFileName, err)
 	}
 
-	// Start-up ramswift
+	// Start-up ramswift if necessary
 
-	ramswiftCmd = exec.Command("ramswift", testConfFileName)
+	if args.UseRAMSwift {
+		ramswiftCmd = exec.Command("ramswift", testConfFileName)
 
-	err = ramswiftCmd.Start()
-	if nil != err {
-		log.Fatalf("unable to start ramswift: %v", err)
-	}
-
-	getInfoURL = "http://127.0.0.1:" + strconv.Itoa(int(noAuthTCPPort)) + "/info"
-
-	for {
-		getInfoResponse, err = http.Get(getInfoURL)
-		if nil == err {
-			_, err = ioutil.ReadAll(getInfoResponse.Body)
-			if nil != err {
-				log.Fatalf("unable to read getInfoResponse.Body: %v", err)
-			}
-			err = getInfoResponse.Body.Close()
-			if nil != err {
-				log.Fatalf("unable to close getInfoResponse.Body: %v", err)
-			}
-			if http.StatusOK == getInfoResponse.StatusCode {
-				break
-			}
+		err = ramswiftCmd.Start()
+		if nil != err {
+			log.Fatalf("unable to start ramswift: %v", err)
 		}
-		time.Sleep(startupPollingDelay)
+
+		getInfoURL = "http://127.0.0.1:" + strconv.Itoa(int(noAuthTCPPort)) + "/info"
+
+		for {
+			getInfoResponse, err = http.Get(getInfoURL)
+			if nil == err {
+				_, err = ioutil.ReadAll(getInfoResponse.Body)
+				if nil != err {
+					log.Fatalf("unable to read getInfoResponse.Body: %v", err)
+				}
+				err = getInfoResponse.Body.Close()
+				if nil != err {
+					log.Fatalf("unable to close getInfoResponse.Body: %v", err)
+				}
+				if http.StatusOK == getInfoResponse.StatusCode {
+					break
+				}
+			}
+			time.Sleep(startupPollingDelay)
+		}
 	}
 
 	// Format Volume
 
-	mkproxyfsCmd = exec.Command("mkproxyfs", "-N", volume, testConfFileName, "SwiftClient.RetryLimit=0")
+	mkproxyfsCmd = exec.Command("mkproxyfs", "-F", volume, testConfFileName, "SwiftClient.RetryLimit=0")
 
 	err = mkproxyfsCmd.Run()
 	if nil != err {
@@ -663,16 +642,18 @@ func teardown() {
 		err error
 	)
 
-	// Stop ramswift
+	// Stop ramswift if started earlier
 
-	err = ramswiftCmd.Process.Signal(unix.SIGTERM)
-	if nil != err {
-		log.Fatalf("unable to send SIGTERM to ramswift: %v", err)
-	}
+	if args.UseRAMSwift {
+		err = ramswiftCmd.Process.Signal(unix.SIGTERM)
+		if nil != err {
+			log.Fatalf("unable to send SIGTERM to ramswift: %v", err)
+		}
 
-	err = ramswiftCmd.Wait()
-	if nil != err {
-		log.Fatalf("failure waiting for ramswift to exit: %v", err)
+		err = ramswiftCmd.Wait()
+		if nil != err {
+			log.Fatalf("failure waiting for ramswift to exit: %v", err)
+		}
 	}
 
 	// Clean-up
