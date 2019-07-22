@@ -2669,14 +2669,32 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 }
 
 func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteList []delayedObjectDeleteStruct) {
-	for _, delayedObjectDelete := range delayedObjectDeleteList {
-		err := swiftclient.ObjectDelete(
-			volume.accountName,
-			delayedObjectDelete.containerName,
-			utils.Uint64ToHexStr(delayedObjectDelete.objectNumber),
-			swiftclient.SkipRetry)
-		if nil != err {
-			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDelete.objectNumber, err)
+	var (
+		delayedObjectDelete     delayedObjectDeleteStruct
+		delayedObjectDeleteName string
+		err                     error
+	)
+
+	for _, delayedObjectDelete = range delayedObjectDeleteList {
+		delayedObjectDeleteName = utils.Uint64ToHexStr(delayedObjectDelete.objectNumber)
+		if globals.metadataRecycleBin && (delayedObjectDelete.containerName == volume.checkpointContainerName) {
+			err = swiftclient.ObjectPost(
+				volume.accountName,
+				delayedObjectDelete.containerName,
+				delayedObjectDeleteName,
+				globals.metadataRecycleBinHeader) // UNDO
+			if nil != err {
+				logger.Errorf("POST %s/%s/%s failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDeleteName, err)
+			}
+		} else {
+			err = swiftclient.ObjectDelete(
+				volume.accountName,
+				delayedObjectDelete.containerName,
+				delayedObjectDeleteName,
+				swiftclient.SkipRetry)
+			if nil != err {
+				logger.Errorf("DELETE %s/%s/%s failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDeleteName, err)
+			}
 		}
 	}
 	volume.backgroundObjectDeleteWG.Done()

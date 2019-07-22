@@ -732,6 +732,49 @@ func testOps(t *testing.T) {
 		t.Fatalf("ContainerGet(\"TestAccount\", \"TestContainer\") didn't return expected objectList")
 	}
 
+	// Send a POST for object "FooBarCopy" adding header Mouse: Bird
+
+	err = ObjectPost("TestAccount", "TestContainer", "FooBarCopy", mouseBirdHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectPost(\"TestAccount\", \"TestContainer\", \"FooBarCopy\", mouseBirdHeaderMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	// Send a HEAD for object "FooBarCopy" expecting header Mouse: Bird
+
+	objectHeaders, err = ObjectHead("TestAccount", "TestContainer", "FooBarCopy")
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectHead(\"TestAccount\", \"TestContainer\", \"FooBarCopy\") failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	objectMouseHeader, ok := objectHeaders["Mouse"]
+	if !ok {
+		t.Fatalf("ObjectHead(\"TestAccount\", \"TestContainer\", \"FooBarCopy\") didn't return Header \"Mouse\"")
+	}
+	if (1 != len(objectMouseHeader)) || ("Bird" != objectMouseHeader[0]) {
+		t.Fatalf("ObjectHead(\"TestAccount\", \"TestContainer\", \"FooBarCopy\") didn't return Header \"Mouse\" having value []string{\"Bird\"}")
+	}
+
+	// Send a POST for object "FooBarCopy" deleting header Mouse
+
+	err = ObjectPost("TestAccount", "TestContainer", "FooBarCopy", mouseDeleteHeaderMap)
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectPost(\"TestAccount\", \"TestContainer\", \"FooBarCopy\", mouseDeleteHeaderMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	// Send a HEAD for object "FooBarCopy" expecting no Mouse Header
+
+	objectHeaders, err = ObjectHead("TestAccount", "TestContainer", "FooBarCopy")
+	if nil != err {
+		tErr := fmt.Sprintf("ObjectHead(\"TestAccount\", \"TestContainer\", \"FooBarCopy\") failed: %v", err)
+		t.Fatalf(tErr)
+	}
+	_, ok = objectHeaders["Mouse"]
+	if ok {
+		t.Fatalf("ObjectHead(\"TestAccount\", \"TestContainer\", \"FooBarCopy\") shouldn't have returned Header \"Mouse\"")
+	}
+
 	// Send a DELETE for object "FooBarCopy"
 
 	err = ObjectDelete("TestAccount", "TestContainer", "FooBarCopy", 0)

@@ -36,6 +36,11 @@ const (
 	StoragePolicyHeaderName     = "X-Storage-Policy"
 )
 
+const (
+	metadataRecycleBinHeaderName  = "X-Object-Meta-Recycle-Bin"
+	metadataRecycleBinHeaderValue = "true"
+)
+
 type bPlusTreeTrackerStruct struct {
 	bPlusTreeLayout sortedmap.LayoutReport
 }
@@ -185,6 +190,9 @@ type globalsStruct struct {
 	etcdAutoSyncInterval time.Duration
 	etcdDialTimeout      time.Duration
 	etcdOpTimeout        time.Duration
+
+	metadataRecycleBin       bool                // UNDO
+	metadataRecycleBinHeader map[string][]string // UNDO
 
 	etcdClient *etcd.Client
 	etcdKV     etcd.KV
@@ -387,6 +395,17 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		}
 
 		globals.etcdKV = etcd.NewKV(globals.etcdClient)
+	}
+
+	// Record temporary MetadataRecycleBin setting [UNDO]
+
+	globals.metadataRecycleBin, err = confMap.FetchOptionValueBool("FSGlobals", "MetadataRecycleBin")
+	if nil != err {
+		globals.metadataRecycleBin = true // UNDO: Eventually just return or, perhaps, set to false
+	}
+	if globals.metadataRecycleBin {
+		globals.metadataRecycleBinHeader = make(map[string][]string)
+		globals.metadataRecycleBinHeader[metadataRecycleBinHeaderName] = []string{metadataRecycleBinHeaderValue}
 	}
 
 	err = nil
