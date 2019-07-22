@@ -971,6 +971,154 @@ func TestViaNoAuthClient(t *testing.T) {
 		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
 	}
 
+	// Send a PUT for object "ZigZag" and header Cat: Dog
+
+	httpRequest, err = http.NewRequest("PUT", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("Cat", "Dog")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusCreated != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a HEAD for object "ZigZag" expecting header Cat: Dog
+
+	httpRequest, err = http.NewRequest("HEAD", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a HEAD for object "ZigZag" expecting header Cat: Dog
+
+	httpRequest, err = http.NewRequest("HEAD", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a POST for object "ZigZag" and header Mouse: Bird
+
+	httpRequest, err = http.NewRequest("POST", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("Mouse", "Bird")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a HEAD for object "ZigZag" expecting header Cat: Dog & Mouse: Bird
+
+	httpRequest, err = http.NewRequest("HEAD", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	if httpResponse.Header.Get("Mouse") != "Bird" {
+		t.Fatalf("TestAccount should have header Mouse: Bird")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a POST for object "ZigZag" deleting header Mouse
+
+	httpRequest, err = http.NewRequest("POST", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpRequest.Header.Add("Mouse", "")
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a HEAD for object "ZigZag" expecting header Cat: Dog & no Mouse header
+
+	httpRequest, err = http.NewRequest("HEAD", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusOK != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	if httpResponse.Header.Get("Cat") != "Dog" {
+		t.Fatalf("TestAccount should have header Cat: Dog")
+	}
+	_, mouseHeaderPresent = httpResponse.Header["Mouse"]
+	if mouseHeaderPresent {
+		t.Fatalf("TestAccount should not have header Mouse")
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
 	// Send a DELETE for object "Foo"
 
 	httpRequest, err = http.NewRequest("DELETE", urlPrefix+"TestAccount/TestContainer/Foo", nil)
@@ -992,6 +1140,24 @@ func TestViaNoAuthClient(t *testing.T) {
 	// Send a DELETE for object "Bar"
 
 	httpRequest, err = http.NewRequest("DELETE", urlPrefix+"TestAccount/TestContainer/Bar", nil)
+	if nil != err {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	httpResponse, err = httpClient.Do(httpRequest)
+	if nil != err {
+		t.Fatalf("httpClient.Do() returned unexpected error: %v", err)
+	}
+	if http.StatusNoContent != httpResponse.StatusCode {
+		t.Fatalf("httpResponse.StatusCode contained unexpected value: %v", httpResponse.StatusCode)
+	}
+	err = httpResponse.Body.Close()
+	if nil != err {
+		t.Fatalf("http.Response.Body.Close() returned unexpected error: %v", err)
+	}
+
+	// Send a DELETE for object "ZigZag"
+
+	httpRequest, err = http.NewRequest("DELETE", urlPrefix+"TestAccount/TestContainer/ZigZag", nil)
 	if nil != err {
 		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
 	}

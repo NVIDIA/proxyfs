@@ -103,6 +103,7 @@ type globalsStruct struct {
 	ObjectHeadUsec                 bucketstats.BucketLog2Round     // bucketized by time
 	ObjectLoadUsec                 bucketstats.BucketLog2Round     // bucketized by time
 	ObjectLoadBytes                bucketstats.BucketLog2Round     // bucketized by byte count
+	ObjectPostUsec                 bucketstats.BucketLog2Round     // bucketized by time
 	ObjectReadUsec                 bucketstats.BucketLog2Round     // bucketized by time
 	ObjectReadBytes                bucketstats.BucketLog2Round     // bucketized by byte count
 	ObjectTailUsec                 bucketstats.BucketLog2Round     // bucketized by time
@@ -134,6 +135,7 @@ type globalsStruct struct {
 	ObjectGetFailure           bucketstats.Total
 	ObjectHeadFailure          bucketstats.Total
 	ObjectLoadFailure          bucketstats.Total
+	ObjectPostFailure          bucketstats.Total
 	ObjectReadFailure          bucketstats.Total
 	ObjectTailFailure          bucketstats.Total
 	ObjectPutCtxtFetchFailure  bucketstats.Total
@@ -155,6 +157,7 @@ type globalsStruct struct {
 	SwiftObjectGetUsec           bucketstats.BucketLog2Round // bucketized by time
 	SwiftObjectHeadUsec          bucketstats.BucketLog2Round // bucketized by time
 	SwiftObjectLoadUsec          bucketstats.BucketLog2Round // bucketized by time
+	SwiftObjectPostUsec          bucketstats.BucketLog2Round // bucketized by time
 	SwiftObjectReadUsec          bucketstats.BucketLog2Round // bucketized by time
 	SwiftObjectTailUsec          bucketstats.BucketLog2Round // bucketized by time
 	SwiftObjectPutCtxtFetchUsec  bucketstats.BucketLog2Round // bucketized by time
@@ -177,6 +180,7 @@ type globalsStruct struct {
 	SwiftObjectGetRetryOps           bucketstats.Average
 	SwiftObjectHeadRetryOps          bucketstats.Average
 	SwiftObjectLoadRetryOps          bucketstats.Average
+	SwiftObjectPostRetryOps          bucketstats.Average
 	SwiftObjectReadRetryOps          bucketstats.Average
 	SwiftObjectTailRetryOps          bucketstats.Average
 	SwiftObjectPutCtxtFetchRetryOps  bucketstats.Average
