@@ -588,6 +588,102 @@ func objectLoad(accountName string, containerName string, objectName string) (bu
 	return
 }
 
+func objectPostWithRetry(accountName string, containerName string, objectName string, requestHeaders map[string][]string) (err error) {
+	// request is a function that, through the miracle of closure, calls
+	// containerPost() with the paramaters passed to this function, stashes
+	// the relevant return values into the local variables of this function,
+	// and then returns err and whether it is retriable to RequestWithRetry()
+	request := func() (bool, error) {
+		var err error
+		err = objectPost(accountName, containerName, objectName, requestHeaders)
+		return true, err
+	}
+
+	var (
+		retryObj *RetryCtrl = NewRetryCtrl(globals.retryLimit, globals.retryDelay, globals.retryExpBackoff)
+		opname   string     = fmt.Sprintf("swiftclient.objectPost(\"%v/%v/%v\")", accountName, containerName, objectName)
+
+		statnm requestStatistics = requestStatistics{
+			retryCnt:          &stats.SwiftObjPostRetryOps,
+			retrySuccessCnt:   &stats.SwiftObjPostRetrySuccessOps,
+			clientRequestTime: &globals.ObjectPostUsec,
+			clientFailureCnt:  &globals.ObjectPostFailure,
+			swiftRequestTime:  &globals.SwiftObjectPostUsec,
+			swiftRetryOps:     &globals.SwiftObjectPostRetryOps,
+		}
+	)
+	err = retryObj.RequestWithRetry(request, &opname, &statnm)
+	return err
+}
+
+func objectPost(accountName string, containerName string, objectName string, requestHeaders map[string][]string) (err error) {
+	var (
+		connection      *connectionStruct
+		contentLength   int
+		fsErr           blunder.FsError
+		httpPayload     string
+		httpStatus      int
+		isError         bool
+		responseHeaders map[string][]string
+	)
+
+	connection, err = acquireNonChunkedConnection()
+	if err != nil {
+		// acquireNonChunkedConnection()/openConnection() logged a warning
+		return
+	}
+
+	requestHeaders["Content-Length"] = []string{"0"}
+
+	err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "POST", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), requestHeaders)
+	if nil != err {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.AddError(err, blunder.BadHTTPPutError)
+		logger.WarnfWithError(err, "swiftclient.objectPost(\"%v/%v/%v\") got writeHTTPRequestLineAndHeaders() error", accountName, containerName, objectName)
+		return
+	}
+
+	httpStatus, responseHeaders, err = readHTTPStatusAndHeaders(connection.tcpConn)
+	if nil != err {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.AddError(err, blunder.BadHTTPPutError)
+		logger.WarnfWithError(err, "swiftclient.objectPost(\"%v/%v/%v\") got readHTTPStatusAndHeaders() error", accountName, containerName, objectName)
+		return
+	}
+	evtlog.Record(evtlog.FormatContainerPost, accountName, containerName, uint32(httpStatus))
+	isError, fsErr = httpStatusIsError(httpStatus)
+	if isError {
+		httpPayload, _ = readHTTPPayloadAsString(connection.tcpConn, responseHeaders)
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.NewError(fsErr, "POST %s/%s/%s returned HTTP StatusCode %d Payload %s", accountName, containerName, objectName, httpStatus, httpPayload)
+		err = blunder.AddHTTPCode(err, httpStatus)
+		logger.WarnfWithError(err, "swiftclient.objectPost(\"%v/%v/%v\") got readHTTPStatusAndHeaders() bad status", accountName, containerName, objectName)
+		return
+	}
+	contentLength, err = parseContentLength(responseHeaders)
+	if nil != err {
+		releaseNonChunkedConnection(connection, false)
+		err = blunder.AddError(err, blunder.BadHTTPPutError)
+		logger.WarnfWithError(err, "swiftclient.objectPost(\"%v/%v/%v\") got parseContentLength() error", accountName, containerName, objectName)
+		return
+	}
+	if 0 < contentLength {
+		_, err = readBytesFromTCPConn(connection.tcpConn, contentLength)
+		if nil != err {
+			releaseNonChunkedConnection(connection, false)
+			err = blunder.AddError(err, blunder.BadHTTPPutError)
+			logger.WarnfWithError(err, "swiftclient.objectPost(\"%v/%v/%v\") got readBytesFromTCPConn() error", accountName, containerName, objectName)
+			return
+		}
+	}
+
+	releaseNonChunkedConnection(connection, parseConnection(responseHeaders))
+
+	stats.IncrementOperations(&stats.SwiftObjPostOps)
+
+	return
+}
+
 func objectReadWithRetry(accountName string, containerName string, objectName string, offset uint64, buf []byte) (uint64, error) {
 	// request is a function that, through the miracle of closure, calls
 	// objectRead() with the paramaters passed to this function, stashes the

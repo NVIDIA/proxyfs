@@ -1,5 +1,20 @@
 # ProxyFS Release Notes
 
+## 1.11.2 (July 282, 2019)
+
+### Notes:
+
+This is a small delta from 1.11.1 to temporarily disable deletion of thought-to-be
+unreferenced objects in the checkpoint container. A working theory of one such
+issue is that a object holding metadata for a volume was inadvertantly thought to
+no longer be referenced. As such, the object was scheduled for deletion. Upon a
+subsequent re-mount, the object could not be found and the re-mount failed.
+
+A new (temporary) boolean setting in the FSGlobals section titled MetadataRecycleBin
+will, for now, default to TRUE and, instead of issuing DELETEs on objects in the
+checkpoint container thought to now be unreferenced, a new header will be applied
+to them titled RecycleBin (with a value of true).
+
 ## 1.11.1 (June 28, 2019)
 
 ### Features:

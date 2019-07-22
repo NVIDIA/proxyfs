@@ -76,7 +76,7 @@ func AccountHead(accountName string) (headers map[string][]string, err error) {
 	return accountHeadWithRetry(accountName)
 }
 
-// AccountPost invokes HTTP PUT on the named Swift Account.
+// AccountPost invokes HTTP POST on the named Swift Account.
 func AccountPost(accountName string, headers map[string][]string) (err error) {
 	return accountPostWithRetry(accountName, headers)
 }
@@ -101,7 +101,7 @@ func ContainerHead(accountName string, containerName string) (headers map[string
 	return containerHeadWithRetry(accountName, containerName)
 }
 
-// ContainerPost invokes HTTP PUT on the named Swift Container.
+// ContainerPost invokes HTTP POST on the named Swift Container.
 func ContainerPost(accountName string, containerName string, headers map[string][]string) (err error) {
 	return containerPostWithRetry(accountName, containerName, headers)
 }
@@ -146,6 +146,11 @@ func ObjectHead(accountName string, containerName string, objectName string) (he
 // ObjectLoad invokes HTTP GET on the named Swift Object for the entire object.
 func ObjectLoad(accountName string, containerName string, objectName string) (buf []byte, err error) {
 	return objectLoadWithRetry(accountName, containerName, objectName)
+}
+
+// ObjectPost invokes HTTP POST on the named Swift Object.
+func ObjectPost(accountName string, containerName string, objectName string, headers map[string][]string) (err error) {
+	return objectPostWithRetry(accountName, containerName, objectName, headers)
 }
 
 // ObjectRead invokes HTTP GET on the named Swift Object at the specified offset filling in the specified byte slice.
