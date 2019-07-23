@@ -38,8 +38,8 @@ type uint64Struct struct {
 }
 
 const (
-	checkpointVersion3 uint64 = iota + 3
-	// uint64 in %016X indicating checkpointVersion2 or checkpointVersion3
+	CheckpointVersion3 uint64 = iota + 3
+	// uint64 in %016X indicating checkpointVersion2 or CheckpointVersion3
 	// ' '
 	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
 	// ' '
@@ -48,18 +48,18 @@ const (
 	// uint64 in %016X indicating reservedToNonce
 )
 
-type checkpointHeaderStruct struct {
-	CheckpointVersion                         uint64 // either checkpointVersion2 or checkpointVersion3
+type CheckpointHeaderStruct struct {
+	CheckpointVersion                         uint64 // either checkpointVersion2 or CheckpointVersion3
 	CheckpointObjectTrailerStructObjectNumber uint64 // checkpointObjectTrailerV?Struct found at "tail" of object
 	CheckpointObjectTrailerStructObjectLength uint64 // this length includes appended non-fixed sized arrays
 	ReservedToNonce                           uint64 // highest nonce value reserved
 }
 
-type checkpointObjectTrailerV3Struct struct {
+type CheckpointObjectTrailerV3Struct struct {
 	InodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
 	InodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
 	InodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
-	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV3Struct
+	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow CheckpointObjectTrailerV3Struct
 	LogSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
 	LogSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
 	LogSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
@@ -73,45 +73,45 @@ type checkpointObjectTrailerV3Struct struct {
 	SnapShotIDNumBits                         uint64 // number of bits reserved to hold SnapShotIDs
 	SnapShotListNumElements                   uint64 // elements immediately follow deletedObjectsBPlusTreeLayout
 	SnapShotListTotalSize                     uint64 // size of entire SnapShotList
-	// inodeRecBPlusTreeLayout        serialized as [InodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
-	// logSegmentBPlusTreeLayout      serialized as [LogSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
-	// bPlusTreeObjectBPlusTreeLayout serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// createdObjectsBPlusTreeLayout  serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// deletedObjectsBPlusTreeLayout  serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// snapShotList                   serialized as [snapShotListNumElements                  ]elementOfSnapShotListStruct
+	// InodeRecBPlusTreeLayout        serialized as [InodeRecBPlusTreeLayoutNumElements       ]ElementOfBPlusTreeLayoutStruct
+	// LogSegmentBPlusTreeLayout      serialized as [LogSegmentRecBPlusTreeLayoutNumElements  ]ElementOfBPlusTreeLayoutStruct
+	// BPlusTreeObjectBPlusTreeLayout serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]ElementOfBPlusTreeLayoutStruct
+	// CreatedObjectsBPlusTreeLayout  serialized as [CreatedObjectsBPlusTreeLayoutNumElements ]ElementOfBPlusTreeLayoutStruct
+	// DeletedObjectsBPlusTreeLayout  serialized as [DeletedObjectsBPlusTreeLayoutNumElements ]ElementOfBPlusTreeLayoutStruct
+	// SnapShotList                   serialized as [SnapShotListNumElements                  ]ElementOfSnapShotListStruct
 }
 
-type elementOfBPlusTreeLayoutStruct struct {
+type ElementOfBPlusTreeLayoutStruct struct {
 	ObjectNumber uint64
 	ObjectBytes  uint64
 }
 
-type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
-	nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
-	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
+type ElementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
+	Nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
+	ID    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
 	//                       ID == 0                     reserved for the "live" view
 	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
-	timeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
+	TimeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
 	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
-	name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
+	Name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func utils.ByteSliceToString(byteSlice []byte)        (str string)
 	//                       func utils.StringToByteSlice(str string)              (byteSlice []byte)
-	inodeRecBPlusTreeObjectNumber        uint64
-	inodeRecBPlusTreeObjectOffset        uint64
-	inodeRecBPlusTreeObjectLength        uint64
-	logSegmentRecBPlusTreeObjectNumber   uint64
-	logSegmentRecBPlusTreeObjectOffset   uint64
-	logSegmentRecBPlusTreeObjectLength   uint64
-	bPlusTreeObjectBPlusTreeObjectNumber uint64
-	bPlusTreeObjectBPlusTreeObjectOffset uint64
-	bPlusTreeObjectBPlusTreeObjectLength uint64
-	createdObjectsBPlusTreeObjectNumber  uint64
-	createdObjectsBPlusTreeObjectOffset  uint64
-	createdObjectsBPlusTreeObjectLength  uint64
-	deletedObjectsBPlusTreeObjectNumber  uint64
-	deletedObjectsBPlusTreeObjectOffset  uint64
-	deletedObjectsBPlusTreeObjectLength  uint64
+	InodeRecBPlusTreeObjectNumber        uint64
+	InodeRecBPlusTreeObjectOffset        uint64
+	InodeRecBPlusTreeObjectLength        uint64
+	LogSegmentRecBPlusTreeObjectNumber   uint64
+	LogSegmentRecBPlusTreeObjectOffset   uint64
+	LogSegmentRecBPlusTreeObjectLength   uint64
+	BPlusTreeObjectBPlusTreeObjectNumber uint64
+	BPlusTreeObjectBPlusTreeObjectOffset uint64
+	BPlusTreeObjectBPlusTreeObjectLength uint64
+	CreatedObjectsBPlusTreeObjectNumber  uint64
+	CreatedObjectsBPlusTreeObjectOffset  uint64
+	CreatedObjectsBPlusTreeObjectLength  uint64
+	DeletedObjectsBPlusTreeObjectNumber  uint64
+	DeletedObjectsBPlusTreeObjectOffset  uint64
+	DeletedObjectsBPlusTreeObjectLength  uint64
 }
 
 type checkpointRequestStruct struct {
@@ -138,7 +138,7 @@ const (
 type replayLogTransactionFixedPartStruct struct { //          transactions begin on a replayLogWriteBufferAlignment boundary
 	CRC64                                         uint64 // checksum of everything after this field
 	BytesFollowing                                uint64 // bytes following in this transaction
-	LastCheckpointObjectTrailerStructObjectNumber uint64 // last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+	LastCheckpointObjectTrailerStructObjectNumber uint64 // last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 	TransactionType                               uint64 // transactionType from above const() block
 }
 
@@ -227,7 +227,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutInodeRec
 				globals.uint64Size + //               inodeNumber
 				globals.uint64Size + //               len(value)
@@ -241,7 +241,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutInodeRecs
 				globals.uint64Size //                 len(inodeNumbers) == len(values)
 		for i = 0; i < len(multipleKeys); i++ {
@@ -258,7 +258,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteInodeRec
 				globals.uint64Size //                 inodeNumber
 	case transactionPutLogSegmentRec:
@@ -267,7 +267,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutLogSegmentRec
 				globals.uint64Size + //               logSegmentNumber
 				globals.uint64Size + //               len(value)
@@ -280,7 +280,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteLogSegmentRec
 				globals.uint64Size //                 logSegmentNumber
 	case transactionPutBPlusTreeObject:
@@ -289,7 +289,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutBPlusTreeObject
 				globals.uint64Size + //               objectNumber
 				globals.uint64Size + //               len(value)
@@ -302,7 +302,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteBPlusTreeObject
 				globals.uint64Size //                 objectNumber
 	default:
@@ -328,7 +328,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 	_ = copy(replayLogWriteBuffer[replayLogWriteBufferPosition:], packedUint64)
 	replayLogWriteBufferPosition += globals.uint64Size
 
-	// Fill in last checkpoint's checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+	// Fill in last checkpoint's CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 
 	packedUint64, err = cstruct.Pack(volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, LittleEndian)
 	if nil != err {
@@ -518,7 +518,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 
 // getEtcdCheckpointHeader gets the JSON-encoded checkpointHeader from etcd returning also its revision.
 //
-func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpointHeaderStruct, checkpointHeaderEtcdRevision int64, err error) {
+func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *CheckpointHeaderStruct, checkpointHeaderEtcdRevision int64, err error) {
 	var (
 		cancel      context.CancelFunc
 		ctx         context.Context
@@ -538,7 +538,7 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpo
 		return
 	}
 
-	checkpointHeader = &checkpointHeaderStruct{}
+	checkpointHeader = &CheckpointHeaderStruct{}
 
 	err = json.Unmarshal(getResponse.Kvs[0].Value, checkpointHeader)
 	if nil != err {
@@ -554,7 +554,7 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpo
 // putEtcdCheckpointHeader puts the JSON-encoding of the supplied checkpointHeader in etcd.
 // If a non-zero oldCheckpointHeaderEtcdRevision, it must match the current revision of the checkpointHeader.
 //
-func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *checkpointHeaderStruct, oldCheckpointHeaderEtcdRevision int64) (newCheckpointHeaderEtcdRevision int64, err error) {
+func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *CheckpointHeaderStruct, oldCheckpointHeaderEtcdRevision int64) (newCheckpointHeaderEtcdRevision int64, err error) {
 	var (
 		cancel              context.CancelFunc
 		checkpointHeaderBuf []byte
@@ -602,7 +602,7 @@ func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *checkpoint
 func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedmap.LayoutReport, err error) {
 	var (
 		checkpointContainerHeaders map[string][]string
-		checkpointHeader           *checkpointHeaderStruct
+		checkpointHeader           *CheckpointHeaderStruct
 		checkpointHeaderValue      string
 		checkpointHeaderValueSlice []string
 		checkpointHeaderValues     []string
@@ -677,18 +677,18 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		bytesConsumed                                      uint64
 		bytesNeeded                                        uint64
 		checkpointContainerHeaders                         map[string][]string
-		checkpointHeader                                   checkpointHeaderStruct
+		checkpointHeader                                   CheckpointHeaderStruct
 		checkpointHeaderValue                              string
 		checkpointHeaderValueSlice                         []string
 		checkpointHeaderValues                             []string
 		checkpointObjectTrailerBuf                         []byte
-		checkpointObjectTrailerV3                          *checkpointObjectTrailerV3Struct
+		checkpointObjectTrailerV3                          *CheckpointObjectTrailerV3Struct
 		computedCRC64                                      uint64
 		containerNameAsValue                               sortedmap.Value
 		createdObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
 		defaultReplayLogReadBuffer                         []byte
 		deletedObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
-		elementOfBPlusTreeLayout                           elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayout                           ElementOfBPlusTreeLayoutStruct
 		expectedCheckpointObjectTrailerSize                uint64
 		inodeIndex                                         uint64
 		inodeNumber                                        uint64
@@ -760,7 +760,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				volume.checkpointHeader = &checkpointHeaderStruct{}
+				volume.checkpointHeader = &CheckpointHeaderStruct{}
 
 				volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
 				if nil != err {
@@ -803,8 +803,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				volume.checkpointHeader = &checkpointHeaderStruct{
-					CheckpointVersion:                         checkpointVersion3,
+				volume.checkpointHeader = &CheckpointHeaderStruct{
+					CheckpointVersion:                         CheckpointVersion3,
 					CheckpointObjectTrailerStructObjectNumber: 0,
 					CheckpointObjectTrailerStructObjectLength: 0,
 					ReservedToNonce:                           firstNonceToProvide, // First FetchNonce() will trigger a reserve step
@@ -870,7 +870,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			if (autoFormat) && (http.StatusNotFound == blunder.HTTPCode(err)) {
 				// Checkpoint Container not found... so try to create it with some initial values...
 
-				checkpointHeader.CheckpointVersion = checkpointVersion3
+				checkpointHeader.CheckpointVersion = CheckpointVersion3
 
 				checkpointHeader.CheckpointObjectTrailerStructObjectNumber = 0
 				checkpointHeader.CheckpointObjectTrailerStructObjectLength = 0
@@ -924,7 +924,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			return
 		}
 
-		volume.checkpointHeader = &checkpointHeaderStruct{}
+		volume.checkpointHeader = &CheckpointHeaderStruct{}
 
 		volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
 		if nil != err {
@@ -952,11 +952,11 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 
 	volume.liveView = &volumeViewStruct{volume: volume}
 
-	if checkpointVersion3 == volume.checkpointHeader.CheckpointVersion {
+	if CheckpointVersion3 == volume.checkpointHeader.CheckpointVersion {
 		if 0 == volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber {
-			// Initialize based on zero-filled checkpointObjectTrailerV3Struct
+			// Initialize based on zero-filled CheckpointObjectTrailerV3Struct
 
-			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{
+			checkpointObjectTrailerV3 = &CheckpointObjectTrailerV3Struct{
 				InodeRecBPlusTreeObjectNumber:             0,
 				InodeRecBPlusTreeObjectOffset:             0,
 				InodeRecBPlusTreeObjectLength:             0,
@@ -1069,7 +1069,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				volume.availableSnapShotIDList.PushBack(snapShotID)
 			}
 		} else {
-			// Read in checkpointObjectTrailerV3Struct
+			// Read in CheckpointObjectTrailerV3Struct
 
 			checkpointObjectTrailerBuf, err =
 				swiftclient.ObjectTail(
@@ -1081,7 +1081,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				return
 			}
 
-			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{}
+			checkpointObjectTrailerV3 = &CheckpointObjectTrailerV3Struct{}
 
 			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, checkpointObjectTrailerV3, LittleEndian)
 			if nil != err {
@@ -1212,7 +1212,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.BPlusTreeObjectBPlusTreeLayoutNumElements
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.CreatedObjectsBPlusTreeLayoutNumElements
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.DeletedObjectsBPlusTreeLayoutNumElements
-			expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
+			expectedCheckpointObjectTrailerSize *= globals.ElementOfBPlusTreeLayoutStructSize
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.SnapShotListTotalSize
 
 			if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
@@ -1290,7 +1290,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			for snapShotIndex = 0; snapShotIndex < checkpointObjectTrailerV3.SnapShotListNumElements; snapShotIndex++ {
 				volumeView = &volumeViewStruct{volume: volume}
 
-				// elementOfSnapShotListStruct.nonce
+				// ElementOfSnapShotListStruct.Nonce
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the nonce", volume.volumeName, snapShotIndex)
@@ -1311,7 +1311,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.id
+				// ElementOfSnapShotListStruct.ID
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the id", volume.volumeName, snapShotIndex)
@@ -1336,7 +1336,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.timeStamp
+				// ElementOfSnapShotListStruct.TimeStamp
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the timeStamp len", volume.volumeName, snapShotIndex)
@@ -1367,7 +1367,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.name
+				// ElementOfSnapShotListStruct.Name
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the name len", volume.volumeName, snapShotIndex)
@@ -1394,7 +1394,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1406,7 +1406,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1418,7 +1418,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1456,7 +1456,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1468,7 +1468,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1480,7 +1480,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1518,7 +1518,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1530,7 +1530,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1542,7 +1542,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1580,7 +1580,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1592,7 +1592,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1604,7 +1604,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1642,7 +1642,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1654,7 +1654,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1666,7 +1666,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -2050,7 +2050,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		checkpointContainerHeaders                         map[string][]string
 		checkpointHeaderValue                              string
 		checkpointHeaderValues                             []string
-		checkpointObjectTrailer                            *checkpointObjectTrailerV3Struct
+		checkpointObjectTrailer                            *CheckpointObjectTrailerV3Struct
 		checkpointObjectTrailerBeginningOffset             uint64
 		checkpointObjectTrailerEndingOffset                uint64
 		checkpointTrailerBuf                               []byte
@@ -2058,7 +2058,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		containerNameAsByteSlice                           []byte
 		containerNameAsValue                               sortedmap.Value
 		delayedObjectDeleteList                            []delayedObjectDeleteStruct
-		elementOfBPlusTreeLayout                           elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayout                           ElementOfBPlusTreeLayoutStruct
 		elementOfBPlusTreeLayoutBuf                        []byte
 		elementOfSnapShotListBuf                           []byte
 		logSegmentObjectsToDelete                          int
@@ -2116,7 +2116,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		volumeViewIndex                                    int
 	)
 
-	checkpointObjectTrailer = &checkpointObjectTrailerV3Struct{}
+	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
 	checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
@@ -2246,7 +2246,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	treeLayoutBufSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.CreatedObjectsBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.DeletedObjectsBPlusTreeLayoutNumElements
-	treeLayoutBufSize *= globals.elementOfBPlusTreeLayoutStructSize
+	treeLayoutBufSize *= globals.ElementOfBPlusTreeLayoutStructSize
 
 	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
 
@@ -2500,7 +2500,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	// Now update checkpointHeader atomically indicating checkpoint is complete
 
-	volume.checkpointHeader.CheckpointVersion = checkpointVersion3
+	volume.checkpointHeader.CheckpointVersion = CheckpointVersion3
 
 	volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
 	volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset

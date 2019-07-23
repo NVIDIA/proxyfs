@@ -72,7 +72,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
 		err                        error
-		newCheckpointHeader        *checkpointHeaderStruct
+		newCheckpointHeader        *CheckpointHeaderStruct
 	)
 
 	if volume.nextNonce >= volume.maxNonce {
@@ -80,7 +80,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 	}
 
 	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
-		newCheckpointHeader = &checkpointHeaderStruct{
+		newCheckpointHeader = &CheckpointHeaderStruct{
 			CheckpointVersion:                         volume.checkpointHeader.CheckpointVersion,
 			CheckpointObjectTrailerStructObjectNumber: volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
 			CheckpointObjectTrailerStructObjectLength: volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
