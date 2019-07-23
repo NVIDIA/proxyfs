@@ -17,16 +17,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-/*
-[FSCK]
-UseRamSwift:     false # If true, ramswift will be launched; if false, running Swift NoAuth Proxy is used
-NumLoops:          100 # Number (>=1) of iterations to perform
-NumCopies:           3 # Number (>=1) of copies of <DirPath> to perform each iteration
-NumOverwrites:       2 # Number (>=0, <=<NumCopies>) of copies of <DirPath> that are overwrites each iteration
-SkipWrites:       true # If true, every other iteration skips the copy step
-DirPath:       ../test # Identifies the source directory tree to copy/compare
-*/
-
 const (
 	compareChunkSize    = 65536
 	dstDirPerm          = os.FileMode(0700)
@@ -133,43 +123,43 @@ func setup() {
 		}
 	}
 
-	args.UseRAMSwift, err = testConfMap.FetchOptionValueBool("FSCK", "UseRAMSwift")
+	args.UseRAMSwift, err = testConfMap.FetchOptionValueBool("RestartTest", "UseRAMSwift")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.UseRAMSwift: %v", err)
+		log.Fatalf("unable to fetch RestartTest.UseRAMSwift: %v", err)
 	}
 
-	args.NumLoops, err = testConfMap.FetchOptionValueUint64("FSCK", "NumLoops")
+	args.NumLoops, err = testConfMap.FetchOptionValueUint64("RestartTest", "NumLoops")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.NumLoops: %v", err)
+		log.Fatalf("unable to fetch RestartTest.NumLoops: %v", err)
 	}
 	if 0 == args.NumLoops {
-		log.Fatalf("FSCK.NumLoops (%v) not valid", args.NumLoops)
+		log.Fatalf("RestartTest.NumLoops (%v) not valid", args.NumLoops)
 	}
 
-	args.NumCopies, err = testConfMap.FetchOptionValueUint64("FSCK", "NumCopies")
+	args.NumCopies, err = testConfMap.FetchOptionValueUint64("RestartTest", "NumCopies")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.NumCopies: %v", err)
+		log.Fatalf("unable to fetch RestartTest.NumCopies: %v", err)
 	}
 	if 0 == args.NumCopies {
-		log.Fatalf("FSCK.NumCopies (%v) not valid", args.NumCopies)
+		log.Fatalf("RestartTest.NumCopies (%v) not valid", args.NumCopies)
 	}
 
-	args.NumOverwrites, err = testConfMap.FetchOptionValueUint64("FSCK", "NumOverwrites")
+	args.NumOverwrites, err = testConfMap.FetchOptionValueUint64("RestartTest", "NumOverwrites")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.NumOverwrites: %v", err)
+		log.Fatalf("unable to fetch RestartTest.NumOverwrites: %v", err)
 	}
 	if args.NumCopies < args.NumOverwrites {
-		log.Fatalf("FSCK.NumOverwrites (%v) must be <= FSCK.NumCopies (%v)", args.NumOverwrites, args.NumCopies)
+		log.Fatalf("RestartTest.NumOverwrites (%v) must be <= RestartTest.NumCopies (%v)", args.NumOverwrites, args.NumCopies)
 	}
 
-	args.SkipWrites, err = testConfMap.FetchOptionValueBool("FSCK", "SkipWrites")
+	args.SkipWrites, err = testConfMap.FetchOptionValueBool("RestartTest", "SkipWrites")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.SkipWrites: %v", err)
+		log.Fatalf("unable to fetch RestartTest.SkipWrites: %v", err)
 	}
 
-	args.DirPath, err = testConfMap.FetchOptionValueString("FSCK", "DirPath")
+	args.DirPath, err = testConfMap.FetchOptionValueString("RestartTest", "DirPath")
 	if nil != err {
-		log.Fatalf("unable to fetch FSCK.DirPath: %v", err)
+		log.Fatalf("unable to fetch RestartTest.DirPath: %v", err)
 	}
 
 	// Fetch (RAMSwift &) ProxyFS values from testConfMap
@@ -286,7 +276,7 @@ FoundVolume:
 
 	err = mkproxyfsCmd.Run()
 	if nil != err {
-		log.Fatalf("mkproxyfs -N Volume \"%s\" failed: %v", volume, err)
+		log.Fatalf("mkproxyfs -F Volume \"%s\" failed: %v", volume, err)
 	}
 }
 
