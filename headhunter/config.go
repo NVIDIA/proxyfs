@@ -401,7 +401,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	globals.metadataRecycleBin, err = confMap.FetchOptionValueBool("FSGlobals", "MetadataRecycleBin")
 	if nil != err {
-		globals.metadataRecycleBin = true // UNDO: Eventually just return or, perhaps, set to false
+		globals.metadataRecycleBin = false // UNDO: Eventually just return or, perhaps, set to true
 	}
 	if globals.metadataRecycleBin {
 		globals.metadataRecycleBinHeader = make(map[string][]string)
