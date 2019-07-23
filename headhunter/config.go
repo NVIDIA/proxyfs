@@ -37,8 +37,8 @@ const (
 )
 
 const (
-	metadataRecycleBinHeaderName  = "X-Object-Meta-Recycle-Bin"
-	metadataRecycleBinHeaderValue = "true"
+	MetadataRecycleBinHeaderName  = "X-Object-Meta-Recycle-Bin"
+	MetadataRecycleBinHeaderValue = "true"
 )
 
 type bPlusTreeTrackerStruct struct {
@@ -145,7 +145,7 @@ type volumeStruct struct {
 	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
-	checkpointHeader                        *checkpointHeaderStruct
+	checkpointHeader                        *CheckpointHeaderStruct
 	checkpointHeaderEtcdRevision            int64
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
@@ -169,7 +169,7 @@ type globalsStruct struct {
 
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
-	elementOfBPlusTreeLayoutStructSize      uint64
+	ElementOfBPlusTreeLayoutStructSize      uint64
 	replayLogTransactionFixedPartStructSize uint64
 
 	inodeRecCache                              sortedmap.BPlusTreeCache
@@ -265,7 +265,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		bPlusTreeObjectCacheEvictLowLimit        uint64
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
+		dummyElementOfBPlusTreeLayoutStruct      ElementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
 		inodeRecCacheEvictHighLimit              uint64
@@ -285,7 +285,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	globals.ElementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
 	if nil != err {
 		return
 	}
@@ -405,7 +405,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	}
 	if globals.metadataRecycleBin {
 		globals.metadataRecycleBinHeader = make(map[string][]string)
-		globals.metadataRecycleBinHeader[metadataRecycleBinHeaderName] = []string{metadataRecycleBinHeaderValue}
+		globals.metadataRecycleBinHeader[MetadataRecycleBinHeaderName] = []string{MetadataRecycleBinHeaderValue}
 	}
 
 	err = nil
