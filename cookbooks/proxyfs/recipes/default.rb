@@ -481,7 +481,7 @@ bash 'Build proxyfsd' do
   # Source profile because we may not have golang in our path yet
   code <<-EOH
   . #{DOT_BASH_PROFILE}
-  make
+  make minimal
   EOH
   cwd PROXYFS_SRC_DIR
 end
