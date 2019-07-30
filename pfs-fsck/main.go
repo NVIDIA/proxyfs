@@ -264,7 +264,7 @@ func setup() {
 
 	globals.noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
 	if nil != err {
-		log.Fatal(err)
+		globals.noAuthIPAddr = "127.0.0.1" // TODO: Eventually just log.Fatal(err)
 	}
 	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
@@ -284,7 +284,7 @@ func setup() {
 
 	globals.etcdEnabled, err = confMap.FetchOptionValueBool("FSGlobals", "EtcdEnabled")
 	if nil != err {
-		log.Fatal(err)
+		globals.etcdEnabled = false // TODO: Current default... perhaps eventually just log.Fatal(err)
 	}
 
 	if globals.etcdEnabled {
