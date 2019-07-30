@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -340,38 +341,69 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 }
 
 // Dump returns a single string that, if passed written to a file used as
-// input to MakeConfMapFromFile() would result in an identical ConfMap
+// input to MakeConfMapFromFile() would result in an identical ConfMap.
+//
+// To enable efficient comparisons, the elements of the ConfMap will be
+// sorted in the output (both by sectionName and by optionName).
+//
 func (confMap ConfMap) Dump() (buf string) {
 	var (
-		confOption       ConfMapOption
-		confOptionName   string
-		confOptionValue  string
-		confSection      ConfMapSection
-		confSectionName  string
-		firstOptionValue bool
-		firstSection     bool
+		confOption                ConfMapOption
+		confOptionName            string
+		confOptionNameLenMax      int
+		confOptionNameSlice       []string
+		confOptionValue           string
+		confOptionValueIndex      int
+		confSection               ConfMapSection
+		confSectionName           string
+		confSectionNameSlice      []string
+		confSectionNameSliceIndex int
 	)
 
 	buf = ""
-	firstSection = true
-	for confSectionName, confSection = range confMap {
-		if firstSection {
-			firstSection = false
-		} else {
+
+	confSectionNameSlice = make([]string, 0, len(confMap))
+
+	for confSectionName = range confMap {
+		confSectionNameSlice = append(confSectionNameSlice, confSectionName)
+	}
+
+	sort.Strings(confSectionNameSlice)
+
+	for confSectionNameSliceIndex, confSectionName = range confSectionNameSlice {
+		confSection = confMap[confSectionName]
+
+		if 0 < confSectionNameSliceIndex {
 			buf += "\n"
 		}
+
 		buf += "[" + confSectionName + "]\n"
-		for confOptionName, confOption = range confSection {
-			buf += confOptionName + " :"
-			firstOptionValue = true
-			for _, confOptionValue = range confOption {
-				if firstOptionValue {
+
+		confOptionNameSlice = make([]string, 0, len(confSection))
+		confOptionNameLenMax = 0
+
+		for confOptionName = range confSection {
+			confOptionNameSlice = append(confOptionNameSlice, confOptionName)
+			if len(confOptionName) > confOptionNameLenMax {
+				confOptionNameLenMax = len(confOptionName)
+			}
+		}
+
+		sort.Strings(confOptionNameSlice)
+
+		for _, confOptionName = range confOptionNameSlice {
+			confOption = confSection[confOptionName]
+
+			buf += confOptionName + ":" + strings.Repeat(" ", confOptionNameLenMax-len(confOptionName))
+
+			for confOptionValueIndex, confOptionValue = range confOption {
+				if 0 == confOptionValueIndex {
 					buf += " " + confOptionValue
-					firstOptionValue = false
 				} else {
 					buf += ", " + confOptionValue
 				}
 			}
+
 			buf += "\n"
 		}
 	}
