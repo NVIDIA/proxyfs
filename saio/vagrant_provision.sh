@@ -5,8 +5,6 @@
 set -e
 set -x
 
-: <<"UNDO"
-
 # Install yum-utils to deal with yum repos
 
 yum -y install yum-utils
@@ -479,4 +477,3 @@ ip addr add dev enp0s8 172.28.128.21/24
 ip addr add dev enp0s8 172.28.128.22/24
 ip addr add dev enp0s8 172.28.128.23/24
 ip addr add dev enp0s8 172.28.128.24/24
-UNDO
