@@ -390,7 +390,13 @@ yum -y install tree
 
 # Install and configure a localhost-only one-node etcd cluster
 
-yum -y install etcd
+ETCD_VERSION=3.3.10
+wget https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+tar xzf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+rm -rf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+install -C -m 755 etcd-v${ETCD_VERSION}-linux-amd64/etcd /usr/local/bin/
+install -C -m 755 etcd-v${ETCD_VERSION}-linux-amd64/etcdctl /usr/local/bin/
+rm -rf etcd-v${ETCD_VERSION}-linux-amd64
 
 mkdir /etcd
 
@@ -405,7 +411,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=root
-ExecStart=/usr/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --initial-advertise-peer-urls http://localhost:2380 --listen-peer-urls http://localhost:2380 --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379 --initial-cluster-token etcd-cluster --initial-cluster default=http://localhost:2380 --initial-cluster-state new
+ExecStart=/usr/local/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --initial-advertise-peer-urls http://localhost:2380 --listen-peer-urls http://localhost:2380 --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379 --initial-cluster-token etcd-cluster --initial-cluster default=http://localhost:2380 --initial-cluster-state new
 
 [Install]
 WantedBy=multi-user.target
