@@ -73,6 +73,9 @@ func TestAPI(t *testing.T) {
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
 		"FSGlobals.VolumeGroupList=",
+		"FSGlobals.MountRetryLimit=6",
+		"FSGlobals.MountRetryDelay=1s",
+		"FSGlobals.MountRetryExpBackoff=2",
 		"FSGlobals.TryLockBackoffMin=10ms",
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",

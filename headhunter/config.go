@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
@@ -185,6 +186,9 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 
+	mountRetryLimit uint16
+	mountRetryDelay []time.Duration
+
 	etcdEnabled          bool
 	etcdEndpoints        []string
 	etcdAutoSyncInterval time.Duration
@@ -272,6 +276,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		inodeRecCacheEvictLowLimit               uint64
 		logSegmentRecCacheEvictHighLimit         uint64
 		logSegmentRecCacheEvictLowLimit          uint64
+		mountRetryDelay                          time.Duration
+		mountRetryExpBackoff                     float64
+		mountRetryIndex                          uint16
+		nextMountRetryDelay                      time.Duration
 	)
 
 	bucketstats.Register("proxyfs.headhunter", "", &globals)
@@ -357,6 +365,30 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	globals.createdDeletedObjectsCachePriorCacheHits = 0
 	globals.createdDeletedObjectsCachePriorCacheMisses = 0
+
+	// Record mount retry parameters and compute retry delays
+
+	globals.mountRetryLimit, err = confMap.FetchOptionValueUint16("FSGlobals", "MountRetryLimit")
+	if nil != err {
+		globals.mountRetryLimit = 6 // TODO: Eventually just return
+	}
+	mountRetryDelay, err = confMap.FetchOptionValueDuration("FSGlobals", "MountRetryDelay")
+	if nil != err {
+		mountRetryDelay = time.Duration(1 * time.Second) // TODO: Eventually just return
+	}
+	mountRetryExpBackoff, err = confMap.FetchOptionValueFloat64("FSGlobals", "MountRetryExpBackoff")
+	if nil != err {
+		mountRetryExpBackoff = 2 // TODO: Eventually just return
+	}
+
+	globals.mountRetryDelay = make([]time.Duration, globals.mountRetryLimit)
+
+	nextMountRetryDelay = mountRetryDelay
+
+	for mountRetryIndex = 0; mountRetryIndex < globals.mountRetryLimit; mountRetryIndex++ {
+		globals.mountRetryDelay[mountRetryIndex] = nextMountRetryDelay
+		nextMountRetryDelay = time.Duration(float64(nextMountRetryDelay) * mountRetryExpBackoff)
+	}
 
 	// Record etcd parameters
 
@@ -626,6 +658,7 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	var (
 		autoFormat            bool
 		autoFormatStringSlice []string
+		mountRetryIndex       uint16
 		volumeSectionName     string
 	)
 
@@ -733,7 +766,25 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 
 	err = volume.getCheckpoint(autoFormat)
 	if nil != err {
-		return
+		logger.Warnf("Initial attempt to mount Volume %s failed: %v", volume.volumeName, err)
+		mountRetryIndex = 0
+		for {
+			if mountRetryIndex == globals.mountRetryLimit {
+				err = fmt.Errorf("MountRetryLimit (%d) for Volume %s exceeded", globals.mountRetryLimit, volume.volumeName)
+				return
+			}
+
+			time.Sleep(globals.mountRetryDelay[mountRetryIndex])
+
+			err = volume.getCheckpoint(autoFormat)
+			if nil == err {
+				break
+			}
+
+			mountRetryIndex++ // Pre-increment to identify first retry as #1 in following logger.Warnf() call
+
+			logger.Warnf("Mount Retry #%d failed: %v", mountRetryIndex, err)
+		}
 	}
 
 	go volume.checkpointDaemon()
