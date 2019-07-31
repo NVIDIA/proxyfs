@@ -93,7 +93,7 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 	// TODO: This should be configurable (i.e. enable/disable... and which port#)
 	go func() {
 		logger.Infof("proxyfsd.Daemon() starting debug HTTP server: %s",
-			http.ListenAndServe("localhost:6060", nil))
+			http.ListenAndServe("localhost:6060", nil)) // TODO: make this configurable !!!
 	}()
 
 	// Arm signal handler used to indicate termination and wait on it

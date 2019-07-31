@@ -28,6 +28,9 @@ func TestViaNoAuthClient(t *testing.T) {
 
 			"Cluster.WhoAmI=Peer0",
 			"FSGlobals.VolumeGroupList=",
+			"FSGlobals.MountRetryLimit=6",
+			"FSGlobals.MountRetryDelay=1s",
+			"FSGlobals.MountRetryExpBackoff=2",
 			"FSGlobals.TryLockBackoffMin=10ms",
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
