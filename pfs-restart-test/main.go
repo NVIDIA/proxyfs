@@ -25,6 +25,7 @@ const (
 )
 
 type argsStruct struct {
+	Volume        string
 	UseRAMSwift   bool
 	NumLoops      uint64
 	NumCopies     uint64
@@ -35,6 +36,7 @@ type argsStruct struct {
 
 var (
 	args                             argsStruct
+	volumeGroupOfVolume              string
 	checkpointInterval               time.Duration
 	dirIndexAdvancePerNonSkippedLoop uint64
 	fuseMountPointName               string
@@ -94,10 +96,11 @@ func setup() {
 		proxyfsdTCPPortAsUint16 uint16
 		testConfFile            *os.File
 		testConfMap             conf.ConfMap
-		volume                  string
 		volumeGroupList         []string
+		volumeGroupListElement  string
 		volumeGroup             string
 		volumeList              []string
+		volumeListElement       string
 		whoAmI                  string
 	)
 
@@ -121,6 +124,11 @@ func setup() {
 		if nil != err {
 			log.Fatalf("confOverride (\"%s\") not parseable: %v", confOverride, err)
 		}
+	}
+
+	args.Volume, err = testConfMap.FetchOptionValueString("RestartTest", "Volume")
+	if nil != err {
+		log.Fatalf("unable to fetch RestartTest.Volume: %v", err)
 	}
 
 	args.UseRAMSwift, err = testConfMap.FetchOptionValueBool("RestartTest", "UseRAMSwift")
@@ -162,16 +170,40 @@ func setup() {
 		log.Fatalf("unable to fetch RestartTest.DirPath: %v", err)
 	}
 
-	// Fetch (RAMSwift &) ProxyFS values from testConfMap
-	//
-	// Scan FSGlobals.VolumeGroupList for the 1st VolumeGroup that has
-	// a Volume who's PrimaryPeer is Cluster.WhoAmI and prune confMap
-	// so that only this Volume is mounted
+	// Fetch (RAMSwift &) ProxyFS values from testConfMap and validate Volume is served by this Peer
 
 	whoAmI, err = testConfMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		log.Fatalf("unable to fetch Cluster.WhoAmI: %v", err)
 	}
+
+	volumeGroupList, err = testConfMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
+	if nil != err {
+		log.Fatalf("unable to fetch FSGlobals.VolumeGroupList: %v", err)
+	}
+
+	for _, volumeGroupListElement = range volumeGroupList {
+		primaryPeerSlice, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupListElement, "PrimaryPeer")
+		if nil != err {
+			log.Fatalf("unable to fetch VolumeGroup:%s.PrimaryPeer: %v", volumeGroupListElement, err)
+		}
+		if (1 == len(primaryPeerSlice)) && (whoAmI == primaryPeerSlice[0]) {
+			volumeList, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupListElement, "VolumeList")
+			if nil != err {
+				log.Fatalf("unable to fetch VolumeGroup:%s.VolumeList: %v", volumeGroupListElement, err)
+			}
+			for _, volumeListElement = range volumeList {
+				if volumeListElement == args.Volume {
+					volumeGroup = volumeGroupListElement
+					goto FoundVolume
+				}
+			}
+		}
+	}
+
+	log.Fatalf("unable to find Volume (\"%s\") in list of served Volumes for this peer (\"%s\")", args.Volume, whoAmI)
+
+FoundVolume:
 
 	proxyfsdPrivateIPAddr, err = testConfMap.FetchOptionValueString("Peer:"+whoAmI, "PrivateIPAddr")
 	if nil != err {
@@ -184,38 +216,12 @@ func setup() {
 	proxyfsdTCPPortAsString = fmt.Sprintf("%d", proxyfsdTCPPortAsUint16)
 	proxyfsdVersionURL = "http://" + net.JoinHostPort(proxyfsdPrivateIPAddr, proxyfsdTCPPortAsString) + "/version"
 
-	volumeGroupList, err = testConfMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
-	if nil != err {
-		log.Fatalf("unable to fetch FSGlobals.VolumeGroupList: %v", err)
-	}
-
-	for _, volumeGroup = range volumeGroupList {
-		primaryPeerSlice, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroup, "PrimaryPeer")
-		if nil != err {
-			log.Fatalf("unable to fetch VolumeGroup:%s.PrimaryPeer: %v", volumeGroup, err)
-		}
-		if (1 == len(primaryPeerSlice)) && (whoAmI == primaryPeerSlice[0]) {
-			volumeList, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroup, "VolumeList")
-			if nil != err {
-				log.Fatalf("unable to fetch VolumeGroup:%s.VolumeList: %v", volumeGroup, err)
-			}
-			if 0 < len(volumeList) {
-				volume = volumeList[0]
-				goto FoundVolume
-			}
-		}
-	}
-
-	log.Fatalf("unable to find VolumeGroup for whoAmI (\"%s\")", whoAmI)
-
-FoundVolume:
-
 	testConfMap["FSGlobals"]["VolumeGroupList"] = []string{volumeGroup}
-	testConfMap["VolumeGroup:"+volumeGroup]["VolumeList"] = []string{volume}
+	testConfMap["VolumeGroup:"+volumeGroup]["VolumeList"] = []string{args.Volume}
 
-	fuseMountPointName, err = testConfMap.FetchOptionValueString("Volume:"+volume, "FUSEMountPointName")
+	fuseMountPointName, err = testConfMap.FetchOptionValueString("Volume:"+args.Volume, "FUSEMountPointName")
 	if nil != err {
-		log.Fatalf("unable to fetch Volume:%s.FUSEMountPointName: %v", volume, err)
+		log.Fatalf("unable to fetch Volume:%s.FUSEMountPointName: %v", args.Volume, err)
 	}
 
 	noAuthTCPPort, err = testConfMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
@@ -272,11 +278,11 @@ FoundVolume:
 
 	// Format Volume
 
-	mkproxyfsCmd = exec.Command("mkproxyfs", "-F", volume, testConfFileName, "SwiftClient.RetryLimit=0")
+	mkproxyfsCmd = exec.Command("mkproxyfs", "-F", args.Volume, testConfFileName, "SwiftClient.RetryLimit=0")
 
 	err = mkproxyfsCmd.Run()
 	if nil != err {
-		log.Fatalf("mkproxyfs -F Volume \"%s\" failed: %v", volume, err)
+		log.Fatalf("mkproxyfs -F Volume \"%s\" failed: %v", args.Volume, err)
 	}
 }
 
