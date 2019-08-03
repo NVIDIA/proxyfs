@@ -1,4 +1,7 @@
 #!/bin/bash
 set -e
+
+/usr/bin/unmount_and_stop_pfs
 cd $GOPATH/src/github.com/swiftstack/ProxyFS
 ci/ansible/install_proxyfs.sh {{ env_arg }} {{ ss_packages_arg }}
+/usr/bin/start_and_mount_pfs
