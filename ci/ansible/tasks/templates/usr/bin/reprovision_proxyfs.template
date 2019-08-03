@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+cd $GOPATH/src/github.com/swiftstack/ProxyFS
+ci/ansible/install_proxyfs.sh {{ env_arg }} {{ ss_packages_arg }}

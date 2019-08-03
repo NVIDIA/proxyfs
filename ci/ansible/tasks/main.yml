@@ -239,19 +239,12 @@
         register: current_etcd_version
         when: etcd_binary.stat.exists == True and etcdctl_binary.stat.exists == True
 
-#      - name: Show etcd version (debug)
-#        debug: msg="{{ current_etcd_version.stdout }}"
-#        when: etcd_binary.stat.exists == True and etcdctl_binary.stat.exists == True
-
       - block:
         - name: Create tmpdir
           tempfile:
             state: directory
             suffix: etcd-install
           register: tmpdir
-
-#        - name: Show tmpdir (debug)
-#          debug: msg="{{ tmpdir }}"
 
         - name: Download and untar etcd version {{ pkg_ver.etcd }}
           unarchive:
@@ -301,3 +294,11 @@
           become: true
 
         when: etcd_binary.stat.exists == False or etcdctl_binary.stat.exists == False or current_etcd_version.stdout != pkg_ver.etcd
+
+  - name: Script for ProxyFS reprovisioning
+    template:
+      src: usr/bin/reprovision_proxyfs.template
+      dest: /usr/bin/reprovision_proxyfs
+      owner: root
+      group: root
+      mode: '0755'

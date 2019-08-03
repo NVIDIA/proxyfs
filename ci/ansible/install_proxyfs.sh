@@ -16,5 +16,5 @@ fi
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-ansible-playbook -i "localhost," -c local -e env=$ENV_NAME $SCRIPT_DIR/tasks/main.yml
-chef-solo -c $SCRIPT_DIR/chef_files/$ENV_NAME.cfg
+ansible-playbook -i "localhost," -c local -e env=$ENV_NAME -e env_arg="$1" -e ss_packages_arg="$2" "$SCRIPT_DIR"/tasks/main.yml
+chef-solo -c "$SCRIPT_DIR"/chef_files/$ENV_NAME.cfg
