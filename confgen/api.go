@@ -17,11 +17,33 @@
 // supply those via the `confOverrides` (e.g. "VolumeGroup:CommonVolumeGroup.PrimaryPeer=Peer0").
 package confgen
 
+// EnvMap allows the caller to provide environment-specific paths for various programs invoked
+// by this API...or by scripts produced by this API.
+type EnvMap map[string]string
+
+const (
+	// LinuxUserCommentEnv specifies a comment to be applied to each Linux user created
+	// to be referenced by the SMB user system as provided by SAMBA97).
+	LinuxUserCommentEnv = "LINUX_USER_COMMENT"
+	// NetDirEnv specifies the directory containing the NET(8) tool used to administer a
+	// SAMBA(7) installation.
+	NetDirEnv = "NET_DIR"
+	// PdbeditDirEnv specifies the directory containing the PDBEDIT(8) tool used to manage
+	// the SAM database of SAMBA(7) users.
+	PdbeditDirEnv = "PDBEDIT_DIR"
+	// SmbdDirEnv specifies the directory containing the SMBD(8) program used to provide
+	// SMB file serving to clients provided by SAMBA(7).
+	SmbdDirEnv = "SMBD_DIR"
+	// SmbpasswdDirEnv specifies the directory containing the SMBPASSWD(8) tool used to add
+	// an SMB user or update the SMB user's password as provided by SAMBA(7).
+	SmbpasswdDirEnv = "SMBPASSWD_DIR"
+)
+
 // ComputeInitial takes a supplied ConfFile, overlays ConfOverrides, and computes an initial
 // set of configuration files that are used by a per-IPAddr set of Samba instances as well as
 // NFSd & ProxyFS.
-func ComputeInitial(confFilePath string, confOverrides []string, initialDirPath string) (err error) {
-	err = computeInitial(confFilePath, confOverrides, initialDirPath)
+func ComputeInitial(envMap EnvMap, confFilePath string, confOverrides []string, initialDirPath string) (err error) {
+	err = computeInitial(envMap, confFilePath, confOverrides, initialDirPath)
 	return
 }
 
@@ -29,7 +51,7 @@ func ComputeInitial(confFilePath string, confOverrides []string, initialDirPath 
 // above) along with a new ConfFile and new ConfOverrides and produces two sets of conf files
 // used in a 2-phase migration from the initial config to a new config. Presumably, the 2nd phase
 // produced will be used as the initial config in the next call to ComputePhases().
-func ComputePhases(initialDirPath string, confFilePath string, confOverrides []string, phaseOneDirPath string, phaseTwoDirPath string) (err error) {
-	err = computePhases(initialDirPath, confFilePath, confOverrides, phaseOneDirPath, phaseTwoDirPath)
+func ComputePhases(envMap EnvMap, initialDirPath string, confFilePath string, confOverrides []string, phaseOneDirPath string, phaseTwoDirPath string) (err error) {
+	err = computePhases(envMap, initialDirPath, confFilePath, confOverrides, phaseOneDirPath, phaseTwoDirPath)
 	return
 }

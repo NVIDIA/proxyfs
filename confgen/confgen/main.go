@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/swiftstack/ProxyFS/confgen"
 )
@@ -32,6 +33,7 @@ func main() {
 	var (
 		confFilePath    string
 		confOverrides   []string
+		env             confgen.EnvMap
 		err             error
 		initialDirPath  string
 		phaseOneDirPath string
@@ -53,16 +55,20 @@ func main() {
 			os.Exit(1)
 		}
 
+		env = fetchEnv()
+
 		initialDirPath = os.Args[2]
 		confFilePath = os.Args[3]
 		confOverrides = os.Args[4:]
 
-		err = confgen.ComputeInitial(confFilePath, confOverrides, initialDirPath)
+		err = confgen.ComputeInitial(env, confFilePath, confOverrides, initialDirPath)
 	case "-P":
 		if 6 > len(os.Args) {
 			usage()
 			os.Exit(1)
 		}
+
+		env = fetchEnv()
 
 		initialDirPath = os.Args[2]
 		phaseOneDirPath = os.Args[3]
@@ -70,7 +76,7 @@ func main() {
 		confFilePath = os.Args[5]
 		confOverrides = os.Args[6:]
 
-		err = confgen.ComputePhases(initialDirPath, confFilePath, confOverrides, phaseOneDirPath, phaseTwoDirPath)
+		err = confgen.ComputePhases(env, initialDirPath, confFilePath, confOverrides, phaseOneDirPath, phaseTwoDirPath)
 	default:
 		usage()
 		os.Exit(1)
@@ -79,4 +85,22 @@ func main() {
 	if nil != err {
 		log.Fatal(err)
 	}
+}
+
+func fetchEnv() (env confgen.EnvMap) {
+	var (
+		osEnvironString      string
+		osEnvironStringSlice []string
+		osEnvironStringSplit []string
+	)
+
+	env = make(confgen.EnvMap)
+	osEnvironStringSlice = os.Environ()
+
+	for _, osEnvironString = range osEnvironStringSlice {
+		osEnvironStringSplit = strings.SplitN(osEnvironString, "=", 2)
+		env[osEnvironStringSplit[0]] = osEnvironStringSplit[1]
+	}
+
+	return
 }
