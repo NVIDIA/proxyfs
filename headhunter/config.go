@@ -186,8 +186,11 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 
-	mountRetryLimit uint16
-	mountRetryDelay []time.Duration
+	checkpointHeaderConsensusAttempts uint16
+	mountRetryLimit                   uint16
+	mountRetryDelay                   []time.Duration
+
+	logCheckpointHeaderPosts bool
 
 	etcdEnabled          bool
 	etcdEndpoints        []string
@@ -368,6 +371,11 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	// Record mount retry parameters and compute retry delays
 
+	globals.checkpointHeaderConsensusAttempts, err = confMap.FetchOptionValueUint16("FSGlobals", "CheckpointHeaderConsensusAttempts")
+	if nil != err {
+		globals.checkpointHeaderConsensusAttempts = 5 // TODO: Eventually just return
+	}
+
 	globals.mountRetryLimit, err = confMap.FetchOptionValueUint16("FSGlobals", "MountRetryLimit")
 	if nil != err {
 		globals.mountRetryLimit = 6 // TODO: Eventually just return
@@ -388,6 +396,13 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	for mountRetryIndex = 0; mountRetryIndex < globals.mountRetryLimit; mountRetryIndex++ {
 		globals.mountRetryDelay[mountRetryIndex] = nextMountRetryDelay
 		nextMountRetryDelay = time.Duration(float64(nextMountRetryDelay) * mountRetryExpBackoff)
+	}
+
+	// Fetch CheckpointHeader logging setting
+
+	globals.logCheckpointHeaderPosts, err = confMap.FetchOptionValueBool("FSGlobals", "LogCheckpointHeaderPosts")
+	if nil != err {
+		globals.logCheckpointHeaderPosts = true // TODO: Eventually just return
 	}
 
 	// Record etcd parameters

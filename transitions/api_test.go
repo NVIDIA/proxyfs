@@ -36,9 +36,11 @@ var testConfStrings = []string{
 	//                                     VolumeF will be created on Peer1
 	//                                     VolumeG will be created on Peer2...then migrate to VolumeF's VolumeGroup
 	"FSGlobals.VolumeList=VolumeA,VolumeB,VolumeC,VolumeD",
+	"FSGlobals.CheckpointHeaderConsensusAttempts=5",
 	"FSGlobals.MountRetryLimit=6",
 	"FSGlobals.MountRetryDelay=1s",
 	"FSGlobals.MountRetryExpBackoff=2",
+	"FSGlobals.LogCheckpointHeaderPosts=true",
 	"FSGlobals.TryLockBackoffMin=10ms",
 	"FSGlobals.TryLockBackoffMax=50ms",
 	"FSGlobals.TryLockSerializationThreshhold=5",
