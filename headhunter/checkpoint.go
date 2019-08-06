@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -20,7 +19,6 @@ import (
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
@@ -599,22 +597,134 @@ func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *Checkpoint
 	return
 }
 
+// fetchCheckpointContainerHeader reads the Checkpoint Container's Checkpoint Header a total of
+// FSGlobals.CheckpointHeaderConsensusAttempts times. With each attempt, it updates its prior
+// knowledge with the latest Checkpoint Header value. At the end of the attempt loop, it assesses
+// if a concensus was achieved (i.e. int((N+1)/2) agree) for the Checkpoint Header's value. If
+// successful, it then returns the parsed result in a *CheckpointHeaderStruct). In either case, it
+// also returns the number of attempts agreeing (up to globals.checkpointHeaderConsensusAttempts).
+//
+func (volume *volumeStruct) fetchCheckpointContainerHeader() (checkpointHeader *CheckpointHeaderStruct, agreements uint16, err error) {
+	var (
+		bestCheckpointHeader             *CheckpointHeaderStruct
+		checkpointContainerHeaders       map[string][]string
+		checkpointHeaderConsensusAttempt uint16
+		checkpointHeaderConsensusQuorum  uint16
+		checkpointHeaderValue            string
+		checkpointHeaderValueSplit       []string
+		checkpointHeaderValues           []string
+		ok                               bool
+		thisCheckpointHeader             *CheckpointHeaderStruct
+	)
+
+	checkpointHeaderConsensusQuorum = (globals.checkpointHeaderConsensusAttempts + 1) / 2
+
+	bestCheckpointHeader = nil
+	agreements = 0
+
+	for checkpointHeaderConsensusAttempt = 0; checkpointHeaderConsensusAttempt < globals.checkpointHeaderConsensusAttempts; checkpointHeaderConsensusAttempt++ {
+		checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead failed: %v", volume.volumeName, err)
+			continue
+		}
+
+		checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
+		if !ok {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead missing Header %s", volume.volumeName, CheckpointHeaderName)
+			continue
+		}
+		if 1 != len(checkpointHeaderValues) {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s should have only a single value (had %d)", volume.volumeName, CheckpointHeaderName, len(checkpointHeaderValues))
+			continue
+		}
+
+		checkpointHeaderValue = checkpointHeaderValues[0]
+		checkpointHeaderValueSplit = strings.Split(checkpointHeaderValue, " ")
+		if 4 != len(checkpointHeaderValueSplit) {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s should have four fields (had %d)", volume.volumeName, CheckpointHeaderName, len(checkpointHeaderValueSplit))
+			continue
+		}
+
+		thisCheckpointHeader = &CheckpointHeaderStruct{}
+
+		thisCheckpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSplit[0], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointVersion (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[0])
+			continue
+		}
+		if CheckpointVersion3 != thisCheckpointHeader.CheckpointVersion {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unsupported CheckpointVersion (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[0])
+			continue
+		}
+
+		thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSplit[1], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointObjectTrailerStructObjectNumber (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[1])
+			continue
+		}
+		thisCheckpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSplit[2], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointObjectTrailerStructObjectLength (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[2])
+			continue
+		}
+		thisCheckpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSplit[3], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable ReservedToNonce (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[3])
+			continue
+		}
+
+		if nil == bestCheckpointHeader {
+			bestCheckpointHeader = thisCheckpointHeader
+			agreements = 1
+		} else {
+			if (thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber == bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber) &&
+				(thisCheckpointHeader.ReservedToNonce == bestCheckpointHeader.ReservedToNonce) {
+				agreements++
+			} else {
+				if (thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber > bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber) ||
+					(thisCheckpointHeader.ReservedToNonce > bestCheckpointHeader.ReservedToNonce) {
+					logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s found to be newer than prior best", volume.volumeName, CheckpointHeaderName)
+					bestCheckpointHeader = thisCheckpointHeader
+					agreements = 1
+				} else {
+					logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s found to be older than prior best", volume.volumeName, CheckpointHeaderName)
+				}
+			}
+		}
+	}
+
+	if agreements >= checkpointHeaderConsensusQuorum {
+		logger.Infof("%s.fetchCheckpointContainerHeader() found consensus CheckpointHeader %016X %016X %016X %016X (%d out of %d)",
+			volume.volumeName,
+			bestCheckpointHeader.CheckpointVersion,
+			bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			bestCheckpointHeader.CheckpointObjectTrailerStructObjectLength,
+			bestCheckpointHeader.ReservedToNonce,
+			agreements,
+			globals.checkpointHeaderConsensusAttempts)
+		checkpointHeader = bestCheckpointHeader
+		err = nil
+	} else {
+		err = fmt.Errorf("%s.fetchCheckpointContainerHeader() could not achieve consensus (%d out of %d)",
+			volume.volumeName,
+			agreements,
+			globals.checkpointHeaderConsensusAttempts)
+		logger.Errorf("%v", err)
+	}
+
+	return
+}
+
 func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedmap.LayoutReport, err error) {
 	var (
-		checkpointContainerHeaders map[string][]string
-		checkpointHeader           *CheckpointHeaderStruct
-		checkpointHeaderValue      string
-		checkpointHeaderValueSlice []string
-		checkpointHeaderValues     []string
-		objectLength               uint64
-		objectNumber               uint64
-		ok                         bool
+		checkpointHeader *CheckpointHeaderStruct
 	)
 
 	if globals.etcdEnabled {
 		checkpointHeader, _, err = volume.getEtcdCheckpointHeader()
 		if nil == err {
-			// Initialize layoutReport from checkpointHeader found in etcd
+			// Return layoutReport from checkpointHeader found in etcd
 
 			layoutReport = make(sortedmap.LayoutReport)
 			layoutReport[checkpointHeader.CheckpointObjectTrailerStructObjectNumber] = checkpointHeader.CheckpointObjectTrailerStructObjectLength
@@ -625,46 +735,15 @@ func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedma
 		// Fall-through to use the checkpointHeader from Swift
 	}
 
-	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+	checkpointHeader, _, err = volume.fetchCheckpointContainerHeader()
 	if nil != err {
 		return
 	}
 
-	checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-	if !ok {
-		err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-		return
-	}
-	if 1 != len(checkpointHeaderValues) {
-		err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-		return
-	}
-
-	checkpointHeaderValue = checkpointHeaderValues[0]
-
-	checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
-
-	if 4 != len(checkpointHeaderValueSlice) {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	objectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-	if nil != err {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	objectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-	if nil != err {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	// Return layoutReport manufactured from the checkpointHeaderValue
+	// Return layoutReport manufactured from the checkpointHeaderValue found in the Checkpoint Container
 
 	layoutReport = make(sortedmap.LayoutReport)
-	layoutReport[objectNumber] = objectLength
+	layoutReport[checkpointHeader.CheckpointObjectTrailerStructObjectNumber] = checkpointHeader.CheckpointObjectTrailerStructObjectLength
 
 	return
 }
@@ -676,10 +755,10 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		bPlusTreeObjectWrapperBPlusTreeTracker             *bPlusTreeTrackerStruct
 		bytesConsumed                                      uint64
 		bytesNeeded                                        uint64
+		checkpointContainerHeadAttempts                    uint16
 		checkpointContainerHeaders                         map[string][]string
 		checkpointHeader                                   CheckpointHeaderStruct
 		checkpointHeaderValue                              string
-		checkpointHeaderValueSlice                         []string
 		checkpointHeaderValues                             []string
 		checkpointObjectTrailerBuf                         []byte
 		checkpointObjectTrailerV3                          *CheckpointObjectTrailerV3Struct
@@ -739,63 +818,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		if nil != err {
 			logger.Infof("No checkpointHeader found in etcd for volume %s: %v", volume.volumeName, err)
 
-			checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
-			if nil == err {
-				checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-				if !ok {
-					err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+			volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+			if nil != err {
+				if 0 != checkpointContainerHeadAttempts {
+					err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 					return
 				}
-				if 1 != len(checkpointHeaderValues) {
-					err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-					return
-				}
-
-				checkpointHeaderValue = checkpointHeaderValues[0]
-
-				checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
-
-				if 4 != len(checkpointHeaderValueSlice) {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader = &CheckpointHeaderStruct{}
-
-				volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
-				if nil != err {
-					return
-				}
-
-				volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeaderEtcdRevision, err = volume.putEtcdCheckpointHeader(volume.checkpointHeader, 0)
-				if nil != err {
-					err = fmt.Errorf("Unable to put checkpointHeader in etcd: %v", err)
-					return
-				}
-			} else {
-				if http.StatusNotFound != blunder.HTTPCode(err) {
-					err = fmt.Errorf("Error fetching checkpointHeader from Swift vor volume %s: %v", volume.volumeName, err)
-					return
-				}
-
 				if autoFormat {
 					logger.Infof("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 				} else {
@@ -853,100 +881,60 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
-		if nil == err {
-			checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-			if !ok {
-				err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+		volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+		if nil != err {
+			if 0 != checkpointContainerHeadAttempts {
+				err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 				return
 			}
-			if 1 != len(checkpointHeaderValues) {
-				err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-				return
-			}
-
-			checkpointHeaderValue = checkpointHeaderValues[0]
-		} else {
-			if (autoFormat) && (http.StatusNotFound == blunder.HTTPCode(err)) {
-				// Checkpoint Container not found... so try to create it with some initial values...
-
-				checkpointHeader.CheckpointVersion = CheckpointVersion3
-
-				checkpointHeader.CheckpointObjectTrailerStructObjectNumber = 0
-				checkpointHeader.CheckpointObjectTrailerStructObjectLength = 0
-
-				checkpointHeader.ReservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
-
-				checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-					checkpointHeader.CheckpointVersion,
-					checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
-					checkpointHeader.CheckpointObjectTrailerStructObjectLength,
-					checkpointHeader.ReservedToNonce,
-				)
-
-				checkpointHeaderValues = []string{checkpointHeaderValue}
-
-				storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
-
-				checkpointContainerHeaders = make(map[string][]string)
-
-				checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
-				checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
-
-				err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
-				if nil != err {
-					return
-				}
-
-				// Mark Account as bi-modal...
-				// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
-
-				accountHeaderValues = []string{AccountHeaderValue}
-
-				accountHeaders = make(map[string][]string)
-
-				accountHeaders[AccountHeaderName] = accountHeaderValues
-
-				err = swiftclient.AccountPost(volume.accountName, accountHeaders)
-				if nil != err {
-					return
-				}
+			if autoFormat {
+				logger.Infof("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 			} else {
-				// If Checkpoint Container HEAD failed for some other reason, we must exit before doing any damage
+				err = fmt.Errorf("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 				return
 			}
-		}
 
-		checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
+			volume.checkpointHeader = &CheckpointHeaderStruct{
+				CheckpointVersion:                         CheckpointVersion3,
+				CheckpointObjectTrailerStructObjectNumber: 0,
+				CheckpointObjectTrailerStructObjectLength: 0,
+				ReservedToNonce:                           firstNonceToProvide, // First FetchNonce() will trigger a reserve step
+			}
 
-		if 4 != len(checkpointHeaderValueSlice) {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
+				checkpointHeader.CheckpointVersion,
+				checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+				checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+				checkpointHeader.ReservedToNonce,
+			)
 
-		volume.checkpointHeader = &CheckpointHeaderStruct{}
+			checkpointHeaderValues = []string{checkpointHeaderValue}
 
-		volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
-		if nil != err {
-			return
-		}
+			storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
 
-		volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointContainerHeaders = make(map[string][]string)
 
-		volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
+			checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
 
-		volume.checkpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
+			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
+			if nil != err {
+				return
+			}
+
+			// Mark Account as bi-modal...
+			// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
+
+			accountHeaderValues = []string{AccountHeaderValue}
+
+			accountHeaders = make(map[string][]string)
+
+			accountHeaders[AccountHeaderName] = accountHeaderValues
+
+			err = swiftclient.AccountPost(volume.accountName, accountHeaders)
+			if nil != err {
+				return
+			}
 		}
 	}
 
@@ -1762,7 +1750,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, volume.checkpointHeader.CheckpointVersion)
+		// Note that, currently, fetchCheckpointContainerHeader() would have error'd preventing us to reach here
+		err = fmt.Errorf("CheckpointHeader.CheckpointVersion (%v) for volume %s not supported", volume.checkpointHeader.CheckpointVersion, volume.volumeName)
 		return
 	}
 
@@ -2528,6 +2517,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 	if nil != err {
 		return
+	}
+	if globals.logCheckpointHeaderPosts {
+		logger.Infof("POST'd checkpointHeaderValue %s for volume %s from putCheckpoint()", checkpointHeaderValue, volume.volumeName)
 	}
 
 	// Remove replayLogFile if necessary

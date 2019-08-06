@@ -95,7 +95,10 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 	// Optionally launch an embedded HTTP Server for Golang runtime access
 
 	debugServerPortAsUint16, err = confMap.FetchOptionValueUint16("ProxyfsDebug", "DebugServerPort")
-	if nil == err {
+	if nil != err {
+		debugServerPortAsUint16 = 6060 // TODO: Eventually set it to zero
+	}
+	if uint16(0) != debugServerPortAsUint16 {
 		debugServerPortAsString = fmt.Sprintf("%d", debugServerPortAsUint16)
 		logger.Infof("proxyfsd.Daemon() starting debug HTTP Server on localhost:%s", debugServerPortAsString)
 		go http.ListenAndServe("localhost:"+debugServerPortAsString, nil)

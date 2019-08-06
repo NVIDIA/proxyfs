@@ -120,9 +120,11 @@ func TestDaemon(t *testing.T) {
 		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
 
 		"FSGlobals.VolumeGroupList=CommonVolumeGroup",
+		"FSGlobals.CheckpointHeaderConsensusAttempts=5",
 		"FSGlobals.MountRetryLimit=6",
 		"FSGlobals.MountRetryDelay=1s",
 		"FSGlobals.MountRetryExpBackoff=2",
+		"FSGlobals.LogCheckpointHeaderPosts=true",
 		"FSGlobals.TryLockBackoffMin=10ms",
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",

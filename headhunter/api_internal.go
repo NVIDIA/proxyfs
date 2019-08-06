@@ -116,6 +116,9 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 		if nil != err {
 			logger.Fatalf("Unable to persist checkpointHeader in Swift: %v", err)
 		}
+		if globals.logCheckpointHeaderPosts {
+			logger.Infof("POST'd checkpointHeaderValue %s for volume %s from fetchNonceWhileLocked()", checkpointHeaderValue, volume.volumeName)
+		}
 	}
 
 	nonce = volume.nextNonce
