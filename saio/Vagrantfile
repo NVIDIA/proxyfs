@@ -22,6 +22,7 @@ Vagrant.configure(2) do |config|
     vb.name = "SAIO for ProxyFS"
     vb.cpus = Integer(ENV['VAGRANT_CPUS'] || 2)
     vb.memory = Integer(ENV['VAGRANT_RAM'] || 6144)
+    vb.customize ["modifyvm", :id, "--audio", "none"]
   end
   config.vm.synced_folder "../../../../../", "/vagrant", type: "virtualbox"
   config.vm.network "private_network", ip: "172.28.128.2", :name => 'vboxnet0', :adapter => 2
