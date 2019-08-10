@@ -207,6 +207,13 @@ directory '/CommonMountPoint' do
   owner 'root'
 end
 
+directory '/AgentMountPoint' do
+  # perms/owner don't really matter since it gets mounted over, but
+  # this helps stop a developer from accidentally dumping stuff on the
+  # root filesystem
+  owner 'root'
+end
+
 directory '/var/lib/proxyfs' do
   mode '0755'
   owner proxyfs_user
@@ -221,6 +228,13 @@ end
 
 link '/etc/proxyfsd' do
   to "#{source_root}/src/github.com/swiftstack/ProxyFS/proxyfsd/"
+  link_type :symbolic
+  owner proxyfs_user
+  group proxyfs_group
+end
+
+link '/etc/pfsagentd' do
+  to "#{source_root}/src/github.com/swiftstack/ProxyFS/pfsagentd/"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
@@ -281,6 +295,11 @@ end
 cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
   source "usr/lib/systemd/system/proxyfsd.service"
   # notifies :restart, 'service[proxyfsd]'
+  only_if { ::File.directory?("/usr/lib/systemd/system/") }
+end
+
+cookbook_file "/usr/lib/systemd/system/pfsagentd.service" do
+  source "usr/lib/systemd/system/pfsagentd.service"
   only_if { ::File.directory?("/usr/lib/systemd/system/") }
 end
 
@@ -490,6 +509,13 @@ end
 ## TODO: do this as an install instead, for non dev environments?
 link '/usr/bin/proxyfsd' do
   to "#{source_root}/bin/proxyfsd"
+  link_type :symbolic
+  owner proxyfs_user
+  group proxyfs_group
+end
+
+link '/usr/bin/pfsagentd' do
+  to "#{source_root}/bin/pfsagentd"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
