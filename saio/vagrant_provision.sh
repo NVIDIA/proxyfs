@@ -407,6 +407,7 @@ EOF
 # Install systemd .service files for ProxyFS
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
 
 # Enable Samba service in an SELinux environment
 

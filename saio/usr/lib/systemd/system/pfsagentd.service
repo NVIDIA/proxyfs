@@ -4,7 +4,7 @@ After=proxyfsd.service
 
 [Service]
 Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
-ExecStart=/usr/bin/pfsagentd /vagrant/src/github.com/swiftstack/ProxyFS/pfsagentd/pfsagent.conf
+ExecStart=/vagrant/bin/pfsagentd /vagrant/src/github.com/swiftstack/ProxyFS/pfsagentd/pfsagent.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
 
 Restart=always
