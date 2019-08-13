@@ -3,19 +3,6 @@
 # A simple script to start the services and mount the sample mount point
 # The PATH, etc should already be setup by systemctl environment
 
-function await_proxyfsd_shutdown {
-    while true
-    do
-        pidof proxyfsd > /dev/null
-        if [ $? -ne 0 ]
-        then
-            break
-        fi
-        echo "Waiting for ProxyFS to be stopped..."
-        sleep 1
-    done
-}
-
 function await_proxyfsd_startup {
     /usr/bin/systemctl -q is-active proxyfsd
     if [ $? -ne 0 ]
@@ -189,42 +176,26 @@ GID_SMB=`id -g`
 
 sudo mount -a
 
-if ! containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
-    mountpoint -q $SHARE_NFS
-    if [ $? -eq 0 ]; then
-      echo "Unmounting NFS mount point at '${SHARE_NFS}'..."
-      sudo umount $SHARE_NFS
-    fi
-
-    mountpoint -q $SHARE_SMB
-    if [ $? -eq 0 ]; then
-      echo "Unmounting SMB mount point at '${SHARE_SMB}'..."
-      sudo umount $SHARE_SMB
-    fi
-fi
-
 # "keepmounts" means "keep everything as it was", but PFSAgent works differently,
 # so just preserving the mount points is not enough. What we'll do is check if
 # it's running before trying to stop it, and if it is, save it as a "MOUNT_OPTION"
 if [ -f /usr/bin/systemctl ] && containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
     /usr/bin/systemctl is-active --quiet pfsagentd && MOUNT_OPTIONS+=("pfsa")
-    echo ${MOUNT_OPTIONS[@]}
 fi
 
+if containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
+    echo "Shutting down services..."
+    /usr/bin/unmount_and_stop_pfs keepmounts
+else
+    echo "Shutting down services and mount points..."
+    /usr/bin/unmount_and_stop_pfs
+fi
+echo
+
+echo "Bringing up services..."
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     MOUNT=/usr/bin/mount
-    sudo /usr/bin/systemctl stop pfsagentd
-    sudo /usr/bin/systemctl stop nfs-idmap
-    sudo /usr/bin/systemctl stop nfs-lock
-    sudo /usr/bin/systemctl stop nfs-server
-    sudo /usr/bin/systemctl stop rpcbind
-    sudo /usr/bin/systemctl stop smb
-    sudo /usr/bin/systemctl stop proxyfsd
-    await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init main stop
-    sudo /usr/bin/systemctl stop memcached
-
     sudo /usr/bin/systemctl start memcached
     sudo /usr/bin/swift-init main start
     await_swift_startup
@@ -238,23 +209,12 @@ if [ -f /usr/bin/systemctl ]; then
     sudo /usr/bin/systemctl start nfs-lock
     sudo /usr/bin/systemctl start nfs-idmap
     if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "pfsa" "${MOUNT_OPTIONS[@]}"; then
-      echo "Starting pfsagentd..."
+      echo "Starting PFSAgent..."
       sudo /usr/bin/systemctl start pfsagentd
     fi
 else
     # Ubuntu (not tested!)
     MOUNT=/bin/mount
-    # Here we should stop pfsagentd, but we don't support Ubuntu
-    sudo /usr/sbin/service nfs-idmap stop
-    sudo /usr/sbin/service nfs-lock stop
-    sudo /usr/sbin/service nfs-server stop
-    sudo /usr/sbin/service rpcbind stop
-    sudo /usr/sbin/service smbd stop
-    sudo /usr/sbin/service proxyfsd stop
-    await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init main stop
-    sudo /usr/sbin/service memcached stop
-
     sudo /usr/sbin/service memcached start
     sudo /usr/bin/swift-init main start
     await_swift_startup
@@ -270,6 +230,7 @@ else
     # Here we should start pfsagentd (if 'all' or 'pfsa' are present in
     # $MOUNT_OPTIONS), but we don't support Ubuntu
 fi
+echo
 
 if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "nfs" "${MOUNT_OPTIONS[@]}"; then
     mountpoint -q $SHARE_NFS

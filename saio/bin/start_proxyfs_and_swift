@@ -75,6 +75,7 @@ fi
 
 if [ -f /usr/bin/systemctl ]; then
     # Centos
+    sudo /usr/bin/systemctl stop pfsagentd
     sudo /usr/bin/systemctl stop nfs-idmap
     sudo /usr/bin/systemctl stop nfs-lock
     sudo /usr/bin/systemctl stop nfs-server

@@ -18,6 +18,7 @@ function await_proxyfsd_shutdown {
 
 if [ -f /usr/bin/systemctl ]; then
     # Centos
+    sudo /usr/bin/systemctl stop pfsagentd
     sudo /usr/bin/systemctl stop proxyfsd
     await_proxyfsd_shutdown
 else

@@ -288,8 +288,6 @@ end
 
 execute "Provision pfs_stat" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/bin/pfs_stat /usr/bin"
-  # Do we want to allow re-provisioning to overwrite the pfs_stat script in case it has changes?
-  # not_if { ::File.exists?("/usr/bin/pfs_stat") }
 end
 
 cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
