@@ -1,10 +1,10 @@
 [Unit]
-Description=Swift ProxyFS service
+Description=PFSAgent service
+After=proxyfsd.service
 
 [Service]
-Environment=NSS_SDB_USE_CACHE=YES
 Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
-ExecStart=/usr/bin/proxyfsd /etc/proxyfsd/saioproxyfsd0.conf
+ExecStart=/vagrant/bin/pfsagentd /vagrant/src/github.com/swiftstack/ProxyFS/pfsagentd/pfsagent.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
 
 Restart=always
@@ -15,5 +15,4 @@ KillMode=process
 
 
 [Install]
-# Don't consider our failure a boot failure
-WantedBy=multi-user.target smb.service pfsagent.service
+WantedBy=multi-user.target

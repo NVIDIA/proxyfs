@@ -334,6 +334,10 @@ rm -rf /CommonMountPoint
 mkdir /CommonMountPoint
 chmod 777 /CommonMountPoint
 
+rm -rf /AgentMountPoint
+mkdir /AgentMountPoint
+chmod 777 /AgentMountPoint
+
 rm -rf /mnt/nfs_proxyfs_mount
 mkdir /mnt/nfs_proxyfs_mount
 chmod 777 /mnt/nfs_proxyfs_mount
@@ -403,6 +407,7 @@ EOF
 # Install systemd .service files for ProxyFS
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
 
 # Enable Samba service in an SELinux environment
 
