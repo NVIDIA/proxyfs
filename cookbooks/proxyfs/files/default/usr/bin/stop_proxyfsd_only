@@ -16,9 +16,23 @@ function await_proxyfsd_shutdown {
     done
 }
 
+function await_pfsagentd_shutdown {
+    while true
+    do
+        pidof pfsagentd > /dev/null
+        if [ $? -ne 0 ]
+        then
+            break
+        fi
+        echo "Waiting for PFSAgent to be stopped..."
+        sleep 1
+    done
+}
+
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     sudo /usr/bin/systemctl stop pfsagentd
+    await_pfsagentd_shutdown
     sudo /usr/bin/systemctl stop proxyfsd
     await_proxyfsd_shutdown
 else

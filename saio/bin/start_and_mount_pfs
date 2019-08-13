@@ -185,10 +185,10 @@ fi
 
 if containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
     echo "Shutting down services..."
-    /usr/bin/unmount_and_stop_pfs keepmounts
+    /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/unmount_and_stop_pfs keepmounts
 else
     echo "Shutting down services and mount points..."
-    /usr/bin/unmount_and_stop_pfs
+    /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/unmount_and_stop_pfs
 fi
 echo
 
