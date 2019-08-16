@@ -57,7 +57,7 @@ type VolumeHandle interface {
 	DeleteBPlusTreeObject(objectNumber uint64) (err error)
 	IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error)
 	DoCheckpoint() (err error)
-	FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error)
+	FetchLayoutReport(treeType BPlusTreeType, validate bool) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error)
 	SnapShotCreateByInodeLayer(name string) (id uint64, err error)
 	SnapShotDeleteByInodeLayer(id uint64) (err error)
 	SnapShotCount() (snapShotCount uint64)

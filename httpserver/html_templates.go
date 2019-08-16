@@ -879,12 +879,15 @@ const layoutReportTopTemplate string = `<!doctype html>
         Layout Report
         <small class="text-muted">%[3]v</small>
       </h1>
+      <a id="validate-button" class="btn btn-primary float-right" href="#">Show validated version</a><br><br>
 `
 
-// To use: fmt.Sprintf(layoutReportTableTopTemplate, TreeName)
+// To use: fmt.Sprintf(layoutReportTableTopTemplate, TreeName, NumDiscrepencies, {"success"|"danger"})
 const layoutReportTableTopTemplate string = `      <br>
-      <h3>%[1]v</h3>
-	  <table class="table table-sm table-striped table-hover">
+      <div class="d-flex justify-content-between">
+        <h3>%[1]v</h3><h4><span class="badge badge-%[3]v d-none">%[2]v discrepancies</span></h4>
+      </div>
+	    <table class="table table-sm table-striped table-hover">
         <thead>
           <tr>
             <th scope="col" class="w-50">ObjectName</th>
@@ -909,6 +912,26 @@ const layoutReportBottom string = `    <div>
     <script src="/jquery-3.2.1.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
+    <script type="text/javascript">
+      var url_params = new URLSearchParams(window.location.search);
+      var validate = false;
+      var validate_button = document.getElementById('validate-button');
+      if (
+        url_params.has("validate") &&
+        url_params.get("validate") != "0" &&
+        url_params.get("validate").toLowerCase() != "false"
+      ) {
+        validate = true;
+      }
+      if (validate) {
+        validate_button.innerHTML = 'Show non-validated version';
+        validate_button.href = window.location.origin + window.location.pathname + "?validate=0";
+        $("h4 .badge").removeClass("d-none");
+      } else {
+        validate_button.innerHTML = 'Show validated version';
+        validate_button.href = window.location.origin + window.location.pathname + "?validate=1";
+      }
+    </script>
   </body>
 </html>
 `
