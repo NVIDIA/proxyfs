@@ -109,43 +109,41 @@ func (vS *volumeStruct) SnapShotDelete(id uint64) (err error) {
 
 func (vS *volumeStruct) CheckpointCompleted() {
 	var (
-		dirEntryCacheHits             uint64
 		dirEntryCacheHitsDelta        uint64
-		dirEntryCacheMisses           uint64
 		dirEntryCacheMissesDelta      uint64
-		fileExtentMapCacheHits        uint64
+		dirEntryCacheStats            *sortedmap.BPlusTreeCacheStats
 		fileExtentMapCacheHitsDelta   uint64
-		fileExtentMapCacheMisses      uint64
 		fileExtentMapCacheMissesDelta uint64
+		fileExtentMapCacheStats       *sortedmap.BPlusTreeCacheStats
 	)
 
-	dirEntryCacheHits, dirEntryCacheMisses, _, _ = globals.dirEntryCache.Stats()
-	fileExtentMapCacheHits, fileExtentMapCacheMisses, _, _ = globals.fileExtentMapCache.Stats()
+	dirEntryCacheStats = globals.dirEntryCache.Stats()
+	fileExtentMapCacheStats = globals.fileExtentMapCache.Stats()
 
-	dirEntryCacheHitsDelta = dirEntryCacheHits - globals.dirEntryCachePriorCacheHits
-	dirEntryCacheMissesDelta = dirEntryCacheMisses - globals.dirEntryCachePriorCacheMisses
+	dirEntryCacheHitsDelta = dirEntryCacheStats.CacheHits - globals.dirEntryCachePriorCacheHits
+	dirEntryCacheMissesDelta = dirEntryCacheStats.CacheMisses - globals.dirEntryCachePriorCacheMisses
 
-	fileExtentMapCacheHitsDelta = fileExtentMapCacheHits - globals.fileExtentMapCachePriorCacheHits
-	fileExtentMapCacheMissesDelta = fileExtentMapCacheMisses - globals.fileExtentMapCachePriorCacheMisses
+	fileExtentMapCacheHitsDelta = fileExtentMapCacheStats.CacheHits - globals.fileExtentMapCachePriorCacheHits
+	fileExtentMapCacheMissesDelta = fileExtentMapCacheStats.CacheMisses - globals.fileExtentMapCachePriorCacheMisses
 
 	globals.Lock()
 
 	if 0 != dirEntryCacheHitsDelta {
 		stats.IncrementOperationsBy(&stats.DirEntryCacheHits, dirEntryCacheHitsDelta)
-		globals.dirEntryCachePriorCacheHits = dirEntryCacheHits
+		globals.dirEntryCachePriorCacheHits = dirEntryCacheStats.CacheHits
 	}
 	if 0 != dirEntryCacheMissesDelta {
 		stats.IncrementOperationsBy(&stats.DirEntryCacheMisses, dirEntryCacheMissesDelta)
-		globals.dirEntryCachePriorCacheMisses = dirEntryCacheMisses
+		globals.dirEntryCachePriorCacheMisses = dirEntryCacheStats.CacheMisses
 	}
 
 	if 0 != fileExtentMapCacheHitsDelta {
 		stats.IncrementOperationsBy(&stats.FileExtentMapCacheHits, fileExtentMapCacheHitsDelta)
-		globals.fileExtentMapCachePriorCacheHits = fileExtentMapCacheHits
+		globals.fileExtentMapCachePriorCacheHits = fileExtentMapCacheStats.CacheHits
 	}
 	if 0 != fileExtentMapCacheMissesDelta {
 		stats.IncrementOperationsBy(&stats.FileExtentMapCacheMisses, fileExtentMapCacheMissesDelta)
-		globals.fileExtentMapCachePriorCacheMisses = fileExtentMapCacheMisses
+		globals.fileExtentMapCachePriorCacheMisses = fileExtentMapCacheStats.CacheMisses
 	}
 
 	globals.Unlock()

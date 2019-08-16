@@ -37,8 +37,17 @@ type BPlusTreeCallbacks interface {
 	UnpackValue(payloadData []byte) (value Value, bytesConsumed uint64, err error)
 }
 
+type BPlusTreeCacheStats struct {
+	EvictLowLimit  uint64
+	EvictHighLimit uint64
+	CleanLRUItems  uint64
+	DirtyLRUItems  uint64
+	CacheHits      uint64
+	CacheMisses    uint64
+}
+
 type BPlusTreeCache interface {
-	Stats() (cacheHits uint64, cacheMisses uint64, evictLowLimit uint64, evictHighLimit uint64)
+	Stats() (bPlusTreeCacheStats *BPlusTreeCacheStats)
 	UpdateLimits(evictLowLimit uint64, evictHighLimit uint64)
 }
 
@@ -100,11 +109,11 @@ func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCal
 	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
 
 	treePtr := &btreeTreeStruct{
-		minKeysPerNode:     minKeysPerNode,
-		maxKeysPerNode:     maxKeysPerNode,
-		Compare:            compare,
-		BPlusTreeCallbacks: callbacks,
-		root:               rootNode,
+		minKeysPerNode:            minKeysPerNode,
+		maxKeysPerNode:            maxKeysPerNode,
+		Compare:                   compare,
+		BPlusTreeCallbacks:        callbacks,
+		root:                      rootNode,
 		staleOnDiskReferencesList: nil,
 	}
 
@@ -149,11 +158,11 @@ func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLe
 	rootNode.btreeNodeCacheElement.btreeNodeCacheTag = noLRU
 
 	treePtr := &btreeTreeStruct{
-		minKeysPerNode:     0, //              To be filled in once root node is loaded
-		maxKeysPerNode:     0, //              To be filled in once root node is loaded
-		Compare:            compare,
-		BPlusTreeCallbacks: callbacks,
-		root:               rootNode,
+		minKeysPerNode:            0, //              To be filled in once root node is loaded
+		maxKeysPerNode:            0, //              To be filled in once root node is loaded
+		Compare:                   compare,
+		BPlusTreeCallbacks:        callbacks,
+		root:                      rootNode,
 		staleOnDiskReferencesList: nil,
 	}
 

@@ -2781,26 +2781,22 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.
 func (volume *volumeStruct) checkpointDaemon() {
 	var (
-		bPlusTreeObjectCacheHits              uint64
 		bPlusTreeObjectCacheHitsDelta         uint64
-		bPlusTreeObjectCacheMisses            uint64
 		bPlusTreeObjectCacheMissesDelta       uint64
+		bPlusTreeObjectCacheStats             *sortedmap.BPlusTreeCacheStats
 		checkpointListener                    VolumeEventListener
 		checkpointListeners                   []VolumeEventListener
 		checkpointRequest                     *checkpointRequestStruct
-		createdDeletedObjectsCacheHits        uint64
 		createdDeletedObjectsCacheHitsDelta   uint64
-		createdDeletedObjectsCacheMisses      uint64
 		createdDeletedObjectsCacheMissesDelta uint64
+		createdDeletedObjectsCacheStats       *sortedmap.BPlusTreeCacheStats
 		exitOnCompletion                      bool
-		inodeRecCacheHits                     uint64
 		inodeRecCacheHitsDelta                uint64
-		inodeRecCacheMisses                   uint64
 		inodeRecCacheMissesDelta              uint64
-		logSegmentRecCacheHits                uint64
+		inodeRecCacheStats                    *sortedmap.BPlusTreeCacheStats
 		logSegmentRecCacheHitsDelta           uint64
-		logSegmentRecCacheMisses              uint64
 		logSegmentRecCacheMissesDelta         uint64
+		logSegmentRecCacheStats               *sortedmap.BPlusTreeCacheStats
 	)
 
 	for {
@@ -2866,59 +2862,59 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		// Update Global B+Tree Cache stats now
 
-		inodeRecCacheHits, inodeRecCacheMisses, _, _ = globals.inodeRecCache.Stats()
-		logSegmentRecCacheHits, logSegmentRecCacheMisses, _, _ = globals.logSegmentRecCache.Stats()
-		bPlusTreeObjectCacheHits, bPlusTreeObjectCacheMisses, _, _ = globals.bPlusTreeObjectCache.Stats()
-		createdDeletedObjectsCacheHits, createdDeletedObjectsCacheMisses, _, _ = globals.createdDeletedObjectsCache.Stats()
+		inodeRecCacheStats = globals.inodeRecCache.Stats()
+		logSegmentRecCacheStats = globals.logSegmentRecCache.Stats()
+		bPlusTreeObjectCacheStats = globals.bPlusTreeObjectCache.Stats()
+		createdDeletedObjectsCacheStats = globals.createdDeletedObjectsCache.Stats()
 
-		inodeRecCacheHitsDelta = inodeRecCacheHits - globals.inodeRecCachePriorCacheHits
-		inodeRecCacheMissesDelta = inodeRecCacheMisses - globals.inodeRecCachePriorCacheMisses
+		inodeRecCacheHitsDelta = inodeRecCacheStats.CacheHits - globals.inodeRecCachePriorCacheHits
+		inodeRecCacheMissesDelta = inodeRecCacheStats.CacheMisses - globals.inodeRecCachePriorCacheMisses
 
-		logSegmentRecCacheHitsDelta = logSegmentRecCacheHits - globals.logSegmentRecCachePriorCacheHits
-		logSegmentRecCacheMissesDelta = logSegmentRecCacheMisses - globals.logSegmentRecCachePriorCacheMisses
+		logSegmentRecCacheHitsDelta = logSegmentRecCacheStats.CacheHits - globals.logSegmentRecCachePriorCacheHits
+		logSegmentRecCacheMissesDelta = logSegmentRecCacheStats.CacheMisses - globals.logSegmentRecCachePriorCacheMisses
 
-		bPlusTreeObjectCacheHitsDelta = bPlusTreeObjectCacheHits - globals.bPlusTreeObjectCachePriorCacheHits
-		bPlusTreeObjectCacheMissesDelta = bPlusTreeObjectCacheMisses - globals.bPlusTreeObjectCachePriorCacheMisses
+		bPlusTreeObjectCacheHitsDelta = bPlusTreeObjectCacheStats.CacheHits - globals.bPlusTreeObjectCachePriorCacheHits
+		bPlusTreeObjectCacheMissesDelta = bPlusTreeObjectCacheStats.CacheMisses - globals.bPlusTreeObjectCachePriorCacheMisses
 
-		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheHits - globals.createdDeletedObjectsCachePriorCacheHits
-		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
+		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
+		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
 
 		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheHits, inodeRecCacheHitsDelta)
-			globals.inodeRecCachePriorCacheHits = inodeRecCacheHits
+			globals.inodeRecCachePriorCacheHits = inodeRecCacheStats.CacheHits
 		}
 		if 0 != inodeRecCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheMisses, inodeRecCacheMissesDelta)
-			globals.inodeRecCachePriorCacheMisses = inodeRecCacheMisses
+			globals.inodeRecCachePriorCacheMisses = inodeRecCacheStats.CacheMisses
 		}
 
 		if 0 != logSegmentRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheHits, logSegmentRecCacheHitsDelta)
-			globals.logSegmentRecCachePriorCacheHits = logSegmentRecCacheHits
+			globals.logSegmentRecCachePriorCacheHits = logSegmentRecCacheStats.CacheHits
 		}
 		if 0 != logSegmentRecCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheMisses, logSegmentRecCacheMissesDelta)
-			globals.logSegmentRecCachePriorCacheMisses = logSegmentRecCacheMisses
+			globals.logSegmentRecCachePriorCacheMisses = logSegmentRecCacheStats.CacheMisses
 		}
 
 		if 0 != bPlusTreeObjectCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheHits, bPlusTreeObjectCacheHitsDelta)
-			globals.bPlusTreeObjectCachePriorCacheHits = bPlusTreeObjectCacheHits
+			globals.bPlusTreeObjectCachePriorCacheHits = bPlusTreeObjectCacheStats.CacheHits
 		}
 		if 0 != bPlusTreeObjectCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheMisses, bPlusTreeObjectCacheMissesDelta)
-			globals.bPlusTreeObjectCachePriorCacheMisses = bPlusTreeObjectCacheMisses
+			globals.bPlusTreeObjectCachePriorCacheMisses = bPlusTreeObjectCacheStats.CacheMisses
 		}
 
 		if 0 != createdDeletedObjectsCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheHits, createdDeletedObjectsCacheHitsDelta)
-			globals.createdDeletedObjectsCachePriorCacheHits = createdDeletedObjectsCacheHits
+			globals.createdDeletedObjectsCachePriorCacheHits = createdDeletedObjectsCacheStats.CacheHits
 		}
 		if 0 != createdDeletedObjectsCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheMisses, createdDeletedObjectsCacheMissesDelta)
-			globals.createdDeletedObjectsCachePriorCacheMisses = createdDeletedObjectsCacheMisses
+			globals.createdDeletedObjectsCachePriorCacheMisses = createdDeletedObjectsCacheStats.CacheMisses
 		}
 
 		globals.Unlock()

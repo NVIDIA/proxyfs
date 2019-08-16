@@ -15,6 +15,7 @@ func CompareUint32(key1 Key, key2 Key) (result int, err error)
 func CompareUint64(key1 Key, key2 Key) (result int, err error)
 func CompareString(key1 Key, key2 Key) (result int, err error)
 func CompareByteSlice(key1 Key, key2 Key) (result int, err error)
+func CompareTime(key1 Key, key2 Key) (result int, err error)
 
 type SortedMap interface {
 	BisectLeft(key Key) (index int, found bool, err error)  // Returns index of matching key:value pair or, if no match, index is to key:value just before where this key would go
@@ -31,29 +32,68 @@ type SortedMap interface {
 	Validate() (err error)
 }
 
-type LLRBTree interface {
-	SortedMap
+type DumpCallbacks interface {
+	DumpKey(key Key) (keyAsString string, err error)
+	DumpValue(value Value) (valueAsString string, err error)
 }
 
-func NewLLRBTree(compare sorted_api.Compare) (tree LLRBTree)
+type LLRBTree interface {
+	SortedMap
+	Reset()
+}
+
+type LLRBTreeCallbacks interface {
+	DumpCallbacks
+}
+
+func NewLLRBTree(compare Compare, callbacks LLRBTreeCallbacks) (tree LLRBTree)
+
+var OnDiskByteOrder = cstruct.LittleEndian
+
+type LayoutReport map[uint64]uint64
 
 type BPlusTree interface {
 	SortedMap
+	FetchLocation() (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64)
+	FetchLayoutReport() (layoutReport LayoutReport, err error)
 	Flush(andPurge bool) (rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, err error)
-	Purge() (err error)
+	Purge(full bool) (err error)
+	Touch() (err error)
+	TouchItem(thisItemIndexToTouch uint64) (nextItemIndexToTouch uint64, err error)
+	Prune() (err error)
+	Discard() (err error)
 }
 
 type BPlusTreeCallbacks interface {
+	DumpCallbacks
 	GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error)
 	PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error)
-	PackKey(key sorted_api.Key) (packedKey []byte, err error)
-	UnpackKey(payloadData []byte) (key sorted_api.Key, bytesConsumed uint64, err error)
-	PackValue(value sorted_api.Value) (packedValue []byte, err error)
-	UnpackValue(payloadData []byte) (value sorted_api.Value, bytesConsumed uint64, err error)
+	DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error)
+	PackKey(key Key) (packedKey []byte, err error)
+	UnpackKey(payloadData []byte) (key Key, bytesConsumed uint64, err error)
+	PackValue(value Value) (packedValue []byte, err error)
+	UnpackValue(payloadData []byte) (value Value, bytesConsumed uint64, err error)
 }
 
-func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCallbacks) (tree BPlusTree)
-func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, compare Compare, callbacks BPlusTreeCallbacks) (tree BPlusTree)
+type BPlusTreeCacheStats struct {
+	EvictLowLimit  uint64
+	EvictHighLimit uint64
+	CleanLRUItems  uint64
+	DirtyLRUItems  uint64
+	CacheHits      uint64
+	CacheMisses    uint64
+}
+
+type BPlusTreeCache interface {
+	Stats() (bPlusTreeCacheStats *BPlusTreeCacheStats)
+	UpdateLimits(evictLowLimit uint64, evictHighLimit uint64)
+}
+
+func NewBPlusTreeCache(evictLowLimit uint64, evictHighLimit uint64) (bPlusTreeCache BPlusTreeCache)
+
+func NewBPlusTree(maxKeysPerNode uint64, compare Compare, callbacks BPlusTreeCallbacks, bPlusTreeCache BPlusTreeCache) (tree BPlusTree)
+
+func OldBPlusTree(rootObjectNumber uint64, rootObjectOffset uint64, rootObjectLength uint64, compare Compare, callbacks BPlusTreeCallbacks, bPlusTreeCache BPlusTreeCache) (tree BPlusTree, err error)
 ```
 
 ## Contributors
