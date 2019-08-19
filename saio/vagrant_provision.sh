@@ -314,7 +314,7 @@ s3api =
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
 EOF
-cat > ~vagrant/.aws/config << EOF
+cat > ~vagrant/.aws/credentials << EOF
 [default]
 aws_access_key_id = test:tester
 aws_secret_access_key = testing
