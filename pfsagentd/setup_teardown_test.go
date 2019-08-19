@@ -101,7 +101,8 @@ func testSetup(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 
-		"StatsLogger.Period=10m",
+		"StatsLogger.Period=0m",
+		"StatsLogger.Verbose=false",
 
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",

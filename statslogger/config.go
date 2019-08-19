@@ -2,8 +2,10 @@ package statslogger
 
 import (
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -17,6 +19,7 @@ type globalsStruct struct {
 	stopChan       chan bool        // time to shutdown and go home
 	doneChan       chan bool        // shutdown complete
 	statsLogPeriod time.Duration    // time between statistics logging
+	verbose        bool             // verbosity of logging
 	collectTicker  *time.Ticker     // ticker for collectChan (if any)
 	logTicker      *time.Ticker     // ticker for logChan (if any)
 }
@@ -38,6 +41,12 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 	if globals.statsLogPeriod < time.Second && globals.statsLogPeriod != 0 {
 		logger.Warnf("config variable 'StatsLogger.Period' value is non-zero and less then 1 min; defaulting to '10m'")
 		globals.statsLogPeriod = time.Duration(10 * time.Minute)
+	}
+
+	globals.verbose, err = confMap.FetchOptionValueBool("StatsLogger", "Verbose")
+	if err != nil {
+		logger.Warnf("config variable 'StatsLogger.Verbose' defaulting to 'true': %v", err)
+		globals.verbose = true
 	}
 
 	err = nil
@@ -194,8 +203,8 @@ mainloop:
 			// fall through to do the logging
 		}
 
-		newStatsMap = stats.Dump()
 		runtime.ReadMemStats(&newMemStats)
+		newStatsMap = stats.Dump()
 
 		// collect an extra connection stats sample to ensure we have at least one
 		chunkedConnectionStats.Sample(swiftclient.ChunkedConnectionFreeCnt())
@@ -222,10 +231,14 @@ mainloop:
 		oldMemStats.PauseTotalNs = newMemStats.PauseTotalNs - oldMemStats.PauseTotalNs
 		oldMemStats.GCCPUFraction = newMemStats.GCCPUFraction - oldMemStats.GCCPUFraction
 
-		for key, _ := range newStatsMap {
+		for key := range newStatsMap {
 			oldStatsMap[key] = newStatsMap[key] - oldStatsMap[key]
 		}
 		logStats("delta", nil, nil, &oldMemStats, oldStatsMap)
+
+		if globals.verbose {
+			logVerboseStats(&newMemStats, newStatsMap)
+		}
 
 		oldMemStats = newMemStats
 		oldStatsMap = newStatsMap
@@ -299,4 +312,92 @@ func logStats(statsType string, chunkedStats *SimpleStats, nonChunkedStats *Simp
 		containerQueryOps, containerModifyOps, objectQueryOps, objectModifyOps)
 	logger.Infof("Swift Client ChunkedPut Ops (%s): FetchOps=%d ReadOps=%d SendOps=%d CloseOps=%d",
 		statsType, chunkedPutFetchOps, chunkedPutQueryOps, chunkedPutModifyOps, chunkedPutCloseOPs)
+}
+
+func logVerboseStats(memStats *runtime.MemStats, statsMap map[string]uint64) {
+	var (
+		bucketstatsValue       string
+		bucketstatsValues      string
+		bucketstatsValuesSlice []string
+		i                      int
+		pauseNsAccumulator     uint64
+		statKey                string
+		statValue              uint64
+		varboseStatKey         string
+		varboseStatValue       uint64
+		varboseStatsMap        map[string]uint64
+	)
+
+	varboseStatsMap = make(map[string]uint64)
+
+	// General statistics.
+	varboseStatsMap["go_runtime_MemStats_Alloc"] = memStats.Alloc
+	varboseStatsMap["go_runtime_MemStats_TotalAlloc"] = memStats.TotalAlloc
+	varboseStatsMap["go_runtime_MemStats_Sys"] = memStats.Sys
+	varboseStatsMap["go_runtime_MemStats_Lookups"] = memStats.Lookups
+	varboseStatsMap["go_runtime_MemStats_Mallocs"] = memStats.Mallocs
+	varboseStatsMap["go_runtime_MemStats_Frees"] = memStats.Frees
+
+	// Main allocation heap statistics.
+	varboseStatsMap["go_runtime_MemStats_HeapAlloc"] = memStats.HeapAlloc
+	varboseStatsMap["go_runtime_MemStats_HeapSys"] = memStats.HeapSys
+	varboseStatsMap["go_runtime_MemStats_HeapIdle"] = memStats.HeapIdle
+	varboseStatsMap["go_runtime_MemStats_HeapInuse"] = memStats.HeapInuse
+	varboseStatsMap["go_runtime_MemStats_HeapReleased"] = memStats.HeapReleased
+	varboseStatsMap["go_runtime_MemStats_HeapObjects"] = memStats.HeapObjects
+
+	// Low-level fixed-size structure allocator statistics.
+	//	Inuse is bytes used now.
+	//	Sys is bytes obtained from system.
+	varboseStatsMap["go_runtime_MemStats_StackInuse"] = memStats.StackInuse
+	varboseStatsMap["go_runtime_MemStats_StackSys"] = memStats.StackSys
+	varboseStatsMap["go_runtime_MemStats_MSpanInuse"] = memStats.MSpanInuse
+	varboseStatsMap["go_runtime_MemStats_MSpanSys"] = memStats.MSpanSys
+	varboseStatsMap["go_runtime_MemStats_MCacheInuse"] = memStats.MCacheInuse
+	varboseStatsMap["go_runtime_MemStats_MCacheSys"] = memStats.MCacheSys
+	varboseStatsMap["go_runtime_MemStats_BuckHashSys"] = memStats.BuckHashSys
+	varboseStatsMap["go_runtime_MemStats_GCSys"] = memStats.GCSys
+	varboseStatsMap["go_runtime_MemStats_OtherSys"] = memStats.OtherSys
+
+	// Garbage collector statistics (fixed portion).
+	varboseStatsMap["go_runtime_MemStats_LastGC"] = memStats.LastGC
+	varboseStatsMap["go_runtime_MemStats_PauseTotalNs"] = memStats.PauseTotalNs
+	varboseStatsMap["go_runtime_MemStats_NumGC"] = uint64(memStats.NumGC)
+	varboseStatsMap["go_runtime_MemStats_GCCPUPercentage"] = uint64(100.0 * memStats.GCCPUFraction)
+
+	// Garbage collector statistics (go_runtime_MemStats_PauseAverageNs).
+	if 0 == memStats.NumGC {
+		varboseStatsMap["go_runtime_MemStats_PauseAverageNs"] = 0
+	} else {
+		pauseNsAccumulator = 0
+		if memStats.NumGC < 255 {
+			for i = 0; i < int(memStats.NumGC); i++ {
+				pauseNsAccumulator += memStats.PauseNs[i]
+			}
+			varboseStatsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / uint64(memStats.NumGC)
+		} else {
+			for i = 0; i < 256; i++ {
+				pauseNsAccumulator += memStats.PauseNs[i]
+			}
+			varboseStatsMap["go_runtime_MemStats_PauseAverageNs"] = pauseNsAccumulator / 256
+		}
+	}
+
+	for statKey, statValue = range statsMap {
+		varboseStatKey = strings.Replace(statKey, ".", "_", -1)
+		varboseStatKey = strings.Replace(varboseStatKey, "-", "_", -1)
+		varboseStatsMap[varboseStatKey] = statValue
+	}
+
+	for varboseStatKey, varboseStatValue = range varboseStatsMap {
+		logger.Infof("metrics %s: %d", varboseStatKey, varboseStatValue)
+	}
+
+	bucketstatsValues = bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*")
+
+	bucketstatsValuesSlice = strings.Split(bucketstatsValues, "\n")
+
+	for _, bucketstatsValue = range bucketstatsValuesSlice {
+		logger.Infof("stats %s", bucketstatsValue)
+	}
 }

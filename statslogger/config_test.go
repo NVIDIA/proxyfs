@@ -54,7 +54,8 @@ func TestAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 
-		"StatsLogger.Period=0s",
+		"StatsLogger.Period=0m",
+		"StatsLogger.Verbose=false",
 
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
