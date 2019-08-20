@@ -304,9 +304,7 @@ cat > ~vagrant/.aws/config << EOF
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[profile default]
-aws_access_key_id = test:tester
-aws_secret_access_key = testing
+[default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
@@ -315,6 +313,11 @@ s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+EOF
+cat > ~vagrant/.aws/credentials << EOF
+[default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
 EOF
 chown -R vagrant:vagrant ~vagrant/.aws
 
