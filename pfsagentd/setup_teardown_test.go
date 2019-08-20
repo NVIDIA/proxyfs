@@ -172,7 +172,7 @@ func testSetup(t *testing.T) {
 		"NFSClientMap:CommonVolumeNFSClient0.ClientPattern=*",
 		"NFSClientMap:CommonVolumeNFSClient0.AccessMode=rw",
 		"NFSClientMap:CommonVolumeNFSClient0.RootSquash=no_root_squash",
-		"NFSClientMap:CommonVolumeNFSClient0.Secureinsecure",
+		"NFSClientMap:CommonVolumeNFSClient0.Secure=insecure",
 
 		"VolumeGroup:CommonVolumeGroup.VolumeList=CommonVolume",
 		"VolumeGroup:CommonVolumeGroup.VirtualIPAddr=",
