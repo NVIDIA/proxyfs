@@ -12,7 +12,7 @@ import (
 const (
 	linuxUserCommentDefault = "user-created-for-samba"
 	netDirDefault           = "/usr/bin"
-	pdbdditDirDefault       = "/usr/bin"
+	pdbeditDirDefault       = "/usr/bin"
 	smbdDirDefault          = "/usr/sbin"
 	smbpasswdDirDefault     = "/usr/bin"
 )
@@ -91,17 +91,18 @@ type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
 
 func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, initialDirPath string) (err error) {
 	var (
-		envSettings             *envSettingsStruct
-		exportsFile             *os.File
-		fuseSetupFile           *os.File
-		initialConfMap          conf.ConfMap
-		localVolumeMap          volumeMap
-		nfsClient               *NFSClient
-		smbUsersSetupFile       *os.File
-		toCreateSMBUserMap      smbUserMap
-		toCreateSMBUserName     string
-		toCreateSMBUserPassword string
-		volume                  *Volume
+		envSettings                    *envSettingsStruct
+		exportsFile                    *os.File
+		fuseSetupFile                  *os.File
+		initialConfMap                 conf.ConfMap
+		localVolumeMap                 volumeMap
+		nfsClient                      *NFSClient
+		smbUsersSetupFile              *os.File
+		toCreateSMBUserMap             smbUserMap
+		toCreateSMBUserName            string
+		toCreateSMBUserPassword        string
+		toCreateSMBUserPasswordEscaped string // == strings.ReplaceAll(toCreateSMBUserPassword, "\\", "\\\\")
+		volume                         *Volume
 	)
 
 	// Fetch environ settings
@@ -155,7 +156,14 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		if nil != err {
 			return
 		}
-		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPassword, strings.ReplaceAll(toCreateSMBUserPassword, "\\", "\\\\"), envSettings.smbpasswdPath, smbConfCommonFileName, toCreateSMBUserName))
+
+		// TODO: Replace following line once Golang 1.12 (sporting new strings.ReplaceAll() func) is required with:
+		//
+		//   toCreateSMBUserPasswordEscaped = strings.ReplaceAll(toCreateSMBUserPassword, "\\", "\\\\\\")
+		//
+		toCreateSMBUserPasswordEscaped = strings.Replace(toCreateSMBUserPassword, "\\", "\\\\\\", -1)
+
+		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPasswordEscaped, toCreateSMBUserPasswordEscaped, envSettings.smbpasswdPath, smbConfCommonFileName, toCreateSMBUserName))
 		if nil != err {
 			return
 		}
@@ -323,7 +331,7 @@ func fetchEnvironSettings(envMap EnvMap) (envSettings *envSettingsStruct) {
 
 	envSettings.pdbeditPath, inEnv = envMap[PdbeditDirEnv]
 	if !inEnv {
-		envSettings.pdbeditPath = pdbdditDirDefault
+		envSettings.pdbeditPath = pdbeditDirDefault
 	}
 	envSettings.pdbeditPath += "/pdbedit"
 
