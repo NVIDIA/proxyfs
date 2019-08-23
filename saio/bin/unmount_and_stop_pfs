@@ -33,7 +33,7 @@ MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
 SHARE_NFS=/mnt/nfs_proxyfs_mount/
 
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
-SHARE_SMB=/mnt/smb_proxyfs_mount
+SHARE_SMB=/mnt/smb_proxyfs_mount/
 
 if [ $# = 0 ]; then
     SHOULD_UNMOUNT=1
