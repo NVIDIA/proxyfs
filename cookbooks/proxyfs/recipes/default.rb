@@ -19,6 +19,7 @@ DOT_BASHRC = "#{HOME_DIR}/.bashrc"
 ROOT_DOT_BASH_PROFILE = "/root/.bash_profile"
 ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
+PROXYFS_BIN_DIR = "#{source_root}/bin"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
 VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
 JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
@@ -178,7 +179,7 @@ execute "Install pfs-swift-load-plot requirements" do
 end
 
 execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
-  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
+  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}"
 end
 
 execute "Install awscli and awscli-plugin-endpoint" do
