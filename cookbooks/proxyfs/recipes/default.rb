@@ -178,8 +178,13 @@ execute "Install pfs-swift-load-plot requirements" do
   command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
 end
 
+execute "Create ProxyFS/bin dir" do
+  command "mkdir #{PROXYFS_BIN_DIR}"
+  not_if { ::Dir.exists?("#{PROXYFS_BIN_DIR}") }
+end
+
 execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
-  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}"
+  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}/"
 end
 
 execute "Install awscli and awscli-plugin-endpoint" do
