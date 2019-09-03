@@ -66,8 +66,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # Check how long are the intervals between samples
-    interval = data_frame[workers[0]].ElapsedTime[1] - \
-               data_frame[workers[0]].ElapsedTime[0]
+    interval = data_frame[workers[0]].ElapsedTime[0]
     # We want an extra column for objects/second. Warning! It doesn't take into
     # account the fact that several threads could have been working in
     # parallel. Maybe we could add an option?
