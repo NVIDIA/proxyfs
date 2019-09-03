@@ -33,17 +33,19 @@ type workerStruct struct {
 	//                       fileRead    http.MethodGet
 	//                       fileDelete  http.MethodDelete
 
-	mountPoint     string // Typically corresponds to swiftAccount
-	directory      string // Typically matches swiftContainer
-	fileBlockCount uint64 // Typically,
-	fileBlockSize  uint64 //   (fileBlockCount * fileBlockSize) == objectSize
+	mountPoint       string // Typically corresponds to swiftAccount
+	directory        string // Typically matches swiftContainer
+	subDirectoryPath string // Optional - but, if present, typically matches swiftObjectPrefix (plus trailing '/')
+	fileBlockCount   uint64 // Typically,
+	fileBlockSize    uint64 //   (fileBlockCount * fileBlockSize) == objectSize
 
 	swiftProxyURL               string
 	swiftAuthUser               string
 	swiftAuthKey                string
 	swiftAccount                string // Typically corresponds to mountPoint
 	swiftContainer              string // Typically matches directory
-	swiftContainerStoragePolicy string
+	swiftContainerStoragePolicy string // Optional - but, if present, typically matches subDirectoryPath (minus trailing '/')
+	swiftObjectPrefix           string //
 	objectSize                  uint64 // Typically matches (fileBlockCount * fileBlockSize)
 
 	iterations uint64
@@ -244,6 +246,14 @@ func main() {
 			if nil != err {
 				log.Fatalf("Fetching %s.Directory failed: %v", workerSectionName, err)
 			}
+			worker.subDirectoryPath, err = confMap.FetchOptionValueString(workerSectionName, "SubDirectoryPath")
+			if nil == err {
+				if strings.HasSuffix(worker.subDirectoryPath, "/") {
+					worker.subDirectoryPath = worker.subDirectoryPath[:len(worker.subDirectoryPath)-1]
+				}
+			} else {
+				worker.subDirectoryPath = ""
+			}
 			worker.fileBlockCount, err = confMap.FetchOptionValueUint64(workerSectionName, "FileBlockCount")
 			if nil != err {
 				log.Fatalf("Fetching %s.FileBlockCount failed: %v", workerSectionName, err)
@@ -283,6 +293,10 @@ func main() {
 			worker.swiftContainerStoragePolicy, err = confMap.FetchOptionValueString(workerSectionName, "SwiftContainerStoragePolicy")
 			if nil != err {
 				log.Fatalf("Fetching %s.SwiftContainerStoragePolicy failed: %v", workerSectionName, err)
+			}
+			worker.swiftObjectPrefix, err = confMap.FetchOptionValueString(workerSectionName, "SwiftObjectPrefix")
+			if nil != err {
+				worker.swiftObjectPrefix = ""
 			}
 			worker.objectSize, err = confMap.FetchOptionValueUint64(workerSectionName, "ObjectSize")
 			if nil != err {
@@ -388,7 +402,12 @@ func main() {
 		globals.Lock()
 		if 0 == globals.liveThreadCount {
 			globals.Unlock()
-			// All threads exited, so just exit
+			// All threads exited, so just exit (indicating success if all worker iterations succeeded)
+			for _, worker = range workerArray {
+				if worker.iterationsCompleted != worker.iterations {
+					os.Exit(1)
+				}
+			}
 			os.Exit(0)
 		}
 		globals.Unlock()
@@ -461,20 +480,29 @@ func (worker *workerStruct) workerLauncher() {
 		containerPutRequest     *http.Request
 		containerPutResponse    *http.Response
 		containerURL            string
+		directoryPath           string
 		err                     error
 		httpClient              *http.Client
 		objectDeleteRequest     *http.Request
 		objectDeleteResponse    *http.Response
 		objectList              []string
+		objectListIndex         int
+		objectListLen           int
+		objectListReversed      []string
 		objectName              string
 		objectURL               string
-		path                    string
+		subDirectoryFullPath    string
 		swiftAuthToken          string
 		threadIndex             uint64
 	)
 
 	if worker.methodListIncludesFileMethod {
-		path = worker.mountPoint + "/" + worker.directory
+		directoryPath = worker.mountPoint + "/" + worker.directory
+		if "" == worker.subDirectoryPath {
+			subDirectoryFullPath = directoryPath
+		} else {
+			subDirectoryFullPath = directoryPath + "/" + worker.subDirectoryPath
+		}
 	}
 	if worker.methodListIncludesSwiftMethod {
 		worker.authorizationsPerformed = 0
@@ -488,9 +516,9 @@ func (worker *workerStruct) workerLauncher() {
 
 	if globals.optionDestroy {
 		if worker.methodListIncludesFileMethod {
-			err = os.RemoveAll(path)
+			err = os.RemoveAll(directoryPath)
 			if nil != err {
-				log.Fatalf("os.RemoveAll(\"%s\") failed: %v", path, err)
+				log.Fatalf("os.RemoveAll(\"%s\") failed: %v", directoryPath, err)
 			}
 		} else { // worker.methodListIncludesSwiftMethod must be true
 			// First, empty the containerURL
@@ -516,15 +544,25 @@ func (worker *workerStruct) workerLauncher() {
 				switch containerGetResponse.StatusCode {
 				case http.StatusOK:
 					objectList = strings.Split(string(containerGetBody[:]), "\n")
-					if (0 < len(objectList)) && ("" == objectList[len(objectList)-1]) {
-						objectList = objectList[:len(objectList)-1]
+
+					objectListLen = len(objectList)
+
+					if (0 < objectListLen) && ("" == objectList[objectListLen-1]) {
+						objectList = objectList[:objectListLen-1]
+						objectListLen--
 					}
 
-					if 0 == len(objectList) {
+					if 0 == objectListLen {
 						break optionDestroyLoop
 					}
 
-					for _, objectName = range objectList {
+					objectListReversed = make([]string, len(objectList))
+
+					for objectListIndex, objectName = range objectList {
+						objectListReversed[objectListLen-objectListIndex-1] = objectName
+					}
+
+					for _, objectName = range objectListReversed {
 						objectURL = containerURL + "/" + objectName
 
 					objectDeleteRetryLoop:
@@ -611,9 +649,9 @@ func (worker *workerStruct) workerLauncher() {
 
 	if globals.optionFormat {
 		if worker.methodListIncludesFileMethod {
-			err = os.Mkdir(path, os.ModePerm)
+			err = os.MkdirAll(subDirectoryFullPath, os.ModePerm)
 			if nil != err {
-				log.Fatalf("os.Mkdir(\"%s\", os.ModePerm) failed: %v", path, err)
+				log.Fatalf("os.MkdirAll(\"%s\", os.ModePerm) failed: %v", subDirectoryFullPath, err)
 			}
 		} else { //worker.methodListIncludesSwiftMethod must be true
 		containerPutRetryLoop:
@@ -662,23 +700,24 @@ func (worker *workerStruct) workerLauncher() {
 
 func (worker *workerStruct) workerThreadLauncher() {
 	var (
-		abandonedIteration bool
-		allDone            bool
-		doSwiftMethod      bool
-		err                error
-		file               *os.File
-		fileBlockIndex     uint64
-		fileReadAt         uint64
-		fileReadBuffer     []byte
-		httpClient         *http.Client
-		iteration          uint64
-		method             string
-		methodRequest      *http.Request
-		methodResponse     *http.Response
-		path               string
-		swiftAuthToken     string
-		swiftPutReader     *bytes.Reader
-		url                string
+		abandonedIteration   bool
+		allDone              bool
+		doSwiftMethod        bool
+		err                  error
+		file                 *os.File
+		fileBlockIndex       uint64
+		fileReadAt           uint64
+		fileReadBuffer       []byte
+		httpClient           *http.Client
+		iteration            uint64
+		method               string
+		methodRequest        *http.Request
+		methodResponse       *http.Response
+		path                 string
+		subDirectoryFullPath string
+		swiftAuthToken       string
+		swiftPutReader       *bytes.Reader
+		url                  string
 	)
 
 	globals.Lock()
@@ -686,6 +725,11 @@ func (worker *workerStruct) workerThreadLauncher() {
 	globals.Unlock()
 
 	if worker.methodListIncludesFileMethod {
+		if "" == worker.subDirectoryPath {
+			subDirectoryFullPath = worker.mountPoint + "/" + worker.directory
+		} else {
+			subDirectoryFullPath = worker.mountPoint + "/" + worker.directory + "/" + worker.subDirectoryPath
+		}
 		fileReadBuffer = make([]byte, worker.fileBlockSize)
 	}
 	if worker.methodListIncludesSwiftMethod {
@@ -709,10 +753,10 @@ func (worker *workerStruct) workerThreadLauncher() {
 
 	for {
 		if worker.methodListIncludesFileMethod {
-			path = fmt.Sprintf("%s/%s/%016X", worker.mountPoint, worker.directory, iteration)
+			path = fmt.Sprintf("%s/%016X", subDirectoryFullPath, iteration)
 		}
 		if worker.methodListIncludesSwiftMethod {
-			url = fmt.Sprintf("%sv1/%s/%s/%016X", worker.swiftProxyURL, worker.swiftAccount, worker.swiftContainer, iteration)
+			url = fmt.Sprintf("%sv1/%s/%s/%s%016X", worker.swiftProxyURL, worker.swiftAccount, worker.swiftContainer, worker.swiftObjectPrefix, iteration)
 		}
 
 		abandonedIteration = false
