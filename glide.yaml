@@ -106,7 +106,7 @@ import:
   - unicode/bidi
   - unicode/norm
 - package: golang.org/x/tools
-  version: 9b61fcc4c548d69663d915801fc4b42a43b6cd9c
+  version: 958971f5c2bf6dd2927330312acbda0ffd3758a0
   subpackages:
   - cmd/stringer
 - package: google.golang.org/genproto
