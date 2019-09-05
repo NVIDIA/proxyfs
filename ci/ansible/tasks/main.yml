@@ -375,9 +375,6 @@
         stat: path="{{ go_root }}"
         register: go_root_stat
 
-      - debug:
-          var: golang_version
-
       - name: Remove {{ go_root }} if it's not a symlink (old golang install)
         file:
           state: absent
@@ -386,7 +383,7 @@
         become_user: root
         when: go_root_stat.stat.exists and go_root_stat.stat.islnk == false
 
-      - name: Create symlink at {{ go_root }}
+      - name: Create symlink at {{ go_root }} to "{{ golang_version }}" version ({{ golang_versions[active_golang_version] }})
         file:
           src: /usr/local/{{ golang_versions[active_golang_version] }}
           path: "{{ go_root }}"
@@ -398,7 +395,7 @@
         when: go_root_stat.stat.exists == false or go_root_stat.stat.islnk == false
 
       - debug:
-          msg: "The active version of golang hasn't been changed because another version ({{ go_root_stat.stat.lnk_target }}) was already in use. Manually change your golang version if that's not ok."
+          msg: "The active version of golang hasn't been changed because another version ({{ go_root_stat.stat.lnk_target }}) was already in use. Please, manually change your golang version if that's not ok."
         when: go_root_stat.stat.exists and go_root_stat.stat.islnk
 
       - name: Set up /etc/profile.d/golang_path.sh
