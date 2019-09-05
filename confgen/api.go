@@ -24,19 +24,24 @@ type EnvMap map[string]string
 const (
 	// LinuxUserCommentEnv specifies a comment to be applied to each Linux user created
 	// to be referenced by the SMB user system as provided by SAMBA97).
-	LinuxUserCommentEnv = "LINUX_USER_COMMENT"
+	LinuxUserCommentEnv     = "LINUX_USER_COMMENT"
+	LinuxUserCommentDefault = "user-created-for-samba"
 	// NetDirEnv specifies the directory containing the NET(8) tool used to administer a
 	// SAMBA(7) installation.
-	NetDirEnv = "NET_DIR"
+	NetDirEnv     = "NET_DIR"
+	NetDirDefault = "/usr/bin"
 	// PdbeditDirEnv specifies the directory containing the PDBEDIT(8) tool used to manage
 	// the SAM database of SAMBA(7) users.
-	PdbeditDirEnv = "PDBEDIT_DIR"
+	PdbeditDirEnv     = "PDBEDIT_DIR"
+	PdbeditDirDefault = "/usr/bin"
 	// SmbdDirEnv specifies the directory containing the SMBD(8) program used to provide
 	// SMB file serving to clients provided by SAMBA(7).
-	SmbdDirEnv = "SMBD_DIR"
+	SmbdDirEnv     = "SMBD_DIR"
+	SmbdDirDefault = "/usr/sbin"
 	// SmbpasswdDirEnv specifies the directory containing the SMBPASSWD(8) tool used to add
 	// an SMB user or update the SMB user's password as provided by SAMBA(7).
-	SmbpasswdDirEnv = "SMBPASSWD_DIR"
+	SmbpasswdDirEnv     = "SMBPASSWD_DIR"
+	SmbpasswdDirDefault = "/usr/bin"
 )
 
 // ComputeInitial takes a supplied ConfFile, overlays ConfOverrides, and computes an initial

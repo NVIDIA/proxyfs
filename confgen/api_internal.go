@@ -9,14 +9,6 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 )
 
-const (
-	linuxUserCommentDefault = "user-created-for-samba"
-	netDirDefault           = "/usr/bin"
-	pdbeditDirDefault       = "/usr/bin"
-	smbdDirDefault          = "/usr/sbin"
-	smbpasswdDirDefault     = "/usr/bin"
-)
-
 type envSettingsStruct struct {
 	linuxUserComment string
 	netPath          string
@@ -320,30 +312,30 @@ func fetchEnvironSettings(envMap EnvMap) (envSettings *envSettingsStruct) {
 
 	envSettings.linuxUserComment, inEnv = envMap[LinuxUserCommentEnv]
 	if !inEnv {
-		envSettings.linuxUserComment = linuxUserCommentDefault
+		envSettings.linuxUserComment = LinuxUserCommentDefault
 	}
 
 	envSettings.netPath, inEnv = envMap[NetDirEnv]
 	if !inEnv {
-		envSettings.netPath = netDirDefault
+		envSettings.netPath = NetDirDefault
 	}
 	envSettings.netPath += "/net"
 
 	envSettings.pdbeditPath, inEnv = envMap[PdbeditDirEnv]
 	if !inEnv {
-		envSettings.pdbeditPath = pdbeditDirDefault
+		envSettings.pdbeditPath = PdbeditDirDefault
 	}
 	envSettings.pdbeditPath += "/pdbedit"
 
 	envSettings.smbdPath, inEnv = envMap[SmbdDirEnv]
 	if !inEnv {
-		envSettings.smbdPath = smbdDirDefault
+		envSettings.smbdPath = SmbdDirDefault
 	}
 	envSettings.smbdPath += "/smbd"
 
 	envSettings.smbpasswdPath, inEnv = envMap[SmbpasswdDirEnv]
 	if !inEnv {
-		envSettings.smbpasswdPath = smbpasswdDirDefault
+		envSettings.smbpasswdPath = SmbpasswdDirDefault
 	}
 	envSettings.smbpasswdPath += "/smbpasswd"
 
