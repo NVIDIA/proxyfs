@@ -1,10 +1,5 @@
 require 'json'
 
-golang_tarfile_name = 'go1.11.4.linux-amd64.tar.gz'
-
-golang_tarfile_path = "/tmp/#{golang_tarfile_name}"
-golang_tarfile_url  = "https://dl.google.com/go/#{golang_tarfile_name}"
-
 source_root = node['source_root']
 proxyfs_user = node['proxyfs_user']
 proxyfs_group = node['proxyfs_group']
@@ -12,7 +7,6 @@ is_dev = node['is_dev_environment']
 ss_packages = node['use_swiftstack_packages']
 package_spec_path = node['package_spec_path']
 
-GOROOT = "/usr/local/go"
 HOME_DIR = "/home/#{proxyfs_user}"
 DOT_BASH_PROFILE = "#{HOME_DIR}/.bash_profile"
 DOT_BASHRC = "#{HOME_DIR}/.bashrc"
@@ -27,29 +21,6 @@ JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
 # change the location of samba again in the future.
 SAMBA_PARENT_DIR = "#{VFS_SRC_DIR}"
 SAMBA_SRC_DIR = "#{SAMBA_PARENT_DIR}/samba"
-
-remote_file "#{golang_tarfile_path}" do
-  source "#{golang_tarfile_url}"
-  owner 'root'
-  group 'root'
-  mode '0400'
-  action :create
-  not_if { ::File.exists?(GOROOT) }
-end
-
-execute 'untar_golang' do
-  command "tar -C /usr/local -xzf #{golang_tarfile_path}"
-  not_if { ::File.exists?(GOROOT) }
-end
-
-file "/etc/profile.d/golang_path.sh" do
-  content "export PATH=$PATH:#{GOROOT}/bin"
-  mode '0644'
-end
-
-file "#{golang_tarfile_path}" do
-  action :delete
-end
 
 if node[:platform_family].include?("rhel") and ss_packages
   cookbook_file "/etc/yum.repos.d/swiftstack-controller.repo" do
