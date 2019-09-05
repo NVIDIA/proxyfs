@@ -11,6 +11,7 @@
       latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
     active_golang_version: "{{ golang_version | default('current') }}"
     go_root: /usr/local/go
+    golang_versions_file: "/etc/golang_versions.json"
 
   tasks:
 
@@ -312,10 +313,10 @@
   - name: Install 3 versions of Golang (current, candidate, and latest)
     block:
 
-      - name: Place Golang versions file under /etc
+      - name: Place Golang versions file at {{ golang_versions_file }}
         copy:
           content: "{{ golang_versions | to_nice_json }}"
-          dest: /etc/golang_versions.json
+          dest: "{{ golang_versions_file }}"
 
       - name: Create tmpdir
         tempfile:
