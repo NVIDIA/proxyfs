@@ -22,31 +22,35 @@ package confgen
 type EnvMap map[string]string
 
 const (
-	// LinuxUserCommentEnv specifies a comment to be applied to each Linux user created
-	// to be referenced by the SMB user system as provided by SAMBA97).
-	LinuxUserCommentEnv = "LINUX_USER_COMMENT"
 	// LinuxUserCommentDefault specifies the default value of LinuxUserCommentEnv.
 	LinuxUserCommentDefault = "user-created-for-samba"
+	// LinuxUserCommentEnv specifies a comment to be applied to each Linux user created
+	// to be referenced by the SMB user system as provided by SAMBA(7).
+	LinuxUserCommentEnv = "LINUX_USER_COMMENT"
+	// NetDirDefault specifies the default value of NetDirEnv.
+	NetDirDefault = "/usr/bin"
 	// NetDirEnv specifies the directory containing the NET(8) tool used to administer a
 	// SAMBA(7) installation.
 	NetDirEnv = "NET_DIR"
-	// NetDirDefault specifies the default value of NetDirEnv.
-	NetDirDefault = "/usr/bin"
+	// PassDBDirDefault specifies the default value of PassDBDirEnv.
+	PassDBDirDefault = "/var/lib/samba/private"
+	// PassDBDirEnv specifies the directory containing each VirtualIPAddr-named directory holding
+	PassDBDirEnv = "PASSDB_DIR"
+	// PdbeditDirDefault specifies the default value of PdbeditDirEnv.
+	PdbeditDirDefault = "/usr/bin"
 	// PdbeditDirEnv specifies the directory containing the PDBEDIT(8) tool used to manage
 	// the SAM database of SAMBA(7) users.
 	PdbeditDirEnv = "PDBEDIT_DIR"
-	// PdbeditDirDefault specifies the default value of PdbeditDirEnv.
-	PdbeditDirDefault = "/usr/bin"
+	// SmbdDirDefault specifies the default value of SmbdDirEnv.
+	SmbdDirDefault = "/usr/sbin"
 	// SmbdDirEnv specifies the directory containing the SMBD(8) program used to provide
 	// SMB file serving to clients provided by SAMBA(7).
 	SmbdDirEnv = "SMBD_DIR"
-	// SmbdDirDefault specifies the default value of SmbdDirEnv.
-	SmbdDirDefault = "/usr/sbin"
+	// SmbpasswdDirDefault specifies the default value of SmbpasswdDirEnv.
+	SmbpasswdDirDefault = "/usr/bin"
 	// SmbpasswdDirEnv specifies the directory containing the SMBPASSWD(8) tool used to add
 	// an SMB user or update the SMB user's password as provided by SAMBA(7).
 	SmbpasswdDirEnv = "SMBPASSWD_DIR"
-	// SmbpasswdDirDefault specifies the default value of SmbpasswdDirEnv.
-	SmbpasswdDirDefault = "/usr/bin"
 )
 
 // ComputeInitial takes a supplied ConfFile, overlays ConfOverrides, and computes an initial

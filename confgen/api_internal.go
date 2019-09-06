@@ -23,11 +23,17 @@ const (
 )
 
 const (
-	exportsFileName       = "exports"              // Used to identify NFS exports
-	fuseSetupFileName     = "fuse_setup.bash"      // Used to create FUSE export directories
-	proxyFSConfFileName   = "proxyfs.conf"         // Used to pass to mkproxyfs & proxyfsd
-	smbConfCommonFileName = "smb_common.conf"      // Used for pdbedit & smbpasswd operations
-	smbUsersSetupFileName = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
+	exportsFileName          = "exports"              // Used to identify NFS exports
+	fuseSetupFileName        = "fuse_setup.bash"      // Used to create FUSE export directories
+	proxyFSConfFileName      = "proxyfs.conf"         // Used to pass to mkproxyfs & proxyfsd
+	realmsSourceDirName      = "realms"               // Used to hold files destined for realmsDestinationDirName
+	realmsDestinationDirName = "/etc/krb5.conf.d"     // Used to specify where files in realmsSourceDirName are copied
+	smbConfFileName          = "smb.conf"             // Used for passing to various SAMBA(7) components
+	smbConfCommonFileName    = "smb_common.conf"      // Used for running SMBPASSWD(8) & PDBEDIT(8)
+	smbPassdbFileName        = "passdb.tdb"           // Used in vips/{VirtualIPAddr} to hold "local" SMB Passwords
+	smbUsersSetupFileName    = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
+	vipsDirName              = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
+	//                                                     where each holds files specific to that VirtualIPAddr
 )
 
 const (
@@ -75,7 +81,7 @@ type volumeMap map[string]*Volume // Key=volume.volumeName
 type VolumeGroup struct {
 	volumeGroupName string    // Must be unique
 	volumeMap       volumeMap //
-	VirtualIPAddr   string    // Must be unique unless == ""
+	VirtualIPAddr   string    // Must be unique
 	PrimaryPeer     string    //
 }
 
@@ -87,6 +93,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		exportsFile                    *os.File
 		fuseSetupFile                  *os.File
 		initialConfMap                 conf.ConfMap
+		localVolumeGroupMap            volumeGroupMap
 		localVolumeMap                 volumeMap
 		nfsClient                      *NFSClient
 		smbUsersSetupFile              *os.File
@@ -125,9 +132,52 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		return
 	}
 
-	// Compute SMB Users script
+	// Fetch pertinent data from Initial Config
+
+	_, localVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
+	if nil != err {
+		return
+	}
 
 	_, toCreateSMBUserMap, _, _, err = computeSMBUserListChange(make(smbUserMap), initialConfMap)
+	if nil != err {
+		return
+	}
+
+	// Compute common exports file - NFSd will (unfortunately) serve ALL VirtualIPAddrs
+
+	exportsFile, err = os.OpenFile(initialDirPath+"/"+exportsFileName, os.O_CREATE|os.O_WRONLY, exportsFilePerm)
+	if nil != err {
+		return
+	}
+
+	for _, volume = range localVolumeMap {
+		if 0 < len(volume.nfsClientList) {
+			_, err = exportsFile.WriteString(fmt.Sprintf("\"%s\"", volume.FUSEMountPointName))
+			if nil != err {
+				return
+			}
+			for _, nfsClient = range volume.nfsClientList {
+				_, err = exportsFile.WriteString(fmt.Sprintf(" %s(%s,%s,fsid=%d,%s,%s,%s)", nfsClient.ClientPattern, nfsClient.AccessMode, nfsSync, volume.FSID, nfsClient.RootSquash, nfsClient.Secure, nfsSubtreeCheck))
+				if nil != err {
+					return
+				}
+			}
+			_, err = exportsFile.WriteString("\n")
+			if nil != err {
+				return
+			}
+		}
+	}
+
+	err = exportsFile.Close()
+	if nil != err {
+		return
+	}
+
+	// Compute per-VitualIPAddr (Samba)
+
+	// Compute SMB Users script
 
 	smbUsersSetupFile, err = os.OpenFile(initialDirPath+"/"+smbUsersSetupFileName, os.O_CREATE|os.O_WRONLY, scriptPerm)
 	if nil != err {
@@ -155,7 +205,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		//
 		toCreateSMBUserPasswordEscaped = strings.Replace(toCreateSMBUserPassword, "\\", "\\\\\\", -1)
 
-		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPasswordEscaped, toCreateSMBUserPasswordEscaped, envSettings.smbpasswdPath, smbConfCommonFileName, toCreateSMBUserName))
+		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPasswordEscaped, toCreateSMBUserPasswordEscaped, envSettings.smbpasswdPath, smbConfFileName, toCreateSMBUserName))
 		if nil != err {
 			return
 		}
@@ -167,12 +217,6 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	}
 
 	// Compute FUSE MountPoint Directory script
-
-	_, _, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
-	if nil != err {
-		err = fmt.Errorf("In initialConfMap: %v", err)
-		return
-	}
 
 	fuseSetupFile, err = os.OpenFile(initialDirPath+"/"+fuseSetupFileName, os.O_CREATE|os.O_WRONLY, scriptPerm)
 	if nil != err {
@@ -198,37 +242,6 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	}
 
 	err = fuseSetupFile.Close()
-	if nil != err {
-		return
-	}
-
-	// Compute exports file
-
-	exportsFile, err = os.OpenFile(initialDirPath+"/"+exportsFileName, os.O_CREATE|os.O_WRONLY, exportsFilePerm)
-	if nil != err {
-		return
-	}
-
-	for _, volume = range localVolumeMap {
-		if 0 < len(volume.nfsClientList) {
-			_, err = exportsFile.WriteString(fmt.Sprintf("\"%s\"", volume.FUSEMountPointName))
-			if nil != err {
-				return
-			}
-			for _, nfsClient = range volume.nfsClientList {
-				_, err = exportsFile.WriteString(fmt.Sprintf(" %s(%s,%s,fsid=%d,%s,%s,%s)", nfsClient.ClientPattern, nfsClient.AccessMode, nfsSync, volume.FSID, nfsClient.RootSquash, nfsClient.Secure, nfsSubtreeCheck))
-				if nil != err {
-					return
-				}
-			}
-			_, err = exportsFile.WriteString("\n")
-			if nil != err {
-				return
-			}
-		}
-	}
-
-	err = exportsFile.Close()
 	if nil != err {
 		return
 	}
