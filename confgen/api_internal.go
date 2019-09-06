@@ -10,11 +10,13 @@ import (
 )
 
 type envSettingsStruct struct {
-	linuxUserComment string
-	netPath          string
-	pdbeditPath      string
-	smbdPath         string
-	smbpasswdPath    string
+	linuxUserComment          string
+	pathToNet                 string
+	pathToKRB5ConfDir         string
+	pathToPDBEdit             string
+	pathToPerVirtualIPAddrDir string
+	pathToSMBD                string
+	pathToSMBPasswd           string
 }
 
 const (
@@ -23,17 +25,15 @@ const (
 )
 
 const (
-	exportsFileName          = "exports"              // Used to identify NFS exports
-	fuseSetupFileName        = "fuse_setup.bash"      // Used to create FUSE export directories
-	proxyFSConfFileName      = "proxyfs.conf"         // Used to pass to mkproxyfs & proxyfsd
-	realmsSourceDirName      = "realms"               // Used to hold files destined for realmsDestinationDirName
-	realmsDestinationDirName = "/etc/krb5.conf.d"     // Used to specify where files in realmsSourceDirName are copied
-	smbConfFileName          = "smb.conf"             // Used for passing to various SAMBA(7) components
-	smbConfCommonFileName    = "smb_common.conf"      // Used for running SMBPASSWD(8) & PDBEDIT(8)
-	smbPassdbFileName        = "passdb.tdb"           // Used in vips/{VirtualIPAddr} to hold "local" SMB Passwords
-	smbUsersSetupFileName    = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
-	vipsDirName              = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
-	//                                                     where each holds files specific to that VirtualIPAddr
+	exportsFileName       = "exports"              // Used to identify NFS exports
+	fuseSetupFileName     = "fuse_setup.bash"      // Used to create FUSE export directories
+	proxyFSConfFileName   = "proxyfs.conf"         // Used to pass to mkproxyfs & proxyfsd
+	realmsSourceDirName   = "realms"               // Used to hold files destined for realmsDestinationDirName
+	smbConfFileName       = "smb.conf"             // Used for passing to various SAMBA(7) components
+	smbPassdbFileName     = "passdb.tdb"           // Used in vips/{VirtualIPAddr} to hold "local" SMB Passwords
+	smbUsersSetupFileName = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
+	vipsDirName           = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
+	//                                                  where each holds files specific to that VirtualIPAddr
 )
 
 const (
@@ -101,7 +101,9 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		toCreateSMBUserName            string
 		toCreateSMBUserPassword        string
 		toCreateSMBUserPasswordEscaped string // == strings.ReplaceAll(toCreateSMBUserPassword, "\\", "\\\\")
+		vipDirPath                     string
 		volume                         *Volume
+		volumeGroup                    *VolumeGroup
 	)
 
 	// Fetch environ settings
@@ -177,6 +179,20 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	// Compute per-VitualIPAddr (Samba)
 
+	err = os.Mkdir(initialDirPath+"/"+vipsDirName, confDirPerm)
+	if nil != err {
+		return
+	}
+
+	for _, volumeGroup = range localVolumeGroupMap {
+		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr
+
+		err = os.Mkdir(vipDirPath, confDirPerm)
+		if nil != err {
+			return
+		}
+	}
+
 	// Compute SMB Users script
 
 	smbUsersSetupFile, err = os.OpenFile(initialDirPath+"/"+smbUsersSetupFileName, os.O_CREATE|os.O_WRONLY, scriptPerm)
@@ -205,7 +221,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		//
 		toCreateSMBUserPasswordEscaped = strings.Replace(toCreateSMBUserPassword, "\\", "\\\\\\", -1)
 
-		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPasswordEscaped, toCreateSMBUserPasswordEscaped, envSettings.smbpasswdPath, smbConfFileName, toCreateSMBUserName))
+		_, err = smbUsersSetupFile.WriteString(fmt.Sprintf("echo -e \"%s\\n%s\" | %s -c %s -a %s\n", toCreateSMBUserPasswordEscaped, toCreateSMBUserPasswordEscaped, envSettings.pathToSMBPasswd, smbConfFileName, toCreateSMBUserName))
 		if nil != err {
 			return
 		}
@@ -328,29 +344,35 @@ func fetchEnvironSettings(envMap EnvMap) (envSettings *envSettingsStruct) {
 		envSettings.linuxUserComment = LinuxUserCommentDefault
 	}
 
-	envSettings.netPath, inEnv = envMap[NetDirEnv]
+	envSettings.pathToNet, inEnv = envMap[PathToNetEnv]
 	if !inEnv {
-		envSettings.netPath = NetDirDefault
+		envSettings.pathToNet = PathToNetDefault
 	}
-	envSettings.netPath += "/net"
 
-	envSettings.pdbeditPath, inEnv = envMap[PdbeditDirEnv]
+	envSettings.pathToKRB5ConfDir, inEnv = envMap[PathToKRB5ConfDirEnv]
 	if !inEnv {
-		envSettings.pdbeditPath = PdbeditDirDefault
+		envSettings.pathToKRB5ConfDir = PathToKRB5ConfDirDefault
 	}
-	envSettings.pdbeditPath += "/pdbedit"
 
-	envSettings.smbdPath, inEnv = envMap[SmbdDirEnv]
+	envSettings.pathToPDBEdit, inEnv = envMap[PathToPDBEditEnv]
 	if !inEnv {
-		envSettings.smbdPath = SmbdDirDefault
+		envSettings.pathToPDBEdit = PathToPDBEditDefault
 	}
-	envSettings.smbdPath += "/smbd"
 
-	envSettings.smbpasswdPath, inEnv = envMap[SmbpasswdDirEnv]
+	envSettings.pathToPerVirtualIPAddrDir, inEnv = envMap[PathToPerVirtualIPAddrDirEnv]
 	if !inEnv {
-		envSettings.smbpasswdPath = SmbpasswdDirDefault
+		envSettings.pathToPerVirtualIPAddrDir = PathToPerVirtualIPAddrDirDefault
 	}
-	envSettings.smbpasswdPath += "/smbpasswd"
+
+	envSettings.pathToSMBD, inEnv = envMap[PathToSMBDEnv]
+	if !inEnv {
+		envSettings.pathToSMBD = PathToSMBDDefault
+	}
+
+	envSettings.pathToSMBPasswd, inEnv = envMap[PathToSMBPasswdEnv]
+	if !inEnv {
+		envSettings.pathToSMBPasswd = PathToSMBPasswdDefault
+	}
 
 	return
 }

@@ -18,39 +18,56 @@
 package confgen
 
 // EnvMap allows the caller to provide environment-specific paths for various programs invoked
-// by this API...or by scripts produced by this API.
+// by this API as well as customize the scripts produced by this API.
 type EnvMap map[string]string
 
 const (
-	// LinuxUserCommentDefault specifies the default value of LinuxUserCommentEnv.
+	// LinuxUserCommentDefault is the default value of environment variable LinuxUserCommentEnv.
 	LinuxUserCommentDefault = "user-created-for-samba"
 	// LinuxUserCommentEnv specifies a comment to be applied to each Linux user created
 	// to be referenced by the SMB user system as provided by SAMBA(7).
 	LinuxUserCommentEnv = "LINUX_USER_COMMENT"
-	// NetDirDefault specifies the default value of NetDirEnv.
-	NetDirDefault = "/usr/bin"
-	// NetDirEnv specifies the directory containing the NET(8) tool used to administer a
+
+	// PathToNetDefault is the default value of environment variable PathToNetEnv.
+	PathToNetDefault = "/usr/bin/net"
+	// PathToNetEnv is the name of the environment variable used to specify the path to the
+	// NET(8) tool used to administer a SAMBA(7) installation.
+	PathToNetEnv = "PATH_TO_NET"
+
+	// PathToKRB5ConfDirDefault is the default value of environment variable PathToKRB5ConfDirEnv.
+	PathToKRB5ConfDirDefault = "/etc/krb5.conf.d"
+	// PathToKRB5ConfDirEnv is the name of the environment variable used to specify the path to
+	// the KRB5 configuration directory where realm declarations are placed. This method is used
+	// to avoid having to merge all realm declarations into a common KRB5 configuration file.
+	PathToKRB5ConfDirEnv = "PATH_TO_KRB5_CONF_DIR"
+
+	// PathToPDBEditDefault is the default value of environment variable PathToPDBEditEnv.
+	PathToPDBEditDefault = "/usr/bin/pdbedit"
+	// PathToPDBEditEnv is the name of the environment variable used to specify the path to
+	// the PDBEDIT(8) tool used to administer a SAMBA(7) installation.
+	PathToPDBEditEnv = "PATH_TO_PDBEDIT"
+
+	// PathToPerVirtualIPAddrDirDefault is the default value of environment variable PathToPerVirtualIPAddrDirEnv.
+	PathToPerVirtualIPAddrDirDefault = "/var/lib/vips"
+	// PathToPerVirtualIPAddrDirEnv is the name of the environment variable used to specify the
+	// path to a directory containing a set of subdirectories each named for the corresponding
+	// VirtualIPAddr to which they pertain. In particular, each such subdirectory will contain
+	// a "samba" subdirectory containing all files referenced by that VirtualIPAddr's instance
+	// of SAMBA(7).
+	PathToPerVirtualIPAddrDirEnv = "PATH_TO_PER_VIRTUAL_IP_ADDR_DIR"
+
+	// PathToSMBDDefault is the default value of environment variable PathToSMBDEnv.
+	PathToSMBDDefault = "/usr/bin/smbd"
+	// PathToSMBDEnv is the name of the environment variable used to specify the path to the
+	// SMBD(8) program in a SAMBA(7) installation used to provide SMB file serving to clients.
+	PathToSMBDEnv = "PATH_TO_SMBD"
+
+	// PathToSMBPasswdDefault is the default value of environment variable PathToSMBPasswdEnv.
+	PathToSMBPasswdDefault = "/usr/bin/smbpasswd"
+	// PathToSMBPasswdEnv is the name of the environment variable used to specify the path to
+	// the SMBPASSWD(8) tool used to add an SMB user or update an SMB user's password in a
 	// SAMBA(7) installation.
-	NetDirEnv = "NET_DIR"
-	// PassDBDirDefault specifies the default value of PassDBDirEnv.
-	PassDBDirDefault = "/var/lib/samba/private"
-	// PassDBDirEnv specifies the directory containing each VirtualIPAddr-named directory holding
-	PassDBDirEnv = "PASSDB_DIR"
-	// PdbeditDirDefault specifies the default value of PdbeditDirEnv.
-	PdbeditDirDefault = "/usr/bin"
-	// PdbeditDirEnv specifies the directory containing the PDBEDIT(8) tool used to manage
-	// the SAM database of SAMBA(7) users.
-	PdbeditDirEnv = "PDBEDIT_DIR"
-	// SmbdDirDefault specifies the default value of SmbdDirEnv.
-	SmbdDirDefault = "/usr/sbin"
-	// SmbdDirEnv specifies the directory containing the SMBD(8) program used to provide
-	// SMB file serving to clients provided by SAMBA(7).
-	SmbdDirEnv = "SMBD_DIR"
-	// SmbpasswdDirDefault specifies the default value of SmbpasswdDirEnv.
-	SmbpasswdDirDefault = "/usr/bin"
-	// SmbpasswdDirEnv specifies the directory containing the SMBPASSWD(8) tool used to add
-	// an SMB user or update the SMB user's password as provided by SAMBA(7).
-	SmbpasswdDirEnv = "SMBPASSWD_DIR"
+	PathToSMBPasswdEnv = "PATH_TO_SMBPASSWD"
 )
 
 // ComputeInitial takes a supplied ConfFile, overlays ConfOverrides, and computes an initial
