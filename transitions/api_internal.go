@@ -785,8 +785,10 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 //
 // In the meantime, the changes are:
 //
-//   MaxFlushSize moves from FlowControl: section to the Volume: section (for each Volume referencing it)
-//   MaxFlushTime moves from FlowControl: section to the Volume: section (for each Volume referencing it)
+//   MaxFlushSize                          moves from FlowControl: section to the Volume: section (for each Volume referencing it)
+//   MaxFlushTime                          moves from FlowControl: section to the Volume: section (for each Volume referencing it)
+//   FileDefragmentChunkSize  (if present) moves from FlowControl: section to the Volume: section (for each Volume referencing it)
+//   FileDefragmentChunkDelay (if present) moves from FlowControl: section to the Volume: section (for each Volume referencing it)
 //
 //   VolumeList in FSGlobals is renamed VolumeGroupList
 //
@@ -817,6 +819,10 @@ func upgradeConfMapIfNeeded(confMap conf.ConfMap) (err error) {
 		autoVolumeGroupNameSuffix      string
 		autoVolumeGroupNameSuffixOK    bool
 		autoVolumeGroupNameSuffixSlice []string
+		fileDefragmentChunkDelay       conf.ConfMapOption
+		fileDefragmentChunkDelayOK     bool
+		fileDefragmentChunkSize        conf.ConfMapOption
+		fileDefragmentChunkSizeOK      bool
 		flowControl                    conf.ConfMapSection
 		flowControlName                conf.ConfMapOption
 		flowControlNameOK              bool
@@ -948,6 +954,9 @@ func upgradeConfMapIfNeeded(confMap conf.ConfMap) (err error) {
 			return
 		}
 
+		fileDefragmentChunkSize, fileDefragmentChunkSizeOK = flowControl["FileDefragmentChunkSize"]
+		fileDefragmentChunkDelay, fileDefragmentChunkDelayOK = flowControl["FileDefragmentChunkDelay"]
+
 		readCacheLineSize, readCacheLineSizeOK = flowControl["ReadCacheLineSize"]
 		if !readCacheLineSizeOK {
 			err = fmt.Errorf("confMap must contain a FlowControl:%s.ReadCacheLineSize key", flowControlName[0])
@@ -972,6 +981,13 @@ func upgradeConfMapIfNeeded(confMap conf.ConfMap) (err error) {
 
 		volume["MaxFlushSize"] = maxFlushSize
 		volume["MaxFlushTime"] = maxFlushTime
+
+		if fileDefragmentChunkSizeOK {
+			volume["FileDefragmentChunkSize"] = fileDefragmentChunkSize
+		}
+		if fileDefragmentChunkDelayOK {
+			volume["FileDefragmentChunkDelay"] = fileDefragmentChunkDelay
+		}
 
 		delete(volume, "PrimaryPeer")
 		delete(volume, "FlowControl")

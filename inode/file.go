@@ -1247,6 +1247,45 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 	return
 }
 
+func (vS *volumeStruct) DefragmentFile(fileInodeNumber InodeNumber, startingFileOffset uint64, chunkSize uint64) (nextFileOffset uint64, eofReached bool, err error) {
+	var (
+		chunk           []byte
+		chunkSizeCapped uint64
+		fileInode       *inMemoryInodeStruct
+	)
+
+	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
+	if nil != err {
+		return
+	}
+
+	if startingFileOffset >= fileInode.Size {
+		nextFileOffset = fileInode.Size
+		eofReached = true
+		err = nil
+		return
+	}
+
+	if (startingFileOffset + chunkSize) >= fileInode.Size {
+		chunkSizeCapped = fileInode.Size - startingFileOffset
+		eofReached = true
+	} else {
+		chunkSizeCapped = chunkSize
+		eofReached = false
+	}
+
+	nextFileOffset = startingFileOffset + chunkSizeCapped
+
+	chunk, err = vS.Read(fileInodeNumber, startingFileOffset, chunkSizeCapped, nil)
+	if nil != err {
+		return
+	}
+
+	err = vS.Write(fileInodeNumber, startingFileOffset, chunk, nil)
+
+	return // err as returned by Write() is sufficient
+}
+
 func (vS *volumeStruct) setLogSegmentContainer(logSegmentNumber uint64, containerName string) (err error) {
 	containerNameAsByteSlice := utils.StringToByteSlice(containerName)
 	err = vS.headhunterVolumeHandle.PutLogSegmentRec(logSegmentNumber, containerNameAsByteSlice)

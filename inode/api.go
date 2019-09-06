@@ -228,6 +228,7 @@ type VolumeHandle interface {
 	SetSize(fileInodeNumber InodeNumber, Size uint64) (err error)
 	Flush(fileInodeNumber InodeNumber, andPurge bool) (err error)
 	Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error)
+	DefragmentFile(fileInodeNumber InodeNumber, startingFileOffset uint64, chunkSize uint64) (nextFileOffset uint64, eofReached bool, err error)
 
 	// Symlink Inode specific methods, implemented in symlink.go
 
