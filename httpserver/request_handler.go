@@ -750,10 +750,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
 	case 4:
+		// Form: /volume/<volume-name>/defrag/<basename>
 		// Form: /volume/<volume-name>/extent-map/<basename>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
+		// Form: /volume/<volume-name>/defrag/<dir>/.../<basename>
 		// Form: /volume/<volume-name>/extent-map/<dir>/.../<basename>
 	}
 
@@ -878,6 +880,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	requestState.formatResponseCompactly = formatResponseCompactly
 
 	switch pathSplit[3] {
+	case "defrag":
+		doDefrag(responseWriter, request, requestState)
+
 	case "extent-map":
 		doExtentMap(responseWriter, request, requestState)
 
@@ -900,6 +905,41 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
+func doDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		dirInodeNumber      inode.InodeNumber
+		err                 error
+		pathPartIndex       int
+	)
+
+	if 3 > requestState.numPathParts {
+		err = fmt.Errorf("doDefrag() not passed enough requestState.numPathParts (%d)", requestState.numPathParts)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	dirEntryInodeNumber = inode.RootDirInodeNumber
+	pathPartIndex = 3
+
+	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
+		dirInodeNumber = dirEntryInodeNumber
+
+		dirEntryInodeNumber, err = requestState.volume.fsMountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
+	err = requestState.volume.fsMountHandle.DefragmentFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber)
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusOK)
+	} else {
+		responseWriter.WriteHeader(http.StatusConflict)
+	}
+}
+
 func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		dirEntryInodeNumber inode.InodeNumber
@@ -916,6 +956,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 	)
 
 	if 3 > requestState.numPathParts {
+		err = fmt.Errorf("doExtentMap() not passed enough requestState.numPathParts (%d)", requestState.numPathParts)
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 
@@ -932,11 +973,11 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		return
 	}
 
-	dirEntryInodeNumber = inode.RootDirInodeNumber
-	pathPartIndex = 3
-
 	path = strings.Join(requestState.pathSplit[4:], "/")
 	pathDoubleQuoted = "\"" + path + "\""
+
+	dirEntryInodeNumber = inode.RootDirInodeNumber
+	pathPartIndex = 3
 
 	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
 		dirInodeNumber = dirEntryInodeNumber

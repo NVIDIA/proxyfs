@@ -382,6 +382,89 @@ func (mS *mountStruct) Create(userID inode.InodeUserID, groupID inode.InodeGroup
 	return fileInodeNumber, nil
 }
 
+func (mS *mountStruct) DefragmentFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber) (err error) {
+	var (
+		eofReached bool
+		fileOffset uint64
+		inodeLock  *dlm.RWLockStruct
+		inodeType  inode.InodeType
+	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.DefragmentFileUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.DefragmentFileErrors.Add(1)
+		}
+	}()
+
+	mS.volStruct.jobRWMutex.RLock()
+
+	inodeLock, err = mS.volStruct.inodeVolumeHandle.InitInodeLock(fileInodeNumber, nil)
+	if nil != err {
+		mS.volStruct.jobRWMutex.RUnlock()
+		return
+	}
+	err = inodeLock.WriteLock()
+	if nil != err {
+		mS.volStruct.jobRWMutex.RUnlock()
+		return
+	}
+
+	if !mS.volStruct.inodeVolumeHandle.Access(fileInodeNumber, userID, groupID, otherGroupIDs, inode.F_OK,
+		inode.NoOverride) {
+		_ = inodeLock.Unlock()
+		mS.volStruct.jobRWMutex.RUnlock()
+		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		return
+	}
+	if !mS.volStruct.inodeVolumeHandle.Access(fileInodeNumber, userID, groupID, otherGroupIDs, inode.W_OK,
+		inode.OwnerOverride) {
+		_ = inodeLock.Unlock()
+		mS.volStruct.jobRWMutex.RUnlock()
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+		return
+	}
+
+	inodeType, err = mS.volStruct.inodeVolumeHandle.GetType(fileInodeNumber)
+	if nil != err {
+		_ = inodeLock.Unlock()
+		mS.volStruct.jobRWMutex.RUnlock()
+		logger.ErrorfWithError(err, "couldn't get type for inode %v", fileInodeNumber)
+		return
+	}
+	// Make sure the inode number is for a file inode
+	if inodeType != inode.FileType {
+		_ = inodeLock.Unlock()
+		mS.volStruct.jobRWMutex.RUnlock()
+		err = fmt.Errorf("%s: expected inode %v to be a file inode, got %v", utils.GetFnName(), fileInodeNumber, inodeType)
+		logger.ErrorWithError(err)
+		err = blunder.AddError(err, blunder.NotFileError)
+		return
+	}
+
+	fileOffset = 0
+
+	for {
+		fileOffset, eofReached, err = mS.volStruct.inodeVolumeHandle.DefragmentFile(fileInodeNumber, fileOffset, mS.volStruct.fileDefragmentChunkSize)
+		_ = inodeLock.Unlock()
+		mS.volStruct.jobRWMutex.RUnlock()
+		if nil != err {
+			return
+		}
+		if eofReached {
+			return
+		}
+		time.Sleep(mS.volStruct.fileDefragmentChunkDelay)
+		mS.volStruct.jobRWMutex.RLock()
+		err = inodeLock.WriteLock()
+		if nil != err {
+			mS.volStruct.jobRWMutex.RUnlock()
+			return
+		}
+	}
+}
+
 func (mS *mountStruct) FetchExtentMapChunk(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *inode.ExtentMapChunkStruct, err error) {
 	var (
 		inodeLock *dlm.RWLockStruct
