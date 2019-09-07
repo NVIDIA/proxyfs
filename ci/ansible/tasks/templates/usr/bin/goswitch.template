@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+from pathlib import Path
+
+GOLANG_VERSIONS_FILE = "{{ golang_versions_file }}"
+GO_DIR_PARENT_PATH = "{{ go_dir_parent_path }}"
+GO_DIR_NAME = "{{ go_dir_name }}"
+GO_DIR_PATH = os.path.join(GO_DIR_PARENT_PATH, GO_DIR_NAME)
+SOURCE_ROOT = "{{ source_root }}"
+REPO_CLONE_PARENT_DIR = os.path.join(
+    SOURCE_ROOT, "src", "github.com", "swiftstack"
+)
+PROXYFS_SRC_DIR = os.path.join(REPO_CLONE_PARENT_DIR, "ProxyFS")
+
+
+class GoDirNotLinkError(Exception):
+    pass
+
+
+def print_error_and_fail(msg):
+    print(msg)
+    sys.exit(1)
+
+
+def parse_args(golang_versions):
+    parser = argparse.ArgumentParser(
+        description="Switch the enabled version of golang in the system"
+    )
+    parser.add_argument(
+        "-b",
+        "--build-proxyfs",
+        action="store_true",
+        default=False,
+        help="Build ProxyFS with the new golang version",
+    )
+    parser.add_argument(
+        "-l",
+        "--list-versions",
+        action="store_true",
+        default=False,
+        help='Show the "well-known" available versions',
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        type=str,
+        help=f"Version of golang to use. It can be either a path to an "
+        f"arbitrary directory containing the version of golang to use or "
+        f"one of the well know versions provided by Runway: "
+        f"{', '.join(get_sorted_version_names(golang_versions))}.",
+    )
+
+    args = parser.parse_args()
+    return args
+
+
+def read_golang_versions_file():
+    try:
+        with open(GOLANG_VERSIONS_FILE, "r") as f:
+            try:
+                golang_versions = json.load(f)
+            except json.decoder.JSONDecodeError:
+                print_error_and_fail(
+                    f"Error parsing golang versions file at "
+                    f"{GOLANG_VERSIONS_FILE}"
+                )
+    except IOError:
+        print_error_and_fail(
+            f"Could not read golang versions file at {GOLANG_VERSIONS_FILE}"
+        )
+
+    return golang_versions
+
+
+def get_sorted_version_names(golang_versions):
+    return [
+        name
+        for name, version in sorted(
+            golang_versions.items(), key=lambda kv: kv[1]
+        )
+    ]
+
+
+def list_versions(golang_versions, current_version_path):
+    version_name_title = "Name"
+    version_title = "Version"
+    version_path_title = "Path"
+    max_name_len = max(
+        map(len, list(golang_versions.keys()) + [version_name_title])
+    )
+    max_version_len = max(
+        map(len, list(golang_versions.values()) + [version_title])
+    )
+    sorted_version_names = get_sorted_version_names(golang_versions)
+    print("\nAvailable golang versions:\n")
+    print(
+        f"  {version_name_title:<{max_name_len}}"
+        f"  {version_title:<{max_version_len}}"
+        f"  {version_path_title}\n"
+    )
+    for name in sorted_version_names:
+        version_path = os.path.join(GO_DIR_PARENT_PATH, golang_versions[name])
+        row = (
+            f"  {name:<{max_name_len}}"
+            f"  {golang_versions[name]:<{max_version_len}}"
+            f"  {version_path}"
+        )
+        if current_version_path == version_path:
+            row = f"{row}  (active)"
+        print(row)
+    print("")
+
+
+def get_desired_version_path(golang_versions, version):
+    if version in golang_versions:
+        return os.path.normpath(
+            os.path.join(GO_DIR_PARENT_PATH, golang_versions[version])
+        )
+
+    if os.path.isdir(version):
+        return os.path.normpath(version)
+    else:
+        return None
+
+
+def get_current_version_path():
+    if not os.path.exists(GO_DIR_PATH):
+        return None
+    elif not os.path.islink(GO_DIR_PATH):
+        raise GoDirNotLinkError(
+            f"{GO_DIR_PATH} already exists but it's not a link"
+        )
+    return os.path.normpath(Path(GO_DIR_PATH).resolve())
+
+
+def switch_versions(current_version_path, desired_version_path):
+    if current_version_path is not None:
+        os.remove(GO_DIR_PATH)
+    os.symlink(desired_version_path, GO_DIR_PATH, target_is_directory=True)
+    print("Golang version successfully switched.")
+
+
+def print_remaining_process_output(p):
+    remaining_output = p.stdout.read().decode("utf-8").strip()
+    if remaining_output != "":
+        print(p.stdout.read().decode("utf-8"))
+
+
+def run_command(cmd, cwd=None):
+    print(cmd)
+    p = None
+    try:
+        p = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=cwd,
+            bufsize=1,
+            shell=True,
+        )
+        while p.poll() is None:
+            # This blocks until it receives a newline:
+            line = p.stdout.readline().decode("utf-8")
+            print(line.rstrip())
+        print_remaining_process_output(p)
+        exit_code = p.wait()
+        if exit_code != 0:
+            if p:
+                print_remaining_process_output(p)
+            print_error_and_fail(
+                f"Command '{cmd}' responded with a non-zero exit status "
+                f"({exit_code}).\nAn error for this command might have been "
+                f"printed above these lines. Please read the output in order "
+                f"to check what went wrong."
+            )
+    except subprocess.CalledProcessError as e:
+        if p:
+            print_remaining_process_output(p)
+        print_error_and_fail(f"Error running '{cmd}':\n{e.output}\n{str(e)}")
+    except Exception as e:
+        if p:
+            print_remaining_process_output(p)
+        print_error_and_fail(f"Error running '{cmd}':\n{str(e)}")
+
+
+def build_proxyfs():
+    print("Stopping services and unmounting mount points...")
+    run_command("/usr/bin/unmount_and_stop_pfs")
+
+    print("Building ProxyFS...")
+    run_command(
+        "make version fmt pre-generate generate install test", PROXYFS_SRC_DIR
+    )
+
+    print("Starting services and mounting mount points...")
+    run_command("/usr/bin/start_and_mount_pfs")
+
+    print(
+        "\nCongrats! After re-building ProxyFS and running the go tests, "
+        "everything still looks ok! But don't trust this humble script and "
+        "test thoroughly!\n"
+    )
+
+
+if __name__ == "__main__":
+    golang_versions = read_golang_versions_file()
+
+    options = parse_args(golang_versions)
+    if not options.version and not options.list_versions:
+        print_error_and_fail("Version not specified")
+
+    try:
+        current_version_path = get_current_version_path()
+    except GoDirNotLinkError as e:
+        print_error_and_fail(e)
+
+    if options.list_versions:
+        list_versions(golang_versions, current_version_path)
+        sys.exit(0)
+
+    desired_version_path = get_desired_version_path(
+        golang_versions, options.version
+    )
+    if not desired_version_path:
+        print_error_and_fail(
+            f"'{options.version}' is not a well-known version name nor a "
+            f"valid path"
+        )
+
+    if current_version_path == desired_version_path:
+        msg = (
+            f"You are already using version '{options.version}'. "
+            f"No changes needed."
+        )
+        if options.build_proxyfs:
+            msg = f"{msg} ProxyFS wasn't re-built."
+        print(msg)
+        sys.exit(0)
+
+    switch_versions(current_version_path, desired_version_path)
+
+    if options.build_proxyfs:
+        build_proxyfs()
