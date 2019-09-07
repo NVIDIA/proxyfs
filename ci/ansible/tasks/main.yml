@@ -10,8 +10,10 @@
       candidate: "go1.12.9"
       latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
     active_golang_version: "{{ golang_version | default('current') }}"
-    go_root: /usr/local/go
     golang_versions_file: "/etc/golang_versions.json"
+    go_dir_parent_path: "/usr/local"
+    go_dir_name: "go"
+    go_dir_path: "{{ go_dir_parent_path }}/{{ go_dir_name }}"
 
   tasks:
 
@@ -317,6 +319,9 @@
         copy:
           content: "{{ golang_versions | to_nice_json }}"
           dest: "{{ golang_versions_file }}"
+          owner: root
+          group: root
+          mode: '0644'
 
       - name: Create tmpdir
         tempfile:
@@ -325,7 +330,7 @@
         register: tmpdir
 
       - name: Check golang directories exist
-        stat: path="/usr/local/{{ item.value }}"
+        stat: path="{{ go_dir_parent_path }}/{{ item.value }}"
         register: golang_version_dirs_raw_info
         with_dict: "{{ golang_versions }}"
 
@@ -360,8 +365,8 @@
         with_dict: "{{ golang_versions }}"
         when: golang_version_dir[item.value] == False
 
-      - name: Move untarred directories to /usr/local/
-        command: "mv {{ tmpdir.path }}/{{ item.value }}/go /usr/local/{{ item.value }}"
+      - name: Move untarred directories to {{ go_dir_parent_path }}
+        command: "mv {{ tmpdir.path }}/{{ item.value }}/go {{ go_dir_parent_path }}/{{ item.value }}"
         with_dict: "{{ golang_versions }}"
         when: golang_version_dir[item.value] == False
         become: yes
@@ -372,37 +377,45 @@
           state: absent
           path: "{{ tmpdir.path }}"
 
-      - name: Check {{ go_root }} directory exists
-        stat: path="{{ go_root }}"
-        register: go_root_stat
+      - name: Check {{ go_dir_path }} directory exists
+        stat: path="{{ go_dir_path }}"
+        register: go_dir_path_stat
 
-      - name: Remove {{ go_root }} if it's not a symlink (old golang install)
+      - name: Remove {{ go_dir_path }} if it's not a symlink (old golang install)
         file:
           state: absent
-          path: "{{ go_root }}"
+          path: "{{ go_dir_path }}"
         become: yes
         become_user: root
-        when: go_root_stat.stat.exists and go_root_stat.stat.islnk == false
+        when: go_dir_path_stat.stat.exists and go_dir_path_stat.stat.islnk == false
 
-      - name: Create symlink at {{ go_root }} to "{{ golang_version }}" version ({{ golang_versions[active_golang_version] }})
+      - name: Create symlink at {{ go_dir_path }} to "{{ golang_version }}" version ({{ golang_versions[active_golang_version] }})
         file:
-          src: /usr/local/{{ golang_versions[active_golang_version] }}
-          path: "{{ go_root }}"
+          src: "{{ go_dir_parent_path }}/{{ golang_versions[active_golang_version] }}"
+          path: "{{ go_dir_path }}"
           state: link
         become: yes
         become_user: root
         # Remember this stat was taken BEFORE attempting to remove the
-        # {{ go_root }} dir in the previous step
-        when: go_root_stat.stat.exists == false or go_root_stat.stat.islnk == false
+        # {{ go_dir_path }} dir in the previous step
+        when: go_dir_path_stat.stat.exists == false or go_dir_path_stat.stat.islnk == false
 
       - debug:
-          msg: "The active version of golang hasn't been changed because another version ({{ go_root_stat.stat.lnk_target }}) was already in use. Please, manually change your golang version if that's not ok."
-        when: go_root_stat.stat.exists and go_root_stat.stat.islnk
+          msg: "The active version of golang hasn't been changed because another version ({{ go_dir_path_stat.stat.lnk_target }}) was already in use. Please, manually change your golang version with 'goswitch' if that's not ok."
+        when: go_dir_path_stat.stat.exists and go_dir_path_stat.stat.islnk
 
       - name: Set up /etc/profile.d/golang_path.sh
         copy:
           dest: "/etc/profile.d/golang_path.sh"
-          content: export PATH=$PATH:{{ go_root }}/bin
+          content: export PATH=$PATH:{{ go_dir_path }}/bin
           mode: '0644'
         become: yes
         become_user: root
+
+      - name: Script for Golang version switching
+        template:
+          src: usr/bin/goswitch.template
+          dest: /usr/bin/goswitch
+          owner: root
+          group: root
+          mode: '0755'
