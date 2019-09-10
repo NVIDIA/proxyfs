@@ -48,6 +48,8 @@ type configStruct struct {
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole                 bool
 	TraceEnabled                 bool
+	HTTPServerIPAddr             string
+	HTTPServerTCPPort            uint16
 	AttrDuration                 time.Duration
 	AttrBlockSize                uint64
 	LookupEntryDuration          time.Duration
@@ -217,6 +219,8 @@ type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
+	httpServer                      *http.Server
+	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
 	retryDelay                      []time.Duration
 	swiftAuthWaitGroup              *sync.WaitGroup
@@ -398,6 +402,15 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.HTTPServerIPAddr, err = confMap.FetchOptionValueString("Agent", "HTTPServerIPAddr")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.HTTPServerTCPPort, err = confMap.FetchOptionValueUint16("Agent", "HTTPServerTCPPort")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.AttrDuration, err = confMap.FetchOptionValueDuration("Agent", "AttrDuration")
 	if nil != err {
 		logFatal(err)
@@ -511,6 +524,7 @@ func uninitializeGlobals() {
 	leaseRequest.Wait()
 
 	globals.logFile = nil
+	globals.httpServer = nil
 	globals.httpClient = nil
 	globals.retryDelay = nil
 	globals.swiftAuthWaitGroup = nil
