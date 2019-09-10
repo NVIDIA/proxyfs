@@ -22,6 +22,17 @@ function await_proxyfsd_startup {
     done
 }
 
+function await_pfsagentd_startup {
+    for i in $(seq 5); do
+        /usr/bin/systemctl -q is-active pfsagentd
+        if [ $? -ne 0 ]; then
+            echo "PFSAgent failed to start. Exiting..."
+            exit 1
+        fi
+        sleep 1
+    done
+}
+
 function await_swift_startup {
     while true
     do
@@ -218,6 +229,7 @@ if [ -f /usr/bin/systemctl ]; then
     if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "pfsa" "${MOUNT_OPTIONS[@]}"; then
       echo "Starting PFSAgent..."
       sudo /usr/bin/systemctl start pfsagentd
+      await_pfsagentd_startup
     fi
 else
     # Ubuntu (not tested!)
@@ -243,7 +255,7 @@ echo
 if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "nfs" "${MOUNT_OPTIONS[@]}"; then
     mountpoint -q $SHARE_NFS
     if [ $? -ne 0 ]; then
-        for i in `seq 5`; do
+        for i in $(seq 5); do
             sleep 5
             sudo $MOUNT -t nfs -o vers=$NFS_VERS $MOUNT_POINT_NFS $SHARE_NFS && break
             echo "Mount of $SHARE_NFS failed.  Retrying..."
@@ -262,7 +274,7 @@ fi
 if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "smb" "${MOUNT_OPTIONS[@]}" || containsElement "smb1" "${MOUNT_OPTIONS[@]}" || containsElement "smb2" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
     mountpoint -q $SHARE_SMB
     if [ $? -ne 0 ]; then
-        for i in `seq 5`; do
+        for i in $(seq 5); do
             sleep 5
             sudo $MOUNT -t cifs -o user=<%= @swift_user %>,password=<%= @swift_user %>,domain=LOCALHOST,uid=$UID_SMB,gid=$GID_SMB,vers=$SMB_VERS,iocharset=utf8,actimeo=0 $MOUNT_POINT_SMB $SHARE_SMB && break
             echo "Mount of $SHARE_SMB failed.  Retrying..."

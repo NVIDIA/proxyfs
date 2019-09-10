@@ -34,13 +34,17 @@
   #
   # On Centos, we have to download and install chef and liberasurecode manually
   #
+  - name: Check Chef is installed
+    stat: path="/usr/bin/chef-solo"
+    register: chef_solo_file
+
   - name: Download and Install Chef
     yum:
       name: https://packages.chef.io/files/stable/chef/12.16.42/el/7/chef-12.16.42-1.el7.x86_64.rpm
       state: present
     become: yes
     become_user: root
-    when: ansible_os_family == 'RedHat'
+    when: ansible_os_family == 'RedHat' and chef_solo_file.stat.exists == false
 
   - name: Create {{ proxyfs_user }} user
     user:
@@ -76,30 +80,18 @@
   #
 
   - name: yum install base packages needed for server config
-    yum: name={{ item }} state=present
-    with_items:
-        - sudo
-        - ruby
-        - rubygems
-        - gcc
-        - libxml2
-        - libxml2-devel
-        - libxslt
-        - libxslt-devel
-        - which
-        - tar
+    yum:
+      name: ['sudo', 'ruby', 'rubygems', 'gcc', 'libxml2', 'libxml2-devel',
+      'libxslt', 'libxslt-devel', 'which', 'tar']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   - name: apt install base packages needed for server config
-    apt: name={{ item }} state=present
-    with_items:
-        - sudo
-        - build-essential
-        - ruby
-        - rubygems
-        - chef
+    apt:
+      name: ['sudo', 'build-essential', 'ruby', 'rubygems', 'chef']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
@@ -126,57 +118,38 @@
     become_user: root
 
   - name: yum install anticipated packages for building/running proxyfs
-    yum: name={{ item }} state=present
-    with_items:
-        - gcc
-        - python-devel
-        - gnutls-devel
-        - libacl-devel
-        - openldap-devel
-        - json-c-devel
+    yum:
+      name: ['gcc', 'python-devel', 'gnutls-devel', 'libacl-devel',
+             'openldap-devel', 'json-c-devel']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   - name: apt install anticipated packages for building/running proxyfs
-    apt: name={{ item }} state=present
-    with_items:
-        - gcc
-        - python-dev
-        - gnutls-dev
-        - libacl1-dev
-        - libldap2-dev
-        - libjson-c-dev
-        - libb64-dev
+    apt:
+      name: ['gcc', 'python-dev', 'gnutls-dev', 'libacl1-dev', 'libldap2-dev',
+             'libjson-c-dev', 'libb64-dev']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
 
   - name: yum install anticipated packages for building/running swift
-    yum: name={{ item }} state=present
-    with_items:
-        - openssl-devel
-        - curl
-        - memcached
-        - rsync
-        - xfsprogs
-        - git-core
-        - gcc
-        - python-devel
-        - libffi-devel
-        - libxml2-devel
-        - libxml2
-        - libxslt-devel
-        - centos-release-scl
+    yum:
+      name: ['openssl-devel', 'curl', 'memcached', 'rsync', 'xfsprogs',
+             'git-core', 'gcc', 'python-devel', 'libffi-devel',
+             'libxml2-devel', 'libxml2', 'libxslt-devel', 'centos-release-scl']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   # rh-python36 must be installed after centos-release-scl, on a separate step
   - name: yum install RedHat's Python 3.6
-    yum: name={{ item }} state=present
-    with_items:
-      - rh-python36
+    yum:
+      name: ['rh-python36']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
@@ -211,23 +184,12 @@
   #  We are not installing py3 on Ubuntu! This should be fixed if we ever
   #  decide to support Ubuntu.
   - name: apt install anticipated packages for building/running swift
-    apt: name={{ item }} state=present
-    with_items:
-        - liberasurecode-dev
-        - libssl-dev
-        - curl
-        - memcached
-        - rsync
-        - sqlite3
-        - xfsprogs
-        - git-core
-        - gcc
-        - build-essential
-        - python-dev
-        - libffi-dev
-        - libxml2-dev
-        - libxml2
-        - libxslt1-dev
+    apt:
+      name: ['liberasurecode-dev', 'libssl-dev', 'curl', 'memcached', 'rsync',
+             'sqlite3', 'xfsprogs', 'git-core', 'gcc', 'build-essential',
+             'python-dev', 'libffi-dev', 'libxml2-dev', 'libxml2',
+             'libxslt1-dev']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
