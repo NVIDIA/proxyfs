@@ -30,6 +30,7 @@ const (
 	proxyFSConfFileName   = "proxyfs.conf"         // Used to pass to mkproxyfs & proxyfsd
 	realmsSourceDirName   = "realms"               // Used to hold files destined for realmsDestinationDirName
 	smbConfFileName       = "smb.conf"             // Used for passing to various SAMBA(7) components
+	smbCommonConfFileName = "smb_common.conf"      // Used for generating a smbPassdbFileName cloned for each vips/{VirtualIPAddr}
 	smbPassdbFileName     = "passdb.tdb"           // Used in vips/{VirtualIPAddr} to hold "local" SMB Passwords
 	smbUsersSetupFileName = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
 	vipsDirName           = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
@@ -177,22 +178,6 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		return
 	}
 
-	// Compute per-VitualIPAddr (Samba)
-
-	err = os.Mkdir(initialDirPath+"/"+vipsDirName, confDirPerm)
-	if nil != err {
-		return
-	}
-
-	for _, volumeGroup = range localVolumeGroupMap {
-		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr
-
-		err = os.Mkdir(vipDirPath, confDirPerm)
-		if nil != err {
-			return
-		}
-	}
-
 	// Compute SMB Users script
 
 	smbUsersSetupFile, err = os.OpenFile(initialDirPath+"/"+smbUsersSetupFileName, os.O_CREATE|os.O_WRONLY, scriptPerm)
@@ -230,6 +215,22 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	err = smbUsersSetupFile.Close()
 	if nil != err {
 		return
+	}
+
+	// Compute per-VitualIPAddr (Samba)
+
+	err = os.Mkdir(initialDirPath+"/"+vipsDirName, confDirPerm)
+	if nil != err {
+		return
+	}
+
+	for _, volumeGroup = range localVolumeGroupMap {
+		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr
+
+		err = os.Mkdir(vipDirPath, confDirPerm)
+		if nil != err {
+			return
+		}
 	}
 
 	// Compute FUSE MountPoint Directory script
