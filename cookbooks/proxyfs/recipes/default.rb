@@ -140,11 +140,6 @@ if node[:platform_family].include?("rhel")
   end
 end
 
-execute "Install PIP" do
-  command "curl https://bootstrap.pypa.io/get-pip.py | python"
-  not_if { system("pip --version") }
-end
-
 execute "Install pfs-swift-load-plot requirements" do
   command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
 end
