@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"go/build"
 	"go/token"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -17,6 +19,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/buildutil"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // TODO(adonovan): test reported source positions, somehow.
@@ -948,7 +951,9 @@ type V struct{ foo.U }
 			ctxt: fakeContext(map[string][]string{
 				"main": {`
 package main
-type I interface { f() }
+type I interface {
+	f()
+}
 type J interface { f(); g() }
 type A int
 func (A) f()
@@ -963,7 +968,7 @@ var _, _ J = B(0), C(0)
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#33", to: "F", // abstract method I.f
+			offset: "/go/src/main/0.go:#34", to: "F", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -994,7 +999,7 @@ var _, _ J = B(0), C(0)
 			},
 		},
 		{
-			offset: "/go/src/main/0.go:#58", to: "F", // abstract method J.f
+			offset: "/go/src/main/0.go:#59", to: "F", // abstract method J.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1025,7 +1030,7 @@ var _, _ J = B(0), C(0)
 			},
 		},
 		{
-			offset: "/go/src/main/0.go:#63", to: "G", // abstract method J.g
+			offset: "/go/src/main/0.go:#64", to: "G", // abstract method J.g
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1060,7 +1065,9 @@ var _, _ J = B(0), C(0)
 			ctxt: fakeContext(map[string][]string{
 				"main": {`
 package main
-type I interface { f() }
+type I interface {
+	f()
+}
 type C int
 func (C) f()
 type D struct{C}
@@ -1068,7 +1075,7 @@ var _ I = D{}
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#33", to: "F", // abstract method I.f
+			offset: "/go/src/main/0.go:#34", to: "F", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1090,14 +1097,16 @@ var _ I = D{}
 			ctxt: fakeContext(map[string][]string{
 				"main": {`
 package main
-type I interface {f()}
+type I interface {
+	f()
+}
 type C struct{I}
 func (C) g() int
 var _ int = C{}.g()
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#32", to: "g", // abstract method I.f
+			offset: "/go/src/main/0.go:#34", to: "g", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1116,13 +1125,17 @@ var _ int = C{}.g()
 		{
 			ctxt: fakeContext(map[string][]string{
 				"main": {`package main
-type I interface{f()}
-type J interface{f()}
+type I interface{
+	f()
+}
+type J interface{
+	f()
+}
 var _ = I(nil).(J)
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#30", to: "g", // abstract method I.f
+			offset: "/go/src/main/0.go:#32", to: "g", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1141,13 +1154,17 @@ var _ = I(nil).(J)
 		{
 			ctxt: fakeContext(map[string][]string{
 				"main": {`package main
-type I interface{f()}
-type J interface{f()int}
+type I interface{
+	f()
+}
+type J interface{
+	f()int
+}
 var _ = I(nil).(J)
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#30", to: "g", // abstract method I.f
+			offset: "/go/src/main/0.go:#32", to: "g", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1166,15 +1183,19 @@ var _ = I(nil).(J)
 		{
 			ctxt: fakeContext(map[string][]string{
 				"main": {`package main
-type I interface{f()}
+type I interface{
+	f()
+}
 type C int
 func (C) f()
-type J interface{f()int}
+type J interface{
+	f()int
+}
 var _ = I(C(0)).(J)
 `,
 				},
 			}),
-			offset: "/go/src/main/0.go:#30", to: "g", // abstract method I.f
+			offset: "/go/src/main/0.go:#32", to: "g", // abstract method I.f
 			want: map[string]string{
 				"/go/src/main/0.go": `package main
 
@@ -1259,12 +1280,18 @@ func main() {
 }
 
 func TestDiff(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skipf("diff tool non-existent for windows on builders")
-	}
-	if runtime.GOOS == "plan9" {
+	switch runtime.GOOS {
+	case "windows":
+		if os.Getenv("GO_BUILDER_NAME") != "" {
+			if _, err := exec.LookPath(DiffCmd); err != nil {
+				t.Skipf("diff tool non-existent for %s on builders", runtime.GOOS)
+			}
+		}
+	case "plan9":
 		t.Skipf("plan9 diff tool doesn't support -u flag")
 	}
+	testenv.NeedsTool(t, DiffCmd)
+	testenv.NeedsTool(t, "go") // to locate the package to be renamed
 
 	defer func() {
 		Diff = false
@@ -1273,7 +1300,42 @@ func TestDiff(t *testing.T) {
 	Diff = true
 	stdout = new(bytes.Buffer)
 
-	if err := Main(&build.Default, "", `"golang.org/x/tools/refactor/rename".justHereForTestingDiff`, "Foo"); err != nil {
+	// Set up a fake GOPATH in a temporary directory,
+	// and ensure we're in GOPATH mode.
+	tmpdir, err := ioutil.TempDir("", "TestDiff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	buildCtx := build.Default
+	buildCtx.GOPATH = tmpdir
+
+	pkgDir := filepath.Join(tmpdir, "src", "example.com", "rename")
+	if err := os.MkdirAll(pkgDir, 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(prevWD)
+
+	if err := os.Chdir(pkgDir); err != nil {
+		t.Fatal(err)
+	}
+
+	const goFile = `package rename
+
+func justHereForTestingDiff() {
+	justHereForTestingDiff()
+}
+`
+	if err := ioutil.WriteFile(filepath.Join(pkgDir, "rename_test.go"), []byte(goFile), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Main(&buildCtx, "", `"example.com/rename".justHereForTestingDiff`, "Foo"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1287,10 +1349,6 @@ func TestDiff(t *testing.T) {
 `) {
 		t.Errorf("unexpected diff:\n<<%s>>", stdout)
 	}
-}
-
-func justHereForTestingDiff() {
-	justHereForTestingDiff()
 }
 
 // ---------------------------------------------------------------------

@@ -2,6 +2,18 @@
   name: Install and start ProxyFS using the Chef installer
   vars_files:
     - "../vars/{{ env }}.yml"
+  vars:
+    pkg_ver:
+      etcd: "3.3.10"
+    golang_versions:
+      current: "go1.11.4"
+      candidate: "go1.12.9"
+      latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
+    active_golang_version: "{{ golang_version | default('current') }}"
+    golang_versions_file: "/etc/golang_versions.json"
+    go_dir_parent_path: "/usr/local"
+    go_dir_name: "go"
+    go_dir_path: "{{ go_dir_parent_path }}/{{ go_dir_name }}"
 
   tasks:
 
@@ -22,13 +34,17 @@
   #
   # On Centos, we have to download and install chef and liberasurecode manually
   #
+  - name: Check Chef is installed
+    stat: path="/usr/bin/chef-solo"
+    register: chef_solo_file
+
   - name: Download and Install Chef
     yum:
       name: https://packages.chef.io/files/stable/chef/12.16.42/el/7/chef-12.16.42-1.el7.x86_64.rpm
       state: present
     become: yes
     become_user: root
-    when: ansible_os_family == 'RedHat'
+    when: ansible_os_family == 'RedHat' and chef_solo_file.stat.exists == false
 
   - name: Create {{ proxyfs_user }} user
     user:
@@ -64,30 +80,18 @@
   #
 
   - name: yum install base packages needed for server config
-    yum: name={{ item }} state=present
-    with_items:
-        - sudo
-        - ruby
-        - rubygems
-        - gcc
-        - libxml2
-        - libxml2-devel
-        - libxslt
-        - libxslt-devel
-        - which
-        - tar
+    yum:
+      name: ['sudo', 'ruby', 'rubygems', 'gcc', 'libxml2', 'libxml2-devel',
+      'libxslt', 'libxslt-devel', 'which', 'tar']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   - name: apt install base packages needed for server config
-    apt: name={{ item }} state=present
-    with_items:
-        - sudo
-        - build-essential
-        - ruby
-        - rubygems
-        - chef
+    apt:
+      name: ['sudo', 'build-essential', 'ruby', 'rubygems', 'chef']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
@@ -114,57 +118,38 @@
     become_user: root
 
   - name: yum install anticipated packages for building/running proxyfs
-    yum: name={{ item }} state=present
-    with_items:
-        - gcc
-        - python-devel
-        - gnutls-devel
-        - libacl-devel
-        - openldap-devel
-        - json-c-devel
+    yum:
+      name: ['gcc', 'python-devel', 'gnutls-devel', 'libacl-devel',
+             'openldap-devel', 'json-c-devel']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   - name: apt install anticipated packages for building/running proxyfs
-    apt: name={{ item }} state=present
-    with_items:
-        - gcc
-        - python-dev
-        - gnutls-dev
-        - libacl1-dev
-        - libldap2-dev
-        - libjson-c-dev
-        - libb64-dev
+    apt:
+      name: ['gcc', 'python-dev', 'gnutls-dev', 'libacl1-dev', 'libldap2-dev',
+             'libjson-c-dev', 'libb64-dev']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
 
   - name: yum install anticipated packages for building/running swift
-    yum: name={{ item }} state=present
-    with_items:
-        - openssl-devel
-        - curl
-        - memcached
-        - rsync
-        - xfsprogs
-        - git-core
-        - gcc
-        - python-devel
-        - libffi-devel
-        - libxml2-devel
-        - libxml2
-        - libxslt-devel
-        - centos-release-scl
+    yum:
+      name: ['openssl-devel', 'curl', 'memcached', 'rsync', 'xfsprogs',
+             'git-core', 'gcc', 'python-devel', 'libffi-devel',
+             'libxml2-devel', 'libxml2', 'libxslt-devel', 'centos-release-scl']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
 
   # rh-python36 must be installed after centos-release-scl, on a separate step
   - name: yum install RedHat's Python 3.6
-    yum: name={{ item }} state=present
-    with_items:
-      - rh-python36
+    yum:
+      name: ['rh-python36']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'RedHat'
@@ -199,24 +184,200 @@
   #  We are not installing py3 on Ubuntu! This should be fixed if we ever
   #  decide to support Ubuntu.
   - name: apt install anticipated packages for building/running swift
-    apt: name={{ item }} state=present
-    with_items:
-        - liberasurecode-dev
-        - libssl-dev
-        - curl
-        - memcached
-        - rsync
-        - sqlite3
-        - xfsprogs
-        - git-core
-        - gcc
-        - build-essential
-        - python-dev
-        - libffi-dev
-        - libxml2-dev
-        - libxml2
-        - libxslt1-dev
+    apt:
+      name: ['liberasurecode-dev', 'libssl-dev', 'curl', 'memcached', 'rsync',
+             'sqlite3', 'xfsprogs', 'git-core', 'gcc', 'build-essential',
+             'python-dev', 'libffi-dev', 'libxml2-dev', 'libxml2',
+             'libxslt1-dev']
+      state: present
     become: yes
     become_user: root
     when: ansible_os_family == 'Debian'
 
+  # Install etcd
+  - name: Download, install, and perform basic set up for etcd
+    block:
+      - name: Check etcd binary exists
+        stat: path="/usr/local/bin/etcd"
+        register: etcd_binary
+
+      - name: Check etcdctl binary exists
+        stat: path="/usr/local/bin/etcdctl"
+        register: etcdctl_binary
+
+      - name: Get current etcd version
+        shell: etcd --version | grep "etcd Version" | awk '{print $NF}'
+        register: current_etcd_version
+        when: etcd_binary.stat.exists == True and etcdctl_binary.stat.exists == True
+
+      - block:
+        - name: Create tmpdir
+          tempfile:
+            state: directory
+            suffix: etcd-install
+          register: tmpdir
+
+        - name: Download and untar etcd version {{ pkg_ver.etcd }}
+          unarchive:
+            src: https://github.com/etcd-io/etcd/releases/download/v{{ pkg_ver.etcd }}/etcd-v{{ pkg_ver.etcd }}-linux-amd64.tar.gz
+            remote_src: yes
+            dest: "{{ tmpdir.path }}"
+
+        - name: Install etcd binaries
+          copy:
+            src: "{{ tmpdir.path }}/etcd-v{{ pkg_ver.etcd }}-linux-amd64/{{ item }}"
+            remote_src: yes
+            dest: /usr/local/bin/
+            mode: '0755'
+          with_items:
+            - etcd
+            - etcdctl
+          become: true
+          become_user: root
+
+        - name: Cleanup tmpdir
+          file:
+            state: absent
+            path: "{{ tmpdir.path }}"
+
+        - name: Create directories for etcd
+          file:
+            path: "{{ item }}"
+            state: directory
+          with_items:
+            - /var/etcd/data
+            - /var/etcd/wal
+            - /etc/etcd
+          become: true
+          become_user: root
+
+        - name: Install systemd service file for etcd
+          copy:
+            src: etc/systemd/system/etcd.service
+            dest: /etc/systemd/system/etcd.service
+          become: true
+          become_user: root
+
+        - name: Install etcd conf file
+          copy:
+            src: etc/etcd/etcd.conf
+            dest: /etc/etcd/etcd.conf
+          become: true
+
+        when: etcd_binary.stat.exists == False or etcdctl_binary.stat.exists == False or current_etcd_version.stdout != pkg_ver.etcd
+
+  - name: Script for ProxyFS reprovisioning
+    template:
+      src: usr/bin/reprovision_proxyfs.template
+      dest: /usr/bin/reprovision_proxyfs
+      owner: root
+      group: root
+      mode: '0755'
+
+  - name: Install 3 versions of Golang (current, candidate, and latest)
+    block:
+
+      - name: Place Golang versions file at {{ golang_versions_file }}
+        copy:
+          content: "{{ golang_versions | to_nice_json }}"
+          dest: "{{ golang_versions_file }}"
+          owner: root
+          group: root
+          mode: '0644'
+
+      - name: Create tmpdir
+        tempfile:
+          state: directory
+          suffix: golang-install
+        register: tmpdir
+
+      - name: Check golang directories exist
+        stat: path="{{ go_dir_parent_path }}/{{ item.value }}"
+        register: golang_version_dirs_raw_info
+        with_dict: "{{ golang_versions }}"
+
+      - name: Save golang directories info
+        # golang_version_dir will look something like:
+        # {
+        #     "go1.11.4": true,
+        #     "go1.12.9": true,
+        #     "go1.13": true
+        # }
+        set_fact:
+          golang_version_dir: "{{ golang_version_dir|default({}) | combine( {item.item.value: item.stat.exists} ) }}"
+        with_items: "{{ golang_version_dirs_raw_info.results }}"
+
+      - name: Make Golang directories in tmpdir
+        file:
+          path: "{{ tmpdir.path }}/{{ item.value }}"
+          state: directory
+          owner: root
+          group: root
+          mode: "0775"
+        become: yes
+        become_user: root
+        with_dict: "{{ golang_versions }}"
+        when: golang_version_dir[item.value] == False
+
+      - name: Download and untar golang versions
+        unarchive:
+          src: https://dl.google.com/go/{{ item.value }}.linux-amd64.tar.gz
+          remote_src: yes
+          dest: "{{ tmpdir.path }}/{{ item.value }}"
+        with_dict: "{{ golang_versions }}"
+        when: golang_version_dir[item.value] == False
+
+      - name: Move untarred directories to {{ go_dir_parent_path }}
+        command: "mv {{ tmpdir.path }}/{{ item.value }}/go {{ go_dir_parent_path }}/{{ item.value }}"
+        with_dict: "{{ golang_versions }}"
+        when: golang_version_dir[item.value] == False
+        become: yes
+        become_user: root
+
+      - name: Cleanup tmpdir
+        file:
+          state: absent
+          path: "{{ tmpdir.path }}"
+
+      - name: Check {{ go_dir_path }} directory exists
+        stat: path="{{ go_dir_path }}"
+        register: go_dir_path_stat
+
+      - name: Remove {{ go_dir_path }} if it's not a symlink (old golang install)
+        file:
+          state: absent
+          path: "{{ go_dir_path }}"
+        become: yes
+        become_user: root
+        when: go_dir_path_stat.stat.exists and go_dir_path_stat.stat.islnk == false
+
+      - name: Create symlink at {{ go_dir_path }} to "{{ golang_version }}" version ({{ golang_versions[active_golang_version] }})
+        file:
+          src: "{{ go_dir_parent_path }}/{{ golang_versions[active_golang_version] }}"
+          path: "{{ go_dir_path }}"
+          state: link
+        become: yes
+        become_user: root
+        # Remember this stat was taken BEFORE attempting to remove the
+        # {{ go_dir_path }} dir in the previous step
+        when: go_dir_path_stat.stat.exists == false or go_dir_path_stat.stat.islnk == false
+
+      - debug:
+          msg: "The active version of golang hasn't been changed because another version ({{ go_dir_path_stat.stat.lnk_target }}) was already in use. Please, manually change your golang version with 'goswitch' if that's not ok."
+        when: go_dir_path_stat.stat.exists and go_dir_path_stat.stat.islnk
+
+      - name: Set up /etc/profile.d/golang_path.sh
+        copy:
+          dest: "/etc/profile.d/golang_path.sh"
+          content: export PATH=$PATH:{{ go_dir_path }}/bin
+          mode: '0644'
+        become: yes
+        become_user: root
+
+      - name: Script for Golang version switching
+        template:
+          src: usr/bin/goswitch.template
+          dest: /usr/bin/goswitch
+          owner: root
+          group: root
+          mode: '0755'

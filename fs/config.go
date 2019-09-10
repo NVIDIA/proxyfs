@@ -38,6 +38,8 @@ type volumeStruct struct {
 	volumeName               string
 	doCheckpointPerFlush     bool
 	maxFlushTime             time.Duration
+	fileDefragmentChunkSize  uint64
+	fileDefragmentChunkDelay time.Duration
 	reportedBlockSize        uint64
 	reportedFragmentSize     uint64
 	reportedNumBlocks        uint64 // Used for Total, Free, and Avail
@@ -109,6 +111,7 @@ type globalsStruct struct {
 	WriteBytes         bucketstats.BucketLog2Round
 
 	CreateErrors              bucketstats.Total
+	DefragmentFileErrors      bucketstats.Total
 	FetchExtentMapChunkErrors bucketstats.Total
 	FlushErrors               bucketstats.Total
 	FlockOtherErrors          bucketstats.Total
@@ -143,6 +146,7 @@ type globalsStruct struct {
 	UnlinkErrors              bucketstats.Total
 	WriteErrors               bucketstats.Total
 
+	DefragmentFileUsec             bucketstats.BucketLog2Round
 	FetchExtentMapChunkUsec        bucketstats.BucketLog2Round
 	CallInodeToProvisionObjectUsec bucketstats.BucketLog2Round
 	MiddlewareCoalesceUsec         bucketstats.BucketLog2Round
@@ -268,6 +272,15 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.maxFlushTime, err = confMap.FetchOptionValueDuration(volumeSectionName, "MaxFlushTime")
 	if nil != err {
 		return
+	}
+
+	volume.fileDefragmentChunkSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "FileDefragmentChunkSize")
+	if nil != err {
+		volume.fileDefragmentChunkSize = 10485760 // TODO: Eventually, just return
+	}
+	volume.fileDefragmentChunkDelay, err = confMap.FetchOptionValueDuration(volumeSectionName, "FileDefragmentChunkDelay")
+	if nil != err {
+		volume.fileDefragmentChunkDelay = time.Duration(10 * time.Millisecond) // TODO: Eventually, just return
 	}
 
 	volume.reportedBlockSize, err = confMap.FetchOptionValueUint64(volumeSectionName, "ReportedBlockSize")

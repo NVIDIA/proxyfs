@@ -27,9 +27,11 @@ import (
 // encountered before or after this point will be sent to errChan (and be non-nil of course).
 func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.WaitGroup, execArgs []string, signals ...os.Signal) {
 	var (
-		confMap        conf.ConfMap
-		err            error
-		signalReceived os.Signal
+		confMap                 conf.ConfMap
+		debugServerPortAsString string
+		debugServerPortAsUint16 uint16
+		err                     error
+		signalReceived          os.Signal
 	)
 
 	// Compute confMap
@@ -90,11 +92,17 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		wg.Done()
 	}()
 
-	// TODO: This should be configurable (i.e. enable/disable... and which port#)
-	go func() {
-		logger.Infof("proxyfsd.Daemon() starting debug HTTP server: %s",
-			http.ListenAndServe("localhost:6060", nil))
-	}()
+	// Optionally launch an embedded HTTP Server for Golang runtime access
+
+	debugServerPortAsUint16, err = confMap.FetchOptionValueUint16("ProxyfsDebug", "DebugServerPort")
+	if nil != err {
+		debugServerPortAsUint16 = 6060 // TODO: Eventually set it to zero
+	}
+	if uint16(0) != debugServerPortAsUint16 {
+		debugServerPortAsString = fmt.Sprintf("%d", debugServerPortAsUint16)
+		logger.Infof("proxyfsd.Daemon() starting debug HTTP Server on localhost:%s", debugServerPortAsString)
+		go http.ListenAndServe("localhost:"+debugServerPortAsString, nil)
+	}
 
 	// Arm signal handler used to indicate termination and wait on it
 	//

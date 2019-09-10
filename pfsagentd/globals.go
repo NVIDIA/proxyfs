@@ -2,10 +2,12 @@ package main
 
 import (
 	"container/list"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,6 +48,8 @@ type configStruct struct {
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole                 bool
 	TraceEnabled                 bool
+	HTTPServerIPAddr             string
+	HTTPServerTCPPort            uint16
 	AttrDuration                 time.Duration
 	AttrBlockSize                uint64
 	LookupEntryDuration          time.Duration
@@ -215,6 +219,8 @@ type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
+	httpServer                      *http.Server
+	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
 	retryDelay                      []time.Duration
 	swiftAuthWaitGroup              *sync.WaitGroup
@@ -252,7 +258,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 	// Default logging related globals
 
 	globals.config.LogFilePath = ""
-	globals.config.LogToConsole = false
+	globals.config.LogToConsole = true
 	globals.logFile = nil
 
 	// Process resultant confMap
@@ -279,6 +285,10 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.config.SwiftAuthURL, err = confMap.FetchOptionValueString("Agent", "SwiftAuthURL")
 	if nil != err {
+		logFatal(err)
+	}
+	if !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "http:") && !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "https:") {
+		err = fmt.Errorf("[Agent]SwiftAuthURL (\"%s\") must start with either \"http:\" or \"https:\"", globals.config.SwiftAuthURL)
 		logFatal(err)
 	}
 
@@ -388,6 +398,15 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.TraceEnabled, err = confMap.FetchOptionValueBool("Agent", "TraceEnabled")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.HTTPServerIPAddr, err = confMap.FetchOptionValueString("Agent", "HTTPServerIPAddr")
+	if nil != err {
+		logFatal(err)
+	}
+	globals.config.HTTPServerTCPPort, err = confMap.FetchOptionValueUint16("Agent", "HTTPServerTCPPort")
 	if nil != err {
 		logFatal(err)
 	}
@@ -505,6 +524,7 @@ func uninitializeGlobals() {
 	leaseRequest.Wait()
 
 	globals.logFile = nil
+	globals.httpServer = nil
 	globals.httpClient = nil
 	globals.retryDelay = nil
 	globals.swiftAuthWaitGroup = nil

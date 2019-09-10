@@ -53,6 +53,7 @@ type swiftObjectStruct struct {
 	sync.Mutex     //                       protects swiftObjectStruct.contents
 	name           string
 	swiftContainer *swiftContainerStruct // back-reference to swiftContainerStruct
+	headers        http.Header
 	contents       []byte
 }
 
@@ -95,7 +96,7 @@ type rangeStruct struct {
 
 type stringSet map[string]bool
 
-var headerNameIgnoreSet = stringSet{"Accept-Encoding": true, "User-Agent": true, "Content-Length": true}
+var headerNameIgnoreSet = stringSet{"Accept": true, "Accept-Encoding": true, "User-Agent": true, "Content-Length": true}
 
 func (context *swiftAccountContext) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
 	keyAsString, ok := key.(string)
@@ -772,6 +773,11 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 								switch errno {
 								case 0:
 									swiftObject.Lock()
+									for headerName, headerValueSlice := range swiftObject.headers {
+										for _, headerValue := range headerValueSlice {
+											responseWriter.Header().Add(headerName, headerValue)
+										}
+									}
 									ranges, err := parseRangeHeader(request, len(swiftObject.contents))
 									if nil == err {
 										switch len(ranges) {
@@ -888,8 +894,15 @@ func doHead(responseWriter http.ResponseWriter, request *http.Request) {
 							swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
 							switch errno {
 							case 0:
+								swiftObject.Lock()
+								for headerName, headerValueSlice := range swiftObject.headers {
+									for _, headerValue := range headerValueSlice {
+										responseWriter.Header().Add(headerName, headerValue)
+									}
+								}
 								responseWriter.Header().Set("Content-Length", strconv.Itoa(len(swiftObject.contents)))
 								responseWriter.WriteHeader(http.StatusOK)
+								swiftObject.Unlock()
 							case unix.ENOENT:
 								responseWriter.WriteHeader(http.StatusNotFound)
 							default:
@@ -990,13 +1003,41 @@ func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 					} else {
 						// POST SwiftObject
 						globals.Lock()
-						globals.objectMethodCount.post++
-						if (0 != globals.objectMethodChaosFailureRate.post) && (0 == globals.objectMethodCount.post%globals.objectMethodChaosFailureRate.post) {
+						globals.objectMethodCount.head++
+						if (0 != globals.objectMethodChaosFailureRate.post) && (0 == globals.objectMethodCount.head%globals.objectMethodChaosFailureRate.post) {
 							globals.Unlock()
 							responseWriter.WriteHeader(globals.chaosFailureHTTPStatus)
 						} else {
 							globals.Unlock()
-							responseWriter.WriteHeader(http.StatusForbidden)
+							swiftObject, errno := locateSwiftObject(swiftContainer, swiftObjectName)
+							switch errno {
+							case 0:
+								swiftObject.Lock()
+								for headerName, headerValueSlice := range request.Header {
+									_, ignoreHeader := headerNameIgnoreSet[headerName]
+									if !ignoreHeader {
+										headerValueSliceLen := len(headerValueSlice)
+										if 0 < headerValueSliceLen {
+											swiftObject.headers[headerName] = make([]string, 0, headerValueSliceLen)
+											for _, headerValue := range headerValueSlice {
+												if 0 < len(headerValue) {
+													swiftObject.headers[headerName] = append(swiftObject.headers[headerName], headerValue)
+												}
+											}
+											if 0 == len(swiftObject.headers[headerName]) {
+												delete(swiftObject.headers, headerName)
+											}
+										}
+									}
+								}
+								swiftObject.Unlock()
+								responseWriter.WriteHeader(http.StatusNoContent)
+							case unix.ENOENT:
+								responseWriter.WriteHeader(http.StatusNotFound)
+							default:
+								err := fmt.Errorf("locateSwiftObject(\"%v\") returned unexpected errno: %v", swiftObjectName, errno)
+								panic(err)
+							}
 						}
 					}
 				case unix.ENOENT:
@@ -1119,6 +1160,26 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 						case 0:
 							swiftObject, wasCreated := createOrLocateSwiftObject(swiftContainer, swiftObjectName)
 							swiftObject.Lock()
+							if wasCreated {
+								swiftObject.headers = make(http.Header)
+							}
+							for headerName, headerValueSlice := range request.Header {
+								_, ignoreHeader := headerNameIgnoreSet[headerName]
+								if !ignoreHeader {
+									headerValueSliceLen := len(headerValueSlice)
+									if 0 < headerValueSliceLen {
+										swiftObject.headers[headerName] = make([]string, 0, headerValueSliceLen)
+										for _, headerValue := range headerValueSlice {
+											if 0 < len(headerValue) {
+												swiftObject.headers[headerName] = append(swiftObject.headers[headerName], headerValue)
+											}
+										}
+										if 0 == len(swiftObject.headers[headerName]) {
+											delete(swiftObject.headers, headerName)
+										}
+									}
+								}
+							}
 							swiftObject.contents, _ = ioutil.ReadAll(request.Body)
 							swiftObject.Unlock()
 							if wasCreated {

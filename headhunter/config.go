@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
@@ -34,6 +35,11 @@ const (
 	AccountHeaderValue          = "true"
 	CheckpointHeaderName        = "X-Container-Meta-Checkpoint"
 	StoragePolicyHeaderName     = "X-Storage-Policy"
+)
+
+const (
+	MetadataRecycleBinHeaderName  = "X-Object-Meta-Recycle-Bin"
+	MetadataRecycleBinHeaderValue = "true"
 )
 
 type bPlusTreeTrackerStruct struct {
@@ -140,7 +146,7 @@ type volumeStruct struct {
 	maxNonce                                uint64
 	nextNonce                               uint64
 	checkpointRequestChan                   chan *checkpointRequestStruct
-	checkpointHeader                        *checkpointHeaderStruct
+	checkpointHeader                        *CheckpointHeaderStruct
 	checkpointHeaderEtcdRevision            int64
 	liveView                                *volumeViewStruct
 	priorView                               *volumeViewStruct
@@ -164,7 +170,7 @@ type globalsStruct struct {
 
 	crc64ECMATable                          *crc64.Table
 	uint64Size                              uint64
-	elementOfBPlusTreeLayoutStructSize      uint64
+	ElementOfBPlusTreeLayoutStructSize      uint64
 	replayLogTransactionFixedPartStructSize uint64
 
 	inodeRecCache                              sortedmap.BPlusTreeCache
@@ -180,11 +186,20 @@ type globalsStruct struct {
 	createdDeletedObjectsCachePriorCacheHits   uint64
 	createdDeletedObjectsCachePriorCacheMisses uint64
 
+	checkpointHeaderConsensusAttempts uint16
+	mountRetryLimit                   uint16
+	mountRetryDelay                   []time.Duration
+
+	logCheckpointHeaderPosts bool
+
 	etcdEnabled          bool
 	etcdEndpoints        []string
 	etcdAutoSyncInterval time.Duration
 	etcdDialTimeout      time.Duration
 	etcdOpTimeout        time.Duration
+
+	metadataRecycleBin       bool                // UNDO
+	metadataRecycleBinHeader map[string][]string // UNDO
 
 	etcdClient *etcd.Client
 	etcdKV     etcd.KV
@@ -257,13 +272,17 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		bPlusTreeObjectCacheEvictLowLimit        uint64
 		createdDeletedObjectsCacheEvictHighLimit uint64
 		createdDeletedObjectsCacheEvictLowLimit  uint64
-		dummyElementOfBPlusTreeLayoutStruct      elementOfBPlusTreeLayoutStruct
+		dummyElementOfBPlusTreeLayoutStruct      ElementOfBPlusTreeLayoutStruct
 		dummyReplayLogTransactionFixedPartStruct replayLogTransactionFixedPartStruct
 		dummyUint64                              uint64
 		inodeRecCacheEvictHighLimit              uint64
 		inodeRecCacheEvictLowLimit               uint64
 		logSegmentRecCacheEvictHighLimit         uint64
 		logSegmentRecCacheEvictLowLimit          uint64
+		mountRetryDelay                          time.Duration
+		mountRetryExpBackoff                     float64
+		mountRetryIndex                          uint16
+		nextMountRetryDelay                      time.Duration
 	)
 
 	bucketstats.Register("proxyfs.headhunter", "", &globals)
@@ -277,7 +296,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.elementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
+	globals.ElementOfBPlusTreeLayoutStructSize, _, err = cstruct.Examine(dummyElementOfBPlusTreeLayoutStruct)
 	if nil != err {
 		return
 	}
@@ -350,6 +369,42 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.createdDeletedObjectsCachePriorCacheHits = 0
 	globals.createdDeletedObjectsCachePriorCacheMisses = 0
 
+	// Record mount retry parameters and compute retry delays
+
+	globals.checkpointHeaderConsensusAttempts, err = confMap.FetchOptionValueUint16("FSGlobals", "CheckpointHeaderConsensusAttempts")
+	if nil != err {
+		globals.checkpointHeaderConsensusAttempts = 5 // TODO: Eventually just return
+	}
+
+	globals.mountRetryLimit, err = confMap.FetchOptionValueUint16("FSGlobals", "MountRetryLimit")
+	if nil != err {
+		globals.mountRetryLimit = 6 // TODO: Eventually just return
+	}
+	mountRetryDelay, err = confMap.FetchOptionValueDuration("FSGlobals", "MountRetryDelay")
+	if nil != err {
+		mountRetryDelay = time.Duration(1 * time.Second) // TODO: Eventually just return
+	}
+	mountRetryExpBackoff, err = confMap.FetchOptionValueFloat64("FSGlobals", "MountRetryExpBackoff")
+	if nil != err {
+		mountRetryExpBackoff = 2 // TODO: Eventually just return
+	}
+
+	globals.mountRetryDelay = make([]time.Duration, globals.mountRetryLimit)
+
+	nextMountRetryDelay = mountRetryDelay
+
+	for mountRetryIndex = 0; mountRetryIndex < globals.mountRetryLimit; mountRetryIndex++ {
+		globals.mountRetryDelay[mountRetryIndex] = nextMountRetryDelay
+		nextMountRetryDelay = time.Duration(float64(nextMountRetryDelay) * mountRetryExpBackoff)
+	}
+
+	// Fetch CheckpointHeader logging setting
+
+	globals.logCheckpointHeaderPosts, err = confMap.FetchOptionValueBool("FSGlobals", "LogCheckpointHeaderPosts")
+	if nil != err {
+		globals.logCheckpointHeaderPosts = true // TODO: Eventually just return
+	}
+
 	// Record etcd parameters
 
 	globals.etcdEnabled, err = confMap.FetchOptionValueBool("FSGlobals", "EtcdEnabled")
@@ -387,6 +442,17 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		}
 
 		globals.etcdKV = etcd.NewKV(globals.etcdClient)
+	}
+
+	// Record temporary MetadataRecycleBin setting [UNDO]
+
+	globals.metadataRecycleBin, err = confMap.FetchOptionValueBool("FSGlobals", "MetadataRecycleBin")
+	if nil != err {
+		globals.metadataRecycleBin = false // UNDO: Eventually just return or, perhaps, set to true
+	}
+	if globals.metadataRecycleBin {
+		globals.metadataRecycleBinHeader = make(map[string][]string)
+		globals.metadataRecycleBinHeader[MetadataRecycleBinHeaderName] = []string{MetadataRecycleBinHeaderValue}
 	}
 
 	err = nil
@@ -607,6 +673,7 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	var (
 		autoFormat            bool
 		autoFormatStringSlice []string
+		mountRetryIndex       uint16
 		volumeSectionName     string
 	)
 
@@ -714,7 +781,25 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 
 	err = volume.getCheckpoint(autoFormat)
 	if nil != err {
-		return
+		logger.Warnf("Initial attempt to mount Volume %s failed: %v", volume.volumeName, err)
+		mountRetryIndex = 0
+		for {
+			if mountRetryIndex == globals.mountRetryLimit {
+				err = fmt.Errorf("MountRetryLimit (%d) for Volume %s exceeded", globals.mountRetryLimit, volume.volumeName)
+				return
+			}
+
+			time.Sleep(globals.mountRetryDelay[mountRetryIndex])
+
+			err = volume.getCheckpoint(autoFormat)
+			if nil == err {
+				break
+			}
+
+			mountRetryIndex++ // Pre-increment to identify first retry as #1 in following logger.Warnf() call
+
+			logger.Warnf("Mount Retry #%d failed: %v", mountRetryIndex, err)
+		}
 	}
 
 	go volume.checkpointDaemon()

@@ -989,12 +989,16 @@ func (tree *btreeTreeStruct) Discard() (err error) {
 	return
 }
 
-func (bPlusTreeCache *btreeNodeCacheStruct) Stats() (cacheHits uint64, cacheMisses uint64, evictLowLimit uint64, evictHighLimit uint64) {
+func (bPlusTreeCache *btreeNodeCacheStruct) Stats() (bPlusTreeCacheStats *BPlusTreeCacheStats) {
 	bPlusTreeCache.Lock()
-	cacheHits = bPlusTreeCache.cacheHits
-	cacheMisses = bPlusTreeCache.cacheMisses
-	evictLowLimit = bPlusTreeCache.evictLowLimit
-	evictHighLimit = bPlusTreeCache.evictHighLimit
+	bPlusTreeCacheStats = &BPlusTreeCacheStats{
+		EvictLowLimit:  bPlusTreeCache.evictLowLimit,
+		EvictHighLimit: bPlusTreeCache.evictHighLimit,
+		CleanLRUItems:  bPlusTreeCache.cleanLRUItems,
+		DirtyLRUItems:  bPlusTreeCache.dirtyLRUItems,
+		CacheHits:      bPlusTreeCache.cacheHits,
+		CacheMisses:    bPlusTreeCache.cacheMisses,
+	}
 	bPlusTreeCache.Unlock()
 	return
 }

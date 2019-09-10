@@ -19,15 +19,17 @@ type File struct {
 	inodeNumber inode.InodeNumber
 }
 
-func (f File) Access(ctx context.Context, req *fuselib.AccessRequest) error {
+func (f File) Access(ctx context.Context, req *fuselib.AccessRequest) (err error) {
 	enterGate()
 	defer leaveGate()
 
 	if f.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, f.inodeNumber, inode.InodeMode(req.Mask)) {
-		return nil
+		err = nil
 	} else {
-		return newFuseError(blunder.NewError(blunder.PermDeniedError, "EACCES"))
+		err = newFuseError(blunder.NewError(blunder.PermDeniedError, "EACCES"))
 	}
+
+	return
 }
 
 func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
@@ -50,7 +52,8 @@ func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 		return
 	}
 
-	attr.Inode = uint64(f.inodeNumber) // or stat[fs.StatINum]
+	attr.Valid = time.Duration(time.Microsecond) // TODO: Make this settable if FUSE inside ProxyFS endures
+	attr.Inode = uint64(f.inodeNumber)           // or stat[fs.StatINum]
 	attr.Size = stat[fs.StatSize]
 	attr.Blocks = (stat[fs.StatSize] + 511) / 512
 	attr.Atime = time.Unix(0, int64(stat[fs.StatATime]))
@@ -131,27 +134,26 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 	return
 }
 
-func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
+func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
+	err = f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 	}
-	return err
+	return
 }
 
-func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
+func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	err := f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
-		f.inodeNumber)
+	err = f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 	}
-	return err
+	return
 }
 
 func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.ReadResponse) (err error) {
@@ -161,13 +163,14 @@ func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.
 	buf, err := f.mountHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
 	if err != nil && err != io.EOF {
 		err = newFuseError(err)
-		return err
+		return
 	}
 	resp.Data = buf
-	return nil
+	err = nil
+	return
 }
 
-func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuselib.WriteResponse) error {
+func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuselib.WriteResponse) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -184,5 +187,5 @@ func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuseli
 	} else {
 		err = newFuseError(err)
 	}
-	return err
+	return
 }

@@ -192,10 +192,10 @@ mount /mnt/sdb1
 sudo mkdir /mnt/sdb1/1 /mnt/sdb1/2 /mnt/sdb1/3 /mnt/sdb1/4
 chown swift:swift /mnt/sdb1/*
 for x in {1..4}; do ln -s /mnt/sdb1/$x /srv/$x; done
-mkdir -p /srv/1/node/sdb1 /srv/1/node/sdb5 \
-         /srv/2/node/sdb2 /srv/2/node/sdb6 \
-         /srv/3/node/sdb3 /srv/3/node/sdb7 \
-         /srv/4/node/sdb4 /srv/4/node/sdb8 \
+mkdir -p /srv/1/node/sdb1 /srv/1/node/sdb5 /srv/1/node/sdb9 \
+         /srv/2/node/sdb2 /srv/2/node/sdb6 /srv/2/node/sdbA \
+         /srv/3/node/sdb3 /srv/3/node/sdb7 /srv/3/node/sdbB \
+         /srv/4/node/sdb4 /srv/4/node/sdb8 /srv/4/node/sdbC \
          /var/run/swift
 chown -R swift:swift /var/run/swift
 for x in {1..4}; do chown -R swift:swift /srv/$x/; done
@@ -243,7 +243,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.21.0.4
+git checkout ss-release-2.22.0.2
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
@@ -304,9 +304,7 @@ cat > ~vagrant/.aws/config << EOF
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[profile default]
-aws_access_key_id = test:tester
-aws_secret_access_key = testing
+[default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
@@ -315,6 +313,11 @@ s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+EOF
+cat > ~vagrant/.aws/credentials << EOF
+[default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
 EOF
 chown -R vagrant:vagrant ~vagrant/.aws
 
@@ -334,6 +337,10 @@ rm -rf /CommonMountPoint
 mkdir /CommonMountPoint
 chmod 777 /CommonMountPoint
 
+rm -rf /AgentMountPoint
+mkdir /AgentMountPoint
+chmod 777 /AgentMountPoint
+
 rm -rf /mnt/nfs_proxyfs_mount
 mkdir /mnt/nfs_proxyfs_mount
 chmod 777 /mnt/nfs_proxyfs_mount
@@ -348,9 +355,62 @@ cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/exports /etc/exports
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/etc/samba/smb.conf /etc/samba/smb.conf
 echo -e "swift\nswift" | smbpasswd -a swift
 
+# Install Kerberos Client to SDOM{1|2|3|4}.LOCAL hosted by sdc{1|2|3|4}.sdom{1|2|3|4}.local
+
+yum -y install krb5-workstation
+
+cat >> /etc/hosts << EOF
+172.28.128.11 sdc1 sdc1.sdom1.local
+172.28.128.12 sdc2 sdc2.sdom2.local
+172.28.128.13 sdc3 sdc3.sdom3.local
+172.28.128.14 sdc4 sdc4.sdom4.local
+172.28.128.21 saio1 saio1.sdom1.local
+172.28.128.22 saio2 saio2.sdom2.local
+172.28.128.23 saio3 saio3.sdom3.local
+172.28.128.24 saio4 saio4.sdom4.local
+EOF
+
+cat > /etc/krb5.conf.d/SambaDCs << EOF
+[libdefaults]
+dns_lookup_kdc = false
+
+[realms]
+SDOM1.LOCAL = {
+ admin_server = sdc1.sdom1.local
+ kdc = sdc1.sdom1.local
+ default_domain = SDOM1
+}
+SDOM2.LOCAL = {
+ admin_server = sdc2.sdom2.local
+ kdc=sdc2.sdom2.local
+ default_domain = SDOM2
+}
+SDOM3.LOCAL = {
+ admin_server = sdc3.sdom3.local
+ kdc=sdc3.sdom3.local
+ default_domain = SDOM3
+}
+SDOM4.LOCAL = {
+ admin_server = sdc4.sdom4.local
+ kdc=sdc4.sdom4.local
+ default_domain = SDOM4
+}
+
+[domain_realm]
+.sdom1.local = SDOM1.LOCAL
+sdom1.local = SDOM1.LOCAL
+.sdom2.local = SDOM2.LOCAL
+sdom2.local = SDOM2.LOCAL
+.sdom3.local = SDOM3.LOCAL
+sdom3.local = SDOM3.LOCAL
+.sdom4.local = SDOM4.LOCAL
+sdom4.local = SDOM4.LOCAL
+EOF
+
 # Install systemd .service files for ProxyFS
 
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
+cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
 
 # Enable Samba service in an SELinux environment
 
@@ -390,7 +450,13 @@ yum -y install tree
 
 # Install and configure a localhost-only one-node etcd cluster
 
-yum -y install etcd
+ETCD_VERSION=3.3.10
+wget https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+tar xzf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+rm -rf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
+install -C -m 755 etcd-v${ETCD_VERSION}-linux-amd64/etcd /usr/local/bin/
+install -C -m 755 etcd-v${ETCD_VERSION}-linux-amd64/etcdctl /usr/local/bin/
+rm -rf etcd-v${ETCD_VERSION}-linux-amd64
 
 mkdir /etcd
 
@@ -405,7 +471,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=root
-ExecStart=/usr/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --initial-advertise-peer-urls http://localhost:2380 --listen-peer-urls http://localhost:2380 --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379 --initial-cluster-token etcd-cluster --initial-cluster default=http://localhost:2380 --initial-cluster-state new
+ExecStart=/usr/local/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --initial-advertise-peer-urls http://localhost:2380 --listen-peer-urls http://localhost:2380 --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379 --initial-cluster-token etcd-cluster --initial-cluster default=http://localhost:2380 --initial-cluster-state new
 
 [Install]
 WantedBy=multi-user.target
@@ -414,3 +480,8 @@ EOF
 # All done
 
 echo "SAIO for ProxyFS provisioned"
+
+ip addr add dev enp0s8 172.28.128.21/24
+ip addr add dev enp0s8 172.28.128.22/24
+ip addr add dev enp0s8 172.28.128.23/24
+ip addr add dev enp0s8 172.28.128.24/24

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/tools/go/loader"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
+	"golang.org/x/tools/internal/testenv"
 )
 
 // Skip the set of packages that transitively depend on
@@ -48,8 +49,10 @@ func bytesAllocated() uint64 {
 
 func TestStdlib(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping in short mode; too slow (golang.org/issue/14113)")
+		t.Skip("skipping in short mode; too slow (https://golang.org/issue/14113)")
 	}
+	testenv.NeedsTool(t, "go")
+
 	// Load, parse and type-check the program.
 	t0 := time.Now()
 	alloc0 := bytesAllocated()

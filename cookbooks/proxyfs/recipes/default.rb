@@ -1,10 +1,5 @@
 require 'json'
 
-golang_tarfile_name = 'go1.11.4.linux-amd64.tar.gz'
-
-golang_tarfile_path = "/tmp/#{golang_tarfile_name}"
-golang_tarfile_url  = "https://dl.google.com/go/#{golang_tarfile_name}"
-
 source_root = node['source_root']
 proxyfs_user = node['proxyfs_user']
 proxyfs_group = node['proxyfs_group']
@@ -12,13 +7,13 @@ is_dev = node['is_dev_environment']
 ss_packages = node['use_swiftstack_packages']
 package_spec_path = node['package_spec_path']
 
-GOROOT = "/usr/local/go"
 HOME_DIR = "/home/#{proxyfs_user}"
 DOT_BASH_PROFILE = "#{HOME_DIR}/.bash_profile"
 DOT_BASHRC = "#{HOME_DIR}/.bashrc"
 ROOT_DOT_BASH_PROFILE = "/root/.bash_profile"
 ROOT_DOT_BASHRC = "/root/.bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
+PROXYFS_BIN_DIR = "#{source_root}/bin"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
 VFS_SRC_DIR = "#{PROXYFS_SRC_DIR}/vfs"
 JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
@@ -26,29 +21,6 @@ JRPCCLIENT_SRC_DIR = "#{PROXYFS_SRC_DIR}/jrpcclient"
 # change the location of samba again in the future.
 SAMBA_PARENT_DIR = "#{VFS_SRC_DIR}"
 SAMBA_SRC_DIR = "#{SAMBA_PARENT_DIR}/samba"
-
-remote_file "#{golang_tarfile_path}" do
-  source "#{golang_tarfile_url}"
-  owner 'root'
-  group 'root'
-  mode '0400'
-  action :create
-  not_if { ::File.exists?(GOROOT) }
-end
-
-execute 'untar_golang' do
-  command "tar -C /usr/local -xzf #{golang_tarfile_path}"
-  not_if { ::File.exists?(GOROOT) }
-end
-
-file "/etc/profile.d/golang_path.sh" do
-  content "export PATH=$PATH:#{GOROOT}/bin"
-  mode '0644'
-end
-
-file "#{golang_tarfile_path}" do
-  action :delete
-end
 
 if node[:platform_family].include?("rhel") and ss_packages
   cookbook_file "/etc/yum.repos.d/swiftstack-controller.repo" do
@@ -168,17 +140,17 @@ if node[:platform_family].include?("rhel")
   end
 end
 
-execute "Install PIP" do
-  command "curl https://bootstrap.pypa.io/get-pip.py | python"
-  not_if { system("pip --version") }
-end
-
 execute "Install pfs-swift-load-plot requirements" do
   command "pip install -r #{PROXYFS_SRC_DIR}/pfs-swift-load/requirements.txt"
 end
 
+execute "Create ProxyFS/bin dir" do
+  command "mkdir #{PROXYFS_BIN_DIR}"
+  not_if { ::Dir.exists?("#{PROXYFS_BIN_DIR}") }
+end
+
 execute "Copy pfs-swift-load-plot at /home/swift/code/ProxyFS/bin/" do
-  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_SRC_DIR}/bin"
+  command "install -m 0755 #{PROXYFS_SRC_DIR}/pfs-swift-load/pfs-swift-load-plot #{PROXYFS_BIN_DIR}/"
 end
 
 execute "Install awscli and awscli-plugin-endpoint" do
@@ -207,6 +179,13 @@ directory '/CommonMountPoint' do
   owner 'root'
 end
 
+directory '/AgentMountPoint' do
+  # perms/owner don't really matter since it gets mounted over, but
+  # this helps stop a developer from accidentally dumping stuff on the
+  # root filesystem
+  owner 'root'
+end
+
 directory '/var/lib/proxyfs' do
   mode '0755'
   owner proxyfs_user
@@ -221,6 +200,13 @@ end
 
 link '/etc/proxyfsd' do
   to "#{source_root}/src/github.com/swiftstack/ProxyFS/proxyfsd/"
+  link_type :symbolic
+  owner proxyfs_user
+  group proxyfs_group
+end
+
+link '/etc/pfsagentd' do
+  to "#{source_root}/src/github.com/swiftstack/ProxyFS/pfsagentd/"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
@@ -274,13 +260,16 @@ end
 
 execute "Provision pfs_stat" do
   command "install -m 0755 #{source_root}/src/github.com/swiftstack/ProxyFS/bin/pfs_stat /usr/bin"
-  # Do we want to allow re-provisioning to overwrite the pfs_stat script in case it has changes?
-  # not_if { ::File.exists?("/usr/bin/pfs_stat") }
 end
 
 cookbook_file "/usr/lib/systemd/system/proxyfsd.service" do
   source "usr/lib/systemd/system/proxyfsd.service"
   # notifies :restart, 'service[proxyfsd]'
+  only_if { ::File.directory?("/usr/lib/systemd/system/") }
+end
+
+cookbook_file "/usr/lib/systemd/system/pfsagentd.service" do
+  source "usr/lib/systemd/system/pfsagentd.service"
   only_if { ::File.directory?("/usr/lib/systemd/system/") }
 end
 
@@ -481,7 +470,7 @@ bash 'Build proxyfsd' do
   # Source profile because we may not have golang in our path yet
   code <<-EOH
   . #{DOT_BASH_PROFILE}
-  make
+  make minimal
   EOH
   cwd PROXYFS_SRC_DIR
 end
@@ -490,6 +479,13 @@ end
 ## TODO: do this as an install instead, for non dev environments?
 link '/usr/bin/proxyfsd' do
   to "#{source_root}/bin/proxyfsd"
+  link_type :symbolic
+  owner proxyfs_user
+  group proxyfs_group
+end
+
+link '/usr/bin/pfsagentd' do
+  to "#{source_root}/bin/pfsagentd"
   link_type :symbolic
   owner proxyfs_user
   group proxyfs_group
@@ -557,9 +553,7 @@ bash 'Configure awscli for swift user' do
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[profile default]
-aws_access_key_id = test:tester
-aws_secret_access_key = testing
+[default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
@@ -569,7 +563,12 @@ s3api =
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
 EOF
-chown -R swift:swift ~swift/.aws
+    cat > ~swift/.aws/credentials << EOF
+[default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+EOF
+    chown -R swift:swift ~swift/.aws
     EOH
 end
 
@@ -580,9 +579,7 @@ bash 'Configure awscli for root user' do
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[profile default]
-aws_access_key_id = test:tester
-aws_secret_access_key = testing
+[default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
@@ -592,7 +589,12 @@ s3api =
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
 EOF
-chown -R root:root ~root/.aws
+    cat > ~root/.aws/credentials << EOF
+[default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+EOF
+    chown -R root:root ~root/.aws
     EOH
 end
 

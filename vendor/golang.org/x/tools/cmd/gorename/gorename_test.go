@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/internal/testenv"
 )
 
 var haveCGO bool
@@ -32,6 +34,7 @@ func TestGeneratedFiles(t *testing.T) {
 	if !haveCGO {
 		t.Skipf("skipping test: no cgo")
 	}
+	testenv.NeedsTool(t, "go")
 
 	tmp, bin, cleanup := buildGorename(t)
 	defer cleanup()
@@ -48,6 +51,8 @@ func TestGeneratedFiles(t *testing.T) {
 			env = append(env, envVar)
 		}
 	}
+	// gorename currently requires GOPATH mode.
+	env = append(env, "GO111MODULE=off")
 
 	// Testing renaming in packages that include cgo files:
 	for iter, renameTest := range []test{
@@ -310,6 +315,9 @@ func g() { fmt.Println(test.Foo(3)) }
 // buildGorename builds the gorename executable.
 // It returns its path, and a cleanup function.
 func buildGorename(t *testing.T) (tmp, bin string, cleanup func()) {
+	if runtime.GOOS == "android" {
+		t.Skipf("the dependencies are not available on android")
+	}
 
 	tmp, err := ioutil.TempDir("", "gorename-regtest-")
 	if err != nil {
@@ -370,7 +378,7 @@ func modifiedFiles(t *testing.T, dir string, packages map[string][]string) (resu
 			file := filepath.Join(pkgDir, strconv.Itoa(i)+".go")
 			// read file contents and compare to val
 			if contents, err := ioutil.ReadFile(file); err != nil {
-				t.Fatal("File missing: %s", err)
+				t.Fatalf("File missing: %s", err)
 			} else if string(contents) != val {
 				results = append(results, strings.TrimPrefix(dir, file))
 			}

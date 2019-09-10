@@ -51,7 +51,8 @@ func TestDaemon(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 
-		"StatsLogger.Period=10m",
+		"StatsLogger.Period=0m",
+		"StatsLogger.Verbose=false",
 
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
@@ -102,8 +103,10 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
 		"Volume:CommonVolume.CheckpointInterval=10s",
 		"Volume:CommonVolume.DefaultPhysicalContainerLayout=PhysicalContainerLayoutReplicated3Way",
-		"Volume:CommonVolume.MaxFlushSize=10000000",
+		"Volume:CommonVolume.MaxFlushSize=10485760",
 		"Volume:CommonVolume.MaxFlushTime=10s",
+		"Volume:CommonVolume.FileDefragmentChunkSize=10485760",
+		"Volume:CommonVolume.FileDefragmentChunkDelay=10ms",
 		"Volume:CommonVolume.NonceValuesToReserve=100",
 		"Volume:CommonVolume.MaxEntriesPerDirNode=32",
 		"Volume:CommonVolume.MaxExtentsPerFileNode=32",
@@ -120,6 +123,11 @@ func TestDaemon(t *testing.T) {
 		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
 
 		"FSGlobals.VolumeGroupList=CommonVolumeGroup",
+		"FSGlobals.CheckpointHeaderConsensusAttempts=5",
+		"FSGlobals.MountRetryLimit=6",
+		"FSGlobals.MountRetryDelay=1s",
+		"FSGlobals.MountRetryExpBackoff=2",
+		"FSGlobals.LogCheckpointHeaderPosts=true",
 		"FSGlobals.TryLockBackoffMin=10ms",
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",

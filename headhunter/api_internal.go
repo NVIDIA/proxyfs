@@ -72,7 +72,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 		checkpointHeaderValue      string
 		checkpointHeaderValues     []string
 		err                        error
-		newCheckpointHeader        *checkpointHeaderStruct
+		newCheckpointHeader        *CheckpointHeaderStruct
 	)
 
 	if volume.nextNonce >= volume.maxNonce {
@@ -80,7 +80,7 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 	}
 
 	if volume.nextNonce == volume.checkpointHeader.ReservedToNonce {
-		newCheckpointHeader = &checkpointHeaderStruct{
+		newCheckpointHeader = &CheckpointHeaderStruct{
 			CheckpointVersion:                         volume.checkpointHeader.CheckpointVersion,
 			CheckpointObjectTrailerStructObjectNumber: volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
 			CheckpointObjectTrailerStructObjectLength: volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength,
@@ -115,6 +115,9 @@ func (volume *volumeStruct) fetchNonceWhileLocked() (nonce uint64) {
 		err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 		if nil != err {
 			logger.Fatalf("Unable to persist checkpointHeader in Swift: %v", err)
+		}
+		if globals.logCheckpointHeaderPosts {
+			logger.Infof("POST'd checkpointHeaderValue %s for volume %s from fetchNonceWhileLocked()", checkpointHeaderValue, volume.volumeName)
 		}
 	}
 
@@ -683,7 +686,7 @@ func (volume *volumeStruct) DoCheckpoint() (err error) {
 	return
 }
 
-func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error) {
+func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType, validate bool) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error) {
 	var (
 		measuredLayoutReport sortedmap.LayoutReport
 		objectBytesMeasured  uint64
@@ -716,44 +719,60 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 		return
 	}
 
-	measuredLayoutReport, err = treeWrapper.bPlusTree.FetchLayoutReport()
-	if nil != err {
-		logger.ErrorfWithError(err, "FetchLayoutReport() volume '%s' tree '%s'", volume.volumeName, treeName)
-		return
-	}
-
-	// Compare measuredLayoutReport & trackingLayoutReport computing discrepencies
-
 	discrepencies = 0
 
-	for objectNumber, objectBytesMeasured = range measuredLayoutReport {
-		objectBytesTracked, ok = treeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
-		if ok {
-			if objectBytesMeasured != objectBytesTracked {
-				discrepencies++
-				logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes mismatch between measuredLayoutReport & trackingLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
+	if validate {
+		// Validate against a LayoutReport fetched from sortedmap (which "walks" the entire B+Tree)
+
+		measuredLayoutReport, err = treeWrapper.bPlusTree.FetchLayoutReport()
+		if nil != err {
+			logger.ErrorfWithError(err, "FetchLayoutReport() volume '%s' tree '%s'", volume.volumeName, treeName)
+			return
+		}
+
+		// Compare measuredLayoutReport & trackingLayoutReport computing discrepencies
+
+		for objectNumber, objectBytesMeasured = range measuredLayoutReport {
+			objectBytesTracked, ok = treeWrapper.bPlusTreeTracker.bPlusTreeLayout[objectNumber]
+			if ok {
+				if objectBytesMeasured != objectBytesTracked {
+					discrepencies++
+					logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes mismatch between measuredLayoutReport (0x%016X) & trackingLayoutReport (0x%016X) for objectNumber 0x%016X", treeName, volume.volumeName, objectBytesMeasured, objectBytesTracked, objectNumber)
+				}
+			} else {
+				if 0 != objectBytesMeasured {
+					discrepencies++
+					logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in measuredLayoutReport (0x%016X) but missing from trackingLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectBytesMeasured, objectNumber)
+				}
 			}
-		} else {
-			discrepencies++
-			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in measuredLayoutReport but missing from trackingLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
 		}
-	}
 
-	for objectNumber, objectBytesTracked = range treeWrapper.bPlusTreeTracker.bPlusTreeLayout {
-		objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
-		if ok {
-			// Already handled above
-		} else {
-			discrepencies++
-			logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in trackingLayoutReport but missing from measuredLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectNumber)
+		for objectNumber, objectBytesTracked = range treeWrapper.bPlusTreeTracker.bPlusTreeLayout {
+			objectBytesMeasured, ok = measuredLayoutReport[objectNumber]
+			if ok {
+				// Already handled above
+			} else {
+				if 0 != objectBytesTracked {
+					discrepencies++
+					logger.Errorf("headhunter.fetchLayoutReport(%v) for volume %v found objectBytes in trackingLayoutReport (0x%016X) but missing from measuredLayoutReport for objectNumber 0x%016X", treeName, volume.volumeName, objectBytesTracked, objectNumber)
+				}
+			}
 		}
+
+		// In the case that they differ, return measuredLayoutReport rather than trackingLayoutReport
+
+		layoutReport = measuredLayoutReport
+	} else {
+		// Not validating, so just clone treeWrapper.bPlusTreeTracker.bPlusTreeLayout
+
+		layoutReport = make(sortedmap.LayoutReport)
+
+		for objectNumber, objectBytesTracked = range treeWrapper.bPlusTreeTracker.bPlusTreeLayout {
+			layoutReport[objectNumber] = objectBytesTracked
+		}
+
+		err = nil
 	}
-
-	// In the case that they differ, return measuredLayoutReport rather than trackingLayoutReport
-
-	layoutReport = measuredLayoutReport
-
-	err = nil
 
 	return
 }
@@ -767,10 +786,11 @@ func (volume *volumeStruct) fetchLayoutReport(treeType BPlusTreeType) (layoutRep
 // primarily due to the fact that SnapShot's inherently overlap in the objects
 // they reference. In the case where one or more SnapShot's exist, the
 // CreatedObjectsBPlusTree should be expected to be empty.
-func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutReport sortedmap.LayoutReport, err error) {
+func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType, validate bool) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error) {
 	var (
 		checkpointLayoutReport sortedmap.LayoutReport
 		checkpointObjectBytes  uint64
+		discrepenciesToAdd     uint64
 		objectBytes            uint64
 		objectNumber           uint64
 		ok                     bool
@@ -792,14 +812,15 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 	if MergedBPlusTree == treeType {
 		// First, accumulate the 5 B+Tree sortedmap.LayoutReport's
 
-		layoutReport, _, err = volume.fetchLayoutReport(InodeRecBPlusTree)
+		layoutReport, discrepencies, err = volume.fetchLayoutReport(InodeRecBPlusTree, validate)
 		if nil != err {
 			return
 		}
-		perTreeLayoutReport, _, err = volume.fetchLayoutReport(LogSegmentRecBPlusTree)
+		perTreeLayoutReport, discrepenciesToAdd, err = volume.fetchLayoutReport(LogSegmentRecBPlusTree, validate)
 		if nil != err {
 			return
 		}
+		discrepencies += discrepenciesToAdd
 		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
 			objectBytes, ok = layoutReport[objectNumber]
 			if ok {
@@ -808,10 +829,11 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 				layoutReport[objectNumber] = perTreeObjectBytes
 			}
 		}
-		perTreeLayoutReport, _, err = volume.fetchLayoutReport(BPlusTreeObjectBPlusTree)
+		perTreeLayoutReport, discrepenciesToAdd, err = volume.fetchLayoutReport(BPlusTreeObjectBPlusTree, validate)
 		if nil != err {
 			return
 		}
+		discrepencies += discrepenciesToAdd
 		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
 			objectBytes, ok = layoutReport[objectNumber]
 			if ok {
@@ -820,10 +842,11 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 				layoutReport[objectNumber] = perTreeObjectBytes
 			}
 		}
-		perTreeLayoutReport, _, err = volume.fetchLayoutReport(CreatedObjectsBPlusTree)
+		perTreeLayoutReport, discrepenciesToAdd, err = volume.fetchLayoutReport(CreatedObjectsBPlusTree, validate)
 		if nil != err {
 			return
 		}
+		discrepencies += discrepenciesToAdd
 		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
 			objectBytes, ok = layoutReport[objectNumber]
 			if ok {
@@ -832,10 +855,11 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 				layoutReport[objectNumber] = perTreeObjectBytes
 			}
 		}
-		perTreeLayoutReport, _, err = volume.fetchLayoutReport(DeletedObjectsBPlusTree)
+		perTreeLayoutReport, discrepenciesToAdd, err = volume.fetchLayoutReport(DeletedObjectsBPlusTree, validate)
 		if nil != err {
 			return
 		}
+		discrepencies += discrepenciesToAdd
 		for objectNumber, perTreeObjectBytes = range perTreeLayoutReport {
 			objectBytes, ok = layoutReport[objectNumber]
 			if ok {
@@ -860,7 +884,7 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType) (layoutRep
 			}
 		}
 	} else {
-		layoutReport, _, err = volume.fetchLayoutReport(treeType)
+		layoutReport, discrepencies, err = volume.fetchLayoutReport(treeType, validate)
 	}
 
 	return

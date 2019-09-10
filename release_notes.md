@@ -1,5 +1,75 @@
 # ProxyFS Release Notes
 
+## 1.12 (September 10, 2019)
+
+### Features:
+
+Added an online FSCK tool (pfs-fsck). Note that the tool will not "stop the
+world". As such, it is possible for it to report false positives for missing
+objects (both metadata and file data). Re-running the tool will typically
+note those false positives were false and move on... but perhaps find more.
+As such, the tool is really only reliably able to avoid announcing false
+positives on an otherwise idle volume.
+
+Implemented support for a "Recycle Bin" mechanism where objects are simply
+marked as being in the Recycle Bin rather than aggressively deleted. If an
+attempt is made to later access the object, a log message will report this
+and statistics bumped to indicate the condition that would have been a file
+system corruption had the object actually been deleted. Note that this feature
+is normally disabled.
+
+Layout Report has been streamlined to, by default, report the "running count"
+of the metrics rather than actually counting them (which would involve paging
+in all the metadata...a potentially very time consuming activity that must
+proceed while the "world is stopped"). It is still possible to do the brute
+force "count"... and note any discrepencies with the "running count" previously
+reported.
+
+The pfs-swift-load tool has been enhanced to support arbitrarily deep paths.
+This is provided to demonstrate specifically the impact of file path length
+on SMB performance.
+
+PFSAgent, like ProxyFS itself, now supports (at least) an HTTP query to report
+the running version. This may also be used to confirm that PFSAgent is up and
+operating on a particular Volume.
+
+### Bug Fixes:
+
+Addressed stale/cached stat results for (FUSE and) NFS mount points by shortening
+the timeout...with the tradeoff that this could increase overhead of certain
+metadata querying operations somewhat.
+
+Added support for HTTPS in ProxyFS Agent. Previously, Swift Proxies behind a
+TLS-terminating Load Balancer would result in an attempt to use non-HTTPS
+connections following authentication via the Swift API.
+
+Added volume mount retry logic to handle the theoretical case where a stale
+Checkpoint Header is returned during the Volume Mount process.
+
+### Notes:
+
+Added logging of each Checkpoint Header operation. This amounts to a log message
+generated once every ten seconds per Volume typically...though clients issuing
+FLUSH/SYNC operations may accellerate this.
+
+In addition, periodic stats are logged as well (in addition to the limited set
+regularly reported earlier). Default interval is 10 minutes per Volume.
+
+## 1.11.2 (July 28, 2019)
+
+### Notes:
+
+This is a small delta from 1.11.1 to temporarily disable deletion of thought-to-be
+unreferenced objects in the checkpoint container. A working theory of one such
+issue is that a object holding metadata for a volume was inadvertantly thought to
+no longer be referenced. As such, the object was scheduled for deletion. Upon a
+subsequent re-mount, the object could not be found and the re-mount failed.
+
+A new (temporary) boolean setting in the FSGlobals section titled MetadataRecycleBin
+will, for now, default to TRUE and, instead of issuing DELETEs on objects in the
+checkpoint container thought to now be unreferenced, a new header will be applied
+to them titled RecycleBin (with a value of true).
+
 ## 1.11.1 (June 28, 2019)
 
 ### Features:

@@ -599,6 +599,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		checkpointContainerObjectList   []string
 		checkpointContainerObjectName   string
 		checkpointContainerObjectNumber uint64
+		discrepencies                   uint64
 		err                             error
 		headhunterLayoutReport          sortedmap.LayoutReport
 		inodeCount                      int
@@ -1143,9 +1144,13 @@ func (vVS *validateVolumeStruct) validateVolume() {
 
 	// Validate headhunter checkpoint container contents
 
-	headhunterLayoutReport, err = vVS.headhunterVolumeHandle.FetchLayoutReport(headhunter.MergedBPlusTree)
+	headhunterLayoutReport, discrepencies, err = vVS.headhunterVolumeHandle.FetchLayoutReport(headhunter.MergedBPlusTree, true)
 	if nil != err {
 		vVS.jobLogErr("Got headhunter.FetchLayoutReport() failure: %v", err)
+		return
+	}
+	if 0 != discrepencies {
+		vVS.jobLogErr("Found %v headhunter.FetchLayoutReport() discrepencies", discrepencies)
 		return
 	}
 

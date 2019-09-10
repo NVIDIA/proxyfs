@@ -3,19 +3,6 @@
 # A simple script to start the services and mount the sample mount point
 # The PATH, etc should already be setup by systemctl environment
 
-function await_proxyfsd_shutdown {
-    while true
-    do
-        pidof proxyfsd > /dev/null
-        if [ $? -ne 0 ]
-        then
-            break
-        fi
-        echo "Waiting for ProxyFS to be stopped..."
-        sleep 1
-    done
-}
-
 function await_proxyfsd_startup {
     /usr/bin/systemctl -q is-active proxyfsd
     if [ $? -ne 0 ]
@@ -31,6 +18,17 @@ function await_proxyfsd_startup {
             break
         fi
         echo "Waiting for ProxyFS to be started..."
+        sleep 1
+    done
+}
+
+function await_pfsagentd_startup {
+    for i in $(seq 5); do
+        /usr/bin/systemctl -q is-active pfsagentd
+        if [ $? -ne 0 ]; then
+            echo "PFSAgent failed to start. Exiting..."
+            exit 1
+        fi
         sleep 1
     done
 }
@@ -57,133 +55,199 @@ function format_volume_if_necessary {
     fi
 }
 
+function containsElement () {
+  local e match="$1"
+  shift
+  for e; do [[ "$e" == "$match" ]] && return 0; done
+  return 1
+}
+
+help() {
+  echo "Usage: $0 [mount type]"
+  echo "Mount type options:"
+  echo "    all: NFS v3 and SMB v3.0 (default option)"
+  echo "    keepmounts: don't umount/mount any mountpoints"
+  echo "    nfs: NFS v3"
+  echo "    smb: SMB v3.0"
+  echo "    smb1: SMB v1.0"
+  echo "    smb2: SMB v2.1"
+  echo "    smb3: SMB v3.0"
+  echo "    pfsa: PFSAgent"
+}
+
+MOUNT_OPTIONS=()
 if [ $# -gt 0 ]; then
-    MOUNT_TYPE="$1"
-    MOUNT_TYPE=${MOUNT_TYPE,,}
-    if [ "$MOUNT_TYPE" != "all" ] && [ "$MOUNT_TYPE" != "keepmounts" ] && [ "$MOUNT_TYPE" != "smb" ] && [ "$MOUNT_TYPE" != "smb1" ] && [ "$MOUNT_TYPE" != "smb2" ] && [ "$MOUNT_TYPE" != "smb3" ] && [ "$MOUNT_TYPE" != "nfs" ]; then
-        if [ "$MOUNT_TYPE" != "-h" ] && [ "$MOUNT_TYPE" != "--help" ]; then
-            echo "Invalid argument '$1'."
-            echo
+  while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+      -h|--help)
+        help
+        exit 0
+        ;;
+      all|keepmounts|smb|smb1|smb2|smb3|nfs|pfsa)
+        if containsElement "$key" "${MOUNT_OPTIONS[@]}"; then
+          echo "Error: duplicated option '${key}'."
+          echo
+          help
+          exit 1
         fi
-        echo "Usage: $0 [mount type]"
-        echo "Mount type options:"
-        echo "    all: NFS v3 and SMB v3.0 (default option)"
-        echo "    keepmounts: don't umount/mount any mountpoints"
-        echo "    nfs: NFS v3"
-        echo "    smb: SMB v3.0"
-        echo "    smb1: SMB v1.0"
-        echo "    smb2: SMB v2.1"
-        echo "    smb3: SMB v3.0"
+        MOUNT_OPTIONS+=("$1")
+        shift
+        ;;
+      *)
+        echo "Invalid argument '$key'."
+        echo
+        help
         exit 1
+    esac
+  done
+
+  # Now that we allow more than one mount option to be passed, we have to check
+  # for incompatible options.
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "all" "${MOUNT_OPTIONS[@]}"; then
+    echo "Error: no other options are allowed while using 'all'."
+    echo
+    help
+    exit 1
+  fi
+
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
+    echo "Error: no other options are allowed while using 'keepmounts'."
+    echo
+    help
+    exit 1
+  fi
+
+  # I know the next 4 'if' clauses are gross, but I don't have the patience to
+  # find out the proper way to do it in bash.
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "smb" "${MOUNT_OPTIONS[@]}"; then
+    if containsElement "smb1" "${MOUNT_OPTIONS[@]}" || containsElement "smb2" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
+      echo "Error: only one SMB option can be specified at a time."
+      echo
+      help
+      exit 1
     fi
+  fi
+
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "smb1" "${MOUNT_OPTIONS[@]}"; then
+    if containsElement "smb" "${MOUNT_OPTIONS[@]}" || containsElement "smb2" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
+      echo "Error: only one SMB option can be specified at a time."
+      echo
+      help
+      exit 1
+    fi
+  fi
+
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "smb2" "${MOUNT_OPTIONS[@]}"; then
+    if containsElement "smb1" "${MOUNT_OPTIONS[@]}" || containsElement "smb" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
+      echo "Error: only one SMB option can be specified at a time."
+      echo
+      help
+      exit 1
+    fi
+  fi
+
+  if [ ${#MOUNT_OPTIONS[@]} -gt 1 ] && containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
+    if containsElement "smb1" "${MOUNT_OPTIONS[@]}" || containsElement "smb2" "${MOUNT_OPTIONS[@]}" || containsElement "smb" "${MOUNT_OPTIONS[@]}"; then
+      echo "Error: only one SMB option can be specified at a time."
+      echo
+      help
+      exit 1
+    fi
+  fi
 else
-    MOUNT_TYPE=all
+    MOUNT_OPTIONS+=("all")
 fi
 
-if [ "$MOUNT_TYPE" == "all" ]; then
+if containsElement "all" "${MOUNT_OPTIONS[@]}"; then
     NFS_VERS=3
     SMB_VERS=3.0
-elif [ "$MOUNT_TYPE" == "nfs" ]; then
+else
+  if containsElement "nfs" "${MOUNT_OPTIONS[@]}"; then
     NFS_VERS=3
-elif [ "$MOUNT_TYPE" == "smb1" ]; then
+  fi
+
+  if containsElement "smb1" "${MOUNT_OPTIONS[@]}"; then
     SMB_VERS=1.0
-elif [ "$MOUNT_TYPE" == "smb2" ]; then
+  elif containsElement "smb2" "${MOUNT_OPTIONS[@]}"; then
     SMB_VERS=2.1
-elif [ "$MOUNT_TYPE" == "smb" ] || [ "$MOUNT_TYPE" == "smb3" ]; then
+  elif containsElement "smb" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
     SMB_VERS=3.0
+  fi
 fi
 
 MOUNT_POINT_NFS=127.0.0.1:/CommonMountPoint
 SHARE_NFS=/mnt/nfs_proxyfs_mount/
 
 MOUNT_POINT_SMB=//127.0.0.1/proxyfs
-SHARE_SMB=/mnt/smb_proxyfs_mount
+SHARE_SMB=/mnt/smb_proxyfs_mount/
 
 UID_SMB=`id -u`
 GID_SMB=`id -g`
 
 sudo mount -a
 
-if [ $MOUNT_TYPE != "keepmounts" ]; then
-    mountpoint -q $SHARE_NFS
-    if [ $? -eq 0 ]; then
-        sudo umount $SHARE_NFS
-    fi
-
-    mountpoint -q $SHARE_SMB
-    if [ $? -eq 0 ]; then
-        sudo umount $SHARE_SMB
-    fi
+# "keepmounts" means "keep everything as it was", but PFSAgent works differently,
+# so just preserving the mount points is not enough. What we'll do is check if
+# it's running before trying to stop it, and if it is, save it as a "MOUNT_OPTION"
+if [ -f /usr/bin/systemctl ] && containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
+    /usr/bin/systemctl is-active --quiet pfsagentd && MOUNT_OPTIONS+=("pfsa")
 fi
 
+if containsElement "keepmounts" "${MOUNT_OPTIONS[@]}"; then
+    echo "Shutting down services..."
+    /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/unmount_and_stop_pfs keepmounts
+else
+    echo "Shutting down services and mount points..."
+    /vagrant/src/github.com/swiftstack/ProxyFS/saio/bin/unmount_and_stop_pfs
+fi
+echo
+
+echo "Bringing up services..."
 if [ -f /usr/bin/systemctl ]; then
     # Centos
     MOUNT=/usr/bin/mount
-    sudo /usr/bin/systemctl stop nfs-idmap
-    sudo /usr/bin/systemctl stop nfs-lock
-    sudo /usr/bin/systemctl stop nfs-server
-    sudo /usr/bin/systemctl stop rpcbind
-    sudo /usr/bin/systemctl stop smb
-    # sudo /usr/bin/systemctl stop nmb
-    # sudo /usr/bin/systemctl stop winbind
-    sudo /usr/bin/systemctl stop proxyfsd
-    await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init main stop
-    # sudo /usr/bin/systemctl stop swift
-    sudo /usr/bin/systemctl stop memcached
-
     sudo /usr/bin/systemctl start memcached
-    # sudo /usr/bin/systemctl start swift
     sudo /usr/bin/swift-init main start
     await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/bin/systemctl start proxyfsd
     await_proxyfsd_startup
-    # sudo /usr/bin/systemctl start winbind
-    # sudo /usr/bin/systemctl start nmb
+    echo "ProxyFS successfully started"
     sudo /usr/bin/systemctl start smb
     sudo /usr/bin/systemctl start rpcbind
     sudo /usr/bin/systemctl start nfs-server
     sudo /usr/bin/systemctl start nfs-lock
     sudo /usr/bin/systemctl start nfs-idmap
+    if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "pfsa" "${MOUNT_OPTIONS[@]}"; then
+      echo "Starting PFSAgent..."
+      sudo /usr/bin/systemctl start pfsagentd
+      await_pfsagentd_startup
+    fi
 else
     # Ubuntu (not tested!)
     MOUNT=/bin/mount
-    sudo /usr/sbin/service nfs-idmap stop
-    sudo /usr/sbin/service nfs-lock stop
-    sudo /usr/sbin/service nfs-server stop
-    sudo /usr/sbin/service rpcbind stop
-    sudo /usr/sbin/service smbd stop
-    # sudo /usr/sbin/service nmbd stop
-    # sudo /usr/sbin/service winbindd stop
-    sudo /usr/sbin/service proxyfsd stop
-    await_proxyfsd_shutdown
-    sudo /usr/bin/swift-init main stop
-    # sudo /usr/sbin/service swift stop
-    sudo /usr/sbin/service memcached stop
-
     sudo /usr/sbin/service memcached start
-    # sudo /usr/sbin/service swift start
     sudo /usr/bin/swift-init main start
     await_swift_startup
     format_volume_if_necessary CommonVolume
     sudo /usr/sbin/service proxyfsd start
     await_proxyfsd_startup
-    # sudo /usr/sbin/service winbindd start
-    # sudo /usr/sbin/service nmbd start
+    echo "ProxyFS successfully started"
     sudo /usr/sbin/service smbd start
     sudo /usr/sbin/service rpcbind start
     sudo /usr/sbin/service nfs-server start
     sudo /usr/sbin/service nfs-lock start
     sudo /usr/sbin/service nfs-idmap start
+    # Here we should start pfsagentd (if 'all' or 'pfsa' are present in
+    # $MOUNT_OPTIONS), but we don't support Ubuntu
 fi
+echo
 
-echo "ProxyFS successfully started"
-
-if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
+if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "nfs" "${MOUNT_OPTIONS[@]}"; then
     mountpoint -q $SHARE_NFS
     if [ $? -ne 0 ]; then
-        for i in `seq 5`; do
+        for i in $(seq 5); do
             sleep 5
             sudo $MOUNT -t nfs -o vers=$NFS_VERS $MOUNT_POINT_NFS $SHARE_NFS && break
             echo "Mount of $SHARE_NFS failed.  Retrying..."
@@ -199,10 +263,10 @@ if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "nfs" ]; then
     fi
 fi
 
-if [ $MOUNT_TYPE = "all" ] || [ $MOUNT_TYPE = "smb" ] || [ $MOUNT_TYPE = "smb1" ] || [ $MOUNT_TYPE = "smb2" ] || [ $MOUNT_TYPE = "smb3" ]; then
+if containsElement "all" "${MOUNT_OPTIONS[@]}" || containsElement "smb" "${MOUNT_OPTIONS[@]}" || containsElement "smb1" "${MOUNT_OPTIONS[@]}" || containsElement "smb2" "${MOUNT_OPTIONS[@]}" || containsElement "smb3" "${MOUNT_OPTIONS[@]}"; then
     mountpoint -q $SHARE_SMB
     if [ $? -ne 0 ]; then
-        for i in `seq 5`; do
+        for i in $(seq 5); do
             sleep 5
             sudo $MOUNT -t cifs -o user=swift,password=swift,uid=$UID_SMB,gid=$GID_SMB,vers=$SMB_VERS,iocharset=utf8,actimeo=0 $MOUNT_POINT_SMB $SHARE_SMB && break
             echo "Mount of $SHARE_SMB failed.  Retrying..."

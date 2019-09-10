@@ -18,10 +18,14 @@ var testConfStrings = []string{
 	"Logging.LogToConsole=false",
 	"FlowControl:FlowControlX.MaxFlushSize=10000000",
 	"FlowControl:FlowControlX.MaxFlushTime=10s",
+	"FlowControl:FlowControlX.FileDefragmentChunkSize=10000000",
+	"FlowControl:FlowControlX.FileDefragmentChunkDelay=10ms",
 	"FlowControl:FlowControlX.ReadCacheLineSize=1000000",
 	"FlowControl:FlowControlX.ReadCacheWeight=100",
 	"FlowControl:FlowControlY.MaxFlushSize=20000000",
 	"FlowControl:FlowControlY.MaxFlushTime=20s",
+	"FlowControl:FlowControlY.FileDefragmentChunkSize=20000000",
+	"FlowControl:FlowControlY.FileDefragmentChunkDelay=20ms",
 	"FlowControl:FlowControlY.ReadCacheLineSize=2000000",
 	"FlowControl:FlowControlY.ReadCacheWeight=200",
 	"Volume:VolumeA.PrimaryPeer=Peer0",
@@ -36,6 +40,11 @@ var testConfStrings = []string{
 	//                                     VolumeF will be created on Peer1
 	//                                     VolumeG will be created on Peer2...then migrate to VolumeF's VolumeGroup
 	"FSGlobals.VolumeList=VolumeA,VolumeB,VolumeC,VolumeD",
+	"FSGlobals.CheckpointHeaderConsensusAttempts=5",
+	"FSGlobals.MountRetryLimit=6",
+	"FSGlobals.MountRetryDelay=1s",
+	"FSGlobals.MountRetryExpBackoff=2",
+	"FSGlobals.LogCheckpointHeaderPosts=true",
 	"FSGlobals.TryLockBackoffMin=10ms",
 	"FSGlobals.TryLockBackoffMax=50ms",
 	"FSGlobals.TryLockSerializationThreshhold=5",
@@ -49,6 +58,8 @@ var testConfStrings = []string{
 var testConfStringsToAddVolumeE = []string{
 	"Volume:VolumeE.MaxFlushSize=30000000",
 	"Volume:VolumeE.MaxFlushTime=30s",
+	"Volume:VolumeE.FileDefragmentChunkSize=30000000",
+	"Volume:VolumeE.FileDefragmentChunkDelay=30ms",
 	"VolumeGroup:VG_One.PrimaryPeer=Peer0",
 	"VolumeGroup:VG_One.ReadCacheLineSize=3000000",
 	"VolumeGroup:VG_One.ReadCacheWeight=300",
@@ -60,6 +71,8 @@ var testConfStringsToAddVolumeE = []string{
 var testConfStringsToAddVolumeF = []string{
 	"Volume:VolumeF.MaxFlushSize=40000000",
 	"Volume:VolumeF.MaxFlushTime=40s",
+	"Volume:VolumeF.FileDefragmentChunkSize=40000000",
+	"Volume:VolumeF.FileDefragmentChunkDelay=40ms",
 	"VolumeGroup:VG_Two.PrimaryPeer=Peer1",
 	"VolumeGroup:VG_Two.ReadCacheLineSize=4000000",
 	"VolumeGroup:VG_Two.ReadCacheWeight=400",
@@ -71,6 +84,8 @@ var testConfStringsToAddVolumeF = []string{
 var testConfStringsToAddVolumeG = []string{
 	"Volume:VolumeG.MaxFlushSize=50000000",
 	"Volume:VolumeG.MaxFlushTime=50s",
+	"Volume:VolumeG.FileDefragmentChunkSize=50000000",
+	"Volume:VolumeG.FileDefragmentChunkDelay=50ms",
 	"VolumeGroup:VG_Three.PrimaryPeer=Peer2",
 	"VolumeGroup:VG_Three.ReadCacheLineSize=5000000",
 	"VolumeGroup:VG_Three.ReadCacheWeight=500",
@@ -89,28 +104,32 @@ var testCallbackLog []string // Accumulates log messages output by transitions.C
 
 func testValidateUpgradedConfMap(t *testing.T, testConfMap conf.ConfMap) {
 	var (
-		fsGlobals           conf.ConfMapSection
-		fsGlobalsOK         bool
-		maxFlushSize        conf.ConfMapOption
-		maxFlushSizeOK      bool
-		maxFlushTime        conf.ConfMapOption
-		maxFlushTimeOK      bool
-		primaryPeer         conf.ConfMapOption
-		primaryPeerOK       bool
-		readCacheLineSize   conf.ConfMapOption
-		readCacheLineSizeOK bool
-		readCacheWeight     conf.ConfMapOption
-		readCacheWeightOK   bool
-		testVolume          conf.ConfMapSection
-		testVolumeGroup     conf.ConfMapSection
-		testVolumeGroupOK   bool
-		testVolumeOK        bool
-		virtualIPAddr       conf.ConfMapOption
-		virtualIPAddrOK     bool
-		volumeGroupList     conf.ConfMapOption
-		volumeGroupListOK   bool
-		volumeList          conf.ConfMapOption
-		volumeListOK        bool
+		fileDefragmentChunkDelay   conf.ConfMapOption
+		fileDefragmentChunkDelayOK bool
+		fileDefragmentChunkSize    conf.ConfMapOption
+		fileDefragmentChunkSizeOK  bool
+		fsGlobals                  conf.ConfMapSection
+		fsGlobalsOK                bool
+		maxFlushSize               conf.ConfMapOption
+		maxFlushSizeOK             bool
+		maxFlushTime               conf.ConfMapOption
+		maxFlushTimeOK             bool
+		primaryPeer                conf.ConfMapOption
+		primaryPeerOK              bool
+		readCacheLineSize          conf.ConfMapOption
+		readCacheLineSizeOK        bool
+		readCacheWeight            conf.ConfMapOption
+		readCacheWeightOK          bool
+		testVolume                 conf.ConfMapSection
+		testVolumeGroup            conf.ConfMapSection
+		testVolumeGroupOK          bool
+		testVolumeOK               bool
+		virtualIPAddr              conf.ConfMapOption
+		virtualIPAddrOK            bool
+		volumeGroupList            conf.ConfMapOption
+		volumeGroupListOK          bool
+		volumeList                 conf.ConfMapOption
+		volumeListOK               bool
 	)
 
 	// Validate FSGlobals
@@ -167,6 +186,15 @@ func testValidateUpgradedConfMap(t *testing.T, testConfMap conf.ConfMap) {
 		t.Fatalf("testConfMap missing Volume:VolumeA.MaxFlushTime=10s")
 	}
 
+	fileDefragmentChunkSize, fileDefragmentChunkSizeOK = testVolume["FileDefragmentChunkSize"]
+	if !fileDefragmentChunkSizeOK || (1 != len(fileDefragmentChunkSize)) || ("10000000" != fileDefragmentChunkSize[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeA.FileDefragmentChunkSize")
+	}
+	fileDefragmentChunkDelay, fileDefragmentChunkDelayOK = testVolume["FileDefragmentChunkDelay"]
+	if !fileDefragmentChunkDelayOK || (1 != len(fileDefragmentChunkDelay)) || ("10ms" != fileDefragmentChunkDelay[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeA.FileDefragmentChunkDelay")
+	}
+
 	// Validate VolumeGroup:V_VolumeB_G
 
 	testVolumeGroup, testVolumeGroupOK = testConfMap["VolumeGroup:V_VolumeB_G"]
@@ -207,6 +235,15 @@ func testValidateUpgradedConfMap(t *testing.T, testConfMap conf.ConfMap) {
 	maxFlushTime, maxFlushTimeOK = testVolume["MaxFlushTime"]
 	if !maxFlushTimeOK || (1 != len(maxFlushTime)) || ("20s" != maxFlushTime[0]) {
 		t.Fatalf("testConfMap missing Volume:VolumeB.MaxFlushTime=20s")
+	}
+
+	fileDefragmentChunkSize, fileDefragmentChunkSizeOK = testVolume["FileDefragmentChunkSize"]
+	if !fileDefragmentChunkSizeOK || (1 != len(fileDefragmentChunkSize)) || ("20000000" != fileDefragmentChunkSize[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeB.FileDefragmentChunkSize")
+	}
+	fileDefragmentChunkDelay, fileDefragmentChunkDelayOK = testVolume["FileDefragmentChunkDelay"]
+	if !fileDefragmentChunkDelayOK || (1 != len(fileDefragmentChunkDelay)) || ("20ms" != fileDefragmentChunkDelay[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeB.FileDefragmentChunkDelay")
 	}
 
 	// Validate VolumeGroup:V_VolumeC_G
@@ -251,6 +288,15 @@ func testValidateUpgradedConfMap(t *testing.T, testConfMap conf.ConfMap) {
 		t.Fatalf("testConfMap missing Volume:VolumeC.MaxFlushTime=10s")
 	}
 
+	fileDefragmentChunkSize, fileDefragmentChunkSizeOK = testVolume["FileDefragmentChunkSize"]
+	if !fileDefragmentChunkSizeOK || (1 != len(fileDefragmentChunkSize)) || ("10000000" != fileDefragmentChunkSize[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeC.FileDefragmentChunkSize")
+	}
+	fileDefragmentChunkDelay, fileDefragmentChunkDelayOK = testVolume["FileDefragmentChunkDelay"]
+	if !fileDefragmentChunkDelayOK || (1 != len(fileDefragmentChunkDelay)) || ("10ms" != fileDefragmentChunkDelay[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeC.FileDefragmentChunkDelay")
+	}
+
 	// Validate VolumeGroup:V_VolumeD_G
 
 	testVolumeGroup, testVolumeGroupOK = testConfMap["VolumeGroup:V_VolumeD_G"]
@@ -291,6 +337,15 @@ func testValidateUpgradedConfMap(t *testing.T, testConfMap conf.ConfMap) {
 	maxFlushTime, maxFlushTimeOK = testVolume["MaxFlushTime"]
 	if !maxFlushTimeOK || (1 != len(maxFlushTime)) || ("20s" != maxFlushTime[0]) {
 		t.Fatalf("testConfMap missing Volume:VolumeD.MaxFlushTime=20s")
+	}
+
+	fileDefragmentChunkSize, fileDefragmentChunkSizeOK = testVolume["FileDefragmentChunkSize"]
+	if !fileDefragmentChunkSizeOK || (1 != len(fileDefragmentChunkSize)) || ("20000000" != fileDefragmentChunkSize[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeD.FileDefragmentChunkSize")
+	}
+	fileDefragmentChunkDelay, fileDefragmentChunkDelayOK = testVolume["FileDefragmentChunkDelay"]
+	if !fileDefragmentChunkDelayOK || (1 != len(fileDefragmentChunkDelay)) || ("20ms" != fileDefragmentChunkDelay[0]) {
+		t.Fatalf("testConfigMap has invalid Volume:VolumeD.FileDefragmentChunkDelay")
 	}
 }
 

@@ -692,17 +692,18 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
-type requestState struct {
+type requestStateStruct struct {
 	pathSplit               []string
 	numPathParts            int
 	formatResponseAsJSON    bool
 	formatResponseCompactly bool
+	performValidation       bool
 	volume                  *volumeStruct
 }
 
 func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		requestState            requestState
+		requestState            *requestStateStruct
 		acceptHeader            string
 		err                     error
 		formatResponseAsJSON    bool
@@ -711,6 +712,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		ok                      bool
 		paramList               []string
 		pathSplit               []string
+		performValidation       bool
 		volumeAsValue           sortedmap.Value
 		volumeList              []string
 		volumeListIndex         int
@@ -748,10 +750,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
 	case 4:
+		// Form: /volume/<volume-name>/defrag/<basename>
 		// Form: /volume/<volume-name>/extent-map/<basename>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
+		// Form: /volume/<volume-name>/defrag/<dir>/.../<basename>
 		// Form: /volume/<volume-name>/extent-map/<dir>/.../<basename>
 	}
 
@@ -772,7 +776,26 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	if formatResponseAsJSON {
 		paramList, ok = request.URL.Query()["compact"]
-		formatResponseCompactly = (ok && (0 < len(paramList)) && (("true" == paramList[0]) || ("1" == paramList[0])))
+		if ok {
+			if 0 == len(paramList) {
+				formatResponseCompactly = false
+			} else {
+				formatResponseCompactly = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+			}
+		} else {
+			formatResponseCompactly = false
+		}
+	}
+
+	paramList, ok = request.URL.Query()["validate"]
+	if ok {
+		if 0 == len(paramList) {
+			performValidation = false
+		} else {
+			performValidation = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		performValidation = false
 	}
 
 	if 1 == numPathParts {
@@ -841,7 +864,15 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-	requestState.volume = volumeAsValue.(*volumeStruct)
+
+	requestState = &requestStateStruct{
+		pathSplit:               pathSplit,
+		numPathParts:            numPathParts,
+		formatResponseAsJSON:    formatResponseAsJSON,
+		formatResponseCompactly: formatResponseCompactly,
+		performValidation:       performValidation,
+		volume:                  volumeAsValue.(*volumeStruct),
+	}
 
 	requestState.pathSplit = pathSplit
 	requestState.numPathParts = numPathParts
@@ -849,6 +880,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	requestState.formatResponseCompactly = formatResponseCompactly
 
 	switch pathSplit[3] {
+	case "defrag":
+		doDefrag(responseWriter, request, requestState)
+
 	case "extent-map":
 		doExtentMap(responseWriter, request, requestState)
 
@@ -871,7 +905,42 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
-func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		dirEntryInodeNumber inode.InodeNumber
+		dirInodeNumber      inode.InodeNumber
+		err                 error
+		pathPartIndex       int
+	)
+
+	if 3 > requestState.numPathParts {
+		err = fmt.Errorf("doDefrag() not passed enough requestState.numPathParts (%d)", requestState.numPathParts)
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+
+	dirEntryInodeNumber = inode.RootDirInodeNumber
+	pathPartIndex = 3
+
+	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
+		dirInodeNumber = dirEntryInodeNumber
+
+		dirEntryInodeNumber, err = requestState.volume.fsMountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
+	err = requestState.volume.fsMountHandle.DefragmentFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber)
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusOK)
+	} else {
+		responseWriter.WriteHeader(http.StatusConflict)
+	}
+}
+
+func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		dirEntryInodeNumber inode.InodeNumber
 		dirInodeNumber      inode.InodeNumber
@@ -887,6 +956,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 	)
 
 	if 3 > requestState.numPathParts {
+		err = fmt.Errorf("doExtentMap() not passed enough requestState.numPathParts (%d)", requestState.numPathParts)
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 
@@ -903,11 +973,11 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		return
 	}
 
-	dirEntryInodeNumber = inode.RootDirInodeNumber
-	pathPartIndex = 3
-
 	path = strings.Join(requestState.pathSplit[4:], "/")
 	pathDoubleQuoted = "\"" + path + "\""
+
+	dirEntryInodeNumber = inode.RootDirInodeNumber
+	pathPartIndex = 3
 
 	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
 		dirInodeNumber = dirEntryInodeNumber
@@ -976,7 +1046,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 	}
 }
 
-func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doJob(jobType jobTypeType, responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		err                     error
 		formatResponseAsJSON    bool
@@ -1233,22 +1303,30 @@ type layoutReportElementLayoutReportElementStruct struct {
 }
 
 type layoutReportSetElementStruct struct {
+	TreeName      string
+	Discrepencies uint64
+	LayoutReport  []layoutReportElementLayoutReportElementStruct
+}
+
+type layoutReportSetElementWithoutDiscrepenciesStruct struct {
 	TreeName     string
 	LayoutReport []layoutReportElementLayoutReportElementStruct
 }
 
-func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
-		err                       error
-		layoutReportIndex         int
-		layoutReportMap           sortedmap.LayoutReport
-		layoutReportSet           [6]*layoutReportSetElementStruct
-		layoutReportSetElement    *layoutReportSetElementStruct
-		layoutReportSetJSON       bytes.Buffer
-		layoutReportSetJSONPacked []byte
-		objectBytes               uint64
-		objectNumber              uint64
-		treeTypeIndex             int
+		discrepencyFormatClass              string
+		err                                 error
+		layoutReportIndex                   int
+		layoutReportMap                     sortedmap.LayoutReport
+		layoutReportSet                     [6]*layoutReportSetElementStruct
+		layoutReportSetElement              *layoutReportSetElementStruct
+		layoutReportSetJSON                 bytes.Buffer
+		layoutReportSetJSONPacked           []byte
+		layoutReportSetWithoutDiscrepencies [6]*layoutReportSetElementWithoutDiscrepenciesStruct
+		objectBytes                         uint64
+		objectNumber                        uint64
+		treeTypeIndex                       int
 	)
 
 	layoutReportSet[headhunter.MergedBPlusTree] = &layoutReportSetElementStruct{
@@ -1271,7 +1349,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 	}
 
 	for treeTypeIndex, layoutReportSetElement = range layoutReportSet {
-		layoutReportMap, err = requestState.volume.headhunterVolumeHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex))
+		layoutReportMap, layoutReportSetElement.Discrepencies, err = requestState.volume.headhunterVolumeHandle.FetchLayoutReport(headhunter.BPlusTreeType(treeTypeIndex), requestState.performValidation)
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusInternalServerError)
 			return
@@ -1291,7 +1369,17 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		responseWriter.Header().Set("Content-Type", "application/json")
 		responseWriter.WriteHeader(http.StatusOK)
 
-		layoutReportSetJSONPacked, err = json.Marshal(layoutReportSet)
+		if requestState.performValidation {
+			layoutReportSetJSONPacked, err = json.Marshal(layoutReportSet)
+		} else {
+			for treeTypeIndex, layoutReportSetElement = range layoutReportSet {
+				layoutReportSetWithoutDiscrepencies[treeTypeIndex] = &layoutReportSetElementWithoutDiscrepenciesStruct{
+					TreeName:     layoutReportSetElement.TreeName,
+					LayoutReport: layoutReportSetElement.LayoutReport,
+				}
+			}
+			layoutReportSetJSONPacked, err = json.Marshal(layoutReportSetWithoutDiscrepencies)
+		}
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusInternalServerError)
 			return
@@ -1311,7 +1399,12 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		_, _ = responseWriter.Write([]byte(fmt.Sprintf(layoutReportTopTemplate, version.ProxyFSVersion, globals.ipAddrTCPPort, requestState.volume.name)))
 
 		for _, layoutReportSetElement = range layoutReportSet {
-			_, _ = responseWriter.Write([]byte(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName)))
+			if 0 == layoutReportSetElement.Discrepencies {
+				discrepencyFormatClass = "success"
+			} else {
+				discrepencyFormatClass = "danger"
+			}
+			_, _ = responseWriter.Write([]byte(fmt.Sprintf(layoutReportTableTopTemplate, layoutReportSetElement.TreeName, layoutReportSetElement.Discrepencies, discrepencyFormatClass)))
 
 			for layoutReportIndex = 0; layoutReportIndex < len(layoutReportSetElement.LayoutReport); layoutReportIndex++ {
 				_, _ = responseWriter.Write([]byte(fmt.Sprintf(layoutReportTableRowTemplate, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectNumber, layoutReportSetElement.LayoutReport[layoutReportIndex].ObjectBytes)))
@@ -1324,7 +1417,7 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 	}
 }
 
-func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState requestState) {
+func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		directionStringCanonicalized string
 		directionStringSlice         []string

@@ -1,5 +1,5 @@
 [Unit]
-Description=Swift Proxyfs service
+Description=Swift ProxyFS service
 
 [Service]
 Environment=NSS_SDB_USE_CACHE=YES
@@ -16,4 +16,4 @@ KillMode=process
 
 [Install]
 # Don't consider our failure a boot failure
-WantedBy=multi-user.target smb.service
+WantedBy=multi-user.target smb.service pfsagent.service

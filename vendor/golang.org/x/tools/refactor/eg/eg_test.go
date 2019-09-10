@@ -11,10 +11,11 @@ package eg_test
 import (
 	"bytes"
 	"flag"
-	exact "go/constant"
+	"go/constant"
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/loader"
+	"golang.org/x/tools/internal/testenv"
 	"golang.org/x/tools/refactor/eg"
 )
 
@@ -38,6 +40,8 @@ var (
 )
 
 func Test(t *testing.T) {
+	testenv.NeedsTool(t, "go")
+
 	switch runtime.GOOS {
 	case "windows":
 		t.Skipf("skipping test on %q (no /usr/bin/diff)", runtime.GOOS)
@@ -78,6 +82,12 @@ func Test(t *testing.T) {
 		"testdata/H.template",
 		"testdata/H1.go",
 
+		"testdata/I.template",
+		"testdata/I1.go",
+
+		"testdata/J.template",
+		"testdata/J1.go",
+
 		"testdata/bad_type.template",
 		"testdata/no_before.template",
 		"testdata/no_after_return.template",
@@ -104,7 +114,7 @@ func Test(t *testing.T) {
 			if err != nil {
 				if shouldFail == nil {
 					t.Errorf("NewTransformer(%s): %s", filename, err)
-				} else if want := exact.StringVal(shouldFail.Val()); !strings.Contains(err.Error(), want) {
+				} else if want := constant.StringVal(shouldFail.Val()); !strings.Contains(err.Error(), want) {
 					t.Errorf("NewTransformer(%s): got error %q, want error %q", filename, err, want)
 				}
 			} else if shouldFail != nil {
@@ -126,7 +136,11 @@ func Test(t *testing.T) {
 			continue
 		}
 
-		got := filename + "t"       // foo.got
+		gotf, err := ioutil.TempFile("", filepath.Base(filename)+"t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := gotf.Name()          // foo.got
 		golden := filename + "lden" // foo.golden
 
 		// Write actual output to foo.got.

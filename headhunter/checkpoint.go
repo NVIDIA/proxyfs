@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -20,7 +19,6 @@ import (
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
-	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/platform"
@@ -38,8 +36,8 @@ type uint64Struct struct {
 }
 
 const (
-	checkpointVersion3 uint64 = iota + 3
-	// uint64 in %016X indicating checkpointVersion2 or checkpointVersion3
+	CheckpointVersion3 uint64 = iota + 3
+	// uint64 in %016X indicating checkpointVersion2 or CheckpointVersion3
 	// ' '
 	// uint64 in %016X indicating objectNumber containing checkpoint record at tail of object
 	// ' '
@@ -48,18 +46,18 @@ const (
 	// uint64 in %016X indicating reservedToNonce
 )
 
-type checkpointHeaderStruct struct {
-	CheckpointVersion                         uint64 // either checkpointVersion2 or checkpointVersion3
+type CheckpointHeaderStruct struct {
+	CheckpointVersion                         uint64 // either checkpointVersion2 or CheckpointVersion3
 	CheckpointObjectTrailerStructObjectNumber uint64 // checkpointObjectTrailerV?Struct found at "tail" of object
 	CheckpointObjectTrailerStructObjectLength uint64 // this length includes appended non-fixed sized arrays
 	ReservedToNonce                           uint64 // highest nonce value reserved
 }
 
-type checkpointObjectTrailerV3Struct struct {
+type CheckpointObjectTrailerV3Struct struct {
 	InodeRecBPlusTreeObjectNumber             uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of inodeRec        B+Tree
 	InodeRecBPlusTreeObjectOffset             uint64 // ...and offset into the Object where root starts
 	InodeRecBPlusTreeObjectLength             uint64 // ...and length if that root node
-	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow checkpointObjectTrailerV3Struct
+	InodeRecBPlusTreeLayoutNumElements        uint64 // elements immediately follow CheckpointObjectTrailerV3Struct
 	LogSegmentRecBPlusTreeObjectNumber        uint64 // if != 0, objectNumber-named Object in <accountName>.<checkpointContainerName> where root of logSegment      B+Tree
 	LogSegmentRecBPlusTreeObjectOffset        uint64 // ...and offset into the Object where root starts
 	LogSegmentRecBPlusTreeObjectLength        uint64 // ...and length if that root node
@@ -73,45 +71,45 @@ type checkpointObjectTrailerV3Struct struct {
 	SnapShotIDNumBits                         uint64 // number of bits reserved to hold SnapShotIDs
 	SnapShotListNumElements                   uint64 // elements immediately follow deletedObjectsBPlusTreeLayout
 	SnapShotListTotalSize                     uint64 // size of entire SnapShotList
-	// inodeRecBPlusTreeLayout        serialized as [InodeRecBPlusTreeLayoutNumElements       ]elementOfBPlusTreeLayoutStruct
-	// logSegmentBPlusTreeLayout      serialized as [LogSegmentRecBPlusTreeLayoutNumElements  ]elementOfBPlusTreeLayoutStruct
-	// bPlusTreeObjectBPlusTreeLayout serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// createdObjectsBPlusTreeLayout  serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// deletedObjectsBPlusTreeLayout  serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]elementOfBPlusTreeLayoutStruct
-	// snapShotList                   serialized as [snapShotListNumElements                  ]elementOfSnapShotListStruct
+	// InodeRecBPlusTreeLayout        serialized as [InodeRecBPlusTreeLayoutNumElements       ]ElementOfBPlusTreeLayoutStruct
+	// LogSegmentBPlusTreeLayout      serialized as [LogSegmentRecBPlusTreeLayoutNumElements  ]ElementOfBPlusTreeLayoutStruct
+	// BPlusTreeObjectBPlusTreeLayout serialized as [BPlusTreeObjectBPlusTreeLayoutNumElements]ElementOfBPlusTreeLayoutStruct
+	// CreatedObjectsBPlusTreeLayout  serialized as [CreatedObjectsBPlusTreeLayoutNumElements ]ElementOfBPlusTreeLayoutStruct
+	// DeletedObjectsBPlusTreeLayout  serialized as [DeletedObjectsBPlusTreeLayoutNumElements ]ElementOfBPlusTreeLayoutStruct
+	// SnapShotList                   serialized as [SnapShotListNumElements                  ]ElementOfSnapShotListStruct
 }
 
-type elementOfBPlusTreeLayoutStruct struct {
+type ElementOfBPlusTreeLayoutStruct struct {
 	ObjectNumber uint64
 	ObjectBytes  uint64
 }
 
-type elementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
-	nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
-	id    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
+type ElementOfSnapShotListStruct struct { // Note: for illustrative purposes... not marshalled with cstruct
+	Nonce uint64 //        supplies strict time-ordering of SnapShots regardless of timebase resets
+	ID    uint64 //        in the range [1:2^SnapShotIDNumBits-2]
 	//                       ID == 0                     reserved for the "live" view
 	//                       ID == 2^SnapShotIDNumBits-1 reserved for the .snapshot subdir of a dir
-	timeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
+	TimeStamp time.Time // serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func (t  time.Time) time.MarshalBinary()              ([]byte, error)
 	//                       func (t *time.Time) time.UnmarshalBinary(data []byte) (error)
-	name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
+	Name string //         serialized/deserialized as a uint64 length followed by a that sized []byte
 	//                       func utils.ByteSliceToString(byteSlice []byte)        (str string)
 	//                       func utils.StringToByteSlice(str string)              (byteSlice []byte)
-	inodeRecBPlusTreeObjectNumber        uint64
-	inodeRecBPlusTreeObjectOffset        uint64
-	inodeRecBPlusTreeObjectLength        uint64
-	logSegmentRecBPlusTreeObjectNumber   uint64
-	logSegmentRecBPlusTreeObjectOffset   uint64
-	logSegmentRecBPlusTreeObjectLength   uint64
-	bPlusTreeObjectBPlusTreeObjectNumber uint64
-	bPlusTreeObjectBPlusTreeObjectOffset uint64
-	bPlusTreeObjectBPlusTreeObjectLength uint64
-	createdObjectsBPlusTreeObjectNumber  uint64
-	createdObjectsBPlusTreeObjectOffset  uint64
-	createdObjectsBPlusTreeObjectLength  uint64
-	deletedObjectsBPlusTreeObjectNumber  uint64
-	deletedObjectsBPlusTreeObjectOffset  uint64
-	deletedObjectsBPlusTreeObjectLength  uint64
+	InodeRecBPlusTreeObjectNumber        uint64
+	InodeRecBPlusTreeObjectOffset        uint64
+	InodeRecBPlusTreeObjectLength        uint64
+	LogSegmentRecBPlusTreeObjectNumber   uint64
+	LogSegmentRecBPlusTreeObjectOffset   uint64
+	LogSegmentRecBPlusTreeObjectLength   uint64
+	BPlusTreeObjectBPlusTreeObjectNumber uint64
+	BPlusTreeObjectBPlusTreeObjectOffset uint64
+	BPlusTreeObjectBPlusTreeObjectLength uint64
+	CreatedObjectsBPlusTreeObjectNumber  uint64
+	CreatedObjectsBPlusTreeObjectOffset  uint64
+	CreatedObjectsBPlusTreeObjectLength  uint64
+	DeletedObjectsBPlusTreeObjectNumber  uint64
+	DeletedObjectsBPlusTreeObjectOffset  uint64
+	DeletedObjectsBPlusTreeObjectLength  uint64
 }
 
 type checkpointRequestStruct struct {
@@ -138,7 +136,7 @@ const (
 type replayLogTransactionFixedPartStruct struct { //          transactions begin on a replayLogWriteBufferAlignment boundary
 	CRC64                                         uint64 // checksum of everything after this field
 	BytesFollowing                                uint64 // bytes following in this transaction
-	LastCheckpointObjectTrailerStructObjectNumber uint64 // last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+	LastCheckpointObjectTrailerStructObjectNumber uint64 // last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 	TransactionType                               uint64 // transactionType from above const() block
 }
 
@@ -227,7 +225,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutInodeRec
 				globals.uint64Size + //               inodeNumber
 				globals.uint64Size + //               len(value)
@@ -241,7 +239,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutInodeRecs
 				globals.uint64Size //                 len(inodeNumbers) == len(values)
 		for i = 0; i < len(multipleKeys); i++ {
@@ -258,7 +256,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteInodeRec
 				globals.uint64Size //                 inodeNumber
 	case transactionPutLogSegmentRec:
@@ -267,7 +265,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutLogSegmentRec
 				globals.uint64Size + //               logSegmentNumber
 				globals.uint64Size + //               len(value)
@@ -280,7 +278,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteLogSegmentRec
 				globals.uint64Size //                 logSegmentNumber
 	case transactionPutBPlusTreeObject:
@@ -289,7 +287,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionPutBPlusTreeObject
 				globals.uint64Size + //               objectNumber
 				globals.uint64Size + //               len(value)
@@ -302,7 +300,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 		bytesNeeded = //                              transactions begin on a replayLogWriteBufferAlignment boundary
 			globals.uint64Size + //                   checksum of everything after this field
 				globals.uint64Size + //               bytes following in this transaction
-				globals.uint64Size + //               last checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+				globals.uint64Size + //               last CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 				globals.uint64Size + //               transactionType == transactionDeleteBPlusTreeObject
 				globals.uint64Size //                 objectNumber
 	default:
@@ -328,7 +326,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 	_ = copy(replayLogWriteBuffer[replayLogWriteBufferPosition:], packedUint64)
 	replayLogWriteBufferPosition += globals.uint64Size
 
-	// Fill in last checkpoint's checkpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
+	// Fill in last checkpoint's CheckpointHeaderStruct.checkpointObjectTrailerStructObjectNumber
 
 	packedUint64, err = cstruct.Pack(volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, LittleEndian)
 	if nil != err {
@@ -518,7 +516,7 @@ func (volume *volumeStruct) recordTransaction(transactionType uint64, keys inter
 
 // getEtcdCheckpointHeader gets the JSON-encoded checkpointHeader from etcd returning also its revision.
 //
-func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpointHeaderStruct, checkpointHeaderEtcdRevision int64, err error) {
+func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *CheckpointHeaderStruct, checkpointHeaderEtcdRevision int64, err error) {
 	var (
 		cancel      context.CancelFunc
 		ctx         context.Context
@@ -538,7 +536,7 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpo
 		return
 	}
 
-	checkpointHeader = &checkpointHeaderStruct{}
+	checkpointHeader = &CheckpointHeaderStruct{}
 
 	err = json.Unmarshal(getResponse.Kvs[0].Value, checkpointHeader)
 	if nil != err {
@@ -554,7 +552,7 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *checkpo
 // putEtcdCheckpointHeader puts the JSON-encoding of the supplied checkpointHeader in etcd.
 // If a non-zero oldCheckpointHeaderEtcdRevision, it must match the current revision of the checkpointHeader.
 //
-func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *checkpointHeaderStruct, oldCheckpointHeaderEtcdRevision int64) (newCheckpointHeaderEtcdRevision int64, err error) {
+func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *CheckpointHeaderStruct, oldCheckpointHeaderEtcdRevision int64) (newCheckpointHeaderEtcdRevision int64, err error) {
 	var (
 		cancel              context.CancelFunc
 		checkpointHeaderBuf []byte
@@ -599,22 +597,134 @@ func (volume *volumeStruct) putEtcdCheckpointHeader(checkpointHeader *checkpoint
 	return
 }
 
+// fetchCheckpointContainerHeader reads the Checkpoint Container's Checkpoint Header a total of
+// FSGlobals.CheckpointHeaderConsensusAttempts times. With each attempt, it updates its prior
+// knowledge with the latest Checkpoint Header value. At the end of the attempt loop, it assesses
+// if a concensus was achieved (i.e. int((N+1)/2) agree) for the Checkpoint Header's value. If
+// successful, it then returns the parsed result in a *CheckpointHeaderStruct). In either case, it
+// also returns the number of attempts agreeing (up to globals.checkpointHeaderConsensusAttempts).
+//
+func (volume *volumeStruct) fetchCheckpointContainerHeader() (checkpointHeader *CheckpointHeaderStruct, agreements uint16, err error) {
+	var (
+		bestCheckpointHeader             *CheckpointHeaderStruct
+		checkpointContainerHeaders       map[string][]string
+		checkpointHeaderConsensusAttempt uint16
+		checkpointHeaderConsensusQuorum  uint16
+		checkpointHeaderValue            string
+		checkpointHeaderValueSplit       []string
+		checkpointHeaderValues           []string
+		ok                               bool
+		thisCheckpointHeader             *CheckpointHeaderStruct
+	)
+
+	checkpointHeaderConsensusQuorum = (globals.checkpointHeaderConsensusAttempts + 1) / 2
+
+	bestCheckpointHeader = nil
+	agreements = 0
+
+	for checkpointHeaderConsensusAttempt = 0; checkpointHeaderConsensusAttempt < globals.checkpointHeaderConsensusAttempts; checkpointHeaderConsensusAttempt++ {
+		checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead failed: %v", volume.volumeName, err)
+			continue
+		}
+
+		checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
+		if !ok {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead missing Header %s", volume.volumeName, CheckpointHeaderName)
+			continue
+		}
+		if 1 != len(checkpointHeaderValues) {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s should have only a single value (had %d)", volume.volumeName, CheckpointHeaderName, len(checkpointHeaderValues))
+			continue
+		}
+
+		checkpointHeaderValue = checkpointHeaderValues[0]
+		checkpointHeaderValueSplit = strings.Split(checkpointHeaderValue, " ")
+		if 4 != len(checkpointHeaderValueSplit) {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s should have four fields (had %d)", volume.volumeName, CheckpointHeaderName, len(checkpointHeaderValueSplit))
+			continue
+		}
+
+		thisCheckpointHeader = &CheckpointHeaderStruct{}
+
+		thisCheckpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSplit[0], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointVersion (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[0])
+			continue
+		}
+		if CheckpointVersion3 != thisCheckpointHeader.CheckpointVersion {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unsupported CheckpointVersion (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[0])
+			continue
+		}
+
+		thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSplit[1], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointObjectTrailerStructObjectNumber (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[1])
+			continue
+		}
+		thisCheckpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSplit[2], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable CheckpointObjectTrailerStructObjectLength (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[2])
+			continue
+		}
+		thisCheckpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSplit[3], 16, 64)
+		if nil != err {
+			logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s contained unparseable ReservedToNonce (%s)", volume.volumeName, CheckpointHeaderName, checkpointHeaderValueSplit[3])
+			continue
+		}
+
+		if nil == bestCheckpointHeader {
+			bestCheckpointHeader = thisCheckpointHeader
+			agreements = 1
+		} else {
+			if (thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber == bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber) &&
+				(thisCheckpointHeader.ReservedToNonce == bestCheckpointHeader.ReservedToNonce) {
+				agreements++
+			} else {
+				if (thisCheckpointHeader.CheckpointObjectTrailerStructObjectNumber > bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber) ||
+					(thisCheckpointHeader.ReservedToNonce > bestCheckpointHeader.ReservedToNonce) {
+					logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s found to be newer than prior best", volume.volumeName, CheckpointHeaderName)
+					bestCheckpointHeader = thisCheckpointHeader
+					agreements = 1
+				} else {
+					logger.Warnf("%s.fetchCheckpointContainerHeader() ContainerHead Header %s found to be older than prior best", volume.volumeName, CheckpointHeaderName)
+				}
+			}
+		}
+	}
+
+	if agreements >= checkpointHeaderConsensusQuorum {
+		logger.Infof("%s.fetchCheckpointContainerHeader() found consensus CheckpointHeader %016X %016X %016X %016X (%d out of %d)",
+			volume.volumeName,
+			bestCheckpointHeader.CheckpointVersion,
+			bestCheckpointHeader.CheckpointObjectTrailerStructObjectNumber,
+			bestCheckpointHeader.CheckpointObjectTrailerStructObjectLength,
+			bestCheckpointHeader.ReservedToNonce,
+			agreements,
+			globals.checkpointHeaderConsensusAttempts)
+		checkpointHeader = bestCheckpointHeader
+		err = nil
+	} else {
+		err = fmt.Errorf("%s.fetchCheckpointContainerHeader() could not achieve consensus (%d out of %d)",
+			volume.volumeName,
+			agreements,
+			globals.checkpointHeaderConsensusAttempts)
+		logger.Errorf("%v", err)
+	}
+
+	return
+}
+
 func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedmap.LayoutReport, err error) {
 	var (
-		checkpointContainerHeaders map[string][]string
-		checkpointHeader           *checkpointHeaderStruct
-		checkpointHeaderValue      string
-		checkpointHeaderValueSlice []string
-		checkpointHeaderValues     []string
-		objectLength               uint64
-		objectNumber               uint64
-		ok                         bool
+		checkpointHeader *CheckpointHeaderStruct
 	)
 
 	if globals.etcdEnabled {
 		checkpointHeader, _, err = volume.getEtcdCheckpointHeader()
 		if nil == err {
-			// Initialize layoutReport from checkpointHeader found in etcd
+			// Return layoutReport from checkpointHeader found in etcd
 
 			layoutReport = make(sortedmap.LayoutReport)
 			layoutReport[checkpointHeader.CheckpointObjectTrailerStructObjectNumber] = checkpointHeader.CheckpointObjectTrailerStructObjectLength
@@ -625,46 +735,15 @@ func (volume *volumeStruct) fetchCheckpointLayoutReport() (layoutReport sortedma
 		// Fall-through to use the checkpointHeader from Swift
 	}
 
-	checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
+	checkpointHeader, _, err = volume.fetchCheckpointContainerHeader()
 	if nil != err {
 		return
 	}
 
-	checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-	if !ok {
-		err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-		return
-	}
-	if 1 != len(checkpointHeaderValues) {
-		err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-		return
-	}
-
-	checkpointHeaderValue = checkpointHeaderValues[0]
-
-	checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
-
-	if 4 != len(checkpointHeaderValueSlice) {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	objectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-	if nil != err {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	objectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-	if nil != err {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-		return
-	}
-
-	// Return layoutReport manufactured from the checkpointHeaderValue
+	// Return layoutReport manufactured from the checkpointHeaderValue found in the Checkpoint Container
 
 	layoutReport = make(sortedmap.LayoutReport)
-	layoutReport[objectNumber] = objectLength
+	layoutReport[checkpointHeader.CheckpointObjectTrailerStructObjectNumber] = checkpointHeader.CheckpointObjectTrailerStructObjectLength
 
 	return
 }
@@ -676,19 +755,19 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		bPlusTreeObjectWrapperBPlusTreeTracker             *bPlusTreeTrackerStruct
 		bytesConsumed                                      uint64
 		bytesNeeded                                        uint64
+		checkpointContainerHeadAttempts                    uint16
 		checkpointContainerHeaders                         map[string][]string
-		checkpointHeader                                   checkpointHeaderStruct
+		checkpointHeader                                   CheckpointHeaderStruct
 		checkpointHeaderValue                              string
-		checkpointHeaderValueSlice                         []string
 		checkpointHeaderValues                             []string
 		checkpointObjectTrailerBuf                         []byte
-		checkpointObjectTrailerV3                          *checkpointObjectTrailerV3Struct
+		checkpointObjectTrailerV3                          *CheckpointObjectTrailerV3Struct
 		computedCRC64                                      uint64
 		containerNameAsValue                               sortedmap.Value
 		createdObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
 		defaultReplayLogReadBuffer                         []byte
 		deletedObjectsWrapperBPlusTreeTracker              *bPlusTreeTrackerStruct
-		elementOfBPlusTreeLayout                           elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayout                           ElementOfBPlusTreeLayoutStruct
 		expectedCheckpointObjectTrailerSize                uint64
 		inodeIndex                                         uint64
 		inodeNumber                                        uint64
@@ -739,63 +818,12 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		if nil != err {
 			logger.Infof("No checkpointHeader found in etcd for volume %s: %v", volume.volumeName, err)
 
-			checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
-			if nil == err {
-				checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-				if !ok {
-					err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+			volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+			if nil != err {
+				if 0 != checkpointContainerHeadAttempts {
+					err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 					return
 				}
-				if 1 != len(checkpointHeaderValues) {
-					err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-					return
-				}
-
-				checkpointHeaderValue = checkpointHeaderValues[0]
-
-				checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
-
-				if 4 != len(checkpointHeaderValueSlice) {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader = &checkpointHeaderStruct{}
-
-				volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
-				if nil != err {
-					return
-				}
-
-				volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
-				if nil != err {
-					err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-					return
-				}
-
-				volume.checkpointHeaderEtcdRevision, err = volume.putEtcdCheckpointHeader(volume.checkpointHeader, 0)
-				if nil != err {
-					err = fmt.Errorf("Unable to put checkpointHeader in etcd: %v", err)
-					return
-				}
-			} else {
-				if http.StatusNotFound != blunder.HTTPCode(err) {
-					err = fmt.Errorf("Error fetching checkpointHeader from Swift vor volume %s: %v", volume.volumeName, err)
-					return
-				}
-
 				if autoFormat {
 					logger.Infof("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 				} else {
@@ -803,8 +831,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				volume.checkpointHeader = &checkpointHeaderStruct{
-					CheckpointVersion:                         checkpointVersion3,
+				volume.checkpointHeader = &CheckpointHeaderStruct{
+					CheckpointVersion:                         CheckpointVersion3,
 					CheckpointObjectTrailerStructObjectNumber: 0,
 					CheckpointObjectTrailerStructObjectLength: 0,
 					ReservedToNonce:                           firstNonceToProvide, // First FetchNonce() will trigger a reserve step
@@ -853,110 +881,70 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		checkpointContainerHeaders, err = swiftclient.ContainerHead(volume.accountName, volume.checkpointContainerName)
-		if nil == err {
-			checkpointHeaderValues, ok = checkpointContainerHeaders[CheckpointHeaderName]
-			if !ok {
-				err = fmt.Errorf("Missing %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
+		volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+		if nil != err {
+			if 0 != checkpointContainerHeadAttempts {
+				err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 				return
 			}
-			if 1 != len(checkpointHeaderValues) {
-				err = fmt.Errorf("Expected one single value for %v/%v header %v", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName)
-				return
-			}
-
-			checkpointHeaderValue = checkpointHeaderValues[0]
-		} else {
-			if (autoFormat) && (http.StatusNotFound == blunder.HTTPCode(err)) {
-				// Checkpoint Container not found... so try to create it with some initial values...
-
-				checkpointHeader.CheckpointVersion = checkpointVersion3
-
-				checkpointHeader.CheckpointObjectTrailerStructObjectNumber = 0
-				checkpointHeader.CheckpointObjectTrailerStructObjectLength = 0
-
-				checkpointHeader.ReservedToNonce = firstNonceToProvide // First FetchNonce() will trigger a reserve step
-
-				checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
-					checkpointHeader.CheckpointVersion,
-					checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
-					checkpointHeader.CheckpointObjectTrailerStructObjectLength,
-					checkpointHeader.ReservedToNonce,
-				)
-
-				checkpointHeaderValues = []string{checkpointHeaderValue}
-
-				storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
-
-				checkpointContainerHeaders = make(map[string][]string)
-
-				checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
-				checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
-
-				err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
-				if nil != err {
-					return
-				}
-
-				// Mark Account as bi-modal...
-				// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
-
-				accountHeaderValues = []string{AccountHeaderValue}
-
-				accountHeaders = make(map[string][]string)
-
-				accountHeaders[AccountHeaderName] = accountHeaderValues
-
-				err = swiftclient.AccountPost(volume.accountName, accountHeaders)
-				if nil != err {
-					return
-				}
+			if autoFormat {
+				logger.Infof("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 			} else {
-				// If Checkpoint Container HEAD failed for some other reason, we must exit before doing any damage
+				err = fmt.Errorf("No checkpointHeader found in Swift for volume %s: %v", volume.volumeName, err)
 				return
 			}
-		}
 
-		checkpointHeaderValueSlice = strings.Split(checkpointHeaderValue, " ")
+			volume.checkpointHeader = &CheckpointHeaderStruct{
+				CheckpointVersion:                         CheckpointVersion3,
+				CheckpointObjectTrailerStructObjectNumber: 0,
+				CheckpointObjectTrailerStructObjectLength: 0,
+				ReservedToNonce:                           firstNonceToProvide, // First FetchNonce() will trigger a reserve step
+			}
 
-		if 4 != len(checkpointHeaderValueSlice) {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (wrong number of fields)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointHeaderValue = fmt.Sprintf("%016X %016X %016X %016X",
+				checkpointHeader.CheckpointVersion,
+				checkpointHeader.CheckpointObjectTrailerStructObjectNumber,
+				checkpointHeader.CheckpointObjectTrailerStructObjectLength,
+				checkpointHeader.ReservedToNonce,
+			)
 
-		volume.checkpointHeader = &checkpointHeaderStruct{}
+			checkpointHeaderValues = []string{checkpointHeaderValue}
 
-		volume.checkpointHeader.CheckpointVersion, err = strconv.ParseUint(checkpointHeaderValueSlice[0], 16, 64)
-		if nil != err {
-			return
-		}
+			storagePolicyHeaderValues = []string{volume.checkpointContainerStoragePolicy}
 
-		volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber, err = strconv.ParseUint(checkpointHeaderValueSlice[1], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectNumber)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointContainerHeaders = make(map[string][]string)
 
-		volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength, err = strconv.ParseUint(checkpointHeaderValueSlice[2], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad objectLength)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
-		}
+			checkpointContainerHeaders[CheckpointHeaderName] = checkpointHeaderValues
+			checkpointContainerHeaders[StoragePolicyHeaderName] = storagePolicyHeaderValues
 
-		volume.checkpointHeader.ReservedToNonce, err = strconv.ParseUint(checkpointHeaderValueSlice[3], 16, 64)
-		if nil != err {
-			err = fmt.Errorf("Cannot parse %v/%v header %v: %v (bad nextNonce)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue)
-			return
+			err = swiftclient.ContainerPut(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
+			if nil != err {
+				return
+			}
+
+			// Mark Account as bi-modal...
+			// Note: pfs_middleware will actually see this header named AccountHeaderNameTranslated
+
+			accountHeaderValues = []string{AccountHeaderValue}
+
+			accountHeaders = make(map[string][]string)
+
+			accountHeaders[AccountHeaderName] = accountHeaderValues
+
+			err = swiftclient.AccountPost(volume.accountName, accountHeaders)
+			if nil != err {
+				return
+			}
 		}
 	}
 
 	volume.liveView = &volumeViewStruct{volume: volume}
 
-	if checkpointVersion3 == volume.checkpointHeader.CheckpointVersion {
+	if CheckpointVersion3 == volume.checkpointHeader.CheckpointVersion {
 		if 0 == volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber {
-			// Initialize based on zero-filled checkpointObjectTrailerV3Struct
+			// Initialize based on zero-filled CheckpointObjectTrailerV3Struct
 
-			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{
+			checkpointObjectTrailerV3 = &CheckpointObjectTrailerV3Struct{
 				InodeRecBPlusTreeObjectNumber:             0,
 				InodeRecBPlusTreeObjectOffset:             0,
 				InodeRecBPlusTreeObjectLength:             0,
@@ -1069,7 +1057,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				volume.availableSnapShotIDList.PushBack(snapShotID)
 			}
 		} else {
-			// Read in checkpointObjectTrailerV3Struct
+			// Read in CheckpointObjectTrailerV3Struct
 
 			checkpointObjectTrailerBuf, err =
 				swiftclient.ObjectTail(
@@ -1081,7 +1069,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				return
 			}
 
-			checkpointObjectTrailerV3 = &checkpointObjectTrailerV3Struct{}
+			checkpointObjectTrailerV3 = &CheckpointObjectTrailerV3Struct{}
 
 			bytesConsumed, err = cstruct.Unpack(checkpointObjectTrailerBuf, checkpointObjectTrailerV3, LittleEndian)
 			if nil != err {
@@ -1212,7 +1200,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.BPlusTreeObjectBPlusTreeLayoutNumElements
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.CreatedObjectsBPlusTreeLayoutNumElements
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.DeletedObjectsBPlusTreeLayoutNumElements
-			expectedCheckpointObjectTrailerSize *= globals.elementOfBPlusTreeLayoutStructSize
+			expectedCheckpointObjectTrailerSize *= globals.ElementOfBPlusTreeLayoutStructSize
 			expectedCheckpointObjectTrailerSize += checkpointObjectTrailerV3.SnapShotListTotalSize
 
 			if uint64(len(checkpointObjectTrailerBuf)) != expectedCheckpointObjectTrailerSize {
@@ -1290,7 +1278,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			for snapShotIndex = 0; snapShotIndex < checkpointObjectTrailerV3.SnapShotListNumElements; snapShotIndex++ {
 				volumeView = &volumeViewStruct{volume: volume}
 
-				// elementOfSnapShotListStruct.nonce
+				// ElementOfSnapShotListStruct.Nonce
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the nonce", volume.volumeName, snapShotIndex)
@@ -1311,7 +1299,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.id
+				// ElementOfSnapShotListStruct.ID
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the id", volume.volumeName, snapShotIndex)
@@ -1336,7 +1324,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.timeStamp
+				// ElementOfSnapShotListStruct.TimeStamp
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the timeStamp len", volume.volumeName, snapShotIndex)
@@ -1367,7 +1355,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.name
+				// ElementOfSnapShotListStruct.Name
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the name len", volume.volumeName, snapShotIndex)
@@ -1394,7 +1382,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					return
 				}
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1406,7 +1394,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1418,7 +1406,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.inodeRecBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.InodeRecBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the inodeRecBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1456,7 +1444,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1468,7 +1456,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1480,7 +1468,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.logSegmentRecBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.LogSegmentRecBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the logSegmentRecBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1518,7 +1506,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1530,7 +1518,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1542,7 +1530,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.bPlusTreeObjectBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.BPlusTreeObjectBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the bPlusTreeObjectBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1580,7 +1568,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1592,7 +1580,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1604,7 +1592,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.createdObjectsBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.CreatedObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the createdObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1642,7 +1630,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 					}
 				}
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectNumber
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectNumber
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectNumber", volume.volumeName, snapShotIndex)
@@ -1654,7 +1642,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectOffset
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectOffset
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectOffset", volume.volumeName, snapShotIndex)
@@ -1666,7 +1654,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 				}
 				checkpointObjectTrailerBuf = checkpointObjectTrailerBuf[bytesConsumed:]
 
-				// elementOfSnapShotListStruct.deletedObjectsBPlusTreeObjectLength
+				// ElementOfSnapShotListStruct.DeletedObjectsBPlusTreeObjectLength
 
 				if uint64(len(checkpointObjectTrailerBuf)) < globals.uint64Size {
 					err = fmt.Errorf("Cannot parse volume %v's checkpointObjectTrailer's SnapShotList element %v...no room for the deletedObjectsBPlusTreeObjectLength", volume.volumeName, snapShotIndex)
@@ -1762,7 +1750,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		err = fmt.Errorf("Cannot parse %v/%v header %v: %v (version: %v not supported)", volume.accountName, volume.checkpointContainerName, CheckpointHeaderName, checkpointHeaderValue, volume.checkpointHeader.CheckpointVersion)
+		// Note that, currently, fetchCheckpointContainerHeader() would have error'd preventing us to reach here
+		err = fmt.Errorf("CheckpointHeader.CheckpointVersion (%v) for volume %s not supported", volume.checkpointHeader.CheckpointVersion, volume.volumeName)
 		return
 	}
 
@@ -2050,7 +2039,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		checkpointContainerHeaders                         map[string][]string
 		checkpointHeaderValue                              string
 		checkpointHeaderValues                             []string
-		checkpointObjectTrailer                            *checkpointObjectTrailerV3Struct
+		checkpointObjectTrailer                            *CheckpointObjectTrailerV3Struct
 		checkpointObjectTrailerBeginningOffset             uint64
 		checkpointObjectTrailerEndingOffset                uint64
 		checkpointTrailerBuf                               []byte
@@ -2058,7 +2047,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		containerNameAsByteSlice                           []byte
 		containerNameAsValue                               sortedmap.Value
 		delayedObjectDeleteList                            []delayedObjectDeleteStruct
-		elementOfBPlusTreeLayout                           elementOfBPlusTreeLayoutStruct
+		elementOfBPlusTreeLayout                           ElementOfBPlusTreeLayoutStruct
 		elementOfBPlusTreeLayoutBuf                        []byte
 		elementOfSnapShotListBuf                           []byte
 		logSegmentObjectsToDelete                          int
@@ -2116,7 +2105,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		volumeViewIndex                                    int
 	)
 
-	checkpointObjectTrailer = &checkpointObjectTrailerV3Struct{}
+	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
 	checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
@@ -2246,7 +2235,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	treeLayoutBufSize += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.CreatedObjectsBPlusTreeLayoutNumElements
 	treeLayoutBufSize += checkpointObjectTrailer.DeletedObjectsBPlusTreeLayoutNumElements
-	treeLayoutBufSize *= globals.elementOfBPlusTreeLayoutStructSize
+	treeLayoutBufSize *= globals.ElementOfBPlusTreeLayoutStructSize
 
 	treeLayoutBuf = make([]byte, 0, treeLayoutBufSize)
 
@@ -2500,7 +2489,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	// Now update checkpointHeader atomically indicating checkpoint is complete
 
-	volume.checkpointHeader.CheckpointVersion = checkpointVersion3
+	volume.checkpointHeader.CheckpointVersion = CheckpointVersion3
 
 	volume.checkpointHeader.CheckpointObjectTrailerStructObjectNumber = volume.checkpointChunkedPutContextObjectNumber
 	volume.checkpointHeader.CheckpointObjectTrailerStructObjectLength = checkpointObjectTrailerEndingOffset - checkpointObjectTrailerBeginningOffset
@@ -2528,6 +2517,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	err = swiftclient.ContainerPost(volume.accountName, volume.checkpointContainerName, checkpointContainerHeaders)
 	if nil != err {
 		return
+	}
+	if globals.logCheckpointHeaderPosts {
+		logger.Infof("POST'd checkpointHeaderValue %s for volume %s from putCheckpoint()", checkpointHeaderValue, volume.volumeName)
 	}
 
 	// Remove replayLogFile if necessary
@@ -2669,14 +2661,32 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 }
 
 func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteList []delayedObjectDeleteStruct) {
-	for _, delayedObjectDelete := range delayedObjectDeleteList {
-		err := swiftclient.ObjectDelete(
-			volume.accountName,
-			delayedObjectDelete.containerName,
-			utils.Uint64ToHexStr(delayedObjectDelete.objectNumber),
-			swiftclient.SkipRetry)
-		if nil != err {
-			logger.Errorf("DELETE %v/%v/%016X failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDelete.objectNumber, err)
+	var (
+		delayedObjectDelete     delayedObjectDeleteStruct
+		delayedObjectDeleteName string
+		err                     error
+	)
+
+	for _, delayedObjectDelete = range delayedObjectDeleteList {
+		delayedObjectDeleteName = utils.Uint64ToHexStr(delayedObjectDelete.objectNumber)
+		if globals.metadataRecycleBin && (delayedObjectDelete.containerName == volume.checkpointContainerName) {
+			err = swiftclient.ObjectPost(
+				volume.accountName,
+				delayedObjectDelete.containerName,
+				delayedObjectDeleteName,
+				globals.metadataRecycleBinHeader) // UNDO
+			if nil != err {
+				logger.Errorf("POST %s/%s/%s failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDeleteName, err)
+			}
+		} else {
+			err = swiftclient.ObjectDelete(
+				volume.accountName,
+				delayedObjectDelete.containerName,
+				delayedObjectDeleteName,
+				swiftclient.SkipRetry)
+			if nil != err {
+				logger.Errorf("DELETE %s/%s/%s failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDeleteName, err)
+			}
 		}
 	}
 	volume.backgroundObjectDeleteWG.Done()
@@ -2771,26 +2781,22 @@ func (volume *volumeStruct) closeCheckpointChunkedPutContext() (err error) {
 // checkpointDaemon periodically and upon request persists a checkpoint/snapshot.
 func (volume *volumeStruct) checkpointDaemon() {
 	var (
-		bPlusTreeObjectCacheHits              uint64
 		bPlusTreeObjectCacheHitsDelta         uint64
-		bPlusTreeObjectCacheMisses            uint64
 		bPlusTreeObjectCacheMissesDelta       uint64
+		bPlusTreeObjectCacheStats             *sortedmap.BPlusTreeCacheStats
 		checkpointListener                    VolumeEventListener
 		checkpointListeners                   []VolumeEventListener
 		checkpointRequest                     *checkpointRequestStruct
-		createdDeletedObjectsCacheHits        uint64
 		createdDeletedObjectsCacheHitsDelta   uint64
-		createdDeletedObjectsCacheMisses      uint64
 		createdDeletedObjectsCacheMissesDelta uint64
+		createdDeletedObjectsCacheStats       *sortedmap.BPlusTreeCacheStats
 		exitOnCompletion                      bool
-		inodeRecCacheHits                     uint64
 		inodeRecCacheHitsDelta                uint64
-		inodeRecCacheMisses                   uint64
 		inodeRecCacheMissesDelta              uint64
-		logSegmentRecCacheHits                uint64
+		inodeRecCacheStats                    *sortedmap.BPlusTreeCacheStats
 		logSegmentRecCacheHitsDelta           uint64
-		logSegmentRecCacheMisses              uint64
 		logSegmentRecCacheMissesDelta         uint64
+		logSegmentRecCacheStats               *sortedmap.BPlusTreeCacheStats
 	)
 
 	for {
@@ -2856,59 +2862,59 @@ func (volume *volumeStruct) checkpointDaemon() {
 
 		// Update Global B+Tree Cache stats now
 
-		inodeRecCacheHits, inodeRecCacheMisses, _, _ = globals.inodeRecCache.Stats()
-		logSegmentRecCacheHits, logSegmentRecCacheMisses, _, _ = globals.logSegmentRecCache.Stats()
-		bPlusTreeObjectCacheHits, bPlusTreeObjectCacheMisses, _, _ = globals.bPlusTreeObjectCache.Stats()
-		createdDeletedObjectsCacheHits, createdDeletedObjectsCacheMisses, _, _ = globals.createdDeletedObjectsCache.Stats()
+		inodeRecCacheStats = globals.inodeRecCache.Stats()
+		logSegmentRecCacheStats = globals.logSegmentRecCache.Stats()
+		bPlusTreeObjectCacheStats = globals.bPlusTreeObjectCache.Stats()
+		createdDeletedObjectsCacheStats = globals.createdDeletedObjectsCache.Stats()
 
-		inodeRecCacheHitsDelta = inodeRecCacheHits - globals.inodeRecCachePriorCacheHits
-		inodeRecCacheMissesDelta = inodeRecCacheMisses - globals.inodeRecCachePriorCacheMisses
+		inodeRecCacheHitsDelta = inodeRecCacheStats.CacheHits - globals.inodeRecCachePriorCacheHits
+		inodeRecCacheMissesDelta = inodeRecCacheStats.CacheMisses - globals.inodeRecCachePriorCacheMisses
 
-		logSegmentRecCacheHitsDelta = logSegmentRecCacheHits - globals.logSegmentRecCachePriorCacheHits
-		logSegmentRecCacheMissesDelta = logSegmentRecCacheMisses - globals.logSegmentRecCachePriorCacheMisses
+		logSegmentRecCacheHitsDelta = logSegmentRecCacheStats.CacheHits - globals.logSegmentRecCachePriorCacheHits
+		logSegmentRecCacheMissesDelta = logSegmentRecCacheStats.CacheMisses - globals.logSegmentRecCachePriorCacheMisses
 
-		bPlusTreeObjectCacheHitsDelta = bPlusTreeObjectCacheHits - globals.bPlusTreeObjectCachePriorCacheHits
-		bPlusTreeObjectCacheMissesDelta = bPlusTreeObjectCacheMisses - globals.bPlusTreeObjectCachePriorCacheMisses
+		bPlusTreeObjectCacheHitsDelta = bPlusTreeObjectCacheStats.CacheHits - globals.bPlusTreeObjectCachePriorCacheHits
+		bPlusTreeObjectCacheMissesDelta = bPlusTreeObjectCacheStats.CacheMisses - globals.bPlusTreeObjectCachePriorCacheMisses
 
-		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheHits - globals.createdDeletedObjectsCachePriorCacheHits
-		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
+		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
+		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
 
 		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheHits, inodeRecCacheHitsDelta)
-			globals.inodeRecCachePriorCacheHits = inodeRecCacheHits
+			globals.inodeRecCachePriorCacheHits = inodeRecCacheStats.CacheHits
 		}
 		if 0 != inodeRecCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.InodeRecCacheMisses, inodeRecCacheMissesDelta)
-			globals.inodeRecCachePriorCacheMisses = inodeRecCacheMisses
+			globals.inodeRecCachePriorCacheMisses = inodeRecCacheStats.CacheMisses
 		}
 
 		if 0 != logSegmentRecCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheHits, logSegmentRecCacheHitsDelta)
-			globals.logSegmentRecCachePriorCacheHits = logSegmentRecCacheHits
+			globals.logSegmentRecCachePriorCacheHits = logSegmentRecCacheStats.CacheHits
 		}
 		if 0 != logSegmentRecCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.LogSegmentRecCacheMisses, logSegmentRecCacheMissesDelta)
-			globals.logSegmentRecCachePriorCacheMisses = logSegmentRecCacheMisses
+			globals.logSegmentRecCachePriorCacheMisses = logSegmentRecCacheStats.CacheMisses
 		}
 
 		if 0 != bPlusTreeObjectCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheHits, bPlusTreeObjectCacheHitsDelta)
-			globals.bPlusTreeObjectCachePriorCacheHits = bPlusTreeObjectCacheHits
+			globals.bPlusTreeObjectCachePriorCacheHits = bPlusTreeObjectCacheStats.CacheHits
 		}
 		if 0 != bPlusTreeObjectCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.BPlusTreeObjectCacheMisses, bPlusTreeObjectCacheMissesDelta)
-			globals.bPlusTreeObjectCachePriorCacheMisses = bPlusTreeObjectCacheMisses
+			globals.bPlusTreeObjectCachePriorCacheMisses = bPlusTreeObjectCacheStats.CacheMisses
 		}
 
 		if 0 != createdDeletedObjectsCacheHitsDelta {
 			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheHits, createdDeletedObjectsCacheHitsDelta)
-			globals.createdDeletedObjectsCachePriorCacheHits = createdDeletedObjectsCacheHits
+			globals.createdDeletedObjectsCachePriorCacheHits = createdDeletedObjectsCacheStats.CacheHits
 		}
 		if 0 != createdDeletedObjectsCacheMissesDelta {
 			stats.IncrementOperationsBy(&stats.CreatedDeletedObjectsCacheMisses, createdDeletedObjectsCacheMissesDelta)
-			globals.createdDeletedObjectsCachePriorCacheMisses = createdDeletedObjectsCacheMisses
+			globals.createdDeletedObjectsCachePriorCacheMisses = createdDeletedObjectsCacheStats.CacheMisses
 		}
 
 		globals.Unlock()

@@ -13,11 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-execute "Install PIP" do
-  command "curl https://bootstrap.pypa.io/get-pip.py | python"
-  not_if { system("pip --version") }
-end
-
 execute "Check setuptools & tox is installed" do
   command "pip install setuptools tox==3.5.3"
 end

@@ -54,7 +54,8 @@ func TestAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 
-		"StatsLogger.Period=0s",
+		"StatsLogger.Period=0m",
+		"StatsLogger.Verbose=false",
 
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",
 		"SwiftClient.NoAuthTCPPort=9999",
@@ -73,6 +74,11 @@ func TestAPI(t *testing.T) {
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 
 		"FSGlobals.VolumeGroupList=",
+		"FSGlobals.CheckpointHeaderConsensusAttempts=5",
+		"FSGlobals.MountRetryLimit=6",
+		"FSGlobals.MountRetryDelay=1s",
+		"FSGlobals.MountRetryExpBackoff=2",
+		"FSGlobals.LogCheckpointHeaderPosts=true",
 		"FSGlobals.TryLockBackoffMin=10ms",
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
