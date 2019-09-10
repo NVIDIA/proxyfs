@@ -91,6 +91,8 @@ func testSetup(t *testing.T) {
 		"Agent.LogFilePath=",
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
+		"Agent.HTTPServerIPAddr=127.0.0.1",
+		"Agent.HTTPServerTCPPort=9091",
 		"Agent.AttrDuration=10s",
 		"Agent.AttrBlockSize=65536",
 		"Agent.LookupEntryDuration=10s",

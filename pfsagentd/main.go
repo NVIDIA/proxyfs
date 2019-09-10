@@ -58,9 +58,17 @@ func main() {
 
 	performMountFUSE()
 
+	// Start serving HTTP
+
+	serveHTTP()
+
 	// Await any of specified signals
 
 	_ = <-signalChan
+
+	// Stop serving HTTP
+
+	unserveHTTP()
 
 	// Stop serving FUSE mount point
 
