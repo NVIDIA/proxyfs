@@ -1,6 +1,6 @@
 # ProxyFS Release Notes
 
-## 1.12 (September 10, 2019)
+## 1.12.0 (September 11, 2019)
 
 ### Features:
 
