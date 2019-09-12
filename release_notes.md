@@ -1,5 +1,24 @@
 # ProxyFS Release Notes
 
+## 1.12.1 (September 12, 2019)
+
+### Bug Fixes:
+
+The "mount retry" fix was actually misnamed. What it actually does is
+attempt to issue multiple Checkpoint HEAD requests and achieve agreement
+on what is returned by a majority quorum. In each such HEAD request,
+a retry logic pre-existed where anything other than a "200 OK" would
+be retried... hence the overloading of the term "retry". Anyway, in the
+case where `mkproxyfs` is being run to format a previously empty Swift
+Account, the retry logic could take a very long time (e.g. *minutes*) to
+give up. Thus, by performing each of those Checkpoint HEAD requests *in
+series*, the formatting process could take an excessive amount of time
+just coming to the decision that the Swift Account needs to be formatted.
+This fix simply performs those quorum Checkpoint HEAD requests (that each
+will be retried a number of times) *in parallel* thus returning the total
+time for the format back to what it was prior to the 1.12.0 "mount retry"
+fix.
+
 ## 1.12.0 (September 11, 2019)
 
 ### Features:
