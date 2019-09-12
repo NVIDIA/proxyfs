@@ -553,7 +553,7 @@ bash 'Configure awscli for swift user' do
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[default]
+[profile default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
@@ -579,7 +579,7 @@ bash 'Configure awscli for root user' do
 [plugins]
 endpoint = awscli_plugin_endpoint
 
-[default]
+[profile default]
 s3 =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
