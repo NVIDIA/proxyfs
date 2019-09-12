@@ -562,9 +562,37 @@ s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+
+[profile nfspfs]
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+
+[profile smbpfs]
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
 EOF
     cat > ~swift/.aws/credentials << EOF
 [default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+
+[nfspfs]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+
+[smbpfs]
 aws_access_key_id = test:tester
 aws_secret_access_key = testing
 EOF
@@ -588,9 +616,37 @@ s3api =
      endpoint_url = http://127.0.0.1:8080
      multipart_threshold = 64MB
      multipart_chunksize = 16MB
+
+[profile nfspfs]
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+
+[profile smbpfs]
+s3 =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
+s3api =
+     endpoint_url = http://127.0.0.1:8080
+     multipart_threshold = 64MB
+     multipart_chunksize = 16MB
 EOF
     cat > ~root/.aws/credentials << EOF
 [default]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+
+[nfspfs]
+aws_access_key_id = test:tester
+aws_secret_access_key = testing
+
+[smbpfs]
 aws_access_key_id = test:tester
 aws_secret_access_key = testing
 EOF
