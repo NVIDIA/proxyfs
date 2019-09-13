@@ -5,16 +5,13 @@
 
 function await_proxyfsd_startup {
     /usr/bin/systemctl -q is-active proxyfsd
-    if [ $? -ne 0 ]
-    then
+    if [ $? -ne 0 ]; then
         echo "ProxyFS failed to start. Exiting..."
         exit 1
     fi
-    while true
-    do
+    while true; do
         curl http://127.0.0.1:15346/ 2>/dev/null >/dev/null
-        if [ $? -eq 0 ]
-        then
+        if [ $? -eq 0 ]; then
             break
         fi
         echo "Waiting for ProxyFS to be started..."
@@ -23,12 +20,19 @@ function await_proxyfsd_startup {
 }
 
 function await_pfsagentd_startup {
-    for i in $(seq 5); do
-        /usr/bin/systemctl -q is-active pfsagentd
-        if [ $? -ne 0 ]; then
-            echo "PFSAgent failed to start. Exiting..."
-            exit 1
+    /usr/bin/systemctl -q is-active pfsagentd
+    if [ $? -ne 0 ]; then
+        echo "PFSAgent failed to start. Exiting..."
+        exit 1
+    fi
+    while true; do
+        curl http://127.0.0.1:9090/version 2>/dev/null >/dev/null
+        if [ $? -eq 0 ]; then
+            # Service is active and curl to the HTTP server succeeded.
+            # We're go to go.
+            break
         fi
+        echo "Waiting for PFSAgent to be started..."
         sleep 1
     done
 }
