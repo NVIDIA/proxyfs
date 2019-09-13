@@ -1239,13 +1239,13 @@ class PfsMiddleware(object):
                 head_response)
         except utils.RpcError as err:
             if err.errno == pfs_errno.NotFoundError:
-                clear_info_cache(None, ctx.req.environ, ctx.account_name,
-                                 container=ctx.container_name)
                 self.rpc_call(ctx, rpc.put_container_request(
                     container_path,
                     "",
                     serialize_metadata({
                         k: v for k, v in new_metadata.items() if v})))
+                clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                                 container=ctx.container_name)
                 return swob.HTTPCreated(request=req)
             else:
                 raise
@@ -1255,10 +1255,10 @@ class PfsMiddleware(object):
             old_metadata, new_metadata)
         raw_merged_metadata = serialize_metadata(merged_metadata)
 
-        clear_info_cache(None, ctx.req.environ, ctx.account_name,
-                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.put_container_request(
             container_path, raw_old_metadata, raw_merged_metadata))
+        clear_info_cache(None, ctx.req.environ, ctx.account_name,
+                         container=ctx.container_name)
 
         return swob.HTTPAccepted(request=req)
 
@@ -1299,19 +1299,20 @@ class PfsMiddleware(object):
         req.headers.clear()
         req.headers.update(new_metadata)
 
-        clear_info_cache(None, req.environ, ctx.account_name,
-                         container=ctx.container_name)
         self.rpc_call(ctx, rpc.post_request(
             container_path, raw_old_metadata, raw_merged_metadata))
+        clear_info_cache(None, req.environ, ctx.account_name,
+                         container=ctx.container_name)
 
         return swob.HTTPNoContent(request=req)
 
     def delete_container(self, ctx):
         # Turns out these are the same RPC with the same error handling, so
         # why not?
+        response = self.delete_object(ctx)
         clear_info_cache(None, ctx.req.environ, ctx.account_name,
                          container=ctx.container_name)
-        return self.delete_object(ctx)
+        return response
 
     def _get_listing_limit(self, req, default_limit):
         raw_limit = req.params.get('limit')
