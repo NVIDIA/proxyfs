@@ -12,9 +12,6 @@ FROM centos:7.4.1708
 # -  sudo
 # -  json-c-devel
 # -  fuse
-## Install liberasurecode
-# -  https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-1.5.0-5.fc28.x86_64.rpm
-# -  https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.5.0-5.fc28.x86_64.rpm
 ## Setup Samba
 # -  git \
 # -  gcc-c++-4.8.5-16.el7_4.2 \
