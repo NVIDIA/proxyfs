@@ -125,7 +125,7 @@ func livenessChecker() {
 					panic(err)
 				}
 
-				// Delay before next entityToChexk
+				// Delay before next entityToCheck
 
 				select {
 				case livenessCheckerControlChanValue = <-globals.livenessCheckerControlChan:
@@ -296,7 +296,7 @@ func livenessCheckVolume(volume *internalVolumeReportStruct) {
 // the Volumes to ObervingPeers with the required livenessCheckRedundancy. That said,
 // it is a bit misleading for an ObservingPeer to report that a VolumeGroup is "alive"
 // when not all of that VolumeGroup's Volumes have been checked. Similarly, it is a
-// bit mislesading for an ObservingPeer to report that a ServingPeer is "alive" when
+// bit misleading for an ObservingPeer to report that a ServingPeer is "alive" when
 // not all of that ServingPeer's VolumeGroups have been checked. Therefore, to get an
 // accurate picture of that state of a VolumeGroup or ServingPeer, all results from
 // all ObservingPeers should be consulted as a set when making any availability
