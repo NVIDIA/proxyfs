@@ -153,11 +153,9 @@ type globalsStruct struct {
 	currentTerm                uint64
 	nextState                  func()
 	stateMachineStopChan       chan struct{}
-	stateMachineStopped        bool
 	stateMachineDone           sync.WaitGroup
 	livenessCheckerControlChan chan bool //                     Send true  to trigger livenessChecker() to recompute polling schedule
 	//                                                          Send false to trigger livenessChecker() to exit
-	livenessCheckerActive      bool
 	livenessCheckerWG          sync.WaitGroup
 	volumeToCheckList          []*volumeStruct
 	emptyVolumeGroupToCheckSet map[string]string   //           List (in "set" form) of VolumeGroups (by name) with no Volumes (Value == ServingPeer)
@@ -205,7 +203,6 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	go requestExpirer()
 
 	globals.livenessCheckerControlChan = make(chan bool, 1)
-	globals.livenessCheckerActive = false
 
 	err = nil
 	return
@@ -247,18 +244,14 @@ func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 
 	globals.active = false
 
-	// Ensure livenessChecker() is stopped
+	// Stop livenessChecker()
 
-	if globals.livenessCheckerActive {
-		globals.livenessCheckerActive = false
-		globals.livenessCheckerControlChan <- false
-		globals.livenessCheckerWG.Wait()
-	}
+	globals.livenessCheckerControlChan <- false
+	globals.livenessCheckerWG.Wait()
 
 	// Stop state machine
 
 	globals.stateMachineStopChan <- struct{}{}
-
 	globals.stateMachineDone.Wait()
 
 	// Shut off recvMsgs()
@@ -708,9 +701,9 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 
 	globals.recvMsgQueue = list.New()
 
-	globals.recvMsgChan = make(chan struct{})
+	globals.recvMsgChan = make(chan struct{}, 1)
 
-	globals.recvMsgsDoneChan = make(chan struct{})
+	globals.recvMsgsDoneChan = make(chan struct{}, 1)
 	go recvMsgs()
 
 	globals.currentLeader = nil
@@ -719,9 +712,7 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 
 	globals.nextState = doFollower
 
-	globals.stateMachineStopChan = make(chan struct{})
-
-	globals.stateMachineStopped = false
+	globals.stateMachineStopChan = make(chan struct{}, 1)
 
 	// Initialize internal Liveness Report data as being empty
 
@@ -730,7 +721,6 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 
 	// Start up livenessChecker()
 
-	globals.livenessCheckerActive = true
 	globals.livenessCheckerWG.Add(1)
 	go livenessChecker()
 
@@ -748,5 +738,8 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
+	globals.requestExpirerStopChan <- struct{}{}
+	globals.requestExpirerDone.Wait()
+
 	return nil
 }

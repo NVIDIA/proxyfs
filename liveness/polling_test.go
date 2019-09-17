@@ -280,7 +280,7 @@ func TestComputeLivenessCheckAssignments(t *testing.T) {
 	}
 	fmt.Println(string(externalLivenessReportForJustPeerAAsJSON))
 
-	// TODO: Actually validate it programatically
+	// TODO: Actually validate it programmatically
 
 	// Validate for observingPeerNameList == []{"PeerA", "PeerB", "PeerC", "PeerD"}
 
@@ -297,7 +297,7 @@ func TestComputeLivenessCheckAssignments(t *testing.T) {
 	}
 	fmt.Println(string(externalLivenessReportForAllPeersAsJSON))
 
-	// TODO: Actually validate it programatically
+	// TODO: Actually validate it programmatically
 
 	// All done
 }

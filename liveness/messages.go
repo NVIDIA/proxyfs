@@ -293,7 +293,7 @@ func recvMsgs() {
 				_ = peer.incompleteRecvMsgQueue.Remove(recvMsgQueueElement.peerRecvMsgQueueElement)
 			}
 
-			// Contstruct a new recvMsgQueueElement
+			// Construct a new recvMsgQueueElement
 
 			recvMsgQueueElement = &recvMsgQueueElementStruct{
 				peer:          peer,
@@ -495,7 +495,7 @@ func requestExpirer() {
 		if nil == frontRequestElement {
 			select {
 			case <-globals.requestExpirerStartChan:
-				// Go look again... there is likely somethin in globals.requestsByExpirationTime now
+				// Go look again... there is likely something in globals.requestsByExpirationTime now
 			case <-globals.requestExpirerStopChan:
 				globals.requestExpirerDone.Done()
 				return
@@ -566,7 +566,7 @@ func sendRequest(peer *peerStruct, msgTag uint64, requestContext interface{}, re
 		globals.Unlock()
 	}
 
-	return // err return from sendMsg() is suffient status
+	return // err return from sendMsg() is sufficient status
 }
 
 func deliverResponse(msgTag uint64, responseMsg interface{}) {
