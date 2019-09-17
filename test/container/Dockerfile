@@ -100,7 +100,7 @@ RUN pip install --upgrade pip
 RUN pip install requests tox==3.5.3
 
 # Install Golang
-ENV GOLANG_TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+ENV GOLANG_TARFILE_NAME=go1.12.9.linux-amd64.tar.gz
 RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME}
 RUN tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME}
 RUN rm -rf /tmp/${GOLANG_TARFILE_NAME}

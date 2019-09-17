@@ -48,7 +48,7 @@ yum -y install wget git nfs-utils vim lsof
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+TARFILE_NAME=go1.12.9.linux-amd64.tar.gz
 wget -q https://dl.google.com/go/$TARFILE_NAME
 tar -C /usr/local -xf $TARFILE_NAME
 rm $TARFILE_NAME
