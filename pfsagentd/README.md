@@ -101,4 +101,7 @@ Type=simple
 Restart=always
 RestartSec=2
 StartLimitInterval=11s
+
+[Install]
+WantedBy=network-online.target
 ```
