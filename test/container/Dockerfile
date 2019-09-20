@@ -12,9 +12,6 @@ FROM centos:7.4.1708
 # -  sudo
 # -  json-c-devel
 # -  fuse
-## Install liberasurecode
-# -  https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-1.5.0-5.fc28.x86_64.rpm
-# -  https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.5.0-5.fc28.x86_64.rpm
 ## Setup Samba
 # -  git \
 # -  gcc-c++-4.8.5-16.el7_4.2 \
@@ -103,7 +100,7 @@ RUN pip install --upgrade pip
 RUN pip install requests tox==3.5.3
 
 # Install Golang
-ENV GOLANG_TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+ENV GOLANG_TARFILE_NAME=go1.12.9.linux-amd64.tar.gz
 RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME}
 RUN tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME}
 RUN rm -rf /tmp/${GOLANG_TARFILE_NAME}

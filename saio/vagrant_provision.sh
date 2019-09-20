@@ -48,7 +48,7 @@ yum -y install wget git nfs-utils vim lsof
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-TARFILE_NAME=go1.11.4.linux-amd64.tar.gz
+TARFILE_NAME=go1.12.9.linux-amd64.tar.gz
 wget -q https://dl.google.com/go/$TARFILE_NAME
 tar -C /usr/local -xf $TARFILE_NAME
 rm $TARFILE_NAME
@@ -228,8 +228,8 @@ yum -y install memcached sqlite xfsprogs \
 
 pip install --upgrade setuptools
 
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-1.5.0-5.fc28.x86_64.rpm
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/28/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.5.0-5.fc28.x86_64.rpm
+yum -y install https://rpmfind.net/linux/fedora/linux/releases/29/Everything/x86_64/os/Packages/l/liberasurecode-1.5.0-6.fc29.x86_64.rpm
+yum -y install https://rpmfind.net/linux/fedora/linux/releases/29/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.5.0-6.fc29.x86_64.rpm
 
 cd ~swift
 git clone -b master --single-branch --depth 1 https://github.com/openstack/python-swiftclient.git

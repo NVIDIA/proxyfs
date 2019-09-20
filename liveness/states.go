@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
@@ -12,10 +13,6 @@ import (
 func stateMachine() {
 	for {
 		globals.nextState()
-		if globals.stateMachineStopped {
-			globals.stateMachineDone.Done()
-			return
-		}
 	}
 }
 
@@ -48,7 +45,7 @@ func doCandidate() {
 		logger.Infof("%s entered Candidate state", globals.myUDPAddr)
 	}
 
-	// Point all LivenessChackAssignments at globals.whoAmI
+	// Point all LivenessCheckAssignments at globals.whoAmI
 
 	globals.Lock()
 	livenessReportWhileCandidate = computeLivenessCheckAssignments([]string{globals.whoAmI})
@@ -119,8 +116,8 @@ func doCandidate() {
 
 		select {
 		case <-globals.stateMachineStopChan:
-			globals.stateMachineStopped = true
-			return
+			globals.stateMachineDone.Done()
+			runtime.Goexit()
 		case <-globals.recvMsgChan:
 			recvMsgQueueElement = popGlobalMsg()
 			if nil != recvMsgQueueElement {
@@ -335,8 +332,8 @@ func doFollower() {
 
 		select {
 		case <-globals.stateMachineStopChan:
-			globals.stateMachineStopped = true
-			return
+			globals.stateMachineDone.Done()
+			runtime.Goexit()
 		case <-globals.recvMsgChan:
 			recvMsgQueueElement = popGlobalMsg()
 			if nil != recvMsgQueueElement {
@@ -635,8 +632,8 @@ func doLeader() {
 
 		select {
 		case <-globals.stateMachineStopChan:
-			globals.stateMachineStopped = true
-			return
+			globals.stateMachineDone.Done()
+			runtime.Goexit()
 		case <-globals.recvMsgChan:
 			recvMsgQueueElement = popGlobalMsg()
 			if nil != recvMsgQueueElement {
