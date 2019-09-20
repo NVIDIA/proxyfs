@@ -1,5 +1,17 @@
 # ProxyFS Release Notes
 
+## 1.12.2 (September 19, 2019)
+
+### Bug Fixes:
+
+Removed an unnecessary checkpoint performed before each PFSAgent
+RpcWrote operation that is generated as each LogSegment is PUT
+to Swift. The prior behavior put a strain on the checkpointing
+system when a large set of small files are uploaded via PFSAgent
+exposed FUSE mount points. Note that explicit flushes (fsync()
+or fdatasync() calls) will still trigger a checkpoint so that
+ProxyFS/PFSAgent can honor the request faithfully.
+
 ## 1.12.1 (September 12, 2019)
 
 ### Bug Fixes:

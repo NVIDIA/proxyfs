@@ -521,6 +521,15 @@ func (mS *mountStruct) FetchExtentMapChunk(userID inode.InodeUserID, groupID ino
 	return
 }
 
+// doInlineCheckpointIfEnabled is called whenever we must guarantee that reported state changes
+// are, indeed, persisted. Absent any sort of persistent transaction log, this means performing
+// a checkpoint unfortunately.
+//
+// Currently, only explicitly invoked Flushes trigger this. But, actually, any Swift/S3 API call
+// that modifies Objects or (what the client thinks are) Containers should also.
+//
+// TODO is to determine where else a call to this func should also be made.
+//
 func (mS *mountStruct) doInlineCheckpointIfEnabled() {
 	var (
 		err error
@@ -4187,7 +4196,6 @@ func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupI
 
 	err = mS.volStruct.inodeVolumeHandle.Flush(inodeNumber, false)
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
-	mS.doInlineCheckpointIfEnabled()
 
 	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, objectPath, fileOffset, objectOffset, length, true)
 
