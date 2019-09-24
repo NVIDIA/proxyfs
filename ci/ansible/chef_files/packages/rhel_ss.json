@@ -3,9 +3,9 @@
     ["ss-samba", "4.6.2-3.el7"]
   ],
   "samba_deps": [
-    ["gcc", "4.8.5-36.el7_6.2"],
-    ["gcc-c++", "4.8.5-36.el7_6.2"],
-    ["python-devel", "2.7.5-80.el7_6"],
+    ["gcc", "4.8.5-39.el7"],
+    ["gcc-c++", "4.8.5-39.el7"],
+    ["python-devel", "2.7.5-86.el7"],
     ["gnutls-devel", "3.3.29-9.el7_6"],
     ["libacl-devel", "2.2.51-14.el7"],
     ["openldap-devel", "2.4.44-21.el7_6"],
@@ -24,10 +24,10 @@
     ["sshpass"]
   ],
   "nfs_packages": [
-    ["nfs-utils", "1.3.0-0.61.el7"]
+    ["nfs-utils", "1.3.0-0.65.el7"]
   ],
   "gdb_packages": [
-    ["gdb", "7.6.1-114.el7"],
+    ["gdb", "7.6.1-115.el7"],
     ["yum-utils"]
   ],
   "utils_packages": [

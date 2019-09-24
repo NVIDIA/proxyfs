@@ -8,7 +8,6 @@
     golang_versions:
       current: "go1.12.9"
       candidate: "go1.13"
-      latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
     active_golang_version: "{{ golang_version | default('current') }}"
     golang_versions_file: "/etc/golang_versions.json"
     go_dir_parent_path: "/usr/local"
@@ -16,6 +15,20 @@
     go_dir_path: "{{ go_dir_parent_path }}/{{ go_dir_name }}"
 
   tasks:
+
+  #
+  # Append "latest" to golang_versions iff it's not different than "current" & "candidate"
+  #
+
+  - set_fact:
+      latest_version: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
+
+  - name: add latest
+    set_fact:
+      golang_versions: '{{ golang_versions|combine({"latest": latest_version}) }}'
+    when:
+    - latest_version != golang_versions['current']
+    - latest_version != golang_versions['candidate']
 
   #
   # Create SwiftStack user, manage related info
@@ -34,6 +47,7 @@
   #
   # On Centos, we have to download and install chef and liberasurecode manually
   #
+
   - name: Check Chef is installed
     stat: path="/usr/bin/chef-solo"
     register: chef_solo_file
