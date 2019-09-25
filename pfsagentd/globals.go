@@ -215,6 +215,54 @@ type logSegmentCacheElementStruct struct {
 	buf             []byte
 }
 
+// metricsStruct contains Prometheus-styled field names to be output by serveGetOfMetrics().
+//
+// In order to utilize Go Reflection, these field names must be capitalized (i.e. Global).
+
+type metricsStruct struct {
+	FUSE_AccessRequest_calls       uint64
+	FUSE_CreateRequest_calls       uint64
+	FUSE_DestroyRequest_calls      uint64
+	FUSE_ExchangeDataRequest_calls uint64
+	FUSE_FlushRequest_calls        uint64
+	FUSE_ForgetRequest_calls       uint64
+	FUSE_FsyncRequest_calls        uint64
+	FUSE_GetattrRequest_calls      uint64
+	FUSE_GetxattrRequest_calls     uint64
+	FUSE_InitRequest_calls         uint64
+	FUSE_InterruptRequest_calls    uint64
+	FUSE_LinkRequest_calls         uint64
+	FUSE_ListxattrRequest_calls    uint64
+	FUSE_LookupRequest_calls       uint64
+	FUSE_MkdirRequest_calls        uint64
+	FUSE_MknodRequest_calls        uint64
+	FUSE_OpenRequest_calls         uint64
+	FUSE_ReadlinkRequest_calls     uint64
+	FUSE_ReleaseRequest_calls      uint64
+	FUSE_RemoveRequest_calls       uint64
+	FUSE_RemovexattrRequest_calls  uint64
+	FUSE_RenameRequest_calls       uint64
+	FUSE_SetattrRequest_calls      uint64
+	FUSE_SetxattrRequest_calls     uint64
+	FUSE_StatfsRequest_calls       uint64
+	FUSE_SymlinkRequest_calls      uint64
+
+	FUSE_UnknownRequest_calls uint64
+
+	FUSE_ReadRequestDirInodeCase_calls  uint64
+	FUSE_ReadRequestFileInodeCase_calls uint64
+	FUSE_WriteRequest_calls             uint64
+
+	FUSE_ReadRequestFileInodeCase_bytes uint64
+	FUSE_WriteRequest_bytes             uint64
+
+	ReadCacheHits   uint64
+	ReadCacheMisses uint64
+
+	LogSegmentPUTs        uint64
+	LogSegmentPUTReadHits uint64
+}
+
 type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
@@ -240,6 +288,7 @@ type globalsStruct struct {
 	handleTable                     map[fuse.HandleID]*handleStruct
 	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
 	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
+	metrics                         *metricsStruct
 }
 
 var globals globalsStruct
@@ -507,6 +556,8 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.logSegmentCacheMap = make(map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct)
 	globals.logSegmentCacheLRU = list.New()
+
+	globals.metrics = &metricsStruct{}
 }
 
 func uninitializeGlobals() {
@@ -542,4 +593,5 @@ func uninitializeGlobals() {
 	globals.handleTable = nil
 	globals.logSegmentCacheMap = nil
 	globals.logSegmentCacheLRU = nil
+	globals.metrics = nil
 }

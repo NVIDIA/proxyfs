@@ -1833,7 +1833,7 @@ func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.
 
 	lenLLRB, err = llrb.Len()
 	if nil != err {
-		err = fmt.Errorf("llrb.Len()) failed: %v", err)
+		err = fmt.Errorf("llrb.Len() failed: %v", err)
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 
