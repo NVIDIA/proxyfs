@@ -28,15 +28,6 @@ type testGlobalsStruct struct {
 
 var testGlobals testGlobalsStruct
 
-/*
-	useUDP           bool   //              Logically useTCP == !useUDP
-	udpLAddr         *net.UDPAddr
-	tcpLAddr         *net.TCPAddr
-	globals.ipAddr = "localhost" // Hard-coded since we only want to talk to the local StatsD
-		globals.udpLAddr, err = net.ResolveUDPAddr("udp", globals.ipAddr+":0")
-		globals.tcpLAddr, err = net.ResolveTCPAddr("tcp", globals.ipAddr+":0")
-*/
-
 func TestStatsAPIviaUDP(t *testing.T) {
 	var (
 		confMap     conf.ConfMap

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"bazil.org/fuse"
@@ -36,6 +37,8 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 		readPlanStepRemainingLength               uint64
 		response                                  *fuse.ReadResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ReadRequestFileInodeCase_calls, 1)
 
 	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
 	defer fileInode.dereference()
@@ -110,6 +113,8 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 				} else {
 					// Fetch LogSegment data... from readPlanStepAsSingleObjectExtentWithLink.chunkedPutContextStruct
 
+					_ = atomic.AddUint64(&globals.metrics.LogSegmentPUTReadHits, 1)
+
 					response.Data = append(response.Data, readPlanStepAsSingleObjectExtentWithLink.chunkedPutContext.buf[readPlanStepAsSingleObjectExtentWithLink.objectOffset:readPlanStepAsSingleObjectExtentWithLink.objectOffset+readPlanStepAsSingleObjectExtentWithLink.length]...)
 				}
 			default:
@@ -117,6 +122,8 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 			}
 		}
 	}
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ReadRequestFileInodeCase_bytes, uint64(len(response.Data)))
 
 	request.Respond(response)
 }
@@ -132,11 +139,15 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 		singleObjectExtent       *singleObjectExtentStruct
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_WriteRequest_calls, 1)
+
 	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
 	grantedLock = fileInode.getExclusiveLock()
 
 	if 0 == fileInode.chunkedPutList.Len() {
 		// No chunkedPutContext is present (so none can be open), so open one
+
+		_ = atomic.AddUint64(&globals.metrics.LogSegmentPUTs, 1)
 
 		chunkedPutContext = &chunkedPutContextStruct{
 			fileSize:       fileInode.extentMapFileSize,
@@ -173,6 +184,8 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 			// Use this most recent (and open) chunkedPutContext
 		} else {
 			// Most recent chunkedPutContext is closed, so open a new one
+
+			_ = atomic.AddUint64(&globals.metrics.LogSegmentPUTs, 1)
 
 			chunkedPutContext = &chunkedPutContextStruct{
 				fileSize:       fileInode.extentMapFileSize,
@@ -223,6 +236,8 @@ func handleWriteRequest(request *fuse.WriteRequest) {
 	response = &fuse.WriteResponse{
 		Size: len(request.Data),
 	}
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_WriteRequest_bytes, uint64(response.Size))
 
 	request.Respond(response)
 }
@@ -1507,7 +1522,9 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 	logSegmentCacheElement, ok = globals.logSegmentCacheMap[logSegmentCacheElementKey]
 
 	if ok {
-		// Found it... so move it to MRU end of LRU
+		// Found it... so indicate cache hit & move it to MRU end of LRU
+
+		_ = atomic.AddUint64(&globals.metrics.ReadCacheHits, 1)
 
 		globals.logSegmentCacheLRU.MoveToBack(logSegmentCacheElement.cacheLRUElement)
 
@@ -1528,6 +1545,10 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 		return
 	}
+
+	// Cache miss
+
+	_ = atomic.AddUint64(&globals.metrics.ReadCacheMisses, 1)
 
 	// Make room for new LogSegment Cache Line if necessary
 
