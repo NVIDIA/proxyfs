@@ -45,6 +45,7 @@ func performMountFUSE() {
 	var (
 		curRetryCount                 uint32
 		err                           error
+		fuseMountPointPathBaseName    string
 		lazyUnmountCmd                *exec.Cmd
 		mountPointContainingDirDevice int64
 		mountPointDevice              int64
@@ -79,6 +80,8 @@ func performMountFUSE() {
 		}
 	}
 
+	fuseMountPointPathBaseName = path.Base(globals.config.FUSEMountPointPath)
+
 	if globals.config.ReadOnly {
 		globals.fuseConn, err = fuse.Mount(
 			globals.config.FUSEMountPointPath,
@@ -86,12 +89,12 @@ func performMountFUSE() {
 			fuse.AsyncRead(),
 			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
 			fuse.ExclCreate(),
-			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.FSName(fuseMountPointPathBaseName),
 			fuse.NoAppleDouble(),
 			fuse.NoAppleXattr(),
 			fuse.ReadOnly(),
 			fuse.Subtype("ProxyFS"),
-			fuse.VolumeName(globals.config.FUSEVolumeName),
+			fuse.VolumeName(fuseMountPointPathBaseName),
 		)
 	} else {
 		globals.fuseConn, err = fuse.Mount(
@@ -100,11 +103,11 @@ func performMountFUSE() {
 			fuse.AsyncRead(),
 			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
 			fuse.ExclCreate(),
-			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.FSName(fuseMountPointPathBaseName),
 			fuse.NoAppleDouble(),
 			fuse.NoAppleXattr(),
 			fuse.Subtype("ProxyFS"),
-			fuse.VolumeName(globals.config.FUSEVolumeName),
+			fuse.VolumeName(fuseMountPointPathBaseName),
 		)
 	}
 	if nil != err {
@@ -160,7 +163,7 @@ func performUnmountFUSE() {
 		logFatal(err)
 	}
 
-	logInfof("%s unmounted", globals.config.FUSEMountPointPath)
+	logInfof("Unmounted %s from %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
 }
 
 func serveFuse() {
