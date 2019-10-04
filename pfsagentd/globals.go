@@ -261,6 +261,13 @@ type metricsStruct struct {
 
 	LogSegmentPUTs        uint64
 	LogSegmentPUTReadHits uint64
+
+	HTTPRequests                         uint64
+	HTTPRequestSubmissionFailures        uint64
+	HTTPRequestResponseBodyCorruptions   uint64
+	HTTPRequestRetryLimitExceededCount   uint64
+	HTTPRequestsRequiringReauthorization uint64
+	HTTPRequestRetries                   uint64
 }
 
 type globalsStruct struct {

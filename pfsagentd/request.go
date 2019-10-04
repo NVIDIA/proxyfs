@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/fs"
@@ -102,6 +103,8 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		swiftAuthToken   string
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.HTTPRequests, 1)
+
 	okStatusCodesSet = make(map[int]struct{})
 	for _, okStatusCode = range okStatusCodes {
 		okStatusCodesSet[okStatusCode] = struct{}{}
@@ -116,6 +119,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		response, err = globals.httpClient.Do(request)
 		if nil != err {
+			_ = atomic.AddUint64(&globals.metrics.HTTPRequestSubmissionFailures, 1)
 			logErrorf("doHTTPRequest() failed to submit request: %v", err)
 			ok = false
 			return
@@ -124,6 +128,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		responseBody, err = ioutil.ReadAll(response.Body)
 		_ = response.Body.Close()
 		if nil != err {
+			_ = atomic.AddUint64(&globals.metrics.HTTPRequestResponseBodyCorruptions, 1)
 			logErrorf("doHTTPRequest() failed to read responseBody: %v", err)
 			ok = false
 			return
@@ -136,12 +141,14 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		}
 
 		if retryIndex >= globals.config.SwiftRetryLimit {
+			_ = atomic.AddUint64(&globals.metrics.HTTPRequestRetryLimitExceededCount, 1)
 			logWarnf("doHTTPRequest() reached SwiftRetryLimit")
 			ok = false
 			return
 		}
 
 		if http.StatusUnauthorized == response.StatusCode {
+			_ = atomic.AddUint64(&globals.metrics.HTTPRequestsRequiringReauthorization, 1)
 			logInfof("doHTTPRequest() needs to call updateAuthTokenAndAccountURL()")
 			updateAuthTokenAndAccountURL()
 		} else {
@@ -150,6 +157,8 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		time.Sleep(globals.retryDelay[retryIndex])
 		retryIndex++
+
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestRetries, 1)
 	}
 }
 
