@@ -404,45 +404,40 @@ PerformFlush:
 	if nil == chunkedPutContext.chunkedPutListElement.Prev() {
 		// We can record this chunkedPutContext as having completed
 
+		nextChunkedPutListElement = chunkedPutContext.chunkedPutListElement.Next()
+
 		chunkedPutContext.complete()
 
 		// Check to see subsequent chunkedPutContext's are also closed and able to be completed
 
-		nextChunkedPutContext = chunkedPutContext
-
-		for {
-			nextChunkedPutListElement = nextChunkedPutContext.chunkedPutListElement.Next()
-
-			if nil == nextChunkedPutListElement {
-				// We now know that all chunkedPutContext's are complete... so tell any flush waiters before exiting
-
-				fileInode.flushInProgress = false
-
-				for fileInode.chunkedPutFlushWaiterList.Len() > 0 {
-					flushWaiterListElement = fileInode.chunkedPutFlushWaiterList.Front()
-					_ = fileInode.chunkedPutFlushWaiterList.Remove(flushWaiterListElement)
-					flushWaiterListElement.Value.(*sync.WaitGroup).Done()
-				}
-
-				break
-			}
-
+		for nil != nextChunkedPutListElement {
 			nextChunkedPutContext = nextChunkedPutListElement.Value.(*chunkedPutContextStruct)
 
-			if chunkedPutContextStateClosed == nextChunkedPutContext.state {
-				// This one was waiting for a predecessor to complete before completing... so it can not be completed
-
-				nextChunkedPutContext.complete()
-			} else {
-				// Ran into one that was not yet closed... so stop here
-
+			if chunkedPutContextStateClosed != nextChunkedPutContext.state {
+				// Ran into an un-closed chunkedPutContext...so simply exit the loop
 				break
 			}
+
+			// We can similarly reccord this chunkedPutContext as having completed
+
+			nextChunkedPutListElement = nextChunkedPutContext.chunkedPutListElement.Next()
+
+			nextChunkedPutContext.complete()
 		}
 	}
 
 	if 0 == fileInode.chunkedPutList.Len() {
-		// We can remove globals.fileInode
+		// Indicate flush is complete
+
+		fileInode.flushInProgress = false
+
+		for fileInode.chunkedPutFlushWaiterList.Len() > 0 {
+			flushWaiterListElement = fileInode.chunkedPutFlushWaiterList.Front()
+			_ = fileInode.chunkedPutFlushWaiterList.Remove(flushWaiterListElement)
+			flushWaiterListElement.Value.(*sync.WaitGroup).Done()
+		}
+
+		// Remove globals.fileInode from globals.fileInodeDirtyList
 
 		globals.Lock()
 		globals.fileInodeDirtyList.Remove(fileInode.dirtyListElement)
