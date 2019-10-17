@@ -51,7 +51,7 @@ func TestParser(t *testing.T) {
 	}
 
 	// Load the template for the global section of smb.conf
-	tplate, err := template.ParseFiles("testData/smb_globals.tmpl")
+	tplate, err := template.ParseFiles("templates/smb_globals.tmpl")
 	if err != nil {
 		fmt.Printf("Parse of template file returned err: %v\n", err)
 		os.Exit(-1)
