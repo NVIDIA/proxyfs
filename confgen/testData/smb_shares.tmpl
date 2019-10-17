@@ -1,5 +1,4 @@
-{{/* This is the only way we set a global variable in the template. */}}
-{{/* Setup the appropriate fields here. */}}
+{{/* Declare our global variables.  Need Go 1.11+ */}}
 {{ if .AdDisabled }}
 	.AdDisabledCommentStr = ";"
 	.AdIDCommentStr = ";"
@@ -7,90 +6,19 @@
 	.AdDisabledCommentStr = ""
 	.AdIDCommentStr = ""
 {{ end }}
-
-[global]
-
-# ----------------------- Network-Related Options -------------------------
-{{ if .WorkGroup }}
-	workgroup = {{ .WorkGroup }}
-{{ end }}
-	server string = Samba Server Version %v
-	map to guest = {{ .MapToGuest }}
-
-	netbios name = {{ .HostName }}
-	server min protocol = {{ .ServerMinProtocol }}
-
-
-# --------------------------- Temporary Options -------------------------
-# Until we resolve permissions
-{{ .AdDisabledCommentStr }}force user = root
-	
-
-# --------------------------- Logging Options -----------------------------
-
-	# log files split per-machine:
-	log file = /opt/ss/var/log/samba/log.%m
-	# maximum size of 50KB per log file, then rotate:
-	max log size = 50
-{{ if .AuditLogging }}
-	log level = full_audit:1
-{{ end }}
-
-# ----------------------- Standalone Server Options ------------------------
-	security = {{ .Security }}
-	{{ .AdDisabled }}passdb backend = tdbsam:/opt/ss/lib64/samba/passdb.tdb
-	restrict anonymous = 2
-	rpc_server:lsarpc = {{ .RPCServerLSARPC }}
-
-
-# ----------------------- Domain Members Options ------------------------
-{{ .AdDisabledCommentStr }}realm = {{ .Realm }}
-{{ .AdIDCommentStr }}winbind nss info = {{ .IDSchema }}
-winbind use default domain = yes
-winbind refresh tickets = yes
-winbind enum users = yes
-winbind enum groups = yes
-winbind expand groups = 5
-winbind nested groups = yes
-
-{{ .AdDisabledCommentStr }}idmap config *:backend = tdb
-{{ .AdDisabledCommentStr }}idmap config *:range = {{ .IDRangeMin1 }} - {{ .IDRangeMax1 }}
-
-{{ .AdDisabledCommentStr }}idmap config {{ .WorkGroup }}:backend = {{ .BackEnd }}
-{{ .AdDisabledCommentStr }}idmap config {{ .WorkGroup }}:default = yes
-{{ .AdDisabledCommentStr }}idmap config {{ .WorkGroup }}:range = {{ .IDRangeMin2 }} - {{ .IDRangeMax2 }}
-
-{{ .AdDisabledCommentStr }}template shell = /sbin/nologin
-{{ .AdDisabledCommentStr }}domain master = no
-{{ .AdDisabledCommentStr }}preferred master = no
-	  	 	  
-{{ .AdDisabledCommentStr }}kerberos method = secrets and keytab
-
-
-#----------------------------- Name Resolution -------------------------------
-
-{{ .AdDisabledCommentStr }}wins server =
-{{ .AdDisabledCommentStr }}remote announce = {{ .BrowserAnnounce }}/{{ .WorkGroup }}
-
-# --------------------------- ProxyFS Options ---------------------------
-
-	proxyfs:PrivateIPAddr = {{ .PrivateProxyFSIP }}
-	proxyfs:TCPPort = {{ .TCPPort }}
-	proxyfs:FastTCPPort = {{ .FastTCPPort }}
-
 #============================ Share Definitions ==============================
 
-{% for export in exports %}
+{{range .Volumes}}
 
-[{{ export.name }}]
-	comment = ProxyFS volume {{ export.name }}
-	path = {{ path }}
-	proxyfs:volume = {{ export.volume_name }}
-	valid users = {{ export.valid_users }}
+[{{ .Name }}]
+	comment = ProxyFS volume {{ .Name }}
+	path = {{ .Path }}
+	proxyfs:volume = {{ .VolumeName }}
+	valid users = {{ .ValidUsers }}
 	public = yes
 	writable = yes
 	printable = no
-	browseable = {% if export.browseable %}yes{% else %}no{% endif %}
+	browseable = {{ if .Browseable }}yes{{- else }}no{{-end }}
 	oplocks = False
 	level2 oplocks = False
 	aio read size = 1
@@ -98,7 +26,7 @@ winbind nested groups = yes
 	case sensitive = yes
 	preserve case = yes
 	short preserve case = yes
-	strict sync = {% if export.strict_sync %}yes{% else %}no{% endif %}
+	strict sync = {{ if .StrictSync }}yes{{- else }}no{{- end }}
 {{ if .AuditLogging }}
 	full_audit:success = mkdir rmdir read pread write pwrite rename unlink
 	full_audit:prefix = %u|%I|%m|%S
@@ -108,8 +36,8 @@ winbind nested groups = yes
 {{- else }}
 	vfs objects = proxyfs
 {{- end }}
-{% if export.encryption_required %}
+{{ if .EncryptionRequired }}
 	smb encrypt = required
-{% endif %}
+{{ end }}
 
-{% endfor %}
+{{end}} {{/* End of range loop */}}

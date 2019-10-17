@@ -35,6 +35,8 @@ type SMBConfig struct {
 }
 
 // TODO - show basic code for printing smb.conf for my 3 VGs...
+// Take proxyfs*.conf configuration, read it with ConfigMap and then
+// create files in a directory
 func TestParser(t *testing.T) {
 	// TODO - handle case where no VGs and therefore do not generate any smb.conf files...
 
@@ -54,14 +56,16 @@ func TestParser(t *testing.T) {
 		fmt.Printf("Parse of template file returned err: %v\n", err)
 		os.Exit(-1)
 	}
-	fmt.Printf("parsed file - tplate: %v\n", tplate)
 
-	// Execute the global template
+	// Execute the globals template
 	for _, c := range mySMB {
 		err := tplate.Execute(os.Stdout, c)
 		if err != nil {
 			log.Println("executing template:", err)
 		}
 	}
+
+	// TODO - add creation of shares/volumes section in output file using
+	// template smb_shares.tmpl
 
 }
