@@ -43,6 +43,7 @@ const (
 	exportsFilePerm = os.FileMode(0666) // Let umask "restrict" this as desired
 	fuseDirPerm     = os.FileMode(0000) // Fail all non-root access to missing FUSE exports
 	scriptPerm      = os.FileMode(0777) // Let umask "restrict" this as desired
+	smbConfPerm     = os.FileMode(0644) // Let umask "restrict" this as desired
 )
 
 type smbUserMap map[string]string // Key=SMBUserName; Value=SMBUserPassword decoded via base64.StdEncoding.DecodeString()
@@ -229,6 +230,14 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 		err = os.Mkdir(vipDirPath, confDirPerm)
 		if nil != err {
+			return
+		}
+
+		// TODO - create a per VG smb.conf, including template from controller,
+		// my changes from the prototype....
+		err = createSMBConf(vipDirPath, volumeGroup)
+		if nil != err {
+			// TODO - log error
 			return
 		}
 	}
@@ -526,11 +535,14 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 			volumeGroup.VirtualIPAddr = ""
 		} else if 1 == len(virtualIPAddrSlice) {
 			volumeGroup.VirtualIPAddr = virtualIPAddrSlice[0]
+			/* TODO - reenable this code when we have unique VIP per
+			 * volume group
 			_, ok = virtualIPAddrSet[volumeGroup.VirtualIPAddr]
 			if ok {
 				err = fmt.Errorf("Found duplicate [%s]VirtualIPAddr (\"%s\")", volumeGroupSection, volumeGroup.VirtualIPAddr)
 				return
 			}
+			*/
 			virtualIPAddrSet[volumeGroup.VirtualIPAddr] = struct{}{}
 		} else {
 			err = fmt.Errorf("Found multiple values for [%s]VirtualIPAddr", volumeGroupSection)
