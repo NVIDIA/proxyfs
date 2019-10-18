@@ -5,6 +5,23 @@
 set -e
 set -x
 
+# Enable core dumps
+#
+# Core files will be placed in /var/lib/systemd/coredump/
+# Core files will be compressed with xz... use unxz to uncompress them
+#
+# To install the delve debugger, you will need to `go get -u github.com/go-delve/delve/cmd/dlv`
+#  - Note that this will compete with the version of dlv installed for your host GOPATH
+#  - As such, delve is not installed during provisioning
+#  - Instead, an alias for the above, `gogetdlv`, would be issued as and when needed inside this VM
+
+sed -i '/DefaultLimitCORE=/c\DefaultLimitCORE=infinity' /etc/systemd/system.conf
+
+echo "kernel.core_pattern=| /usr/lib/systemd/systemd-coredump %p %u %g %s %t %c %e" > /etc/sysctl.d/90-override.conf
+sysctl kernel.core_pattern='| /usr/lib/systemd/systemd-coredump %p %u %g %s %t %c %e'
+
+echo "GOTRACEBACK=crash" >> /etc/environment
+
 # Install yum-utils to deal with yum repos
 
 yum -y install yum-utils
@@ -94,6 +111,7 @@ echo "export GOPATH=/vagrant" >> ~vagrant/.bash_profile
 echo "export PATH=\$PATH:\$GOPATH/bin" >> ~vagrant/.bash_profile
 echo "alias cdpfs=\"cd \$GOPATH/src/github.com/swiftstack/ProxyFS\"" >> ~vagrant/.bash_profile
 echo "alias goclean=\"go clean;go clean --cache;go clean --testcache\"" >> ~vagrant/.bash_profile
+echo "alias gogetdlv=\"go get -u github.com/go-delve/delve/cmd/dlv\"" >> ~vagrant/.bash_profile
 echo "user_allow_other" >> /etc/fuse.conf
 
 # Setup Samba
@@ -476,6 +494,10 @@ ExecStart=/usr/local/bin/etcd --name proxyfs --data-dir /etcd/proxyfs.etcd --ini
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Inform systemd that we've updated .service files
+
+systemctl daemon-reload
 
 # All done
 

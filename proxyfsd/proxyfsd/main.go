@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/swiftstack/ProxyFS/proxyfsd"
+	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	// empty signal list (final argument) means "catch all signals" its possible to catch
-	go proxyfsd.Daemon(os.Args[1], os.Args[2:], errChan, &wg, os.Args)
+	go proxyfsd.Daemon(os.Args[1], os.Args[2:], errChan, &wg, os.Args, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
 
 	// read errChan to indicate when proxyfsd.Daemon() is up and running... or
 	// that an error during startup has been encountered
