@@ -395,3 +395,19 @@
           owner: root
           group: root
           mode: '0755'
+
+  - name: Script for enabling core dumps
+    copy:
+      src: usr/bin/enable_core_dumps
+      dest: /usr/bin/enable_core_dumps
+      owner: root
+      group: root
+      mode: '0755'
+
+  - name: Script for disabling core dumps
+    copy:
+      src: usr/bin/disable_core_dumps
+      dest: /usr/bin/disable_core_dumps
+      owner: root
+      group: root
+      mode: '0755'
