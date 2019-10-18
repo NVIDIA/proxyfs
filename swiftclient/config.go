@@ -22,23 +22,23 @@ type connectionStruct struct {
 
 type connectionPoolStruct struct {
 	trackedlock.Mutex
-	poolCapacity            uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
-	poolInUse               uint16              // Active (i.e. not in LIFO) *connectionStruct's
-	lifoIndex               uint16              // Indicates where next released *connectionStruct will go
-	lifoOfActiveConnections []*connectionStruct // LIFO of available active connections
-	numWaiters              uint64              // Count of the number of blocked acquirers
-	waiters                 *list.List          // Contains sync.Cond's of waiters
-	//                                             At time of connection release:
-	//                                               If poolInUse < poolCapacity,
-	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
-	//                                               If poolInUse == poolCapacity,
-	//                                                 If keepAlive: connectionStruct pushed to lifoOfActiveConnections
-	//                                                 sync.Cond at front of waitors is awakened
-	//                                               If poolInUse > poolCapacity,
-	//                                                 poolInUse is decremented and connection is discarded
-	//                                             Note: waiters list is not used for when in starvation mode
-	//                                                   for the chunkedConnectionPool if a starvationCallback
-	//                                                   has been provided
+	poolCapacity               uint16              // Set to SwiftClient.{|Non}ChunkedConnectionPoolSize
+	poolInUse                  uint16              // Active (i.e. not in LIFO) *connectionStruct's
+	lifoIndex                  uint16              // Indicates where next released *connectionStruct will go
+	lifoOfAvailableConnections []*connectionStruct // LIFO of available active connections
+	numWaiters                 uint64              // Count of the number of blocked acquirers
+	waiters                    *list.List          // Contains sync.Cond's of waiters
+	//                                                At time of connection release:
+	//                                                  If poolInUse < poolCapacity,
+	//                                                    If keepAlive: connectionStruct pushed to lifoOfAvailableConnections
+	//                                                  If poolInUse == poolCapacity,
+	//                                                    If keepAlive: connectionStruct pushed to lifoOfAvailableConnections
+	//                                                    sync.Cond at front of waitors is awakened
+	//                                                  If poolInUse > poolCapacity,
+	//                                                    poolInUse is decremented and connection is discarded
+	//                                                Note: waiters list is not used for when in starvation mode
+	//                                                      for the chunkedConnectionPool if a starvationCallback
+	//                                                      has been provided
 }
 
 // Used to track client request times (client's of swiftclient) and Swift server
@@ -292,12 +292,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.chunkedConnectionPool.poolCapacity = chunkedConnectionPoolSize
 	globals.chunkedConnectionPool.poolInUse = 0
 	globals.chunkedConnectionPool.lifoIndex = 0
-	globals.chunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, chunkedConnectionPoolSize)
+	globals.chunkedConnectionPool.lifoOfAvailableConnections = make([]*connectionStruct, chunkedConnectionPoolSize)
 	globals.chunkedConnectionPool.numWaiters = 0
 	globals.chunkedConnectionPool.waiters = list.New()
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < chunkedConnectionPoolSize; freeConnectionIndex++ {
-		globals.chunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
+		globals.chunkedConnectionPool.lifoOfAvailableConnections[freeConnectionIndex] = nil
 	}
 
 	nonChunkedConnectionPoolSize, err = confMap.FetchOptionValueUint16("SwiftClient", "NonChunkedConnectionPoolSize")
@@ -312,12 +312,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.nonChunkedConnectionPool.poolCapacity = nonChunkedConnectionPoolSize
 	globals.nonChunkedConnectionPool.poolInUse = 0
 	globals.nonChunkedConnectionPool.lifoIndex = 0
-	globals.nonChunkedConnectionPool.lifoOfActiveConnections = make([]*connectionStruct, nonChunkedConnectionPoolSize)
+	globals.nonChunkedConnectionPool.lifoOfAvailableConnections = make([]*connectionStruct, nonChunkedConnectionPoolSize)
 	globals.nonChunkedConnectionPool.numWaiters = 0
 	globals.nonChunkedConnectionPool.waiters = list.New()
 
 	for freeConnectionIndex = uint16(0); freeConnectionIndex < nonChunkedConnectionPoolSize; freeConnectionIndex++ {
-		globals.nonChunkedConnectionPool.lifoOfActiveConnections[freeConnectionIndex] = nil
+		globals.nonChunkedConnectionPool.lifoOfAvailableConnections[freeConnectionIndex] = nil
 	}
 
 	globals.starvationCallback = nil

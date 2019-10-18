@@ -39,8 +39,8 @@ func drainConnections() {
 	*/
 	for 0 < globals.chunkedConnectionPool.lifoIndex {
 		globals.chunkedConnectionPool.lifoIndex--
-		connection = globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex]
-		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = nil
+		connection = globals.chunkedConnectionPool.lifoOfAvailableConnections[globals.chunkedConnectionPool.lifoIndex]
+		globals.chunkedConnectionPool.lifoOfAvailableConnections[globals.chunkedConnectionPool.lifoIndex] = nil
 		_ = connection.tcpConn.Close()
 	}
 	globals.chunkedConnectionPool.Unlock()
@@ -56,8 +56,8 @@ func drainConnections() {
 	*/
 	for 0 < globals.nonChunkedConnectionPool.lifoIndex {
 		globals.nonChunkedConnectionPool.lifoIndex--
-		connection = globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex]
-		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
+		connection = globals.nonChunkedConnectionPool.lifoOfAvailableConnections[globals.nonChunkedConnectionPool.lifoIndex]
+		globals.nonChunkedConnectionPool.lifoOfAvailableConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
 		_ = connection.tcpConn.Close()
 	}
 	globals.nonChunkedConnectionPool.Unlock()
@@ -178,8 +178,8 @@ func acquireChunkedConnection(useReserveForVolumeName string) (connection *conne
 		connectionToBeCreated = true
 	} else {
 		globals.chunkedConnectionPool.lifoIndex--
-		connection = globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex]
-		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = nil
+		connection = globals.chunkedConnectionPool.lifoOfAvailableConnections[globals.chunkedConnectionPool.lifoIndex]
+		globals.chunkedConnectionPool.lifoOfAvailableConnections[globals.chunkedConnectionPool.lifoIndex] = nil
 	}
 
 	globals.chunkedConnectionPool.Unlock()
@@ -242,7 +242,7 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	globals.chunkedConnectionPool.poolInUse--
 
 	if keepAlive && (connection.connectionNonce == globals.connectionNonce) {
-		globals.chunkedConnectionPool.lifoOfActiveConnections[globals.chunkedConnectionPool.lifoIndex] = connection
+		globals.chunkedConnectionPool.lifoOfAvailableConnections[globals.chunkedConnectionPool.lifoIndex] = connection
 		globals.chunkedConnectionPool.lifoIndex++
 	} else {
 		connectionToBeClosed = true
@@ -263,41 +263,49 @@ func releaseChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	}
 }
 
-// grow or shrink the chunked connection pool
+// Grow or shrink the chunked connection pool
 //
 func resizeChunkedConnectionPool(newPoolSize uint) {
+	var (
+		index                   uint16
+		newAvailableConnections []*connectionStruct
+		newSize                 uint16
+	)
 
-	newSize := uint16(newPoolSize)
-	if newSize == globals.chunkedConnectionPool.poolCapacity {
-		return
-	}
+	newSize = uint16(newPoolSize)
 
-	globals.chunkedConnectionPool.Lock()
-	defer globals.chunkedConnectionPool.Unlock()
+	if newSize != globals.chunkedConnectionPool.poolCapacity {
+		// Need to adjust the size of the pool
 
-	// if shrinking the pool close any connections that are no longer usable
-	if newSize < globals.chunkedConnectionPool.poolCapacity {
-		for globals.chunkedConnectionPool.lifoIndex > newSize {
-			globals.chunkedConnectionPool.lifoIndex--
-			index := globals.chunkedConnectionPool.lifoIndex
-			globals.chunkedConnectionPool.lifoOfActiveConnections[index].tcpConn.Close()
-			globals.chunkedConnectionPool.lifoOfActiveConnections[index] = nil
+		globals.chunkedConnectionPool.Lock()
+
+		if newSize < globals.chunkedConnectionPool.poolCapacity {
+			// Shrinking the pool... must close any open connections beyond newSize
+
+			for globals.chunkedConnectionPool.lifoIndex > newSize {
+				globals.chunkedConnectionPool.lifoIndex--
+				index = globals.chunkedConnectionPool.lifoIndex
+				globals.chunkedConnectionPool.lifoOfAvailableConnections[index].tcpConn.Close()
+				globals.chunkedConnectionPool.lifoOfAvailableConnections[index] = nil
+			}
+		} else {
+			// Growing the pool... so clone and extend existing pool
+
+			newAvailableConnections = make([]*connectionStruct, newPoolSize)
+			for i := uint16(0); i < globals.chunkedConnectionPool.poolCapacity; i++ {
+				newAvailableConnections[i] = globals.chunkedConnectionPool.lifoOfAvailableConnections[i]
+			}
+			for i := globals.chunkedConnectionPool.poolCapacity; i < newSize; i++ {
+				newAvailableConnections[globals.chunkedConnectionPool.poolCapacity] = nil
+			}
+
+			globals.chunkedConnectionPool.lifoOfAvailableConnections = newAvailableConnections
 		}
-		globals.chunkedConnectionPool.poolCapacity = newSize
-		return
-	}
 
-	// growing -- must allocate a new pool and populate it
-	newActiveConnections := make([]*connectionStruct, newPoolSize)
-	for i := uint16(0); i < globals.chunkedConnectionPool.poolCapacity; i++ {
-		newActiveConnections[i] = globals.chunkedConnectionPool.lifoOfActiveConnections[i]
+		globals.chunkedConnectionPool.poolCapacity = newSize
+
+		globals.chunkedConnectionPool.Unlock()
 	}
-	for i := globals.chunkedConnectionPool.poolCapacity; i < newSize; i++ {
-		newActiveConnections[globals.chunkedConnectionPool.poolCapacity] = nil
-	}
-	globals.chunkedConnectionPool.lifoOfActiveConnections = newActiveConnections
-	globals.chunkedConnectionPool.poolCapacity = newSize
-	return
 }
 
 // Get a connection to the noauth server from the non-chunked connection pool.
@@ -338,8 +346,8 @@ func acquireNonChunkedConnection() (connection *connectionStruct, err error) {
 		connectionToBeCreated = true
 	} else {
 		globals.nonChunkedConnectionPool.lifoIndex--
-		connection = globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex]
-		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
+		connection = globals.nonChunkedConnectionPool.lifoOfAvailableConnections[globals.nonChunkedConnectionPool.lifoIndex]
+		globals.nonChunkedConnectionPool.lifoOfAvailableConnections[globals.nonChunkedConnectionPool.lifoIndex] = nil
 	}
 
 	globals.nonChunkedConnectionPool.Unlock()
@@ -376,6 +384,7 @@ func releaseNonChunkedConnection(connection *connectionStruct, keepAlive bool) {
 		cv                   *sync.Cond
 		waiter               *list.Element
 	)
+
 	connectionToBeClosed = false
 
 	globals.nonChunkedConnectionPool.Lock()
@@ -383,7 +392,7 @@ func releaseNonChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	globals.nonChunkedConnectionPool.poolInUse--
 
 	if keepAlive && (connection.connectionNonce == globals.connectionNonce) {
-		globals.nonChunkedConnectionPool.lifoOfActiveConnections[globals.nonChunkedConnectionPool.lifoIndex] = connection
+		globals.nonChunkedConnectionPool.lifoOfAvailableConnections[globals.nonChunkedConnectionPool.lifoIndex] = connection
 		globals.nonChunkedConnectionPool.lifoIndex++
 	} else {
 		connectionToBeClosed = true
@@ -403,41 +412,49 @@ func releaseNonChunkedConnection(connection *connectionStruct, keepAlive bool) {
 	}
 }
 
-// grow or shrink the non-chunked connection pool
+// Grow or shrink the non-chunked connection pool
 //
 func resizeNonChunkedConnectionPool(newPoolSize uint) {
+	var (
+		index                   uint16
+		newAvailableConnections []*connectionStruct
+		newSize                 uint16
+	)
 
-	newSize := uint16(newPoolSize)
-	if newSize == globals.nonChunkedConnectionPool.poolCapacity {
-		return
-	}
+	newSize = uint16(newPoolSize)
 
-	globals.nonChunkedConnectionPool.Lock()
-	defer globals.nonChunkedConnectionPool.Unlock()
+	if newSize != globals.nonChunkedConnectionPool.poolCapacity {
+		// Need to adjust the size of the pool
 
-	// if shrinking the pool close any connections that are no longer usable
-	if newSize < globals.nonChunkedConnectionPool.poolCapacity {
-		for globals.nonChunkedConnectionPool.lifoIndex > newSize {
-			globals.nonChunkedConnectionPool.lifoIndex--
-			index := globals.nonChunkedConnectionPool.lifoIndex
-			globals.nonChunkedConnectionPool.lifoOfActiveConnections[index].tcpConn.Close()
-			globals.nonChunkedConnectionPool.lifoOfActiveConnections[index] = nil
+		globals.nonChunkedConnectionPool.Lock()
+
+		if newSize < globals.nonChunkedConnectionPool.poolCapacity {
+			// Shrinking the pool... must close any open connections beyond newSize
+
+			for globals.nonChunkedConnectionPool.lifoIndex > newSize {
+				globals.nonChunkedConnectionPool.lifoIndex--
+				index = globals.nonChunkedConnectionPool.lifoIndex
+				globals.nonChunkedConnectionPool.lifoOfAvailableConnections[index].tcpConn.Close()
+				globals.nonChunkedConnectionPool.lifoOfAvailableConnections[index] = nil
+			}
+		} else {
+			// Growing the pool... so clone and extend existing pool
+
+			newAvailableConnections = make([]*connectionStruct, newPoolSize)
+			for i := uint16(0); i < globals.nonChunkedConnectionPool.poolCapacity; i++ {
+				newAvailableConnections[i] = globals.nonChunkedConnectionPool.lifoOfAvailableConnections[i]
+			}
+			for i := globals.nonChunkedConnectionPool.poolCapacity; i < newSize; i++ {
+				newAvailableConnections[globals.nonChunkedConnectionPool.poolCapacity] = nil
+			}
+
+			globals.nonChunkedConnectionPool.lifoOfAvailableConnections = newAvailableConnections
 		}
-		globals.nonChunkedConnectionPool.poolCapacity = newSize
-		return
-	}
 
-	// growing -- must allocate a new pool and populate it
-	newActiveConnections := make([]*connectionStruct, newPoolSize)
-	for i := uint16(0); i < globals.nonChunkedConnectionPool.poolCapacity; i++ {
-		newActiveConnections[i] = globals.nonChunkedConnectionPool.lifoOfActiveConnections[i]
+		globals.nonChunkedConnectionPool.poolCapacity = newSize
+
+		globals.nonChunkedConnectionPool.Unlock()
 	}
-	for i := globals.nonChunkedConnectionPool.poolCapacity; i < newSize; i++ {
-		newActiveConnections[globals.nonChunkedConnectionPool.poolCapacity] = nil
-	}
-	globals.nonChunkedConnectionPool.lifoOfActiveConnections = newActiveConnections
-	globals.nonChunkedConnectionPool.poolCapacity = newSize
-	return
 }
 
 func chunkedConnectionFreeCnt() (freeChunkedConnections int64) {
@@ -457,16 +474,9 @@ func nonChunkedConnectionFreeCnt() (freeNonChunkedConnections int64) {
 // used during testing for error injection
 var openConnectionCallCnt uint32
 
-// (Re)open a connection to the Swift NoAuth Proxy.
-//
-// The connection is closed first, just in case it was already open.
+// Open a connection to the Swift NoAuth Proxy.
 //
 func openConnection(caller string, connection *connectionStruct) (err error) {
-
-	if connection.tcpConn != nil {
-		_ = connection.tcpConn.Close()
-	}
-
 	if globals.chaosOpenConnectionFailureRate > 0 {
 		// atomic add only used when testing
 		if atomic.AddUint32(&openConnectionCallCnt, 1)%globals.chaosOpenConnectionFailureRate == 0 {

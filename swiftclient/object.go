@@ -953,18 +953,19 @@ type chunkedPutChunkInfo struct {
 
 type chunkedPutContextStruct struct {
 	trackedlock.Mutex
-	accountName   string
-	containerName string
-	objectName    string
-	fetchTime     time.Time
-	sendTime      time.Time
-	active        bool
-	err           error
-	fatal         bool
-	connection    *connectionStruct
-	stillOpen     bool
-	bytesPut      uint64
-	bytesPutTree  sortedmap.LLRBTree // Key   == objectOffset of start of chunk in object
+	accountName             string
+	containerName           string
+	objectName              string
+	fetchTime               time.Time
+	sendTime                time.Time
+	active                  bool
+	err                     error
+	fatal                   bool
+	useReserveForVolumeName string
+	connection              *connectionStruct
+	stillOpen               bool
+	bytesPut                uint64
+	bytesPutTree            sortedmap.LLRBTree // Key   == objectOffset of start of chunk in object
 	//                                  Value == []byte       of bytes sent to SendChunk()
 	chunkInfoArray []chunkedPutChunkInfo
 }
@@ -1066,13 +1067,14 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 	}
 
 	chunkedPutContext = &chunkedPutContextStruct{
-		accountName:   accountName,
-		containerName: containerName,
-		objectName:    objectName,
-		err:           nil,
-		active:        true,
-		connection:    connection,
-		bytesPut:      0,
+		accountName:             accountName,
+		containerName:           containerName,
+		objectName:              objectName,
+		err:                     nil,
+		active:                  true,
+		useReserveForVolumeName: useReserveForVolumeName,
+		connection:              connection,
+		bytesPut:                0,
 	}
 
 	chunkedPutContext.bytesPutTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
@@ -1166,9 +1168,11 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 	// RequestWithRetry() tried the operation one or more times until it
 	// either: succeeded; failed with a non-retriable (fatal) error; or hit
 	// the retry limit. Regardless, its time to release the connection we
-	// got at the very start.
+	// got at the very start or acquired during retry (if any).
 	if err != nil {
-		releaseChunkedConnection(chunkedPutContext.connection, false)
+		if nil != chunkedPutContext.connection {
+			releaseChunkedConnection(chunkedPutContext.connection, false)
+		}
 	} else {
 		releaseChunkedConnection(chunkedPutContext.connection, chunkedPutContext.stillOpen)
 	}
@@ -1401,11 +1405,14 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 	chunkedPutContext.active = true
 
 	// try to re-open chunked put connection
-	err = openConnection("swiftclient.chunkedPutContext.retry()", chunkedPutContext.connection)
-	if err != nil {
+	if nil != chunkedPutContext.connection {
+		releaseChunkedConnection(chunkedPutContext.connection, false)
+	}
+	chunkedPutContext.connection, err = acquireChunkedConnection(chunkedPutContext.useReserveForVolumeName)
+	if nil != err {
 		chunkedPutContext.Unlock()
 		err = blunder.AddError(err, blunder.BadHTTPPutError)
-		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") openConnection() failed",
+		logger.WarnfWithError(err, "swiftclient.chunkedPutContext.retry(\"%v/%v/%v\") acquireChunkedConnection() failed",
 			chunkedPutContext.accountName, chunkedPutContext.containerName, chunkedPutContext.objectName)
 		return
 	}
