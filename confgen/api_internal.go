@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -80,11 +81,24 @@ type Volume struct {
 
 type volumeMap map[string]*Volume // Key=volume.volumeName
 
+// SMBVg contains per Volume Group SMB settings
+type SMBVg struct {
+	WorkGroup         string
+	Enabled           bool
+	Realm             string
+	IDMapDefaultMin   int
+	IDMapDefaultMax   int
+	IDMapWorkgroupMin int
+	IDMapWorkgroupMax int
+}
+
+// VolumeGroup contains VolumeGroup conf settings
 type VolumeGroup struct {
-	volumeGroupName string    // Must be unique
-	volumeMap       volumeMap //
+	VolumeGroupName string    // Must be unique
+	VolumeMap       volumeMap //
 	VirtualIPAddr   string    // Must be unique
 	PrimaryPeer     string    //
+	SMB             SMBVg     // SMB specific settings of the VG
 }
 
 type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
@@ -138,7 +152,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	// Fetch pertinent data from Initial Config
 
-	_, localVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
+	_, localVolumeGroupMap, localVolumeMap, _, _, _, _, err = fetchVolumeInfo(initialConfMap)
 	if nil != err {
 		return
 	}
@@ -441,12 +455,12 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 		volumeName        string
 	)
 
-	_, _, oldLocalVolumeMap, _, _, err = fetchVolumeInfo(oldConfMap)
+	_, _, oldLocalVolumeMap, _, _, _, _, err = fetchVolumeInfo(oldConfMap)
 	if nil != err {
 		err = fmt.Errorf("In oldConfMap: %v", err)
 		return
 	}
-	_, _, newLocalVolumeMap, _, _, err = fetchVolumeInfo(newConfMap)
+	_, _, newLocalVolumeMap, _, _, _, _, err = fetchVolumeInfo(newConfMap)
 	if nil != err {
 		err = fmt.Errorf("In newConfMap: %v", err)
 	}
@@ -455,7 +469,7 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 
 	for volumeName, oldVolume = range oldLocalVolumeMap {
 		newVolume, ok = newLocalVolumeMap[volumeName]
-		if !ok || (oldVolume.volumeGroup.volumeGroupName != newVolume.volumeGroup.volumeGroupName) {
+		if !ok || (oldVolume.volumeGroup.VolumeGroupName != newVolume.volumeGroup.VolumeGroupName) {
 			toDeleteVolumeMap[volumeName] = oldVolume
 		}
 	}
@@ -464,7 +478,7 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 
 	for volumeName, newVolume = range newLocalVolumeMap {
 		oldVolume, ok = oldLocalVolumeMap[volumeName]
-		if !ok || (oldVolume.volumeGroup.volumeGroupName != newVolume.volumeGroup.volumeGroupName) {
+		if !ok || (oldVolume.volumeGroup.VolumeGroupName != newVolume.volumeGroup.VolumeGroupName) {
 			toCreateVolumeMap[volumeName] = newVolume
 		}
 	}
@@ -472,7 +486,9 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 	return
 }
 
-func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap, localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap, err error) {
+func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap,
+	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
+	tcpPort int, fastTCPPort int, err error) {
 	var (
 		accountNameSet                stringSet
 		fsidSet                       uint64Set
@@ -521,7 +537,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 			return
 		}
 
-		volumeGroup = &VolumeGroup{volumeGroupName: volumeGroupName, volumeMap: make(volumeMap)}
+		volumeGroup = &VolumeGroup{VolumeGroupName: volumeGroupName, VolumeMap: make(volumeMap)}
 
 		volumeGroupSection = "VolumeGroup:" + volumeGroupName
 
@@ -557,6 +573,8 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		} else {
 			err = fmt.Errorf("Found multiple values for [%s]PrimaryPeer", volumeGroupSection)
 		}
+
+		// TODO - fill in VG SMB information
 
 		for _, volumeName = range volumeList {
 			_, ok = volumeNameSet[volumeName]
@@ -646,6 +664,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 				volume.nfsClientMap = make(NFSClientMap)
 			}
 
+			// TODO - fillin per volume SMB information
 			smbShareNameSlice, err = confMap.FetchOptionValueStringSlice(volumeSection, "SMBShareName")
 			if (nil != err) || (0 == len(smbShareNameSlice)) {
 				volume.SMBShareName = ""
@@ -673,7 +692,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 			}
 			accountNameSet[volume.AccountName] = struct{}{}
 
-			volumeGroup.volumeMap[volumeName] = volume
+			volumeGroup.VolumeMap[volumeName] = volume
 		}
 
 		globalVolumeGroupMap[volumeGroupName] = volumeGroup
@@ -691,13 +710,35 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 	for volumeGroupName, volumeGroup = range globalVolumeGroupMap {
 		if whoAmI == volumeGroup.PrimaryPeer {
 			localVolumeGroupMap[volumeGroupName] = volumeGroup
-			for volumeName, volume = range volumeGroup.volumeMap {
+			for volumeName, volume = range volumeGroup.VolumeMap {
 				localVolumeMap[volumeName] = volume
 			}
 		}
-		for volumeName, volume = range volumeGroup.volumeMap {
+		for volumeName, volume = range volumeGroup.VolumeMap {
 			globalVolumeMap[volumeName] = volume
 		}
+	}
+
+	// Fetch port number from config file
+	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
+	if confErr != nil {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
+		return
+	}
+	tcpPort, err = strconv.Atoi(portString)
+	if err != nil {
+		return
+	}
+
+	// Fetch fastPort number from config file
+	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
+	if confErr != nil {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
+		return
+	}
+	fastTCPPort, err = strconv.Atoi(fastPortString)
+	if err != nil {
+		return
 	}
 
 	return
