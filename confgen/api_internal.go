@@ -81,15 +81,17 @@ type Volume struct {
 
 type volumeMap map[string]*Volume // Key=volume.volumeName
 
-// SMBVg contains per Volume Group SMB settings
-type SMBVg struct {
-	WorkGroup         string
+// SMBVG contains per Volume Group SMB settings
+type SMBVG struct {
+	WorkGroup         []string
 	Enabled           bool
-	Realm             string
+	Realm             []string
 	IDMapDefaultMin   int
 	IDMapDefaultMax   int
 	IDMapWorkgroupMin int
 	IDMapWorkgroupMax int
+	TCPPort           int
+	FastTCPPort       int
 }
 
 // VolumeGroup contains VolumeGroup conf settings
@@ -98,7 +100,7 @@ type VolumeGroup struct {
 	VolumeMap       volumeMap //
 	VirtualIPAddr   string    // Must be unique
 	PrimaryPeer     string    //
-	SMB             SMBVg     // SMB specific settings of the VG
+	SMB             SMBVG     // SMB specific settings of the VG
 }
 
 type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
@@ -249,6 +251,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 		// TODO - create a per VG smb.conf, including template from controller,
 		// my changes from the prototype....
+
 		err = createSMBConf(vipDirPath, volumeGroup)
 		if nil != err {
 			// TODO - log error
@@ -486,11 +489,57 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 	return
 }
 
-func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap,
-	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
-	tcpPort int, fastTCPPort int, err error) {
+// populateVolumeGroupSMB will populate the VolumeGroup with SMB related
+// info
+func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup) (err error) {
+	var (
+		idUint32 uint32
+	)
+	volumeGroup.SMB.TCPPort = tcpPort
+	volumeGroup.SMB.FastTCPPort = fastTCPPort
+
+	volumeGroup.SMB.Enabled, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBActiveDirectoryEnabled")
+	if err != nil {
+		return
+	}
+	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMin")
+	volumeGroup.SMB.IDMapDefaultMin = int(idUint32)
+	if err != nil {
+		return
+	}
+	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMax")
+	volumeGroup.SMB.IDMapDefaultMax = int(idUint32)
+	if err != nil {
+		return
+	}
+
+	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMin")
+	volumeGroup.SMB.IDMapWorkgroupMin = int(idUint32)
+	if err != nil {
+		return
+	}
+	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMax")
+	volumeGroup.SMB.IDMapWorkgroupMax = int(idUint32)
+	if err != nil {
+		return
+	}
+	volumeGroup.SMB.WorkGroup, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBWorkgroup")
+	if err != nil {
+		return
+	}
+	volumeGroup.SMB.Realm, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBActiveDirectoryRealm")
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+// populateVolumeGroup is a helper function to populate the volume group information
+func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupMap, volumeGroupList []string) (err error) {
 	var (
 		accountNameSet                stringSet
+		fastTCPPort                   int
 		fsidSet                       uint64Set
 		fuseMountPointNameSet         stringSet
 		fuseMountPointNameSlice       []string
@@ -503,11 +552,11 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		primaryPeerSlice              []string
 		smbShareNameSet               stringSet
 		smbShareNameSlice             []string
+		tcpPort                       int
 		virtualIPAddrSet              stringSet
 		virtualIPAddrSlice            []string
 		volume                        *Volume
 		volumeGroup                   *VolumeGroup
-		volumeGroupList               []string
 		volumeGroupName               string
 		volumeGroupSection            string
 		volumeList                    []string
@@ -516,19 +565,37 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		volumeSection                 string
 	)
 
+	// Fetch tcpPort and fastTCPPort number from config file.
+	//
+	// We store this in each SMBVG since the per volume group template used for generating
+	// smb.conf files needs it.
+	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
+	if confErr != nil {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
+		return
+	}
+	tcpPort, err = strconv.Atoi(portString)
+	if err != nil {
+		return
+	}
+
+	// Fetch fastPort number from config file
+	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
+	if confErr != nil {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
+		return
+	}
+	fastTCPPort, err = strconv.Atoi(fastPortString)
+	if err != nil {
+		return
+	}
+
 	accountNameSet = make(stringSet)
 	fsidSet = make(uint64Set)
 	fuseMountPointNameSet = make(stringSet)
 	smbShareNameSet = make(stringSet)
 	virtualIPAddrSet = make(stringSet)
 	volumeNameSet = make(stringSet)
-
-	globalVolumeGroupMap = make(volumeGroupMap)
-
-	volumeGroupList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
-	if nil != err {
-		return
-	}
 
 	for _, volumeGroupName = range volumeGroupList {
 		_, ok = globalVolumeGroupMap[volumeGroupName]
@@ -551,6 +618,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 			volumeGroup.VirtualIPAddr = ""
 		} else if 1 == len(virtualIPAddrSlice) {
 			volumeGroup.VirtualIPAddr = virtualIPAddrSlice[0]
+
 			/* TODO - reenable this code when we have unique VIP per
 			 * volume group
 			_, ok = virtualIPAddrSet[volumeGroup.VirtualIPAddr]
@@ -559,6 +627,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 				return
 			}
 			*/
+
 			virtualIPAddrSet[volumeGroup.VirtualIPAddr] = struct{}{}
 		} else {
 			err = fmt.Errorf("Found multiple values for [%s]VirtualIPAddr", volumeGroupSection)
@@ -574,7 +643,11 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 			err = fmt.Errorf("Found multiple values for [%s]PrimaryPeer", volumeGroupSection)
 		}
 
-		// TODO - fill in VG SMB information
+		// Fill in VG SMB information
+		err = populateVolumeGroupSMB(confMap, volumeGroupSection, tcpPort, fastTCPPort, volumeGroup)
+		if err != nil {
+			return
+		}
 
 		for _, volumeName = range volumeList {
 			_, ok = volumeNameSet[volumeName]
@@ -698,6 +771,32 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		globalVolumeGroupMap[volumeGroupName] = volumeGroup
 	}
 
+	return
+}
+
+func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap,
+	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
+	tcpPort int, fastTCPPort int, err error) {
+	var (
+		volume          *Volume
+		volumeGroup     *VolumeGroup
+		volumeGroupList []string
+		volumeGroupName string
+		volumeName      string
+	)
+
+	globalVolumeGroupMap = make(volumeGroupMap)
+
+	volumeGroupList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
+	if nil != err {
+		return
+	}
+
+	err = populateVolumeGroup(confMap, globalVolumeGroupMap, volumeGroupList)
+	if err != nil {
+		return
+	}
+
 	localVolumeGroupMap = make(volumeGroupMap)
 	localVolumeMap = make(volumeMap)
 	globalVolumeMap = make(volumeMap)
@@ -717,28 +816,6 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		for volumeName, volume = range volumeGroup.VolumeMap {
 			globalVolumeMap[volumeName] = volume
 		}
-	}
-
-	// Fetch port number from config file
-	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
-	if confErr != nil {
-		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
-		return
-	}
-	tcpPort, err = strconv.Atoi(portString)
-	if err != nil {
-		return
-	}
-
-	// Fetch fastPort number from config file
-	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
-	if confErr != nil {
-		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
-		return
-	}
-	fastTCPPort, err = strconv.Atoi(fastPortString)
-	if err != nil {
-		return
 	}
 
 	return
