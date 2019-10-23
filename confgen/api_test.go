@@ -2,6 +2,7 @@ package confgen
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"testing"
@@ -26,12 +27,12 @@ func getConfMap(t *testing.T, filename string) (confMap conf.ConfMap, err error)
 // It calls confgen to generate all of the config files
 // for SMB, NFS, etc.
 
-// TODO:
 // 1. Read sample config using ConfigMap
 // 2. Pass ConfigMap to both templates to generate the smb.conf files and prove
-//    correct.
-// TODO - later run through confgen to create all files...
+//    correct
 func TestConfigPath(t *testing.T) {
+	assert := assert.New(t)
+
 	// Get the configuration from the config file
 	confMap, err := getConfMap(t, "sample-proxyfs-configuration/proxyfs.conf")
 	fmt.Printf("ConfMap: %v err: %v\n", confMap, err)
@@ -40,15 +41,9 @@ func TestConfigPath(t *testing.T) {
 	_, localVolumeGroupMap, _, _, _, err := fetchVolumeInfo(confMap)
 
 	/*
-		// TODO - End goal
-		// 1. call confgen with info pulled from fetchVolumeInfo()
+		// TODO
+		// 1. call createSMBConf() on a per VG basis
 		// 2. verify that smb.conf, exports, etc are correct
-
-		// TODO - current goal
-		// Build my SMB related information and call templates
-		numVGs := len(localVolumeGroupMap)
-		myVGinfo := make([]SMBVg, numVGs)
-
 	*/
 
 	// Load the template for the global section of smb.conf
@@ -65,16 +60,30 @@ func TestConfigPath(t *testing.T) {
 		os.Exit(-1)
 	}
 
+	// Create temp directory for SMB VG configuration files
+	var tmpDir string
+	tmpDir, err = ioutil.TempDir(".", "tst-gen-files")
+	assert.Nil(err, "ioutil.TempDir returned error")
+
 	// Execute the templates
 	for _, vg := range localVolumeGroupMap {
-		err := globalTplate.Execute(os.Stdout, vg)
+		fileName := tmpDir + "/smb-VG-" + vg.VolumeGroupName + ".conf"
+		f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, smbConfPerm)
+		if err != nil {
+			return
+		}
+
+		err = globalTplate.Execute(f, vg)
 		if err != nil {
 			log.Println("executing globalTplate:", err)
 		}
 
-		err = sharesTplate.Execute(os.Stdout, vg)
+		err = sharesTplate.Execute(f, vg)
 		if err != nil {
 			log.Println("executing sharesTplate:", err)
 		}
 	}
+
+	// TODO - verify new contents
+	// remove tmpDir directory
 }
