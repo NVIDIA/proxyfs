@@ -8,7 +8,7 @@ Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
 # Set GOTRACEBACK=crash to allow core dumps to be created
 Environment=GOTRACEBACK=1
 LimitCORE=0
-ExecStart=/usr/bin/pfsagentd /etc/pfsagentd/pfsagent.conf
+ExecStart=/usr/bin/pfsagentd /etc/pfsagentd/pfsagent.conf Agent.FUSEMountPointPath=/mnt/pfsa_proxyfs_mount
 ExecReload=/usr/bin/kill -HUP $MAINPID
 
 Restart=always

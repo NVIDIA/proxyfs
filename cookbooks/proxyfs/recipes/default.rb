@@ -188,13 +188,6 @@ directory '/CommonMountPoint' do
   owner 'root'
 end
 
-directory '/AgentMountPoint' do
-  # perms/owner don't really matter since it gets mounted over, but
-  # this helps stop a developer from accidentally dumping stuff on the
-  # root filesystem
-  owner 'root'
-end
-
 directory '/var/lib/proxyfs' do
   mode '0755'
   owner proxyfs_user
@@ -444,6 +437,12 @@ execute "Create NFS mount point" do
   command "mkdir /mnt/nfs_proxyfs_mount"
   not_if { ::Dir.exists?("/mnt/nfs_proxyfs_mount") }
 end
+
+execute "Create PFSAgent mount point" do
+  command "mkdir /mnt/pfsa_proxyfs_mount"
+  not_if { ::Dir.exists?("/mnt/pfsa_proxyfs_mount") }
+end
+
 ruby_block "Create exports entry" do
   block do
     unless File.exist?("/etc/exports")
