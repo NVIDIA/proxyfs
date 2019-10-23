@@ -17,13 +17,9 @@ func getConfMap(t *testing.T, filename string) (confMap conf.ConfMap, err error)
 	return
 }
 
-// This test tests the path where we have updated the confMap
-// with the location where a VG shall be started and now want to
-// put the new configuration into place.
+// This test tests that the correct smb.conf files are created
+// for each VG.
 //
-// It calls confgen to generate all of the config files
-// for SMB, NFS, etc.
-
 // 1. Read sample config using ConfigMap
 // 2. Pass ConfigMap to both templates to generate the smb.conf files and prove
 //    correct

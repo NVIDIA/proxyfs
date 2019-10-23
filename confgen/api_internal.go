@@ -506,16 +506,16 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 	shareNameSet = make(stringSet)
 
 	volume.SMB.AuditLogging, err = confMap.FetchOptionValueBool(volumeSection, "SMBAuditLogging")
-	if err != nil {
+	if nil != err {
 		return
 	}
 	volume.SMB.Browseable, err = confMap.FetchOptionValueBool(volumeSection, "SMBBrowseable")
-	if err != nil {
+	if nil != err {
 		return
 	}
 
 	volume.SMB.EncryptionRequired, err = confMap.FetchOptionValueBool(volumeSection, "SMBEncryptionRequired")
-	if err != nil {
+	if nil != err {
 		return
 	}
 
@@ -536,7 +536,7 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 	}
 
 	volume.SMB.StrictSync, err = confMap.FetchOptionValueBool(volumeSection, "SMBStrictSync")
-	if err != nil {
+	if nil != err {
 		return
 	}
 
@@ -561,36 +561,36 @@ func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcp
 	volumeGroup.SMB.FastTCPPort = fastTCPPort
 
 	volumeGroup.SMB.Enabled, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBActiveDirectoryEnabled")
-	if err != nil {
+	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMin")
 	volumeGroup.SMB.IDMapDefaultMin = int(idUint32)
-	if err != nil {
+	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMax")
 	volumeGroup.SMB.IDMapDefaultMax = int(idUint32)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMin")
 	volumeGroup.SMB.IDMapWorkgroupMin = int(idUint32)
-	if err != nil {
+	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMax")
 	volumeGroup.SMB.IDMapWorkgroupMax = int(idUint32)
-	if err != nil {
+	if nil != err {
 		return
 	}
 	volumeGroup.SMB.WorkGroup, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBWorkgroup")
-	if err != nil {
+	if nil != err {
 		return
 	}
 	volumeGroup.SMB.Realm, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBActiveDirectoryRealm")
-	if err != nil {
+	if nil != err {
 		return
 	}
 
@@ -630,21 +630,21 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	// We store this in each SMBVG since the per volume group template used for generating
 	// smb.conf files needs it.
 	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
-	if confErr != nil {
+	if nil != confErr {
 		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
 		return
 	}
 	tcpPort, err = strconv.Atoi(portString)
-	if err != nil {
+	if nil != err {
 		return
 	}
 	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
-	if confErr != nil {
+	if nil != confErr {
 		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
 		return
 	}
 	fastTCPPort, err = strconv.Atoi(fastPortString)
-	if err != nil {
+	if nil != err {
 		return
 	}
 
@@ -676,14 +676,11 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		} else if 1 == len(virtualIPAddrSlice) {
 			volumeGroup.VirtualIPAddr = virtualIPAddrSlice[0]
 
-			/* TODO - reenable this code when we have unique VIP per
-			 * volume group
 			_, ok = virtualIPAddrSet[volumeGroup.VirtualIPAddr]
 			if ok {
 				err = fmt.Errorf("Found duplicate [%s]VirtualIPAddr (\"%s\")", volumeGroupSection, volumeGroup.VirtualIPAddr)
 				return
 			}
-			*/
 
 			virtualIPAddrSet[volumeGroup.VirtualIPAddr] = struct{}{}
 		} else {
@@ -702,7 +699,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 
 		// Fill in VG SMB information
 		err = populateVolumeGroupSMB(confMap, volumeGroupSection, tcpPort, fastTCPPort, volumeGroup)
-		if err != nil {
+		if nil != err {
 			return
 		}
 
@@ -795,9 +792,8 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 				volume.nfsClientMap = make(NFSClientMap)
 			}
 
-			// TODO - fillin per volume SMB information
 			err = populateVolumeSMB(confMap, volumeSection, volume)
-			if err != nil {
+			if nil != err {
 				return
 			}
 
@@ -840,7 +836,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 	}
 
 	err = populateVolumeGroup(confMap, globalVolumeGroupMap, volumeGroupList)
-	if err != nil {
+	if nil != err {
 		return
 	}
 

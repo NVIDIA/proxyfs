@@ -15,7 +15,7 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 
 	// Load the template for the global section of smb.conf
 	globalTplate, err := template.ParseFiles("templates/smb_globals.tmpl")
-	if err != nil {
+	if nil != err {
 		// TODO - log this appropriately
 		fmt.Printf("Parse of template file returned err: %v\n", err)
 		return
@@ -23,7 +23,7 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 
 	// Load the template for the share section of smb.conf
 	sharesTplate, err := template.ParseFiles("templates/smb_shares.tmpl")
-	if err != nil {
+	if nil != err {
 		// TODO - log this appropriately
 		fmt.Printf("Parse of template file returned err: %v\n", err)
 		return
@@ -40,21 +40,21 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 
 		fileName := vipDirPath + "/smb-VG-" + volumeGroup.VolumeGroupName + ".conf"
 		f, openErr := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, smbConfPerm)
-		if openErr != nil {
+		if nil != openErr {
 			// TODO - log it
 			err = openErr
 			return
 		}
 
 		err = globalTplate.Execute(f, volumeGroup)
-		if err != nil {
+		if nil != err {
 			// TODO - log it
 			fmt.Printf("executing globalTplate: %v\n", err)
 			return
 		}
 
 		err = sharesTplate.Execute(f, volumeGroup)
-		if err != nil {
+		if nil != err {
 			// TODO - log it
 			fmt.Printf("executing sharesTplate: %v\n", err)
 			return
