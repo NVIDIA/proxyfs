@@ -1,24 +1,16 @@
-{{/* Declare our global variables.  Need Go 1.11+ */}}
-{{ if .AdDisabled }}
-	.AdDisabledCommentStr = ";"
-	.AdIDCommentStr = ";"
-{{ else }}
-	.AdDisabledCommentStr = ""
-	.AdIDCommentStr = ""
-{{ end }}
 #============================ Share Definitions ==============================
 
-{{range .Volumes}}
+{{range .VolumeMap}}
 
-[{{ .Name }}]
-	comment = ProxyFS volume {{ .Name }}
-	path = {{ .Path }}
+[{{ .SMB.ShareName }}]
+	comment = ProxyFS volume {{ .SMB.ShareName }}
+	path = {{ .SMB.Path }}
 	proxyfs:volume = {{ .VolumeName }}
-	valid users = {{ .ValidUsers }}
+	valid users = {{ .SMB.ValidUsers }}
 	public = yes
 	writable = yes
 	printable = no
-	browseable = {{ if .Browseable }}yes{{- else }}no{{-end }}
+	browseable = {{ if .SMB.Browseable }}yes{{- else }}no{{- end }}
 	oplocks = False
 	level2 oplocks = False
 	aio read size = 1
@@ -26,8 +18,8 @@
 	case sensitive = yes
 	preserve case = yes
 	short preserve case = yes
-	strict sync = {{ if .StrictSync }}yes{{- else }}no{{- end }}
-{{ if .AuditLogging }}
+	strict sync = {{ if .SMB.StrictSync }}yes{{- else }}no{{- end }}
+{{ if .SMB.AuditLogging }}
 	full_audit:success = mkdir rmdir read pread write pwrite rename unlink
 	full_audit:prefix = %u|%I|%m|%S
 	full_audit:failure = mkdir rmdir read pread write pwrite rename unlink
@@ -36,7 +28,7 @@
 {{- else }}
 	vfs objects = proxyfs
 {{- end }}
-{{ if .EncryptionRequired }}
+{{ if .SMB.EncryptionRequired }}
 	smb encrypt = required
 {{ end }}
 

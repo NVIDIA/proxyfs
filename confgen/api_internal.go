@@ -69,8 +69,8 @@ type NFSClientList []*NFSClient
 type NFSClientMap map[string]*NFSClient // Key=NFSClient.clientName
 
 type Volume struct {
-	volumeName         string        // Must be unique
-	volumeGroup        *VolumeGroup  //
+	VolumeName         string        // Must be unique
+	VolumeGroup        *VolumeGroup  //
 	FSID               uint64        // Must be unique
 	FUSEMountPointName string        // Must be unique unless == "" (no FUSE mount point...and cannot be NFS exported)
 	nfsClientList      NFSClientList // Must be empty (no NFS Export) if FUSEMountPointName == ""
@@ -88,6 +88,8 @@ type SMBVolume struct {
 	Browseable         bool
 	EncryptionRequired bool
 	StrictSync         bool
+	Path               string   // TODO - Not implemented
+	ValidUsers         []string // TODO - Not implemented
 }
 
 // SMBVG contains per Volume Group SMB settings
@@ -490,7 +492,7 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 
 	for volumeName, oldVolume = range oldLocalVolumeMap {
 		newVolume, ok = newLocalVolumeMap[volumeName]
-		if !ok || (oldVolume.volumeGroup.VolumeGroupName != newVolume.volumeGroup.VolumeGroupName) {
+		if !ok || (oldVolume.VolumeGroup.VolumeGroupName != newVolume.VolumeGroup.VolumeGroupName) {
 			toDeleteVolumeMap[volumeName] = oldVolume
 		}
 	}
@@ -499,7 +501,7 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 
 	for volumeName, newVolume = range newLocalVolumeMap {
 		oldVolume, ok = oldLocalVolumeMap[volumeName]
-		if !ok || (oldVolume.volumeGroup.VolumeGroupName != newVolume.volumeGroup.VolumeGroupName) {
+		if !ok || (oldVolume.VolumeGroup.VolumeGroupName != newVolume.VolumeGroup.VolumeGroupName) {
 			toCreateVolumeMap[volumeName] = newVolume
 		}
 	}
@@ -726,7 +728,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 				return
 			}
 
-			volume = &Volume{volumeName: volumeName, volumeGroup: volumeGroup}
+			volume = &Volume{VolumeName: volumeName, VolumeGroup: volumeGroup}
 
 			volumeSection = "Volume:" + volumeName
 
