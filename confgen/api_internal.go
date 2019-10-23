@@ -139,9 +139,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		toCreateSMBUserName            string
 		toCreateSMBUserPassword        string
 		toCreateSMBUserPasswordEscaped string // == strings.ReplaceAll(toCreateSMBUserPassword, "\\", "\\\\")
-		vipDirPath                     string
 		volume                         *Volume
-		volumeGroup                    *VolumeGroup
 	)
 
 	// Fetch environ settings
@@ -261,22 +259,10 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		return
 	}
 
-	for _, volumeGroup = range localVolumeGroupMap {
-		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr
-
-		err = os.Mkdir(vipDirPath, confDirPerm)
-		if nil != err {
-			return
-		}
-
-		// TODO - create a per VG smb.conf, including template from controller,
-		// my changes from the prototype....
-
-		err = createSMBConf(vipDirPath, volumeGroup)
-		if nil != err {
-			// TODO - log error
-			return
-		}
+	// Create per VG smb.conf files
+	err = createSMBConf(initialDirPath, localVolumeGroupMap)
+	if nil != err {
+		return
 	}
 
 	// Compute FUSE MountPoint Directory script

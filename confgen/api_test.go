@@ -1,12 +1,9 @@
 package confgen
 
 import (
-	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
-	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/conf"
@@ -35,55 +32,23 @@ func TestConfigPath(t *testing.T) {
 
 	// Get the configuration from the config file
 	confMap, err := getConfMap(t, "sample-proxyfs-configuration/proxyfs.conf")
-	fmt.Printf("ConfMap: %v err: %v\n", confMap, err)
 
 	// Grab volumes and volume group information
 	_, localVolumeGroupMap, _, _, _, err := fetchVolumeInfo(confMap)
-
-	/*
-		// TODO
-		// 1. call createSMBConf() on a per VG basis
-		// 2. verify that smb.conf, exports, etc are correct
-	*/
-
-	// Load the template for the global section of smb.conf
-	globalTplate, err := template.ParseFiles("templates/smb_globals.tmpl")
-	if err != nil {
-		fmt.Printf("Parse of template file returned err: %v\n", err)
-		os.Exit(-1)
-	}
-
-	// Load the template for the share section of smb.conf
-	sharesTplate, err := template.ParseFiles("templates/smb_shares.tmpl")
-	if err != nil {
-		fmt.Printf("Parse of template file returned err: %v\n", err)
-		os.Exit(-1)
-	}
 
 	// Create temp directory for SMB VG configuration files
 	var tmpDir string
 	tmpDir, err = ioutil.TempDir(".", "tst-gen-files")
 	assert.Nil(err, "ioutil.TempDir returned error")
 
-	// Execute the templates
-	for _, vg := range localVolumeGroupMap {
-		fileName := tmpDir + "/smb-VG-" + vg.VolumeGroupName + ".conf"
-		f, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, smbConfPerm)
-		if err != nil {
-			return
-		}
+	err = os.Mkdir(tmpDir+"/vips", confDirPerm)
+	assert.Nil(err, "os.Mkdir returned error")
 
-		err = globalTplate.Execute(f, vg)
-		if err != nil {
-			log.Println("executing globalTplate:", err)
-		}
-
-		err = sharesTplate.Execute(f, vg)
-		if err != nil {
-			log.Println("executing sharesTplate:", err)
-		}
-	}
+	err = createSMBConf(tmpDir, localVolumeGroupMap)
+	assert.Nil(err, "createSMBConf returned error")
 
 	// TODO - verify new contents
-	// remove tmpDir directory
+
+	err = os.RemoveAll(tmpDir)
+	assert.Nil(err, "Remove of generated directory returned err error")
 }
