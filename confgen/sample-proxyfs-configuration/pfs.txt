@@ -1,0 +1,667 @@
+{
+	"Cluster": {
+		"AcctHash": [
+			"de374096638e77912ff8ebf617b98fc7"
+		],
+		"Arbiters": [
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07",
+			"c67631b5-cb88-11e9-99da-0248604d6797",
+			"c6e8e18f-cb88-11e9-92db-02a727b377d1"
+		],
+		"ConfigVersion": [
+			"1571957870"
+		],
+		"Peers": [
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07",
+			"c67631b5-cb88-11e9-99da-0248604d6797",
+			"c6e8e18f-cb88-11e9-92db-02a727b377d1"
+		],
+		"ServerGuid": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		],
+		"WhoAmI": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		]
+	},
+	"FSGlobals": {
+		"BPlusTreeObjectCacheEvictHighLimit": [
+			"100010"
+		],
+		"BPlusTreeObjectCacheEvictLowLimit": [
+			"100000"
+		],
+		"CreatedDeletedObjectsCacheEvictHighLimit": [
+			"100010"
+		],
+		"CreatedDeletedObjectsCacheEvictLowLimit": [
+			"100000"
+		],
+		"DirEntryCacheEvictHighLimit": [
+			"100010"
+		],
+		"DirEntryCacheEvictLowLimit": [
+			"100000"
+		],
+		"EtcdAutoSyncInterval": [
+			"60000ms"
+		],
+		"EtcdDialTimeout": [
+			"10000ms"
+		],
+		"EtcdEnabled": [
+			"true"
+		],
+		"EtcdEndpoints": [
+			"192.168.17.234:2379",
+			"192.168.17.177:2379",
+			"192.168.18.222:2379"
+		],
+		"EtcdOpTimeout": [
+			"20000ms"
+		],
+		"FileExtentMapEvictHighLimit": [
+			"100010"
+		],
+		"FileExtentMapEvictLowLimit": [
+			"100000"
+		],
+		"HAMode": [
+			"on"
+		],
+		"InodeRecCacheEvictHighLimit": [
+			"100010"
+		],
+		"InodeRecCacheEvictLowLimit": [
+			"100000"
+		],
+		"LogSegmentRecCacheEvictHighLimit": [
+			"100010"
+		],
+		"LogSegmentRecCacheEvictLowLimit": [
+			"100000"
+		],
+		"SMBADBackend": [
+			"rid"
+		],
+		"SMBADIDMgmt": [
+			"false"
+		],
+		"SMBADIDSchema": [],
+		"SMBMapToGuest": [
+			"bad",
+			"user"
+		],
+		"SMBServerMinProtocol": [
+			"NT1"
+		],
+		"SMBUserList": [
+			"swift",
+			"bob",
+			"ed",
+			"blake"
+		],
+		"ShareConfigVersion": [
+			"1571957870.2"
+		],
+		"VolumeGroupList": [
+			"vg32-2",
+			"vg32-1",
+			"VG1"
+		]
+	},
+	"HTTPServer": {
+		"TCPPort": [
+			"15346"
+		]
+	},
+	"JSONRPCServer": {
+		"DataPathLogging": [
+			"False"
+		],
+		"Debug": [
+			"False"
+		],
+		"FastTCPPort": [
+			"32345"
+		],
+		"TCPPort": [
+			"12345"
+		]
+	},
+	"Logging": {
+		"DebugLevelLogging": [
+			"none"
+		],
+		"LogFilePath": [
+			"/opt/ss/var/log/proxyfsd.log"
+		],
+		"LogToConsole": [
+			"false"
+		],
+		"TraceLevelLogging": [
+			"none"
+		]
+	},
+	"Peer:c63edaae-cb88-11e9-b49f-020e05f0ad07": {
+		"PrivateIPAddr": [
+			"192.168.17.234"
+		],
+		"PublicIPAddr": [
+			"192.168.17.234"
+		],
+		"ReadCacheQuotaFraction": [
+			"0.20"
+		]
+	},
+	"Peer:c67631b5-cb88-11e9-99da-0248604d6797": {
+		"PrivateIPAddr": [
+			"192.168.17.177"
+		],
+		"PublicIPAddr": [
+			"192.168.17.177"
+		],
+		"ReadCacheQuotaFraction": [
+			"0.20"
+		]
+	},
+	"Peer:c6e8e18f-cb88-11e9-92db-02a727b377d1": {
+		"PrivateIPAddr": [
+			"192.168.18.222"
+		],
+		"PublicIPAddr": [
+			"192.168.18.222"
+		],
+		"ReadCacheQuotaFraction": [
+			"0.20"
+		]
+	},
+	"PhysicalContainerLayout:back-policy1": {
+		"ContainerNamePrefix": [
+			"Standard-Replica_"
+		],
+		"ContainerStoragePolicy": [
+			"Standard-Replica"
+		],
+		"ContainerStoragePolicyIndex": [
+			"0"
+		],
+		"ContainersPerPeer": [
+			"1000"
+		],
+		"MaxObjectsPerContainer": [
+			"1000000"
+		]
+	},
+	"RPC": {
+		"NoAuthTCPSocket": [
+			"true"
+		]
+	},
+	"SMBUsers": {
+		"blake": [
+			"Ymxha2U="
+		],
+		"bob": [
+			"Ym9i"
+		],
+		"ed": [
+			"ZWQ="
+		],
+		"swift": [
+			"c3dpZnQ="
+		]
+	},
+	"Stats": {
+		"BufferLength": [
+			"100"
+		],
+		"MaxLatency": [
+			"1000ms"
+		],
+		"UDPPort": [
+			"8133"
+		]
+	},
+	"StatsLogger": {
+		"Period": [
+			"600s"
+		]
+	},
+	"SwiftClient": {
+		"ChunkedConnectionPoolSize": [
+			"1000"
+		],
+		"NoAuthTCPPort": [
+			"8090"
+		],
+		"NonChunkedConnectionPoolSize": [
+			"100"
+		],
+		"RetryDelay": [
+			"1000ms"
+		],
+		"RetryDelayObject": [
+			"1000ms"
+		],
+		"RetryExpBackoff": [
+			"1.5"
+		],
+		"RetryExpBackoffObject": [
+			"1.95"
+		],
+		"RetryLimit": [
+			"11"
+		],
+		"RetryLimitObject": [
+			"8"
+		],
+		"Timeout": [
+			"10000ms"
+		]
+	},
+	"Volume:vol-vg32-1": {
+		"AccountName": [
+			"vgacct1"
+		],
+		"CheckpointContainerName": [
+			".__checkpoint__"
+		],
+		"CheckpointContainerStoragePolicy": [
+			"Standard-Replica"
+		],
+		"CheckpointEtcdKeyName": [
+			"ProxyFS:Volume:vol-vg32-1"
+		],
+		"CheckpointInterval": [
+			"10000ms"
+		],
+		"DefaultPhysicalContainerLayout": [
+			"back-policy1"
+		],
+		"FSID": [
+			"10"
+		],
+		"FUSEMountPointName": [
+			"/share/vol-vg32-1"
+		],
+		"InodeCacheEvictInterval": [
+			"5000ms"
+		],
+		"MaxBytesInodeCache": [
+			"104876"
+		],
+		"MaxCreatedDeletedObjectsPerMetadataNode": [
+			"256"
+		],
+		"MaxDirFileNodesPerMetadataNode": [
+			"16"
+		],
+		"MaxEntriesPerDirNode": [
+			"32"
+		],
+		"MaxExtentsPerFileNode": [
+			"32"
+		],
+		"MaxFlushSize": [
+			"10485760"
+		],
+		"MaxFlushTime": [
+			"10000ms"
+		],
+		"MaxInodesPerMetadataNode": [
+			"32"
+		],
+		"MaxLogSegmentsPerMetadataNode": [
+			"64"
+		],
+		"NFSExportClientMapList": [],
+		"NonceValuesToReserve": [
+			"10000"
+		],
+		"PhysicalContainerLayoutList": [
+			"back-policy1"
+		],
+		"PrimaryPeer": [
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07"
+		],
+		"SMBAuditLogging": [
+			"true"
+		],
+		"SMBBrowseable": [
+			"true"
+		],
+		"SMBEncryptionRequired": [
+			"false"
+		],
+		"SMBShareName": [
+			"vol-vg32-1"
+		],
+		"SMBStrictSync": [
+			"true"
+		],
+		"SMBValidADGroupList": [],
+		"SMBValidADUserList": [],
+		"SMBValidUserList": [
+			"swift",
+			"bob",
+			"ed",
+			"blake"
+		],
+		"SnapShotIDNumBits": [
+			"10"
+		],
+		"StandbyPeerList": [
+			"c67631b5-cb88-11e9-99da-0248604d6797",
+			"c6e8e18f-cb88-11e9-92db-02a727b377d1"
+		],
+		"VolumeGroup": [
+			"vg32-1"
+		]
+	},
+	"Volume:vol-vg32-2": {
+		"AccountName": [
+			"vgacct2"
+		],
+		"CheckpointContainerName": [
+			".__checkpoint__"
+		],
+		"CheckpointContainerStoragePolicy": [
+			"Standard-Replica"
+		],
+		"CheckpointEtcdKeyName": [
+			"ProxyFS:Volume:vol-vg32-2"
+		],
+		"CheckpointInterval": [
+			"10000ms"
+		],
+		"DefaultPhysicalContainerLayout": [
+			"back-policy1"
+		],
+		"FSID": [
+			"11"
+		],
+		"FUSEMountPointName": [
+			"/share/vol-vg32-2"
+		],
+		"InodeCacheEvictInterval": [
+			"5000ms"
+		],
+		"MaxBytesInodeCache": [
+			"104876"
+		],
+		"MaxCreatedDeletedObjectsPerMetadataNode": [
+			"256"
+		],
+		"MaxDirFileNodesPerMetadataNode": [
+			"16"
+		],
+		"MaxEntriesPerDirNode": [
+			"32"
+		],
+		"MaxExtentsPerFileNode": [
+			"32"
+		],
+		"MaxFlushSize": [
+			"10485760"
+		],
+		"MaxFlushTime": [
+			"10000ms"
+		],
+		"MaxInodesPerMetadataNode": [
+			"32"
+		],
+		"MaxLogSegmentsPerMetadataNode": [
+			"64"
+		],
+		"NFSExportClientMapList": [],
+		"NonceValuesToReserve": [
+			"10000"
+		],
+		"PhysicalContainerLayoutList": [
+			"back-policy1"
+		],
+		"PrimaryPeer": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		],
+		"SMBAuditLogging": [
+			"true"
+		],
+		"SMBBrowseable": [
+			"true"
+		],
+		"SMBEncryptionRequired": [
+			"false"
+		],
+		"SMBShareName": [
+			"vol-vg32-2"
+		],
+		"SMBStrictSync": [
+			"true"
+		],
+		"SMBValidADGroupList": [],
+		"SMBValidADUserList": [],
+		"SMBValidUserList": [
+			"swift",
+			"bob",
+			"ed",
+			"blake"
+		],
+		"SnapShotIDNumBits": [
+			"10"
+		],
+		"StandbyPeerList": [
+			"c6e8e18f-cb88-11e9-92db-02a727b377d1",
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07"
+		],
+		"VolumeGroup": [
+			"vg32-2"
+		]
+	},
+	"Volume:volume3": {
+		"AccountName": [
+			"volume3acct"
+		],
+		"CheckpointContainerName": [
+			".__checkpoint__"
+		],
+		"CheckpointContainerStoragePolicy": [
+			"Standard-Replica"
+		],
+		"CheckpointEtcdKeyName": [
+			"ProxyFS:Volume:volume3"
+		],
+		"CheckpointInterval": [
+			"10000ms"
+		],
+		"DefaultPhysicalContainerLayout": [
+			"back-policy1"
+		],
+		"FSID": [
+			"3"
+		],
+		"FUSEMountPointName": [
+			"/share/volume3"
+		],
+		"InodeCacheEvictInterval": [
+			"5000ms"
+		],
+		"MaxBytesInodeCache": [
+			"104876"
+		],
+		"MaxCreatedDeletedObjectsPerMetadataNode": [
+			"256"
+		],
+		"MaxDirFileNodesPerMetadataNode": [
+			"16"
+		],
+		"MaxEntriesPerDirNode": [
+			"32"
+		],
+		"MaxExtentsPerFileNode": [
+			"32"
+		],
+		"MaxFlushSize": [
+			"10485760"
+		],
+		"MaxFlushTime": [
+			"10000ms"
+		],
+		"MaxInodesPerMetadataNode": [
+			"32"
+		],
+		"MaxLogSegmentsPerMetadataNode": [
+			"64"
+		],
+		"NFSExportClientMapList": [],
+		"NonceValuesToReserve": [
+			"10000"
+		],
+		"PhysicalContainerLayoutList": [
+			"back-policy1"
+		],
+		"PrimaryPeer": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		],
+		"SMBAuditLogging": [
+			"true"
+		],
+		"SMBBrowseable": [
+			"true"
+		],
+		"SMBEncryptionRequired": [
+			"false"
+		],
+		"SMBShareName": [
+			"volume3"
+		],
+		"SMBStrictSync": [
+			"true"
+		],
+		"SMBValidADGroupList": [],
+		"SMBValidADUserList": [],
+		"SMBValidUserList": [
+			"blake"
+		],
+		"SnapShotIDNumBits": [
+			"10"
+		],
+		"StandbyPeerList": [
+			"c6e8e18f-cb88-11e9-92db-02a727b377d1",
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07"
+		],
+		"VolumeGroup": [
+			"VG1"
+		]
+	},
+	"VolumeGroup:VG1": {
+		"PrimaryPeer": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		],
+		"ReadCacheLineSize": [
+			"1048576"
+		],
+		"ReadCacheWeight": [
+			"100"
+		],
+		"SMBActiveDirectoryEnabled": [
+			"false"
+		],
+		"SMBActiveDirectoryIDMapDefaultMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapDefaultMin": [
+			"501"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMin": [
+			"500"
+		],
+		"SMBActiveDirectoryRealm": [],
+		"SMBWorkgroup": [],
+		"VirtualHostname": [
+			"VIP-VG1"
+		],
+		"VirtualIPAddr": [
+			"11.11.11.11"
+		],
+		"VolumeList": [
+			"volume3"
+		]
+	},
+	"VolumeGroup:vg32-1": {
+		"PrimaryPeer": [
+			"c63edaae-cb88-11e9-b49f-020e05f0ad07"
+		],
+		"ReadCacheLineSize": [
+			"1048576"
+		],
+		"ReadCacheWeight": [
+			"100"
+		],
+		"SMBActiveDirectoryEnabled": [
+			"false"
+		],
+		"SMBActiveDirectoryIDMapDefaultMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapDefaultMin": [
+			"501"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMin": [
+			"500"
+		],
+		"SMBActiveDirectoryRealm": [],
+		"SMBWorkgroup": [],
+		"VirtualHostname": [
+			"VIP-VG32-1"
+		],
+		"VirtualIPAddr": [
+			"192.168.17.234"
+		],
+		"VolumeList": [
+			"vol-vg32-1"
+		]
+	},
+	"VolumeGroup:vg32-2": {
+		"PrimaryPeer": [
+			"c67631b5-cb88-11e9-99da-0248604d6797"
+		],
+		"ReadCacheLineSize": [
+			"1048576"
+		],
+		"ReadCacheWeight": [
+			"100"
+		],
+		"SMBActiveDirectoryEnabled": [
+			"false"
+		],
+		"SMBActiveDirectoryIDMapDefaultMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapDefaultMin": [
+			"501"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMax": [
+			"3554431"
+		],
+		"SMBActiveDirectoryIDMapWorkgroupMin": [
+			"500"
+		],
+		"SMBActiveDirectoryRealm": [],
+		"SMBWorkgroup": [],
+		"VirtualHostname": [
+			"VIP-VG32-2"
+		],
+		"VirtualIPAddr": [
+			"32.32.32.32"
+		],
+		"VolumeList": [
+			"vol-vg32-2"
+		]
+	}
+}
