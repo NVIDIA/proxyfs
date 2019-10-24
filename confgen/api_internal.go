@@ -83,44 +83,44 @@ type volumeMap map[string]*Volume // Key=volume.volumeName
 
 // SMBVolume contains per volume SMB settings
 type SMBVolume struct {
-	ShareName          string // Must be unique unless == "" (no SMB Share)
 	AuditLogging       bool
 	Browseable         bool
 	EncryptionRequired bool
+	Path               string // TODO - Not implemented
+	ShareName          string // Must be unique unless == "" (no SMB Share)
 	StrictSync         bool
-	Path               string   // TODO - Not implemented
 	ValidUsers         []string // TODO - Not implemented
 }
 
 // SMBVG contains per Volume Group SMB settings
 type SMBVG struct {
-	WorkGroup         []string
-	Enabled           bool
-	Realm             []string
-	IDMapDefaultMin   int
-	IDMapDefaultMax   int
-	IDMapWorkgroupMin int
-	IDMapWorkgroupMax int
-	TCPPort           int
-	FastTCPPort       int
-	ServerMinProtocol string   // TODO - not implemented
-	MapToGuest        []string // TODO - not implemented
-	AuditLogging      bool     // TODO - not implemented
-	Security          []string // TODO - not implemented
-	RPCServerLSARPC   []string // TODO - not implemented
-	IDSchema          []string // TODO - not implemented
-	BackEnd           []string // TODO - not implemented
-	BrowserAnnounce   string   // TODO - not implemented
+	ADBackEnd           []string // TODO - not implemented
+	ADEnabled           bool
+	ADIDMapDefaultMin   int
+	ADIDMapDefaultMax   int
+	ADIDMapWorkgroupMin int
+	ADIDMapWorkgroupMax int
+	ADIDSchema          []string // TODO - not implemented
+	AuditLogging        bool     // TODO - not implemented - needs testing
+	BrowserAnnounce     string   // TODO - not implemented
+	FastTCPPort         int
+	MapToGuest          []string // TODO - not implemented
+	ADRealm             []string
+	RPCServerLSARPC     []string // TODO - not implemented
+	Security            []string // TODO - not implemented
+	ServerMinProtocol   string   // TODO - not implemented
+	TCPPort             int
+	WorkGroup           string
 }
 
 // VolumeGroup contains VolumeGroup conf settings
 type VolumeGroup struct {
-	VolumeGroupName string    // Must be unique
-	VolumeMap       volumeMap //
-	VirtualIPAddr   string    // Must be unique
 	PrimaryPeer     string    //
 	SMB             SMBVG     // SMB specific settings of the VG
-	VirtualHostName string    // TODO - not implemented
+	VirtualHostName string    // Must be unique
+	VirtualIPAddr   string    // Must be unique
+	VolumeGroupName string    // Must be unique
+	VolumeMap       volumeMap //
 }
 
 type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
@@ -262,6 +262,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	// Create per VG smb.conf files
 	err = createSMBConf(initialDirPath, localVolumeGroupMap)
 	if nil != err {
+		// TODO - logging
 		return
 	}
 
@@ -553,43 +554,61 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 
 // populateVolumeGroupSMB populates the VolumeGroup with SMB related
 // info
-func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup) (err error) {
+func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup,
+	workGroupSet stringSet) (err error) {
 	var (
-		idUint32 uint32
+		idUint32       uint32
+		ok             bool
+		workGroupSlice []string
 	)
 	volumeGroup.SMB.TCPPort = tcpPort
 	volumeGroup.SMB.FastTCPPort = fastTCPPort
 
-	volumeGroup.SMB.Enabled, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBActiveDirectoryEnabled")
+	volumeGroup.SMB.ADEnabled, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBActiveDirectoryEnabled")
 	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMin")
-	volumeGroup.SMB.IDMapDefaultMin = int(idUint32)
+	volumeGroup.SMB.ADIDMapDefaultMin = int(idUint32)
 	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMax")
-	volumeGroup.SMB.IDMapDefaultMax = int(idUint32)
+	volumeGroup.SMB.ADIDMapDefaultMax = int(idUint32)
 	if nil != err {
 		return
 	}
 
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMin")
-	volumeGroup.SMB.IDMapWorkgroupMin = int(idUint32)
+	volumeGroup.SMB.ADIDMapWorkgroupMin = int(idUint32)
 	if nil != err {
 		return
 	}
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapWorkgroupMax")
-	volumeGroup.SMB.IDMapWorkgroupMax = int(idUint32)
+	volumeGroup.SMB.ADIDMapWorkgroupMax = int(idUint32)
 	if nil != err {
 		return
 	}
-	volumeGroup.SMB.WorkGroup, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBWorkgroup")
-	if nil != err {
+
+	workGroupSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBWorkgroup")
+	if (nil != err) || (0 == len(workGroupSlice)) {
+		volumeGroup.SMB.WorkGroup = ""
+	} else if 1 == len(workGroupSlice) {
+		volumeGroup.SMB.WorkGroup = workGroupSlice[0]
+
+		_, ok = workGroupSet[volumeGroup.SMB.WorkGroup]
+		if ok {
+			err = fmt.Errorf("Found duplicate [%s]WorkGroup (\"%s\")", volumeGroupSection, volumeGroup.SMB.WorkGroup)
+			return
+		}
+
+		workGroupSet[volumeGroup.SMB.WorkGroup] = struct{}{}
+	} else {
+		err = fmt.Errorf("Found multiple values for [%s]VirtualIPAddr", volumeGroupSection)
 		return
 	}
-	volumeGroup.SMB.Realm, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBActiveDirectoryRealm")
+
+	volumeGroup.SMB.ADRealm, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBActiveDirectoryRealm")
 	if nil != err {
 		return
 	}
@@ -598,7 +617,8 @@ func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcp
 }
 
 // populateVolumeGroup is a helper function to populate the volume group information
-func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupMap, volumeGroupList []string) (err error) {
+func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupMap,
+	volumeGroupList []string) (err error) {
 	var (
 		accountNameSet                stringSet
 		fastTCPPort                   int
@@ -613,6 +633,8 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		ok                            bool
 		primaryPeerSlice              []string
 		tcpPort                       int
+		virtualHostNameSet            stringSet
+		virtualHostNameSlice          []string
 		virtualIPAddrSet              stringSet
 		virtualIPAddrSlice            []string
 		volume                        *Volume
@@ -623,6 +645,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		volumeName                    string
 		volumeNameSet                 stringSet
 		volumeSection                 string
+		workGroupSet                  stringSet
 	)
 
 	// Fetch tcpPort and fastTCPPort number from config file.
@@ -651,10 +674,15 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	accountNameSet = make(stringSet)
 	fsidSet = make(uint64Set)
 	fuseMountPointNameSet = make(stringSet)
+	virtualHostNameSet = make(stringSet)
 	virtualIPAddrSet = make(stringSet)
 	volumeNameSet = make(stringSet)
+	workGroupSet = make(stringSet)
 
 	for _, volumeGroupName = range volumeGroupList {
+		var (
+			haveVolumeWithAuditLogging bool
+		)
 		_, ok = globalVolumeGroupMap[volumeGroupName]
 		if ok {
 			err = fmt.Errorf("Found duplicate volumeGroupName (\"%s\") in [FSGlobals]VolumeGroupList", volumeGroupName)
@@ -688,6 +716,24 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
+		virtualHostNameSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "VirtualHostname")
+		if (nil != err) || (0 == len(virtualHostNameSlice)) {
+			volumeGroup.VirtualHostName = ""
+		} else if 1 == len(virtualHostNameSlice) {
+			volumeGroup.VirtualHostName = virtualHostNameSlice[0]
+
+			_, ok = virtualHostNameSet[volumeGroup.VirtualHostName]
+			if ok {
+				err = fmt.Errorf("Found duplicate [%s]VirtualHostName (\"%s\")", volumeGroupSection, volumeGroup.VirtualHostName)
+				return
+			}
+
+			virtualHostNameSet[volumeGroup.VirtualHostName] = struct{}{}
+		} else {
+			err = fmt.Errorf("Found multiple values for [%s]VirtualHostName", volumeGroupSection)
+			return
+		}
+
 		primaryPeerSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "PrimaryPeer")
 		if (nil != err) || (0 == len(primaryPeerSlice)) {
 			volumeGroup.PrimaryPeer = ""
@@ -698,7 +744,8 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		}
 
 		// Fill in VG SMB information
-		err = populateVolumeGroupSMB(confMap, volumeGroupSection, tcpPort, fastTCPPort, volumeGroup)
+		err = populateVolumeGroupSMB(confMap, volumeGroupSection, tcpPort, fastTCPPort, volumeGroup,
+			workGroupSet)
 		if nil != err {
 			return
 		}
@@ -797,6 +844,12 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 				return
 			}
 
+			// If any volume has audit logging then the volume group
+			// has audit logging.
+			if volume.SMB.AuditLogging {
+				haveVolumeWithAuditLogging = volume.SMB.AuditLogging
+			}
+
 			volume.AccountName, err = confMap.FetchOptionValueString(volumeSection, "AccountName")
 			if nil != err {
 				return
@@ -810,6 +863,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 
 			volumeGroup.VolumeMap[volumeName] = volume
 		}
+		volumeGroup.SMB.AuditLogging = haveVolumeWithAuditLogging
 
 		globalVolumeGroupMap[volumeGroupName] = volumeGroup
 	}
