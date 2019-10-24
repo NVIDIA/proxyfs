@@ -7,7 +7,6 @@
 	path = {{ .SMB.Path }}
 	proxyfs:volume = {{ .VolumeName }}
 	valid users = {{ .SMB.ValidUsers }}
-	public = yes
 	writable = yes
 	printable = no
 	browseable = {{ if .SMB.Browseable }}yes{{- else }}no{{- end }}
@@ -33,3 +32,4 @@
 {{ end }}
 
 {{end}} {{/* End of range loop */}}
+

@@ -38,6 +38,8 @@
 	security = {{ .SMB.Security }}
 	{{ $ADDisabledCommentStr }}passdb backend = tdbsam:/opt/ss/lib64/samba/passdb.tdb
 	restrict anonymous = 2
+	public = no
+	guest account = nobody
 	rpc_server:lsarpc = {{ .SMB.RPCServerLSARPC }}
 
 
@@ -75,3 +77,4 @@ winbind nested groups = yes
 	proxyfs:PrivateIPAddr = {{ .VirtualIPAddr }}
 	proxyfs:TCPPort = {{ .SMB.TCPPort }}
 	proxyfs:FastTCPPort = {{ .SMB.FastTCPPort }}
+
