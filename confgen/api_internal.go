@@ -94,21 +94,22 @@ type SMBVolume struct {
 
 // SMBVG contains per Volume Group SMB settings
 type SMBVG struct {
-	ADBackEnd           []string // TODO - not implemented
+	ADBackEnd           string // TODO - not implemented, new
 	ADEnabled           bool
 	ADIDMapDefaultMin   int
 	ADIDMapDefaultMax   int
 	ADIDMapWorkgroupMin int
 	ADIDMapWorkgroupMax int
-	ADIDSchema          []string // TODO - not implemented
-	AuditLogging        bool     // TODO - not implemented - needs testing
-	BrowserAnnounce     string   // TODO - not implemented
+	ADIDMgmt            bool   // TODO - not implemented, new
+	ADIDSchema          string // TODO - not implemented, new
+	AuditLogging        bool   // True if any volume in volume group has it enabled
+	BrowserAnnounce     string // TODO - not implemented, new
 	FastTCPPort         int
-	MapToGuest          []string // TODO - not implemented
-	ADRealm             []string
-	RPCServerLSARPC     []string // TODO - not implemented
-	Security            []string // TODO - not implemented
-	ServerMinProtocol   string   // TODO - not implemented
+	MapToGuest          string // TODO - not implemented, new
+	ADRealm             string
+	RPCServerLSARPC     string // TODO - not implemented, new
+	Security            string // TODO - not implemented, new
+	ServerMinProtocol   string // TODO - not implemented, new
 	TCPPort             int
 	WorkGroup           string
 }
@@ -496,15 +497,37 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 	return
 }
 
-// populateVolumeSMB populates the Volume with SMB related info
-func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volume) (err error) {
+// fetchStringSet fetches 0 or 1 elements from a slice stored in a ConfMap and returns an error if
+// the slice has more than 1 element.
+func fetchStringSet(confMap conf.ConfMap, section string, value string, valueSet stringSet) (data string, err error) {
 	var (
-		shareNameSet   stringSet
-		shareNameSlice []string
-		ok             bool
+		valueAsSlice []string
+		ok           bool
 	)
 
-	shareNameSet = make(stringSet)
+	valueAsSlice, err = confMap.FetchOptionValueStringSlice(section, value)
+	if (nil != err) || (0 == len(valueAsSlice)) {
+		data = ""
+	} else if 1 == len(valueAsSlice) {
+		data = valueAsSlice[0]
+
+		_, ok = valueSet[data]
+		if ok {
+			err = fmt.Errorf("Found duplicate [%s]%s (\"%s\")", section, value, data)
+			return
+		}
+
+		valueSet[data] = struct{}{}
+	} else {
+		err = fmt.Errorf("Found multiple values for [%s]%s", section, value)
+		return
+	}
+
+	return
+}
+
+// populateVolumeSMB populates the Volume with SMB related info
+func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volume, shareNameSet stringSet) (err error) {
 
 	volume.SMB.AuditLogging, err = confMap.FetchOptionValueBool(volumeSection, "SMBAuditLogging")
 	if nil != err {
@@ -520,23 +543,17 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 		return
 	}
 
-	shareNameSlice, err = confMap.FetchOptionValueStringSlice(volumeSection, "SMBShareName")
-	if (nil != err) || (0 == len(shareNameSlice)) {
-		volume.SMB.ShareName = ""
-	} else if 1 == len(shareNameSlice) {
-		volume.SMB.ShareName = shareNameSlice[0]
-		_, ok = shareNameSet[volume.SMB.ShareName]
-		if ok {
-			err = fmt.Errorf("Found duplicate [%s]SMBShareName (\"%s\")", volumeSection, volume.SMB.ShareName)
-			return
-		}
-		shareNameSet[volume.SMB.ShareName] = struct{}{}
-	} else {
-		err = fmt.Errorf("Found multiple values for [%s]SMBShareName", volumeSection)
+	volume.SMB.ShareName, err = fetchStringSet(confMap, volumeSection, "SMBShareName", shareNameSet)
+	if nil != err {
 		return
 	}
 
 	volume.SMB.StrictSync, err = confMap.FetchOptionValueBool(volumeSection, "SMBStrictSync")
+	if nil != err {
+		return
+	}
+
+	volume.SMB.ValidUsers, err = confMap.FetchOptionValueStringSlice(volumeSection, "SMBValidUserList")
 	if nil != err {
 		return
 	}
@@ -557,9 +574,7 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup,
 	workGroupSet stringSet) (err error) {
 	var (
-		idUint32       uint32
-		ok             bool
-		workGroupSlice []string
+		idUint32 uint32
 	)
 	volumeGroup.SMB.TCPPort = tcpPort
 	volumeGroup.SMB.FastTCPPort = fastTCPPort
@@ -590,25 +605,14 @@ func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcp
 		return
 	}
 
-	workGroupSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBWorkgroup")
-	if (nil != err) || (0 == len(workGroupSlice)) {
-		volumeGroup.SMB.WorkGroup = ""
-	} else if 1 == len(workGroupSlice) {
-		volumeGroup.SMB.WorkGroup = workGroupSlice[0]
-
-		_, ok = workGroupSet[volumeGroup.SMB.WorkGroup]
-		if ok {
-			err = fmt.Errorf("Found duplicate [%s]WorkGroup (\"%s\")", volumeGroupSection, volumeGroup.SMB.WorkGroup)
-			return
-		}
-
-		workGroupSet[volumeGroup.SMB.WorkGroup] = struct{}{}
-	} else {
-		err = fmt.Errorf("Found multiple values for [%s]VirtualIPAddr", volumeGroupSection)
+	volumeGroup.SMB.WorkGroup, err = fetchStringSet(confMap, volumeGroupSection, "SMBWorkgroup", workGroupSet)
+	if nil != err {
 		return
 	}
 
-	volumeGroup.SMB.ADRealm, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBActiveDirectoryRealm")
+	// We do not verify that the realm is unique
+	realmSet := make(stringSet)
+	volumeGroup.SMB.ADRealm, err = fetchStringSet(confMap, volumeGroupSection, "SMBActiveDirectoryRealm", realmSet)
 	if nil != err {
 		return
 	}
@@ -624,19 +628,16 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		fastTCPPort                   int
 		fsidSet                       uint64Set
 		fuseMountPointNameSet         stringSet
-		fuseMountPointNameSlice       []string
 		nfsClient                     *NFSClient
 		nfsClientSection              string
 		nfsExportClientMapList        []string
 		nfsExportClientMapListElement string
 		nfsExportClientMapSet         stringSet
 		ok                            bool
-		primaryPeerSlice              []string
+		shareNameSet                  stringSet
 		tcpPort                       int
 		virtualHostNameSet            stringSet
-		virtualHostNameSlice          []string
 		virtualIPAddrSet              stringSet
-		virtualIPAddrSlice            []string
 		volume                        *Volume
 		volumeGroup                   *VolumeGroup
 		volumeGroupName               string
@@ -674,6 +675,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	accountNameSet = make(stringSet)
 	fsidSet = make(uint64Set)
 	fuseMountPointNameSet = make(stringSet)
+	shareNameSet = make(stringSet)
 	virtualHostNameSet = make(stringSet)
 	virtualIPAddrSet = make(stringSet)
 	volumeNameSet = make(stringSet)
@@ -698,49 +700,21 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		virtualIPAddrSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "VirtualIPAddr")
-		if (nil != err) || (0 == len(virtualIPAddrSlice)) {
-			volumeGroup.VirtualIPAddr = ""
-		} else if 1 == len(virtualIPAddrSlice) {
-			volumeGroup.VirtualIPAddr = virtualIPAddrSlice[0]
-
-			_, ok = virtualIPAddrSet[volumeGroup.VirtualIPAddr]
-			if ok {
-				err = fmt.Errorf("Found duplicate [%s]VirtualIPAddr (\"%s\")", volumeGroupSection, volumeGroup.VirtualIPAddr)
-				return
-			}
-
-			virtualIPAddrSet[volumeGroup.VirtualIPAddr] = struct{}{}
-		} else {
-			err = fmt.Errorf("Found multiple values for [%s]VirtualIPAddr", volumeGroupSection)
+		volumeGroup.VirtualIPAddr, err = fetchStringSet(confMap, volumeGroupSection, "VirtualIPAddr", virtualIPAddrSet)
+		if nil != err {
 			return
 		}
 
-		virtualHostNameSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "VirtualHostname")
-		if (nil != err) || (0 == len(virtualHostNameSlice)) {
-			volumeGroup.VirtualHostName = ""
-		} else if 1 == len(virtualHostNameSlice) {
-			volumeGroup.VirtualHostName = virtualHostNameSlice[0]
-
-			_, ok = virtualHostNameSet[volumeGroup.VirtualHostName]
-			if ok {
-				err = fmt.Errorf("Found duplicate [%s]VirtualHostName (\"%s\")", volumeGroupSection, volumeGroup.VirtualHostName)
-				return
-			}
-
-			virtualHostNameSet[volumeGroup.VirtualHostName] = struct{}{}
-		} else {
-			err = fmt.Errorf("Found multiple values for [%s]VirtualHostName", volumeGroupSection)
+		volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection, "VirtualHostname", virtualHostNameSet)
+		if nil != err {
 			return
 		}
 
-		primaryPeerSlice, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "PrimaryPeer")
-		if (nil != err) || (0 == len(primaryPeerSlice)) {
-			volumeGroup.PrimaryPeer = ""
-		} else if 1 == len(primaryPeerSlice) {
-			volumeGroup.PrimaryPeer = primaryPeerSlice[0]
-		} else {
-			err = fmt.Errorf("Found multiple values for [%s]PrimaryPeer", volumeGroupSection)
+		// We do not check for duplicates of PrimaryPeer
+		emptySet := make(stringSet)
+		volumeGroup.PrimaryPeer, err = fetchStringSet(confMap, volumeGroupSection, "PrimaryPeer", emptySet)
+		if nil != err {
+			return
 		}
 
 		// Fill in VG SMB information
@@ -773,19 +747,8 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			}
 			fsidSet[volume.FSID] = struct{}{}
 
-			fuseMountPointNameSlice, err = confMap.FetchOptionValueStringSlice(volumeSection, "FUSEMountPointName")
-			if (nil != err) || (0 == len(fuseMountPointNameSlice)) {
-				volume.FUSEMountPointName = ""
-			} else if 1 == len(fuseMountPointNameSlice) {
-				volume.FUSEMountPointName = fuseMountPointNameSlice[0]
-				_, ok = fuseMountPointNameSet[volume.FUSEMountPointName]
-				if ok {
-					err = fmt.Errorf("Found duplicate [%s]FUSEMountPointName (\"%s\")", volumeSection, volume.FUSEMountPointName)
-					return
-				}
-				fuseMountPointNameSet[volume.FUSEMountPointName] = struct{}{}
-			} else {
-				err = fmt.Errorf("Found multiple values for [%s]FUSEMountPointName", volumeSection)
+			volume.FUSEMountPointName, err = fetchStringSet(confMap, volumeSection, "FUSEMountPointName", fuseMountPointNameSet)
+			if nil != err {
 				return
 			}
 
@@ -839,7 +802,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 				volume.nfsClientMap = make(NFSClientMap)
 			}
 
-			err = populateVolumeSMB(confMap, volumeSection, volume)
+			err = populateVolumeSMB(confMap, volumeSection, volume, shareNameSet)
 			if nil != err {
 				return
 			}

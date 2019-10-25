@@ -1,9 +1,11 @@
 {{/* Declare our global variables.  Need Go 1.11+ */}}
 {{$AdIDCommentStr := ""}}
 {{$ADDisabledCommentStr := ""}}
+{{$EnabledIfNoAD := ";"}} {{/* If no AD, print this line */}}
 {{ if not .SMB.ADEnabled }}
 	{{$AdIDCommentStr = ";"}}
-	{{$ADDisabledCommentStr := ";"}}
+	{{$ADDisabledCommentStr = ";"}}
+	{{$EnabledIfNoAD = ""}}
 {{ end }}
 
 [global]
@@ -21,7 +23,7 @@
 
 # --------------------------- Temporary Options -------------------------
 # Until we resolve permissions
-{{ $ADDisabledCommentStr }}force user = root
+{{ $EnabledIfNoAD }}force user = root
 	
 
 # --------------------------- Logging Options -----------------------------
@@ -36,7 +38,7 @@
 
 # ----------------------- Standalone Server Options ------------------------
 	security = {{ .SMB.Security }}
-	{{ $ADDisabledCommentStr }}passdb backend = tdbsam:/opt/ss/lib64/samba/passdb.tdb
+	{{ $EnabledIfNoAD }}passdb backend = tdbsam:/opt/ss/lib64/samba/passdb.tdb
 	restrict anonymous = 2
 	public = no
 	guest account = nobody

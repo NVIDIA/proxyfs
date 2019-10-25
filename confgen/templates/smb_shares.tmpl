@@ -6,7 +6,9 @@
 	comment = ProxyFS volume {{ .SMB.ShareName }}
 	path = {{ .SMB.Path }}
 	proxyfs:volume = {{ .VolumeName }}
-	valid users = {{ .SMB.ValidUsers }}
+
+	valid users =  {{ range $i, $e := .SMB.ValidUsers}}{{if $i}}, {{end}}"{{$e}}"{{- end}}
+
 	writable = yes
 	printable = no
 	browseable = {{ if .SMB.Browseable }}yes{{- else }}no{{- end }}
