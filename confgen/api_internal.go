@@ -36,6 +36,10 @@ const (
 	smbPassdbFileName     = "passdb.tdb"           // Used in vips/{VirtualIPAddr} to hold "local" SMB Passwords
 	smbUsersSetupFileName = "smb_users_setup.bash" // Used to {create|update|destroy} SMB & Linux users
 	vipsDirName           = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
+	proxyfsConfDir0       = "/etc/proxyfsd"        // proxyfs conf files (includingtemplates directory) are here
+	proxyfsConfDir1       = "/opt/ss/etc/proxyfsd" // or here
+	proxyfsConfDir2       = "."                    // or relative to the current directory!
+
 	//                                                  where each holds files specific to that VirtualIPAddr
 )
 
