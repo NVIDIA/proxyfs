@@ -21,8 +21,9 @@ type envSettingsStruct struct {
 }
 
 const (
-	useraddPath = "/usr/sbin/useradd"
-	userdelPath = "/usr/sbin/userdel"
+	useraddPath     = "/usr/sbin/useradd"
+	userdelPath     = "/usr/sbin/userdel"
+	volumeDummyPath = "/opt/ss/var/lib/dummy_path"
 )
 
 const (
@@ -86,30 +87,32 @@ type SMBVolume struct {
 	AuditLogging       bool
 	Browseable         bool
 	EncryptionRequired bool
-	Path               string // TODO - Not implemented
+	Path               string
 	ShareName          string // Must be unique unless == "" (no SMB Share)
 	StrictSync         bool
-	ValidUsers         []string // TODO - Not implemented
+	ValidADGroup       []string
+	ValidADUsers       []string
+	ValidUsers         []string
 }
 
 // SMBVG contains per Volume Group SMB settings
 type SMBVG struct {
-	ADBackEnd           string // TODO - not implemented, new
+	ADBackEnd           string
 	ADEnabled           bool
 	ADIDMapDefaultMin   int
 	ADIDMapDefaultMax   int
 	ADIDMapWorkgroupMin int
 	ADIDMapWorkgroupMax int
-	ADIDMgmt            bool   // TODO - not implemented, new
-	ADIDSchema          string // TODO - not implemented, new
-	AuditLogging        bool   // True if any volume in volume group has it enabled
-	BrowserAnnounce     string // TODO - not implemented, new
+	ADIDMgmt            bool
+	ADIDSchema          string
+	AuditLogging        bool // True if any volume in volume group has it enabled
+	BrowserAnnounce     string
 	FastTCPPort         int
-	MapToGuest          string // TODO - not implemented, new
+	MapToGuest          string
 	ADRealm             string
-	RPCServerLSARPC     string // TODO - not implemented, new
-	Security            string // TODO - not implemented, new
-	ServerMinProtocol   string // TODO - not implemented, new
+	RPCServerLSARPC     string
+	Security            string
+	ServerMinProtocol   string
 	TCPPort             int
 	WorkGroup           string
 }
@@ -546,12 +549,24 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 		return
 	}
 
+	volume.SMB.Path = volumeDummyPath
+
 	volume.SMB.ShareName, err = fetchStringSet(confMap, volumeSection, "SMBShareName", shareNameSet)
 	if nil != err {
 		return
 	}
 
 	volume.SMB.StrictSync, err = confMap.FetchOptionValueBool(volumeSection, "SMBStrictSync")
+	if nil != err {
+		return
+	}
+
+	volume.SMB.ValidADGroup, err = confMap.FetchOptionValueStringSlice(volumeSection, "SMBValidADGroupList")
+	if nil != err {
+		return
+	}
+
+	volume.SMB.ValidADUsers, err = confMap.FetchOptionValueStringSlice(volumeSection, "SMBValidADUserList")
 	if nil != err {
 		return
 	}

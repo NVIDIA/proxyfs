@@ -3,9 +3,12 @@
 {{$ADDisabledCommentStr := ""}}
 {{$EnabledIfNoAD := ";"}} {{/* If no AD, print this line */}}
 {{ if not .SMB.ADEnabled }}
-	{{$AdIDCommentStr = ";"}}
-	{{$ADDisabledCommentStr = ";"}}
 	{{$EnabledIfNoAD = ""}}
+	{{$ADDisabledCommentStr = ";"}}
+{{ end }}
+
+{{ if not .SMB.ADIDMgmt}}
+	{{$AdIDCommentStr = ";"}}
 {{ end }}
 
 [global]

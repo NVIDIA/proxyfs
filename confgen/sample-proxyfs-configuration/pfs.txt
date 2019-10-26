@@ -9,7 +9,7 @@
 			"c6e8e18f-cb88-11e9-92db-02a727b377d1"
 		],
 		"ConfigVersion": [
-			"1571957870"
+			"1572046570"
 		],
 		"Peers": [
 			"c63edaae-cb88-11e9-b49f-020e05f0ad07",
@@ -80,20 +80,6 @@
 		"LogSegmentRecCacheEvictLowLimit": [
 			"100000"
 		],
-		"SMBADBackend": [
-			"rid"
-		],
-		"SMBADIDMgmt": [
-			"false"
-		],
-		"SMBADIDSchema": [],
-		"SMBMapToGuest": [
-			"bad",
-			"user"
-		],
-		"SMBServerMinProtocol": [
-			"NT1"
-		],
 		"SMBUserList": [
 			"swift",
 			"bob",
@@ -101,7 +87,7 @@
 			"blake"
 		],
 		"ShareConfigVersion": [
-			"1571957870.2"
+			"1572046570.2"
 		],
 		"VolumeGroupList": [
 			"vg32-2",
@@ -563,6 +549,13 @@
 		"ReadCacheWeight": [
 			"100"
 		],
+		"SMBADBackend": [
+			"rid"
+		],
+		"SMBADIDMgmt": [
+			"false"
+		],
+		"SMBADIDSchema": [],
 		"SMBActiveDirectoryEnabled": [
 			"false"
 		],
@@ -579,6 +572,22 @@
 			"500"
 		],
 		"SMBActiveDirectoryRealm": [],
+		"SMBBrowserAnnounce": [
+			"0.0.0.0"
+		],
+		"SMBMapToGuest": [
+			"bad",
+			"user"
+		],
+		"SMBRPCServerLSARPC": [
+			"embedded"
+		],
+		"SMBSecurity": [
+			"user"
+		],
+		"SMBServerMinProtocol": [
+			"NT1"
+		],
 		"SMBWorkgroup": [],
 		"VirtualHostname": [
 			"VIP-VG1"
@@ -600,6 +609,13 @@
 		"ReadCacheWeight": [
 			"100"
 		],
+		"SMBADBackend": [
+			"rid"
+		],
+		"SMBADIDMgmt": [
+			"false"
+		],
+		"SMBADIDSchema": [],
 		"SMBActiveDirectoryEnabled": [
 			"false"
 		],
@@ -616,6 +632,22 @@
 			"500"
 		],
 		"SMBActiveDirectoryRealm": [],
+		"SMBBrowserAnnounce": [
+			"0.0.0.0"
+		],
+		"SMBMapToGuest": [
+			"bad",
+			"user"
+		],
+		"SMBRPCServerLSARPC": [
+			"embedded"
+		],
+		"SMBSecurity": [
+			"user"
+		],
+		"SMBServerMinProtocol": [
+			"NT1"
+		],
 		"SMBWorkgroup": [],
 		"VirtualHostname": [
 			"VIP-VG32-1"
@@ -637,6 +669,13 @@
 		"ReadCacheWeight": [
 			"100"
 		],
+		"SMBADBackend": [
+			"rid"
+		],
+		"SMBADIDMgmt": [
+			"false"
+		],
+		"SMBADIDSchema": [],
 		"SMBActiveDirectoryEnabled": [
 			"false"
 		],
@@ -653,6 +692,22 @@
 			"500"
 		],
 		"SMBActiveDirectoryRealm": [],
+		"SMBBrowserAnnounce": [
+			"0.0.0.0"
+		],
+		"SMBMapToGuest": [
+			"bad",
+			"user"
+		],
+		"SMBRPCServerLSARPC": [
+			"embedded"
+		],
+		"SMBSecurity": [
+			"user"
+		],
+		"SMBServerMinProtocol": [
+			"NT1"
+		],
 		"SMBWorkgroup": [],
 		"VirtualHostname": [
 			"VIP-VG32-2"
