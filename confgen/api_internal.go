@@ -511,13 +511,16 @@ func fetchStringSet(confMap conf.ConfMap, section string, value string, valueSet
 	} else if 1 == len(valueAsSlice) {
 		data = valueAsSlice[0]
 
-		_, ok = valueSet[data]
-		if ok {
-			err = fmt.Errorf("Found duplicate [%s]%s (\"%s\")", section, value, data)
-			return
-		}
+		// valueSet nil means caller is not interested in the value being unique
+		if nil != valueSet {
+			_, ok = valueSet[data]
+			if ok {
+				err = fmt.Errorf("Found duplicate [%s]%s (\"%s\")", section, value, data)
+				return
+			}
 
-		valueSet[data] = struct{}{}
+			valueSet[data] = struct{}{}
+		}
 	} else {
 		err = fmt.Errorf("Found multiple values for [%s]%s", section, value)
 		return
@@ -574,15 +577,34 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup,
 	workGroupSet stringSet) (err error) {
 	var (
-		idUint32 uint32
+		idUint32   uint32
+		mapToGuest []string
 	)
 	volumeGroup.SMB.TCPPort = tcpPort
 	volumeGroup.SMB.FastTCPPort = fastTCPPort
+
+	// We do not verify that the backend is unique
+	volumeGroup.SMB.ADBackEnd, err = fetchStringSet(confMap, volumeGroupSection, "SMBADBackend", nil)
+	if nil != err {
+		return
+	}
+
+	volumeGroup.SMB.ADIDMgmt, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBADIDMgmt")
+	if nil != err {
+		return
+	}
+
+	// We do not verify that the schema is unique
+	volumeGroup.SMB.ADIDSchema, err = fetchStringSet(confMap, volumeGroupSection, "SMBADIDSchema", nil)
+	if nil != err {
+		return
+	}
 
 	volumeGroup.SMB.ADEnabled, err = confMap.FetchOptionValueBool(volumeGroupSection, "SMBActiveDirectoryEnabled")
 	if nil != err {
 		return
 	}
+
 	idUint32, err = confMap.FetchOptionValueUint32(volumeGroupSection, "SMBActiveDirectoryIDMapDefaultMin")
 	volumeGroup.SMB.ADIDMapDefaultMin = int(idUint32)
 	if nil != err {
@@ -605,14 +627,42 @@ func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcp
 		return
 	}
 
-	volumeGroup.SMB.WorkGroup, err = fetchStringSet(confMap, volumeGroupSection, "SMBWorkgroup", workGroupSet)
+	// We do not verify that the realm is unique
+	volumeGroup.SMB.ADRealm, err = fetchStringSet(confMap, volumeGroupSection, "SMBActiveDirectoryRealm", nil)
 	if nil != err {
 		return
 	}
 
-	// We do not verify that the realm is unique
-	realmSet := make(stringSet)
-	volumeGroup.SMB.ADRealm, err = fetchStringSet(confMap, volumeGroupSection, "SMBActiveDirectoryRealm", realmSet)
+	// We do not verify that browser announce is unique
+	volumeGroup.SMB.BrowserAnnounce, err = fetchStringSet(confMap, volumeGroupSection, "SMBBrowserAnnounce", nil)
+	if nil != err {
+		return
+	}
+
+	mapToGuest, err = confMap.FetchOptionValueStringSlice(volumeGroupSection, "SMBMapToGuest")
+	if nil != err {
+		return
+	}
+
+	// No easy way to pass string with " " between words.   Join the elements and store.
+	volumeGroup.SMB.MapToGuest = strings.Join(mapToGuest, " ")
+
+	volumeGroup.SMB.RPCServerLSARPC, err = fetchStringSet(confMap, volumeGroupSection, "SMBRPCServerLSARPC", nil)
+	if nil != err {
+		return
+	}
+
+	volumeGroup.SMB.Security, err = fetchStringSet(confMap, volumeGroupSection, "SMBSecurity", nil)
+	if nil != err {
+		return
+	}
+
+	volumeGroup.SMB.ServerMinProtocol, err = fetchStringSet(confMap, volumeGroupSection, "SMBServerMinProtocol", nil)
+	if nil != err {
+		return
+	}
+
+	volumeGroup.SMB.WorkGroup, err = fetchStringSet(confMap, volumeGroupSection, "SMBWorkgroup", workGroupSet)
 	if nil != err {
 		return
 	}
