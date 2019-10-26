@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/creachadair/cityhash"
@@ -1041,8 +1042,6 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	evtlog.Record(evtlog.FormatObjectPutChunkedStart, accountName, containerName, objectName)
 
-	objectFetchChunkedPutContextCnt++
-
 	connection, err = acquireChunkedConnection(useReserveForVolumeName)
 	if err != nil {
 		// acquireChunkedConnection()/openConnection() logged a warning
@@ -1054,7 +1053,8 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 
 	// check for chaos error generation (testing only)
 	if globals.chaosFetchChunkedPutFailureRate > 0 &&
-		objectFetchChunkedPutContextCnt%globals.chaosFetchChunkedPutFailureRate == 0 {
+		(atomic.AddUint64(&objectFetchChunkedPutContextCnt, 1)%
+			globals.chaosFetchChunkedPutFailureRate == 0) {
 		err = fmt.Errorf("swiftclient.objectFetchChunkedPutContext returning simulated error")
 	} else {
 		err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
