@@ -5,6 +5,7 @@ gopkgsubdirs = \
 	blunder \
 	bucketstats \
 	conf \
+	confgen \
 	dlm \
 	evtlog \
 	fs \
@@ -30,6 +31,7 @@ gopkgsubdirs = \
 
 gobinsubdirs = \
 	cleanproxyfs \
+	confgen/confgen \
 	fsworkout \
 	inodeworkout \
 	pfs-crash \

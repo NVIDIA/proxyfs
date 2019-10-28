@@ -147,7 +147,7 @@ func testSetup(t *testing.T) {
 
 		"Volume:CommonVolume.FSID=1",
 		"Volume:CommonVolume.FUSEMountPointName=ProxyFSMountPointPath",
-		"Volume:CommonVolume.NFSExportName=CommonExport",
+		"Volume:CommonVolume.NFSExportClientMapList=CommonVolumeNFSClient0",
 		"Volume:CommonVolume.SMBShareName=CommonShare",
 		"Volume:CommonVolume.PrimaryPeer=Peer0",
 		"Volume:CommonVolume.AccountName=AUTH_test",
@@ -168,6 +168,11 @@ func testSetup(t *testing.T) {
 		"Volume:CommonVolume.MaxBytesInodeCache=100000",
 		"Volume:CommonVolume.InodeCacheEvictInterval=1s",
 		"Volume:CommonVolume.AutoFormat=true",
+
+		"NFSClientMap:CommonVolumeNFSClient0.ClientPattern=*",
+		"NFSClientMap:CommonVolumeNFSClient0.AccessMode=rw",
+		"NFSClientMap:CommonVolumeNFSClient0.RootSquash=no_root_squash",
+		"NFSClientMap:CommonVolumeNFSClient0.Secure=insecure",
 
 		"VolumeGroup:CommonVolumeGroup.VolumeList=CommonVolume",
 		"VolumeGroup:CommonVolumeGroup.VirtualIPAddr=",

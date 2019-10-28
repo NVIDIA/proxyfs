@@ -53,7 +53,7 @@ type volumeStruct struct {
 	volumeGroup        *volumeGroupStruct
 	name               string
 	fuseMountPointName string
-	nfsExportName      string
+	nfsExported        bool
 	smbShareName       string
 	accountName        string
 }
@@ -662,10 +662,10 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 						return
 					}
 
-					volume.nfsExportName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "NFSExportName")
+					volume.nfsExported, err = confMap.FetchOptionValueBool("Volume:"+volumeName, "NFSExported")
 					if nil != err {
 						// Default to no NFS Export
-						volume.nfsExportName = ""
+						volume.nfsExported = false
 					}
 
 					volume.smbShareName, err = confMap.FetchOptionValueString("Volume:"+volumeName, "SMBShareName")

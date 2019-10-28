@@ -804,7 +804,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		bPlusTreeObjectWrapperBPlusTreeTracker             *bPlusTreeTrackerStruct
 		bytesConsumed                                      uint64
 		bytesNeeded                                        uint64
-		checkpointContainerHeadAttempts                    uint16
+		checkpointContainerHeadAgreements                  uint16
 		checkpointContainerHeaders                         map[string][]string
 		checkpointHeader                                   CheckpointHeaderStruct
 		checkpointHeaderValue                              string
@@ -867,9 +867,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		if nil != err {
 			logger.Infof("No checkpointHeader found in etcd for volume %s: %v", volume.volumeName, err)
 
-			volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+			volume.checkpointHeader, checkpointContainerHeadAgreements, err = volume.fetchCheckpointContainerHeader()
 			if nil != err {
-				if 0 != checkpointContainerHeadAttempts {
+				if 0 != checkpointContainerHeadAgreements {
 					err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 					return
 				}
@@ -930,9 +930,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+		volume.checkpointHeader, checkpointContainerHeadAgreements, err = volume.fetchCheckpointContainerHeader()
 		if nil != err {
-			if 0 != checkpointContainerHeadAttempts {
+			if 0 != checkpointContainerHeadAgreements {
 				err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 				return
 			}
