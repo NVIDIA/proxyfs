@@ -39,8 +39,7 @@ const (
 	proxyfsConfDir0       = "/etc/proxyfsd"        // proxyfs conf files (includingtemplates directory) are here
 	proxyfsConfDir1       = "/opt/ss/etc/proxyfsd" // or here
 	proxyfsConfDir2       = "."                    // or relative to the current directory!
-
-	//                                                  where each holds files specific to that VirtualIPAddr
+	//                                                where each holds files specific to that VirtualIPAddr
 )
 
 const (
