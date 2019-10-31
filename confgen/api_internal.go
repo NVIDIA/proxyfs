@@ -38,7 +38,7 @@ const (
 	vipsDirName           = "vips"                 // Used to hold a set of VirtualIPAddr-named subdirectories
 	proxyfsConfDir0       = "/usr/lib/proxyfsd"    // proxyfs conf files (includingtemplates directory) are here
 	proxyfsConfDir1       = "/opt/ss/lib/proxyfsd" // or here
-	proxyfsConfDir2       = "."                    // or relative to the current directory!
+	proxyfsConfDir2       = "./templates"          // or relative to the current directory!
 	//                                                where each holds files specific to that VirtualIPAddr
 )
 
