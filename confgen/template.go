@@ -18,21 +18,20 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 	confDirs := []string{proxyfsConfDir0, proxyfsConfDir1, proxyfsConfDir2}
 	for _, proxyfsConfDir = range confDirs {
 
-		// if the directory has a parsable "templates/smb_globals.tmpl"
-		// then its the right one
-		_, err = template.ParseFiles(proxyfsConfDir + "/" + "templates/smb_globals.tmpl")
+		// if the directory has a "smb_globals.tmpl"
+		_, err = os.Stat(proxyfsConfDir + "/" + "smb_globals.tmpl")
 		if err == nil {
 			break
 		}
 	}
 	if err != nil {
-		fmt.Printf("Could not find '%s' in any of %v\n", "templates/smb_globals.tmpl", confDirs)
+		fmt.Printf("Could not find '%s' in any of %v\n", "smb_globals.tmpl", confDirs)
 		return
 	}
 
 	// Load the template for the global section of smb.conf
 	// from one of several possible locations
-	globalTplate, err := template.ParseFiles(proxyfsConfDir + "/" + "templates/smb_globals.tmpl")
+	globalTplate, err := template.ParseFiles(proxyfsConfDir + "/" + "smb_globals.tmpl")
 	if nil != err {
 
 		// TODO - log this appropriately
@@ -41,7 +40,7 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 	}
 
 	// Load the template for the share section of smb.conf
-	sharesTplate, err := template.ParseFiles("templates/smb_shares.tmpl")
+	sharesTplate, err := template.ParseFiles(proxyfsConfDir + "/" + "smb_shares.tmpl")
 	if nil != err {
 		// TODO - log this appropriately
 		fmt.Printf("Parse of template file returned err: %v\n", err)
