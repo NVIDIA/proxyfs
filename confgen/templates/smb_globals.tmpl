@@ -17,12 +17,16 @@
 {{ if .SMB.WorkGroup }}
 	workgroup = {{ .WorkGroup }}
 {{ end }}
+	interfaces = {{ .VirtualIPAddr }}
+	pid directory = /opt/ss/var/run/samba/{{ .VolumeGroupName }}
+	lock directory = /opt/ss/var/cache/samba/{{ .VolumeGroupName }}
+	private dir = /opt/ss/var/cache/samba/{{ .VolumeGroupName }}
+
 	server string = Samba Server Version %v
 	map to guest = {{ .SMB.MapToGuest }}
 
 	netbios name = {{ .VirtualHostName }}
 	server min protocol = {{ .SMB.ServerMinProtocol }}
-
 
 # --------------------------- Temporary Options -------------------------
 # Until we resolve permissions
