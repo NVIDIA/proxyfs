@@ -16,11 +16,17 @@
 from .bimodal_checker import BimodalChecker  # flake8: noqa
 from .middleware import PfsMiddleware  # flake8: noqa
 from .s3_compat import S3Compat  # flake8: noqa
+from swift.common.utils import register_swift_info
 
 
 def filter_factory(global_conf, **local_conf):
     conf = global_conf.copy()
     conf.update(local_conf)
+
+    register_swift_info('pfs',
+                        proxyfsd_host=conf["proxyfsd_host"],
+                        proxyfsd_port=conf["proxyfsd_port"],
+                        bypass_mode=conf["bypass_mode"])
 
     def pfs_filter(app):
         return BimodalChecker(S3Compat(PfsMiddleware(app, conf), conf), conf)
