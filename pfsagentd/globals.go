@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -272,30 +273,38 @@ type metricsStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	config                          configStruct
-	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
-	httpServer                      *http.Server
-	httpServerWG                    sync.WaitGroup
-	httpClient                      *http.Client
-	retryDelay                      []time.Duration
-	swiftAuthWaitGroup              *sync.WaitGroup
-	swiftAuthToken                  string
-	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
-	mountID                         jrpcfs.MountIDAsString
-	rootDirInodeNumber              uint64
-	fuseConn                        *fuse.Conn
-	jrpcLastID                      uint64
-	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
-	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
-	leaseRequestChan                chan *fileInodeLeaseRequestStruct
-	unleasedFileInodeCacheLRU       *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	sharedLeaseFileInodeCacheLRU    *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	exclusiveLeaseFileInodeCacheLRU *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	lastHandleID                    fuse.HandleID
-	handleTable                     map[fuse.HandleID]*handleStruct
-	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
-	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
-	metrics                         *metricsStruct
+	config                           configStruct
+	logFile                          *os.File // == nil if configStruct.LogFilePath == ""
+	jrpcSwiftProxyBypassRequestChan  chan *jrpcSwiftProxyBypassRequestStruct
+	jrpcSwiftProxyBypassRequestMap   map[uint64]*jrpcSwiftProxyBypassRequestStruct // Key == jrpcRequestID
+	jrpcSwiftProxyBypassStopChan     chan struct{}
+	jrpcSwiftProxyBypassParentDoneWG sync.WaitGroup
+	jrpcSwiftProxyBypassChildDoneWG  sync.WaitGroup
+	jrpcSwiftProxyBypassTCPAddr      *net.TCPAddr
+	jrpcSwiftProxyBypassTCPConn      *net.TCPConn
+	jrpcSwiftProxyBypassResponseChan chan []byte
+	httpServer                       *http.Server
+	httpServerWG                     sync.WaitGroup
+	httpClient                       *http.Client
+	retryDelay                       []time.Duration
+	swiftAuthWaitGroup               *sync.WaitGroup
+	swiftAuthToken                   string
+	swiftAccountURL                  string // swiftStorageURL with AccountName forced to config.SwiftAccountName
+	mountID                          jrpcfs.MountIDAsString
+	rootDirInodeNumber               uint64
+	fuseConn                         *fuse.Conn
+	jrpcLastID                       uint64
+	fileInodeMap                     map[inode.InodeNumber]*fileInodeStruct
+	fileInodeDirtyList               *list.List // LRU of fileInode's with non-empty chunkedPutList
+	leaseRequestChan                 chan *fileInodeLeaseRequestStruct
+	unleasedFileInodeCacheLRU        *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
+	sharedLeaseFileInodeCacheLRU     *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
+	exclusiveLeaseFileInodeCacheLRU  *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
+	lastHandleID                     fuse.HandleID
+	handleTable                      map[fuse.HandleID]*handleStruct
+	logSegmentCacheMap               map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
+	logSegmentCacheLRU               *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
+	metrics                          *metricsStruct
 }
 
 var globals globalsStruct
