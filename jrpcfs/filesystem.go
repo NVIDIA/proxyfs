@@ -1404,6 +1404,7 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
+		reply.JSONRpcTCPAddrString = globals.publicIPAddr + ":" + globals.portString
 	}
 	return
 }
@@ -1420,6 +1421,7 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
+		reply.JSONRpcTCPAddrString = globals.publicIPAddr + ":" + globals.portString
 	}
 	return
 }
