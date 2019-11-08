@@ -181,10 +181,12 @@ func jrpcSwiftProxyBypassChild() {
 			if insideString {
 				if nextByteEscaped {
 					nextByteEscaped = false
+				} else if '\\' == jrpcReadByte {
+					nextByteEscaped = true
+				} else if '"' == jrpcReadByte {
+					insideString = false
 				} else {
-					if '"' == jrpcReadByte {
-						insideString = false
-					}
+					// No change to any state
 				}
 			} else {
 				if '{' == jrpcReadByte {
@@ -199,6 +201,10 @@ func jrpcSwiftProxyBypassChild() {
 							jrpcResponse = make([]byte, 0)
 						}
 					}
+				} else if '"' == jrpcReadByte {
+					insideString = true
+				} else {
+					// No change to any state
 				}
 			}
 		}
