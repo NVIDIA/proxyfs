@@ -482,7 +482,7 @@ func TestBPlusTreeSpecific(t *testing.T) {
 	if nil != err {
 		t.Fatalf("btreeOld.TouchItem(7) should not have failed")
 	}
-	if 2 != nextItemIndexToTouch {
+	if 0 != nextItemIndexToTouch {
 		t.Fatalf("btreeOld.TouchItem(7) should have returned 2")
 	}
 
