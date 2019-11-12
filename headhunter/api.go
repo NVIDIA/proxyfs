@@ -58,6 +58,7 @@ type VolumeHandle interface {
 	IndexedBPlusTreeObjectNumber(index uint64) (objectNumber uint64, ok bool, err error)
 	DoCheckpoint() (err error)
 	FetchLayoutReport(treeType BPlusTreeType, validate bool) (layoutReport sortedmap.LayoutReport, discrepencies uint64, err error)
+	DefragmentMetadata(treeType BPlusTreeType, thisStartPercentage uint8, thisStopPercentage uint8) (nextStartPercentage uint8, err error)
 	SnapShotCreateByInodeLayer(name string) (id uint64, err error)
 	SnapShotDeleteByInodeLayer(id uint64) (err error)
 	SnapShotCount() (snapShotCount uint64)
