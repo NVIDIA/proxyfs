@@ -891,8 +891,11 @@ func (tree *btreeTreeStruct) TouchItem(thisItemIndexToTouch uint64) (nextItemInd
 
 	if thisItemIndexToTouch >= node.items {
 		// Apparently tree has shrunk since last TouchItem() call,
-		// so simply wrap back to the zeroth element
+		//   so simply wrap back to the zeroth element and return
+		//   immmediately (indicating that caller has reached the end)
 		thisItemIndexToTouch = 0
+		err = nil
+		return
 	}
 
 	netIndex := uint64(thisItemIndexToTouch)
