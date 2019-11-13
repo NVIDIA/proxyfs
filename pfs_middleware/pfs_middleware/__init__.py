@@ -24,8 +24,6 @@ def filter_factory(global_conf, **local_conf):
     conf.update(local_conf)
 
     register_swift_info('pfs',
-                        proxyfsd_host=conf["proxyfsd_host"],
-                        proxyfsd_port=conf["proxyfsd_port"],
                         bypass_mode=conf["bypass_mode"])
 
     def pfs_filter(app):
