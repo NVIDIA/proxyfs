@@ -2903,6 +2903,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		checkpointListener                    VolumeEventListener
 		checkpointListeners                   []VolumeEventListener
 		checkpointRequest                     *checkpointRequestStruct
+		checkpointRequesters                  []*checkpointRequestStruct
 		createdDeletedObjectsCacheHitsDelta   uint64
 		createdDeletedObjectsCacheMissesDelta uint64
 		createdDeletedObjectsCacheStats       *sortedmap.BPlusTreeCacheStats
@@ -2965,17 +2966,25 @@ func (volume *volumeStruct) checkpointDaemon() {
 			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 		}
 
-		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
+		// Collect any outstanding requests for a checkpoint.
+		//
+		// The volume lock has been held since the checkpoint started
+		// and the volume lock is required to add any metadata that can
+		// be part of the checkpoint, so any metadata that the
+		// requesters wanted flushed has been flushed.
+		checkpointRequesters = make([]*checkpointRequestStruct, 0, 1)
+		moreRequests := true
+		for moreRequests {
+			checkpointRequesters = append(checkpointRequesters, checkpointRequest)
 
-		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
-		if nil != volume.checkpointDoneWaitGroup {
-			// Awake any others who were waiting on this checkpoint
-			volume.checkpointDoneWaitGroup.Done()
-			volume.checkpointDoneWaitGroup = nil
+			select {
+			case checkpointRequest = <-volume.checkpointRequestChan:
+			default:
+				moreRequests = false
+			}
 		}
 
 		checkpointListeners = make([]VolumeEventListener, 0, len(volume.eventListeners))
-
 		for checkpointListener = range volume.eventListeners {
 			checkpointListeners = append(checkpointListeners, checkpointListener)
 		}
@@ -2987,6 +2996,14 @@ func (volume *volumeStruct) checkpointDaemon() {
 		// time), time spent waking waiters and calling back listeners
 		// (note that one listener also updates statistics).
 		startTime2 = time.Now()
+
+		exitOnCompletion = false
+		for _, checkpointRequest = range checkpointRequesters {
+			if checkpointRequest.exitOnCompletion {
+				exitOnCompletion = true
+			}
+			checkpointRequest.waitGroup.Done() // Awake the checkpoint requester
+		}
 
 		for _, checkpointListener = range checkpointListeners {
 			checkpointListener.CheckpointCompleted()

@@ -139,7 +139,6 @@ type volumeStruct struct {
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
-	checkpointDoneWaitGroup                 *sync.WaitGroup
 	eventListeners                          map[VolumeEventListener]struct{}
 	snapShotIDNumBits                       uint16
 	snapShotIDShift                         uint64 //             e.g. inodeNumber >> snapShotIDNumBits == snapShotID
@@ -709,7 +708,6 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	volumeSectionName = "Volume:" + volume.volumeName
 
 	volume.checkpointChunkedPutContext = nil
-	volume.checkpointDoneWaitGroup = nil
 	volume.eventListeners = make(map[VolumeEventListener]struct{})
 	volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
 	volume.postponePriorViewCreatedObjectsPuts = false
