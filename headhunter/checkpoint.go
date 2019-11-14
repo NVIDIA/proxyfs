@@ -2081,7 +2081,31 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 	return
 }
 
+// putCheckpoint does the dirty work of creating a ProxyFS checkpoint -- its complicated.
+//
+// putCheckpoint collects bucketized statistics of the total time taken by the
+// checkpoint and the number of bytes written to Swift to store the checkpoint.
+// In addition, the time required by, and number of bytes transferred by, each step
+// along the way is recorded in individual PutCheckpoint* bucketstats.
+//
+// Note that startTime2 is recorded as the starting time of an interval several
+// times in this routine, and each time it is used to measure time.Since(startTime2)
+// it is reset to the current time.
+//
 func (volume *volumeStruct) putCheckpoint() (err error) {
+
+	// measure entire time and bytes for putCheckpoint
+	startTime := time.Now()
+	var chunkedPutBytes uint64
+	defer func() {
+		globals.PutCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.PutCheckpointErrors.Add(1)
+			return
+		}
+		globals.PutCheckpointBytes.Add(chunkedPutBytes)
+	}()
+
 	var (
 		bytesUsedCumulative                                uint64
 		bytesUsedThisBPlusTree                             uint64
@@ -2156,28 +2180,43 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
+	startTime2 := time.Now()
 	checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
 		err = volume.liveView.inodeRecWrapper.bPlusTree.Flush(false)
+	globals.PutCheckpointInodeRecUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointInodeRecBytes.Add(checkpointObjectTrailer.InodeRecBPlusTreeObjectLength)
+	chunkedPutBytes += checkpointObjectTrailer.InodeRecBPlusTreeObjectLength
+
+	startTime2 = time.Now()
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
 		err = volume.liveView.logSegmentRecWrapper.bPlusTree.Flush(false)
+	globals.PutCheckpointLogSegmentUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointLogSegmentBytes.Add(checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength)
+	chunkedPutBytes += checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength
+
+	startTime2 = time.Now()
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
 		err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
+	globals.PutCheckpointbPlusTreeObjectUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointbPlusTreeObjectBytes.Add(checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength)
+	chunkedPutBytes += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength
 
+	startTime2 = time.Now()
 	volumeViewCount, err = volume.viewTreeByNonce.Len()
 	if nil != err {
 		logger.Fatalf("volume.viewTreeByNonce.Len() failed: %v", err)
@@ -2272,7 +2311,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointSnapshotFlushUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout))
@@ -2327,7 +2368,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
+	globals.PutCheckpointTreeLayoutUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	checkpointObjectTrailer.SnapShotIDNumBits = uint64(volume.snapShotIDNumBits)
 
 	checkpointObjectTrailer.SnapShotListNumElements = uint64(volumeViewCount)
@@ -2483,8 +2526,11 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 		snapShotListBuf = append(snapShotListBuf, elementOfSnapShotListBuf...)
 	}
-
 	checkpointObjectTrailer.SnapShotListTotalSize = uint64(len(snapShotListBuf))
+
+	globals.PutCheckpointSnapshotListUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+	startTime2 = time.Now()
 
 	checkpointTrailerBuf, err = cstruct.Pack(checkpointObjectTrailer, LittleEndian)
 	if nil != err {
@@ -2505,11 +2551,15 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointCheckpointTrailerBytes.Add(uint64(len(checkpointTrailerBuf)))
+	chunkedPutBytes += uint64(len(checkpointTrailerBuf))
 
 	err = volume.sendChunkToCheckpointChunkedPutContext(treeLayoutBuf)
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointTreeLayoutBytes.Add(uint64(len(treeLayoutBuf)))
+	chunkedPutBytes += uint64(len(treeLayoutBuf))
 
 	if 0 < len(snapShotListBuf) {
 		err = volume.sendChunkToCheckpointChunkedPutContext(snapShotListBuf)
@@ -2517,6 +2567,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			return
 		}
 	}
+	globals.PutCheckpointSnapshotListBytes.Add(uint64(len(snapShotListBuf)))
+	chunkedPutBytes += uint64(len(snapShotListBuf))
 
 	checkpointObjectTrailerEndingOffset, err = volume.bytesPutToCheckpointChunkedPutContext()
 	if nil != err {
@@ -2527,6 +2579,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointChunkedPutUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+	startTime2 = time.Now()
 
 	// Before updating checkpointHeader, start accounting for unreferencing of prior checkpointTrailer
 
@@ -2570,7 +2625,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if globals.logCheckpointHeaderPosts {
 		logger.Infof("POST'd checkpointHeaderValue %s for volume %s from putCheckpoint()", checkpointHeaderValue, volume.volumeName)
 	}
+	globals.PutCheckpointPostAndEtcdUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	// Remove replayLogFile if necessary
 
 	if nil != volume.replayLogFile {
@@ -2704,6 +2761,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		volume.backgroundObjectDeleteWG.Add(1)
 		go volume.performDelayedObjectDeletes(delayedObjectDeleteList)
 	}
+	globals.PutCheckpointObjectCleanupUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
 	err = nil
 	return
@@ -2858,7 +2916,17 @@ func (volume *volumeStruct) checkpointDaemon() {
 			checkpointRequest.waitGroup.Add(1) // ...even though we won't be waiting on it...
 		}
 
+		// measure the time required to perform the checkpoint
+		startTime := time.Now()
+
+		// measure the time required to get the volume lock for the checkpoint
+		startTime2 := startTime
+
 		volume.Lock()
+		globals.DaemonPerCheckpointLockWaitUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+		// measure the time while the lock is held for the checkpoint
+		startTime2 = time.Now()
 
 		evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
 
@@ -2904,10 +2972,13 @@ func (volume *volumeStruct) checkpointDaemon() {
 		}
 
 		volume.Unlock()
+		globals.DaemonPerCheckpointLockedUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
 		for _, checkpointListener = range checkpointListeners {
 			checkpointListener.CheckpointCompleted()
 		}
+
+		startTime2 = time.Now()
 
 		// Update Global B+Tree Cache stats now
 
@@ -2928,6 +2999,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
 		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
 
+		// measure time spent updating statistics (including lock wait time)
 		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
@@ -2967,6 +3039,8 @@ func (volume *volumeStruct) checkpointDaemon() {
 		}
 
 		globals.Unlock()
+		globals.DaemonPerCheckpointStatsUpdateUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+		globals.DaemonPerCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 
 		if exitOnCompletion {
 			return
