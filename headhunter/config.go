@@ -53,6 +53,8 @@ type bPlusTreeWrapperStruct struct {
 	//                                            only valid for liveView... nil otherwise
 	//                                          For createdObjectsWrapper & deletedObjectsWrapper:
 	//                                            all volumeView's share the corresponding one created for liveView
+	totalPutNodes uint64 // each call to PutNode() increments this
+	totalPutBytes uint64 // each call to PutNode() adds the buffer size
 }
 
 type volumeViewStruct struct {
@@ -236,10 +238,13 @@ type globalsStruct struct {
 	PutCheckpointBytes                  bucketstats.BucketLog2Round
 	PutCheckpointInodeRecUsec           bucketstats.BucketLog2Round
 	PutCheckpointInodeRecBytes          bucketstats.BucketLog2Round
+	PutCheckpointInodeRecNodes          bucketstats.BucketLog2Round
 	PutCheckpointLogSegmentUsec         bucketstats.BucketLog2Round
 	PutCheckpointLogSegmentBytes        bucketstats.BucketLog2Round
+	PutCheckpointLogSegmentNodes        bucketstats.BucketLog2Round
 	PutCheckpointbPlusTreeObjectUsec    bucketstats.BucketLog2Round
 	PutCheckpointbPlusTreeObjectBytes   bucketstats.BucketLog2Round
+	PutCheckpointbPlusTreeObjectNodes   bucketstats.BucketLog2Round
 	PutCheckpointSnapshotFlushUsec      bucketstats.BucketLog2Round
 	PutCheckpointTreeLayoutUsec         bucketstats.BucketLog2Round
 	PutCheckpointTreeLayoutBytes        bucketstats.BucketLog2Round

@@ -2181,40 +2181,49 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
 	startTime2 := time.Now()
+	volume.liveView.inodeRecWrapper.ClearCounters()
+
 	checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
 		err = volume.liveView.inodeRecWrapper.bPlusTree.Flush(false)
-	globals.PutCheckpointInodeRecUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
-	globals.PutCheckpointInodeRecBytes.Add(checkpointObjectTrailer.InodeRecBPlusTreeObjectLength)
-	chunkedPutBytes += checkpointObjectTrailer.InodeRecBPlusTreeObjectLength
+	globals.PutCheckpointInodeRecUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointInodeRecNodes.Add(volume.liveView.inodeRecWrapper.totalPutNodes)
+	globals.PutCheckpointInodeRecBytes.Add(volume.liveView.inodeRecWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.inodeRecWrapper.totalPutBytes
 
 	startTime2 = time.Now()
+	volume.liveView.logSegmentRecWrapper.ClearCounters()
+
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
 		err = volume.liveView.logSegmentRecWrapper.bPlusTree.Flush(false)
-	globals.PutCheckpointLogSegmentUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
-	globals.PutCheckpointLogSegmentBytes.Add(checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength)
-	chunkedPutBytes += checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength
+	globals.PutCheckpointLogSegmentUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointLogSegmentNodes.Add(volume.liveView.logSegmentRecWrapper.totalPutNodes)
+	globals.PutCheckpointLogSegmentBytes.Add(volume.liveView.logSegmentRecWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.logSegmentRecWrapper.totalPutBytes
 
 	startTime2 = time.Now()
+	volume.liveView.bPlusTreeObjectWrapper.ClearCounters()
+
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
 		err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.Flush(false)
-	globals.PutCheckpointbPlusTreeObjectUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 	if nil != err {
 		return
 	}
-	globals.PutCheckpointbPlusTreeObjectBytes.Add(checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength)
-	chunkedPutBytes += checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength
+	globals.PutCheckpointbPlusTreeObjectUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointbPlusTreeObjectNodes.Add(volume.liveView.bPlusTreeObjectWrapper.totalPutNodes)
+	globals.PutCheckpointbPlusTreeObjectBytes.Add(volume.liveView.bPlusTreeObjectWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.bPlusTreeObjectWrapper.totalPutBytes
 
 	startTime2 = time.Now()
 	volumeViewCount, err = volume.viewTreeByNonce.Len()
@@ -2974,11 +2983,14 @@ func (volume *volumeStruct) checkpointDaemon() {
 		volume.Unlock()
 		globals.DaemonPerCheckpointLockedUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+		// Measure time spent updating statistics (including lock wait
+		// time), time spent waking waiters and calling back listeners
+		// (note that one listener also updates statistics).
+		startTime2 = time.Now()
+
 		for _, checkpointListener = range checkpointListeners {
 			checkpointListener.CheckpointCompleted()
 		}
-
-		startTime2 = time.Now()
 
 		// Update Global B+Tree Cache stats now
 
@@ -2999,7 +3011,6 @@ func (volume *volumeStruct) checkpointDaemon() {
 		createdDeletedObjectsCacheHitsDelta = createdDeletedObjectsCacheStats.CacheHits - globals.createdDeletedObjectsCachePriorCacheHits
 		createdDeletedObjectsCacheMissesDelta = createdDeletedObjectsCacheStats.CacheMisses - globals.createdDeletedObjectsCachePriorCacheMisses
 
-		// measure time spent updating statistics (including lock wait time)
 		globals.Lock()
 
 		if 0 != inodeRecCacheHitsDelta {
