@@ -134,14 +134,16 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 	return
 }
 
+// Flush is called by Fuse when the VFS layer calls the fuse drivers flush()
+// routine.  According to some documentation, this is called as a result of
+// a close() on a file descriptor:
+// https://dri.freedesktop.org/docs/drm/filesystems/vfs.html#id2
+//
 func (f File) Flush(ctx context.Context, req *fuselib.FlushRequest) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	err = f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
-	if nil != err {
-		err = newFuseError(err)
-	}
+	// there's no flushing necessary for a close()
 	return
 }
 

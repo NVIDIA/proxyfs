@@ -207,10 +207,10 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 	fuseEntries := make([]fuselib.Dirent, entryCount)
 
 	for i, entry := range entries {
-		inodeType, _ := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, entry.InodeNumber)
+
 		fuseEntries[i] = fuselib.Dirent{
 			Inode: uint64(entry.InodeNumber),
-			Type:  inodeTypeToDirentType(inodeType),
+			Type:  inodeTypeToDirentType(entry.Type),
 			Name:  entry.Basename,
 		}
 	}

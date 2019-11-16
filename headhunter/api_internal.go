@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/sortedmap"
@@ -55,15 +54,6 @@ func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
 func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
 	accountName = volume.accountName
 	checkpointContainerName = volume.checkpointContainerName
-	return
-}
-
-func (volume *volumeStruct) fetchNextCheckPointDoneWaitGroupWhileLocked() (wg *sync.WaitGroup) {
-	if nil == volume.checkpointDoneWaitGroup {
-		volume.checkpointDoneWaitGroup = &sync.WaitGroup{}
-		volume.checkpointDoneWaitGroup.Add(1)
-	}
-	wg = volume.checkpointDoneWaitGroup
 	return
 }
 
