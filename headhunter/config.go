@@ -53,6 +53,8 @@ type bPlusTreeWrapperStruct struct {
 	//                                            only valid for liveView... nil otherwise
 	//                                          For createdObjectsWrapper & deletedObjectsWrapper:
 	//                                            all volumeView's share the corresponding one created for liveView
+	totalPutNodes uint64 // each call to PutNode() increments this
+	totalPutBytes uint64 // each call to PutNode() adds the buffer size
 }
 
 type volumeViewStruct struct {
@@ -137,7 +139,6 @@ type volumeStruct struct {
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
-	checkpointDoneWaitGroup                 *sync.WaitGroup
 	eventListeners                          map[VolumeEventListener]struct{}
 	snapShotIDNumBits                       uint16
 	snapShotIDShift                         uint64 //             e.g. inodeNumber >> snapShotIDNumBits == snapShotID
@@ -207,26 +208,52 @@ type globalsStruct struct {
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
 
-	FetchNonceUsec                            bucketstats.BucketLog2Round
-	GetInodeRecUsec                           bucketstats.BucketLog2Round
-	GetInodeRecBytes                          bucketstats.BucketLog2Round
-	PutInodeRecUsec                           bucketstats.BucketLog2Round
-	PutInodeRecBytes                          bucketstats.BucketLog2Round
-	PutInodeRecsUsec                          bucketstats.BucketLog2Round
-	PutInodeRecsBytes                         bucketstats.BucketLog2Round
-	DeleteInodeRecUsec                        bucketstats.BucketLog2Round
-	IndexedInodeNumberUsec                    bucketstats.BucketLog2Round
-	GetLogSegmentRecUsec                      bucketstats.BucketLog2Round
-	PutLogSegmentRecUsec                      bucketstats.BucketLog2Round
-	DeleteLogSegmentRecUsec                   bucketstats.BucketLog2Round
-	IndexedLogSegmentNumberUsec               bucketstats.BucketLog2Round
-	GetBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
-	GetBPlusTreeObjectBytes                   bucketstats.BucketLog2Round
-	PutBPlusTreeObjectUsec                    bucketstats.BucketLog2Round
-	PutBPlusTreeObjectBytes                   bucketstats.BucketLog2Round
-	DeleteBPlusTreeObjectUsec                 bucketstats.BucketLog2Round
-	IndexedBPlusTreeObjectNumberUsec          bucketstats.BucketLog2Round
-	DoCheckpointUsec                          bucketstats.BucketLog2Round
+	FetchNonceUsec                     bucketstats.BucketLog2Round
+	GetInodeRecUsec                    bucketstats.BucketLog2Round
+	GetInodeRecBytes                   bucketstats.BucketLog2Round
+	PutInodeRecUsec                    bucketstats.BucketLog2Round
+	PutInodeRecBytes                   bucketstats.BucketLog2Round
+	PutInodeRecsUsec                   bucketstats.BucketLog2Round
+	PutInodeRecsBytes                  bucketstats.BucketLog2Round
+	DeleteInodeRecUsec                 bucketstats.BucketLog2Round
+	IndexedInodeNumberUsec             bucketstats.BucketLog2Round
+	GetLogSegmentRecUsec               bucketstats.BucketLog2Round
+	PutLogSegmentRecUsec               bucketstats.BucketLog2Round
+	DeleteLogSegmentRecUsec            bucketstats.BucketLog2Round
+	IndexedLogSegmentNumberUsec        bucketstats.BucketLog2Round
+	GetBPlusTreeObjectUsec             bucketstats.BucketLog2Round
+	GetBPlusTreeObjectBytes            bucketstats.BucketLog2Round
+	PutBPlusTreeObjectUsec             bucketstats.BucketLog2Round
+	PutBPlusTreeObjectBytes            bucketstats.BucketLog2Round
+	DeleteBPlusTreeObjectUsec          bucketstats.BucketLog2Round
+	IndexedBPlusTreeObjectNumberUsec   bucketstats.BucketLog2Round
+	DoCheckpointUsec                   bucketstats.BucketLog2Round
+	DaemonPerCheckpointUsec            bucketstats.BucketLog2Round
+	DaemonPerCheckpointLockWaitUsec    bucketstats.BucketLog2Round
+	DaemonPerCheckpointLockedUsec      bucketstats.BucketLog2Round
+	DaemonPerCheckpointStatsUpdateUsec bucketstats.BucketLog2Round
+
+	PutCheckpointUsec                   bucketstats.BucketLog2Round
+	PutCheckpointBytes                  bucketstats.BucketLog2Round
+	PutCheckpointInodeRecUsec           bucketstats.BucketLog2Round
+	PutCheckpointInodeRecBytes          bucketstats.BucketLog2Round
+	PutCheckpointInodeRecNodes          bucketstats.BucketLog2Round
+	PutCheckpointLogSegmentUsec         bucketstats.BucketLog2Round
+	PutCheckpointLogSegmentBytes        bucketstats.BucketLog2Round
+	PutCheckpointLogSegmentNodes        bucketstats.BucketLog2Round
+	PutCheckpointbPlusTreeObjectUsec    bucketstats.BucketLog2Round
+	PutCheckpointbPlusTreeObjectBytes   bucketstats.BucketLog2Round
+	PutCheckpointbPlusTreeObjectNodes   bucketstats.BucketLog2Round
+	PutCheckpointSnapshotFlushUsec      bucketstats.BucketLog2Round
+	PutCheckpointTreeLayoutUsec         bucketstats.BucketLog2Round
+	PutCheckpointTreeLayoutBytes        bucketstats.BucketLog2Round
+	PutCheckpointCheckpointTrailerBytes bucketstats.BucketLog2Round
+	PutCheckpointSnapshotListUsec       bucketstats.BucketLog2Round
+	PutCheckpointSnapshotListBytes      bucketstats.BucketLog2Round
+	PutCheckpointChunkedPutUsec         bucketstats.BucketLog2Round
+	PutCheckpointPostAndEtcdUsec        bucketstats.BucketLog2Round
+	PutCheckpointObjectCleanupUsec      bucketstats.BucketLog2Round
+
 	FetchLayoutReportUsec                     bucketstats.BucketLog2Round
 	SnapShotCreateByInodeLayerUsec            bucketstats.BucketLog2Round
 	SnapShotDeleteByInodeLayerUsec            bucketstats.BucketLog2Round
@@ -239,25 +266,26 @@ type globalsStruct struct {
 	SnapShotIDAndNonceEncodeUsec              bucketstats.BucketLog2Round
 	SnapShotTypeDotSnapShotAndNonceEncodeUsec bucketstats.BucketLog2Round
 
-	GetInodeRecErrors                  bucketstats.BucketLog2Round
-	PutInodeRecErrors                  bucketstats.BucketLog2Round
-	PutInodeRecsErrors                 bucketstats.BucketLog2Round
-	DeleteInodeRecErrors               bucketstats.BucketLog2Round
-	IndexedInodeNumberErrors           bucketstats.BucketLog2Round
-	GetLogSegmentRecErrors             bucketstats.BucketLog2Round
-	PutLogSegmentRecErrors             bucketstats.BucketLog2Round
-	DeleteLogSegmentRecErrors          bucketstats.BucketLog2Round
-	IndexedLogSegmentNumberErrors      bucketstats.BucketLog2Round
-	GetBPlusTreeObjectErrors           bucketstats.BucketLog2Round
-	PutBPlusTreeObjectErrors           bucketstats.BucketLog2Round
-	DeleteBPlusTreeObjectErrors        bucketstats.BucketLog2Round
-	IndexedBPlusTreeObjectNumberErrors bucketstats.BucketLog2Round
-	DoCheckpointErrors                 bucketstats.BucketLog2Round
-	FetchLayoutReportErrors            bucketstats.BucketLog2Round
-	SnapShotCreateByInodeLayerErrors   bucketstats.BucketLog2Round
-	SnapShotDeleteByInodeLayerErrors   bucketstats.BucketLog2Round
-	SnapShotCountErrors                bucketstats.BucketLog2Round
-	SnapShotLookupByNameErrors         bucketstats.BucketLog2Round
+	GetInodeRecErrors                  bucketstats.Total
+	PutInodeRecErrors                  bucketstats.Total
+	PutInodeRecsErrors                 bucketstats.Total
+	DeleteInodeRecErrors               bucketstats.Total
+	IndexedInodeNumberErrors           bucketstats.Total
+	GetLogSegmentRecErrors             bucketstats.Total
+	PutLogSegmentRecErrors             bucketstats.Total
+	DeleteLogSegmentRecErrors          bucketstats.Total
+	IndexedLogSegmentNumberErrors      bucketstats.Total
+	GetBPlusTreeObjectErrors           bucketstats.Total
+	PutBPlusTreeObjectErrors           bucketstats.Total
+	DeleteBPlusTreeObjectErrors        bucketstats.Total
+	IndexedBPlusTreeObjectNumberErrors bucketstats.Total
+	DoCheckpointErrors                 bucketstats.Total
+	PutCheckpointErrors                bucketstats.Total
+	FetchLayoutReportErrors            bucketstats.Total
+	SnapShotCreateByInodeLayerErrors   bucketstats.Total
+	SnapShotDeleteByInodeLayerErrors   bucketstats.Total
+	SnapShotCountErrors                bucketstats.Total
+	SnapShotLookupByNameErrors         bucketstats.Total
 }
 
 var globals globalsStruct
@@ -680,7 +708,6 @@ func (volume *volumeStruct) up(confMap conf.ConfMap) (err error) {
 	volumeSectionName = "Volume:" + volume.volumeName
 
 	volume.checkpointChunkedPutContext = nil
-	volume.checkpointDoneWaitGroup = nil
 	volume.eventListeners = make(map[VolumeEventListener]struct{})
 	volume.checkpointRequestChan = make(chan *checkpointRequestStruct, 1)
 	volume.postponePriorViewCreatedObjectsPuts = false

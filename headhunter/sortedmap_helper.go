@@ -78,6 +78,10 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) PutNode(nodeByteSlice []byte) (o
 		ok        bool
 	)
 
+	// track data written
+	bPlusTreeWrapper.totalPutNodes++
+	bPlusTreeWrapper.totalPutBytes += uint64(len(nodeByteSlice))
+
 	err = bPlusTreeWrapper.volumeView.volume.openCheckpointChunkedPutContextIfNecessary()
 	if nil != err {
 		return
@@ -197,4 +201,13 @@ func (bPlusTreeWrapper *bPlusTreeWrapperStruct) UnpackValue(payloadData []byte) 
 	bytesConsumed = 8 + valueSize
 	err = nil
 	return
+}
+
+// ClearCounters clears the counters that track the number of bytes and number
+// of nodes passed to PutNode().
+//
+func (bPlusTreeWrapper *bPlusTreeWrapperStruct) ClearCounters() {
+
+	bPlusTreeWrapper.totalPutNodes = 0
+	bPlusTreeWrapper.totalPutBytes = 0
 }

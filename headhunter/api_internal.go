@@ -3,7 +3,7 @@ package headhunter
 import (
 	"container/list"
 	"fmt"
-	"sync"
+	"math/big"
 	"time"
 
 	"github.com/swiftstack/sortedmap"
@@ -54,15 +54,6 @@ func (volume *volumeStruct) UnregisterForEvents(listener VolumeEventListener) {
 func (volume *volumeStruct) FetchAccountAndCheckpointContainerNames() (accountName string, checkpointContainerName string) {
 	accountName = volume.accountName
 	checkpointContainerName = volume.checkpointContainerName
-	return
-}
-
-func (volume *volumeStruct) fetchNextCheckPointDoneWaitGroupWhileLocked() (wg *sync.WaitGroup) {
-	if nil == volume.checkpointDoneWaitGroup {
-		volume.checkpointDoneWaitGroup = &sync.WaitGroup{}
-		volume.checkpointDoneWaitGroup.Add(1)
-	}
-	wg = volume.checkpointDoneWaitGroup
 	return
 }
 
@@ -887,6 +878,137 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType, validate b
 		layoutReport, discrepencies, err = volume.fetchLayoutReport(treeType, validate)
 	}
 
+	return
+}
+
+func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStartPercentage uint8, thisStopPercentage uint8) (nextStartPercentage uint8, err error) {
+	var (
+		bPlusTree                   sortedmap.BPlusTree
+		bPlusTreeLenAsInt           int
+		bPlusTreeLenAsBigInt        *big.Int
+		nextItemIndexToTouch        uint64
+		nextStartPercentageAsBigInt *big.Int
+		oneHundedAsBigInt           *big.Int
+		startIndexAsBigInt          *big.Int
+		startIndexAsU64             uint64
+		stopIndexAsBigInt           *big.Int
+		stopIndexAsU64              uint64
+		thisItemIndexToTouch        uint64
+		treeWrapper                 *bPlusTreeWrapperStruct
+	)
+
+	if 100 <= thisStartPercentage {
+		err = fmt.Errorf("thisStartPercentage (%d) must be < 100", thisStartPercentage)
+		return
+	}
+	if 100 < thisStopPercentage {
+		err = fmt.Errorf("thisStopPercentage (%d) must be <= 100", thisStopPercentage)
+		return
+	}
+	if thisStartPercentage >= thisStopPercentage {
+		err = fmt.Errorf("thisStartPercentage (%d) must be < thisStopPercentage (%d)", thisStartPercentage, thisStopPercentage)
+	}
+
+	volume.Lock()
+
+	switch treeType {
+	case InodeRecBPlusTree:
+		treeWrapper = volume.liveView.inodeRecWrapper
+	case LogSegmentRecBPlusTree:
+		treeWrapper = volume.liveView.logSegmentRecWrapper
+	case BPlusTreeObjectBPlusTree:
+		treeWrapper = volume.liveView.bPlusTreeObjectWrapper
+	case CreatedObjectsBPlusTree:
+		treeWrapper = volume.liveView.createdObjectsWrapper
+	case DeletedObjectsBPlusTree:
+		treeWrapper = volume.liveView.deletedObjectsWrapper
+	default:
+		err = fmt.Errorf("DefragmentMetadata(treeType %d): bad tree type", treeType)
+		logger.ErrorfWithError(err, "volume '%s'", volume.volumeName)
+		return
+	}
+
+	if nil == treeWrapper {
+		// Just return... apparently there is no B+Tree for this treeType [Case 1]
+		volume.Unlock()
+		nextStartPercentage = 0
+		err = nil
+		return
+	}
+
+	bPlusTree = treeWrapper.bPlusTree
+
+	if nil == bPlusTree {
+		// Just return... apparently there is no B+Tree for this treeType [Case 2]
+		volume.Unlock()
+		nextStartPercentage = 0
+		err = nil
+		return
+	}
+
+	bPlusTreeLenAsInt, err = bPlusTree.Len()
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+
+	if 0 == bPlusTreeLenAsInt {
+		volume.Unlock()
+		nextStartPercentage = 0
+		err = nil
+		return
+	}
+
+	bPlusTreeLenAsBigInt = big.NewInt(int64(bPlusTreeLenAsInt))
+	oneHundedAsBigInt = big.NewInt(int64(100))
+
+	startIndexAsBigInt = big.NewInt(int64(thisStartPercentage))
+	_ = startIndexAsBigInt.Mul(startIndexAsBigInt, bPlusTreeLenAsBigInt)
+	_ = startIndexAsBigInt.Div(startIndexAsBigInt, oneHundedAsBigInt)
+	startIndexAsU64 = startIndexAsBigInt.Uint64()
+
+	if 100 == thisStopPercentage {
+		stopIndexAsU64 = uint64(0)
+	} else {
+		stopIndexAsBigInt = big.NewInt(int64(thisStopPercentage))
+		_ = stopIndexAsBigInt.Mul(stopIndexAsBigInt, bPlusTreeLenAsBigInt)
+		_ = stopIndexAsBigInt.Div(stopIndexAsBigInt, oneHundedAsBigInt)
+		stopIndexAsU64 = stopIndexAsBigInt.Uint64()
+	}
+
+	thisItemIndexToTouch = startIndexAsU64
+
+	nextItemIndexToTouch, err = bPlusTree.TouchItem(thisItemIndexToTouch)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+
+	for nextItemIndexToTouch < stopIndexAsU64 {
+		if 0 == nextItemIndexToTouch {
+			volume.Unlock()
+			nextStartPercentage = 0
+			err = nil
+			return
+		}
+
+		thisItemIndexToTouch = nextItemIndexToTouch
+
+		nextItemIndexToTouch, err = bPlusTree.TouchItem(thisItemIndexToTouch)
+		if nil != err {
+			volume.Unlock()
+			return
+		}
+	}
+
+	volume.Unlock()
+
+	nextStartPercentageAsBigInt = big.NewInt(int64(nextItemIndexToTouch))
+	_ = nextStartPercentageAsBigInt.Mul(nextStartPercentageAsBigInt, oneHundedAsBigInt)
+	_ = nextStartPercentageAsBigInt.Div(nextStartPercentageAsBigInt, bPlusTreeLenAsBigInt)
+	nextStartPercentage = uint8(nextStartPercentageAsBigInt.Uint64())
+
+	err = nil
 	return
 }
 

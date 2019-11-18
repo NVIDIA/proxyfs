@@ -698,12 +698,12 @@ type requestStateStruct struct {
 	formatResponseAsJSON    bool
 	formatResponseCompactly bool
 	performValidation       bool
+	percentRange            string
 	volume                  *volumeStruct
 }
 
 func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
-		requestState            *requestStateStruct
 		acceptHeader            string
 		err                     error
 		formatResponseAsJSON    bool
@@ -712,7 +712,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		ok                      bool
 		paramList               []string
 		pathSplit               []string
+		percentRange            string
 		performValidation       bool
+		requestState            *requestStateStruct
 		volumeAsValue           sortedmap.Value
 		volumeList              []string
 		volumeListIndex         int
@@ -747,12 +749,14 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume/<volume-name>/extent-map
 		// Form: /volume/<volume-name>/fsck-job
 		// Form: /volume/<volume-name>/layout-report
+		// Form: /volume/<volume-name>/meta-defrag
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
 	case 4:
 		// Form: /volume/<volume-name>/defrag/<basename>
 		// Form: /volume/<volume-name>/extent-map/<basename>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
+		// Form: /volume/<volume-name>/meta-defrag/<BPlusTreeType>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
 		// Form: /volume/<volume-name>/defrag/<dir>/.../<basename>
@@ -796,6 +800,20 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 	} else {
 		performValidation = false
+	}
+
+	paramList, ok = request.URL.Query()["range"]
+	if ok {
+		if 0 == len(paramList) {
+			percentRange = "0-100"
+		} else {
+			percentRange = paramList[0]
+			if "" == percentRange {
+				percentRange = "0-100"
+			}
+		}
+	} else {
+		percentRange = "0-100"
 	}
 
 	if 1 == numPathParts {
@@ -871,6 +889,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		formatResponseAsJSON:    formatResponseAsJSON,
 		formatResponseCompactly: formatResponseCompactly,
 		performValidation:       performValidation,
+		percentRange:            percentRange,
 		volume:                  volumeAsValue.(*volumeStruct),
 	}
 
@@ -892,6 +911,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case "layout-report":
 		doLayoutReport(responseWriter, request, requestState)
 
+	case "meta-defrag":
+		doMetaDefrag(responseWriter, request, requestState)
+
 	case "scrub-job":
 		doJob(scrubJobType, responseWriter, request, requestState)
 
@@ -903,6 +925,90 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		return
 	}
 	return
+}
+
+func doMetaDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		bPlusTreeType          string
+		bPlusTreeTypeSlice     []string
+		err                    error
+		percentRangeSplit      []string
+		percentRangeStartAsInt int
+		percentRangeStartAsU8  uint8
+		percentRangeStopAsInt  int
+		percentRangeStopAsU8   uint8
+	)
+
+	if 3 == requestState.numPathParts {
+		bPlusTreeTypeSlice = []string{"InodeRecBPlusTree", "LogSegmentRecBPlusTree", "BPlusTreeObjectBPlusTree", "CreatedObjectsBPlusTree", "DeletedObjectsBPlusTree"}
+	} else if 4 == requestState.numPathParts {
+		bPlusTreeTypeSlice = []string{requestState.pathSplit[4]}
+	} else {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	percentRangeSplit = strings.Split(requestState.percentRange, "-")
+
+	if 2 != len(percentRangeSplit) {
+		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	percentRangeStartAsInt, err = strconv.Atoi(percentRangeSplit[0])
+	if (nil != err) || (0 > percentRangeStartAsInt) || (99 < percentRangeStartAsInt) {
+		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+	percentRangeStopAsInt, err = strconv.Atoi(percentRangeSplit[1])
+	if (nil != err) || (percentRangeStartAsInt >= percentRangeStopAsInt) || (100 < percentRangeStopAsInt) {
+		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	percentRangeStartAsU8 = uint8(percentRangeStartAsInt)
+	percentRangeStopAsU8 = uint8(percentRangeStopAsInt)
+
+	for _, bPlusTreeType = range bPlusTreeTypeSlice {
+		switch bPlusTreeType {
+		case "InodeRecBPlusTree":
+			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+				headhunter.InodeRecBPlusTree,
+				percentRangeStartAsU8,
+				percentRangeStopAsU8)
+		case "LogSegmentRecBPlusTree":
+			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+				headhunter.LogSegmentRecBPlusTree,
+				percentRangeStartAsU8,
+				percentRangeStopAsU8)
+		case "BPlusTreeObjectBPlusTree":
+			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+				headhunter.BPlusTreeObjectBPlusTree,
+				percentRangeStartAsU8,
+				percentRangeStopAsU8)
+		case "CreatedObjectsBPlusTree":
+			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+				headhunter.CreatedObjectsBPlusTree,
+				percentRangeStartAsU8,
+				percentRangeStopAsU8)
+		case "DeletedObjectsBPlusTree":
+			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+				headhunter.DeletedObjectsBPlusTree,
+				percentRangeStartAsU8,
+				percentRangeStopAsU8)
+		default:
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		if nil != err {
+			logger.Fatalf("Call to %s.headhunterVolumeHandle.DefragmentMetadata(%s,,) failed: %v", requestState.volume.name, bPlusTreeType, err)
+			responseWriter.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	}
+
+	responseWriter.WriteHeader(http.StatusNoContent)
 }
 
 func doDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
@@ -1833,7 +1939,7 @@ func sortedTwoColumnResponseWriter(llrb sortedmap.LLRBTree, responseWriter http.
 
 	lenLLRB, err = llrb.Len()
 	if nil != err {
-		err = fmt.Errorf("llrb.Len()) failed: %v", err)
+		err = fmt.Errorf("llrb.Len() failed: %v", err)
 		logger.Fatalf("HTTP Server Logic Error: %v", err)
 	}
 

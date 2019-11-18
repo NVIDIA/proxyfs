@@ -804,7 +804,7 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		bPlusTreeObjectWrapperBPlusTreeTracker             *bPlusTreeTrackerStruct
 		bytesConsumed                                      uint64
 		bytesNeeded                                        uint64
-		checkpointContainerHeadAttempts                    uint16
+		checkpointContainerHeadAgreements                  uint16
 		checkpointContainerHeaders                         map[string][]string
 		checkpointHeader                                   CheckpointHeaderStruct
 		checkpointHeaderValue                              string
@@ -867,9 +867,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		if nil != err {
 			logger.Infof("No checkpointHeader found in etcd for volume %s: %v", volume.volumeName, err)
 
-			volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+			volume.checkpointHeader, checkpointContainerHeadAgreements, err = volume.fetchCheckpointContainerHeader()
 			if nil != err {
-				if 0 != checkpointContainerHeadAttempts {
+				if 0 != checkpointContainerHeadAgreements {
 					err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 					return
 				}
@@ -930,9 +930,9 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 			}
 		}
 	} else {
-		volume.checkpointHeader, checkpointContainerHeadAttempts, err = volume.fetchCheckpointContainerHeader()
+		volume.checkpointHeader, checkpointContainerHeadAgreements, err = volume.fetchCheckpointContainerHeader()
 		if nil != err {
-			if 0 != checkpointContainerHeadAttempts {
+			if 0 != checkpointContainerHeadAgreements {
 				err = fmt.Errorf("Found no consensus but non-empty checkpointHeader in Swift for volume %s", volume.volumeName)
 				return
 			}
@@ -2081,7 +2081,31 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 	return
 }
 
+// putCheckpoint does the dirty work of creating a ProxyFS checkpoint -- its complicated.
+//
+// putCheckpoint collects bucketized statistics of the total time taken by the
+// checkpoint and the number of bytes written to Swift to store the checkpoint.
+// In addition, the time required by, and number of bytes transferred by, each step
+// along the way is recorded in individual PutCheckpoint* bucketstats.
+//
+// Note that startTime2 is recorded as the starting time of an interval several
+// times in this routine, and each time it is used to measure time.Since(startTime2)
+// it is reset to the current time.
+//
 func (volume *volumeStruct) putCheckpoint() (err error) {
+
+	// measure entire time and bytes for putCheckpoint
+	startTime := time.Now()
+	var chunkedPutBytes uint64
+	defer func() {
+		globals.PutCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.PutCheckpointErrors.Add(1)
+			return
+		}
+		globals.PutCheckpointBytes.Add(chunkedPutBytes)
+	}()
+
 	var (
 		bytesUsedCumulative                                uint64
 		bytesUsedThisBPlusTree                             uint64
@@ -2156,6 +2180,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
+	startTime2 := time.Now()
+	volume.liveView.inodeRecWrapper.ClearCounters()
+
 	checkpointObjectTrailer.InodeRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.InodeRecBPlusTreeObjectLength,
@@ -2163,6 +2190,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointInodeRecUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointInodeRecNodes.Add(volume.liveView.inodeRecWrapper.totalPutNodes)
+	globals.PutCheckpointInodeRecBytes.Add(volume.liveView.inodeRecWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.inodeRecWrapper.totalPutBytes
+
+	startTime2 = time.Now()
+	volume.liveView.logSegmentRecWrapper.ClearCounters()
+
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectNumber,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectOffset,
 		checkpointObjectTrailer.LogSegmentRecBPlusTreeObjectLength,
@@ -2170,6 +2205,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointLogSegmentUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointLogSegmentNodes.Add(volume.liveView.logSegmentRecWrapper.totalPutNodes)
+	globals.PutCheckpointLogSegmentBytes.Add(volume.liveView.logSegmentRecWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.logSegmentRecWrapper.totalPutBytes
+
+	startTime2 = time.Now()
+	volume.liveView.bPlusTreeObjectWrapper.ClearCounters()
+
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectNumber,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectOffset,
 		checkpointObjectTrailer.BPlusTreeObjectBPlusTreeObjectLength,
@@ -2177,7 +2220,12 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointbPlusTreeObjectUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+	globals.PutCheckpointbPlusTreeObjectNodes.Add(volume.liveView.bPlusTreeObjectWrapper.totalPutNodes)
+	globals.PutCheckpointbPlusTreeObjectBytes.Add(volume.liveView.bPlusTreeObjectWrapper.totalPutBytes)
+	chunkedPutBytes += volume.liveView.bPlusTreeObjectWrapper.totalPutBytes
 
+	startTime2 = time.Now()
 	volumeViewCount, err = volume.viewTreeByNonce.Len()
 	if nil != err {
 		logger.Fatalf("volume.viewTreeByNonce.Len() failed: %v", err)
@@ -2272,7 +2320,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointSnapshotFlushUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	checkpointObjectTrailer.InodeRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.inodeRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.LogSegmentRecBPlusTreeLayoutNumElements = uint64(len(volume.liveView.logSegmentRecWrapper.bPlusTreeTracker.bPlusTreeLayout))
 	checkpointObjectTrailer.BPlusTreeObjectBPlusTreeLayoutNumElements = uint64(len(volume.liveView.bPlusTreeObjectWrapper.bPlusTreeTracker.bPlusTreeLayout))
@@ -2327,7 +2377,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		}
 		treeLayoutBuf = append(treeLayoutBuf, elementOfBPlusTreeLayoutBuf...)
 	}
+	globals.PutCheckpointTreeLayoutUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	checkpointObjectTrailer.SnapShotIDNumBits = uint64(volume.snapShotIDNumBits)
 
 	checkpointObjectTrailer.SnapShotListNumElements = uint64(volumeViewCount)
@@ -2483,8 +2535,11 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 
 		snapShotListBuf = append(snapShotListBuf, elementOfSnapShotListBuf...)
 	}
-
 	checkpointObjectTrailer.SnapShotListTotalSize = uint64(len(snapShotListBuf))
+
+	globals.PutCheckpointSnapshotListUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+	startTime2 = time.Now()
 
 	checkpointTrailerBuf, err = cstruct.Pack(checkpointObjectTrailer, LittleEndian)
 	if nil != err {
@@ -2505,11 +2560,15 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointCheckpointTrailerBytes.Add(uint64(len(checkpointTrailerBuf)))
+	chunkedPutBytes += uint64(len(checkpointTrailerBuf))
 
 	err = volume.sendChunkToCheckpointChunkedPutContext(treeLayoutBuf)
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointTreeLayoutBytes.Add(uint64(len(treeLayoutBuf)))
+	chunkedPutBytes += uint64(len(treeLayoutBuf))
 
 	if 0 < len(snapShotListBuf) {
 		err = volume.sendChunkToCheckpointChunkedPutContext(snapShotListBuf)
@@ -2517,6 +2576,8 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 			return
 		}
 	}
+	globals.PutCheckpointSnapshotListBytes.Add(uint64(len(snapShotListBuf)))
+	chunkedPutBytes += uint64(len(snapShotListBuf))
 
 	checkpointObjectTrailerEndingOffset, err = volume.bytesPutToCheckpointChunkedPutContext()
 	if nil != err {
@@ -2527,6 +2588,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if nil != err {
 		return
 	}
+	globals.PutCheckpointChunkedPutUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+	startTime2 = time.Now()
 
 	// Before updating checkpointHeader, start accounting for unreferencing of prior checkpointTrailer
 
@@ -2570,7 +2634,9 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 	if globals.logCheckpointHeaderPosts {
 		logger.Infof("POST'd checkpointHeaderValue %s for volume %s from putCheckpoint()", checkpointHeaderValue, volume.volumeName)
 	}
+	globals.PutCheckpointPostAndEtcdUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
+	startTime2 = time.Now()
 	// Remove replayLogFile if necessary
 
 	if nil != volume.replayLogFile {
@@ -2704,6 +2770,7 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		volume.backgroundObjectDeleteWG.Add(1)
 		go volume.performDelayedObjectDeletes(delayedObjectDeleteList)
 	}
+	globals.PutCheckpointObjectCleanupUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
 
 	err = nil
 	return
@@ -2836,6 +2903,7 @@ func (volume *volumeStruct) checkpointDaemon() {
 		checkpointListener                    VolumeEventListener
 		checkpointListeners                   []VolumeEventListener
 		checkpointRequest                     *checkpointRequestStruct
+		checkpointRequesters                  []*checkpointRequestStruct
 		createdDeletedObjectsCacheHitsDelta   uint64
 		createdDeletedObjectsCacheMissesDelta uint64
 		createdDeletedObjectsCacheStats       *sortedmap.BPlusTreeCacheStats
@@ -2858,7 +2926,17 @@ func (volume *volumeStruct) checkpointDaemon() {
 			checkpointRequest.waitGroup.Add(1) // ...even though we won't be waiting on it...
 		}
 
+		// measure the time required to perform the checkpoint
+		startTime := time.Now()
+
+		// measure the time required to get the volume lock for the checkpoint
+		startTime2 := startTime
+
 		volume.Lock()
+		globals.DaemonPerCheckpointLockWaitUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+		// measure the time while the lock is held for the checkpoint
+		startTime2 = time.Now()
 
 		evtlog.Record(evtlog.FormatHeadhunterCheckpointStart, volume.volumeName)
 
@@ -2888,22 +2966,44 @@ func (volume *volumeStruct) checkpointDaemon() {
 			logger.FatalfWithError(checkpointRequest.err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 		}
 
-		exitOnCompletion = checkpointRequest.exitOnCompletion // In case requestor re-uses checkpointRequest
+		// Collect any outstanding requests for a checkpoint.
+		//
+		// The volume lock has been held since the checkpoint started
+		// and the volume lock is required to add any metadata that can
+		// be part of the checkpoint, so any metadata that the
+		// requesters wanted flushed has been flushed.
+		checkpointRequesters = make([]*checkpointRequestStruct, 0, 1)
+		moreRequests := true
+		for moreRequests {
+			checkpointRequesters = append(checkpointRequesters, checkpointRequest)
 
-		checkpointRequest.waitGroup.Done() // Awake the checkpoint requestor
-		if nil != volume.checkpointDoneWaitGroup {
-			// Awake any others who were waiting on this checkpoint
-			volume.checkpointDoneWaitGroup.Done()
-			volume.checkpointDoneWaitGroup = nil
+			select {
+			case checkpointRequest = <-volume.checkpointRequestChan:
+			default:
+				moreRequests = false
+			}
 		}
 
 		checkpointListeners = make([]VolumeEventListener, 0, len(volume.eventListeners))
-
 		for checkpointListener = range volume.eventListeners {
 			checkpointListeners = append(checkpointListeners, checkpointListener)
 		}
 
 		volume.Unlock()
+		globals.DaemonPerCheckpointLockedUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+		// Measure time spent updating statistics (including lock wait
+		// time), time spent waking waiters and calling back listeners
+		// (note that one listener also updates statistics).
+		startTime2 = time.Now()
+
+		exitOnCompletion = false
+		for _, checkpointRequest = range checkpointRequesters {
+			if checkpointRequest.exitOnCompletion {
+				exitOnCompletion = true
+			}
+			checkpointRequest.waitGroup.Done() // Awake the checkpoint requester
+		}
 
 		for _, checkpointListener = range checkpointListeners {
 			checkpointListener.CheckpointCompleted()
@@ -2967,6 +3067,8 @@ func (volume *volumeStruct) checkpointDaemon() {
 		}
 
 		globals.Unlock()
+		globals.DaemonPerCheckpointStatsUpdateUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+		globals.DaemonPerCheckpointUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
 
 		if exitOnCompletion {
 			return

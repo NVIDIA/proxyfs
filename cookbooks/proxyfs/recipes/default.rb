@@ -12,6 +12,7 @@ DOT_BASH_PROFILE = "#{HOME_DIR}/.bash_profile"
 DOT_BASHRC = "#{HOME_DIR}/.bashrc"
 ROOT_DOT_BASH_PROFILE = "/root/.bash_profile"
 ROOT_DOT_BASHRC = "/root/.bashrc"
+ETC_BASHRC = "/etc/bashrc"
 REPO_CLONE_PARENT_DIR = "#{source_root}/src/github.com/swiftstack"
 PROXYFS_BIN_DIR = "#{source_root}/bin"
 PROXYFS_SRC_DIR = "#{REPO_CLONE_PARENT_DIR}/ProxyFS"
@@ -50,14 +51,23 @@ ruby_block "update_profile_and_bashrc" do
     end
 
     file = Chef::Util::FileEdit.new(DOT_BASH_PROFILE)
-    file.insert_line_if_no_match(/ulimit/, "ulimit -c unlimited")
     file.insert_line_if_no_match(/\. ~\/.bashrc/, ". ~/.bashrc")
     file.insert_line_if_no_match(/\. ~\/.profile/, "if [ -f ~/.profile ]; then . ~/.profile; fi")
     file.write_file
 
+    unless File.exist?(ETC_BASHRC)
+      File.open(ETC_BASHRC, "w") do |fh|
+        # nothing to do here, just creating an empty file
+      end
+    end
+
+    file = Chef::Util::FileEdit.new(ETC_BASHRC)
+    file.insert_line_if_no_match(/ulimit/, "ulimit -c 0")
+    file.write_file
+
     unless File.exist?(DOT_BASHRC)
       File.open(DOT_BASHRC, "w") do |fh|
-        # nothing to do here, just making an empty file
+        # nothing to do here, just creating an empty file
       end
     end
 
@@ -86,14 +96,13 @@ ruby_block "update_profile_and_bashrc" do
     end
 
     file = Chef::Util::FileEdit.new(ROOT_DOT_BASH_PROFILE)
-    file.insert_line_if_no_match(/ulimit/, "ulimit -c unlimited")
     file.insert_line_if_no_match(/\. ~\/.bashrc/, ". ~/.bashrc")
     file.insert_line_if_no_match(/\. ~\/.profile/, "if [ -f ~/.profile ]; then . ~/.profile; fi")
     file.write_file
 
     unless File.exist?(ROOT_DOT_BASHRC)
       File.open(ROOT_DOT_BASHRC, "w") do |fh|
-        # nothing to do here, just making an empty file
+        # nothing to do here, just creating an empty file
       end
     end
 
@@ -173,13 +182,6 @@ if is_dev
 end
 
 directory '/CommonMountPoint' do
-  # perms/owner don't really matter since it gets mounted over, but
-  # this helps stop a developer from accidentally dumping stuff on the
-  # root filesystem
-  owner 'root'
-end
-
-directory '/AgentMountPoint' do
   # perms/owner don't really matter since it gets mounted over, but
   # this helps stop a developer from accidentally dumping stuff on the
   # root filesystem
@@ -435,6 +437,12 @@ execute "Create NFS mount point" do
   command "mkdir /mnt/nfs_proxyfs_mount"
   not_if { ::Dir.exists?("/mnt/nfs_proxyfs_mount") }
 end
+
+execute "Create PFSAgent mount point" do
+  command "mkdir /mnt/pfsa_proxyfs_mount"
+  not_if { ::Dir.exists?("/mnt/pfsa_proxyfs_mount") }
+end
+
 ruby_block "Create exports entry" do
   block do
     unless File.exist?("/etc/exports")

@@ -194,6 +194,7 @@ func performMount(volume *volumeStruct) (err error) {
 		mountHandle                   fs.MountHandle
 		mountPointContainingDirDevice int64
 		mountPointDevice              int64
+		mountPointNameBase            string
 	)
 
 	volume.mounted = false
@@ -246,13 +247,15 @@ func performMount(volume *volumeStruct) (err error) {
 		}
 	}
 
+	mountPointNameBase = path.Base(volume.mountPointName)
+
 	conn, err = fuselib.Mount(
 		volume.mountPointName,
-		fuselib.FSName(volume.mountPointName),
+		fuselib.FSName(mountPointNameBase),
 		fuselib.AllowOther(),
 		// OS X specific—
 		fuselib.LocalVolume(),
-		fuselib.VolumeName(volume.mountPointName),
+		fuselib.VolumeName(mountPointNameBase),
 		fuselib.NoAppleDouble(),
 		fuselib.NoAppleXattr(),
 	)

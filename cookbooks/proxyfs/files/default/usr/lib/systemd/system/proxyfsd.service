@@ -4,6 +4,10 @@ Description=Swift ProxyFS service
 [Service]
 Environment=NSS_SDB_USE_CACHE=YES
 Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
+# Set GOTRACEBACK=1 to prevent core dumps to be created
+# Set GOTRACEBACK=crash to allow core dumps to be created
+Environment=GOTRACEBACK=1
+LimitCORE=0
 ExecStart=/usr/bin/proxyfsd /etc/proxyfsd/saioproxyfsd0.conf
 ExecReload=/usr/bin/kill -HUP $MAINPID
 

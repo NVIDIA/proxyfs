@@ -12,8 +12,8 @@ build/
 dist/
 
 # Local FUSE Mount Point directories
+AgentMountPoint
 CommonMountPoint
-MountPoint0
 
 # Default etcd database
 default.etcd/

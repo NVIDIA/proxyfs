@@ -120,13 +120,13 @@ func (vS *volumeStruct) CheckpointCompleted() {
 	dirEntryCacheStats = globals.dirEntryCache.Stats()
 	fileExtentMapCacheStats = globals.fileExtentMapCache.Stats()
 
+	globals.Lock()
+
 	dirEntryCacheHitsDelta = dirEntryCacheStats.CacheHits - globals.dirEntryCachePriorCacheHits
 	dirEntryCacheMissesDelta = dirEntryCacheStats.CacheMisses - globals.dirEntryCachePriorCacheMisses
 
 	fileExtentMapCacheHitsDelta = fileExtentMapCacheStats.CacheHits - globals.fileExtentMapCachePriorCacheHits
 	fileExtentMapCacheMissesDelta = fileExtentMapCacheStats.CacheMisses - globals.fileExtentMapCachePriorCacheMisses
-
-	globals.Lock()
 
 	if 0 != dirEntryCacheHitsDelta {
 		stats.IncrementOperationsBy(&stats.DirEntryCacheHits, dirEntryCacheHitsDelta)

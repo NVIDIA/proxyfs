@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path"
 	"reflect"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ func performMountFUSE() {
 	var (
 		curRetryCount                 uint32
 		err                           error
+		fuseMountPointPathBaseName    string
 		lazyUnmountCmd                *exec.Cmd
 		mountPointContainingDirDevice int64
 		mountPointDevice              int64
@@ -78,6 +80,8 @@ func performMountFUSE() {
 		}
 	}
 
+	fuseMountPointPathBaseName = path.Base(globals.config.FUSEMountPointPath)
+
 	if globals.config.ReadOnly {
 		globals.fuseConn, err = fuse.Mount(
 			globals.config.FUSEMountPointPath,
@@ -85,12 +89,12 @@ func performMountFUSE() {
 			fuse.AsyncRead(),
 			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
 			fuse.ExclCreate(),
-			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.FSName(fuseMountPointPathBaseName),
 			fuse.NoAppleDouble(),
 			fuse.NoAppleXattr(),
 			fuse.ReadOnly(),
 			fuse.Subtype("ProxyFS"),
-			fuse.VolumeName(globals.config.FUSEVolumeName),
+			fuse.VolumeName(fuseMountPointPathBaseName),
 		)
 	} else {
 		globals.fuseConn, err = fuse.Mount(
@@ -99,11 +103,11 @@ func performMountFUSE() {
 			fuse.AsyncRead(),
 			fuse.DefaultPermissions(), // so handleAccessRequest() should not be called
 			fuse.ExclCreate(),
-			fuse.FSName(globals.config.FUSEVolumeName),
+			fuse.FSName(fuseMountPointPathBaseName),
 			fuse.NoAppleDouble(),
 			fuse.NoAppleXattr(),
 			fuse.Subtype("ProxyFS"),
-			fuse.VolumeName(globals.config.FUSEVolumeName),
+			fuse.VolumeName(fuseMountPointPathBaseName),
 		)
 	}
 	if nil != err {
@@ -159,7 +163,7 @@ func performUnmountFUSE() {
 		logFatal(err)
 	}
 
-	logInfof("%s unmounted", globals.config.FUSEMountPointPath)
+	logInfof("Unmounted %s from %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
 }
 
 func serveFuse() {
@@ -242,12 +246,15 @@ func serveFuse() {
 			handleWriteRequest(request.(*fuse.WriteRequest)) // See io.go
 		default:
 			// Bazil FUSE punted the not-understood opCode... so just reject it
+			_ = atomic.AddUint64(&globals.metrics.FUSE_UnknownRequest_calls, 1)
 			request.RespondError(fuse.ENOTSUP)
 		}
 	}
 }
 
 func handleAccessRequest(request *fuse.AccessRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_AccessRequest_calls, 1)
+
 	logFatalf("handleAccessRequest() should not have been called due to DefaultPermissions() passed to fuse.Mount()")
 }
 
@@ -260,6 +267,8 @@ func handleCreateRequest(request *fuse.CreateRequest) {
 		createRequest          *jrpcfs.CreateRequest
 		response               *fuse.CreateResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_CreateRequest_calls, 1)
 
 	createRequest = &jrpcfs.CreateRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -300,10 +309,14 @@ func handleCreateRequest(request *fuse.CreateRequest) {
 // that no subsequent upcalls will be made, this is not necessary.
 //
 func handleDestroyRequest(request *fuse.DestroyRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_DestroyRequest_calls, 1)
+
 	request.Respond()
 }
 
 func handleExchangeDataRequest(request *fuse.ExchangeDataRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ExchangeDataRequest_calls, 1)
+
 	request.RespondError(fuse.ENOTSUP)
 }
 
@@ -316,6 +329,8 @@ func handleFlushRequest(request *fuse.FlushRequest) {
 		fileInode *fileInodeStruct
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_FlushRequest_calls, 1)
+
 	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
 	fileInode.doFlushIfNecessary()
 	fileInode.dereference()
@@ -327,6 +342,8 @@ func handleFlushRequest(request *fuse.FlushRequest) {
 // As the InodeCache is managed with its own eviction logic, this becomes a no-op.
 //
 func handleForgetRequest(request *fuse.ForgetRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ForgetRequest_calls, 1)
+
 	request.Respond()
 }
 
@@ -338,6 +355,8 @@ func handleFsyncRequest(request *fuse.FsyncRequest) {
 	var (
 		fileInode *fileInodeStruct
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_FsyncRequest_calls, 1)
 
 	fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
 	fileInode.doFlushIfNecessary()
@@ -423,6 +442,8 @@ func handleGetattrRequest(request *fuse.GetattrRequest) {
 		response *fuse.GetattrResponse
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_GetattrRequest_calls, 1)
+
 	attr, err = getattrRequestHelper(request.Header.Node)
 	if nil != err {
 		request.RespondError(fuse.ENOENT)
@@ -443,6 +464,8 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 		getXAttrRequest *jrpcfs.GetXAttrRequest
 		response        *fuse.GetxattrResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_GetxattrRequest_calls, 1)
 
 	if (0 == request.Size) && (0 != request.Position) {
 		request.RespondError(fuse.ERANGE)
@@ -489,10 +512,14 @@ func handleGetxattrRequest(request *fuse.GetxattrRequest) {
 }
 
 func handleInitRequest(request *fuse.InitRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_InitRequest_calls, 1)
+
 	logFatalf("handleInitRequest() should not have been called... fuse.Mount() supposedly took care of it")
 }
 
 func handleInterruptRequest(request *fuse.InterruptRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_InterruptRequest_calls, 1)
+
 	request.RespondError(fuse.ENOTSUP)
 }
 
@@ -503,6 +530,8 @@ func handleLinkRequest(request *fuse.LinkRequest) {
 		linkRequest *jrpcfs.LinkRequest
 		response    *fuse.LookupResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_LinkRequest_calls, 1)
 
 	linkRequest = &jrpcfs.LinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -546,6 +575,8 @@ func handleListxattrRequest(request *fuse.ListxattrRequest) {
 		listXAttrRequest *jrpcfs.ListXAttrRequest
 		response         *fuse.ListxattrResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ListxattrRequest_calls, 1)
 
 	if (0 == request.Size) && (0 != request.Position) {
 		request.RespondError(fuse.ERANGE)
@@ -680,6 +711,8 @@ func handleLookupRequest(request *fuse.LookupRequest) {
 		response *fuse.LookupResponse
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_LookupRequest_calls, 1)
+
 	response, err = lookupRequestHelper(request.Node, request.Name)
 	if nil != err {
 		request.RespondError(fuse.ENOENT)
@@ -697,6 +730,8 @@ func handleMkdirRequest(request *fuse.MkdirRequest) {
 		mkdirRequest           *jrpcfs.MkdirRequest
 		response               *fuse.MkdirResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_MkdirRequest_calls, 1)
 
 	mkdirRequest = &jrpcfs.MkdirRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -731,6 +766,8 @@ func handleMkdirRequest(request *fuse.MkdirRequest) {
 }
 
 func handleMknodRequest(request *fuse.MknodRequest) {
+	_ = atomic.AddUint64(&globals.metrics.FUSE_MknodRequest_calls, 1)
+
 	request.RespondError(fuse.ENOTSUP)
 }
 
@@ -771,6 +808,8 @@ func handleOpenRequest(request *fuse.OpenRequest) {
 		response *fuse.OpenResponse
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_OpenRequest_calls, 1)
+
 	response = openRequestHelper(request.Node, request.Dir)
 
 	request.Respond(response)
@@ -791,6 +830,8 @@ func handleReadRequest(request *fuse.ReadRequest) {
 	)
 
 	if request.Dir {
+		_ = atomic.AddUint64(&globals.metrics.FUSE_ReadRequestDirInodeCase_calls, 1)
+
 		handle, ok = globals.handleTable[request.Handle]
 		if !ok {
 			request.RespondError(fuse.ESTALE)
@@ -862,6 +903,8 @@ func handleReadlinkRequest(request *fuse.ReadlinkRequest) {
 		readSymlinkRequest *jrpcfs.ReadSymlinkRequest
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ReadlinkRequest_calls, 1)
+
 	readSymlinkRequest = &jrpcfs.ReadSymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
@@ -885,6 +928,8 @@ func handleReleaseRequest(request *fuse.ReleaseRequest) {
 		fileInode *fileInodeStruct
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_ReleaseRequest_calls, 1)
+
 	if !request.Dir && (0 != (request.ReleaseFlags & fuse.ReleaseFlush)) {
 		fileInode = referenceFileInode(inode.InodeNumber(request.Header.Node))
 		fileInode.doFlushIfNecessary()
@@ -906,6 +951,8 @@ func handleRemoveRequest(request *fuse.RemoveRequest) {
 		unlinkReply   *jrpcfs.Reply
 		unlinkRequest *jrpcfs.UnlinkRequest
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_RemoveRequest_calls, 1)
 
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -938,6 +985,8 @@ func handleRemovexattrRequest(request *fuse.RemovexattrRequest) {
 		removeXAttrRequest *jrpcfs.RemoveXAttrRequest
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_RemovexattrRequest_calls, 1)
+
 	removeXAttrRequest = &jrpcfs.RemoveXAttrRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
@@ -963,6 +1012,8 @@ func handleRenameRequest(request *fuse.RenameRequest) {
 		renameReply   *jrpcfs.Reply
 		renameRequest *jrpcfs.RenameRequest
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_RenameRequest_calls, 1)
 
 	renameRequest = &jrpcfs.RenameRequest{
 		MountID:           globals.mountID,
@@ -1007,6 +1058,8 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		settingUid             bool
 		timeNow                time.Time
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_SetattrRequest_calls, 1)
 
 	// TODO: Verify it is ok to accept but ignore fuse.SetattrHandle    in request.Valid
 	// TODO: Verify it is ok to accept but ignore fuse.SetattrLockOwner in request.Valid
@@ -1175,6 +1228,8 @@ func handleSetxattrRequest(request *fuse.SetxattrRequest) {
 		xattrReplacementIndex int
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_SetxattrRequest_calls, 1)
+
 	if 0 == request.Position {
 		attrValue = request.Xattr
 	} else {
@@ -1232,6 +1287,8 @@ func handleStatfsRequest(request *fuse.StatfsRequest) {
 		statVFSRequest *jrpcfs.StatVFSRequest
 	)
 
+	_ = atomic.AddUint64(&globals.metrics.FUSE_StatfsRequest_calls, 1)
+
 	statVFSRequest = &jrpcfs.StatVFSRequest{
 		MountID: globals.mountID,
 	}
@@ -1266,6 +1323,8 @@ func handleSymlinkRequest(request *fuse.SymlinkRequest) {
 		symlinkRequest         *jrpcfs.SymlinkRequest
 		response               *fuse.SymlinkResponse
 	)
+
+	_ = atomic.AddUint64(&globals.metrics.FUSE_SymlinkRequest_calls, 1)
 
 	symlinkRequest = &jrpcfs.SymlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{

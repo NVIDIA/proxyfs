@@ -1,0 +1,17 @@
+#!/bin/bash
+
+sed -i '/ulimit/c\ulimit -c 0' /etc/bashrc
+sed -i '/Environment=GOTRACEBACK=/c\Environment=GOTRACEBACK=1' /usr/lib/systemd/system/proxyfsd.service
+sed -i '/LimitCORE=/c\LimitCORE=0' /usr/lib/systemd/system/proxyfsd.service
+sed -i '/Environment=GOTRACEBACK=/c\Environment=GOTRACEBACK=1' /usr/lib/systemd/system/pfsagentd.service
+sed -i '/LimitCORE=/c\LimitCORE=0' /usr/lib/systemd/system/pfsagentd.service
+
+systemctl daemon-reload
+if systemctl is-active -q proxyfsd; then
+  /usr/bin/start_and_mount_pfs keepmounts
+fi
+
+echo "Core dumping has been disabled for ProxyFS and PFSAgent, and it will be "
+echo "disabled for everything else the next time you log into this container."
+echo "If you want disable core dumping for everything else NOW, please run:"
+echo "    ulimit -c 0"
