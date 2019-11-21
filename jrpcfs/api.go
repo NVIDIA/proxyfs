@@ -345,6 +345,26 @@ type LookupRequest struct {
 	Basename string
 }
 
+// LookupPlusRequest is the request object for RpcLookupPlus.
+type LookupPlusRequest struct {
+	InodeHandle
+	Basename string
+}
+
+// LookupPlusReply is the reply object for RpcLookupPlus.
+type LookupPlusReply struct {
+	InodeNumber int64
+	StatStruct
+}
+
+// AccessRequest is the request object for RpcAccess.
+type AccessRequest struct {
+	InodeHandle
+	UserID     int32
+	GroupID    int32
+	AccessMode uint32
+}
+
 // MkdirRequest is the request object for RpcMkdir.
 type MkdirRequest struct {
 	InodeHandle

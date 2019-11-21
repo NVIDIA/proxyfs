@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
@@ -25,12 +24,6 @@ func doMountProxyFS() {
 		MountOptions: 0,
 		AuthUserID:   0,
 		AuthGroupID:  0,
-	}
-
-	if globals.config.ReadOnly {
-		mountRequest.MountOptions = uint64(fs.MountReadOnly)
-	} else {
-		mountRequest.MountOptions = 0
 	}
 
 	mountReply = &jrpcfs.MountByAccountNameReply{}
@@ -117,7 +110,9 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, 1)
 		response, err = globals.httpClient.Do(request)
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, ^uint64(0))
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestSubmissionFailures, 1)
 			logErrorf("doHTTPRequest(%s %s) failed to submit request: %v", request.Method, request.URL.String(), err)
@@ -153,6 +148,16 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			updateAuthTokenAndAccountURL()
 		} else {
 			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
+
+			// Close request.Body at this time just in case...
+			//
+			// It appears that net/http.Do() will actually return
+			// even if it has an outstanding Read() call to
+			// request.Body.Read() and calling request.Body.Close()
+			// will give it a chance to force request.Body.Read()
+			// to exit cleanly.
+
+			_ = request.Body.Close()
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])

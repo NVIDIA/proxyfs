@@ -16,7 +16,7 @@ var (
 	testFileLastByte byte
 )
 
-func HIDETestSimpleWriteReadClose(t *testing.T) {
+func TestSimpleWriteReadClose(t *testing.T) {
 	const (
 		testFileName       = "testSimpleWriteReadCloseFileName"
 		totalBytes   int64 = 100
@@ -72,7 +72,7 @@ func HIDETestSimpleWriteReadClose(t *testing.T) {
 	testTeardown(t)
 }
 
-func HIDETestRandomOverwrites(t *testing.T) {
+func TestRandomOverwrites(t *testing.T) {
 	const (
 		testFileName       = "testRandomeOverwritesFileName"
 		totalBytes   int64 = 1000
@@ -340,7 +340,7 @@ func testExhaustiveOverwrites(t *testing.T, prefix string, reopenBeforeEachWrite
 	verifyTestFileContents(t, prefix, "Overlapping one existing extent on the right, another existing extent entirely, & a 3rd existing extent on the left")
 }
 
-func HIDETestExhaustiveOverwrites(t *testing.T) {
+func TestExhaustiveOverwrites(t *testing.T) {
 	const (
 		testFileName = "testExhaustiveOverwritesFileName"
 	)

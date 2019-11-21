@@ -62,9 +62,15 @@ func main() {
 
 	serveHTTP()
 
-	// Await any of specified signals
+	// Await any of specified signals or fission exit
 
-	_ = <-signalChan
+	select {
+	case _ = <-signalChan:
+		// Normal termination due to one of the above registered signals
+	case err = <-globals.fissionErrChan:
+		// Unexpected exit of fission.Volume
+		logFatalf("unexpected error from package fission: %v", err)
+	}
 
 	// Stop serving HTTP
 
