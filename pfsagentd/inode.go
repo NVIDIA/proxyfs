@@ -60,6 +60,7 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 	} else {
 		fileInode = &fileInodeStruct{
 			InodeNumber:               inodeNumber,
+			cachedStat:                nil,
 			references:                1,
 			leaseState:                fileInodeLeaseStateNone,
 			sharedLockHolders:         list.New(),
