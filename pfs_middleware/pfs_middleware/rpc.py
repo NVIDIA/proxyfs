@@ -24,6 +24,7 @@ import base64
 import uuid
 
 allow_read_only = {
+    "Server.RpcAccess",
     "Server.RpcFetchExtentMapChunk",
     "Server.RpcGetAccount",
     "Server.RpcGetContainer",
@@ -45,6 +46,7 @@ allow_read_only = {
 }
 
 allow_read_write = {
+    "Server.RpcAccess",
     "Server.RpcChmod",
     "Server.RpcChown",
     "Server.RpcCreate",

@@ -1,5 +1,5 @@
-hash: 68a51bafc057773f62a8e605407c8c42a225ac3dc913cdb235aa0f5708ea380c
-updated: 2019-11-12T09:46:52.613515-08:00
+hash: 8216b278edbab48375b9596e2d39b1d74be3b7d4f502300c506a77001c270a8b
+updated: 2019-11-21T10:08:29.456692-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -48,6 +48,8 @@ imports:
   - assert
 - name: github.com/swiftstack/cstruct
   version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
+- name: github.com/swiftstack/fission
+  version: 59e475fd3ad1b692c7a30895104a069921af07a3
 - name: github.com/swiftstack/sortedmap
   version: 6f9ef66702b23f47054e69be97a26feb6e7301b1
 - name: go.etcd.io/etcd

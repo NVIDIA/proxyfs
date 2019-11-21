@@ -1338,6 +1338,29 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 	return
 }
 
+func (s *Server) RpcAccess(in *AccessRequest, reply *InodeReply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+
+	ok := mountHandle.Access(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), inode.InodeMode(in.AccessMode))
+	if ok {
+		err = nil
+	} else {
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+	}
+
+	return
+}
+
 func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
 	enterGate()
 	defer leaveGate()
@@ -1929,7 +1952,7 @@ func (s *Server) RpcStatVFS(in *StatVFSRequest, reply *StatVFS) (err error) {
 	return
 }
 
-func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
+func (s *Server) RpcSymlink(in *SymlinkRequest, reply *InodeReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1942,7 +1965,8 @@ func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
 		return
 	}
 
-	_, err = mountHandle.Symlink(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, in.Target)
+	ino, err := mountHandle.Symlink(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, in.Target)
+	reply.InodeNumber = int64(uint64(ino))
 	return
 }
 

@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
@@ -25,12 +24,6 @@ func doMountProxyFS() {
 		MountOptions: 0,
 		AuthUserID:   0,
 		AuthGroupID:  0,
-	}
-
-	if globals.config.ReadOnly {
-		mountRequest.MountOptions = uint64(fs.MountReadOnly)
-	} else {
-		mountRequest.MountOptions = 0
 	}
 
 	mountReply = &jrpcfs.MountByAccountNameReply{}
