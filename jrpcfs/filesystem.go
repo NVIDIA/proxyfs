@@ -4,6 +4,7 @@ package jrpcfs
 import (
 	"container/list"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -2163,100 +2164,42 @@ func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply 
 	return
 }
 
-func bypassUnmarshal(params []byte) (req interface{}, err error) {
-	/*
-		var (
-			braceDepth      uint32
-			insideString    bool
-			jrpcReadBuf     []byte
-			jrpcReadByte    byte
-			jrpcReadBufPos  int
-			nextByteEscaped bool
-			numBytesRead    int
-		)
-	*/
-
-	/*
-		braceDepth = 0
-		insideString = false
-		nextByteEscaped = false
-	*/
-	fmt.Printf("bypassUnmarshal() params: %v\n", string(params))
-
-	// TODO - do loop below to figure out method and then unmarshal to
-	// appropriate reques type
-
-	/*
-		jrpcReadBuf = []byte(params)
-			for jrpcReadBufPos = 0; jrpcReadBufPos < numBytesRead; jrpcReadBufPos++ {
-				jrpcReadByte = jrpcReadBuf[jrpcReadBufPos]
-				jrpcReq = append(jrpcReq, jrpcReadByte)
-				if insideString {
-					if nextByteEscaped {
-						nextByteEscaped = false
-					} else if '\\' == jrpcReadByte {
-						nextByteEscaped = true
-					} else if '"' == jrpcReadByte {
-						insideString = false
-					} else {
-						// No change to any state
-					}
-				} else {
-					if '{' == jrpcReadByte {
-						braceDepth++
-					} else if '}' == jrpcReadByte {
-						if 0 == braceDepth {
-							logFatalf("malformed JSONRPC 2.0 received... closing brace with no opening brace")
-						} else {
-							braceDepth--
-							if 0 == braceDepth {
-								globals.jrpcSwiftProxyBypassResponseChan <- jrpcReq
-								jrpcReq = make([]byte, 0)
-							}
-						}
-					} else if '"' == jrpcReadByte {
-						insideString = true
-					} else {
-						// No change to any state
-					}
-				}
-			}
-	*/
-
-	return
-}
-
 // RpcBypass tunnels RPCs from pfsagent to proxyfsd
-func (s *Server) RpcBypass(in *BypassReq, reply *BypassReply) (err error) {
+func (s *Server) RpcBypass(breq *BypassReq, breply *BypassReply) (err error) {
 
 	// Break out the original RPC request
-	fmt.Printf("RpcBypass() - show original message!!! req: %+v\n", in)
-	fmt.Printf("RpcBypass() - show original message!!! req.Params: %+v\n", string(in.Params))
+	fmt.Printf("RpcBypass() - show original message!!! breq.Params: %+v\n", string(breq.Params))
 
-	// TODO - make function unmarshal() or something like that....
-	// Know method already so know structure to Unmarshal() into....
-	tunReq, bypassErr := bypassUnmarshal(in.Params)
-	if bypassErr != nil {
-		// TODO - log?
-		return bypassErr
-	}
+	switch breq.Method {
+	case "Server.RpcPing":
+		var (
+			req   PingReq
+			reply PingReply
+		)
 
-	// TODO - call the RPC
-	fmt.Printf("Tunneled request is: %v\n", tunReq)
+		breply.ID = breq.ID
 
-	// TODO - return results in reply
-	// marshal() result
-	// return results to caller...
-
-	/*
-		// Return results of tunneled request to caller
-		reply.SnapShot, ok = headhunterVolumeHandle.SnapShotLookupByName(in.Name)
-		if ok {
-			err = nil
-		} else {
-			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		// Pull out the RpcPing parameters
+		err = json.Unmarshal(breq.Params, &req)
+		if err != nil {
+			breply.Error = err.Error()
+			return
 		}
-	*/
+
+		// Execute RpcPing and marshal the results
+		err = s.RpcPing(&req, &reply)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result, err = json.Marshal(reply)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+	default:
+		fmt.Printf("Invalid tunnel request method: %v\n", breq.Method)
+	}
 
 	return
 }
