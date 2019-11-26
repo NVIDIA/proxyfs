@@ -4,6 +4,7 @@ package jrpcfs
 import (
 	"container/list"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -2159,6 +2160,100 @@ func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply 
 	} else {
 		err = blunder.NewError(blunder.NotFoundError, "ENOENT")
 	}
+
+	return
+}
+
+func bypassUnmarshal(params interface{}) (req interface{}, err error) {
+	tunReq, mErr := json.Unmarshal(params)
+	/*
+		var (
+			braceDepth      uint32
+			insideString    bool
+			jrpcReadBuf     []byte
+			jrpcReadByte    byte
+			jrpcReadBufPos  int
+			nextByteEscaped bool
+			numBytesRead    int
+		)
+	*/
+
+	/*
+		braceDepth = 0
+		insideString = false
+		nextByteEscaped = false
+	*/
+	fmt.Printf("bypassUnmarshal() params: %v\n", params)
+
+	/*
+		jrpcReadBuf = []byte(params)
+			for jrpcReadBufPos = 0; jrpcReadBufPos < numBytesRead; jrpcReadBufPos++ {
+				jrpcReadByte = jrpcReadBuf[jrpcReadBufPos]
+				jrpcReq = append(jrpcReq, jrpcReadByte)
+				if insideString {
+					if nextByteEscaped {
+						nextByteEscaped = false
+					} else if '\\' == jrpcReadByte {
+						nextByteEscaped = true
+					} else if '"' == jrpcReadByte {
+						insideString = false
+					} else {
+						// No change to any state
+					}
+				} else {
+					if '{' == jrpcReadByte {
+						braceDepth++
+					} else if '}' == jrpcReadByte {
+						if 0 == braceDepth {
+							logFatalf("malformed JSONRPC 2.0 received... closing brace with no opening brace")
+						} else {
+							braceDepth--
+							if 0 == braceDepth {
+								globals.jrpcSwiftProxyBypassResponseChan <- jrpcReq
+								jrpcReq = make([]byte, 0)
+							}
+						}
+					} else if '"' == jrpcReadByte {
+						insideString = true
+					} else {
+						// No change to any state
+					}
+				}
+			}
+	*/
+
+	return
+}
+
+// RpcBypass tunnels RPCs from pfsagent to proxyfsd
+func (s *Server) RpcBypass(in *BypassReq, reply *BypassReply) (err error) {
+
+	// Break out the original RPC request
+	fmt.Printf("RpcBypass() - show original message!!! req: %+v\n", in)
+	fmt.Printf("RpcBypass() - show original message!!! req.Params: %+v\n", string(in.Params))
+
+	// TODO - make function unmarshal() or something like that....
+	tunReq, bypassErr := bypassUnmarshal(in.Params)
+	if bypassErr != nil {
+		// TODO - log?
+		return bypassErr
+	}
+
+	// TODO - call the RPC
+	fmt.Printf("Tunnedled request is: %v\n", tunReq)
+
+	// TODO - return results in reply
+	// marshal() result
+	// return results to caller...
+
+	/*
+		reply.SnapShot, ok = headhunterVolumeHandle.SnapShotLookupByName(in.Name)
+		if ok {
+			err = nil
+		} else {
+			err = blunder.NewError(blunder.NotFoundError, "ENOENT")
+		}
+	*/
 
 	return
 }

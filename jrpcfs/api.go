@@ -165,6 +165,23 @@ import (
 type MountIDAsByteArray [16]byte
 type MountIDAsString string
 
+// BypassReply contains response to BypassReq
+type BypassReply struct {
+	// TODO - update all error vs result vs, etc
+	// want to include Result and Error???
+	ID     uint64      `json:"id"`
+	Result interface{} `json:"result"`
+	Error  string      `json:"error"`
+}
+
+// BypassReq tunnels file system RPCs from pfsagentd to proxyfsd
+type BypassReq struct {
+	JSONrpc string         `json:"jsonrpc"`
+	Method  string         `json:"method"`
+	ID      uint64         `json:"id"`
+	Params  [1]interface{} `json:"params"`
+}
+
 // InodeHandle is embedded in a number of the request objects.
 type InodeHandle struct {
 	MountID     MountIDAsString
