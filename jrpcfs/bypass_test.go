@@ -29,7 +29,7 @@ func testBypassMarshal(requestMethod string, request interface{}) (requestID uin
 		JSONrpc: "2.0",
 		Method:  requestMethod,
 		ID:      dummyRequestID,
-		Params:  [1]interface{}{jsonReq},
+		Params:  jsonReq,
 	}
 
 	return

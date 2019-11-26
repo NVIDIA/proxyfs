@@ -176,10 +176,10 @@ type BypassReply struct {
 
 // BypassReq tunnels file system RPCs from pfsagentd to proxyfsd
 type BypassReq struct {
-	JSONrpc string         `json:"jsonrpc"`
-	Method  string         `json:"method"`
-	ID      uint64         `json:"id"`
-	Params  [1]interface{} `json:"params"`
+	JSONrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	ID      uint64 `json:"id"`
+	Params  []byte `json:"params"`
 }
 
 // InodeHandle is embedded in a number of the request objects.

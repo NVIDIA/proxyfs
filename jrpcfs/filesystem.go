@@ -4,7 +4,6 @@ package jrpcfs
 import (
 	"container/list"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -2164,8 +2163,7 @@ func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply 
 	return
 }
 
-func bypassUnmarshal(params interface{}) (req interface{}, err error) {
-	tunReq, mErr := json.Unmarshal(params)
+func bypassUnmarshal(params []byte) (req interface{}, err error) {
 	/*
 		var (
 			braceDepth      uint32
@@ -2183,7 +2181,10 @@ func bypassUnmarshal(params interface{}) (req interface{}, err error) {
 		insideString = false
 		nextByteEscaped = false
 	*/
-	fmt.Printf("bypassUnmarshal() params: %v\n", params)
+	fmt.Printf("bypassUnmarshal() params: %v\n", string(params))
+
+	// TODO - do loop below to figure out method and then unmarshal to
+	// appropriate reques type
 
 	/*
 		jrpcReadBuf = []byte(params)
@@ -2233,6 +2234,7 @@ func (s *Server) RpcBypass(in *BypassReq, reply *BypassReply) (err error) {
 	fmt.Printf("RpcBypass() - show original message!!! req.Params: %+v\n", string(in.Params))
 
 	// TODO - make function unmarshal() or something like that....
+	// Know method already so know structure to Unmarshal() into....
 	tunReq, bypassErr := bypassUnmarshal(in.Params)
 	if bypassErr != nil {
 		// TODO - log?
@@ -2240,13 +2242,14 @@ func (s *Server) RpcBypass(in *BypassReq, reply *BypassReply) (err error) {
 	}
 
 	// TODO - call the RPC
-	fmt.Printf("Tunnedled request is: %v\n", tunReq)
+	fmt.Printf("Tunneled request is: %v\n", tunReq)
 
 	// TODO - return results in reply
 	// marshal() result
 	// return results to caller...
 
 	/*
+		// Return results of tunneled request to caller
 		reply.SnapShot, ok = headhunterVolumeHandle.SnapShotLookupByName(in.Name)
 		if ok {
 			err = nil
