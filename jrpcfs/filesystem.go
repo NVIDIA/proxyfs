@@ -4,7 +4,6 @@ package jrpcfs
 import (
 	"container/list"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/rpc"
@@ -2168,19 +2167,19 @@ func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply 
 func (s *Server) RpcBypass(breq *BypassReq, breply *BypassReply) (err error) {
 
 	// Break out the original RPC request
-	fmt.Printf("RpcBypass() - show original message!!! breq.Params: %+v\n", string(breq.Params))
-
+	// TODO - way to avoid strcmp() and just use type?
 	switch breq.Method {
 	case "Server.RpcPing":
 		var (
 			req   PingReq
 			reply PingReply
 		)
+		fmt.Printf("RpcBypass() - show original message!!! breq.Params: %+v\n", breq.Params[0].(PingReq))
 
 		breply.ID = breq.ID
 
 		// Pull out the RpcPing parameters
-		err = json.Unmarshal(breq.Params, &req)
+		req = breq.Params[0].(PingReq)
 		if err != nil {
 			breply.Error = err.Error()
 			return
@@ -2192,11 +2191,8 @@ func (s *Server) RpcBypass(breq *BypassReq, breply *BypassReply) (err error) {
 			breply.Error = err.Error()
 			return
 		}
-		breply.Result, err = json.Marshal(reply)
-		if err != nil {
-			breply.Error = err.Error()
-			return
-		}
+		breply.Result[0] = reply
+
 	default:
 		fmt.Printf("Invalid tunnel request method: %v\n", breq.Method)
 	}

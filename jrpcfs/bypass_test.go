@@ -1,7 +1,6 @@
 package jrpcfs
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -25,8 +24,7 @@ func bypassMarshalReq(requestMethod string, ID uint64, tunnelReq interface{}) (b
 		ID:      ID,
 	}
 
-	// Convert the tunneled request to JSON and save in bypass Params
-	bypassReq.Params, err = json.Marshal(tunnelReq)
+	bypassReq.Params[0] = tunnelReq
 
 	return
 }
@@ -40,7 +38,7 @@ func testBasicRpcBypass(t *testing.T, server *Server) {
 	assert := assert.New(t)
 
 	// Create a RpcPing request
-	pingReq := &PingReq{
+	pingReq := PingReq{
 		Message: "TestMessage",
 	}
 
@@ -54,9 +52,7 @@ func testBasicRpcBypass(t *testing.T, server *Server) {
 	assert.Nil(err)
 
 	// Unmarshal reply to bypass request
-	var pingReply PingReply
-	err = json.Unmarshal(bypassReply.Result, &pingReply)
-	assert.Nil(err)
+	pingReply := bypassReply.Result[0].(PingReply)
 
 	// Verify the results with assert
 	x := fmt.Sprintf("pong %d bytes", len(pingReq.Message))
