@@ -1,5 +1,55 @@
 # ProxyFS Release Notes
 
+## 1.14.1 (November 26, 2019)
+
+### Features:
+
+Added an online FSCK tool (pfs-fsck). Note that the tool will not "stop the
+Add bucketstat counters to measure all checkpoint operations and how
+long individual parts of checkpoint processing take.  Add some bucketstat
+counters to measure extent map lookups and updates for Read() and Write()
+operations and their analogous object operations.  Add bucketstat counters
+to measure B+Tree flush operations.
+
+Added pfs_middleware configuration data to /info resource.
+
+### Bug Fixes:
+
+Significantly improve the performance of concurrent sync operations by
+batching checkpoint operations.  If multiple threads request a checkpoint,
+only perform one checkpoint instead of one for each request.
+
+Significantly improve the performance of the FUSE mountpoint by treating
+a Flush() operation as a no-op, which it is.  It does not imply any sort
+of persistence guarantees.
+
+Pick up sortedmap.TouchItem() fix in 1.6.1 (glide update).
+
+Fix a few bugs in confgen.
+
+## 1.13.4 (October 30, 2019)
+
+### Bug Fixes:
+
+Changes to runway environment for pfsagent mount points and allow users
+to easily enable/disable core dumps.
+
+Fixes to confgen search for template files.
+
+## 1.13.0 (October 28, 2019)
+
+### Features:
+
+Add confgen tool to generate SMB, VIP, NFS and FUSE configuration files
+from a proxyfs configuration
+
+### Bug Fixes:
+
+Fix a bug in ProxyFS in retry of chunked put operations that caused
+a panic.
+
+Sundry PFSAgent bug fixes.
+
 ## 1.12.2 (September 19, 2019)
 
 ### Bug Fixes:

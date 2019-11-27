@@ -291,7 +291,12 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	for _, volume = range localVolumeMap {
 		if "" != volume.FUSEMountPointName {
-			_, err = fuseSetupFile.WriteString(fmt.Sprintf("mkdir -p -m 0%03o %s\n", fuseDirPerm, volume.FUSEMountPointName))
+			cmdString := ""
+			cmdString += fmt.Sprintf("if [ ! -d '%s'; then\n", volume.FUSEMountPointName)
+			cmdString += fmt.Sprintf("    mkdir -p -m 0%03o '%s'\n", fuseDirPerm, volume.FUSEMountPointName)
+			cmdString += fmt.Sprintf("fi\n")
+
+			_, err = fuseSetupFile.WriteString(cmdString)
 			if nil != err {
 				return
 			}
@@ -706,6 +711,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		tcpPort                       int
 		virtualHostNameSet            stringSet
 		virtualIPAddrSet              stringSet
+		virtualIPAddr                 string
 		volume                        *Volume
 		volumeGroup                   *VolumeGroup
 		volumeGroupName               string
@@ -768,10 +774,13 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		volumeGroup.VirtualIPAddr, err = fetchStringSet(confMap, volumeGroupSection, "VirtualIPAddr", virtualIPAddrSet)
+		// Fetch the virtual IP address for the group and strip off the netmask (if any).
+		// virtualIPAddrSet is not used so we don't "fix it".
+		virtualIPAddr, err = fetchStringSet(confMap, volumeGroupSection, "VirtualIPAddr", virtualIPAddrSet)
 		if nil != err {
 			return
 		}
+		volumeGroup.VirtualIPAddr = strings.Split(virtualIPAddr, "/")[0]
 
 		volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection, "VirtualHostname", virtualHostNameSet)
 		if nil != err {
