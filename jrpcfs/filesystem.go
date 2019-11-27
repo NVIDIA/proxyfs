@@ -2166,32 +2166,258 @@ func (s *Server) RpcSnapShotLookupByName(in *SnapShotLookupByNameRequest, reply 
 // RpcBypass tunnels RPCs from pfsagent to proxyfsd
 func (s *Server) RpcBypass(breq *BypassReq, breply *BypassReply) (err error) {
 
-	// Break out the original RPC request
+	// TODO - how handle RpcMount?
+
 	// TODO - way to avoid strcmp() and just use type?
+	// assume not since can you guarantee that "type" has same value on two different systems?
+
+	breply.ID = breq.ID
+
 	switch breq.Method {
+	case "Server.RpcChmod":
+		q := breq.Params[0].(ChmodRequest)
+		p := Reply{}
+		err = s.RpcChmod(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcChown":
+		q := breq.Params[0].(ChownRequest)
+		p := Reply{}
+		err = s.RpcChown(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcCreate":
+		q := breq.Params[0].(CreateRequest)
+		// TODO - which is correct? p := Reply{}
+		p := InodeReply{}
+		err = s.RpcCreate(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcFetchExtentMapChunk":
+		q := breq.Params[0].(FetchExtentMapChunkRequest)
+		p := FetchExtentMapChunkReply{}
+		err = s.RpcFetchExtentMapChunk(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcGetStat":
+		q := breq.Params[0].(GetStatRequest)
+		p := StatStruct{}
+		err = s.RpcGetStat(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcGetXAttr":
+		q := breq.Params[0].(GetXAttrRequest)
+		p := GetXAttrReply{}
+		err = s.RpcGetXAttr(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcLink":
+		q := breq.Params[0].(LinkRequest)
+		p := Reply{}
+		err = s.RpcLink(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcListXAttr":
+		q := breq.Params[0].(ListXAttrRequest)
+		p := ListXAttrReply{}
+		err = s.RpcListXAttr(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcLookup":
+		q := breq.Params[0].(LookupRequest)
+		p := InodeReply{}
+		err = s.RpcLookup(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcMkdir":
+		q := breq.Params[0].(MkdirRequest)
+		// TODO - which is correct? p := Reply{}
+		p := InodeReply{}
+		err = s.RpcMkdir(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcMountByAccountName":
+		// TODO - how do this?  Need this?
+
 	case "Server.RpcPing":
-		var (
-			req   PingReq
-			reply PingReply
-		)
-		fmt.Printf("RpcBypass() - show original message!!! breq.Params: %+v\n", breq.Params[0].(PingReq))
-
-		breply.ID = breq.ID
-
-		// Pull out the RpcPing parameters
-		req = breq.Params[0].(PingReq)
+		q := breq.Params[0].(PingReq)
+		p := PingReply{}
+		err = s.RpcPing(&q, &p)
 		if err != nil {
 			breply.Error = err.Error()
 			return
 		}
+		breply.Result[0] = p
 
-		// Execute RpcPing and marshal the results
-		err = s.RpcPing(&req, &reply)
+	case "Server.RpcProvisionObject":
+		q := breq.Params[0].(ProvisionObjectRequest)
+		p := ProvisionObjectReply{}
+		err = s.RpcProvisionObject(&q, &p)
 		if err != nil {
 			breply.Error = err.Error()
 			return
 		}
-		breply.Result[0] = reply
+		breply.Result[0] = p
+
+	case "Server.RpcReadSymlink":
+		q := breq.Params[0].(ReadSymlinkRequest)
+		p := ReadSymlinkReply{}
+		err = s.RpcReadSymlink(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcReaddirByLoc":
+		q := breq.Params[0].(ReaddirByLocRequest)
+		p := ReaddirReply{}
+		err = s.RpcReaddirByLoc(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcRemoveXAttr":
+		q := breq.Params[0].(RemoveXAttrRequest)
+		p := Reply{}
+		err = s.RpcRemoveXAttr(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcRename":
+		q := breq.Params[0].(RenameRequest)
+		p := Reply{}
+		err = s.RpcRename(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcResize":
+		q := breq.Params[0].(ResizeRequest)
+		p := Reply{}
+		err = s.RpcResize(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcRmdir":
+		q := breq.Params[0].(UnlinkRequest)
+		p := Reply{}
+		err = s.RpcRmdir(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcSetTime":
+		q := breq.Params[0].(SetTimeRequest)
+		p := Reply{}
+		err = s.RpcSetTime(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcSetXAttr":
+		q := breq.Params[0].(SetXAttrRequest)
+		p := Reply{}
+		err = s.RpcSetXAttr(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcStatVFS":
+		q := breq.Params[0].(StatVFSRequest)
+		p := StatVFS{}
+		err = s.RpcStatVFS(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcSymlink":
+		q := breq.Params[0].(SymlinkRequest)
+		p := Reply{}
+		err = s.RpcSymlink(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcUnlink":
+		q := breq.Params[0].(UnlinkRequest)
+		p := Reply{}
+		err = s.RpcUnlink(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
+
+	case "Server.RpcWrote":
+		q := breq.Params[0].(WroteRequest)
+		p := WroteReply{}
+		err = s.RpcWrote(&q, &p)
+		if err != nil {
+			breply.Error = err.Error()
+			return
+		}
+		breply.Result[0] = p
 
 	default:
 		fmt.Printf("Invalid tunnel request method: %v\n", breq.Method)
