@@ -1,5 +1,11 @@
 # ProxyFS Release Notes
 
+## 1.14.2 (December 2, 2019)
+
+### Bug Fixes:
+
+Allow `chmod` to work on a directory via PFSAgent.
+
 ## 1.14.1 (November 26, 2019)
 
 ### Features:
