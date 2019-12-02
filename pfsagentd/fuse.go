@@ -1051,11 +1051,11 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		setTimeRequest         *jrpcfs.SetTimeRequest
 		settingAtime           bool
 		settingAtimeAndOrMtime bool
-		settingGid             bool
+		settingGID             bool
 		settingMode            bool
 		settingMtime           bool
 		settingSize            bool
-		settingUid             bool
+		settingUID             bool
 		timeNow                time.Time
 	)
 
@@ -1072,8 +1072,8 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 
 	settingMode = (0 != (request.Valid & fuse.SetattrMode))
 
-	settingUid = (0 != (request.Valid & fuse.SetattrUid))
-	settingGid = (0 != (request.Valid & fuse.SetattrGid))
+	settingUID = (0 != (request.Valid & fuse.SetattrUid))
+	settingGID = (0 != (request.Valid & fuse.SetattrGid))
 
 	settingSize = (0 != (request.Valid & fuse.SetattrSize))
 
@@ -1083,17 +1083,12 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 	settingAtimeAndOrMtime = settingAtime || settingMtime
 
 	if settingMode {
-		if request.Mode != (request.Mode & os.FileMode(inode.PosixModePerm)) {
-			request.RespondError(fuse.ENOTSUP)
-			return
-		}
-
 		chmodRequest = &jrpcfs.ChmodRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
 				InodeNumber: int64(request.Header.Node),
 			},
-			FileMode: uint32(request.Mode),
+			FileMode: uint32(request.Mode & os.ModePerm),
 		}
 
 		chmodReply = &jrpcfs.Reply{}
@@ -1105,7 +1100,7 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 		}
 	}
 
-	if settingUid || settingGid {
+	if settingUID || settingGID {
 		chownRequest = &jrpcfs.ChownRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
@@ -1113,13 +1108,13 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 			},
 		}
 
-		if settingUid {
+		if settingUID {
 			chownRequest.UserID = int32(request.Uid)
 		} else {
 			chownRequest.UserID = -1
 		}
 
-		if settingGid {
+		if settingGID {
 			chownRequest.GroupID = int32(request.Gid)
 		} else {
 			chownRequest.GroupID = -1
