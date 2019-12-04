@@ -13,7 +13,7 @@ type Request struct {
 	Len       uint64 // Length of this struct including len field
 	RequestID uint64 // Unique ID of this request
 	MountID   uint64 // Mount ID
-	Req       []byte // JSON containing request
+	JReq      []byte // JSON containing request
 }
 
 // Response is the structure returned
@@ -87,12 +87,17 @@ func NewClient(mountID uint64) *Client {
 }
 
 // MakeRPC takes the RPC method and arguments and returns a Request struct
-func MakeRPC(method string, params []byte) (request *Request) {
+func MakeRPC(method string, args ...interface{}) (request *Request) {
+
+	// TODO - RequestID, MountID, JReq
+
 	// This will:
 	// 1. bump the client request ID
-	// 2. Store the RPC method in the request
-	// 3. Store the parameters in the request
-	// 4. return the request
+	// 2. Store the RPC method and args in JSON and store in JReq
+	// 3. Store the mountID
+	// 4. set the length of the request
+	// 5. return the request
+	request = &Request{}
 	return
 }
 
@@ -103,4 +108,10 @@ func (client *Client) Send(request *Request) (response *Response, err error) {
 	// off the queue
 	// if connection drops, get new connection and resend the request
 	return
+}
+
+// Close gracefully shuts down the client.   This allows the Server
+// to remove Client request on completed queue.
+func (client *Client) Close() {
+
 }

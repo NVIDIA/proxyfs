@@ -38,14 +38,15 @@ func testServer(t *testing.T) {
 
 	// Now - setup a client to send requests to the server
 	c := NewClient(1)
-	assert.Nil(c)
+	assert.NotNil(c)
 
 	// Make a new request and send to server
-	// TODO - how create the JSON???
-	request := MakeRPC("Server.RpcPing", params)
-	response, sendErr := c.Send(request)
+	// TODO - how create the JSON??? varadic arguments....
+	request := MakeRPC("Server.RpcPing", "this is a message")
+	assert.NotNil(request)
+
+	_, sendErr := c.Send(request)
 	assert.Nil(sendErr)
-	assert.Nil(response.Err)
 
 	// Stop the server before exiting
 	s.Close()
