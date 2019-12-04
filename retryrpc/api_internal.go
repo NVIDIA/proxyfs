@@ -4,6 +4,17 @@ package retryrpc
 
 import ()
 
+// jsonRequest is used to marshal an RPC request in/out of JSON
+type jsonRequest struct {
+	Method string         `json:"method"`
+	Params [1]interface{} `json:"params"`
+}
+
+// jsonResponse is used to marshal an RPC response in/out of JSON
+type jsonResponse struct {
+	Result interface{} `json:"result"`
+}
+
 // makeRPC takes the RPC method and arguments and returns a Request struct
 // TODO - how use mountID, subsetID???
 func makeRPC(method string, args ...interface{}) (request *Request) {

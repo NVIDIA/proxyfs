@@ -38,7 +38,7 @@ func testServer(t *testing.T) {
 	// TODO - do some work.....
 
 	// Now - setup a client to send requests to the server
-	c := NewClient(1)
+	c := NewClient("client 1")
 	assert.NotNil(c)
 
 	pingRequest := &jrpcfs.PingReq{Message: "Ping Me!"}

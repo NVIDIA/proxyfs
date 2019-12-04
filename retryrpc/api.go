@@ -1,10 +1,15 @@
 // Package retryrpc provides a client and server RPC model which survives
 // lost connections on either the client or the server.
+//
+// NOTE: This package does handle cases where the server process dies.  There
+// are still gaps where a server may complete an RPC and die before returning
+// a response.
+
 package retryrpc
 
 import (
-	"container/list"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -12,15 +17,16 @@ import (
 type Request struct {
 	Len       uint64 // Length of this struct including len field
 	RequestID uint64 // Unique ID of this request
-	MountID   uint64 // Mount ID
+	MountID   string // Mount ID
 	JReq      []byte // JSON containing request
 }
 
 // Response is the structure returned
 type Response struct {
-	Len uint64 // Length of this struct including len field
-	Res []byte // JSON response - only valid if err != nil
-	Err error  // Status of request
+	Len    uint64 // Length of this struct including len field
+	Result []byte // JSON response - only valid if err != nil
+	Err    error  // Status of request
+	Errno  syscall.Errno
 }
 
 type completedRequest struct {
@@ -28,23 +34,27 @@ type completedRequest struct {
 	request       *Request
 }
 
+// ReqResKey uniquely identifies a client request from a client
+type ReqResKey struct {
+	uniqueID        string
+	clientRequestID uint64
+}
+
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
 	completedTTL      time.Duration // How long a completed request stays on queue
 	serviceMap        map[string]*func(request interface{}, response interface{})
-	connections       *list.List                   // List of outstanding connections
-	pendingRequests   map[string]*Request          // Request which have not been completed yet.
-	completedRequests map[string]*completedRequest // Request which have been completed.  Will age out
-	ipaddr            string                       // IP address server listens too
-	port              int                          // Port of server
+	pendingRequests   map[ReqResKey]*Request          // Request which have not been completed yet.
+	completedRequests map[ReqResKey]*completedRequest // Request which have been completed.  Will age out
+	ipaddr            string                          // IP address server listens too
+	port              int                             // Port of server
 }
 
 // NewServer creates the Server object
 func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.serviceMap = make(map[string]*func(request interface{}, response interface{}))
-	s.connections = list.New()
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
@@ -63,12 +73,16 @@ func (server *Server) Register() (err error) {
 // return the results.
 func (server *Server) Run() {
 	// TODO - Algorithm - Standard server stuff
-	// 1. goroutine which accepts new connection and creates goroutine W
-	// 2. goroutine W adds request to server.pendingRequest, unmarshals
-	//    request, processes RPC, puts request on server.completedRequest
-	//    and under same lock removes from server.pendingRequest.
-	// 3. Results are sent back to client if socket still up
+	// 1. goroutine GR1 accepts new connection and does "go GR2(conn)
+	// 2. GR2 adds request to server.pendingRequest, unmarshals
+	//    request and does "go GR3(process RPC)"
+	// 3. GR2 proceses the RPC, grabs server lock and moves request from
+	//    server.pendingRequest to server.completedRequest, releases lock
+	//    and then sends response to client if socket is still up.
 	// 4. request stays on server.completedRequest until s.completedTTL exceeded
+
+	// TODO - do we need to retransmit responses in order?
+	// What ordering guarantees do we need to enforce?
 
 }
 
@@ -82,17 +96,17 @@ func (server *Server) Close() {
 
 // Client tracking structure
 type Client struct {
+	sync.Mutex
 	currentRequestID uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
-	myUniqueID         uint64              // Unique ID across all clients
-	subsetID           uint64              // Subset of unique ID (mount ID)
+	myUniqueID         string              // Unique ID across all clients
 	outstandingRequest map[uint64]*Request // Map of outstanding requests sent
 	// or to be sent to server
 }
 
 // NewClient returns a Client structure
-func NewClient(myUniqueID uint64) *Client {
+func NewClient(myUniqueID string) *Client {
 	// TODO - if restart client, Client Request ID will be 0.   How know the server
 	// has removed these client IDs from it's queue?  Race condition...
 	c := &Client{myUniqueID: myUniqueID}
@@ -123,6 +137,8 @@ func (client *Client) Send(method string, rpcRequest interface{}) (response *Res
 		sendRequest := makeRPC(method, rpcRequest)
 		fmt.Printf("sendRequest: %v\n", sendRequest)
 	*/
+
+	// TODO - do we need to retransmit these requests in order?
 
 	return
 }
