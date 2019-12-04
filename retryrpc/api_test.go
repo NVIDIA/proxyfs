@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 // Test basic retryrpc primitives
@@ -40,12 +41,8 @@ func testServer(t *testing.T) {
 	c := NewClient(1)
 	assert.NotNil(c)
 
-	// Make a new request and send to server
-	// TODO - how create the JSON??? varadic arguments....
-	request := MakeRPC("Server.RpcPing", "this is a message")
-	assert.NotNil(request)
-
-	_, sendErr := c.Send(request)
+	pingRequest := &jrpcfs.PingReq{Message: "Ping Me!"}
+	_, sendErr := c.Send("Server.RpcPing", pingRequest)
 	assert.Nil(sendErr)
 
 	// Stop the server before exiting

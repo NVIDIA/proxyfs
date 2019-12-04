@@ -55,12 +55,20 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 func (server *Server) Register() (err error) {
 
 	// TODO - build the serviceMap similiar to how net/rpc Register does it...
+	// serviceMap looks like serviceMap["RpcPing"]*rpcPing()
 	return
 }
 
 // Run server loop, accept connections, read request, run RPC method and
 // return the results.
 func (server *Server) Run() {
+	// TODO - Algorithm - Standard server stuff
+	// 1. goroutine which accepts new connection and creates goroutine W
+	// 2. goroutine W adds request to server.pendingRequest, unmarshals
+	//    request, processes RPC, puts request on server.completedRequest
+	//    and under same lock removes from server.pendingRequest.
+	// 3. Results are sent back to client if socket still up
+	// 4. request stays on server.completedRequest until s.completedTTL exceeded
 
 }
 
@@ -74,39 +82,48 @@ func (server *Server) Close() {
 
 // Client tracking structure
 type Client struct {
-	mountID          uint64
-	currentRequestID uint64
+	currentRequestID uint64 // Last request ID - start from clock
+	// tick at mount and increment from there?
+	// Handle reset of time?
+	myUniqueID         uint64              // Unique ID across all clients
+	subsetID           uint64              // Subset of unique ID (mount ID)
+	outstandingRequest map[uint64]*Request // Map of outstanding requests sent
+	// or to be sent to server
 }
 
 // NewClient returns a Client structure
-func NewClient(mountID uint64) *Client {
+func NewClient(myUniqueID uint64) *Client {
 	// TODO - if restart client, Client Request ID will be 0.   How know the server
 	// has removed these client IDs from it's queue?  Race condition...
-	c := &Client{mountID: mountID}
+	c := &Client{myUniqueID: myUniqueID}
+	c.outstandingRequest = make(map[uint64]*Request)
 	return c
 }
 
-// MakeRPC takes the RPC method and arguments and returns a Request struct
-func MakeRPC(method string, args ...interface{}) (request *Request) {
-
-	// TODO - RequestID, MountID, JReq
-
-	// This will:
-	// 1. bump the client request ID
-	// 2. Store the RPC method and args in JSON and store in JReq
-	// 3. Store the mountID
-	// 4. set the length of the request
-	// 5. return the request
-	request = &Request{}
-	return
-}
-
 // Send the request and block until it has completed
-func (client *Client) Send(request *Request) (response *Response, err error) {
+func (client *Client) Send(method string, rpcRequest interface{}) (response *Response, err error) {
 
-	// TODO - puts request on queue and sends, only when request returns do we take it
-	// off the queue
-	// if connection drops, get new connection and resend the request
+	// TODO - Algorithm:
+	// 1. marshal method and args into JSON and put into Request struct
+	// 2. put request on client.outstandingRequests
+	// 3. Send request on socket to server and have goroutine block
+	//    on socket waiting for result
+	//    a. if read result then remove from queue and return result
+	//    b. if get error (which one?) on socket then resend request.
+	//       will have to make sure have enough info in request to make
+	//       the operation idempotent.   Assume client retries until
+	//       server comes back up?   Wait for failover to a peer?
+	//       Assume using VIP on proxyfs node?
+	// 4. Should we block forever? How kill?
+
+	// TODO - TODO - what if RCP was completed on Server1 and before response,
+	// proxyfsd fails over to Server2?   Client will resend - not idempotent!!!
+
+	/*
+		sendRequest := makeRPC(method, rpcRequest)
+		fmt.Printf("sendRequest: %v\n", sendRequest)
+	*/
+
 	return
 }
 
