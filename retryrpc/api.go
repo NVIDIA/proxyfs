@@ -8,6 +8,7 @@
 package retryrpc
 
 import (
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
@@ -44,7 +45,7 @@ type ReqResKey struct {
 type Server struct {
 	sync.Mutex
 	completedTTL      time.Duration // How long a completed request stays on queue
-	serviceMap        map[string]*func(request interface{}, response interface{})
+	serviceMap        map[string]*reflect.Method
 	pendingRequests   map[ReqResKey]*Request          // Request which have not been completed yet.
 	completedRequests map[ReqResKey]*completedRequest // Request which have been completed.  Will age out
 	ipaddr            string                          // IP address server listens too
@@ -54,7 +55,7 @@ type Server struct {
 // NewServer creates the Server object
 func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
-	s.serviceMap = make(map[string]*func(request interface{}, response interface{}))
+	s.serviceMap = make(map[string]*reflect.Method)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
@@ -62,11 +63,13 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 }
 
 // Register creates the map of server methods
-func (server *Server) Register() (err error) {
+func (server *Server) Register(retrySvr interface{}) (err error) {
 
+	// Find all the methods associated with retrySvr and put into serviceMap
 	// TODO - build the serviceMap similiar to how net/rpc Register does it...
 	// serviceMap looks like serviceMap["RpcPing"]*rpcPing()
-	return
+
+	return server.register(retrySvr)
 }
 
 // Run server loop, accept connections, read request, run RPC method and

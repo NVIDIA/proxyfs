@@ -2,8 +2,6 @@
 // lost connections on either the client or the server.
 package retryrpc
 
-import ()
-
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
 	Method string         `json:"method"`

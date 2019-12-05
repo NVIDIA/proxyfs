@@ -14,6 +14,27 @@ func TestRetryRPC(t *testing.T) {
 	testServer(t)
 }
 
+type MyType struct {
+	field1 int
+}
+
+type MyRequest struct {
+	Field1 int
+}
+
+type MyResponse struct {
+	Error error
+}
+
+func (m *MyType) ExportedFunction(request MyRequest, response *MyResponse) (err error) {
+	request.Field1 = 1
+	return
+}
+
+func (m *MyType) unexportedFunction(i int) {
+	m.field1 = i
+}
+
 // Test basic Server creation and deletion
 func testServer(t *testing.T) {
 	assert := assert.New(t)
@@ -29,7 +50,8 @@ func testServer(t *testing.T) {
 	// server
 	// TODO - how do this while supporting several different methods???
 	// Must pass interface{} somewhere....
-	err := s.Register()
+	dummyVar := &MyType{field1: 1}
+	err := s.Register(dummyVar)
 	assert.Nil(err)
 
 	// Server starts listening for requests on the ipaddr/port
