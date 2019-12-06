@@ -1,5 +1,18 @@
 # ProxyFS Release Notes
 
+## 1.14.2.1 (December 6, 2019)
+
+### Bug Fixes:
+
+Memory leak PFSAgent's read cache is fixed. This bug would present whenever
+a file is larger than the read cache line size and a read was issued to the
+portion of the file beyond the cache line size (assuming the file was written
+sequentially to one or more LogSegments lartger than cache line size).
+
+Note that an Out-Of-Memory ("OOM") condition is still entirely possible with
+PFSAgent deployed as the only limits to its read cache memory consumption are
+the ReadCacheLineSize and ReadCacheLineCount configuration parameters.
+
 ## 1.14.2 (December 2, 2019)
 
 ### Bug Fixes:
