@@ -8,18 +8,22 @@
 package retryrpc
 
 import (
+	"container/list"
+	"fmt"
+	"net"
 	"reflect"
 	"sync"
 	"syscall"
 	"time"
 )
 
+// ReqLenTyp is the type of the length field in a Request
+type ReqLenTyp int
+
 // Request is the structure sent
 type Request struct {
-	Len       uint64 // Length of this struct including len field
-	RequestID uint64 // Unique ID of this request
-	MountID   string // Mount ID
-	JReq      []byte // JSON containing request
+	Len  ReqLenTyp // Length of this struct including len field
+	JReq []byte    // JSON containing request
 }
 
 // Response is the structure returned
@@ -50,6 +54,14 @@ type Server struct {
 	completedRequests map[ReqResKey]*completedRequest // Request which have been completed.  Will age out
 	ipaddr            string                          // IP address server listens too
 	port              int                             // Port of server
+	listener          net.Listener
+
+	halting     bool
+	connLock    sync.Mutex
+	connections *list.List
+	connWG      sync.WaitGroup
+	listeners   []net.Listener
+	listenersWG sync.WaitGroup
 }
 
 // NewServer creates the Server object
@@ -59,6 +71,7 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
+	s.connections = list.New()
 	return s
 }
 
@@ -70,6 +83,14 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 	// serviceMap looks like serviceMap["RpcPing"]*rpcPing()
 
 	return server.register(retrySvr)
+}
+
+// Start listener
+func (server *Server) Start() (l net.Listener, err error) {
+	ps := fmt.Sprintf("%d", server.port)
+	server.listener, err = net.Listen("tcp", net.JoinHostPort(server.ipaddr, ps))
+
+	return server.listener, err
 }
 
 // Run server loop, accept connections, read request, run RPC method and
@@ -87,12 +108,14 @@ func (server *Server) Run() {
 	// TODO - do we need to retransmit responses in order?
 	// What ordering guarantees do we need to enforce?
 
+	server.run()
 }
 
 // Close stops the server
 func (server *Server) Close() {
-	// TODO - blocks until the server is shut down
+	_ = server.listener.Close()
 
+	// TODO - blocks until the server is shut down
 }
 
 // Client methods
@@ -106,6 +129,7 @@ type Client struct {
 	myUniqueID         string              // Unique ID across all clients
 	outstandingRequest map[uint64]*Request // Map of outstanding requests sent
 	// or to be sent to server
+	tcpConn *net.TCPConn // Our connection to the server
 }
 
 // NewClient returns a Client structure
@@ -117,33 +141,34 @@ func NewClient(myUniqueID string) *Client {
 	return c
 }
 
+// TODO - TODO - split client and server packages since two loggers....
+
+// Dial sets up connection to server
+func (client *Client) Dial(ipaddr string, port int) (err error) {
+
+	portStr := fmt.Sprintf("%d", port)
+	hostPort := net.JoinHostPort(ipaddr, portStr)
+
+	tcpAddr, resolvErr := net.ResolveTCPAddr("tcp", hostPort)
+	if resolvErr != nil {
+		fmt.Printf("ResolveTCPAddr returned err: %v\n", resolvErr)
+		err = resolvErr
+		return
+	}
+
+	client.tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
+	if err != nil {
+		fmt.Printf("unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
+		return
+	}
+
+	return
+}
+
 // Send the request and block until it has completed
 func (client *Client) Send(method string, rpcRequest interface{}) (response *Response, err error) {
 
-	// TODO - Algorithm:
-	// 1. marshal method and args into JSON and put into Request struct
-	// 2. put request on client.outstandingRequests
-	// 3. Send request on socket to server and have goroutine block
-	//    on socket waiting for result
-	//    a. if read result then remove from queue and return result
-	//    b. if get error (which one?) on socket then resend request.
-	//       will have to make sure have enough info in request to make
-	//       the operation idempotent.   Assume client retries until
-	//       server comes back up?   Wait for failover to a peer?
-	//       Assume using VIP on proxyfs node?
-	// 4. Should we block forever? How kill?
-
-	// TODO - TODO - what if RCP was completed on Server1 and before response,
-	// proxyfsd fails over to Server2?   Client will resend - not idempotent!!!
-
-	/*
-		sendRequest := makeRPC(method, rpcRequest)
-		fmt.Printf("sendRequest: %v\n", sendRequest)
-	*/
-
-	// TODO - do we need to retransmit these requests in order?
-
-	return
+	return client.send(method, rpcRequest)
 }
 
 // Close gracefully shuts down the client.   This allows the Server

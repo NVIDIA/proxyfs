@@ -8,6 +8,8 @@ import (
 	"unicode/utf8"
 )
 
+// TODO TODO TODO - rewrite this from scratch
+
 // NOTE: The basic code in this file is taken from Golang
 // "net/rpc" server.go:register()
 
