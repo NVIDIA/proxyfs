@@ -1551,6 +1551,7 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 		logSegmentCacheElementToEvictLRUElement = globals.logSegmentCacheLRU.Front()
 		logSegmentCacheElementToEvict = logSegmentCacheElementToEvictLRUElement.Value.(*logSegmentCacheElementStruct)
 		logSegmentCacheElementToEvictKey.logSegmentNumber, err = strconv.ParseUint(logSegmentCacheElementToEvict.objectName, 16, 64)
+		logSegmentCacheElementToEvictKey.cacheLineTag = logSegmentCacheElementToEvict.startingOffset / globals.config.ReadCacheLineSize
 		if nil != err {
 			logFatalf("fetchLogSegmentCacheLine() evicting hit un-parseable objectName: \"%s\" (err: %v)", logSegmentCacheElementToEvict.objectName, err)
 		}
