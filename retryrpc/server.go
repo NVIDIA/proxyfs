@@ -3,10 +3,10 @@ package retryrpc
 import (
 	"container/list"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"os"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -72,22 +72,26 @@ func getRequest(conn net.Conn, req *Request) (err error) {
 	err = binary.Read(conn, binary.BigEndian, &reqLen)
 	fmt.Printf("SERVER: Read header length: %v err: %v\n", reqLen, err)
 
-	if reqLen == 0 {
-		os.Exit(-1)
-	}
-
 	// Now read the rest of the structure off the wire.
 	fmt.Printf("SERVER: Try to read request of length: %v\n", reqLen)
-	jsonBuf := make([]byte, reqLen)
-	bytesRead, writeErr := io.ReadFull(conn, jsonBuf)
+	buf := make([]byte, reqLen)
+	bytesRead, writeErr := io.ReadFull(conn, buf)
 	fmt.Printf("SERVER: Read cnt bytes: %v err: %v\n", bytesRead, writeErr)
 
 	// TODO - error handling if err != nil
 
 	// Now unmarshal the jsonBuf
-	fmt.Printf("getRequest() - buffer read is: %v\n", string(jsonBuf))
+	fmt.Printf("getRequest() - buffer read is: %v\n", string(buf))
+	jReq := jsonRequest{}
+	err = json.Unmarshal(buf, &jReq)
+	if err != nil {
+		fmt.Printf("SERVER: Unmarshal of buf failed with err: %v\n", err)
+		return
+	}
+	fmt.Printf("jReq() - json request is: %+v\n", jReq)
 
 	// Now call the actual RPC and return the results...
+	// TODO - swithch on method and setup request structure....
 
 	/*
 		reqBytes := makeBytesReq(&ctx.req)
