@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -41,7 +40,7 @@ func (m *MyType) unexportedFunction(i int) {
 func testServer(t *testing.T) {
 	var (
 		ipaddr = "127.0.0.1"
-		port   = 666
+		port   = 24456
 	)
 	assert := assert.New(t)
 	zero := 0
@@ -66,14 +65,8 @@ func testServer(t *testing.T) {
 	assert.NotNil(listener, "Listener should not be nil")
 	assert.Nil(lisErr, "lisErr is not nil")
 
-	// TODO - debug code to be removed
-	dummyReq := Request{}
-	fmt.Printf("sizeof(Request): %v sizeof(Request.Len): %v\n", unsafe.Sizeof(dummyReq), unsafe.Sizeof(dummyReq.Len))
-
 	// Tell server to start accepting and processing requests
 	go s.Run()
-
-	// TODO - do some work.....
 
 	// Now - setup a client to send requests to the server
 	c := NewClient("client 1")
@@ -86,7 +79,8 @@ func testServer(t *testing.T) {
 	_, sendErr := c.Send("Server.RpcPing", pingRequest)
 	assert.Nil(sendErr)
 
+	time.Sleep(10 * time.Second)
+
 	// Stop the server before exiting
 	s.Close()
-
 }

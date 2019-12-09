@@ -24,7 +24,6 @@ func (server *Server) buildServiceMap(typ reflect.Type) {
 		method := typ.Method(m)
 		mtype := method.Type
 		mname := method.Name
-		fmt.Printf("mname: %v method: %+v\n", mname, method)
 		// Method must be exported.
 		if method.PkgPath != "" {
 			continue
@@ -94,7 +93,6 @@ func (server *Server) register(retrySvr interface{}) (err error) {
 		s := "retryrpc.Register: type " + sname + " is not exported"
 		return errors.New(s)
 	}
-	fmt.Printf("typ: %v rcvr: %v sname: %v\n", typ, rcvr, sname)
 
 	server.buildServiceMap(typ)
 	fmt.Printf("ServiceMap: %+v\n", server.serviceMap)

@@ -2,17 +2,18 @@ package retryrpc
 
 import (
 	"container/list"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
-	"unsafe"
+	"os"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
 // TODO - remove
 // Variable to control debug output
-var printDebugLogs bool = false
+var printDebugLogs bool = true
 var debugPutGet bool = false
 
 // TODO - Algorithm - Standard server stuff
@@ -32,11 +33,13 @@ func (server *Server) run() {
 		conn, err := server.listener.Accept()
 		if err != nil {
 			if !server.halting {
-				logger.ErrorfWithError(err, "net.Accept failed for Retry RPC listener\n")
+				logger.ErrorfWithError(err, "net.Accept failed for Retry RPC listener")
 			}
 			server.listenersWG.Done()
 			return
 		}
+
+		fmt.Printf("Accept conn: %v\n", conn)
 
 		server.connWG.Add(1)
 
@@ -59,30 +62,32 @@ func (server *Server) run() {
 
 }
 
-var dummyReq Request
-var sizeOfLenField = ReqLenTyp(unsafe.Sizeof(dummyReq.Len))
-
 func getRequest(conn net.Conn, req *Request) (err error) {
-	// Read in the length of the request first
-	buf := make([]byte, sizeOfLenField)
-	bytesRead, err := io.ReadFull(conn, buf)
+	if printDebugLogs {
+		logger.Infof("conn: %v, req: %v", conn, req)
+	}
 
-	if (ReqLenTyp(bytesRead) != sizeOfLenField) || (err != nil) {
-		fmt.Printf("getRequest() - ReadFull() of length returned bytesRead: %v err: %v\n",
-			bytesRead, err)
-		return
+	// Read in the length of the request first
+	var reqLen int64
+	err = binary.Read(conn, binary.BigEndian, &reqLen)
+	fmt.Printf("SERVER: Read header length: %v err: %v\n", reqLen, err)
+
+	if reqLen == 0 {
+		os.Exit(-1)
 	}
 
 	// Now read the rest of the structure off the wire.
-	var sizeOfJSON ReqLenTyp
-	sizeOfJSON = *(*ReqLenTyp)(unsafe.Pointer(&buf[0]))
-	jsonBuf := make([]byte, sizeOfJSON)
-	bytesRead, err = io.ReadFull(conn, jsonBuf)
+	fmt.Printf("SERVER: Try to read request of length: %v\n", reqLen)
+	jsonBuf := make([]byte, reqLen)
+	bytesRead, writeErr := io.ReadFull(conn, jsonBuf)
+	fmt.Printf("SERVER: Read cnt bytes: %v err: %v\n", bytesRead, writeErr)
 
 	// TODO - error handling if err != nil
 
 	// Now unmarshal the jsonBuf
-	fmt.Printf("getRequest() - buffer read is: %v\n", jsonBuf)
+	fmt.Printf("getRequest() - buffer read is: %v\n", string(jsonBuf))
+
+	// Now call the actual RPC and return the results...
 
 	/*
 		reqBytes := makeBytesReq(&ctx.req)

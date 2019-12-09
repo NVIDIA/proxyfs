@@ -17,13 +17,10 @@ import (
 	"time"
 )
 
-// ReqLenTyp is the type of the length field in a Request
-type ReqLenTyp int
-
 // Request is the structure sent
 type Request struct {
-	Len  ReqLenTyp // Length of this struct including len field
-	JReq []byte    // JSON containing request
+	Len  int64  // Length of this struct including len field
+	JReq []byte // JSON containing request
 }
 
 // Response is the structure returned
@@ -89,6 +86,7 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 func (server *Server) Start() (l net.Listener, err error) {
 	ps := fmt.Sprintf("%d", server.port)
 	server.listener, err = net.Listen("tcp", net.JoinHostPort(server.ipaddr, ps))
+	server.listenersWG.Add(1)
 
 	return server.listener, err
 }

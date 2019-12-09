@@ -1,6 +1,10 @@
 package retryrpc
 
-import "encoding/json"
+import (
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+)
 
 // TODO - Algorithm:
 // 1. marshal method and args into JSON and put into Request struct
@@ -24,6 +28,10 @@ import "encoding/json"
 */
 
 // TODO - do we need to retransmit these requests in order?
+// TODO - add mutex around client.tcpConn so that only one
+// reader or writer??? will need way to deserialize requests
+// returned? verify need this - use channels to coordinate
+// return???
 func (client *Client) send(method string, rpcRequest interface{}) (response *Response, err error) {
 	var crID uint64
 
@@ -40,6 +48,12 @@ func (client *Client) send(method string, rpcRequest interface{}) (response *Res
 
 	req := Request{}
 	req.JReq, err = json.Marshal(jreq)
+	req.Len = int64(len(req.JReq))
+
+	fmt.Printf("req.Len is : %v\n", req.Len)
+
+	// TODO TODO - how serializes send() requests so no intermixed
+	// writes...
 
 	// Keep track of requests we are sending so we can resend them later as
 	// needed.
@@ -48,5 +62,17 @@ func (client *Client) send(method string, rpcRequest interface{}) (response *Res
 	client.Unlock()
 
 	// Now send the request to the server and retry operation if it fails
+
+	// Send length - how do in one?
+	// This is how you hton() in Golang
+	err = binary.Write(client.tcpConn, binary.BigEndian, req.Len)
+	if err != nil {
+		fmt.Println("binary.Write failed:", err)
+	}
+	fmt.Printf("CLIENT: Wrote req length: %v err: %v\n", req.Len, err)
+
+	// Send JSON request
+	bytesWritten, writeErr := client.tcpConn.Write(req.JReq)
+	fmt.Printf("CLIENT: Wrote RPC REQEUST with bytesWritten: %v writeErr: %v\n", bytesWritten, writeErr)
 	return
 }
