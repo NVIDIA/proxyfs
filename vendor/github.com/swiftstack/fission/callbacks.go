@@ -1257,7 +1257,6 @@ func (volume *volumeStruct) doCreate(inHeader *InHeader, devFuseFDReadBufPayload
 
 func (volume *volumeStruct) doInterrupt(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
 	var (
-		errno       syscall.Errno
 		interruptIn *InterruptIn
 	)
 
@@ -1271,9 +1270,7 @@ func (volume *volumeStruct) doInterrupt(inHeader *InHeader, devFuseFDReadBufPayl
 		Unique: *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
 	}
 
-	errno = volume.callbacks.DoInterrupt(inHeader, interruptIn)
-
-	volume.devFuseFDWriter(inHeader, errno)
+	volume.callbacks.DoInterrupt(inHeader, interruptIn)
 }
 
 func (volume *volumeStruct) doBMap(inHeader *InHeader, devFuseFDReadBufPayload []byte) {

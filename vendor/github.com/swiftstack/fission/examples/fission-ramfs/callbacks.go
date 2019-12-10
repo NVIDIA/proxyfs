@@ -2284,8 +2284,7 @@ Restart:
 	return
 }
 
-func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn *fission.InterruptIn) (errno syscall.Errno) {
-	errno = 0
+func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn *fission.InterruptIn) {
 	return
 }
 

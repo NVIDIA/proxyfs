@@ -1982,9 +1982,8 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 	return
 }
 
-func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn *fission.InterruptIn) (errno syscall.Errno) {
+func (dummy *globalsStruct) DoInterrupt(inHeader *fission.InHeader, interruptIn *fission.InterruptIn) {
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoInterrupt_calls, 1)
-	errno = 0
 	return
 }
 

@@ -289,11 +289,11 @@ func unixTimeToGoTime(unixTimeSec uint64, unixTimeNSec uint32) (goTime time.Time
 }
 func goTimeToUnixTime(goTime time.Time) (unixTimeSec uint64, unixTimeNSec uint32) {
 	var (
-		unixTimeNow uint64
+		unixTime uint64
 	)
-	unixTimeNow = uint64(goTime.UnixNano())
-	unixTimeSec = unixTimeNow / 1e9
-	unixTimeNSec = uint32(unixTimeNow - (unixTimeSec * 1e9))
+	unixTime = uint64(goTime.UnixNano())
+	unixTimeSec = unixTime / 1e9
+	unixTimeNSec = uint32(unixTime - (unixTimeSec * 1e9))
 	return
 }
 func unixTimeNow() (unixTimeNowSec uint64, unixTimeNowNSec uint32) {

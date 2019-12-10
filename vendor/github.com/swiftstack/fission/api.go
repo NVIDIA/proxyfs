@@ -69,7 +69,7 @@ type Callbacks interface {
 	DoSetLKW(inHeader *InHeader, setLKWIn *SetLKWIn) (errno syscall.Errno)
 	DoAccess(inHeader *InHeader, accessIn *AccessIn) (errno syscall.Errno)
 	DoCreate(inHeader *InHeader, createIn *CreateIn) (createOut *CreateOut, errno syscall.Errno)
-	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn) (errno syscall.Errno)
+	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn)
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
 	DoDestroy(inHeader *InHeader)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
@@ -332,7 +332,7 @@ const (
 	OpCodeSetLKW        = uint32(33)
 	OpCodeAccess        = uint32(34)
 	OpCodeCreate        = uint32(35)
-	OpCodeInterrupt     = uint32(36)
+	OpCodeInterrupt     = uint32(36) // no reply
 	OpCodeBMap          = uint32(37)
 	OpCodeDestroy       = uint32(38) // no reply
 	OpCodeIoCtl         = uint32(39) // unsupported

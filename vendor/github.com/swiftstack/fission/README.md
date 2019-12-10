@@ -71,7 +71,7 @@ type Callbacks interface {
 	DoSetLKW(inHeader *InHeader, setLKWIn *SetLKWIn) (errno syscall.Errno)
 	DoAccess(inHeader *InHeader, accessIn *AccessIn) (errno syscall.Errno)
 	DoCreate(inHeader *InHeader, createIn *CreateIn) (createOut *CreateOut, errno syscall.Errno)
-	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn) (errno syscall.Errno)
+	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn)
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
 	DoDestroy(inHeader *InHeader)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
