@@ -1,3 +1,5 @@
+package retryrpc
+
 // Package retryrpc provides a client and server RPC model which survives
 // lost connections on either the client or the server.
 //
@@ -5,30 +7,27 @@
 // are still gaps where a server may complete an RPC and die before returning
 // a response.
 
-package retryrpc
-
 import (
 	"container/list"
 	"fmt"
 	"net"
 	"reflect"
 	"sync"
-	"syscall"
 	"time"
+
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 // Request is the structure sent
 type Request struct {
-	Len  int64  // Length of this struct including len field
+	Len  int64  // Length of JReq
 	JReq []byte // JSON containing request
 }
 
-// Response is the structure returned
-type Response struct {
-	Len    uint64 // Length of this struct including len field
-	Result []byte // JSON response - only valid if err != nil
-	Err    error  // Status of request
-	Errno  syscall.Errno
+// Reply is the structure returned
+type Reply struct {
+	Len     int64  // Length of JResult
+	JResult []byte // JSON containing response - only valid if err != nil
 }
 
 type completedRequest struct {
@@ -59,16 +58,18 @@ type Server struct {
 	connWG      sync.WaitGroup
 	listeners   []net.Listener
 	listenersWG sync.WaitGroup
+	jrpcfs      *jrpcfs.Server // TODO - move out to an interface?
 }
 
 // NewServer creates the Server object
-func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
+func NewServer(jrpcfs *jrpcfs.Server, ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.serviceMap = make(map[string]*reflect.Method)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
 	s.connections = list.New()
+	s.jrpcfs = jrpcfs
 	return s
 }
 
@@ -164,7 +165,8 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 }
 
 // Send the request and block until it has completed
-func (client *Client) Send(method string, rpcRequest interface{}) (response *Response, err error) {
+func (client *Client) Send(method string, rpcRequest interface{}) (reply *Reply,
+	err error) {
 
 	return client.send(method, rpcRequest)
 }

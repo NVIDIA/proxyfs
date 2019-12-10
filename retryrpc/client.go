@@ -32,7 +32,7 @@ import (
 // reader or writer??? will need way to deserialize requests
 // returned? verify need this - use channels to coordinate
 // return???
-func (client *Client) send(method string, rpcRequest interface{}) (response *Response, err error) {
+func (client *Client) send(method string, rpcRequest interface{}) (reply *Reply, err error) {
 	var crID uint64
 
 	// Put request data into structure to be be marshaled into JSON
@@ -74,5 +74,35 @@ func (client *Client) send(method string, rpcRequest interface{}) (response *Res
 	// Send JSON request
 	bytesWritten, writeErr := client.tcpConn.Write(req.JReq)
 	fmt.Printf("CLIENT: Wrote RPC REQEUST with bytesWritten: %v writeErr: %v\n", bytesWritten, writeErr)
+
+	// Wait reply
+	buf, getErr := getIO(client.tcpConn, "CLIENT")
+	if getErr != nil {
+		// TODO - error handling!
+		err = getErr
+		return
+	}
+	fmt.Printf("CLIENT: Saw response: %+v\n", buf)
+
+	// TODO - Unmarshal this back to rpcReply and return it...
+
+	// Unmarshal back once to get the header fields
+	jReply := jsonReply{}
+	err = json.Unmarshal(buf, &jReply)
+	if err != nil {
+		fmt.Printf("CLIENT: Unmarshal of buf failed with err: %v\n", err)
+		return
+	}
+
+	// Now get the result field
+	pingReply := pingJSONReply{}
+	err = json.Unmarshal(buf, &pingReply)
+	if err != nil {
+		fmt.Printf("CLIENT: Unmarshal of buf failed with err: %v\n", err)
+		return
+	}
+	fmt.Printf("CLIENT: jReply: %+v\n", jReply)
+	fmt.Printf("CLIENT: pingReply.Result: %+v\n", pingReply.Result)
+
 	return
 }

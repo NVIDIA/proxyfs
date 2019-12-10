@@ -46,9 +46,13 @@ func testServer(t *testing.T) {
 	zero := 0
 	assert.Equal(0, zero)
 
+	// Create new jrpcfs server - needed for calling
+	// jrcpfs RPCs
+	myJrpcfs := jrpcfs.NewServer()
+
 	// Create a new Server.  Completed request will live on
 	// completedRequests for 5 seconds.
-	s := NewServer(5*time.Second, ipaddr, port)
+	s := NewServer(myJrpcfs, 5*time.Second, ipaddr, port)
 	assert.NotNil(s)
 
 	// Register the Server - sets up the methods supported by the

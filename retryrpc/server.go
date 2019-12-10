@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -48,7 +48,7 @@ func (server *Server) run() {
 		server.connLock.Unlock()
 
 		go func(myConn net.Conn, myElm *list.Element) {
-			processRequest(myConn)
+			server.processRequest(myConn)
 			server.connLock.Lock()
 			server.connections.Remove(myElm)
 
@@ -62,92 +62,10 @@ func (server *Server) run() {
 
 }
 
-func getRequest(conn net.Conn, req *Request) (err error) {
-	if printDebugLogs {
-		logger.Infof("conn: %v, req: %v", conn, req)
-	}
+func (server *Server) processRequest(conn net.Conn) {
 
-	// Read in the length of the request first
-	var reqLen int64
-	err = binary.Read(conn, binary.BigEndian, &reqLen)
-	fmt.Printf("SERVER: Read header length: %v err: %v\n", reqLen, err)
-
-	// Now read the rest of the structure off the wire.
-	fmt.Printf("SERVER: Try to read request of length: %v\n", reqLen)
-	buf := make([]byte, reqLen)
-	bytesRead, writeErr := io.ReadFull(conn, buf)
-	fmt.Printf("SERVER: Read cnt bytes: %v err: %v\n", bytesRead, writeErr)
-
-	// TODO - error handling if err != nil
-
-	// Now unmarshal the jsonBuf
-	fmt.Printf("getRequest() - buffer read is: %v\n", string(buf))
-	jReq := jsonRequest{}
-	err = json.Unmarshal(buf, &jReq)
-	if err != nil {
-		fmt.Printf("SERVER: Unmarshal of buf failed with err: %v\n", err)
-		return
-	}
-	fmt.Printf("jReq() - json request is: %+v\n", jReq)
-
-	// Now call the actual RPC and return the results...
-	// TODO - swithch on method and setup request structure....
-
-	/*
-		reqBytes := makeBytesReq(&ctx.req)
-
-		bytesRead, err := io.ReadFull(conn, reqBytes)
-		if err != nil {
-			if err != io.EOF {
-				logger.Errorf("Failed to read request from the socket: %v", err)
-			}
-			return err
-		}
-
-		// "cast" bytes to request
-		makeReq(reqBytes, &ctx.req)
-
-		if debugPutGet {
-			logger.Infof("Got %v bytes, request: %+v", bytesRead, ctx.req)
-		}
-
-		if ctx.req.opType == 1001 {
-			// Write op
-			ctx.op = WriteOp
-		} else if ctx.req.opType == 1002 {
-			// Read op
-			ctx.op = ReadOp
-		} else {
-			return fmt.Errorf("getRequest: unsupported op %v!", ctx.req.opType)
-		}
-
-		// For writes, get write data
-		if ctx.op == WriteOp {
-			if debugPutGet {
-				logger.Infof("Reading %v bytes of write data, ctx.data len is %v.", ctx.req.length, len(ctx.data))
-			}
-
-			ctx.data = make([]byte, ctx.req.length)
-
-			_, err = io.ReadFull(conn, ctx.data)
-			if err != nil {
-				logger.Infof("Failed to read write buffer from the socket uint64_t.")
-				return err
-			}
-			// NOTE: Suppress for now, will be counted in next event
-			//profiler.AddEventNow("after get write buf")
-		}
-	*/
-
-	return nil
-}
-
-func processRequest(conn net.Conn) {
 	// NOTE: This function runs in a goroutine and only processes
 	//               one request at a time.
-	reqStorage := Request{}
-	req := &reqStorage
-
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
 	}
@@ -160,12 +78,38 @@ func processRequest(conn net.Conn) {
 		*/
 
 		// Get RPC request
-		err := getRequest(conn, req)
-		fmt.Printf("processRequest() - getRequest() returned err: %v\n", err)
-
-		if debugPutGet {
-			logger.Infof("Got request: %+v", req)
+		buf, getErr := getIO(conn, "SERVER")
+		if getErr != nil {
+			// TODO - error handling!!!
+			// Retry??? Drop on floor since other side failed???
+			return
 		}
+
+		// TODO - error handling
+		if debugPutGet {
+			logger.Infof("Got raw request: %+v", buf)
+		}
+
+		// Call the RPC - and return an already marshaled response
+		reply, err := server.callRPC(buf)
+		fmt.Printf("Server: RPC returned jReply: %+v \n\tResult: %v err: %v\n",
+			reply, string(reply.JResult), err)
+
+		// Now write the response back to the client
+		// TODO - do this in a Goroutine?   How will error handling work?
+		// TODO - handle Len first in binary and then write the other fields....
+
+		// Write Len back
+		reply.Len = int64(len(reply.JResult))
+		err = binary.Write(conn, binary.BigEndian, reply.Len)
+		if err != nil {
+			fmt.Println("SERVER: binary.Write failed:", err)
+		}
+		fmt.Printf("SERVER: Wrote reply length: %v err: %v\n", reply.Len, err)
+
+		// Send JSON request
+		bytesWritten, writeErr := conn.Write(reply.JResult)
+		fmt.Printf("SERVER: Wrote RPC REQEUST with bytesWritten: %v writeErr:  %v\n", bytesWritten, writeErr)
 
 		/*
 			switch ctx.op {
@@ -227,4 +171,301 @@ func processRequest(conn net.Conn) {
 			decRunningWorkers()
 		*/
 	}
+}
+
+// callRPC calls the RPC and returns an already marshalled reply
+func (server *Server) callRPC(buf []byte) (reply *Reply, err error) {
+
+	// TODO - how handle RpcMount?
+
+	// We first unmarshal the raw buf to find the method
+	//
+	// Next we unmarshal again with the request structure specific
+	// to the RPC.  (There is no way I no of to pass an interface
+	// over JSON and have it be unmarshalled.)
+	//
+	fmt.Printf("getRequest() - buffer read is: %v\n", string(buf))
+	jReq := jsonRequest{}
+	err = json.Unmarshal(buf, &jReq)
+	if err != nil {
+		fmt.Printf("SERVER: Unmarshal of buf failed with err: %v\n", err)
+		return
+	}
+
+	// Setup the reply structure with common fields
+	reply = &Reply{}
+	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: jReq.RequestID}
+
+	switch jReq.Method {
+	/*
+			case "Server.RpcChmod":
+				q := breq.Params[0].(ChmodRequest)
+		                p := Reply{}
+		                err = s.RpcChmod(&q, &p)
+		                if err != nil {
+		                        breply.Error = err.Error()
+		                        return
+		                }
+		                breply.Result[0] = p
+
+					case "Server.RpcChown":
+						q := breq.Params[0].(ChownRequest)
+						p := Reply{}
+						err = s.RpcChown(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcCreate":
+						q := breq.Params[0].(CreateRequest)
+						// TODO - which is correct? p := Reply{}
+						p := InodeReply{}
+						err = s.RpcCreate(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcFetchExtentMapChunk":
+						q := breq.Params[0].(FetchExtentMapChunkRequest)
+						p := FetchExtentMapChunkReply{}
+						err = s.RpcFetchExtentMapChunk(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcGetStat":
+						q := breq.Params[0].(GetStatRequest)
+						p := StatStruct{}
+						err = s.RpcGetStat(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcGetXAttr":
+						q := breq.Params[0].(GetXAttrRequest)
+						p := GetXAttrReply{}
+						err = s.RpcGetXAttr(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcLink":
+						q := breq.Params[0].(LinkRequest)
+						p := Reply{}
+						err = s.RpcLink(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcListXAttr":
+						q := breq.Params[0].(ListXAttrRequest)
+						p := ListXAttrReply{}
+						err = s.RpcListXAttr(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcLookup":
+						q := breq.Params[0].(LookupRequest)
+						p := InodeReply{}
+						err = s.RpcLookup(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcMkdir":
+						q := breq.Params[0].(MkdirRequest)
+						// TODO - which is correct? p := Reply{}
+						p := InodeReply{}
+						err = s.RpcMkdir(&q, &p)
+						if err != nil {
+							breply.Error = err.Error()
+							return
+						}
+						breply.Result[0] = p
+
+					case "Server.RpcMountByAccountName":
+						// TODO - how do this?  Need this?
+	*/
+
+	case "Server.RpcPing":
+		// Another unmarshal of buf to find the parameters specific to
+		// this RPC
+		paramsReq := pingJSONReq{}
+		fmt.Printf("BEFORE UNMARSHAL - buf: %+v dReq: %v\n", string(buf), paramsReq)
+		err = json.Unmarshal(buf, &paramsReq)
+		if err != nil {
+			// TODO - error handling
+			return
+		}
+		fmt.Printf("AFTER UNMARSHAL - paramsReq.Params is: %v err: %v\n", paramsReq.Params, err)
+
+		// Now actually call the RPC
+		p := jrpcfs.PingReply{}
+		r := paramsReq.Params[0]
+		err = server.jrpcfs.RpcPing(&r, &p)
+		if err != nil {
+			jReply.Err = err
+			// TODO - have to marshal the response!!!
+			return
+		}
+		jReply.Result[0] = p
+		fmt.Printf("RPC returned ====== r: %v p: %v\n", r, p)
+
+		/*
+			case "Server.RpcProvisionObject":
+				q := breq.Params[0].(ProvisionObjectRequest)
+				p := ProvisionObjectReply{}
+				err = s.RpcProvisionObject(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcReadSymlink":
+				q := breq.Params[0].(ReadSymlinkRequest)
+				p := ReadSymlinkReply{}
+				err = s.RpcReadSymlink(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcReaddirByLoc":
+				q := breq.Params[0].(ReaddirByLocRequest)
+				p := ReaddirReply{}
+				err = s.RpcReaddirByLoc(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcRemoveXAttr":
+				q := breq.Params[0].(RemoveXAttrRequest)
+				p := Reply{}
+				err = s.RpcRemoveXAttr(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcRename":
+				q := breq.Params[0].(RenameRequest)
+				p := Reply{}
+				err = s.RpcRename(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcResize":
+				q := breq.Params[0].(ResizeRequest)
+				p := Reply{}
+				err = s.RpcResize(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcRmdir":
+				q := breq.Params[0].(UnlinkRequest)
+				p := Reply{}
+				err = s.RpcRmdir(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcSetTime":
+				q := breq.Params[0].(SetTimeRequest)
+				p := Reply{}
+				err = s.RpcSetTime(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcSetXAttr":
+				q := breq.Params[0].(SetXAttrRequest)
+				p := Reply{}
+				err = s.RpcSetXAttr(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcStatVFS":
+				q := breq.Params[0].(StatVFSRequest)
+				p := StatVFS{}
+				err = s.RpcStatVFS(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcSymlink":
+				q := breq.Params[0].(SymlinkRequest)
+				p := Reply{}
+				err = s.RpcSymlink(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcUnlink":
+				q := breq.Params[0].(UnlinkRequest)
+				p := Reply{}
+				err = s.RpcUnlink(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+
+			case "Server.RpcWrote":
+				q := breq.Params[0].(WroteRequest)
+				p := WroteReply{}
+				err = s.RpcWrote(&q, &p)
+				if err != nil {
+					breply.Error = err.Error()
+					return
+				}
+				breply.Result[0] = p
+		*/
+
+	default:
+		fmt.Printf("Invalid tunnel request method: %v\n", jReq.Method)
+	}
+
+	// Convert response into JSON for return trip..
+	reply.JResult, err = json.Marshal(jReply)
+
+	return
 }
