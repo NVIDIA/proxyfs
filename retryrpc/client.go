@@ -29,9 +29,36 @@ import (
 
 // TODO - do we need to retransmit these requests in order?
 // TODO - add mutex around client.tcpConn so that only one
-// reader or writer??? will need way to deserialize requests
-// returned? verify need this - use channels to coordinate
-// return???
+// reader or writer
+
+/*
+gotDisconnect - who calls - on read/write failure - could be holding lock!!!
+===> should only be two outstanding - one writer and one reader....
+1. set flag that reconnecting so others don't do it
+2. reconnect
+3. loop thru outstanding list of requests incomplete and resend with
+   goroutines which send and wait result and write on chan from send()
+4.
+
+*/
+
+/*
+ readResponse - reads complete response (only one thread)
+ 1. block on read on socket - (how handle disconnects?)
+ 2. when gets reply issues a goroutine and goes and reads next one
+ 3. goroutine unmarshals request, looks it up, marks done and
+	then sends reply on channel back to send()
+ 4. who strips it from channel???
+*/
+
+/*
+Send() algorithm
+1. build ctx including channel for reply struct
+2. go doRequest()
+		- doRequest() sends request and queues it.... what order???
+		- matter if holding lock the whole time???
+3. wait reply on channel
+*/
 func (client *Client) send(method string, rpcRequest interface{}) (reply *Reply, err error) {
 	var crID uint64
 

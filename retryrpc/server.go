@@ -319,6 +319,8 @@ func (server *Server) callRPC(buf []byte) (reply *Reply, err error) {
 		// Now actually call the RPC
 		p := jrpcfs.PingReply{}
 		r := paramsReq.Params[0]
+
+		// TODO - look it up in serviceMap or remove serviceMap???
 		err = server.jrpcfs.RpcPing(&r, &p)
 		if err != nil {
 			jReply.Err = err
