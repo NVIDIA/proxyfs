@@ -787,6 +787,9 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoUnlink_calls, 1)
 
+	// TODO: Remove this once Lease Management makes this unnecessary
+	doFlushIfNecessary(inode.InodeNumber(inHeader.NodeID), unlinkIn.Name)
+
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
@@ -846,6 +849,9 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename_calls, 1)
+
+	// TODO: Remove this once Lease Management makes this unnecessary
+	doFlushIfNecessary(inode.InodeNumber(renameIn.NewDir), renameIn.NewName)
 
 	renameRequest = &jrpcfs.RenameRequest{
 		MountID:           globals.mountID,
@@ -2151,6 +2157,9 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename2_calls, 1)
+
+	// TODO: Remove this once Lease Management makes this unnecessary
+	doFlushIfNecessary(inode.InodeNumber(rename2In.NewDir), rename2In.NewName)
 
 	renameRequest = &jrpcfs.RenameRequest{
 		MountID:           globals.mountID,

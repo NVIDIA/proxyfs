@@ -17,6 +17,44 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
+// doFlushIfNecessary (the non-receiver form) is currently necessary due to the lack
+// of Lease Management whereby an implicitly deleted fileInode (due to a DoUnlink()
+// or DoRename/DoRename2() call or equivalent somewhere) would revoke such Lease
+// causing any in-flight LogSegment PUTs to be flushed first. In the meantime, this
+// func will do the flush if necessary based on what *this* PFSAgent instance is
+// doing.
+//
+func doFlushIfNecessary(dirInodeNumber inode.InodeNumber, name []byte) {
+	var (
+		err           error
+		fileInode     *fileInodeStruct
+		lookupReply   *jrpcfs.InodeReply
+		lookupRequest *jrpcfs.LookupRequest
+	)
+
+	lookupRequest = &jrpcfs.LookupRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(dirInodeNumber),
+		},
+		Basename: string(name[:]),
+	}
+
+	lookupReply = &jrpcfs.InodeReply{}
+
+	err = doJRPCRequest("Server.RpcLookup", lookupRequest, lookupReply)
+	if nil != err {
+		// Assume the fileInode simply did not exist, so just return
+		return
+	}
+
+	fileInode = referenceFileInode(inode.InodeNumber(lookupReply.InodeNumber))
+
+	fileInode.doFlushIfNecessary()
+
+	fileInode.dereference()
+}
+
 func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
