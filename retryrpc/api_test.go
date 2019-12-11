@@ -1,7 +1,6 @@
 package retryrpc
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -65,7 +64,6 @@ func testServer(t *testing.T) {
 
 	// Start listening for requests on the ipaddr/port
 	listener, lisErr := s.Start()
-	fmt.Printf("listener: %v lisErr: %v\n", listener, lisErr)
 	assert.NotNil(listener, "Listener should not be nil")
 	assert.Nil(lisErr, "lisErr is not nil")
 
@@ -80,8 +78,9 @@ func testServer(t *testing.T) {
 	c.Dial(ipaddr, port)
 
 	pingRequest := &jrpcfs.PingReq{Message: "Ping Me!"}
-	_, sendErr := c.Send("Server.RpcPing", pingRequest)
+	pingReply, sendErr := c.Send("Server.RpcPing", pingRequest)
 	assert.Nil(sendErr)
+	assert.Equal("pong 8 bytes", pingReply.(jrpcfs.PingReply).Message)
 
 	time.Sleep(10 * time.Second)
 

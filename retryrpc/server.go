@@ -16,17 +16,7 @@ import (
 var printDebugLogs bool = true
 var debugPutGet bool = false
 
-// TODO - Algorithm - Standard server stuff
-// 1. goroutine GR1 accepts new connection and does "go GR2(conn)
-// 2. GR2 adds request to server.pendingRequest, unmarshals
-//    request and does "go GR3(process RPC)"
-// 3. GR2 proceses the RPC, grabs server lock and moves request from
-//    server.pendingRequest to server.completedRequest, releases lock
-//    and then sends response to client if socket is still up.
-// 4. request stays on server.completedRequest until s.completedTTL exceeded
-
 // TODO - do we need to retransmit responses in order?
-// What ordering guarantees do we need to enforce?
 // TODO - test if Register has been called???
 func (server *Server) run() {
 	for {
@@ -82,6 +72,7 @@ func (server *Server) processRequest(conn net.Conn) {
 		if getErr != nil {
 			// TODO - error handling!!!
 			// Retry??? Drop on floor since other side failed???
+			// Retransmit case?
 			return
 		}
 
@@ -89,6 +80,8 @@ func (server *Server) processRequest(conn net.Conn) {
 		if debugPutGet {
 			logger.Infof("Got raw request: %+v", buf)
 		}
+
+		// TODO - START OF GOROUTINE(s)
 
 		// Call the RPC - and return an already marshaled response
 		reply, err := server.callRPC(buf)
@@ -107,74 +100,16 @@ func (server *Server) processRequest(conn net.Conn) {
 		}
 		fmt.Printf("SERVER: Wrote reply length: %v err: %v\n", reply.Len, err)
 
-		// Send JSON request
+		// Send JSON reply
 		bytesWritten, writeErr := conn.Write(reply.JResult)
 		fmt.Printf("SERVER: Wrote RPC REQEUST with bytesWritten: %v writeErr:  %v\n", bytesWritten, writeErr)
 
-		/*
-			switch ctx.op {
-			case WriteOp:
-				if globals.dataPathLogging || printDebugLogs {
-					logger.Tracef(">> ioWrite in.{InodeHandle:{MountID:%v InodeNumber:%v} Offset:%v Buf.size:%v Buf.<buffer not printed>",
-						ctx.req.mountID, ctx.req.inodeID, ctx.req.offset, len(ctx.data))
-				}
-
-				profiler.AddEventNow("before fs.Write()")
-				mountHandle, err = lookupMountHandleByMountIDAsByteArray(ctx.req.mountID)
-				if err == nil {
-					ctx.resp.ioSize, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
-				}
-				profiler.AddEventNow("after fs.Write()")
-
-				stats.IncrementOperationsAndBucketedBytes(stats.JrpcfsIoWrite, ctx.resp.ioSize)
-
-				if globals.dataPathLogging || printDebugLogs {
-					logger.Tracef("<< ioWrite errno:%v out.Size:%v", ctx.resp.errno, ctx.resp.ioSize)
-				}
-
-			default:
-				// Hmmm, this should have been caught by getRequest...
-				logger.Errorf("Error, unsupported op %v", ctx.op)
-				decRunningWorkers()
-				return
-			}
-
-			// Set error in context
-			ctx.resp.errno = uint64(blunder.Errno(err))
-
-			// Write response
-			err = putResponse(conn, ctx)
-			// XXX TODO: Enable if we want to see this event specifically.
-			//           Otherwise this will show up under "remaining time".
-			//profiler.AddEventNow("after rpc send response")
-			if err != nil {
-				decRunningWorkers()
-				return
-			}
-
-			// Save profiler with server op stats. Close it first so that save time isn't counted.
-			profiler.Close()
-			SaveProfiler(qserver, ctx.op, profiler)
-
-			// XXX TODO: no sync.Pool for now, just alloc on the stack
-			// Return context struct to pool
-			//              ioContextPool.Put(ctx)
-
-			// Reset data buffer size in ctx to its full size
-			// ctx.data = dataStorage[:0]
-			ctx.data = nil
-
-			if printDebugLogs {
-				logger.Infof("Done with op, back to beginning")
-			}
-
-			decRunningWorkers()
-		*/
+		// TODO - END OF GOROUTINE(s)
 	}
 }
 
 // callRPC calls the RPC and returns an already marshalled reply
-func (server *Server) callRPC(buf []byte) (reply *Reply, err error) {
+func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 
 	// TODO - how handle RpcMount?
 
@@ -193,7 +128,7 @@ func (server *Server) callRPC(buf []byte) (reply *Reply, err error) {
 	}
 
 	// Setup the reply structure with common fields
-	reply = &Reply{}
+	reply = &ioReply{}
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: jReq.RequestID}
 
 	switch jReq.Method {

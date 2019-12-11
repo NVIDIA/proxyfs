@@ -18,43 +18,18 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
-// Request is the structure sent
-type Request struct {
-	Len  int64  // Length of JReq
-	JReq []byte // JSON containing request
-}
-
-// Reply is the structure returned
-type Reply struct {
-	Len     int64  // Length of JResult
-	JResult []byte // JSON containing response - only valid if err != nil
-}
-
-type completedRequest struct {
-	completedTime time.Time
-	request       *Request
-}
-
-// ReqResKey uniquely identifies a client request from a client
-type ReqResKey struct {
-	uniqueID        string
-	clientRequestID uint64
-}
-
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
-	completedTTL      time.Duration // How long a completed request stays on queue
-	serviceMap        map[string]*reflect.Method
-	pendingRequests   map[ReqResKey]*Request          // Request which have not been completed yet.
-	completedRequests map[ReqResKey]*completedRequest // Request which have been completed.  Will age out
-	ipaddr            string                          // IP address server listens too
-	port              int                             // Port of server
-	listener          net.Listener
+	completedTTL time.Duration // How long a completed request stays on queue
+	serviceMap   map[string]*reflect.Method
+	ipaddr       string // IP address server listens too
+	port         int    // Port of server
+	listener     net.Listener
 
 	halting     bool
 	connLock    sync.Mutex
-	connections *list.List
+	connections *list.List // TODO - how used?
 	connWG      sync.WaitGroup
 	listeners   []net.Listener
 	listenersWG sync.WaitGroup
@@ -125,18 +100,20 @@ type Client struct {
 	currentRequestID uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
-	myUniqueID         string              // Unique ID across all clients
-	outstandingRequest map[uint64]*Request // Map of outstanding requests sent
-	// or to be sent to server
+	myUniqueID         string             // Unique ID across all clients
+	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
+	// or to be sent to server.  Key is assigned from currentRequestID
 	tcpConn *net.TCPConn // Our connection to the server
 }
 
 // NewClient returns a Client structure
 func NewClient(myUniqueID string) *Client {
+
 	// TODO - if restart client, Client Request ID will be 0.   How know the server
 	// has removed these client IDs from it's queue?  Race condition...
 	c := &Client{myUniqueID: myUniqueID}
-	c.outstandingRequest = make(map[uint64]*Request)
+	c.outstandingRequest = make(map[uint64]*reqCtx)
+
 	return c
 }
 
@@ -161,11 +138,14 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 		return
 	}
 
+	// Start readResponse goroutine to read responses from server
+	go client.readReplies()
+
 	return
 }
 
 // Send the request and block until it has completed
-func (client *Client) Send(method string, rpcRequest interface{}) (reply *Reply,
+func (client *Client) Send(method string, rpcRequest interface{}) (reply interface{},
 	err error) {
 
 	return client.send(method, rpcRequest)
@@ -174,5 +154,7 @@ func (client *Client) Send(method string, rpcRequest interface{}) (reply *Reply,
 // Close gracefully shuts down the client.   This allows the Server
 // to remove Client request on completed queue.
 func (client *Client) Close() {
+
+	// TODO - shutdown listener, readResponses, etc
 
 }

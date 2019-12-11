@@ -8,9 +8,32 @@ import (
 	"io"
 	"net"
 
-	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/logger"
 )
+
+// Request is the structure sent
+type ioRequest struct {
+	Len    int64  // Length of JReq
+	Method string // Needed by "read" goroutine to create Reply{}
+	JReq   []byte // JSON containing request
+}
+
+// Reply is the structure returned
+type ioReply struct {
+	Len     int64  // Length of JResult
+	JResult []byte // JSON containing response - only valid if err != nil
+}
+
+// reqCtx tracks a request passed to Send() until Send() returns
+type reqCtx struct {
+	ioreq  ioRequest        // Wrapped request passed to Send()
+	answer chan interface{} // Channel with RPC reply
+}
+
+// NOTE: jsonRequest and jsonReply get "redefined" by the client's
+// version of these data structures.   This is because the
+// client code has to unmarshal the Params and Result fields
+// into data structure's specific to the RPC.
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
@@ -27,17 +50,6 @@ type jsonReply struct {
 	Err        error  `json:"err"`
 	// TODO - include errno too?
 	Result [1]interface{} `json:"result"`
-}
-
-// These data structures in effect "redefine" jsonRequest and jsonReply.
-//
-// This is the only way we can unmarshal Params and Result into the
-// appropriate concrete type
-type pingJSONReq struct {
-	Params [1]jrpcfs.PingReq `json:"params"`
-}
-type pingJSONReply struct {
-	Result [1]jrpcfs.PingReply `json:"result"`
 }
 
 // TODO clean up the names of these data structures ... jReq is already
