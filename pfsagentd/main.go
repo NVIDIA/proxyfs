@@ -50,6 +50,10 @@ func main() {
 
 	initializeGlobals(confMap)
 
+	// Launch SwiftProxyBypass JSON RPC Client
+
+	startJRPCSwiftProxyBypass()
+
 	// Perform mount via ProxyFS
 
 	doMountProxyFS()
@@ -83,6 +87,10 @@ func main() {
 	// Flush all dirty fileInode's
 
 	emptyFileInodeDirtyList()
+
+	// Terminate SwiftProxyBypass JSON RPC Client
+
+	stopJRPCSwiftProxyBypass()
 
 	// Uninitialize globals
 
