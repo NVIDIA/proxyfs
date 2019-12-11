@@ -2001,10 +2001,9 @@ func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.P
 	return
 }
 
-func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForgetIn *fission.BatchForgetIn) (errno syscall.Errno) {
+func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForgetIn *fission.BatchForgetIn) {
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoBatchForget_calls, 1)
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoBatchForget_nodes, uint64(len(batchForgetIn.Forget)))
-	errno = 0
 	return
 }
 
