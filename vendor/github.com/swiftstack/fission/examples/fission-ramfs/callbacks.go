@@ -2302,8 +2302,7 @@ func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.P
 	return
 }
 
-func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForgetIn *fission.BatchForgetIn) (errno syscall.Errno) {
-	errno = 0
+func (dummy *globalsStruct) DoBatchForget(inHeader *fission.InHeader, batchForgetIn *fission.BatchForgetIn) {
 	return
 }
 

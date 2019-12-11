@@ -73,7 +73,7 @@ type Callbacks interface {
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
 	DoDestroy(inHeader *InHeader)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
-	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn) (errno syscall.Errno)
+	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn)
 	DoFAllocate(inHeader *InHeader, fAllocateIn *FAllocateIn) (errno syscall.Errno)
 	DoReadDirPlus(inHeader *InHeader, readDirPlusIn *ReadDirPlusIn) (readDirPlusOut *ReadDirPlusOut, errno syscall.Errno)
 	DoRename2(inHeader *InHeader, rename2In *Rename2In) (errno syscall.Errno)
@@ -338,7 +338,7 @@ const (
 	OpCodeIoCtl         = uint32(39) // unsupported
 	OpCodePoll          = uint32(40)
 	OpCodeNotifyReply   = uint32(41) // unsupported
-	OpCodeBatchForget   = uint32(42)
+	OpCodeBatchForget   = uint32(42) // no reply
 	OpCodeFAllocate     = uint32(43)
 	OpCodeReadDirPlus   = uint32(44)
 	OpCodeRename2       = uint32(45)

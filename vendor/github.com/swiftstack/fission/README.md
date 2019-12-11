@@ -75,7 +75,7 @@ type Callbacks interface {
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
 	DoDestroy(inHeader *InHeader)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
-	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn) (errno syscall.Errno)
+	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn)
 	DoFAllocate(inHeader *InHeader, fAllocateIn *FAllocateIn) (errno syscall.Errno)
 	DoReadDirPlus(inHeader *InHeader, readDirPlusIn *ReadDirPlusIn) (readDirPlusOut *ReadDirPlusOut, errno syscall.Errno)
 	DoRename2(inHeader *InHeader, rename2In *Rename2In) (errno syscall.Errno)

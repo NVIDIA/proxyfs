@@ -1357,7 +1357,6 @@ func (volume *volumeStruct) doBatchForget(inHeader *InHeader, devFuseFDReadBufPa
 		batchForgetInForgetIndex uint32
 		batchForgetInSize        int
 		batchForgetInOffset      uint32
-		errno                    syscall.Errno
 	)
 
 	if len(devFuseFDReadBufPayload) < BatchForgetInFixedPortionSize {
@@ -1390,9 +1389,7 @@ func (volume *volumeStruct) doBatchForget(inHeader *InHeader, devFuseFDReadBufPa
 		}
 	}
 
-	errno = volume.callbacks.DoBatchForget(inHeader, batchForgetIn)
-
-	volume.devFuseFDWriter(inHeader, errno)
+	volume.callbacks.DoBatchForget(inHeader, batchForgetIn)
 }
 
 func (volume *volumeStruct) doFAllocate(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
