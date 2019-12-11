@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -296,37 +297,45 @@ type metricsStruct struct {
 
 type globalsStruct struct {
 	sync.Mutex
-	config                          configStruct
-	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
-	entryValidSec                   uint64
-	entryValidNSec                  uint32
-	attrValidSec                    uint64
-	attrValidNSec                   uint32
-	httpServer                      *http.Server
-	httpServerWG                    sync.WaitGroup
-	httpClient                      *http.Client
-	retryDelay                      []time.Duration
-	swiftAuthWaitGroup              *sync.WaitGroup
-	swiftAuthToken                  string
-	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
-	mountID                         jrpcfs.MountIDAsString
-	rootDirInodeNumber              uint64
-	fissionErrChan                  chan error
-	fissionVolume                   fission.Volume
-	fuseConn                        *fuse.Conn
-	jrpcLastID                      uint64
-	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
-	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
-	leaseRequestChan                chan *fileInodeLeaseRequestStruct
-	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	exclusiveLeaseFileInodeCacheLRU *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	fhToInodeNumberMap              map[uint64]uint64    // Key == FH; Value == InodeNumber
-	inodeNumberToFHMap              map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
-	lastFH                          uint64               // Valid FH's start at 1
-	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
-	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
-	metrics                         *metricsStruct
+	config                           configStruct
+	logFile                          *os.File // == nil if configStruct.LogFilePath == ""
+	jrpcSwiftProxyBypassRequestChan  chan *jrpcSwiftProxyBypassRequestStruct
+	jrpcSwiftProxyBypassRequestMap   map[uint64]*jrpcSwiftProxyBypassRequestStruct // Key == jrpcRequestID
+	jrpcSwiftProxyBypassStopChan     chan struct{}
+	jrpcSwiftProxyBypassParentDoneWG sync.WaitGroup
+	jrpcSwiftProxyBypassChildDoneWG  sync.WaitGroup
+	jrpcSwiftProxyBypassTCPAddr      *net.TCPAddr
+	jrpcSwiftProxyBypassTCPConn      *net.TCPConn
+	jrpcSwiftProxyBypassResponseChan chan []byte
+	entryValidSec                    uint64
+	entryValidNSec                   uint32
+	attrValidSec                     uint64
+	attrValidNSec                    uint32
+	httpServer                       *http.Server
+	httpServerWG                     sync.WaitGroup
+	httpClient                       *http.Client
+	retryDelay                       []time.Duration
+	swiftAuthWaitGroup               *sync.WaitGroup
+	swiftAuthToken                   string
+	swiftAccountURL                  string // swiftStorageURL with AccountName forced to config.SwiftAccountName
+	mountID                          jrpcfs.MountIDAsString
+	rootDirInodeNumber               uint64
+	fissionErrChan                   chan error
+	fissionVolume                    fission.Volume
+	fuseConn                         *fuse.Conn
+	jrpcLastID                       uint64
+	fileInodeMap                     map[inode.InodeNumber]*fileInodeStruct
+	fileInodeDirtyList               *list.List // LRU of fileInode's with non-empty chunkedPutList
+	leaseRequestChan                 chan *fileInodeLeaseRequestStruct
+	unleasedFileInodeCacheLRU        *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	sharedLeaseFileInodeCacheLRU     *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	exclusiveLeaseFileInodeCacheLRU  *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	fhToInodeNumberMap               map[uint64]uint64    // Key == FH; Value == InodeNumber
+	inodeNumberToFHMap               map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
+	lastFH                           uint64               // Valid FH's start at 1
+	logSegmentCacheMap               map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
+	logSegmentCacheLRU               *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
+	metrics                          *metricsStruct
 }
 
 var globals globalsStruct

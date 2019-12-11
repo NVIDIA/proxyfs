@@ -18,7 +18,8 @@ type globalsStruct struct {
 	//                       confMap changes Lock()/Unlock()
 
 	whoAmI          string
-	ipAddr          string
+	publicIPAddr    string
+	privateIPAddr   string
 	portString      string
 	fastPortString  string
 	dataPathLogging bool
@@ -55,13 +56,18 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.mountIDAsStringMap = make(map[MountIDAsString]fs.MountHandle)
 	globals.bimodalMountMap = make(map[string]fs.MountHandle)
 
-	// Fetch IPAddr from config file
+	// Fetch IPAddrs from config file
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get Cluster.WhoAmI from config file")
 		return
 	}
-	globals.ipAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
+	globals.publicIPAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PublicIPAddr")
+	if nil != err {
+		logger.ErrorfWithError(err, "failed to get %s.PublicIPAddr from config file", globals.whoAmI)
+		return
+	}
+	globals.privateIPAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get %s.PrivateIPAddr from config file", globals.whoAmI)
 		return
@@ -100,10 +106,11 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.halting = false
 
 	// Init JSON RPC server stuff
-	jsonRpcServerUp(globals.ipAddr, globals.portString)
+	// jsonRpcServerUp(globals.privateIPAddr, globals.portString)
+	jsonRpcServerUp("0.0.0.0", globals.portString)
 
 	// Now kick off our other, faster RPC server
-	ioServerUp(globals.ipAddr, globals.fastPortString)
+	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	return
 }
