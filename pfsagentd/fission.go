@@ -811,15 +811,13 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 }
 
 func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission.RmDirIn) (errno syscall.Errno) {
-	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRmDir_calls, 1)
-
 	var (
 		err           error
 		unlinkReply   *jrpcfs.Reply
 		unlinkRequest *jrpcfs.UnlinkRequest
 	)
 
-	_ = atomic.AddUint64(&globals.metrics.FUSE_DoUnlink_calls, 1)
+	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRmDir_calls, 1)
 
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
