@@ -392,8 +392,9 @@ type MountByAccountNameRequest struct {
 
 // MountByAccountNameReply is the reply object for RpcMountByAccountName.
 type MountByAccountNameReply struct {
-	MountID            MountIDAsString
-	RootDirInodeNumber int64
+	MountID              MountIDAsString
+	RootDirInodeNumber   int64
+	JSONRpcTCPAddrString string
 }
 
 // MountByVolumeNameRequest is the request object for RpcMountByVolumeName.
@@ -406,8 +407,9 @@ type MountByVolumeNameRequest struct {
 
 // MountByVolumeNameReply is the reply object for RpcMountByVolumeName.
 type MountByVolumeNameReply struct {
-	MountID            MountIDAsString
-	RootDirInodeNumber int64
+	MountID              MountIDAsString
+	RootDirInodeNumber   int64
+	JSONRpcTCPAddrString string
 }
 
 // ReaddirRequest is the request object for RpcReaddir.
