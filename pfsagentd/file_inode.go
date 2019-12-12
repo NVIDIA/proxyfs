@@ -389,6 +389,11 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err err
 		grantedLock *fileInodeLockRequestStruct
 	)
 
+	chunkedPutContext.inRead = true
+	defer func() {
+		chunkedPutContext.inRead = false
+	}()
+
 	grantedLock = chunkedPutContext.fileInode.getExclusiveLock()
 
 	n = len(chunkedPutContext.buf) - chunkedPutContext.pos
@@ -435,6 +440,16 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err err
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
+	// Make sure Read() gets a chance to cleanly exit
+
+	if chunkedPutContext.inRead {
+		chunkedPutContext.wakeChan <- false
+
+		for chunkedPutContext.inRead {
+			time.Sleep(chunkedPutContextExitReadPollingRate)
+		}
+	}
+
 	// To ensure retry resends all the data, reset pos
 
 	chunkedPutContext.pos = 0

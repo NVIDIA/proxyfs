@@ -148,6 +148,16 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			updateAuthTokenAndAccountURL()
 		} else {
 			logWarnf("doHTTPRequest() needs to retry due to unexpected http.Status: %s", response.Status)
+
+			// Close request.Body at this time just in case...
+			//
+			// It appears that net/http.Do() will actually return
+			// even if it has an outstanding Read() call to
+			// request.Body.Read() and calling request.Body.Close()
+			// will give it a chance to force request.Body.Read()
+			// to exit cleanly.
+
+			_ = request.Body.Close()
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])

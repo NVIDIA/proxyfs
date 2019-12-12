@@ -1149,6 +1149,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 			state:          chunkedPutContextStateOpen,
 			sendChan:       make(chan bool, chunkedPutContextSendChanBufferSize),
 			wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
+			inRead:         false,
 			flushRequested: false,
 		}
 
@@ -1187,6 +1188,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 				state:          chunkedPutContextStateOpen,
 				sendChan:       make(chan bool, chunkedPutContextSendChanBufferSize),
 				wakeChan:       make(chan bool, chunkedPutContextWakeChanBufferSize),
+				inRead:         false,
 				flushRequested: false,
 			}
 
