@@ -110,7 +110,9 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, 1)
 		response, err = globals.httpClient.Do(request)
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, ^uint64(0))
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestSubmissionFailures, 1)
 			logErrorf("doHTTPRequest() failed to submit request: %v", err)

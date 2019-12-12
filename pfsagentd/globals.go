@@ -292,6 +292,7 @@ type metricsStruct struct {
 	HTTPRequestRetryLimitExceededCount   uint64
 	HTTPRequestsRequiringReauthorization uint64
 	HTTPRequestRetries                   uint64
+	HTTPRequestsInFlight                 uint64
 }
 
 type globalsStruct struct {
