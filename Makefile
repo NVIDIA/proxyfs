@@ -21,6 +21,7 @@ gopkgsubdirs = \
 	platform \
 	proxyfsd \
 	ramswift \
+	retryrpc \
 	stats \
 	statslogger \
 	swiftclient \
