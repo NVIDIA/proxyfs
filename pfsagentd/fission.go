@@ -112,22 +112,20 @@ func unixTimeToNs(sec uint64, nsec uint32) (ns uint64) {
 
 func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fission.LookupIn) (lookupOut *fission.LookupOut, errno syscall.Errno) {
 	var (
-		aTimeNSec      uint32
-		aTimeSec       uint64
-		cTimeNSec      uint32
-		cTimeSec       uint64
-		err            error
-		getStatReply   *jrpcfs.StatStruct
-		getStatRequest *jrpcfs.GetStatRequest
-		lookupReply    *jrpcfs.InodeReply
-		lookupRequest  *jrpcfs.LookupRequest
-		mTimeNSec      uint32
-		mTimeSec       uint64
+		aTimeNSec         uint32
+		aTimeSec          uint64
+		cTimeNSec         uint32
+		cTimeSec          uint64
+		err               error
+		lookupPlusReply   *jrpcfs.LookupPlusReply
+		lookupPlusRequest *jrpcfs.LookupPlusRequest
+		mTimeNSec         uint32
+		mTimeSec          uint64
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoLookup_calls, 1)
 
-	lookupRequest = &jrpcfs.LookupRequest{
+	lookupPlusRequest = &jrpcfs.LookupPlusRequest{
 		InodeHandle: jrpcfs.InodeHandle{
 			MountID:     globals.mountID,
 			InodeNumber: int64(inHeader.NodeID),
@@ -135,55 +133,40 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		Basename: string(lookupIn.Name[:]),
 	}
 
-	lookupReply = &jrpcfs.InodeReply{}
+	lookupPlusReply = &jrpcfs.LookupPlusReply{}
 
-	err = doJRPCRequest("Server.RpcLookup", lookupRequest, lookupReply)
+	err = doJRPCRequest("Server.RpcLookupPlus", lookupPlusRequest, lookupPlusReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
 
-	getStatRequest = &jrpcfs.GetStatRequest{
-		InodeHandle: jrpcfs.InodeHandle{
-			MountID:     globals.mountID,
-			InodeNumber: lookupReply.InodeNumber,
-		},
-	}
-
-	getStatReply = &jrpcfs.StatStruct{}
-
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
-	if nil != err {
-		errno = convertErrToErrno(err, syscall.EIO)
-		return
-	}
-
-	aTimeSec, aTimeNSec = nsToUnixTime(getStatReply.ATimeNs)
-	mTimeSec, mTimeNSec = nsToUnixTime(getStatReply.MTimeNs)
-	cTimeSec, cTimeNSec = nsToUnixTime(getStatReply.CTimeNs)
+	aTimeSec, aTimeNSec = nsToUnixTime(lookupPlusReply.ATimeNs)
+	mTimeSec, mTimeNSec = nsToUnixTime(lookupPlusReply.MTimeNs)
+	cTimeSec, cTimeNSec = nsToUnixTime(lookupPlusReply.CTimeNs)
 
 	lookupOut = &fission.LookupOut{
 		EntryOut: fission.EntryOut{
-			NodeID:         uint64(lookupReply.InodeNumber),
+			NodeID:         uint64(lookupPlusReply.InodeNumber),
 			Generation:     0,
 			EntryValidSec:  globals.entryValidSec,
 			AttrValidSec:   globals.attrValidSec,
 			EntryValidNSec: globals.entryValidNSec,
 			AttrValidNSec:  globals.attrValidNSec,
 			Attr: fission.Attr{
-				Ino:       uint64(lookupReply.InodeNumber),
-				Size:      getStatReply.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                 // fixAttrSizes() will compute this
+				Ino:       uint64(lookupPlusReply.InodeNumber),
+				Size:      lookupPlusReply.Size, // fixAttrSizes() will correct this if necessary
+				Blocks:    0,                    // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
 				ATimeNSec: aTimeNSec,
 				MTimeNSec: mTimeNSec,
 				CTimeNSec: cTimeNSec,
-				Mode:      getStatReply.FileMode,
-				NLink:     uint32(getStatReply.NumLinks),
-				UID:       getStatReply.UserID,
-				GID:       getStatReply.GroupID,
+				Mode:      lookupPlusReply.FileMode,
+				NLink:     uint32(lookupPlusReply.NumLinks),
+				UID:       lookupPlusReply.UserID,
+				GID:       lookupPlusReply.GroupID,
 				RDev:      0,
 				BlkSize:   0, // fixAttrSizes() will set this
 				Padding:   0,
