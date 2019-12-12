@@ -81,8 +81,6 @@ func (server *Server) processRequest(conn net.Conn) {
 			logger.Infof("Got raw request: %+v", buf)
 		}
 
-		// TODO - START OF GOROUTINE(s)
-
 		// Call the RPC - and return an already marshaled response
 		reply, err := server.callRPC(buf)
 		fmt.Printf("Server: RPC returned jReply: %+v \n\tResult: %v err: %v\n",
@@ -103,8 +101,6 @@ func (server *Server) processRequest(conn net.Conn) {
 		// Send JSON reply
 		bytesWritten, writeErr := conn.Write(reply.JResult)
 		fmt.Printf("SERVER: Wrote RPC REQEUST with bytesWritten: %v writeErr:  %v\n", bytesWritten, writeErr)
-
-		// TODO - END OF GOROUTINE(s)
 	}
 }
 
@@ -116,7 +112,7 @@ func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 	// We first unmarshal the raw buf to find the method
 	//
 	// Next we unmarshal again with the request structure specific
-	// to the RPC.  (There is no way I no of to pass an interface
+	// to the RPC.  (There is no way I know to pass an interface
 	// over JSON and have it be unmarshalled.)
 	//
 	fmt.Printf("getRequest() - buffer read is: %v\n", string(buf))
@@ -129,7 +125,13 @@ func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 
 	// Setup the reply structure with common fields
 	reply = &ioReply{}
-	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: jReq.RequestID}
+	rid := jReq.RequestID
+	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
+
+	// Queue the request
+	server.Lock()
+	server.pendingRequest[rid] = buf
+	server.Unlock()
 
 	switch jReq.Method {
 	/*
@@ -243,13 +245,11 @@ func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 		// Another unmarshal of buf to find the parameters specific to
 		// this RPC
 		paramsReq := pingJSONReq{}
-		fmt.Printf("BEFORE UNMARSHAL - buf: %+v dReq: %v\n", string(buf), paramsReq)
 		err = json.Unmarshal(buf, &paramsReq)
 		if err != nil {
 			// TODO - error handling
 			return
 		}
-		fmt.Printf("AFTER UNMARSHAL - paramsReq.Params is: %v err: %v\n", paramsReq.Params, err)
 
 		// Now actually call the RPC
 		p := jrpcfs.PingReply{}
@@ -263,7 +263,6 @@ func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 			return
 		}
 		jReply.Result[0] = p
-		fmt.Printf("RPC returned ====== r: %v p: %v\n", r, p)
 
 		/*
 			case "Server.RpcProvisionObject":
@@ -403,6 +402,11 @@ func (server *Server) callRPC(buf []byte) (reply *ioReply, err error) {
 
 	// Convert response into JSON for return trip..
 	reply.JResult, err = json.Marshal(jReply)
+
+	server.Lock()
+	server.completedRequest[rid] = reply
+	delete(server.pendingRequest, rid)
+	server.Unlock()
 
 	return
 }

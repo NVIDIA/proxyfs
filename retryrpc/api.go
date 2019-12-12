@@ -21,25 +21,29 @@ import (
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
-	completedTTL time.Duration // How long a completed request stays on queue
-	serviceMap   map[string]*reflect.Method
-	ipaddr       string // IP address server listens too
-	port         int    // Port of server
+	completedTTL time.Duration              // How long a completed request stays on queue
+	serviceMap   map[string]*reflect.Method // TODO - better name
+	ipaddr       string                     // IP address server listens too
+	port         int                        // Port of server
 	listener     net.Listener
 
-	halting     bool
-	connLock    sync.Mutex
-	connections *list.List // TODO - how used?
-	connWG      sync.WaitGroup
-	listeners   []net.Listener
-	listenersWG sync.WaitGroup
-	jrpcfs      *jrpcfs.Server // TODO - move out to an interface?
+	halting          bool
+	connLock         sync.Mutex
+	connections      *list.List // TODO - how used?
+	connWG           sync.WaitGroup
+	listeners        []net.Listener
+	listenersWG      sync.WaitGroup
+	jrpcfs           *jrpcfs.Server      // TODO - move out to an interface?
+	pendingRequest   map[uint64][]byte   // Key: requestID
+	completedRequest map[uint64]*ioReply // Key: requestID
 }
 
 // NewServer creates the Server object
 func NewServer(jrpcfs *jrpcfs.Server, ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.serviceMap = make(map[string]*reflect.Method)
+	s.pendingRequest = make(map[uint64][]byte)
+	s.completedRequest = make(map[uint64]*ioReply)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port

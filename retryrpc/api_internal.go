@@ -21,7 +21,7 @@ type ioRequest struct {
 // Reply is the structure returned
 type ioReply struct {
 	Len     int64  // Length of JResult
-	JResult []byte // JSON containing response - only valid if err != nil
+	JResult []byte // JSON containing response
 }
 
 // reqCtx tracks a request passed to Send() until Send() returns
