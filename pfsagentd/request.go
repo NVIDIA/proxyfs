@@ -120,7 +120,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		response, err = globals.httpClient.Do(request)
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestSubmissionFailures, 1)
-			logErrorf("doHTTPRequest() failed to submit request: %v", err)
+			logErrorf("doHTTPRequest(%s %s) failed to submit request: %v", request.Method, request.URL.String(), err)
 			ok = false
 			return
 		}
@@ -129,7 +129,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		_ = response.Body.Close()
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestResponseBodyCorruptions, 1)
-			logErrorf("doHTTPRequest() failed to read responseBody: %v", err)
+			logErrorf("doHTTPRequest(%s %s) failed to read responseBody: %v", request.Method, request.URL.String(), err)
 			ok = false
 			return
 		}
@@ -142,17 +142,17 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		if retryIndex >= globals.config.SwiftRetryLimit {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestRetryLimitExceededCount, 1)
-			logWarnf("doHTTPRequest() reached SwiftRetryLimit")
+			logWarnf("doHTTPRequest(%s %s) reached SwiftRetryLimit", request.Method, request.URL.String())
 			ok = false
 			return
 		}
 
 		if http.StatusUnauthorized == response.StatusCode {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestsRequiringReauthorization, 1)
-			logInfof("doHTTPRequest() needs to call updateAuthTokenAndAccountURL()")
+			logInfof("doHTTPRequest(%s %s) needs to call updateAuthTokenAndAccountURL()", request.Method, request.URL.String())
 			updateAuthTokenAndAccountURL()
 		} else {
-			logWarnf("doHTTPRequest() needs to retry due to unexpected http.Status: %s", response.Status)
+			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])

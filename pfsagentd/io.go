@@ -106,7 +106,7 @@ func handleReadRequestFileInodeCase(request *fuse.ReadRequest) {
 			case *singleObjectExtentWithLinkStruct:
 				readPlanStepAsSingleObjectExtentWithLink = readPlanStepAsInterface.(*singleObjectExtentWithLinkStruct)
 
-				if nil == readPlanStepAsSingleObjectExtentWithLink {
+				if nil == readPlanStepAsSingleObjectExtentWithLink.chunkedPutContext {
 					// Zero-fill for readPlanStep.length
 
 					response.Data = append(response.Data, make([]byte, readPlanStepAsSingleObjectExtentWithLink.length)...)
@@ -1198,7 +1198,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 			inReadPlanStepLength = inReadPlanStepAsSingleObjectExtent.length
 		}
 
-		preExtentIndex, found, err = chunkedPutContext.extentMap.BisectLeft(fileOffset)
+		preExtentIndex, found, err = chunkedPutContext.extentMap.BisectLeft(inReadPlanStepFileOffset)
 		if nil != err {
 			logFatalf("getReadPlanHelper() couldn't find preExtentIndex: %v", err)
 		}
@@ -1218,7 +1218,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 				}
 			}
 		}
-		postExtentIndex, _, err = chunkedPutContext.extentMap.BisectRight(fileOffset + inReadPlanStepLength)
+		postExtentIndex, _, err = chunkedPutContext.extentMap.BisectRight(inReadPlanStepFileOffset + inReadPlanStepLength)
 		if nil != err {
 			logFatalf("getReadPlanHelper() couldn't find postExtentIndex [Case 1]: %v", err)
 		}
@@ -1328,7 +1328,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 
 	// Compute tentative outReadPlanSpan
 
-	if 0 == len(inReadPlan) {
+	if 0 == len(outReadPlan) {
 		outReadPlanSpan = 0
 	} else {
 		outReadPlanStepAsInterface = outReadPlan[len(outReadPlan)-1]
@@ -1372,19 +1372,26 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 		if nil != err {
 			logFatalf("getReadPlanHelper() couldn't find postExtent [Case 2]: %v", err)
 		}
-		if !ok {
-			return
-		}
 
-		overlapExtent = postExtentAsValue.(*singleObjectExtentStruct)
+		if ok {
+			overlapExtent = postExtentAsValue.(*singleObjectExtentStruct)
 
-		if (overlapExtent.fileOffset + overlapExtent.length) > curFileOffset {
-			// Create a postExtent equivalent to the non-overlapping tail of overlapExtent
+			if (overlapExtent.fileOffset + overlapExtent.length) > curFileOffset {
+				// Create a postExtent equivalent to the non-overlapping tail of overlapExtent
 
-			postExtent = &singleObjectExtentStruct{
-				fileOffset:   curFileOffset,
-				objectOffset: overlapExtent.objectOffset + (curFileOffset - overlapExtent.fileOffset),
-				length:       overlapExtent.length - (curFileOffset - overlapExtent.fileOffset),
+				postExtent = &singleObjectExtentStruct{
+					fileOffset:   curFileOffset,
+					objectOffset: overlapExtent.objectOffset + (curFileOffset - overlapExtent.fileOffset),
+					length:       overlapExtent.length - (curFileOffset - overlapExtent.fileOffset),
+				}
+			} else {
+				// Create a zero-length postExtent instead
+
+				postExtent = &singleObjectExtentStruct{
+					fileOffset:   curFileOffset,
+					objectOffset: 0,
+					length:       0,
+				}
 			}
 		} else {
 			// Create a zero-length postExtent instead
@@ -1590,7 +1597,7 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 	}
 
 	getRequest.Header.Add("X-Bypass-Proxyfs", "true")
-	getRequest.Header.Add("Range", fmt.Sprintf("Bytes=%d-%d", logSegmentStart, logSegmentEnd))
+	getRequest.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", logSegmentStart, logSegmentEnd))
 
 	_, logSegmentCacheElement.buf, ok, _ = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
 
@@ -1740,9 +1747,9 @@ func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExt
 				} else {
 					// curExtent is overlapped "in the middle" by newExtent... so split curExtent "around" newExtent
 
-					curExtent.length = preLength
-
 					postLength = (curExtent.fileOffset + curExtent.length) - (newExtent.fileOffset + newExtent.length)
+
+					curExtent.length = preLength
 
 					splitExtent = &singleObjectExtentStruct{
 						fileOffset:   newExtent.fileOffset + newExtent.length,
@@ -1773,7 +1780,7 @@ func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExt
 	}
 
 	// At this point, the special case of the first extent starting at or before newExtent has been
-	// cleared from oveerlapping with newExtent... so now we have to loop from curExtentIndex looking
+	// cleared from overlapping with newExtent... so now we have to loop from curExtentIndex looking
 	// for additional extents to either delete entirely or truncate "on the left" in order to ensure
 	// that no other extents overlap with newExtent
 
@@ -1797,7 +1804,7 @@ func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExt
 			break
 		}
 
-		if (curExtent.fileOffset + curExtent.length) < (newExtent.fileOffset + newExtent.length) {
+		if (curExtent.fileOffset + curExtent.length) <= (newExtent.fileOffset + newExtent.length) {
 			// curExtent completely overlapped by newExtent... so simply delete it
 
 			_, err = chunkedPutContext.extentMap.DeleteByIndex(curExtentIndex)
@@ -1818,7 +1825,7 @@ func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExt
 
 			splitExtent = &singleObjectExtentStruct{
 				fileOffset:   newExtent.fileOffset + newExtent.length,
-				objectOffset: curExtent.objectOffset + preLength + newExtent.length,
+				objectOffset: curExtent.objectOffset + (curExtent.length - postLength),
 				length:       postLength,
 			}
 
@@ -1844,6 +1851,75 @@ func (chunkedPutContext *chunkedPutContextStruct) mergeSingleObjectExtent(newExt
 	if nil != err {
 		logFatalf("mergeSingleObjectExtent() failed to Put() newExtent [Case 4]: %v", err)
 	}
+}
+
+func pruneExtentMap(extentMap sortedmap.LLRBTree, newSize uint64) {
+	var (
+		err                                error
+		extentAsMultiObjectExtent          *multiObjectExtentStruct
+		extentAsSingleObjectExtent         *singleObjectExtentStruct
+		extentAsSingleObjectExtentWithLink *singleObjectExtentWithLinkStruct
+		extentAsValue                      sortedmap.Value
+		index                              int
+		ok                                 bool
+	)
+
+	// First, destroy any extents starting at or beyond newSize
+
+	index, _, err = extentMap.BisectRight(newSize)
+	if nil != err {
+		logFatalf("extentMap.BisectLeft() failed: %v", err)
+	}
+
+	ok = true
+	for ok {
+		ok, err = extentMap.DeleteByIndex(index)
+		if nil != err {
+			logFatalf("extentMap.DeleteByIndex(index+1) failed: %v", err)
+		}
+	}
+
+	// Next, back up and look at (new) tailing extent
+
+	index--
+
+	if 0 > index {
+		// No extents remain in extentmap, so just return empty extentMap
+
+		return
+	}
+
+	// See if trailing extent map entries need to be truncated
+
+	_, extentAsValue, _, err = extentMap.GetByIndex(index)
+	if nil != err {
+		logFatalf("extentMap.GetByIndex(index) failed: %v", err)
+	}
+
+	extentAsMultiObjectExtent, ok = extentAsValue.(*multiObjectExtentStruct)
+	if ok {
+		if (extentAsMultiObjectExtent.fileOffset + extentAsMultiObjectExtent.length) > newSize {
+			extentAsMultiObjectExtent.length = newSize - extentAsMultiObjectExtent.fileOffset
+		}
+	} else {
+		extentAsSingleObjectExtent, ok = extentAsValue.(*singleObjectExtentStruct)
+		if ok {
+			if (extentAsSingleObjectExtent.fileOffset + extentAsSingleObjectExtent.length) > newSize {
+				extentAsSingleObjectExtent.length = newSize - extentAsSingleObjectExtent.fileOffset
+			}
+		} else {
+			extentAsSingleObjectExtentWithLink, ok = extentAsValue.(*singleObjectExtentWithLinkStruct)
+			if ok {
+				if (extentAsSingleObjectExtentWithLink.fileOffset + extentAsSingleObjectExtentWithLink.length) > newSize {
+					extentAsSingleObjectExtentWithLink.length = newSize - extentAsSingleObjectExtentWithLink.fileOffset
+				}
+			} else {
+				logFatalf("extentAsValue.(*{multi|single|single}ObjectExtent{||WithLink}Struct) returned !ok")
+			}
+		}
+	}
+
+	return
 }
 
 // DumpKey formats the Key (multiObjectExtentStruct.fileOffset) for fileInodeStruct.ExtentMap
@@ -1922,4 +1998,79 @@ func (chunkedPutContext *chunkedPutContextStruct) DumpValue(value sortedmap.Valu
 	}
 
 	return
+}
+
+func dumpExtentMap(extentMap sortedmap.LLRBTree) {
+	var (
+		err                                error
+		extentAsMultiObjectExtent          *multiObjectExtentStruct
+		extentAsSingleObjectExtent         *singleObjectExtentStruct
+		extentAsSingleObjectExtentWithLink *singleObjectExtentWithLinkStruct
+		extentAsValue                      sortedmap.Value
+		extentIndex                        int
+		extentMapLen                       int
+		ok                                 bool
+	)
+
+	extentMapLen, err = extentMap.Len()
+	if nil != err {
+		logFatalf("dumpExtentMap() doing extentMap.Len() failed: %v", err)
+	}
+
+	for extentIndex = 0; extentIndex < extentMapLen; extentIndex++ {
+		_, extentAsValue, ok, err = extentMap.GetByIndex(extentIndex)
+		if nil != err {
+			logFatalf("dumpExtentMap() doing extentMap.GetByIndex() failed: %v", err)
+		}
+		if !ok {
+			logFatalf("dumpExtentMap() doing extentMap.GetByIndex() returned !ok")
+		}
+
+		extentAsMultiObjectExtent, ok = extentAsValue.(*multiObjectExtentStruct)
+		if ok {
+			logInfof("             MultiObjectExtent: %+v", extentAsMultiObjectExtent)
+		} else {
+			extentAsSingleObjectExtent, ok = extentAsValue.(*singleObjectExtentStruct)
+			if ok {
+				logInfof("            SingleObjectExtent: %+v", extentAsSingleObjectExtent)
+			} else {
+				extentAsSingleObjectExtentWithLink, ok = extentAsValue.(*singleObjectExtentWithLinkStruct)
+				if ok {
+					logInfof("    SingleObjectExtentWithLink: %+v [containerName:%s objectName:%s]", extentAsSingleObjectExtentWithLink, extentAsSingleObjectExtentWithLink.chunkedPutContext.containerName, extentAsSingleObjectExtentWithLink.chunkedPutContext.objectName)
+				} else {
+					logFatalf("dumpExtentMap() doing extentAsValue.(*{multi|single|single}ObjectExtent{||WithLink}Struct) returned !ok")
+				}
+			}
+		}
+	}
+}
+
+func (fileInode *fileInodeStruct) dumpExtentMaps() {
+	var (
+		chunkedPutContext        *chunkedPutContextStruct
+		chunkedPutContextElement *list.Element
+		chunkedPutContextIndex   uint64
+		ok                       bool
+	)
+
+	logInfof("FileInode @%p ExtentMap:", fileInode)
+
+	dumpExtentMap(fileInode.extentMap)
+
+	chunkedPutContextIndex = 0
+	chunkedPutContextElement = fileInode.chunkedPutList.Front()
+
+	for nil != chunkedPutContextElement {
+		chunkedPutContext, ok = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+		if !ok {
+			logFatalf("dumpExtentMaps() doing chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
+		}
+
+		logInfof("  ChunkedPutContext #%v @%p ExtentMap [containerName:%s objectName:%s]:", chunkedPutContextIndex, chunkedPutContext, chunkedPutContext.containerName, chunkedPutContext.objectName)
+
+		dumpExtentMap(chunkedPutContext.extentMap)
+
+		chunkedPutContextIndex++
+		chunkedPutContextElement = chunkedPutContextElement.Next()
+	}
 }
