@@ -291,7 +291,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 	testTeardown(t)
 }
 
-func TestJrpcMarshaling(t *testing.T) {
+func TestJRPCMarshaling(t *testing.T) {
 	var (
 		marshalErr               error
 		pingReplyBuf             []byte
