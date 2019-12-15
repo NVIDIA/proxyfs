@@ -54,6 +54,11 @@ func (server *Server) buildSvrMap(typ reflect.Type) {
 			continue
 		}
 
+		// request and reply will be a pointer value.   We want
+		// to dereference the pointer so we just have the type we
+		// need to allocate.
+		// TODO -
+
 		ma := methodArgs{methodPtr: &method, request: argType, reply: replyType}
 		server.svrMap[mname] = &ma
 	}

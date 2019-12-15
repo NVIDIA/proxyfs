@@ -56,10 +56,7 @@ func testServer(t *testing.T) {
 
 	// Register the Server - sets up the methods supported by the
 	// server
-	// TODO - how do this while supporting several different methods???
-	// Must pass interface{} somewhere....
-	dummyVar := &MyType{field1: 1}
-	err := s.Register(dummyVar)
+	err := s.Register(myJrpcfs)
 	assert.Nil(err)
 
 	// Start listening for requests on the ipaddr/port
@@ -78,11 +75,13 @@ func testServer(t *testing.T) {
 	c.Dial(ipaddr, port)
 
 	pingRequest := &jrpcfs.PingReq{Message: "Ping Me!"}
-	pingReply, sendErr := c.Send("Server.RpcPing", pingRequest)
+	pingReply := &jrpcfs.PingReply{}
+	sendErr := c.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
-	assert.Equal("pong 8 bytes", pingReply.(jrpcfs.PingReply).Message)
+	assert.Equal("pong 8 bytes", pingReply.Message)
 
-	time.Sleep(10 * time.Second)
+	assert.Equal(0, len(s.pendingRequest))
+	assert.Equal(1, len(s.completedRequest))
 
 	// Stop the server before exiting
 	s.Close()

@@ -14,17 +14,15 @@ import (
 	"reflect"
 	"sync"
 	"time"
-
-	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
-	completedTTL time.Duration              // How long a completed request stays on queue
-	serviceMap   map[string]*reflect.Method // TODO - better name
-	ipaddr       string                     // IP address server listens too
-	port         int                        // Port of server
+	completedTTL time.Duration          // How long a completed request stays on queue
+	svrMap       map[string]*methodArgs // Key: Method name
+	ipaddr       string                 // IP address server listens too
+	port         int                    // Port of server
 	listener     net.Listener
 
 	halting          bool
@@ -33,22 +31,22 @@ type Server struct {
 	connWG           sync.WaitGroup
 	listeners        []net.Listener
 	listenersWG      sync.WaitGroup
-	jrpcfs           *jrpcfs.Server      // TODO - move out to an interface?
+	receiver         reflect.Value       // Package receiver being served
 	pendingRequest   map[uint64][]byte   // Key: requestID
 	completedRequest map[uint64]*ioReply // Key: requestID
 }
 
 // NewServer creates the Server object
-func NewServer(jrpcfs *jrpcfs.Server, ttl time.Duration, ipaddr string, port int) *Server {
+func NewServer(rcvr interface{}, ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
-	s.serviceMap = make(map[string]*reflect.Method)
+	s.svrMap = make(map[string]*methodArgs)
 	s.pendingRequest = make(map[uint64][]byte)
 	s.completedRequest = make(map[uint64]*ioReply)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
 	s.connections = list.New()
-	s.jrpcfs = jrpcfs
+	s.receiver = reflect.ValueOf(rcvr)
 	return s
 }
 
@@ -74,18 +72,6 @@ func (server *Server) Start() (l net.Listener, err error) {
 // Run server loop, accept connections, read request, run RPC method and
 // return the results.
 func (server *Server) Run() {
-	// TODO - Algorithm - Standard server stuff
-	// 1. goroutine GR1 accepts new connection and does "go GR2(conn)
-	// 2. GR2 adds request to server.pendingRequest, unmarshals
-	//    request and does "go GR3(process RPC)"
-	// 3. GR2 proceses the RPC, grabs server lock and moves request from
-	//    server.pendingRequest to server.completedRequest, releases lock
-	//    and then sends response to client if socket is still up.
-	// 4. request stays on server.completedRequest until s.completedTTL exceeded
-
-	// TODO - do we need to retransmit responses in order?
-	// What ordering guarantees do we need to enforce?
-
 	server.run()
 }
 
@@ -149,10 +135,9 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 }
 
 // Send the request and block until it has completed
-func (client *Client) Send(method string, rpcRequest interface{}) (reply interface{},
-	err error) {
+func (client *Client) Send(method string, request interface{}, reply interface{}) (err error) {
 
-	return client.send(method, rpcRequest)
+	return client.send(method, request, reply)
 }
 
 // Close gracefully shuts down the client.   This allows the Server

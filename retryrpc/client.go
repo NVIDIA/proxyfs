@@ -30,7 +30,7 @@ gotDisconnect - who calls - on read/write failure - could be holding lock!!!
 // 3. Wait on channel in reply struct for result
 // 4. readResponses goroutine will read response on socket
 //    and call a goroutine to do unmarshalling and notification
-func (client *Client) send(method string, rpcRequest interface{}) (rpcReply interface{}, err error) {
+func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
 	var crID uint64
 
 	// Put request data into structure to be be marshaled into JSON
@@ -52,7 +52,7 @@ func (client *Client) send(method string, rpcRequest interface{}) (rpcReply inte
 	ioreq.Len = int64(len(ioreq.JReq))
 
 	// Create context to wait result and to handle retransmits
-	ctx := &reqCtx{ioreq: ioreq}
+	ctx := &reqCtx{ioreq: ioreq, rpcReply: rpcReply}
 	ctx.answer = make(chan interface{})
 
 	// Keep track of requests we are sending so we can resend them later as
@@ -132,7 +132,7 @@ func (client *Client) notifyReply(buf []byte) {
 
 	// Remove request from client.outstandingRequest
 	//
-	// We do it here since we need to retrieve the method from the
+	// We do it here since we need to retrieve the RequestID from the
 	// original request anyway.
 	crID := jReply.RequestID
 	client.Lock()
@@ -140,17 +140,17 @@ func (client *Client) notifyReply(buf []byte) {
 	delete(client.outstandingRequest, crID)
 	client.Unlock()
 
-	// Unmarshal the buf into the correct Reply structure
-	r, err := methodToReply(ctx.ioreq.Method, buf)
-	if err != nil {
-		fmt.Printf("CLIENT: methodToReply returned err: %v\n", err)
+	// Unmarshal the buf into the original reply structure
+	m := svrResponse{Result: ctx.rpcReply}
+	unmarshalErr := json.Unmarshal(buf, &m)
+	if unmarshalErr != nil {
+		fmt.Printf("CLIENT: Unmarshal of r failed with err: %v\n", unmarshalErr)
 		// TODO - error handling???
 		return
-
 	}
 
 	// Give reply to blocked send()
-	ctx.answer <- r
+	ctx.answer <- err
 }
 
 // readReplies is a goroutine dedicated to reading responses from the server.
