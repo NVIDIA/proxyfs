@@ -66,7 +66,9 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	// Now wait for response
 	rpcReply = <-ctx.answer
 
-	fmt.Printf("CLIENT: REPLY: %+v\n", rpcReply)
+	/*
+		fmt.Printf("CLIENT: REPLY: %+v\n", rpcReply)
+	*/
 
 	return
 }

@@ -17,30 +17,25 @@ type methodArgs struct {
 	reply     reflect.Type
 }
 
-// Request is the structure sent
+// Request is the structure sent over the wire
 type ioRequest struct {
 	Len    int64  // Length of JReq
 	Method string // Needed by "read" goroutine to create Reply{}
 	JReq   []byte // JSON containing request
 }
 
-// Reply is the structure returned
+// Reply is the structure returned over the wire
 type ioReply struct {
 	Len     int64  // Length of JResult
 	JResult []byte // JSON containing response
 }
 
-// reqCtx tracks a request passed to Send() until Send() returns
+// reqCtx tracks a request passed to Send() on the client until Send() returns
 type reqCtx struct {
 	ioreq    ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
 	answer   chan interface{}
 }
-
-// NOTE: jsonRequest and jsonReply get "redefined" by the client's
-// version of these data structures.   This is because the
-// client code has to unmarshal the Params and Result fields
-// into data structure's specific to the RPC.
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {

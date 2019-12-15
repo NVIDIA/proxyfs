@@ -54,9 +54,6 @@ func NewServer(rcvr interface{}, ttl time.Duration, ipaddr string, port int) *Se
 func (server *Server) Register(retrySvr interface{}) (err error) {
 
 	// Find all the methods associated with retrySvr and put into serviceMap
-	// TODO - build the serviceMap similiar to how net/rpc Register does it...
-	// serviceMap looks like serviceMap["RpcPing"]*rpcPing()
-
 	return server.register(retrySvr)
 }
 
