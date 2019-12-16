@@ -91,8 +91,8 @@ func (server *Server) processRequest(conn net.Conn) {
 		// Now write the response back to the client
 
 		// Write Len back
-		reply.Len = int64(len(reply.JResult))
-		err = binary.Write(conn, binary.BigEndian, reply.Len)
+		setupHdrReply(reply)
+		err = binary.Write(conn, binary.BigEndian, reply.Hdr)
 		if err != nil {
 			fmt.Printf("SERVER: binary.Write failed err: %v\n", err)
 		}

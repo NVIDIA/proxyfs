@@ -47,12 +47,13 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	client.Unlock()
 
 	// Setup ioreq to write structure on socket to server
-	ioreq := ioRequest{Method: method} // Will be needed by Read goroutine
-	ioreq.JReq, err = json.Marshal(jreq)
-	ioreq.Len = int64(len(ioreq.JReq))
+	ioreq, err := buildIoRequest(method, jreq)
+	if err != nil {
+		return err
+	}
 
 	// Create context to wait result and to handle retransmits
-	ctx := &reqCtx{ioreq: ioreq, rpcReply: rpcReply}
+	ctx := &reqCtx{ioreq: *ioreq, rpcReply: rpcReply}
 	ctx.answer = make(chan interface{})
 
 	// Keep track of requests we are sending so we can resend them later as
@@ -97,13 +98,13 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) (err error) {
 	// Send length - how do whole request in one I/O?
 	//
 	// This is how you hton() in Golang
-	err = binary.Write(client.tcpConn, binary.BigEndian, ctx.ioreq.Len)
+	err = binary.Write(client.tcpConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
 		fmt.Println("binary.Write failed:", err)
 		client.Unlock()
 		return
 	}
-	fmt.Printf("CLIENT: Wrote ioreq length: %v err: %v\n", ctx.ioreq.Len, err)
+	fmt.Printf("CLIENT: Wrote ioreq length: %v err: %v\n", ctx.ioreq.Hdr.Len, err)
 
 	// Send JSON request
 	bytesWritten, writeErr := client.tcpConn.Write(ctx.ioreq.JReq)
