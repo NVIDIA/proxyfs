@@ -7,80 +7,67 @@ import (
 	"unicode/utf8"
 )
 
-// TODO TODO TODO - rewrite this from scratch
-
-// NOTE: The basic code in this file is taken from Golang
-// "net/rpc" server.go:register()
-
-// Precompute the reflect type for error. Can't use error directly
-// because Typeof takes an empty interface value. This is annoying.
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 
-// Find all methods which can be exported and build
-// serviceMap
+// Find all methods for the type which can be exported.
+// Build svrMap listing methods available as well as their
+// request and reply types.
 func (server *Server) buildSvrMap(typ reflect.Type) {
 	for m := 0; m < typ.NumMethod(); m++ {
 		method := typ.Method(m)
 		mtype := method.Type
 		mname := method.Name
-		// Method must be exported.
+
+		// Just like net/rpc, we have these requirements on methods:
+		// - must be exported
+		// - needs three ins: receiver, *args, *reply
+		// - reply has to be a pointer and must be exported
+		// - method can only return one value of type error
 		if method.PkgPath != "" {
 			continue
 		}
-		// Method needs three ins: receiver, *args, *reply.
+
 		if mtype.NumIn() != 3 {
 			continue
 		}
-		// First arg need not be a pointer.
 		argType := mtype.In(1)
 		if !isExportedOrBuiltinType(argType) {
 			continue
 		}
-		// Second arg must be a pointer.
+
 		replyType := mtype.In(2)
 		if replyType.Kind() != reflect.Ptr {
 			continue
 		}
-		// Reply type must be exported.
+
 		if !isExportedOrBuiltinType(replyType) {
 			continue
 		}
-		// Method needs one out.
+
 		if mtype.NumOut() != 1 {
 			continue
 		}
-		// The return type of the method must be error.
-		if returnType := mtype.Out(0); returnType != typeOfError {
+
+		returnType := mtype.Out(0)
+		if returnType != typeOfError {
 			continue
 		}
 
-		// request and reply will be a pointer value.   We want
-		// to dereference the pointer so we just have the type we
-		// need to allocate.
-		// TODO -
-
+		// We save off the request type so we know how to unmarshal the request.
+		// We use the reply type to allocate the reply struct and marshal the response.
 		ma := methodArgs{methodPtr: &method, request: argType, reply: replyType}
 		server.svrMap[mname] = &ma
 	}
 }
 
-// Is this type exported or a builtin?
-//
-// Taken from Golang "net/rpc" server.go
 func isExportedOrBuiltinType(t reflect.Type) bool {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
-	// PkgPath will be non-empty even for an exported type,
-	// so we need to check the type name as well.
-	return IsExported(t.Name()) || t.PkgPath() == ""
+	return isMethodExported(t.Name()) || t.PkgPath() == ""
 }
 
-// IsExported reports whether name starts with an upper-case letter.
-//
-// NOTE: Go 1.13.1 has this function in the "go/token" package.
-// Remove this function once we upgrade to 1.13.1.
-func IsExported(name string) bool {
+func isMethodExported(name string) bool {
 	ch, _ := utf8.DecodeRuneInString(name)
 	return unicode.IsUpper(ch)
 }
@@ -94,7 +81,7 @@ func (server *Server) register(retrySvr interface{}) (err error) {
 	rcvr := reflect.ValueOf(retrySvr)
 	sname := reflect.Indirect(rcvr).Type().Name()
 
-	if !IsExported(sname) {
+	if !isMethodExported(sname) {
 		s := "retryrpc.Register: type " + sname + " is not exported"
 		return errors.New(s)
 	}
