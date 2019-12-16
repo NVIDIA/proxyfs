@@ -73,6 +73,17 @@ type jsonReply struct {
 	Result interface{} `json:"result"`
 }
 
+// svrRequest is used with jsonRequest when we unmarshal the
+// parameters passed in an RPC
+type svrRequest struct {
+	Params [1]interface{} `json:"params"`
+}
+
+// svrReply is used with jsonReply when we marshal the reply
+type svrResponse struct {
+	Result interface{} `json:"result"`
+}
+
 func buildIoRequest(method string, jReq jsonRequest) (ioreq *ioRequest, err error) {
 	ioreq = &ioRequest{Method: method} // Will be needed by Read goroutine
 	ioreq.JReq, err = json.Marshal(jReq)
