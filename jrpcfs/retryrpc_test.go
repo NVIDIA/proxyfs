@@ -1,11 +1,11 @@
-package retryrpc
+package jrpcfs
 
 import (
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
 // Test basic retryrpc primitives
@@ -47,11 +47,11 @@ func testServer(t *testing.T) {
 
 	// Create new jrpcfs server - needed for calling
 	// jrcpfs RPCs
-	myJrpcfs := jrpcfs.NewServer()
+	myJrpcfs := NewServer()
 
-	// Create a new Server.  Completed request will live on
+	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 5 seconds.
-	s := NewServer(myJrpcfs, 5*time.Second, ipaddr, port)
+	s := retryrpc.NewServer(myJrpcfs, 5*time.Second, ipaddr, port)
 	assert.NotNil(s)
 
 	// Register the Server - sets up the methods supported by the
@@ -68,20 +68,20 @@ func testServer(t *testing.T) {
 	go s.Run()
 
 	// Now - setup a client to send requests to the server
-	c := NewClient("client 1")
+	c := retryrpc.NewClient("client 1")
 	assert.NotNil(c)
 
 	// Have client connect to server
 	c.Dial(ipaddr, port)
 
-	pingRequest := &jrpcfs.PingReq{Message: "Ping Me!"}
-	pingReply := &jrpcfs.PingReply{}
+	pingRequest := &PingReq{Message: "Ping Me!"}
+	pingReply := &PingReply{}
 	sendErr := c.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 
-	assert.Equal(0, len(s.pendingRequest))
-	assert.Equal(1, len(s.completedRequest))
+	assert.Equal(0, s.PendingCnt())
+	assert.Equal(1, s.CompletedCnt())
 
 	// Stop the server before exiting
 	s.Close()
