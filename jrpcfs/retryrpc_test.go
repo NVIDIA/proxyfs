@@ -51,7 +51,7 @@ func testServer(t *testing.T) {
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 5 seconds.
-	s := retryrpc.NewServer(myJrpcfs, 5*time.Second, ipaddr, port)
+	s := retryrpc.NewServer(5*time.Second, ipaddr, port)
 	assert.NotNil(s)
 
 	// Register the Server - sets up the methods supported by the

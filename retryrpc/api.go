@@ -37,7 +37,7 @@ type Server struct {
 }
 
 // NewServer creates the Server object
-func NewServer(rcvr interface{}, ttl time.Duration, ipaddr string, port int) *Server {
+func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.svrMap = make(map[string]*methodArgs)
 	s.pendingRequest = make(map[uint64][]byte)
@@ -46,7 +46,6 @@ func NewServer(rcvr interface{}, ttl time.Duration, ipaddr string, port int) *Se
 	s.ipaddr = ipaddr
 	s.port = port
 	s.connections = list.New()
-	s.receiver = reflect.ValueOf(rcvr)
 	return s
 }
 
@@ -54,6 +53,7 @@ func NewServer(rcvr interface{}, ttl time.Duration, ipaddr string, port int) *Se
 func (server *Server) Register(retrySvr interface{}) (err error) {
 
 	// Find all the methods associated with retrySvr and put into serviceMap
+	server.receiver = reflect.ValueOf(retrySvr)
 	return server.register(retrySvr)
 }
 
