@@ -202,12 +202,10 @@ func testSetup(t *testing.T) {
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"FSGlobals.EtcdEnabled=false",
 
-		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
-		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
+		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
+		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
+		"JSONRPCServer.RetryRPCPort=24457", // 24457 instead of 24456 so that test can run if proxyfsd is already running
 		"JSONRPCServer.DataPathLogging=false",
-
-		"RetryRPCServer.TCPPort=24457", // 24457 instead of 24456 so that test can run if proxyfsd is already running
-		"RetryRPCServer.DataPathLogging=false",
 	}
 
 	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxAccountNameLength="+strconv.FormatUint(testMaxAccountNameLength, 10))

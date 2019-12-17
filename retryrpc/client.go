@@ -179,6 +179,12 @@ func (client *Client) readReplies() {
 		// We have a reply - let a goroutine do the unmarshalling and
 		// sending the reply to blocked Send()
 		go client.notifyReply(buf)
+
+		// TODO - implement setting this flag in all places
+		// Probably need a waitgroup decrement here
+		if client.halting {
+			break
+		}
 	}
 
 	return

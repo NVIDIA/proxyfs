@@ -116,7 +116,6 @@ var packageTraceSettings = map[string]bool{
 	"jrpcfs":      false,
 	"logger":      false,
 	"proxyfsd":    false,
-	"retryrpc":    false,
 	"sortedmap":   false,
 	"swiftclient": false,
 	"transitions": false,
@@ -201,10 +200,6 @@ var packageDebugSettings = map[string][]string{
 	},
 	"inode": []string{
 		//DbgInodeInternal,
-	},
-	"retryrpc": []string{
-		//DbgInternal,
-		//DbgTesting,
 	},
 }
 

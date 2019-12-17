@@ -150,7 +150,6 @@ import (
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
-	_ "github.com/swiftstack/ProxyFS/retryrpc"
 )
 
 // The first section of this file defines the structs used by protocols like Samba.

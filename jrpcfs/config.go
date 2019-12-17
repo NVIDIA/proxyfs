@@ -9,6 +9,7 @@ import (
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
@@ -17,11 +18,12 @@ type globalsStruct struct {
 	gate     sync.RWMutex // API Requests RLock()/RUnlock()
 	//                       confMap changes Lock()/Unlock()
 
-	whoAmI          string
-	ipAddr          string
-	portString      string
-	fastPortString  string
-	dataPathLogging bool
+	whoAmI             string
+	ipAddr             string
+	portString         string
+	fastPortString     string
+	retryRPCPortString string
+	dataPathLogging    bool
 
 	// Map used to enumerate volumes served by this peer
 	volumeMap map[string]bool // key == volumeName; value is ignored
@@ -33,6 +35,9 @@ type globalsStruct struct {
 
 	// Map used to store volumes by name already mounted for bimodal support
 	bimodalMountMap map[string]fs.MountHandle // key == volumeName
+
+	// RetryRPC server
+	retryrpcSvr *retryrpc.Server
 
 	// Connection list and listener list to close during shutdown:
 	halting     bool
@@ -81,6 +86,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	globals.retryRPCPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCPort")
+	if nil != err {
+		logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCPort from config file")
+		return
+	}
+
 	// Set data path logging level to true, so that all trace logging is controlled by settings
 	// in the logger package. To enable jrpcfs trace logging, set Logging.TraceLevelLogging to jrpcfs.
 	// This will enable all jrpcfs trace logs, including those formerly controled by globals.dataPathLogging.
@@ -104,6 +115,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	// Now kick off our other, faster RPC server
 	ioServerUp(globals.ipAddr, globals.fastPortString)
+
+	// Init Retry RPC server
+	retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString)
 
 	return
 }
@@ -210,6 +224,7 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 
 	jsonRpcServerDown()
 	ioServerDown()
+	retryRPCServerDown()
 
 	globals.listenersWG.Wait()
 

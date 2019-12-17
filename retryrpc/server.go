@@ -114,6 +114,11 @@ func (server *Server) callRPCAndMarshal(buf []byte, jReq *jsonRequest) (reply *i
 	rid := jReq.RequestID
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
+	// TODO TODO - first look onn completed or pending queue!
+	// May have already been completed and can be returned.
+	// If on pending queue - update the return path to reference
+	// the current call net.Conn!!!
+
 	// Queue the request
 	server.Lock()
 	server.pendingRequest[rid] = buf
