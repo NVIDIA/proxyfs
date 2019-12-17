@@ -103,7 +103,8 @@ type Client struct {
 	myUniqueID         string             // Unique ID across all clients
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
-	tcpConn *net.TCPConn // Our connection to the server
+	tcpConn     *net.TCPConn   // Our connection to the server
+	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
 // NewClient returns a Client structure
@@ -139,6 +140,7 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 	}
 
 	// Start readResponse goroutine to read responses from server
+	client.goroutineWG.Add(1)
 	go client.readReplies()
 
 	return
@@ -150,10 +152,16 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 	return client.send(method, request, reply)
 }
 
-// Close gracefully shuts down the client.   This allows the Server
-// to remove Client request on completed queue.
+// Close gracefully shuts down the client
 func (client *Client) Close() {
 
-	// TODO - shutdown listener, readResponses, etc
+	// Set halting flag and then close our socket to server.
+	// This will cause the blocked getIO() in readReplies() to return.
+	client.Lock()
+	client.halting = true
+	client.Unlock()
+	client.tcpConn.Close()
 
+	// Wait for the goroutines to return
+	client.goroutineWG.Wait()
 }

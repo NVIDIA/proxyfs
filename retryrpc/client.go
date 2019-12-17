@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// TODO - TODO - what if RCP was completed on Server1 and before response,
+// TODO - what if RPC was completed on Server1 and before response,
 // proxyfsd fails over to Server2?   Client will resend - not idempotent!!!
 
 // TODO - do we need to retransmit these requests in order?
@@ -62,6 +62,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	client.outstandingRequest[crID] = ctx
 	client.Unlock()
 
+	client.goroutineWG.Add(1)
 	go client.sendToServer(crID, ctx)
 
 	// Now wait for response
@@ -79,7 +80,9 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 //
 // TODO - if the send fails, resend the request via the
 // retransmit thread
-func (client *Client) sendToServer(crID uint64, ctx *reqCtx) (err error) {
+func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
+	defer client.goroutineWG.Done()
+	var err error
 
 	// TODO - retransmit ctx in gotDisconnect() routine
 
@@ -104,17 +107,26 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) (err error) {
 		client.Unlock()
 		return
 	}
-	fmt.Printf("CLIENT: Wrote ioreq length: %v err: %v\n", ctx.ioreq.Hdr.Len, err)
+	/*
+		fmt.Printf("CLIENT: Wrote ioreq length: %v err: %v\n", ctx.ioreq.Hdr.Len, err)
+	*/
 
 	// Send JSON request
 	bytesWritten, writeErr := client.tcpConn.Write(ctx.ioreq.JReq)
-	fmt.Printf("CLIENT: Wrote RPC REQEUST with bytesWritten: %v writeErr: %v\n",
-		bytesWritten, writeErr)
+	if bytesWritten != len(ctx.ioreq.JReq) {
+		fmt.Printf("CLIENT: PARTIAL Write! bytesWritten is: %v len(ctx.ioreq.JReq): %v writeErr: %v\n",
+			bytesWritten, len(ctx.ioreq.JReq), writeErr)
+	}
+	/*
+		bytesWritten, writeErr := client.tcpConn.Write(ctx.ioreq.JReq)
+			fmt.Printf("CLIENT: Wrote RPC REQEUST with bytesWritten: %v writeErr: %v\n",
+				bytesWritten, writeErr)
+	*/
 	if writeErr != nil {
 		// TODO - handle disconnect or other error????
 		fmt.Printf("CLIENT: Failed WRITE - HANLDE disconnect or other error??\n")
 		client.Unlock()
-		return writeErr
+		return
 	}
 
 	// Drop the lock once we wrote the request.
@@ -123,6 +135,7 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) (err error) {
 }
 
 func (client *Client) notifyReply(buf []byte) {
+	defer client.goroutineWG.Done()
 
 	// Unmarshal once to get the header fields
 	jReply := jsonReply{}
@@ -163,13 +176,18 @@ func (client *Client) notifyReply(buf []byte) {
 //
 // TODO - if the read fails - attempt start of retransmitThread???
 func (client *Client) readReplies() {
-
-	// TODO - how start/stop this goroutine???
+	defer client.goroutineWG.Done()
 
 	for {
 
 		// Wait reply from server
 		buf, getErr := getIO(client.tcpConn, "CLIENT")
+
+		// This must happen before checking error
+		if client.halting {
+			break
+		}
+
 		if getErr != nil {
 			// TODO - error handling!
 			// call retransmit thread???
@@ -178,13 +196,8 @@ func (client *Client) readReplies() {
 
 		// We have a reply - let a goroutine do the unmarshalling and
 		// sending the reply to blocked Send()
+		client.goroutineWG.Add(1)
 		go client.notifyReply(buf)
-
-		// TODO - implement setting this flag in all places
-		// Probably need a waitgroup decrement here
-		if client.halting {
-			break
-		}
 	}
 
 	return

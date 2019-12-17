@@ -86,7 +86,9 @@ func (server *Server) processRequest(conn net.Conn) {
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
 		reply, err := server.callRPCAndMarshal(buf, &jReq)
-		fmt.Printf("Server: RPC Result: %v err: %v\n", string(reply.JResult), err)
+		/*
+			fmt.Printf("Server: RPC Result: %v err: %v\n", string(reply.JResult), err)
+		*/
 
 		// Now write the response back to the client
 
