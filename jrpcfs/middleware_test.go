@@ -150,6 +150,8 @@ func testSetup() []func() {
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
+		"RetryRPCServer.TCPPort=24457", // 24457 instead of 24456 so that test can run if proxyfsd is already running
+		"RetryRPCServer.DataPathLogging=false",
 	}
 
 	tempDir, err = ioutil.TempDir("", "jrpcfs_test")

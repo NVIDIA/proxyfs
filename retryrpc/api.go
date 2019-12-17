@@ -79,6 +79,18 @@ func (server *Server) Close() {
 	// TODO - blocks until the server is shut down
 }
 
+// CompletedCnt returns count of pendingRequests
+// This is only useful for testing.
+func (server *Server) CompletedCnt() int {
+	return len(server.completedRequest)
+}
+
+// PendingCnt returns count of pendingRequests
+// This is only useful for testing.
+func (server *Server) PendingCnt() int {
+	return len(server.pendingRequest)
+}
+
 // Client methods
 
 // Client tracking structure
