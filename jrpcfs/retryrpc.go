@@ -37,7 +37,7 @@ func retryRPCServerUp(jserver *Server, ipAddr string, portString string) {
 	}
 
 	// Tell retryrpc server to start accepting requests
-	go rrSvr.Run()
+	rrSvr.Run()
 }
 
 func retryRPCServerDown() {

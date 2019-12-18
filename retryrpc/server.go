@@ -20,6 +20,7 @@ var debugPutGet bool = false
 // TODO - test if Register has been called???
 
 func (server *Server) run() {
+	defer server.goroutineWG.Done()
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
@@ -36,7 +37,10 @@ func (server *Server) run() {
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
 
+		server.goroutineWG.Add(1)
 		go func(myConn net.Conn, myElm *list.Element) {
+			defer server.goroutineWG.Done()
+
 			server.processRequest(myConn)
 			server.connLock.Lock()
 			server.connections.Remove(myElm)
@@ -48,7 +52,6 @@ func (server *Server) run() {
 			server.connWG.Done()
 		}(conn, elm)
 	}
-
 }
 
 func (server *Server) processRequest(conn net.Conn) {

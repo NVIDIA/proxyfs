@@ -26,6 +26,7 @@ type Server struct {
 	listener     net.Listener
 
 	halting          bool
+	goroutineWG      sync.WaitGroup // Used to track outstanding goroutines
 	connLock         sync.Mutex
 	connections      *list.List // TODO - how used?
 	connWG           sync.WaitGroup
@@ -69,14 +70,20 @@ func (server *Server) Start() (l net.Listener, err error) {
 // Run server loop, accept connections, read request, run RPC method and
 // return the results.
 func (server *Server) Run() {
-	server.run()
+	server.goroutineWG.Add(1)
+	go server.run()
 }
 
 // Close stops the server
 func (server *Server) Close() {
+	server.Lock()
+	server.halting = true
+	server.Unlock()
+
 	_ = server.listener.Close()
 
-	// TODO - blocks until the server is shut down
+	server.listenersWG.Wait()
+	server.goroutineWG.Wait()
 }
 
 // CompletedCnt returns count of pendingRequests

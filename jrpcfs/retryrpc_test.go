@@ -51,38 +51,41 @@ func testServer(t *testing.T) {
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 5 seconds.
-	s := retryrpc.NewServer(5*time.Second, ipaddr, port)
-	assert.NotNil(s)
+	rrSvr := retryrpc.NewServer(5*time.Second, ipaddr, port)
+	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
 	// server
-	err := s.Register(myJrpcfs)
+	err := rrSvr.Register(myJrpcfs)
 	assert.Nil(err)
 
 	// Start listening for requests on the ipaddr/port
-	listener, lisErr := s.Start()
+	listener, lisErr := rrSvr.Start()
 	assert.NotNil(listener, "Listener should not be nil")
 	assert.Nil(lisErr, "lisErr is not nil")
 
 	// Tell server to start accepting and processing requests
-	go s.Run()
+	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	c := retryrpc.NewClient("client 1")
-	assert.NotNil(c)
+	rrClnt := retryrpc.NewClient("client 1")
+	assert.NotNil(rrClnt)
 
 	// Have client connect to server
-	c.Dial(ipaddr, port)
+	rrClnt.Dial(ipaddr, port)
 
 	pingRequest := &PingReq{Message: "Ping Me!"}
 	pingReply := &PingReply{}
-	sendErr := c.Send("RpcPing", pingRequest, pingReply)
+	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 
-	assert.Equal(0, s.PendingCnt())
-	assert.Equal(1, s.CompletedCnt())
+	assert.Equal(0, rrSvr.PendingCnt())
+	assert.Equal(1, rrSvr.CompletedCnt())
+
+	// Stop the client before exiting
+	rrClnt.Close()
 
 	// Stop the server before exiting
-	s.Close()
+	rrSvr.Close()
 }
