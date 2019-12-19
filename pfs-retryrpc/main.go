@@ -13,8 +13,8 @@ import (
 	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
-func sendIt(client *retryrpc.Client, i int, wg *sync.WaitGroup) {
-	defer wg.Done()
+func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup) {
+	defer sendWg.Done()
 
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v\n", i)
@@ -29,8 +29,9 @@ func sendIt(client *retryrpc.Client, i int, wg *sync.WaitGroup) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(ipAddr string, retryRPCPortString string, i int, agentWG *sync.WaitGroup) {
-	defer agentWG.Done()
+func pfsagent(ipAddr string, retryRPCPortString string, i int, agentWg *sync.WaitGroup,
+	sendCnt int) {
+	defer agentWg.Done()
 
 	// 1. setup client and connect to proxyfsd
 	// 2. loop doing RPCs in parallel
@@ -41,18 +42,34 @@ func pfsagent(ipAddr string, retryRPCPortString string, i int, agentWG *sync.Wai
 	port, _ := strconv.Atoi(retryRPCPortString)
 	client.Dial(ipAddr, port)
 
-	var wg sync.WaitGroup
+	var sendWg sync.WaitGroup
 
 	var z int
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < sendCnt; i++ {
 		z = (z + i) * 10
 
-		wg.Add(1)
-		go sendIt(client, z, &wg)
+		sendWg.Add(1)
+		go sendIt(client, z, &sendWg)
 	}
-	wg.Wait()
+	sendWg.Wait()
 
 	client.Close()
+}
+
+func parallelAgentSenders(ipAddr string, retryRPCPortString string, agentCnt int,
+	sendCnt int) {
+
+	var agentWg sync.WaitGroup
+
+	// Start parallel pfsagents - each agent doing sendCnt parallel sends
+	var z int
+	for i := 0; i < agentCnt; i++ {
+		z = (z + i) * 10
+
+		agentWg.Add(1)
+		go pfsagent(ipAddr, retryRPCPortString, z, &agentWg, sendCnt)
+	}
+	agentWg.Wait()
 }
 
 func main() {
@@ -109,15 +126,7 @@ func main() {
 		return
 	}
 
-	var wg sync.WaitGroup
-
-	// Start parallel pfsagents each doing parallel sends
-	var z int
-	for i := 0; i < 100; i++ {
-		z = (z + i) * 10
-
-		wg.Add(1)
-		go pfsagent(ipAddr, retryRPCPortString, z, &wg)
-	}
-	wg.Wait()
+	sendCnt := 100
+	agentCnt := 1
+	parallelAgentSenders(ipAddr, retryRPCPortString, agentCnt, sendCnt)
 }

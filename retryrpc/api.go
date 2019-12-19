@@ -33,16 +33,16 @@ type Server struct {
 	listeners        []net.Listener
 	listenersWG      sync.WaitGroup
 	receiver         reflect.Value       // Package receiver being served
-	pendingRequest   map[uint64][]byte   // Key: requestID
-	completedRequest map[uint64]*ioReply // Key: requestID
+	pendingRequest   map[string][]byte   // Key: "MyUniqueID:RequestID"
+	completedRequest map[string]*ioReply // Key: "MyUniqueID:RequestID"
 }
 
 // NewServer creates the Server object
 func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.svrMap = make(map[string]*methodArgs)
-	s.pendingRequest = make(map[uint64][]byte)
-	s.completedRequest = make(map[uint64]*ioReply)
+	s.pendingRequest = make(map[string][]byte)
+	s.completedRequest = make(map[string]*ioReply)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
@@ -84,6 +84,11 @@ func (server *Server) Close() {
 
 	server.listenersWG.Wait()
 	server.goroutineWG.Wait()
+
+	x := len(server.pendingRequest)
+	if len(server.pendingRequest) != 0 {
+		fmt.Printf("retryrpc.Close() - pendingRequest non-zero - count: %v\n", x)
+	}
 }
 
 // CompletedCnt returns count of pendingRequests
