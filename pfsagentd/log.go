@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func logFatal(err error) {
@@ -42,8 +44,8 @@ func logf(level string, format string, args ...interface{}) {
 		logMsg         string
 	)
 
-	enhancedFormat = "%-32s %-5s " + format
-	enhancedArgs = append([]interface{}{time.Now().Format(time.RFC3339Nano), level}, args...)
+	enhancedFormat = "[%s][%s][%d][%s] " + format
+	enhancedArgs = append([]interface{}{time.Now().Format(time.RFC3339Nano), globals.config.FUSEVolumeName, unix.Getpid(), level}, args...)
 
 	logMsg = fmt.Sprintf(enhancedFormat, enhancedArgs[:]...)
 
