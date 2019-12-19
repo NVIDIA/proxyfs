@@ -121,7 +121,7 @@ func performMountFUSE() {
 		logFatal(globals.fuseConn.MountError)
 	}
 
-	logInfof("Now serving %s on %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
+	logInfof("Now serving on %s", globals.config.FUSEMountPointPath)
 }
 
 func fetchInodeDevice(pathTitle string, path string) (inodeDevice int64) {
@@ -163,7 +163,7 @@ func performUnmountFUSE() {
 		logFatal(err)
 	}
 
-	logInfof("Unmounted %s from %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
+	logInfof("Unmounted from %s", globals.config.FUSEMountPointPath)
 }
 
 func serveFuse() {
