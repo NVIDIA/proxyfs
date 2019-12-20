@@ -1280,7 +1280,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 				} else {
 					outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
 						fileOffset:        curFileOffset,
-						objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+						objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsSingleObjectExtent.fileOffset),
 						length:            overlapExtentWithLink.fileOffset - curFileOffset,
 						chunkedPutContext: chunkedPutContext,
 					}
@@ -1316,7 +1316,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 			} else {
 				outReadPlanStepAsSingleObjectExtent = &singleObjectExtentWithLinkStruct{
 					fileOffset:        curFileOffset,
-					objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsMultiObjectExtent.fileOffset),
+					objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsSingleObjectExtent.fileOffset),
 					length:            remainingLength,
 					chunkedPutContext: chunkedPutContext,
 				}
