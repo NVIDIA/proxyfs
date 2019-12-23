@@ -597,10 +597,19 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 				if "" == virtualIPAddr {
 					volumeGroup.virtualIPAddr = globals.myPublicIPAddr
 				} else {
+
+					// virtualIPAddr must be a valid IP address or valid
+					// IP address in CIDR notation
 					volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
 					if nil == volumeGroup.virtualIPAddr {
-						err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
-						return
+
+						volumeGroup.virtualIPAddr, _, err = net.ParseCIDR(virtualIPAddr)
+						if err != nil {
+							err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr: '%s' "+
+								" as IP address or CIDR IP address: %v",
+								volumeGroupName, virtualIPAddr, err)
+							return
+						}
 					}
 				}
 
@@ -627,10 +636,19 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 				if "" == virtualIPAddr {
 					volumeGroup.virtualIPAddr = peer.publicIPAddr
 				} else {
+
+					// virtualIPAddr must be a valid IP address or valid
+					// IP address in CIDR notation
 					volumeGroup.virtualIPAddr = net.ParseIP(virtualIPAddr)
 					if nil == volumeGroup.virtualIPAddr {
-						err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr", volumeGroupName)
-						return
+
+						volumeGroup.virtualIPAddr, _, err = net.ParseCIDR(virtualIPAddr)
+						if err != nil {
+							err = fmt.Errorf("Cannot parse [VolumeGroup:%v]VirtualIPAddr: '%s' "+
+								" as IP address or CIDR IP address: %v",
+								volumeGroupName, virtualIPAddr, err)
+							return
+						}
 					}
 				}
 
