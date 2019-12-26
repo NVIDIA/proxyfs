@@ -1282,7 +1282,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 						fileOffset:        curFileOffset,
 						objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsSingleObjectExtent.fileOffset),
 						length:            overlapExtentWithLink.fileOffset - curFileOffset,
-						chunkedPutContext: chunkedPutContext,
+						chunkedPutContext: inReadPlanStepAsSingleObjectExtent.chunkedPutContext,
 					}
 
 					outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
@@ -1318,7 +1318,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 					fileOffset:        curFileOffset,
 					objectOffset:      inReadPlanStepAsSingleObjectExtent.objectOffset + (curFileOffset - inReadPlanStepAsSingleObjectExtent.fileOffset),
 					length:            remainingLength,
-					chunkedPutContext: chunkedPutContext,
+					chunkedPutContext: inReadPlanStepAsSingleObjectExtent.chunkedPutContext,
 				}
 
 				outReadPlan = append(outReadPlan, outReadPlanStepAsSingleObjectExtent)
@@ -1863,6 +1863,12 @@ func pruneExtentMap(extentMap sortedmap.LLRBTree, newSize uint64) {
 		index                              int
 		ok                                 bool
 	)
+
+	// Nothing to do if extentMap hasn't been populated yet
+
+	if nil == extentMap {
+		return
+	}
 
 	// First, destroy any extents starting at or beyond newSize
 
