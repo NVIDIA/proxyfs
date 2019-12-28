@@ -3,6 +3,7 @@ package confgen
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -122,12 +123,13 @@ type SMBVG struct {
 
 // VolumeGroup contains VolumeGroup conf settings
 type VolumeGroup struct {
-	PrimaryPeer     string    //
-	SMB             SMBVG     // SMB specific settings of the VG
-	VirtualHostName string    // Must be unique
-	VirtualIPAddr   string    // Must be unique
-	VolumeGroupName string    // Must be unique
-	VolumeMap       volumeMap //
+	PrimaryPeer     string     //
+	SMB             SMBVG      // SMB specific settings of the VG
+	VirtualHostName string     // Must be unique
+	VirtualIPAddr   net.IP     // Must be unique
+	VirtualIPMask   *net.IPNet // not necessarily unique
+	VolumeGroupName string     // Must be unique
+	VolumeMap       volumeMap  //
 }
 
 type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
@@ -774,13 +776,21 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		// Fetch the virtual IP address for the group and strip off the netmask (if any).
-		// virtualIPAddrSet is not used so we don't "fix it".
+		// Fetch the virtual IP address for the group.  It must be be a valid
+		// (parsable) CIDR notation IP address.  Hold onto the netmask
+		// separtely. This code also has the effect of converting an IP address to
+		// canonical form (RFC-4291 or RFC-4632).
 		virtualIPAddr, err = fetchStringSet(confMap, volumeGroupSection, "VirtualIPAddr", virtualIPAddrSet)
 		if nil != err {
 			return
 		}
-		volumeGroup.VirtualIPAddr = strings.Split(virtualIPAddr, "/")[0]
+		volumeGroup.VirtualIPAddr, volumeGroup.VirtualIPMask, err = net.ParseCIDR(virtualIPAddr)
+		if nil != err {
+			err = fmt.Errorf("ParseCIDR() for config file variable [%s][%s] value '%s' failed: %v",
+				volumeGroupSection, "VirtualIPAddr", virtualIPAddr, err)
+
+			return
+		}
 
 		volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection, "VirtualHostname", virtualHostNameSet)
 		if nil != err {

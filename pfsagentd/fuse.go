@@ -121,7 +121,7 @@ func performMountFUSE() {
 		logFatal(globals.fuseConn.MountError)
 	}
 
-	logInfof("Now serving %s on %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
+	logInfof("Now serving on %s", globals.config.FUSEMountPointPath)
 }
 
 func fetchInodeDevice(pathTitle string, path string) (inodeDevice int64) {
@@ -163,7 +163,7 @@ func performUnmountFUSE() {
 		logFatal(err)
 	}
 
-	logInfof("Unmounted %s from %s", globals.config.FUSEVolumeName, globals.config.FUSEMountPointPath)
+	logInfof("Unmounted from %s", globals.config.FUSEMountPointPath)
 }
 
 func serveFuse() {
@@ -1036,27 +1036,31 @@ func handleRenameRequest(request *fuse.RenameRequest) {
 
 func handleSetattrRequest(request *fuse.SetattrRequest) {
 	var (
-		attr                   *fuse.Attr
-		chmodReply             *jrpcfs.Reply
-		chmodRequest           *jrpcfs.ChmodRequest
-		chownReply             *jrpcfs.Reply
-		chownRequest           *jrpcfs.ChownRequest
-		err                    error
-		newAtime               *time.Time
-		newMtime               *time.Time
-		resizeReply            *jrpcfs.Reply
-		resizeRequest          *jrpcfs.ResizeRequest
-		response               *fuse.SetattrResponse
-		setTimeReply           *jrpcfs.Reply
-		setTimeRequest         *jrpcfs.SetTimeRequest
-		settingAtime           bool
-		settingAtimeAndOrMtime bool
-		settingGID             bool
-		settingMode            bool
-		settingMtime           bool
-		settingSize            bool
-		settingUID             bool
-		timeNow                time.Time
+		attr                     *fuse.Attr
+		chmodReply               *jrpcfs.Reply
+		chmodRequest             *jrpcfs.ChmodRequest
+		chownReply               *jrpcfs.Reply
+		chownRequest             *jrpcfs.ChownRequest
+		chunkedPutContext        *chunkedPutContextStruct
+		chunkedPutContextElement *list.Element
+		err                      error
+		fileInode                *fileInodeStruct
+		ok                       bool
+		newAtime                 *time.Time
+		newMtime                 *time.Time
+		resizeReply              *jrpcfs.Reply
+		resizeRequest            *jrpcfs.ResizeRequest
+		response                 *fuse.SetattrResponse
+		setTimeReply             *jrpcfs.Reply
+		setTimeRequest           *jrpcfs.SetTimeRequest
+		settingAtime             bool
+		settingAtimeAndOrMtime   bool
+		settingGID               bool
+		settingMode              bool
+		settingMtime             bool
+		settingSize              bool
+		settingUID               bool
+		timeNow                  time.Time
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_SetattrRequest_calls, 1)
@@ -1130,6 +1134,37 @@ func handleSetattrRequest(request *fuse.SetattrRequest) {
 	}
 
 	if settingSize {
+		globals.Lock()
+
+		fileInode, ok = globals.fileInodeMap[inode.InodeNumber(request.Header.Node)]
+
+		if ok {
+			if fileInode.extentMapFileSize > request.Size {
+				fileInode.extentMapFileSize = request.Size
+			}
+
+			pruneExtentMap(fileInode.extentMap, request.Size)
+
+			chunkedPutContextElement = fileInode.chunkedPutList.Front()
+
+			for nil != chunkedPutContextElement {
+				chunkedPutContext, ok = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+				if !ok {
+					logFatalf("chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
+				}
+
+				if chunkedPutContext.fileSize > request.Size {
+					chunkedPutContext.fileSize = request.Size
+				}
+
+				pruneExtentMap(chunkedPutContext.extentMap, request.Size)
+
+				chunkedPutContextElement = chunkedPutContextElement.Next()
+			}
+		}
+
+		globals.Unlock()
+
 		resizeRequest = &jrpcfs.ResizeRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
