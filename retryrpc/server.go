@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sync"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -34,6 +33,7 @@ func (server *Server) run() {
 
 		server.connWG.Add(1)
 
+		// TODO - remove server.connections?
 		server.connLock.Lock()
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
@@ -43,6 +43,7 @@ func (server *Server) run() {
 			defer server.goroutineWG.Done()
 
 			server.serviceClient(myConn)
+
 			server.connLock.Lock()
 			server.connections.Remove(myElm)
 
@@ -67,7 +68,7 @@ func keyString(myUniqueID string, requestID uint64) string {
 //
 // Otherwise, call the RPC.  callRPCAndMarshal() takes care
 // of adding the request to the pending queue.
-func (server *Server) findQOrCallRPC(buf []byte, jReq *jsonRequest) (reply *ioReply, err error) {
+func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonRequest) (err error) {
 	queueKey := keyString(jReq.MyUniqueID, jReq.RequestID)
 
 	// First check if we already completed this request by looking at
@@ -81,36 +82,46 @@ func (server *Server) findQOrCallRPC(buf []byte, jReq *jsonRequest) (reply *ioRe
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
 		server.Unlock()
-		logger.Infof("findQOrCallRPC - request on completedRequest Q - key: %v value: %+v",
-			queueKey, v)
-		reply = v
+		logger.Infof("findQOrCallRPC - request on completedRequest Q - key: %v reply: %v",
+			queueKey, string(v.JResult))
+		server.returnResults(v, cCtx, jReq)
 
 	} else {
 		v2, ok2 := server.pendingRequest[queueKey]
 		if ok2 {
-			// TODO - on pending queue - update return socket so when complete gets returned
-			// to correct socket.   Be careful to hold mutex while writing on the socket.
+			// Already on pending queue.  Replace the connCtx in the pending queue so
+			// that the goroutine completing the task sends the response back to the
+			// most recent connection.  Any prior connections will have been closed by
+			// the client before creating a new connection.
+			//
+			// This goroutine simply returns.
+			server.buildAndQPendingCtx(queueKey, buf, cCtx, true)
 			server.Unlock()
+
 			logger.Infof("findQOrCallRPC - request on pending Q - key: %v value: %+v",
 				queueKey, v2)
 
 		} else {
 			// On neither queue - must be new request
 
-			// Call the RPC - and return an already marshaled response
+			// Call the RPC and return the results
 			//
 			// We pass buf to the call because the request will have to
 			// be unmarshaled again to retrieve the parameters specific to
 			// the RPC.
 			server.Unlock()
-			reply, err = server.callRPCAndMarshal(buf, jReq, queueKey)
+
+			// TODO - why return err here if already returned results to
+			// client?
+			err = server.callRPCAndMarshal(cCtx, buf, jReq, queueKey)
 		}
 	}
 
 	return
 }
 
-func (server *Server) processRequest(conn net.Conn, buf []byte, writeMutex *sync.Mutex) {
+// processRequest is given a request from the client.
+func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	defer server.goroutineWG.Done()
 
 	// We first unmarshal the raw buf to find the method
@@ -124,38 +135,24 @@ func (server *Server) processRequest(conn net.Conn, buf []byte, writeMutex *sync
 		return
 	}
 
-	// First check if we already completed this request by looking at
-	// completed and pending queues.  Update pending queue with new
-	// net.Conn if needed.
-	reply, err := server.findQOrCallRPC(buf, &jReq)
-	// TODO - error handling
-
-	// Now write the response back to the client
-	//
-	// Serialize multiple goroutines writing back with writeMutex
-
-	// Write Len back
-	writeMutex.Lock()
-	setupHdrReply(reply)
-	err = binary.Write(conn, binary.BigEndian, reply.Hdr)
+	// Complete the request either by looking in completed queue,
+	// updating cCtx of pending queue entry or by calling the
+	// RPC.
+	err := server.findQOrCallRPC(cCtx, buf, &jReq)
 	if err != nil {
-		fmt.Printf("SERVER: binary.Write failed err: %v\n", err)
+		// TODO - error handling
+		fmt.Printf("findQOrCallRPC returned err: %v\n", err)
 	}
-
-	// Send JSON reply
-	bytesWritten, writeErr := conn.Write(reply.JResult)
-	if writeErr != nil {
-		fmt.Printf("SERVER: conn.Write failed - bytesWritten: %v err: %v\n",
-			bytesWritten, err)
-	}
-	writeMutex.Unlock()
 }
 
+// serviceClient gets called when we accept a new connection.
+// This means we have a new client connection.
 func (server *Server) serviceClient(conn net.Conn) {
 	var (
-		halting    bool
-		writeMutex sync.Mutex
+		halting bool
 	)
+
+	cCtx := &connCtx{conn: conn}
 
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
@@ -170,6 +167,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 			server.Unlock()
 			logger.Infof("serviceClient - getIO returned err: %v - halting: %v",
 				getErr, halting)
+
 			// TODO - error handling!!!
 			// Retry??? Drop on floor since other side failed???
 			// Retransmit case - just return and wait for new connection for this
@@ -183,22 +181,34 @@ func (server *Server) serviceClient(conn net.Conn) {
 		// Writes back on the socket have to be serialized so
 		// pass the per connection mutex.
 		server.goroutineWG.Add(1)
-		go server.processRequest(conn, buf, &writeMutex)
+		go server.processRequest(cCtx, buf)
 	}
 }
 
-// callRPCAndMarshal calls the RPC and returns an already marshalled reply
-func (server *Server) callRPCAndMarshal(buf []byte, jReq *jsonRequest, queueKey string) (reply *ioReply, err error) {
+func (server *Server) buildAndQPendingCtx(queueKey string, buf []byte, cCtx *connCtx, lockHeld bool) {
+	pc := &pendingCtx{buf: buf, cCtx: cCtx}
+
+	if lockHeld == false {
+		server.Lock()
+	}
+
+	server.pendingRequest[queueKey] = pc
+
+	if lockHeld == false {
+		server.Unlock()
+	}
+}
+
+// callRPCAndMarshal calls the RPC and returns results to requestor
+func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonRequest, queueKey string) (err error) {
 
 	// Setup the reply structure with common fields
-	reply = &ioReply{}
+	reply := &ioReply{}
 	rid := jReq.RequestID
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
 	// Queue the request
-	server.Lock()
-	server.pendingRequest[queueKey] = buf
-	server.Unlock()
+	server.buildAndQPendingCtx(queueKey, buf, cCtx, false)
 
 	ma := server.svrMap[jReq.Method]
 	/* Debugging
@@ -244,9 +254,62 @@ func (server *Server) callRPCAndMarshal(buf []byte, jReq *jsonRequest, queueKey 
 	reply.JResult, err = json.Marshal(jReply)
 
 	server.Lock()
+	// connCtx may have changed due to new connection.   Pull
+	// the current one from pendingCtx
+	pendingCtx := server.pendingRequest[queueKey]
+	currentCCtx := pendingCtx.cCtx
+
 	server.completedRequest[queueKey] = reply
 	delete(server.pendingRequest, queueKey)
 	server.Unlock()
 
+	// Now return the results
+	server.returnResults(reply, currentCCtx, jReq)
+
 	return
+}
+
+func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
+	jReq *jsonRequest) {
+
+	// Now write the response back to the client
+	//
+	// Serialize multiple goroutines writing on socket back to client
+	// by grabbing a mutex on the context
+
+	// We may not have the correct reply structure if we are retransmitting.
+	//
+	// Consider this scenario:
+	//
+	// t0 receive RPC on socket#1 and put on pending queue
+	// t1 before the RPC is processed, the client disconnects
+	// t2 client reconnects with socket#2
+	// t3 client resends RPC
+	// t4 server receives RPC and checks if the RPC is on pending queue.
+	// It is but still lists socket#1.
+	//
+	// The fix is the second thread replaces the contextCtx in the pending queue
+	// entry.  When the first thread completes the RPC, it pulls the most recent
+	// pendingCtx off the pending queue and uses those contents to return the result.
+	if reply != nil {
+
+		// Write Len back
+		cCtx.Lock()
+		setupHdrReply(reply)
+		binErr := binary.Write(cCtx.conn, binary.BigEndian, reply.Hdr)
+		if binErr != nil {
+			cCtx.Unlock()
+			fmt.Printf("SERVER: binary.Write failed err: %v\n", binErr)
+			return
+		}
+
+		// Write JSON reply
+		bytesWritten, writeErr := cCtx.conn.Write(reply.JResult)
+		if writeErr != nil {
+			fmt.Printf("SERVER: conn.Write failed - bytesWritten: %v err: %v\n",
+				bytesWritten, writeErr)
+		}
+		logger.Infof("returnResults() - Reply is: %v", string(reply.JResult))
+		cCtx.Unlock()
+	}
 }

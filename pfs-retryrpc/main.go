@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
@@ -17,30 +18,42 @@ func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup) {
 	defer sendWg.Done()
 
 	// Send a ping RPC and print the results
-	msg := fmt.Sprintf("Ping Me - %v\n", i)
+	msg := fmt.Sprintf("Ping Me - %v", i)
 	pingRequest := &jrpcfs.PingReq{Message: msg}
 	pingReply := &jrpcfs.PingReply{}
+	expectedReply := fmt.Sprintf("pong %d bytes", len(msg))
 	err := client.Send("RpcPing", pingRequest, pingReply)
 	if err != nil {
 		fmt.Printf("client.Send(RpcPing) failed with err: %v\n", err)
 		os.Exit(-1)
 	}
-	fmt.Printf("client.Send(RpcPing) returned reply: %+v\n", pingReply)
+	if expectedReply != pingReply.Message {
+		fmt.Printf("ERR ==== client: '%+v'\n", client)
+		fmt.Printf("         client.Send(RpcPing) reply '%+v'\n", pingReply)
+		fmt.Printf("         client.Send(RpcPing) expected '%s' but received '%s'\n", expectedReply, pingReply.Message)
+		fmt.Printf("         client.Send(RpcPing) SENT: msg '%v' but received '%s'\n", msg, pingReply.Message)
+		fmt.Printf("         client.Send(RpcPing) len(pingRequest.Message): '%d' i: %v\n", len(pingRequest.Message), i)
+		os.Exit(-1)
+	}
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(ipAddr string, retryRPCPortString string, i int, agentWg *sync.WaitGroup,
+func pfsagent(ipAddr string, retryRPCPortString string, aid uint64, agentWg *sync.WaitGroup,
 	sendCnt int) {
 	defer agentWg.Done()
 
 	// 1. setup client and connect to proxyfsd
 	// 2. loop doing RPCs in parallel
-	clientID := fmt.Sprintf("client - %v", i)
+	clientID := fmt.Sprintf("client - %v", aid)
 	client := retryrpc.NewClient(clientID)
 
 	// Have client connect to server
 	port, _ := strconv.Atoi(retryRPCPortString)
-	client.Dial(ipAddr, port)
+	err := client.Dial(ipAddr, port)
+	if err != nil {
+		fmt.Printf("Dial() failedd with err: %v\n", err)
+		return
+	}
 
 	var sendWg sync.WaitGroup
 
@@ -61,13 +74,17 @@ func parallelAgentSenders(ipAddr string, retryRPCPortString string, agentCnt int
 
 	var agentWg sync.WaitGroup
 
+	// Figure out random seed for runs
+	r := rand.New(rand.NewSource(99))
+	clientSeed := r.Uint64()
+
 	// Start parallel pfsagents - each agent doing sendCnt parallel sends
-	var z int
+	var aid uint64
 	for i := 0; i < agentCnt; i++ {
-		z = (z + i) * 10
+		aid = clientSeed + uint64(i)
 
 		agentWg.Add(1)
-		go pfsagent(ipAddr, retryRPCPortString, z, &agentWg, sendCnt)
+		go pfsagent(ipAddr, retryRPCPortString, aid, &agentWg, sendCnt)
 	}
 	agentWg.Wait()
 }
@@ -127,6 +144,6 @@ func main() {
 	}
 
 	sendCnt := 100
-	agentCnt := 1
+	agentCnt := 100
 	parallelAgentSenders(ipAddr, retryRPCPortString, agentCnt, sendCnt)
 }

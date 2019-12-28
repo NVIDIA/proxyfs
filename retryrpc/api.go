@@ -32,16 +32,16 @@ type Server struct {
 	connWG           sync.WaitGroup
 	listeners        []net.Listener
 	listenersWG      sync.WaitGroup
-	receiver         reflect.Value       // Package receiver being served
-	pendingRequest   map[string][]byte   // Key: "MyUniqueID:RequestID"
-	completedRequest map[string]*ioReply // Key: "MyUniqueID:RequestID"
+	receiver         reflect.Value          // Package receiver being served
+	pendingRequest   map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
+	completedRequest map[string]*ioReply    // Key: "MyUniqueID:RequestID"
 }
 
 // NewServer creates the Server object
 func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s := &Server{}
 	s.svrMap = make(map[string]*methodArgs)
-	s.pendingRequest = make(map[string][]byte)
+	s.pendingRequest = make(map[string]*pendingCtx)
 	s.completedRequest = make(map[string]*ioReply)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr

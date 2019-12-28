@@ -117,11 +117,6 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 		fmt.Printf("CLIENT: PARTIAL Write! bytesWritten is: %v len(ctx.ioreq.JReq): %v writeErr: %v\n",
 			bytesWritten, len(ctx.ioreq.JReq), writeErr)
 	}
-	/*
-		bytesWritten, writeErr := client.tcpConn.Write(ctx.ioreq.JReq)
-			fmt.Printf("CLIENT: Wrote RPC REQEUST with bytesWritten: %v writeErr: %v\n",
-				bytesWritten, writeErr)
-	*/
 	if writeErr != nil {
 		// TODO - handle disconnect or other error????
 		fmt.Printf("CLIENT: Failed WRITE - HANLDE disconnect or other error??\n")

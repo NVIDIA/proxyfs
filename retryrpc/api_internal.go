@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"reflect"
+	"sync"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -24,14 +25,33 @@ const (
 	currentRetryVersion = 1
 )
 
+// connCtx tracks a conn which has been accepted.
+//
+// It also contains the lock used for serialization when
+// reading or writing on the socket.
+type connCtx struct {
+	sync.Mutex
+	conn net.Conn
+}
+
+// pendingCtx tracks an individual request from a client
+type pendingCtx struct {
+	lock sync.Mutex
+	buf  []byte   // Request
+	cCtx *connCtx // Most recent connection to return results
+}
+
+// methodArgs defines the method provided by the RPC server
+// as well as the request type and reply type arguments
 type methodArgs struct {
 	methodPtr *reflect.Method
 	request   reflect.Type
 	reply     reflect.Type
 }
 
+// ioHeader is the header sent on the socket
 type ioHeader struct {
-	Len      uint32
+	Len      uint32 // Number of bytes following header
 	Protocol uint16
 	Version  uint16
 }
@@ -49,7 +69,7 @@ type ioReply struct {
 	JResult []byte // JSON containing response
 }
 
-// reqCtx tracks a request passed to Send() on the client until Send() returns
+// reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
 	ioreq    ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
@@ -111,15 +131,13 @@ func getIO(conn net.Conn, who string) (buf []byte, err error) {
 	// Read in the header of the request first
 	var hdr ioHeader
 	err = binary.Read(conn, binary.BigEndian, &hdr)
+	if err != nil {
+		return
+	}
 
 	// Now read the rest of the structure off the wire.
 	buf = make([]byte, hdr.Len)
-	_, writeErr := io.ReadFull(conn, buf)
-
-	if writeErr != nil {
-		err = writeErr
-		return
-	}
+	_, err = io.ReadFull(conn, buf)
 
 	return
 }
