@@ -88,8 +88,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	globals.retryRPCPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCPort")
 	if nil != err {
-		logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCPort from config file")
-		return
+		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -117,7 +116,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	ioServerUp(globals.ipAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString)
+	if globals.retryRPCPortString != "" {
+		retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString)
+	}
 
 	return
 }
