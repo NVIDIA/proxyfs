@@ -21,6 +21,7 @@ gopkgsubdirs = \
 	platform \
 	proxyfsd \
 	ramswift \
+	retryrpc \
 	stats \
 	statslogger \
 	swiftclient \
@@ -37,6 +38,7 @@ gobinsubdirs = \
 	pfs-crash \
 	pfs-fsck \
 	pfs-restart-test \
+	pfs-retryrpc \
 	pfs-stress \
 	pfs-swift-load \
 	pfsagentd \

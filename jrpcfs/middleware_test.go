@@ -147,8 +147,9 @@ func testSetup() []func() {
 		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1000000",
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
-		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
-		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
+		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
+		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
+		"JSONRPCServer.RetryRPCPort=24457", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
 	}
 
