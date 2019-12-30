@@ -24,7 +24,7 @@ type globalsStruct struct {
 	privateIPAddr        string
 	portString           string
 	fastPortString       string
-	retryRPCPortString   string
+	retryRPCPort         uint16
 	retryRPCTTLCompleted time.Duration
 	dataPathLogging      bool
 
@@ -94,15 +94,17 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.retryRPCPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCPort")
-	if nil != err {
+	globals.retryRPCPort, err = confMap.FetchOptionValueUint16("JSONRPCServer", "RetryRPCPort")
+	if nil == err {
+		globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
+		if nil != err {
+			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCTTLCompleted from config file")
+			return
+		}
+	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
-	}
-
-	globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
-	if (nil != err) && (globals.retryRPCPortString != "") {
-		logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10 minutes")
-		globals.retryRPCTTLCompleted = 10 * time.Minute
+		globals.retryRPCPort = 0
+		globals.retryRPCTTLCompleted = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -130,9 +132,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	// Now kick off our other, faster RPC server
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
-	// Init Retry RPC server
-	if globals.retryRPCPortString != "" {
-		retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPortString, globals.retryRPCTTLCompleted)
+	// Init Retry RPC server (if necessary)
+	if 0 != globals.retryRPCPort {
+		retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted)
 	}
 
 	return

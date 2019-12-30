@@ -1456,7 +1456,8 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
-		reply.JSONRpcTCPAddrString = net.JoinHostPort(globals.publicIPAddr, globals.portString)
+		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
+		reply.RetryRPCPort = globals.retryRPCPort
 	}
 	return
 }
@@ -1473,7 +1474,8 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
-		reply.JSONRpcTCPAddrString = net.JoinHostPort(globals.publicIPAddr, globals.portString)
+		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
+		reply.RetryRPCPort = globals.retryRPCPort
 	}
 	return
 }

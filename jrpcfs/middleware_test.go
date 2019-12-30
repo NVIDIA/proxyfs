@@ -151,6 +151,7 @@ func testSetup() []func() {
 		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
 		"JSONRPCServer.RetryRPCPort=24457", // ...and similarly here...
+		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.DataPathLogging=false",
 	}
 
