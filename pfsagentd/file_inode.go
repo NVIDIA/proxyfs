@@ -42,7 +42,7 @@ func doFlushIfNecessary(dirInodeNumber inode.InodeNumber, name []byte) {
 
 	lookupReply = &jrpcfs.InodeReply{}
 
-	err = doJRPCRequest("Server.RpcLookup", lookupRequest, lookupReply)
+	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
 	if nil != err {
 		// Assume the fileInode simply did not exist, so just return
 		return
@@ -280,7 +280,7 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 
 	provisionObjectReply = &jrpcfs.ProvisionObjectReply{}
 
-	err = doJRPCRequest("Server.RpcProvisionObject", provisionObjectRequest, provisionObjectReply)
+	err = globals.retryRPCClient.Send("RpcProvisionObject", provisionObjectRequest, provisionObjectReply)
 	if nil != err {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to Server.RpcProvisionObject failed: %v", err)
 	}
@@ -370,7 +370,7 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 
 	wroteReply = &jrpcfs.WroteReply{}
 
-	err = doJRPCRequest("Server.RpcWrote", wroteRequest, wroteReply)
+	err = globals.retryRPCClient.Send("RpcWrote", wroteRequest, wroteReply)
 	if nil != err {
 		logFatalf("*chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
 	}
@@ -597,7 +597,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 
 	fetchExtentMapChunkReply = &jrpcfs.FetchExtentMapChunkReply{}
 
-	err = doJRPCRequest("Server.RpcFetchExtentMapChunk", fetchExtentMapChunkRequest, fetchExtentMapChunkReply)
+	err = globals.retryRPCClient.Send("RpcFetchExtentMapChunk", fetchExtentMapChunkRequest, fetchExtentMapChunkReply)
 	if nil != err {
 		return
 	}

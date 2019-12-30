@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,211 +10,14 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/swiftstack/ProxyFS/retryrpc"
 )
-
-const jrpcResponseBufferIncrement = 1024 // Max # bytes to read from jrpcSwiftProxyBypassTCPConn
-
-type jrpcSwiftProxyBypassRequestStruct struct {
-	sync.WaitGroup
-	jrpcMethod string
-	jrpcParam  interface{}
-	jrpcResult interface{}
-	err        error
-}
-
-func startJRPCSwiftProxyBypass() {
-	globals.jrpcSwiftProxyBypassRequestChan = make(chan *jrpcSwiftProxyBypassRequestStruct)
-	globals.jrpcSwiftProxyBypassStopChan = make(chan struct{})
-	globals.jrpcSwiftProxyBypassParentDoneWG.Add(1)
-	go jrpcSwiftProxyBypassParent()
-}
-
-func stopJRPCSwiftProxyBypass() {
-	globals.jrpcSwiftProxyBypassStopChan <- struct{}{}
-	globals.jrpcSwiftProxyBypassParentDoneWG.Wait()
-	globals.jrpcSwiftProxyBypassStopChan = nil
-	globals.jrpcSwiftProxyBypassRequestChan = nil
-}
-
-func jrpcSwiftProxyBypassParent() {
-	var (
-		err                         error
-		jrpcSwiftProxyBypassRequest *jrpcSwiftProxyBypassRequestStruct
-		jrpcRequest                 []byte
-		jrpcRequestID               uint64
-		jrpcRequestBytePosition     int
-		jrpcRequestBytesWritten     int
-		jrpcResponse                []byte
-		marshalErr                  error
-		ok                          bool
-		responseErr                 error
-		unmarshalErr                error
-	)
-
-	globals.jrpcSwiftProxyBypassRequestMap = make(map[uint64]*jrpcSwiftProxyBypassRequestStruct)
-
-	// Enter special select loop one time before doMountProxyFS() has fetched globals.jrpcSwiftProxyBypassTCPAddr
-
-	select {
-	case jrpcSwiftProxyBypassRequest = <-globals.jrpcSwiftProxyBypassRequestChan:
-		// Now it's time to make the connection to ProxyFS's JSON RPC Server
-
-		globals.jrpcSwiftProxyBypassTCPConn, err = net.DialTCP("tcp", nil, globals.jrpcSwiftProxyBypassTCPAddr)
-		if nil != err {
-			logFatalf("unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", globals.jrpcSwiftProxyBypassTCPAddr.String(), err)
-		}
-
-		// Fall-through to "real" select loop with jrpcSwiftProxyBypassRequest non-nil
-	case _ = <-globals.jrpcSwiftProxyBypassStopChan:
-		globals.jrpcSwiftProxyBypassParentDoneWG.Done()
-		return
-	}
-
-	// Now that we have a jrpcSwiftProxyBypassTCPConn, launch response reader
-
-	globals.jrpcSwiftProxyBypassResponseChan = make(chan []byte)
-
-	globals.jrpcSwiftProxyBypassChildDoneWG.Add(1)
-	go jrpcSwiftProxyBypassChild()
-
-	// Now we can fall into the "real" select loop
-
-	for {
-		if nil != jrpcSwiftProxyBypassRequest {
-			// Process jrpcSwiftProxyBypassRequest now (either from above or below)
-
-			jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcSwiftProxyBypassRequest.jrpcMethod, jrpcSwiftProxyBypassRequest.jrpcParam)
-			if nil != marshalErr {
-				logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %#v", jrpcSwiftProxyBypassRequest.jrpcMethod, jrpcSwiftProxyBypassRequest.jrpcParam, marshalErr)
-			}
-
-			globals.jrpcSwiftProxyBypassRequestMap[jrpcRequestID] = jrpcSwiftProxyBypassRequest
-
-			// Send the request
-
-			jrpcRequestBytePosition = 0
-
-			for jrpcRequestBytePosition < len(jrpcRequest) {
-				jrpcRequestBytesWritten, err = globals.jrpcSwiftProxyBypassTCPConn.Write(jrpcRequest[jrpcRequestBytePosition:])
-				if nil != err {
-					logFatalf("unable to write jrpcRequest to jrpcSwiftProxyBypassTCPConn: %v", err)
-				}
-				jrpcRequestBytePosition += jrpcRequestBytesWritten
-			}
-		}
-
-		select {
-		case jrpcSwiftProxyBypassRequest = <-globals.jrpcSwiftProxyBypassRequestChan:
-			// Fall-through to be executed in next for{} loop iteration
-		case jrpcResponse = <-globals.jrpcSwiftProxyBypassResponseChan:
-			// Process response
-
-			jrpcRequestID, responseErr, unmarshalErr = jrpcUnmarshalResponseForIDAndError(jrpcResponse)
-			if nil != unmarshalErr {
-				logFatalf("unable to unmarshal response [case 1]: %v", unmarshalErr)
-			}
-
-			jrpcSwiftProxyBypassRequest, ok = globals.jrpcSwiftProxyBypassRequestMap[jrpcRequestID]
-			if !ok {
-				logFatalf("unable to find jrpcRequestID (0x%16X)", jrpcRequestID)
-			}
-
-			jrpcSwiftProxyBypassRequest.err = responseErr
-
-			if nil == responseErr {
-				unmarshalErr = jrpcUnmarshalResponse(jrpcRequestID, jrpcResponse, jrpcSwiftProxyBypassRequest.jrpcResult)
-				if nil != unmarshalErr {
-					logFatalf("unable to unmarshal response [case 2]: %v", unmarshalErr)
-				}
-			}
-
-			jrpcSwiftProxyBypassRequest.Done()
-
-			// Ensure we don't re-send it
-
-			jrpcSwiftProxyBypassRequest = nil
-		case _ = <-globals.jrpcSwiftProxyBypassStopChan:
-			// Time to exit...
-
-			globals.jrpcSwiftProxyBypassRequestMap = nil
-			_ = globals.jrpcSwiftProxyBypassTCPConn.Close()
-			globals.jrpcSwiftProxyBypassParentDoneWG.Done()
-
-			return
-		}
-	}
-}
-
-func jrpcSwiftProxyBypassChild() {
-	var (
-		braceDepth      uint32
-		err             error
-		insideString    bool
-		jrpcResponse    []byte
-		jrpcReadBuf     []byte
-		jrpcReadByte    byte
-		jrpcReadBufPos  int
-		nextByteEscaped bool
-		numBytesRead    int
-	)
-
-	jrpcResponse = make([]byte, 0)
-
-	braceDepth = 0
-	insideString = false
-	nextByteEscaped = false
-
-	for {
-		jrpcReadBuf = make([]byte, jrpcResponseBufferIncrement)
-		numBytesRead, err = globals.jrpcSwiftProxyBypassTCPConn.Read(jrpcReadBuf)
-		if nil != err {
-			// Presumably this error is likely due to a call to Close()... so we should just exit
-			globals.jrpcSwiftProxyBypassChildDoneWG.Done()
-			return
-		}
-		jrpcReadBuf = jrpcReadBuf[:numBytesRead]
-		for jrpcReadBufPos = 0; jrpcReadBufPos < numBytesRead; jrpcReadBufPos++ {
-			jrpcReadByte = jrpcReadBuf[jrpcReadBufPos]
-			jrpcResponse = append(jrpcResponse, jrpcReadByte)
-			if insideString {
-				if nextByteEscaped {
-					nextByteEscaped = false
-				} else if '\\' == jrpcReadByte {
-					nextByteEscaped = true
-				} else if '"' == jrpcReadByte {
-					insideString = false
-				} else {
-					// No change to any state
-				}
-			} else {
-				if '{' == jrpcReadByte {
-					braceDepth++
-				} else if '}' == jrpcReadByte {
-					if 0 == braceDepth {
-						logFatalf("malformed JSONRPC 2.0 received... closing brace with no opening brace")
-					} else {
-						braceDepth--
-						if 0 == braceDepth {
-							globals.jrpcSwiftProxyBypassResponseChan <- jrpcResponse
-							jrpcResponse = make([]byte, 0)
-						}
-					}
-				} else if '"' == jrpcReadByte {
-					insideString = true
-				} else {
-					// No change to any state
-				}
-			}
-		}
-	}
-}
 
 func doMountProxyFS() {
 	var (
-		err                  error
-		jsonRpcTCPAddrString string
-		mountReply           *jrpcfs.MountByAccountNameReply
-		mountRequest         *jrpcfs.MountByAccountNameRequest
+		err          error
+		mountReply   *jrpcfs.MountByAccountNameReply
+		mountRequest *jrpcfs.MountByAccountNameRequest
 	)
 
 	mountRequest = &jrpcfs.MountByAccountNameRequest{
@@ -235,46 +37,45 @@ func doMountProxyFS() {
 
 	globals.mountID = mountReply.MountID
 	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
+	globals.retryRPCPublicIPAddr = mountReply.RetryRPCPublicIPAddr
+	globals.retryRPCPort = mountReply.RetryRPCPort
 
-	jsonRpcTCPAddrString = mountReply.JSONRpcTCPAddrString
+	globals.retryRPCClient = retryrpc.NewClient(string(globals.mountID))
 
-	globals.jrpcSwiftProxyBypassTCPAddr, err = net.ResolveTCPAddr("tcp", jsonRpcTCPAddrString)
+	// TODO: Remove the following when no longer needed
+
+	err = globals.retryRPCClient.Dial(globals.retryRPCPublicIPAddr, int(globals.retryRPCPort))
 	if nil != err {
-		logFatalf("unable to net.ResolveTCPAddr(\"tcp\", \"%s\"): %v", jsonRpcTCPAddrString, err)
+		logFatalf("unable to retryRPCClient.Dial(%v,%v): %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
 	}
+}
+
+func doUnmountProxyFS() {
+	// TODO: Flush outstanding FileInode's
+	// TODO: Tell ProxyFS we are releasing all leases
+	// TODO: Tell ProxyFS we are unmounting
+
+	globals.retryRPCClient.Close()
+}
+
+func doRetryRPCRequest(method string, request interface{}, reply interface{}) (err error) {
+	err = globals.retryRPCClient.Send(method, request, reply)
+
+	return
 }
 
 func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
 	var (
-		httpErr                     error
-		httpRequest                 *http.Request
-		jrpcRequest                 []byte
-		jrpcRequestID               uint64
-		jrpcResponse                []byte
-		jrpcSwiftProxyBypassRequest *jrpcSwiftProxyBypassRequestStruct
-		marshalErr                  error
-		ok                          bool
-		unmarshalErr                error
-		swiftAccountURL             string
+		httpErr         error
+		httpRequest     *http.Request
+		jrpcRequest     []byte
+		jrpcRequestID   uint64
+		jrpcResponse    []byte
+		marshalErr      error
+		ok              bool
+		unmarshalErr    error
+		swiftAccountURL string
 	)
-
-	if "Server.RpcMountByAccountName" != jrpcMethod {
-		jrpcSwiftProxyBypassRequest = &jrpcSwiftProxyBypassRequestStruct{
-			jrpcMethod: jrpcMethod,
-			jrpcParam:  jrpcParam,
-			jrpcResult: jrpcResult,
-		}
-
-		jrpcSwiftProxyBypassRequest.Add(1)
-
-		globals.jrpcSwiftProxyBypassRequestChan <- jrpcSwiftProxyBypassRequest
-
-		jrpcSwiftProxyBypassRequest.Wait()
-
-		err = jrpcSwiftProxyBypassRequest.err
-
-		return
-	}
 
 	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
 	if nil != marshalErr {

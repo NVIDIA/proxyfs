@@ -1,20 +1,17 @@
 package jrpcfs
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
-func retryRPCServerUp(jserver *Server, ipAddr string, portString string, completedTTL time.Duration) {
+func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16, retryRPCTTLCompleted time.Duration) {
 	var err error
 
-	port, _ := strconv.Atoi(portString)
-
 	// Create a new RetryRPC Server.
-	rrSvr := retryrpc.NewServer(completedTTL, ipAddr, port)
+	rrSvr := retryrpc.NewServer(retryRPCTTLCompleted, publicIPAddr, int(retryRPCPort))
 
 	// Register jrpcsfs methods with the retryrpc server
 	err = rrSvr.Register(jserver)
@@ -29,7 +26,7 @@ func retryRPCServerUp(jserver *Server, ipAddr string, portString string, complet
 	// Start the retryrpc server listener
 	_, listErr := rrSvr.Start()
 	if listErr != nil {
-		logger.ErrorfWithError(listErr, "net.Listen %s:%s failed", ipAddr, portString)
+		logger.ErrorfWithError(listErr, "net.Listen %s:%d failed", publicIPAddr, retryRPCPort)
 		return
 	}
 

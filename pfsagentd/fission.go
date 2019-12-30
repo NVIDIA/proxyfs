@@ -135,7 +135,7 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 
 	lookupPlusReply = &jrpcfs.LookupPlusReply{}
 
-	err = doJRPCRequest("Server.RpcLookupPlus", lookupPlusRequest, lookupPlusReply)
+	err = globals.retryRPCClient.Send("RpcLookupPlus", lookupPlusRequest, lookupPlusReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -222,7 +222,7 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 
 			getStatReply = &jrpcfs.StatStruct{}
 
-			err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+			err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 			if nil != err {
 				errno = convertErrToErrno(err, syscall.EIO)
 				return
@@ -288,7 +288,7 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 
 		getStatReply = &jrpcfs.StatStruct{}
 
-		err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 		if nil != err {
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
@@ -405,7 +405,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 		chmodReply = &jrpcfs.Reply{}
 
-		err = doJRPCRequest("Server.RpcChmod", chmodRequest, chmodReply)
+		err = globals.retryRPCClient.Send("RpcChmod", chmodRequest, chmodReply)
 		if nil != err {
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
@@ -434,7 +434,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 		chownReply = &jrpcfs.Reply{}
 
-		err = doJRPCRequest("Server.RpcChown", chownRequest, chownReply)
+		err = globals.retryRPCClient.Send("RpcChown", chownRequest, chownReply)
 		if nil != err {
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
@@ -481,7 +481,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 		resizeReply = &jrpcfs.Reply{}
 
-		err = doJRPCRequest("Server.RpcResize", resizeRequest, resizeReply)
+		err = globals.retryRPCClient.Send("RpcResize", resizeRequest, resizeReply)
 		if nil != err {
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
@@ -523,7 +523,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 		setTimeReply = &jrpcfs.Reply{}
 
-		err = doJRPCRequest("Server.RpcSetTime", setTimeRequest, setTimeReply)
+		err = globals.retryRPCClient.Send("RpcSetTime", setTimeRequest, setTimeReply)
 		if nil != err {
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
@@ -539,7 +539,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -597,7 +597,7 @@ func (dummy *globalsStruct) DoReadLink(inHeader *fission.InHeader) (readLinkOut 
 
 	readSymlinkReply = &jrpcfs.ReadSymlinkReply{}
 
-	err = doJRPCRequest("Server.RpcReadSymlink", readSymlinkRequest, readSymlinkReply)
+	err = globals.retryRPCClient.Send("RpcReadSymlink", readSymlinkRequest, readSymlinkReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -641,7 +641,7 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 
 	symlinkReply = &jrpcfs.InodeReply{}
 
-	err = doJRPCRequest("Server.RpcSymlink", symlinkRequest, symlinkReply)
+	err = globals.retryRPCClient.Send("RpcSymlink", symlinkRequest, symlinkReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -656,7 +656,7 @@ func (dummy *globalsStruct) DoSymLink(inHeader *fission.InHeader, symLinkIn *fis
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -735,7 +735,7 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 
 	mkdirReply = &jrpcfs.InodeReply{}
 
-	err = doJRPCRequest("Server.RpcMkdir", mkdirRequest, mkdirReply)
+	err = globals.retryRPCClient.Send("RpcMkdir", mkdirRequest, mkdirReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -750,7 +750,7 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -815,7 +815,7 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 
 	unlinkReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcUnlink", unlinkRequest, unlinkReply)
+	err = globals.retryRPCClient.Send("RpcUnlink", unlinkRequest, unlinkReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -844,7 +844,7 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 
 	unlinkReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcRmdir", unlinkRequest, unlinkReply)
+	err = globals.retryRPCClient.Send("RpcRmdir", unlinkRequest, unlinkReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -876,7 +876,7 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 
 	renameReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcRename", renameRequest, renameReply)
+	err = globals.retryRPCClient.Send("RpcRename", renameRequest, renameReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -914,7 +914,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 	linkReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcLink", linkRequest, linkReply)
+	err = globals.retryRPCClient.Send("RpcLink", linkRequest, linkReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -929,7 +929,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -994,7 +994,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1286,7 +1286,7 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 
 	statVFSReply = &jrpcfs.StatVFS{}
 
-	err = doJRPCRequest("Server.RpcStatVFS", statVFSRequest, statVFSReply)
+	err = globals.retryRPCClient.Send("RpcStatVFS", statVFSRequest, statVFSReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1411,7 +1411,7 @@ func (dummy *globalsStruct) DoSetXAttr(inHeader *fission.InHeader, setXAttrIn *f
 
 	setXAttrReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcSetXAttr", setXAttrRequest, setXAttrReply)
+	err = globals.retryRPCClient.Send("RpcSetXAttr", setXAttrRequest, setXAttrReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1447,7 +1447,7 @@ func (dummy *globalsStruct) DoGetXAttr(inHeader *fission.InHeader, getXAttrIn *f
 
 	getXAttrReply = &jrpcfs.GetXAttrReply{}
 
-	err = doJRPCRequest("Server.RpcGetXAttr", getXAttrRequest, getXAttrReply)
+	err = globals.retryRPCClient.Send("RpcGetXAttr", getXAttrRequest, getXAttrReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1506,7 +1506,7 @@ func (dummy *globalsStruct) DoListXAttr(inHeader *fission.InHeader, listXAttrIn 
 
 	listXAttrReply = &jrpcfs.ListXAttrReply{}
 
-	err = doJRPCRequest("Server.RpcListXAttr", listXAttrRequest, listXAttrReply)
+	err = globals.retryRPCClient.Send("RpcListXAttr", listXAttrRequest, listXAttrReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1568,7 +1568,7 @@ func (dummy *globalsStruct) DoRemoveXAttr(inHeader *fission.InHeader, removeXAtt
 
 	removeXAttrReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcRemoveXAttr", removeXAttrRequest, removeXAttrReply)
+	err = globals.retryRPCClient.Send("RpcRemoveXAttr", removeXAttrRequest, removeXAttrReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1648,7 +1648,7 @@ func (dummy *globalsStruct) DoOpenDir(inHeader *fission.InHeader, openDirIn *fis
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1728,7 +1728,7 @@ func (dummy *globalsStruct) DoReadDir(inHeader *fission.InHeader, readDirIn *fis
 
 	readdirReply = &jrpcfs.ReaddirReply{}
 
-	err = doJRPCRequest("Server.RpcReaddirByLoc", readdirByLocRequest, readdirReply)
+	err = globals.retryRPCClient.Send("RpcReaddirByLoc", readdirByLocRequest, readdirReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1877,7 +1877,7 @@ func (dummy *globalsStruct) DoAccess(inHeader *fission.InHeader, accessIn *fissi
 
 	accessReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcAccess", accessRequest, accessReply)
+	err = globals.retryRPCClient.Send("RpcAccess", accessRequest, accessReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1919,7 +1919,7 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 
 	createReply = &jrpcfs.InodeReply{}
 
-	err = doJRPCRequest("Server.RpcCreate", createRequest, createReply)
+	err = globals.retryRPCClient.Send("RpcCreate", createRequest, createReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -1934,7 +1934,7 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 
 	getStatReply = &jrpcfs.StatStruct{}
 
-	err = doJRPCRequest("Server.RpcGetStat", getStatRequest, getStatReply)
+	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -2081,7 +2081,7 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 
 	readdirPlusReply = &jrpcfs.ReaddirPlusReply{}
 
-	err = doJRPCRequest("Server.RpcReaddirPlusByLoc", readdirPlusByLocRequest, readdirPlusReply)
+	err = globals.retryRPCClient.Send("RpcReaddirPlusByLoc", readdirPlusByLocRequest, readdirPlusReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
@@ -2184,7 +2184,7 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 
 	renameReply = &jrpcfs.Reply{}
 
-	err = doJRPCRequest("Server.RpcRename", renameRequest, renameReply)
+	err = globals.retryRPCClient.Send("RpcRename", renameRequest, renameReply)
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
