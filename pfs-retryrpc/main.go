@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -54,19 +55,20 @@ func pfsagent(ipAddr string, retryRPCPortString string, aid uint64, agentWg *syn
 		fmt.Printf("Dial() failedd with err: %v\n", err)
 		return
 	}
+	defer client.Close()
 
-	var sendWg sync.WaitGroup
+	for {
+		var sendWg sync.WaitGroup
 
-	var z int
-	for i := 0; i < sendCnt; i++ {
-		z = (z + i) * 10
+		var z int
+		for i := 0; i < sendCnt; i++ {
+			z = (z + i) * 10
 
-		sendWg.Add(1)
-		go sendIt(client, z, &sendWg)
+			sendWg.Add(1)
+			go sendIt(client, z, &sendWg)
+		}
+		sendWg.Wait()
 	}
-	sendWg.Wait()
-
-	client.Close()
 }
 
 func parallelAgentSenders(ipAddr string, retryRPCPortString string, agentCnt int,
@@ -87,6 +89,7 @@ func parallelAgentSenders(ipAddr string, retryRPCPortString string, agentCnt int
 		go pfsagent(ipAddr, retryRPCPortString, aid, &agentWg, sendCnt)
 	}
 	agentWg.Wait()
+	time.Sleep(100 * time.Millisecond)
 }
 
 func main() {
