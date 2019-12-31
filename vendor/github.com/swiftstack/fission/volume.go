@@ -1,7 +1,6 @@
 package fission
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -41,80 +40,6 @@ func newVolume(volumeName string, mountpointDirPath string, mountFlags uintptr, 
 			return make([]byte, volume.devFuseFDReadSize) // len == cap
 		},
 	}
-
-	return
-}
-
-func (volume *volumeStruct) DoMount() (err error) {
-	var (
-		allowOtherOption     string
-		devFuseFDMountOption string
-		gid                  int
-		gidMountOption       string
-		mountOptions         string
-		rootMode             uint32
-		rootModeMountOption  string
-		uid                  int
-		uidMountOption       string
-	)
-
-	_ = syscall.Unmount(volume.mountpointDirPath, syscall.MNT_FORCE)
-
-	volume.devFuseFD, err = syscall.Open("/dev/fuse", syscall.O_RDWR|syscall.O_CLOEXEC, 0)
-	if nil != err {
-		volume.logger.Printf("Volume %s unable to open /dev/fuse", volume.volumeName)
-		return
-	}
-
-	volume.devFuseFDReaderWG.Add(1)
-	go volume.devFuseFDReader()
-
-	devFuseFDMountOption = fmt.Sprintf("fd=%d", volume.devFuseFD)
-
-	rootMode = syscall.S_IFDIR
-	rootModeMountOption = fmt.Sprintf("rootmode=%o", rootMode)
-
-	uid = syscall.Geteuid()
-	gid = syscall.Getegid()
-
-	uidMountOption = fmt.Sprintf("user_id=%d", uid)
-	gidMountOption = fmt.Sprintf("group_id=%d", gid)
-	allowOtherOption = "allow_other"
-
-	mountOptions = devFuseFDMountOption +
-		"," + rootModeMountOption +
-		"," + uidMountOption +
-		"," + gidMountOption +
-		"," + allowOtherOption
-
-	err = syscall.Mount(volume.volumeName, volume.mountpointDirPath, "fuse", volume.mountFlags, mountOptions)
-	if nil == err {
-		volume.logger.Printf("Volume %s mounted on mountpoint %s", volume.volumeName, volume.mountpointDirPath)
-	} else {
-		volume.logger.Printf("Volume %s mount on mountpoint %s failed: %v", volume.volumeName, volume.mountpointDirPath, err)
-		_ = syscall.Close(volume.devFuseFD)
-		volume.devFuseFDReaderWG.Wait()
-	}
-
-	return
-}
-
-func (volume *volumeStruct) DoUnmount() (err error) {
-	err = syscall.Unmount(volume.mountpointDirPath, syscall.MNT_FORCE)
-	if nil != err {
-		volume.logger.Printf("Unable to unmount %s: %v", volume.mountpointDirPath, err)
-		return
-	}
-
-	err = syscall.Close(volume.devFuseFD)
-	if nil != err {
-		volume.logger.Printf("Unable to close /dev/fuse: %v", err)
-		return
-	}
-
-	volume.devFuseFDReaderWG.Wait()
-
-	volume.logger.Printf("Volume %s unmounted from mountpoint %s", volume.volumeName, volume.mountpointDirPath)
 
 	return
 }
