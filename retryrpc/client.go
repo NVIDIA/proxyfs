@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 // TODO - what if RPC was completed on Server1 and before response,
@@ -63,14 +65,13 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	client.Unlock()
 
 	client.goroutineWG.Add(1)
+	fmt.Printf("CLIENT: sendToServer()-----\n")
 	go client.sendToServer(crID, ctx)
 
 	// Now wait for response
 	rpcReply = <-ctx.answer
 
-	/*
-		fmt.Printf("CLIENT: REPLY: %+v\n", rpcReply)
-	*/
+	fmt.Printf("CLIENT: REPLY: %+v\n", rpcReply)
 
 	return
 }
@@ -176,7 +177,9 @@ func (client *Client) readReplies() {
 	for {
 
 		// Wait reply from server
+		logger.Infof("readReplies() - BEFORE call getIO()\n")
 		buf, getErr := getIO(client.tcpConn, "CLIENT")
+		logger.Infof("readReplies() - AFTER call getIO()\n")
 
 		// This must happen before checking error
 		if client.halting {
@@ -186,6 +189,7 @@ func (client *Client) readReplies() {
 		if getErr != nil {
 			// TODO - error handling!
 			// call retransmit thread???
+			logger.Infof("readReplies() - getIO() returned: %v\n", getErr)
 			continue
 		}
 

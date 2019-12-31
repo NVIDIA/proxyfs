@@ -9,6 +9,7 @@ import (
 	"net"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -47,6 +48,13 @@ type methodArgs struct {
 	methodPtr *reflect.Method
 	request   reflect.Type
 	reply     reflect.Type
+}
+
+// completedLRUEntry tracks time entry was completed for
+// expiration from cache
+type completedLRUEntry struct {
+	queueKey      string
+	timeCompleted time.Time
 }
 
 // ioHeader is the header sent on the socket

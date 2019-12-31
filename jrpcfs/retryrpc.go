@@ -17,7 +17,8 @@ func retryRPCServerUp(jserver *Server, ipAddr string, portString string) {
 	// completedRequests for 5 seconds.
 
 	// TODO - 10 minutes should be configurable
-	rrSvr := retryrpc.NewServer(10*time.Minute, ipAddr, port)
+	// TODO - move back .... rrSvr := retryrpc.NewServer(10*time.Minute, ipAddr, port)
+	rrSvr := retryrpc.NewServer(10*time.Second, ipAddr, port)
 
 	// Register jrpcsfs methods with the retryrpc server
 	err = rrSvr.Register(jserver)
