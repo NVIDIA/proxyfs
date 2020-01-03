@@ -82,9 +82,7 @@ func (server *Server) Start() (l net.Listener, err error) {
 				server.completedDoneWG.Done()
 				return
 			case t := <-server.completedTicker.C:
-				logger.Infof("Before trimCompleted()")
 				server.trimCompleted(t)
-				logger.Infof("After trimCompleted()")
 			}
 		}
 	}()
@@ -105,14 +103,19 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	_ = server.listener.Close()
+	err := server.listener.Close()
+	if err != nil {
+		logger.Errorf("server.listener.Close() returned err: %v", err)
+	}
 
 	server.listenersWG.Wait()
 	server.goroutineWG.Wait()
 
+	server.Lock()
 	x := len(server.pendingRequest)
-	if len(server.pendingRequest) != 0 {
-		fmt.Printf("retryrpc.Close() - pendingRequest non-zero - count: %v\n", x)
+	server.Unlock()
+	if x != 0 {
+		logger.Errorf("pendingRequest count is: %v when should be zero", x)
 	}
 
 	server.completedTicker.Stop()
@@ -171,14 +174,14 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 
 	tcpAddr, resolvErr := net.ResolveTCPAddr("tcp", hostPort)
 	if resolvErr != nil {
-		fmt.Printf("ResolveTCPAddr returned err: %v\n", resolvErr)
+		logger.Errorf("ResolveTCPAddr returned err: %v\n", resolvErr)
 		err = resolvErr
 		return
 	}
 
 	client.tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
-		fmt.Printf("unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
+		logger.Errorf("Unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
 		return
 	}
 
@@ -197,7 +200,6 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 
 // Close gracefully shuts down the client
 func (client *Client) Close() {
-
 	// Set halting flag and then close our socket to server.
 	// This will cause the blocked getIO() in readReplies() to return.
 	client.Lock()

@@ -13,7 +13,7 @@ import (
 )
 
 // Variable to control debug output
-var printDebugLogs bool = true
+var printDebugLogs bool = false
 var debugPutGet bool = false
 
 // TODO - do we need to retransmit responses in order?
@@ -76,19 +76,20 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 	// net.Conn if needed.
 
 	// TODO - be careful that drop locks appropriately!!
-	logger.Infof("findQOrCallRPC() - before LOCK()")
 	server.Lock()
 	v, ok := server.completedRequest[queueKey]
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
 		server.Unlock()
+		/* debugging
 		logger.Infof("findQOrCallRPC - request on completedRequest Q - key: %v reply: %v",
 			queueKey, string(v.JResult))
+		*/
 		server.returnResults(v, cCtx, jReq)
 
 	} else {
-		v2, ok2 := server.pendingRequest[queueKey]
+		_, ok2 := server.pendingRequest[queueKey]
 		if ok2 {
 			// Already on pending queue.  Replace the connCtx in the pending queue so
 			// that the goroutine completing the task sends the response back to the
@@ -98,9 +99,6 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 			// This goroutine simply returns.
 			server.buildAndQPendingCtx(queueKey, buf, cCtx, true)
 			server.Unlock()
-
-			logger.Infof("findQOrCallRPC - request on pending Q - key: %v value: %+v",
-				queueKey, v2)
 
 		} else {
 			// On neither queue - must be new request
@@ -114,9 +112,7 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 
 			// TODO - why return err here if already returned results to
 			// client?
-			logger.Infof("findQOrCallRPC() - BEFORE callRPCAndMarshal()")
 			err = server.callRPCAndMarshal(cCtx, buf, jReq, queueKey)
-			logger.Infof("findQOrCallRPC() - AFTER callRPCAndMarshal() - err: %v", err)
 		}
 	}
 
@@ -134,20 +130,18 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	jReq := jsonRequest{}
 	unmarErr := json.Unmarshal(buf, &jReq)
 	if unmarErr != nil {
-		fmt.Printf("SERVER: Unmarshal of buf failed with err: %v\n", unmarErr)
+		logger.Errorf("Unmarshal of buf failed with err: %v\n", unmarErr)
 		return
 	}
 
 	// Complete the request either by looking in completed queue,
 	// updating cCtx of pending queue entry or by calling the
 	// RPC.
-	logger.Infof("processRequest() - before findQOrCallRPC - cCtx: %+v jReq: %+v\n", cCtx, jReq)
 	err := server.findQOrCallRPC(cCtx, buf, &jReq)
 	if err != nil {
 		// TODO - error handling
 		logger.Errorf("findQOrCallRPC returned err: %v", err)
 	}
-	logger.Infof("processRequest() - AFTER findQOrCallRPC")
 }
 
 // serviceClient gets called when we accept a new connection.
@@ -179,7 +173,6 @@ func (server *Server) serviceClient(conn net.Conn) {
 			// client?
 			return
 		}
-		logger.Infof("serviceClient() - read buffer: %v\n", buf)
 
 		// No sense blocking the read of the next request,
 		// push the work off on processRequest().
@@ -214,9 +207,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
 	// Queue the request
-	logger.Infof("callRPCAndMarshal - BEFORE - buildAndQPendingCtx-----")
 	server.buildAndQPendingCtx(queueKey, buf, cCtx, false)
-	logger.Infof("callRPCAndMarshal - AFTER - buildAndQPendingCtx-----")
 
 	ma := server.svrMap[jReq.Method]
 	/* Debugging
@@ -242,16 +233,14 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	typOfReply := ma.reply.Elem()
 	myReply := reflect.New(typOfReply)
 
-	/* For debugging
+	/* debugging
 	fmt.Printf("-------------->>>>> reflect.TypeOf(tp.Elem()): %v\n",
 		reflect.TypeOf(myReply.Elem().Interface()))
 	*/
 
 	// Call the method
 	function := ma.methodPtr.Func
-	logger.Infof("BEFORE CALL RPC - req: %v myReply: %v", req, myReply)
 	returnValues := function.Call([]reflect.Value{server.receiver, req, myReply})
-	logger.Infof("AFTER CALL RPC - returnValues: %+v", returnValues)
 
 	// The return value for the method is an error.
 	errInter := returnValues[0].Interface()
@@ -263,11 +252,8 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
-	logger.Infof("Convert response: reply.JResult: %+v err: %v", reply.JResult, err)
-
 	lruEntry := completedLRUEntry{queueKey: queueKey, timeCompleted: time.Now()}
 
-	logger.Infof("BEFORE Call to server.Lock()")
 	server.Lock()
 	// connCtx may have changed due to new connection.   Pull
 	// the current one from pendingCtx
@@ -280,7 +266,6 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	server.Unlock()
 
 	// Now return the results
-	logger.Infof("BEFORE Call to returnResults()")
 	server.returnResults(reply, currentCCtx, jReq)
 
 	return
@@ -310,8 +295,6 @@ func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
 	// pendingCtx off the pending queue and uses those contents to return the result.
 	if reply != nil {
 
-		logger.Infof("SERVER: returnResults() - BEFORE binary.Write")
-
 		// Write Len back
 		cCtx.Lock()
 		setupHdrReply(reply)
@@ -329,52 +312,40 @@ func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
 				bytesWritten, writeErr)
 		}
 		cCtx.Unlock()
-		logger.Infof("returnResults() - Reply is: %v", string(reply.JResult))
 	}
 }
 
 // Remove entries older than server.completedTTL
 func (server *Server) trimCompleted(t time.Time) {
-	/*
-		var (
-			startCompleted    int
-			startCompletedLRU int
-			endCompleted      int
-			endCompletedLRU   int
-		)
 
-					l := list.New()
+	var (
+		numItems int
+	)
 
-				server.Lock()
-				startCompleted = len(server.completedRequest)
-				startCompletedLRU = server.completedRequestLRU.Len()
-						for e := server.completedRequestLRU.Front(); e != nil; e = e.Next() {
-							eTime := e.Value.(*completedLRUEntry).timeCompleted.Add(server.completedTTL)
-							logger.Infof("trimCompleted e: %+v eTime: %v\n", e, eTime)
-								if eTime.Before(t) {
-									delete(server.completedRequest, e.Value.(*completedLRUEntry).queueKey)
-									logger.Infof("trimCompleted e: %+v eTime: %v\n", e, eTime)
+	l := list.New()
 
-									// Push on local list so don't delete while iterating
-									l.PushBack(e)
-								} else {
-									// Oldest is in front so just break
-									break
-								}
-						}
+	server.Lock()
+	for e := server.completedRequestLRU.Front(); e != nil; e = e.Next() {
+		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedTTL)
+		if eTime.Before(t) {
+			delete(server.completedRequest, e.Value.(completedLRUEntry).queueKey)
 
-					// Now delete from LRU using the local list
-					for e2 := l.Front(); e2 != nil; e2.Next() {
-						e := server.completedRequestLRU.Front()
-						server.completedRequestLRU.Remove(e)
-					}
+			// Push on local list so don't delete while iterating
+			l.PushBack(e)
+		} else {
+			// Oldest is in front so just break
+			break
+		}
+	}
 
-				endCompleted = len(server.completedRequest)
-				endCompletedLRU = server.completedRequestLRU.Len()
-				server.Unlock()
+	numItems = l.Len()
 
-			logger.Infof("trimComplete() - BEGINING len(completed): %d len(completedLRU): %d\n\t\tENDlen(completed): %d len(completedLRU): %d",
-				startCompleted, startCompletedLRU, endCompleted, endCompletedLRU)
-	*/
+	// Now delete from LRU using the local list
+	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
+		tmpE := server.completedRequestLRU.Front()
+		_ = server.completedRequestLRU.Remove(tmpE)
 
+	}
+	server.Unlock()
+	logger.Infof("Completed RetryRPCs - Total items trimmed: %v", numItems)
 }
