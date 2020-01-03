@@ -14,6 +14,8 @@ import (
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/swiftstack/ProxyFS/logger"
 )
 
 // Server tracks the state of the server
@@ -25,16 +27,20 @@ type Server struct {
 	port         int                    // Port of server
 	listener     net.Listener
 
-	halting          bool
-	goroutineWG      sync.WaitGroup // Used to track outstanding goroutines
-	connLock         sync.Mutex
-	connections      *list.List // TODO - how used?
-	connWG           sync.WaitGroup
-	listeners        []net.Listener
-	listenersWG      sync.WaitGroup
-	receiver         reflect.Value          // Package receiver being served
-	pendingRequest   map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
-	completedRequest map[string]*ioReply    // Key: "MyUniqueID:RequestID"
+	halting             bool
+	goroutineWG         sync.WaitGroup // Used to track outstanding goroutines
+	connLock            sync.Mutex
+	connections         *list.List // TODO - how used?
+	connWG              sync.WaitGroup
+	listeners           []net.Listener
+	listenersWG         sync.WaitGroup
+	receiver            reflect.Value          // Package receiver being served
+	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
+	completedRequest    map[string]*ioReply    // Key: "MyUniqueID:RequestID"
+	completedRequestLRU *list.List             // LRU used to remove completed request in ticker
+	completedTickerDone chan bool
+	completedTicker     *time.Ticker
+	completedDoneWG     sync.WaitGroup
 }
 
 // NewServer creates the Server object
@@ -43,6 +49,8 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	s.svrMap = make(map[string]*methodArgs)
 	s.pendingRequest = make(map[string]*pendingCtx)
 	s.completedRequest = make(map[string]*ioReply)
+	s.completedRequestLRU = list.New()
+	s.completedTickerDone = make(chan bool)
 	s.completedTTL = ttl
 	s.ipaddr = ipaddr
 	s.port = port
@@ -64,6 +72,21 @@ func (server *Server) Start() (l net.Listener, err error) {
 	server.listener, err = net.Listen("tcp", net.JoinHostPort(server.ipaddr, ps))
 	server.listenersWG.Add(1)
 
+	// Start ticker which removes older completedRequests
+	server.completedTicker = time.NewTicker(server.completedTTL)
+	server.completedDoneWG.Add(1)
+	go func() {
+		for {
+			select {
+			case <-server.completedTickerDone:
+				server.completedDoneWG.Done()
+				return
+			case t := <-server.completedTicker.C:
+				server.trimCompleted(t)
+			}
+		}
+	}()
+
 	return server.listener, err
 }
 
@@ -80,24 +103,35 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	_ = server.listener.Close()
+	err := server.listener.Close()
+	if err != nil {
+		logger.Errorf("server.listener.Close() returned err: %v", err)
+	}
 
 	server.listenersWG.Wait()
 	server.goroutineWG.Wait()
 
+	server.Lock()
 	x := len(server.pendingRequest)
-	if len(server.pendingRequest) != 0 {
-		fmt.Printf("retryrpc.Close() - pendingRequest non-zero - count: %v\n", x)
+	server.Unlock()
+	if x != 0 {
+		logger.Errorf("pendingRequest count is: %v when should be zero", x)
 	}
+
+	server.completedTicker.Stop()
+	server.completedTickerDone <- true
+	server.completedDoneWG.Wait()
 }
 
 // CompletedCnt returns count of pendingRequests
+//
 // This is only useful for testing.
 func (server *Server) CompletedCnt() int {
 	return len(server.completedRequest)
 }
 
 // PendingCnt returns count of pendingRequests
+//
 // This is only useful for testing.
 func (server *Server) PendingCnt() int {
 	return len(server.pendingRequest)
@@ -140,14 +174,14 @@ func (client *Client) Dial(ipaddr string, port int) (err error) {
 
 	tcpAddr, resolvErr := net.ResolveTCPAddr("tcp", hostPort)
 	if resolvErr != nil {
-		fmt.Printf("ResolveTCPAddr returned err: %v\n", resolvErr)
+		logger.Errorf("ResolveTCPAddr returned err: %v\n", resolvErr)
 		err = resolvErr
 		return
 	}
 
 	client.tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
-		fmt.Printf("unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
+		logger.Errorf("Unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
 		return
 	}
 
@@ -166,7 +200,6 @@ func (client *Client) Send(method string, request interface{}, reply interface{}
 
 // Close gracefully shuts down the client
 func (client *Client) Close() {
-
 	// Set halting flag and then close our socket to server.
 	// This will cause the blocked getIO() in readReplies() to return.
 	client.Lock()
