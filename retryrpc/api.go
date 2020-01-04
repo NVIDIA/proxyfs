@@ -109,6 +109,9 @@ func (server *Server) Close() {
 	}
 
 	server.listenersWG.Wait()
+
+	// Now close the client sockets to wakeup our blocked readers
+	server.closeClientConn()
 	server.goroutineWG.Wait()
 
 	server.Lock()

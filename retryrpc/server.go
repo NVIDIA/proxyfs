@@ -33,7 +33,6 @@ func (server *Server) run() {
 
 		server.connWG.Add(1)
 
-		// TODO - remove server.connections?
 		server.connLock.Lock()
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
@@ -348,4 +347,15 @@ func (server *Server) trimCompleted(t time.Time) {
 	}
 	server.Unlock()
 	logger.Infof("Completed RetryRPCs - Total items trimmed: %v", numItems)
+}
+
+// Close sockets to client so that goroutines wakeup from blocked
+// reads and let the server exit.
+func (server *Server) closeClientConn() {
+	server.connLock.Lock()
+	for e := server.connections.Front(); e != nil; e = e.Next() {
+		conn := e.Value.(net.Conn)
+		conn.Close()
+	}
+	server.connLock.Unlock()
 }
