@@ -77,11 +77,15 @@ type ioReply struct {
 	JResult []byte // JSON containing response
 }
 
+type replyCtx struct {
+	err error
+}
+
 // reqCtx exists on the client and tracks a request passed to Send()
 type reqCtx struct {
 	ioreq    ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
-	answer   chan interface{}
+	answer   chan replyCtx
 }
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
@@ -131,7 +135,7 @@ func setupHdrReply(ioreply *ioReply) {
 	return
 }
 
-func getIO(conn net.Conn, who string) (buf []byte, err error) {
+func getIO(conn net.Conn) (buf []byte, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
 	}

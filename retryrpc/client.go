@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sys/unix"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -43,6 +44,12 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	// Grab RequestID under the lock since it could change once
 	// we drop the lock
 	client.Lock()
+	if client.halting == true {
+		client.Unlock()
+		e := fmt.Errorf("Calling retryrpc.Send() without dialing")
+		logger.PanicfWithError(e, "")
+		return
+	}
 	client.currentRequestID++
 	crID = client.currentRequestID
 	jreq.RequestID = client.currentRequestID
@@ -56,7 +63,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 
 	// Create context to wait result and to handle retransmits
 	ctx := &reqCtx{ioreq: *ioreq, rpcReply: rpcReply}
-	ctx.answer = make(chan interface{})
+	ctx.answer = make(chan replyCtx)
 
 	// Keep track of requests we are sending so we can resend them later as
 	// needed.
@@ -68,9 +75,9 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	go client.sendToServer(crID, ctx)
 
 	// Now wait for response
-	rpcReply = <-ctx.answer
+	answer := <-ctx.answer
 
-	return
+	return answer.err
 }
 
 // sendToServer packages the request and marshals it before
@@ -103,6 +110,13 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 	if err != nil {
 		fmt.Println("binary.Write failed:", err)
 		client.Unlock()
+
+		// TODO - retransimit code should retry operation and make it
+		// transparent to caller.   For now, just return the error.
+
+		// Legacy code requires the errno to be returned this way.
+		e := fmt.Errorf("Error: %d", unix.ENOTCONN)
+		sendReply(ctx, e)
 		return
 	}
 	/*
@@ -119,12 +133,25 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 		// TODO - handle disconnect or other error????
 		fmt.Printf("CLIENT: Failed WRITE - HANLDE disconnect or other error??\n")
 		client.Unlock()
+
+		// TODO - retransimit code should retry operation and make it
+		// transparent to caller.   For now, just return the error.
+		// TODO - put in proper format with "Err: 128"
+		e := fmt.Errorf("Error: %d", unix.ENOTCONN)
+		sendReply(ctx, e)
 		return
 	}
 
 	// Drop the lock once we wrote the request.
 	client.Unlock()
 	return
+}
+
+func sendReply(ctx *reqCtx, err error) {
+
+	// Give reply to blocked send()
+	r := replyCtx{err: err}
+	ctx.answer <- r
 }
 
 func (client *Client) notifyReply(buf []byte) {
@@ -134,8 +161,9 @@ func (client *Client) notifyReply(buf []byte) {
 	jReply := jsonReply{}
 	err := json.Unmarshal(buf, &jReply)
 	if err != nil {
-		fmt.Printf("CLIENT: Unmarshal of buf failed with err: %v\n", err)
-		// TODO - error handling???
+		// Don't have ctx to reply - only can panic
+		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", buf, err)
+		logger.PanicfWithError(e, "")
 		return
 	}
 
@@ -153,13 +181,13 @@ func (client *Client) notifyReply(buf []byte) {
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
-		fmt.Printf("CLIENT: Unmarshal of r failed with err: %v\n", unmarshalErr)
-		// TODO - error handling???
+		sendReply(ctx, unmarshalErr)
 		return
 	}
 
 	// Give reply to blocked send()
-	ctx.answer <- err
+	r := replyCtx{err: err}
+	ctx.answer <- r
 }
 
 // readReplies is a goroutine dedicated to reading responses from the server.
@@ -174,7 +202,7 @@ func (client *Client) readReplies() {
 	for {
 
 		// Wait reply from server
-		buf, getErr := getIO(client.tcpConn, "CLIENT")
+		buf, getErr := getIO(client.tcpConn)
 
 		// This must happen before checking error
 		if client.halting {

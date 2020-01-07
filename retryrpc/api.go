@@ -145,7 +145,7 @@ func (server *Server) PendingCnt() int {
 // Client tracking structure
 type Client struct {
 	sync.Mutex
-	halting          bool   // TODO - not implemented yet
+	halting          bool
 	currentRequestID uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?

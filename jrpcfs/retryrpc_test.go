@@ -9,6 +9,9 @@ import (
 )
 
 // Test basic retryrpc primitives
+//
+// This unit test exists here since it uses jrpcfs which would be a
+// circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
 
 	testServer(t)
