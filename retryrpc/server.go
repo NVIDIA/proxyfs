@@ -158,7 +158,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 
 	for {
 		// Get RPC request
-		buf, getErr := getIO(conn, "SERVER")
+		buf, getErr := getIO(conn)
 		if getErr != nil {
 			server.Lock()
 			halting = server.halting
@@ -166,10 +166,8 @@ func (server *Server) serviceClient(conn net.Conn) {
 			logger.Infof("serviceClient - getIO returned err: %v - halting: %v",
 				getErr, halting)
 
-			// TODO - error handling!!!
-			// Retry??? Drop on floor since other side failed???
-			// Retransmit case - just return and wait for new connection for this
-			// client?
+			// Drop response on the floor.   Client will either reconnect or
+			// this response will age our of the queues.
 			return
 		}
 
