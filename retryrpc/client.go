@@ -115,7 +115,7 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 		// transparent to caller.   For now, just return the error.
 
 		// Legacy code requires the errno to be returned this way.
-		e := fmt.Errorf("Error: %d", unix.ENOTCONN)
+		e := fmt.Errorf("errno: %d", unix.ENOTCONN)
 		sendReply(ctx, e)
 		return
 	}
@@ -136,8 +136,9 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 
 		// TODO - retransimit code should retry operation and make it
 		// transparent to caller.   For now, just return the error.
-		// TODO - put in proper format with "Err: 128"
-		e := fmt.Errorf("Error: %d", unix.ENOTCONN)
+
+		// Legacy code requires the errno to be returned this way.
+		e := fmt.Errorf("errno: %d", unix.ENOTCONN)
 		sendReply(ctx, e)
 		return
 	}
@@ -162,7 +163,7 @@ func (client *Client) notifyReply(buf []byte) {
 	err := json.Unmarshal(buf, &jReply)
 	if err != nil {
 		// Don't have ctx to reply - only can panic
-		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", buf, err)
+		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", string(buf), err)
 		logger.PanicfWithError(e, "")
 		return
 	}
@@ -181,12 +182,17 @@ func (client *Client) notifyReply(buf []byte) {
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
-		sendReply(ctx, unmarshalErr)
+		e := fmt.Errorf("notifyReply failed to unmarshal buf: %v err: %v", string(buf), unmarshalErr)
+		logger.PanicfWithError(e, "")
 		return
 	}
 
-	// Give reply to blocked send()
-	r := replyCtx{err: err}
+	// Give reply to blocked send() - most developers test for nil err so
+	// only set it if there is an error
+	r := replyCtx{}
+	if jReply.ErrStr != "" {
+		r.err = fmt.Errorf("%v", jReply.ErrStr)
+	}
 	ctx.answer <- r
 }
 
