@@ -98,15 +98,15 @@ type jsonRequest struct {
 
 // jsonReply is used to marshal an RPC response in/out of JSON
 type jsonReply struct {
-	MyUniqueID string `json:"myuniqueid"` // ID of client
-	RequestID  uint64 `json:"requestid"`  // ID of this request
-	Err        error  `json:"err"`
-	// TODO - include errno too?
-	Result interface{} `json:"result"`
+	MyUniqueID string      `json:"myuniqueid"` // ID of client
+	RequestID  uint64      `json:"requestid"`  // ID of this request
+	ErrStr     string      `json:"errstr"`
+	Result     interface{} `json:"result"`
 }
 
 // svrRequest is used with jsonRequest when we unmarshal the
-// parameters passed in an RPC
+// parameters passed in an RPC.  This is how we get the rpcReply
+// structure specific to the RPC
 type svrRequest struct {
 	Params [1]interface{} `json:"params"`
 }

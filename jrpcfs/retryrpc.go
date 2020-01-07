@@ -8,16 +8,13 @@ import (
 	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
-func retryRPCServerUp(jserver *Server, ipAddr string, portString string) {
+func retryRPCServerUp(jserver *Server, ipAddr string, portString string, completedTTL time.Duration) {
 	var err error
 
 	port, _ := strconv.Atoi(portString)
 
-	// Create a new RetryRPC Server.  Completed request will live on
-	// completedRequests for 5 seconds.
-
-	// TODO - 10 minutes should be configurable
-	rrSvr := retryrpc.NewServer(10*time.Minute, ipAddr, port)
+	// Create a new RetryRPC Server.
+	rrSvr := retryrpc.NewServer(completedTTL, ipAddr, port)
 
 	// Register jrpcsfs methods with the retryrpc server
 	err = rrSvr.Register(jserver)

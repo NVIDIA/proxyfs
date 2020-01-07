@@ -1,11 +1,11 @@
-package jrpcfs
+package retryrpc
 
 import (
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/swiftstack/ProxyFS/retryrpc"
+	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
 
 // Test basic retryrpc primitives
@@ -48,13 +48,13 @@ func testServer(t *testing.T) {
 	zero := 0
 	assert.Equal(0, zero)
 
-	// Create new jrpcfs server - needed for calling
-	// jrcpfs RPCs
-	myJrpcfs := NewServer()
+	// Create new rpctest server - needed for calling
+	// RPCs
+	myJrpcfs := rpctest.NewServer()
 
 	// Create a new RetryRPC Server.  Completed request will live on
-	// completedRequests for 5 seconds.
-	rrSvr := retryrpc.NewServer(5*time.Second, ipaddr, port)
+	// completedRequests for 10 seconds.
+	rrSvr := NewServer(10*time.Second, ipaddr, port)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -71,20 +71,30 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	rrClnt := retryrpc.NewClient("client 1")
+	rrClnt := NewClient("client 1")
 	assert.NotNil(rrClnt)
 
 	// Have client connect to server
 	rrClnt.Dial(ipaddr, port)
 
-	pingRequest := &PingReq{Message: "Ping Me!"}
-	pingReply := &PingReply{}
+	// Send an RPC which should return success
+	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
+	pingReply := &rpctest.PingReply{}
 	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
 
 	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(1, rrSvr.CompletedCnt())
+
+	// Send an RPC which should return an error
+	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
+	pingReply = &rpctest.PingReply{}
+	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
+	assert.NotNil(sendErr)
+
+	assert.Equal(0, rrSvr.PendingCnt())
+	assert.Equal(2, rrSvr.CompletedCnt())
 
 	// Stop the client before exiting
 	rrClnt.Close()

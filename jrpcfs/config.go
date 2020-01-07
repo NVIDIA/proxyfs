@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
@@ -18,12 +19,15 @@ type globalsStruct struct {
 	gate     sync.RWMutex // API Requests RLock()/RUnlock()
 	//                       confMap changes Lock()/Unlock()
 
-	whoAmI             string
-	ipAddr             string
-	portString         string
-	fastPortString     string
-	retryRPCPortString string
-	dataPathLogging    bool
+	whoAmI               string
+	ipAddr               string
+	portString           string
+	fastPortString       string
+	retryRPCPortString   string
+	retryRPCTTLCompleted time.Duration
+
+	retryRPC        string
+	dataPathLogging bool
 
 	// Map used to enumerate volumes served by this peer
 	volumeMap map[string]bool // key == volumeName; value is ignored
@@ -91,6 +95,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 	}
 
+	globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
+	if (nil != err) && (globals.retryRPCPortString != "") {
+		logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10 minutes")
+		globals.retryRPCTTLCompleted = 10 * time.Minute
+	}
+
 	// Set data path logging level to true, so that all trace logging is controlled by settings
 	// in the logger package. To enable jrpcfs trace logging, set Logging.TraceLevelLogging to jrpcfs.
 	// This will enable all jrpcfs trace logs, including those formerly controled by globals.dataPathLogging.
@@ -117,7 +127,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	// Init Retry RPC server
 	if globals.retryRPCPortString != "" {
-		retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString)
+		retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString, globals.retryRPCTTLCompleted)
 	}
 
 	return

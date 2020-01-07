@@ -241,14 +241,23 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 
 	// The return value for the method is an error.
 	errInter := returnValues[0].Interface()
-	if jReply.Err == nil {
+	if errInter == nil {
 		jReply.Result = myReply.Elem().Interface()
 	} else {
-		jReply.Err = errInter.(error)
+		e, ok := errInter.(error)
+		if !ok {
+			logger.PanicfWithError(err, "Call returnValues invalid cast errInter: %+v", errInter)
+		}
+		jReply.ErrStr = e.Error()
 	}
 
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
+	if err != nil {
+		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
+
+	}
+
 	lruEntry := completedLRUEntry{queueKey: queueKey, timeCompleted: time.Now()}
 
 	server.Lock()
