@@ -126,16 +126,15 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.halting = false
 
 	// Init JSON RPC server stuff
+
 	// jsonRpcServerUp(globals.privateIPAddr, globals.portString)
 	jsonRpcServerUp("0.0.0.0", globals.portString)
 
 	// Now kick off our other, faster RPC server
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
-	// Init Retry RPC server (if necessary)
-	if 0 != globals.retryRPCPort {
-		retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted)
-	}
+	// Init Retry RPC server
+	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted)
 
 	return
 }
