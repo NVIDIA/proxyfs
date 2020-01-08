@@ -278,9 +278,11 @@ func testTeardown(t *testing.T) {
 
 	performUnmountFUSE()
 
+	doUnmountProxyFS()
+
 	uninitializeGlobals()
 
-	unix.Kill(unix.Getpid(), unix.SIGUSR2)
+	_ = unix.Kill(unix.Getpid(), unix.SIGUSR2)
 
 	err = <-testDaemonGlobals.proxyfsdErrChan
 
