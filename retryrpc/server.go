@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
+	"golang.org/x/sys/unix"
 )
 
 // Variable to control debug output
@@ -210,45 +211,49 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	/* Debugging
 	fmt.Printf("MA======: method: %v request: %v reply %v\n", jReq.Method, ma.request, ma.reply)
 	*/
+	if ma != nil {
 
-	// Another unmarshal of buf to find the parameters specific to
-	// this RPC
-	typOfReq := ma.request.Elem()
-	dummyReq := reflect.New(typOfReq).Interface()
+		// Another unmarshal of buf to find the parameters specific to
+		// this RPC
+		typOfReq := ma.request.Elem()
+		dummyReq := reflect.New(typOfReq).Interface()
 
-	sReq := svrRequest{}
-	sReq.Params[0] = dummyReq
-	err = json.Unmarshal(buf, &sReq)
-	if err != nil {
-		// TODO - error handling
-		logger.Errorf("Unmarshal sReq: %+v returned err: %v", sReq, err)
-		return
-	}
-	req := reflect.ValueOf(dummyReq)
-
-	// Create the reply structure
-	typOfReply := ma.reply.Elem()
-	myReply := reflect.New(typOfReply)
-
-	/* debugging
-	fmt.Printf("-------------->>>>> reflect.TypeOf(tp.Elem()): %v\n",
-		reflect.TypeOf(myReply.Elem().Interface()))
-	*/
-
-	// Call the method
-	function := ma.methodPtr.Func
-	returnValues := function.Call([]reflect.Value{server.receiver, req, myReply})
-
-	// The return value for the method is an error.
-	errInter := returnValues[0].Interface()
-	if errInter == nil {
-		jReply.Result = myReply.Elem().Interface()
-	} else {
-		e, ok := errInter.(error)
-		if !ok {
-			logger.PanicfWithError(err, "Call returnValues invalid cast errInter: %+v", errInter)
+		sReq := svrRequest{}
+		sReq.Params[0] = dummyReq
+		err = json.Unmarshal(buf, &sReq)
+		if err != nil {
+			// TODO - error handling
+			logger.Errorf("Unmarshal sReq: %+v returned err: %v", sReq, err)
+			return
 		}
-		jReply.ErrStr = e.Error()
+		req := reflect.ValueOf(dummyReq)
+
+		// Create the reply structure
+		typOfReply := ma.reply.Elem()
+		myReply := reflect.New(typOfReply)
+
+		/* debugging
+		fmt.Printf("-------------->>>>> reflect.TypeOf(tp.Elem()): %v\n",
+			reflect.TypeOf(myReply.Elem().Interface()))
+		*/
+
+		// Call the method
+		function := ma.methodPtr.Func
+		returnValues := function.Call([]reflect.Value{server.receiver, req, myReply})
+
+		// The return value for the method is an error.
+		errInter := returnValues[0].Interface()
+		if errInter == nil {
+			jReply.Result = myReply.Elem().Interface()
+		} else {
+			e, ok := errInter.(error)
+			if !ok {
+				logger.PanicfWithError(err, "Call returnValues invalid cast errInter: %+v", errInter)
+			}
+			jReply.ErrStr = e.Error()
+		}
+	} else {
+		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
 	}
 
 	// Convert response into JSON for return trip

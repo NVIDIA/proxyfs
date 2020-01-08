@@ -96,6 +96,15 @@ func testServer(t *testing.T) {
 	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(2, rrSvr.CompletedCnt())
 
+	// Send an RPC which should return an error
+	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
+	pingReply = &rpctest.PingReply{}
+	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
+	assert.NotNil(sendErr)
+
+	assert.Equal(0, rrSvr.PendingCnt())
+	assert.Equal(3, rrSvr.CompletedCnt())
+
 	// Stop the client before exiting
 	rrClnt.Close()
 
