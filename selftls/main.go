@@ -47,7 +47,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 
 	rootCAx509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if nil != err {
-		err = fmt.Errorf("rand.Int() failed: %v", err)
+		err = fmt.Errorf("rand.Int() [1] failed: %v", err)
 		return
 	}
 
@@ -59,7 +59,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 		},
 		NotBefore:             commonX509NotBefore,
 		NotAfter:              commonX509NotAfter,
-		KeyUsage:              x509.KeyUsageCertSign,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
@@ -67,13 +67,13 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 
 	rootCAEd25519PublicKey, rootCAEd25519PrivateKey, err = ed25519.GenerateKey(nil)
 	if nil != err {
-		err = fmt.Errorf("ed25519.GenerateKey() failed: %v", err)
+		err = fmt.Errorf("ed25519.GenerateKey() [1] failed: %v", err)
 		return
 	}
 
 	rootCAx509CertificateDER, err = x509.CreateCertificate(rand.Reader, rootCAx509CertificateTemplate, rootCAx509CertificateTemplate, rootCAEd25519PublicKey, rootCAEd25519PrivateKey)
 	if nil != err {
-		err = fmt.Errorf("x509.CreateCertificate() failed: %v", err)
+		err = fmt.Errorf("x509.CreateCertificate() [1] failed: %v", err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 
 	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if nil != err {
-		err = fmt.Errorf("rand.Int() failed: %v", err)
+		err = fmt.Errorf("rand.Int() [2] failed: %v", err)
 		return
 	}
 
@@ -102,13 +102,13 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 
 	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
 	if nil != err {
-		err = fmt.Errorf("ed25519.GenerateKey() failed: %v", err)
+		err = fmt.Errorf("ed25519.GenerateKey() [2] failed: %v", err)
 		return
 	}
 
 	serverX509CertificateDER, err = x509.CreateCertificate(rand.Reader, serverX509CertificateTemplate, rootCAx509CertificateTemplate, serverEd25519PublicKey, rootCAEd25519PrivateKey)
 	if nil != err {
-		err = fmt.Errorf("x509.CreateCertificate() failed: %v", err)
+		err = fmt.Errorf("x509.CreateCertificate() [2] failed: %v", err)
 		return
 	}
 
