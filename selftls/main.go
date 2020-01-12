@@ -91,13 +91,11 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 			Organization: []string{"Server Organization"},
 			CommonName:   "Server",
 		},
-		NotBefore:             commonX509NotBefore,
-		NotAfter:              commonX509NotAfter,
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  false,
-		IPAddresses:           []net.IP{net.ParseIP(serverIPAddrAsString)},
+		NotBefore:   commonX509NotBefore,
+		NotAfter:    commonX509NotAfter,
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses: []net.IP{net.ParseIP(serverIPAddrAsString)},
 	}
 
 	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
