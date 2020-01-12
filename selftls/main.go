@@ -42,6 +42,8 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *serverCreds
 
 	serverCreds = &serverCredsStruct{}
 
+	timeNow = time.Now()
+
 	commonX509NotBefore = time.Date(timeNow.Year()-1, time.January, 1, 0, 0, 0, 0, timeNow.Location())
 	commonX509NotAfter = time.Date(timeNow.Year()+99, time.January, 1, 0, 0, 0, 0, timeNow.Location())
 
