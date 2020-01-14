@@ -85,7 +85,8 @@ func (volume *volumeStruct) DoMount() (err error) {
 	mountCmd = &exec.Cmd{
 		Path: fusermountProgramPath,
 		Args: []string{
-			"-o " + mountOptions,
+			fusermountProgramPath,
+			"-o", mountOptions + ",subtype=proxyfs", // TODO: passed in to NewVolume() ultimately
 			volume.mountpointDirPath,
 		},
 		Env:          append(os.Environ(), "_FUSE_COMMFD=3"),
