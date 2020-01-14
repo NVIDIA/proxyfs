@@ -18,6 +18,8 @@ import (
 )
 
 const (
+	fuseSubtype = "fission-ramfs"
+
 	mountFlags = uintptr(0)
 
 	initOutFlagsMask            = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData | fission.InitFlagsDoReadDirPlus
@@ -167,7 +169,7 @@ func main() {
 	globals.fhMap = make(map[uint64]uint64)
 	globals.lastFH = uint64(0)
 
-	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
+	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
 
 	err = globals.volume.DoMount()
 	if nil != err {
@@ -287,6 +289,7 @@ func unixTimeToGoTime(unixTimeSec uint64, unixTimeNSec uint32) (goTime time.Time
 	goTime = time.Unix(int64(unixTimeSec), int64(unixTimeNSec))
 	return
 }
+
 func goTimeToUnixTime(goTime time.Time) (unixTimeSec uint64, unixTimeNSec uint32) {
 	var (
 		unixTime uint64
@@ -296,6 +299,7 @@ func goTimeToUnixTime(goTime time.Time) (unixTimeSec uint64, unixTimeNSec uint32
 	unixTimeNSec = uint32(unixTime - (unixTimeSec * 1e9))
 	return
 }
+
 func unixTimeNow() (unixTimeNowSec uint64, unixTimeNowNSec uint32) {
 	unixTimeNowSec, unixTimeNowNSec = goTimeToUnixTime(time.Now())
 	return

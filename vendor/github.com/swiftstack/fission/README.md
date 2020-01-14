@@ -73,7 +73,7 @@ type Callbacks interface {
 	DoCreate(inHeader *InHeader, createIn *CreateIn) (createOut *CreateOut, errno syscall.Errno)
 	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn)
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
-	DoDestroy(inHeader *InHeader)
+	DoDestroy(inHeader *InHeader) (errno syscall.Errno)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
 	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn)
 	DoFAllocate(inHeader *InHeader, fAllocateIn *FAllocateIn) (errno syscall.Errno)
@@ -83,13 +83,15 @@ type Callbacks interface {
 }
 
 // NewVolume is called to create a Volume instance. Various callbacks listed in the Callbacks interface
-// will be made while the Volume is mounted. Note that the caller provides a value for InitOut.MaxWrite
-// at the time the Volume instance is provisioned so that the package may properly setup the read loop
-// against /dev/fuse prior to reception of an InitIn request. A chan error is also supplied to enable
-// the Volume to indicate that it is no longer servicing FUSE upcalls (e.g. as a result of an intentional
-// DoUnmount() call or some unexpected error reading from /dev/fuse).
+// will be made while the Volume is mounted. The type of the file system, once mounted, will be "fuse"
+// and, if non-empty, followed by a "." and the fuseSubtype (if supported... as it is on Linux). Note
+// that the caller provides a value for InitOut.MaxWrite at the time the Volume instance is provisioned
+// so that the package may properly setup the read loop against /dev/fuse prior to reception of an InitIn
+// request. A chan error is also supplied to enable the Volume to indicate that it is no longer servicing
+// FUSE upcalls (e.g. as a result of an intentional DoUnmount() call or some unexpected error reading
+// from /dev/fuse).
 //
-func NewVolume(volumeName string, mountpointDirPath string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume)
+func NewVolume(volumeName string, mountpointDirPath string, fuseSubtype string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume)
 ```
 
 ## Contributors
