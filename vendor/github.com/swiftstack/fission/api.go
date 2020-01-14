@@ -71,7 +71,7 @@ type Callbacks interface {
 	DoCreate(inHeader *InHeader, createIn *CreateIn) (createOut *CreateOut, errno syscall.Errno)
 	DoInterrupt(inHeader *InHeader, interruptIn *InterruptIn)
 	DoBMap(inHeader *InHeader, bMapIn *BMapIn) (bMapOut *BMapOut, errno syscall.Errno)
-	DoDestroy(inHeader *InHeader)
+	DoDestroy(inHeader *InHeader) (errno syscall.Errno)
 	DoPoll(inHeader *InHeader, pollIn *PollIn) (pollOut *PollOut, errno syscall.Errno)
 	DoBatchForget(inHeader *InHeader, batchForgetIn *BatchForgetIn)
 	DoFAllocate(inHeader *InHeader, fAllocateIn *FAllocateIn) (errno syscall.Errno)
@@ -81,37 +81,21 @@ type Callbacks interface {
 }
 
 // NewVolume is called to create a Volume instance. Various callbacks listed in the Callbacks interface
-// will be made while the Volume is mounted. Note that the caller provides a value for InitOut.MaxWrite
-// at the time the Volume instance is provisioned so that the package may properly setup the read loop
-// against /dev/fuse prior to reception of an InitIn request. A chan error is also supplied to enable
-// the Volume to indicate that it is no longer servicing FUSE upcalls (e.g. as a result of an intentional
-// DoUnmount() call or some unexpected error reading from /dev/fuse).
+// will be made while the Volume is mounted. The type of the file system, once mounted, will be "fuse"
+// and, if non-empty, followed by a "." and the fuseSubtype (if supported... as it is on Linux). Note
+// that the caller provides a value for InitOut.MaxWrite at the time the Volume instance is provisioned
+// so that the package may properly setup the read loop against /dev/fuse prior to reception of an InitIn
+// request. A chan error is also supplied to enable the Volume to indicate that it is no longer servicing
+// FUSE upcalls (e.g. as a result of an intentional DoUnmount() call or some unexpected error reading
+// from /dev/fuse).
 //
-func NewVolume(volumeName string, mountpointDirPath string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume) {
-	volume = newVolume(volumeName, mountpointDirPath, mountFlags, initOutMaxWrite, callbacks, logger, errChan)
+func NewVolume(volumeName string, mountpointDirPath string, fuseSubtype string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume) {
+	volume = newVolume(volumeName, mountpointDirPath, fuseSubtype, mountFlags, initOutMaxWrite, callbacks, logger, errChan)
 	return
 }
 
-const AttrSize = 88
-
-type Attr struct {
-	Ino       uint64
-	Size      uint64
-	Blocks    uint64
-	ATimeSec  uint64
-	MTimeSec  uint64
-	CTimeSec  uint64
-	ATimeNSec uint32
-	MTimeNSec uint32
-	CTimeNSec uint32
-	Mode      uint32
-	NLink     uint32
-	UID       uint32
-	GID       uint32
-	RDev      uint32
-	BlkSize   uint32
-	Padding   uint32
-}
+// See api_{darwin|linux}.go for const AttrSize
+// See api_{darwin|linux}.go for type Attr struct
 
 const KStatFSSize = 80
 
@@ -138,16 +122,22 @@ type FileLock struct {
 }
 
 const (
-	SetAttrInValidMode = uint32(1) << iota
-	SetAttrInValidUID
-	SetAttrInValidGID
-	SetAttrInValidSize
-	SetAttrInValidATime
-	SetAttrInValidMTime
-	SetAttrInValidFH
-	SetAttrInValidATimeNow
-	SetAttrInValidMTimeNow
-	SetAttrInValidLockOwner
+	SetAttrInValidMode      = uint32(1) << 0
+	SetAttrInValidUID       = uint32(1) << 1
+	SetAttrInValidGID       = uint32(1) << 2
+	SetAttrInValidSize      = uint32(1) << 3
+	SetAttrInValidATime     = uint32(1) << 4
+	SetAttrInValidMTime     = uint32(1) << 5
+	SetAttrInValidFH        = uint32(1) << 6
+	SetAttrInValidATimeNow  = uint32(1) << 7
+	SetAttrInValidMTimeNow  = uint32(1) << 8
+	SetAttrInValidLockOwner = uint32(1) << 9
+	SetAttrInValidCTime     = uint32(1) << 10 // not supported
+
+	SetAttrInValidCrTime   = uint32(1) << 28 // darwin only
+	SetAttrInValidChgTime  = uint32(1) << 29 // darwin only
+	SetAttrInValidBkupTime = uint32(1) << 30 // darwin only
+	SetAttrInValidFlags    = uint32(1) << 31 // darwin only
 )
 
 const (
@@ -162,41 +152,45 @@ const (
 )
 
 const (
-	FOpenResponseDirectIO = uint32(1) << iota
-	FOpenResponseKeepCache
-	FOpenResponseNonSeekable
-	FOpenResponseCacheDir
-	FOpenResponseStream
+	FOpenResponseDirectIO    = uint32(1) << 0
+	FOpenResponseKeepCache   = uint32(1) << 1
+	FOpenResponseNonSeekable = uint32(1) << 2
+	FOpenResponseCacheDir    = uint32(1) << 3
+	FOpenResponseStream      = uint32(1) << 4
 )
 
 const (
-	InitFlagsAsyncRead = uint32(1) << iota
-	InitFlagsPosixLocks
-	InitFlagsFileOps
-	InitFlagsAtomicOTrunc
-	InitFlagsExportSupport
-	InitFlagsBigWrites
-	InitFlagsDontMask
-	InitFlagsSpliceWrite
-	InitFlagsSpliceMove
-	InitFlagsSpliceRead
-	InitFlagsFLockLocks
-	InitFlagsHasIoctlDir
-	InitFlagsAutoInvalData
-	InitFlagsDoReadDirPlus
-	InitFlagsReaddirplusAuto
-	InitFlagsAsyncDio
-	InitFlagsWritebackCache
-	InitFlagsNoOpenSupport
-	InitFlagsParallelDirops
-	InitFlagsHandleKillpriv
-	InitFlagsPosixACL
-	InitFlagsAbortError
-	InitFlagsMaxPages
-	InitFlagsCacheSymlinks
-	InitFlagsNoOpendirSupport
-	InitFlagsExplicitInvalData
-	InitFlagsMapAlignment
+	InitFlagsAsyncRead         = uint32(1) << 0
+	InitFlagsPosixLocks        = uint32(1) << 1
+	InitFlagsFileOps           = uint32(1) << 2
+	InitFlagsAtomicOTrunc      = uint32(1) << 3
+	InitFlagsExportSupport     = uint32(1) << 4
+	InitFlagsBigWrites         = uint32(1) << 5
+	InitFlagsDontMask          = uint32(1) << 6
+	InitFlagsSpliceWrite       = uint32(1) << 7
+	InitFlagsSpliceMove        = uint32(1) << 8
+	InitFlagsSpliceRead        = uint32(1) << 9
+	InitFlagsFLockLocks        = uint32(1) << 10
+	InitFlagsHasIoctlDir       = uint32(1) << 11
+	InitFlagsAutoInvalData     = uint32(1) << 12
+	InitFlagsDoReadDirPlus     = uint32(1) << 13
+	InitFlagsReaddirplusAuto   = uint32(1) << 14
+	InitFlagsAsyncDio          = uint32(1) << 15
+	InitFlagsWritebackCache    = uint32(1) << 16
+	InitFlagsNoOpenSupport     = uint32(1) << 17
+	InitFlagsParallelDirops    = uint32(1) << 18
+	InitFlagsHandleKillpriv    = uint32(1) << 19
+	InitFlagsPosixACL          = uint32(1) << 20
+	InitFlagsAbortError        = uint32(1) << 21
+	InitFlagsMaxPages          = uint32(1) << 22
+	InitFlagsCacheSymlinks     = uint32(1) << 23
+	InitFlagsNoOpendirSupport  = uint32(1) << 24
+	InitFlagsExplicitInvalData = uint32(1) << 25
+	InitFlagsMapAlignment      = uint32(1) << 26
+
+	InitFlagsCaseSensitive = uint32(1) << 29 // darwin only
+	InitFlagsVolRename     = uint32(1) << 30 // darwin only
+	InitFlagsXtimes        = uint32(1) << 31 // darwin only
 )
 
 const (
@@ -404,26 +398,8 @@ type GetAttrOut struct {
 	Attr
 }
 
-const SetAttrInSize = 88
-
-type SetAttrIn struct {
-	Valid     uint32 // mask of const SetAttrInValid* bits
-	Padding   uint32
-	FH        uint64
-	Size      uint64
-	LockOwner uint64
-	ATimeSec  uint64
-	MTimeSec  uint64
-	Unused2   uint64
-	ATimeNSec uint32
-	MTimeNSec uint32
-	Unused3   uint32
-	Mode      uint32
-	Unused4   uint32
-	UID       uint32
-	GID       uint32
-	Unused5   uint32
-}
+// See api_{darwin|linux}.go for const SetAttrInSize
+// See api_{darwin|linux}.go for type SetAttrIn struct
 
 const SetAttrOutSize = 16 + AttrSize
 

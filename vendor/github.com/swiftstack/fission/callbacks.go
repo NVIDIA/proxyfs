@@ -33,22 +33,7 @@ func (volume *volumeStruct) doLookup(inHeader *InHeader, devFuseFDReadBufPayload
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = lookupOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = lookupOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = lookupOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = lookupOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = lookupOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = lookupOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = lookupOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = lookupOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = lookupOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = lookupOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = lookupOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = lookupOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = lookupOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = lookupOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = lookupOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = lookupOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = lookupOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = lookupOut.EntryOut.Attr.Padding
+	marshalAttr(&lookupOut.EntryOut.Attr, outPayload, 40)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -102,57 +87,25 @@ func (volume *volumeStruct) doGetAttr(inHeader *InHeader, devFuseFDReadBufPayloa
 	*(*uint32)(unsafe.Pointer(&outPayload[8])) = getAttrOut.AttrValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[12])) = getAttrOut.Dummy
 
-	*(*uint64)(unsafe.Pointer(&outPayload[16])) = getAttrOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[24])) = getAttrOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[32])) = getAttrOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = getAttrOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = getAttrOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = getAttrOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[64])) = getAttrOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[68])) = getAttrOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[72])) = getAttrOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[76])) = getAttrOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[80])) = getAttrOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[84])) = getAttrOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = getAttrOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = getAttrOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = getAttrOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = getAttrOut.Attr.Padding
+	marshalAttr(&getAttrOut.Attr, outPayload, 16)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
 
 func (volume *volumeStruct) doSetAttr(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
 	var (
+		err        error
 		errno      syscall.Errno
 		outPayload []byte
 		setAttrIn  *SetAttrIn
 		setAttrOut *SetAttrOut
 	)
 
-	if len(devFuseFDReadBufPayload) != SetAttrInSize {
-		volume.logger.Printf("Call to doSetAttr() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
+	setAttrIn, err = unmarshalSetAttrIn(devFuseFDReadBufPayload)
+	if nil != err {
+		volume.logger.Printf("Call to doSetAttr() found %v", err)
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
 		return
-	}
-
-	setAttrIn = &SetAttrIn{
-		Valid:     *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
-		Padding:   *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[4])),
-		FH:        *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[8])),
-		Size:      *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[16])),
-		LockOwner: *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[24])),
-		ATimeSec:  *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[32])),
-		MTimeSec:  *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[40])),
-		Unused2:   *(*uint64)(unsafe.Pointer(&devFuseFDReadBufPayload[48])),
-		ATimeNSec: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[56])),
-		MTimeNSec: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[60])),
-		Unused3:   *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[64])),
-		Mode:      *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[68])),
-		Unused4:   *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[72])),
-		UID:       *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[76])),
-		GID:       *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[80])),
-		Unused5:   *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[84])),
 	}
 
 	setAttrOut, errno = volume.callbacks.DoSetAttr(inHeader, setAttrIn)
@@ -167,22 +120,7 @@ func (volume *volumeStruct) doSetAttr(inHeader *InHeader, devFuseFDReadBufPayloa
 	*(*uint32)(unsafe.Pointer(&outPayload[8])) = setAttrOut.AttrValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[12])) = setAttrOut.Dummy
 
-	*(*uint64)(unsafe.Pointer(&outPayload[16])) = setAttrOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[24])) = setAttrOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[32])) = setAttrOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = setAttrOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = setAttrOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = setAttrOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[64])) = setAttrOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[68])) = setAttrOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[72])) = setAttrOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[76])) = setAttrOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[80])) = setAttrOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[84])) = setAttrOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = setAttrOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = setAttrOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = setAttrOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = setAttrOut.Attr.Padding
+	marshalAttr(&setAttrOut.Attr, outPayload, 16)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -247,22 +185,7 @@ func (volume *volumeStruct) doSymLink(inHeader *InHeader, devFuseFDReadBufPayloa
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = symLinkOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = symLinkOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = symLinkOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = symLinkOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = symLinkOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = symLinkOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = symLinkOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = symLinkOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = symLinkOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = symLinkOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = symLinkOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = symLinkOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = symLinkOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = symLinkOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = symLinkOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = symLinkOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = symLinkOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = symLinkOut.EntryOut.Attr.Padding
+	marshalAttr(&symLinkOut.EntryOut.Attr, outPayload, 40)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -304,22 +227,7 @@ func (volume *volumeStruct) doMkNod(inHeader *InHeader, devFuseFDReadBufPayload 
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = mkNodOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = mkNodOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = mkNodOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = mkNodOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = mkNodOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = mkNodOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = mkNodOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = mkNodOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = mkNodOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = mkNodOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = mkNodOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = mkNodOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = mkNodOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = mkNodOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = mkNodOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = mkNodOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = mkNodOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = mkNodOut.EntryOut.Attr.Padding
+	marshalAttr(&mkNodOut.EntryOut.Attr, outPayload, 40)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -359,22 +267,7 @@ func (volume *volumeStruct) doMkDir(inHeader *InHeader, devFuseFDReadBufPayload 
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = mkDirOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = mkDirOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = mkDirOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = mkDirOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = mkDirOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = mkDirOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = mkDirOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = mkDirOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = mkDirOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = mkDirOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = mkDirOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = mkDirOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = mkDirOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = mkDirOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = mkDirOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = mkDirOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = mkDirOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = mkDirOut.EntryOut.Attr.Padding
+	marshalAttr(&mkDirOut.EntryOut.Attr, outPayload, 40)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -474,22 +367,7 @@ func (volume *volumeStruct) doLink(inHeader *InHeader, devFuseFDReadBufPayload [
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = linkOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = linkOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = linkOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = linkOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = linkOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = linkOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = linkOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = linkOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = linkOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = linkOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = linkOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = linkOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = linkOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = linkOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = linkOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = linkOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = linkOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = linkOut.EntryOut.Attr.Padding
+	marshalAttr(&linkOut.EntryOut.Attr, outPayload, 40)
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -1231,26 +1109,11 @@ func (volume *volumeStruct) doCreate(inHeader *InHeader, devFuseFDReadBufPayload
 	*(*uint32)(unsafe.Pointer(&outPayload[32])) = createOut.EntryOut.EntryValidNSec
 	*(*uint32)(unsafe.Pointer(&outPayload[36])) = createOut.EntryOut.AttrValidNSec
 
-	*(*uint64)(unsafe.Pointer(&outPayload[40])) = createOut.EntryOut.Attr.Ino
-	*(*uint64)(unsafe.Pointer(&outPayload[48])) = createOut.EntryOut.Attr.Size
-	*(*uint64)(unsafe.Pointer(&outPayload[56])) = createOut.EntryOut.Attr.Blocks
-	*(*uint64)(unsafe.Pointer(&outPayload[64])) = createOut.EntryOut.Attr.ATimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[72])) = createOut.EntryOut.Attr.MTimeSec
-	*(*uint64)(unsafe.Pointer(&outPayload[80])) = createOut.EntryOut.Attr.CTimeSec
-	*(*uint32)(unsafe.Pointer(&outPayload[88])) = createOut.EntryOut.Attr.ATimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[92])) = createOut.EntryOut.Attr.MTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[96])) = createOut.EntryOut.Attr.CTimeNSec
-	*(*uint32)(unsafe.Pointer(&outPayload[100])) = createOut.EntryOut.Attr.Mode
-	*(*uint32)(unsafe.Pointer(&outPayload[104])) = createOut.EntryOut.Attr.NLink
-	*(*uint32)(unsafe.Pointer(&outPayload[108])) = createOut.EntryOut.Attr.UID
-	*(*uint32)(unsafe.Pointer(&outPayload[112])) = createOut.EntryOut.Attr.GID
-	*(*uint32)(unsafe.Pointer(&outPayload[116])) = createOut.EntryOut.Attr.RDev
-	*(*uint32)(unsafe.Pointer(&outPayload[120])) = createOut.EntryOut.Attr.BlkSize
-	*(*uint32)(unsafe.Pointer(&outPayload[124])) = createOut.EntryOut.Attr.Padding
+	marshalAttr(&createOut.EntryOut.Attr, outPayload, 40)
 
-	*(*uint64)(unsafe.Pointer(&outPayload[128])) = createOut.FH
-	*(*uint32)(unsafe.Pointer(&outPayload[136])) = createOut.OpenFlags
-	*(*uint32)(unsafe.Pointer(&outPayload[140])) = createOut.Padding
+	*(*uint64)(unsafe.Pointer(&outPayload[EntryOutSize+0])) = createOut.FH
+	*(*uint32)(unsafe.Pointer(&outPayload[EntryOutSize+8])) = createOut.OpenFlags
+	*(*uint32)(unsafe.Pointer(&outPayload[EntryOutSize+12])) = createOut.Padding
 
 	volume.devFuseFDWriter(inHeader, 0, outPayload)
 }
@@ -1307,13 +1170,19 @@ func (volume *volumeStruct) doBMap(inHeader *InHeader, devFuseFDReadBufPayload [
 }
 
 func (volume *volumeStruct) doDestroy(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
+	var (
+		errno syscall.Errno
+	)
+
 	if len(devFuseFDReadBufPayload) != 0 {
 		volume.logger.Printf("Call to doDestroy() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
 		return
 	}
 
-	volume.callbacks.DoDestroy(inHeader)
+	errno = volume.callbacks.DoDestroy(inHeader)
+
+	volume.devFuseFDWriter(inHeader, errno)
 }
 
 func (volume *volumeStruct) doPoll(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
@@ -1480,22 +1349,7 @@ func (volume *volumeStruct) doReadDirPlus(inHeader *InHeader, devFuseFDReadBufPa
 		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+32])) = dirEntPlus.EntryOut.EntryValidNSec
 		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+36])) = dirEntPlus.EntryOut.AttrValidNSec
 
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+40])) = dirEntPlus.EntryOut.Attr.Ino
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+48])) = dirEntPlus.EntryOut.Attr.Size
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+56])) = dirEntPlus.EntryOut.Attr.Blocks
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+64])) = dirEntPlus.EntryOut.Attr.ATimeSec
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+72])) = dirEntPlus.EntryOut.Attr.MTimeSec
-		*(*uint64)(unsafe.Pointer(&outPayload[outPayloadOffset+80])) = dirEntPlus.EntryOut.Attr.CTimeSec
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+88])) = dirEntPlus.EntryOut.Attr.ATimeNSec
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+92])) = dirEntPlus.EntryOut.Attr.MTimeNSec
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+96])) = dirEntPlus.EntryOut.Attr.CTimeNSec
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+100])) = dirEntPlus.EntryOut.Attr.Mode
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+104])) = dirEntPlus.EntryOut.Attr.NLink
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+108])) = dirEntPlus.EntryOut.Attr.UID
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+112])) = dirEntPlus.EntryOut.Attr.GID
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+116])) = dirEntPlus.EntryOut.Attr.RDev
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+120])) = dirEntPlus.EntryOut.Attr.BlkSize
-		*(*uint32)(unsafe.Pointer(&outPayload[outPayloadOffset+124])) = dirEntPlus.EntryOut.Attr.Padding
+		marshalAttr(&dirEntPlus.EntryOut.Attr, outPayload, outPayloadOffset+40)
 
 		outPayloadOffset += EntryOutSize
 

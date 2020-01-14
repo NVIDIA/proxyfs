@@ -17,6 +17,7 @@ const (
 func (volume *volumeStruct) DoMount() (err error) {
 	var (
 		allowOtherOption         string
+		fuseSubtypeMountOption   string
 		fusermountChildWriteFile *os.File
 		fusermountParentReadFile *os.File
 		fusermountProgramPath    string
@@ -82,10 +83,16 @@ func (volume *volumeStruct) DoMount() (err error) {
 		"," + gidMountOption +
 		"," + allowOtherOption
 
+	if "" != volume.fuseSubtype {
+		fuseSubtypeMountOption = "subtype=" + volume.fuseSubtype
+		mountOptions += "," + fuseSubtypeMountOption
+	}
+
 	mountCmd = &exec.Cmd{
 		Path: fusermountProgramPath,
 		Args: []string{
-			"-o " + mountOptions,
+			fusermountProgramPath,
+			"-o", mountOptions,
 			volume.mountpointDirPath,
 		},
 		Env:          append(os.Environ(), "_FUSE_COMMFD=3"),

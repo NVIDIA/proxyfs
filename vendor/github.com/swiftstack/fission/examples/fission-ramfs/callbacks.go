@@ -2003,10 +2003,12 @@ func (dummy *globalsStruct) DoGetLK(inHeader *fission.InHeader, getLKIn *fission
 	errno = syscall.ENOSYS
 	return
 }
+
 func (dummy *globalsStruct) DoSetLK(inHeader *fission.InHeader, setLKIn *fission.SetLKIn) (errno syscall.Errno) {
 	errno = syscall.ENOSYS
 	return
 }
+
 func (dummy *globalsStruct) DoSetLKW(inHeader *fission.InHeader, setLKWIn *fission.SetLKWIn) (errno syscall.Errno) {
 	errno = syscall.ENOSYS
 	return
@@ -2293,8 +2295,9 @@ func (dummy *globalsStruct) DoBMap(inHeader *fission.InHeader, bMapIn *fission.B
 	return
 }
 
-func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) {
-	os.Exit(0)
+func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) (errno syscall.Errno) {
+	errno = syscall.ENOSYS
+	return
 }
 
 func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.PollIn) (pollOut *fission.PollOut, errno syscall.Errno) {
