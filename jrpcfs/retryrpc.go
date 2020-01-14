@@ -28,9 +28,9 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 	globals.connLock.Unlock()
 
 	// Start the retryrpc server listener
-	_, listErr := rrSvr.Start()
-	if listErr != nil {
-		logger.ErrorfWithError(listErr, "net.Listen %s:%d failed", publicIPAddr, retryRPCPort)
+	startErr := rrSvr.Start()
+	if startErr != nil {
+		logger.ErrorfWithError(startErr, "retryrpc.Start() failed with err: %v", startErr)
 		return
 	}
 

@@ -9,6 +9,8 @@ package retryrpc
 
 import (
 	"container/list"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"reflect"
@@ -17,6 +19,13 @@ import (
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
+
+// ServerCreds tracks the root CA and the
+// server CA
+type ServerCreds struct {
+	rootCAx509CertificatePEM []byte
+	serverTLSCertificate     tls.Certificate
+}
 
 // Server tracks the state of the server
 type Server struct {
@@ -33,6 +42,7 @@ type Server struct {
 	connections         *list.List // TODO - how used?
 	connWG              sync.WaitGroup
 	listeners           []net.Listener
+	creds               *ServerCreds
 	listenersWG         sync.WaitGroup
 	receiver            reflect.Value          // Package receiver being served
 	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
@@ -45,17 +55,24 @@ type Server struct {
 
 // NewServer creates the Server object
 func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
-	s := &Server{}
-	s.svrMap = make(map[string]*methodArgs)
-	s.pendingRequest = make(map[string]*pendingCtx)
-	s.completedRequest = make(map[string]*ioReply)
-	s.completedRequestLRU = list.New()
-	s.completedTickerDone = make(chan bool)
-	s.completedTTL = ttl
-	s.ipaddr = ipaddr
-	s.port = port
-	s.connections = list.New()
-	return s
+	var (
+		err error
+	)
+	server := &Server{ipaddr: ipaddr, port: port, completedTTL: ttl}
+	server.svrMap = make(map[string]*methodArgs)
+	server.pendingRequest = make(map[string]*pendingCtx)
+	server.completedRequest = make(map[string]*ioReply)
+	server.completedRequestLRU = list.New()
+	server.completedTickerDone = make(chan bool)
+	server.connections = list.New()
+
+	server.creds, err = constructServerCreds(ipaddr)
+	if err != nil {
+		logger.Errorf("Construction of server credentials failed with err: %v", err)
+		panic(err)
+	}
+
+	return server
 }
 
 // Register creates the map of server methods
@@ -67,9 +84,20 @@ func (server *Server) Register(retrySvr interface{}) (err error) {
 }
 
 // Start listener
-func (server *Server) Start() (l net.Listener, err error) {
-	ps := fmt.Sprintf("%d", server.port)
-	server.listener, err = net.Listen("tcp", net.JoinHostPort(server.ipaddr, ps))
+func (server *Server) Start() (err error) {
+	portStr := fmt.Sprintf("%d", server.port)
+	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{server.creds.serverTLSCertificate},
+	}
+
+	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)
+	if nil != err {
+		err = fmt.Errorf("tls.Listen() failed: %v", err)
+		return
+	}
+
 	server.listenersWG.Add(1)
 
 	// Start ticker which removes older completedRequests
@@ -87,7 +115,7 @@ func (server *Server) Start() (l net.Listener, err error) {
 		}
 	}()
 
-	return server.listener, err
+	return err
 }
 
 // Run server loop, accept connections, read request, run RPC method and
@@ -152,8 +180,10 @@ type Client struct {
 	myUniqueID         string             // Unique ID across all clients
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
-	tcpConn     *net.TCPConn   // Our connection to the server
-	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
+	tlsConn      *tls.Conn // Our connection to the server
+	x509CertPool *x509.CertPool
+	tlsConfig    *tls.Config
+	goroutineWG  sync.WaitGroup // Used to track outstanding goroutines
 }
 
 // NewClient returns a Client structure
@@ -167,24 +197,30 @@ func NewClient(myUniqueID string) *Client {
 	return c
 }
 
-// TODO - TODO - split client and server packages since two loggers....
+// TODO - pass loggers to Client and Server objects
 
 // Dial sets up connection to server
-func (client *Client) Dial(ipaddr string, port int) (err error) {
-
+func (client *Client) Dial(ipaddr string, port int, rootCAx509CertificatePEM []byte) (err error) {
 	portStr := fmt.Sprintf("%d", port)
-	hostPort := net.JoinHostPort(ipaddr, portStr)
+	hostPortStr := net.JoinHostPort(ipaddr, portStr)
 
-	tcpAddr, resolvErr := net.ResolveTCPAddr("tcp", hostPort)
-	if resolvErr != nil {
-		logger.Errorf("ResolveTCPAddr returned err: %v\n", resolvErr)
-		err = resolvErr
+	client.x509CertPool = x509.NewCertPool()
+
+	// Add cert for root CA to our pool
+	ok := client.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
+	if !ok {
+		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
 		return
 	}
 
-	client.tcpConn, err = net.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		logger.Errorf("Unable to net.DialTCP(\"tcp\", nil, \"%s\"): %v", hostPort, err)
+	client.tlsConfig = &tls.Config{
+		RootCAs: client.x509CertPool,
+	}
+
+	// Now dial the server
+	client.tlsConn, err = tls.Dial("tcp", hostPortStr, client.tlsConfig)
+	if nil != err {
+		err = fmt.Errorf("tls.Dial() failed: %v", err)
 		return
 	}
 
@@ -208,7 +244,7 @@ func (client *Client) Close() {
 	client.Lock()
 	client.halting = true
 	client.Unlock()
-	client.tcpConn.Close()
+	client.tlsConn.Close()
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
