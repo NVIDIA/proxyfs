@@ -20,6 +20,8 @@ import (
 const (
 	initOutFlagsMaskReadDirPlusEnabled  = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData | fission.InitFlagsDoReadDirPlus
 	initOutFlagsMaskReadDirPlusDisabled = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData
+
+	pfsagentFuseSubtype = "PFSAgent"
 )
 
 func performMountFUSE() {
@@ -30,6 +32,7 @@ func performMountFUSE() {
 	globals.fissionVolume = fission.NewVolume(
 		globals.config.FUSEVolumeName,     // volumeName        string
 		globals.config.FUSEMountPointPath, // mountpointDirPath string
+		pfsagentFuseSubtype,               // fuseSubtype       string
 		0,                                 // mountFlags        uintptr
 		globals.config.FUSEMaxWrite,       // initOutMaxWrite   uint32
 		&globals,                          // callbacks         fission.Callbacks
@@ -2008,8 +2011,10 @@ func (dummy *globalsStruct) DoBMap(inHeader *fission.InHeader, bMapIn *fission.B
 	return
 }
 
-func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) {
+func (dummy *globalsStruct) DoDestroy(inHeader *fission.InHeader) (errno syscall.Errno) {
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoDestroy_calls, 1)
+	errno = syscall.ENOSYS
+	return
 }
 
 func (dummy *globalsStruct) DoPoll(inHeader *fission.InHeader, pollIn *fission.PollIn) (pollOut *fission.PollOut, errno syscall.Errno) {
