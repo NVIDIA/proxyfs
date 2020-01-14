@@ -306,6 +306,7 @@ type globalsStruct struct {
 	retryRPCPublicIPAddr            string
 	retryRPCPort                    uint16
 	retryRPCClient                  *retryrpc.Client
+	rootCAx509CertificatePEM        []byte
 	entryValidSec                   uint64
 	entryValidNSec                  uint32
 	attrValidSec                    uint64
@@ -651,6 +652,7 @@ func uninitializeGlobals() {
 	globals.retryRPCPublicIPAddr = ""
 	globals.retryRPCPort = 0
 	globals.retryRPCClient = nil
+	globals.rootCAx509CertificatePEM = []byte{}
 	globals.entryValidSec = 0
 	globals.entryValidNSec = 0
 	globals.attrValidSec = 0

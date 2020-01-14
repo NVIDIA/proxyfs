@@ -19,14 +19,15 @@ type globalsStruct struct {
 	gate     sync.RWMutex // API Requests RLock()/RUnlock()
 	//                       confMap changes Lock()/Unlock()
 
-	whoAmI               string
-	publicIPAddr         string
-	privateIPAddr        string
-	portString           string
-	fastPortString       string
-	retryRPCPort         uint16
-	retryRPCTTLCompleted time.Duration
-	dataPathLogging      bool
+	whoAmI                   string
+	publicIPAddr             string
+	privateIPAddr            string
+	portString               string
+	fastPortString           string
+	retryRPCPort             uint16
+	retryRPCTTLCompleted     time.Duration
+	rootCAx509CertificatePEM []byte
+	dataPathLogging          bool
 
 	// Map used to enumerate volumes served by this peer
 	volumeMap map[string]bool // key == volumeName; value is ignored

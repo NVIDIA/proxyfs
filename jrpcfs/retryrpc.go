@@ -23,9 +23,6 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 		logger.ErrorfWithError(err, "failed to register Retry RPC handler")
 		return
 	}
-	globals.connLock.Lock()
-	globals.retryrpcSvr = rrSvr
-	globals.connLock.Unlock()
 
 	// Start the retryrpc server listener
 	startErr := rrSvr.Start()
@@ -33,6 +30,11 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 		logger.ErrorfWithError(startErr, "retryrpc.Start() failed with err: %v", startErr)
 		return
 	}
+
+	globals.connLock.Lock()
+	globals.retryrpcSvr = rrSvr
+	globals.rootCAx509CertificatePEM = rrSvr.Creds.RootCAx509CertificatePEM
+	globals.connLock.Unlock()
 
 	// Tell retryrpc server to start accepting requests
 	rrSvr.Run()

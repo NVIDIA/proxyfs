@@ -23,7 +23,7 @@ import (
 // ServerCreds tracks the root CA and the
 // server CA
 type ServerCreds struct {
-	rootCAx509CertificatePEM []byte
+	RootCAx509CertificatePEM []byte
 	serverTLSCertificate     tls.Certificate
 }
 
@@ -42,7 +42,7 @@ type Server struct {
 	connections         *list.List // TODO - how used?
 	connWG              sync.WaitGroup
 	listeners           []net.Listener
-	creds               *ServerCreds
+	Creds               *ServerCreds
 	listenersWG         sync.WaitGroup
 	receiver            reflect.Value          // Package receiver being served
 	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
@@ -66,7 +66,7 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
-	server.creds, err = constructServerCreds(ipaddr)
+	server.Creds, err = constructServerCreds(ipaddr)
 	if err != nil {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
@@ -89,7 +89,7 @@ func (server *Server) Start() (err error) {
 	hostPortStr := net.JoinHostPort(server.ipaddr, portStr)
 
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{server.creds.serverTLSCertificate},
+		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
 	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)

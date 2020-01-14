@@ -233,7 +233,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 		return
 	}
 
-	serverCreds.rootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
+	serverCreds.RootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
 
 	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if nil != err {

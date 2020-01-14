@@ -75,7 +75,7 @@ func testServer(t *testing.T) {
 
 	// Have client connect to server.  Grab the server creds
 	// from the server structure
-	rrClnt.Dial(ipaddr, port, rrSvr.creds.rootCAx509CertificatePEM)
+	rrClnt.Dial(ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	// Send an RPC which should return success
 	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}
