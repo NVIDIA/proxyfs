@@ -65,7 +65,7 @@ yum -y install wget git nfs-utils vim lsof
 
 yum -y --disableexcludes=all install gcc
 cd /tmp
-TARFILE_NAME=go1.12.9.linux-amd64.tar.gz
+TARFILE_NAME=go1.13.6.linux-amd64.tar.gz
 wget -q https://dl.google.com/go/$TARFILE_NAME
 tar -C /usr/local -xf $TARFILE_NAME
 rm $TARFILE_NAME
@@ -261,7 +261,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.23.1.2
+git checkout ss-release-2.23.1.3
 pip install --no-binary cryptography -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
