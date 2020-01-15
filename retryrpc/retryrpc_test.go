@@ -63,9 +63,8 @@ func testServer(t *testing.T) {
 	assert.Nil(err)
 
 	// Start listening for requests on the ipaddr/port
-	listener, lisErr := rrSvr.Start()
-	assert.NotNil(listener, "Listener should not be nil")
-	assert.Nil(lisErr, "lisErr is not nil")
+	startErr := rrSvr.Start()
+	assert.Nil(startErr, "startErr is not nil")
 
 	// Tell server to start accepting and processing requests
 	rrSvr.Run()
@@ -74,8 +73,9 @@ func testServer(t *testing.T) {
 	rrClnt := NewClient("client 1")
 	assert.NotNil(rrClnt)
 
-	// Have client connect to server
-	rrClnt.Dial(ipaddr, port)
+	// Have client connect to server.  Grab the server creds
+	// from the server structure
+	rrClnt.Dial(ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	// Send an RPC which should return success
 	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}

@@ -39,12 +39,13 @@ func doMountProxyFS() {
 	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
 	globals.retryRPCPublicIPAddr = mountReply.RetryRPCPublicIPAddr
 	globals.retryRPCPort = mountReply.RetryRPCPort
+	globals.rootCAx509CertificatePEM = mountReply.RootCAx509CertificatePEM
 
 	globals.retryRPCClient = retryrpc.NewClient(string(globals.mountID))
 
 	// TODO: Remove the following when no longer needed
 
-	err = globals.retryRPCClient.Dial(globals.retryRPCPublicIPAddr, int(globals.retryRPCPort))
+	err = globals.retryRPCClient.Dial(globals.retryRPCPublicIPAddr, int(globals.retryRPCPort), globals.rootCAx509CertificatePEM)
 	if nil != err {
 		logFatalf("unable to retryRPCClient.Dial(%v,%v): %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
 	}

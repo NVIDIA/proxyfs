@@ -106,7 +106,7 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 	// Send length - how do whole request in one I/O?
 	//
 	// This is how you hton() in Golang
-	err = binary.Write(client.tcpConn, binary.BigEndian, ctx.ioreq.Hdr)
+	err = binary.Write(client.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
 		fmt.Println("binary.Write failed:", err)
 		client.Unlock()
@@ -124,7 +124,7 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 	*/
 
 	// Send JSON request
-	bytesWritten, writeErr := client.tcpConn.Write(ctx.ioreq.JReq)
+	bytesWritten, writeErr := client.tlsConn.Write(ctx.ioreq.JReq)
 	if bytesWritten != len(ctx.ioreq.JReq) {
 		fmt.Printf("CLIENT: PARTIAL Write! bytesWritten is: %v len(ctx.ioreq.JReq): %v writeErr: %v\n",
 			bytesWritten, len(ctx.ioreq.JReq), writeErr)
@@ -208,7 +208,7 @@ func (client *Client) readReplies() {
 	for {
 
 		// Wait reply from server
-		buf, getErr := getIO(client.tcpConn)
+		buf, getErr := getIO(client.tlsConn)
 
 		// This must happen before checking error
 		if client.halting {
