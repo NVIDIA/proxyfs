@@ -4,6 +4,8 @@ import:
   version: 1.1.0
 - package: github.com/swiftstack/sortedmap
   version: 1.6.1
+- package: github.com/swiftstack/fission
+  version: 1.1.2
 - package: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
   subpackages:

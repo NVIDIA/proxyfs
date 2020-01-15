@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -75,6 +76,16 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 	path = strings.TrimRight(request.URL.Path, "/")
 
 	switch path {
+	case "/debug/pprof":
+		pprof.Index(responseWriter, request)
+	case "/debug/pprof/cmdline":
+		pprof.Cmdline(responseWriter, request)
+	case "/debug/pprof/profile":
+		pprof.Profile(responseWriter, request)
+	case "/debug/pprof/symbol":
+		pprof.Symbol(responseWriter, request)
+	case "/debug/pprof/trace":
+		pprof.Trace(responseWriter, request)
 	case "/metrics":
 		serveGetOfMetrics(responseWriter, request)
 	case "/version":

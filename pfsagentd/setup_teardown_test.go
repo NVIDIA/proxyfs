@@ -87,16 +87,20 @@ func testSetup(t *testing.T) {
 		"Agent.DirtyFileLimit=50",
 		"Agent.MaxFlushSize=10485760",
 		"Agent.MaxFlushTime=10s",
-		"Agent.ReadOnly=false",
 		"Agent.LogFilePath=",
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
 		"Agent.HTTPServerIPAddr=127.0.0.1",
 		"Agent.HTTPServerTCPPort=9091",
+		"Agent.ReadDirPlusEnabled=false",
+		"Agent.XAttrEnabled=false",
+		"Agent.EntryDuration=10s",
 		"Agent.AttrDuration=10s",
 		"Agent.AttrBlockSize=65536",
-		"Agent.LookupEntryDuration=10s",
 		"Agent.ReaddirMaxEntries=1024",
+		"Agent.FUSEMaxBackground=100",
+		"Agent.FUSECongestionThreshhold=0",
+		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=52184",
@@ -204,7 +208,8 @@ func testSetup(t *testing.T) {
 
 		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
-		"JSONRPCServer.RetryRPCPort=24457", // 24457 instead of 24456 so that test can run if proxyfsd is already running
+		"JSONRPCServer.RetryRPCPort=32357", // ...and similarly here...
+		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.DataPathLogging=false",
 	}
 
@@ -274,9 +279,11 @@ func testTeardown(t *testing.T) {
 
 	performUnmountFUSE()
 
+	doUnmountProxyFS()
+
 	uninitializeGlobals()
 
-	unix.Kill(unix.Getpid(), unix.SIGUSR2)
+	_ = unix.Kill(unix.Getpid(), unix.SIGUSR2)
 
 	err = <-testDaemonGlobals.proxyfsdErrChan
 

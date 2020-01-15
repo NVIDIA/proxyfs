@@ -19,15 +19,15 @@ type globalsStruct struct {
 	gate     sync.RWMutex // API Requests RLock()/RUnlock()
 	//                       confMap changes Lock()/Unlock()
 
-	whoAmI               string
-	ipAddr               string
-	portString           string
-	fastPortString       string
-	retryRPCPortString   string
-	retryRPCTTLCompleted time.Duration
-
-	retryRPC        string
-	dataPathLogging bool
+	whoAmI                   string
+	publicIPAddr             string
+	privateIPAddr            string
+	portString               string
+	fastPortString           string
+	retryRPCPort             uint16
+	retryRPCTTLCompleted     time.Duration
+	rootCAx509CertificatePEM []byte
+	dataPathLogging          bool
 
 	// Map used to enumerate volumes served by this peer
 	volumeMap map[string]bool // key == volumeName; value is ignored
@@ -64,13 +64,18 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.mountIDAsStringMap = make(map[MountIDAsString]fs.MountHandle)
 	globals.bimodalMountMap = make(map[string]fs.MountHandle)
 
-	// Fetch IPAddr from config file
+	// Fetch IPAddrs from config file
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get Cluster.WhoAmI from config file")
 		return
 	}
-	globals.ipAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
+	globals.publicIPAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PublicIPAddr")
+	if nil != err {
+		logger.ErrorfWithError(err, "failed to get %s.PublicIPAddr from config file", globals.whoAmI)
+		return
+	}
+	globals.privateIPAddr, err = confMap.FetchOptionValueString("Peer:"+globals.whoAmI, "PrivateIPAddr")
 	if nil != err {
 		logger.ErrorfWithError(err, "failed to get %s.PrivateIPAddr from config file", globals.whoAmI)
 		return
@@ -90,15 +95,17 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	globals.retryRPCPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "RetryRPCPort")
-	if nil != err {
+	globals.retryRPCPort, err = confMap.FetchOptionValueUint16("JSONRPCServer", "RetryRPCPort")
+	if nil == err {
+		globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
+		if nil != err {
+			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCTTLCompleted from config file")
+			return
+		}
+	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
-	}
-
-	globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
-	if (nil != err) && (globals.retryRPCPortString != "") {
-		logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10 minutes")
-		globals.retryRPCTTLCompleted = 10 * time.Minute
+		globals.retryRPCPort = 0
+		globals.retryRPCTTLCompleted = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -120,15 +127,15 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.halting = false
 
 	// Init JSON RPC server stuff
-	jsonRpcServerUp(globals.ipAddr, globals.portString)
+
+	// jsonRpcServerUp(globals.privateIPAddr, globals.portString)
+	jsonRpcServerUp("0.0.0.0", globals.portString)
 
 	// Now kick off our other, faster RPC server
-	ioServerUp(globals.ipAddr, globals.fastPortString)
+	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	if globals.retryRPCPortString != "" {
-		retryRPCServerUp(jserver, globals.ipAddr, globals.retryRPCPortString, globals.retryRPCTTLCompleted)
-	}
+	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted)
 
 	return
 }

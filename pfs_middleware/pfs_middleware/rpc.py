@@ -24,6 +24,7 @@ import base64
 import uuid
 
 allow_read_only = {
+    "Server.RpcAccess",
     "Server.RpcFetchExtentMapChunk",
     "Server.RpcGetAccount",
     "Server.RpcGetContainer",
@@ -32,6 +33,7 @@ allow_read_only = {
     "Server.RpcGetXAttr",
     "Server.RpcListXAttr",
     "Server.RpcLookup",
+    "Server.RpcLookupPlus",
     "Server.RpcMountByAccountName",
     "Server.RpcMountByVolumeName",
     "Server.RpcPing",
@@ -45,6 +47,7 @@ allow_read_only = {
 }
 
 allow_read_write = {
+    "Server.RpcAccess",
     "Server.RpcChmod",
     "Server.RpcChown",
     "Server.RpcCreate",
@@ -61,6 +64,7 @@ allow_read_write = {
     "Server.RpcListXAttr",
     "Server.RpcLog",
     "Server.RpcLookup",
+    "Server.RpcLookupPlus",
     "Server.RpcMiddlewareMkdir",
     "Server.RpcMiddlewarePost",
     "Server.RpcMkdir",
