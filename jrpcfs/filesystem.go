@@ -1458,6 +1458,7 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
 		reply.RetryRPCPort = globals.retryRPCPort
+		reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 	}
 	return
 }

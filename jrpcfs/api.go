@@ -392,10 +392,11 @@ type MountByAccountNameRequest struct {
 
 // MountByAccountNameReply is the reply object for RpcMountByAccountName.
 type MountByAccountNameReply struct {
-	MountID              MountIDAsString
-	RootDirInodeNumber   int64
-	RetryRPCPublicIPAddr string
-	RetryRPCPort         uint16
+	MountID                  MountIDAsString
+	RootDirInodeNumber       int64
+	RetryRPCPublicIPAddr     string
+	RetryRPCPort             uint16
+	RootCAx509CertificatePEM []byte
 }
 
 // MountByVolumeNameRequest is the request object for RpcMountByVolumeName.
