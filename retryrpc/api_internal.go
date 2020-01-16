@@ -199,7 +199,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	commonX509NotAfter = time.Date(timeNow.Year()+99, time.January, 1, 0, 0, 0, 0, timeNow.Location())
 
 	rootCAx509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("rand.Int() [1] failed: %v", err)
 		return
 	}
@@ -220,7 +220,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 
 	// Generate public and private key
 	rootCAEd25519PublicKey, rootCAEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("ed25519.GenerateKey() [1] failed: %v", err)
 		return
 	}
@@ -228,7 +228,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	// Create the certificate with the keys
 	rootCAx509CertificateDER, err = x509.CreateCertificate(rand.Reader,
 		rootCAx509CertificateTemplate, rootCAx509CertificateTemplate, rootCAEd25519PublicKey, rootCAEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.CreateCertificate() [1] failed: %v", err)
 		return
 	}
@@ -236,7 +236,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	serverCreds.RootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
 
 	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("rand.Int() [2] failed: %v", err)
 		return
 	}
@@ -256,14 +256,14 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 
 	// Generate the server public/private keys
 	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("ed25519.GenerateKey() [2] failed: %v", err)
 		return
 	}
 
 	// Create the server certificate with the server public/private keys
 	serverX509CertificateDER, err = x509.CreateCertificate(rand.Reader, serverX509CertificateTemplate, rootCAx509CertificateTemplate, serverEd25519PublicKey, rootCAEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.CreateCertificate() [2] failed: %v", err)
 		return
 	}
@@ -272,7 +272,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	serverX509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverX509CertificateDER})
 
 	serverEd25519PrivateKeyDER, err = x509.MarshalPKCS8PrivateKey(serverEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.MarshalPKCS8PrivateKey() failed: %v", err)
 		return
 	}
