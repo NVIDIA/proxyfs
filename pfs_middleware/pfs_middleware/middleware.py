@@ -778,6 +778,12 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
+        # Alternate way to specify bypass mode: /proxyfs/AUTH_acct/...
+        if vrs == 'proxyfs':
+            req.headers['X-Bypass-ProxyFS'] = 'true'
+            req.path_info = req.path_info.replace('/proxyfs/', '/v1/', 1)
+            vrs = 'v1'
+
         if not acc or not constraints.valid_api_version(vrs) or (
                 obj and not con):
             # could be a GET /info request or something made up by some
