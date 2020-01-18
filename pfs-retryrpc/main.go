@@ -48,11 +48,6 @@ func pfsagent(ipAddr string, retryRPCPortString string, aid uint64, agentWg *syn
 
 	// TODO - do mount request and get cert...
 
-	// 1. setup client and connect to proxyfsd
-	// 2. loop doing RPCs in parallel
-	clientID := fmt.Sprintf("client - %v", aid)
-	client := retryrpc.NewClient(clientID)
-
 	// Have client connect to server
 	port, _ := strconv.Atoi(retryRPCPortString)
 
@@ -61,7 +56,10 @@ func pfsagent(ipAddr string, retryRPCPortString string, aid uint64, agentWg *syn
 		fmt.Printf("readErr: %v\n", readErr)
 	}
 
-	err := client.Dial(ipAddr, port, raw)
+	// 1. setup client and connect to proxyfsd
+	// 2. loop doing RPCs in parallel
+	clientID := fmt.Sprintf("client - %v", aid)
+	client, err := retryrpc.NewClient(clientID, ipAddr, port, raw)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
 		return

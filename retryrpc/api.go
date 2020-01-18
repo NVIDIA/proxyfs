@@ -163,6 +163,9 @@ func (server *Server) Close() {
 
 // CloseClientConn - TODO - DEBUG - this is debug code to cause some connections to be closed
 func (server *Server) CloseClientConn() {
+	if server == nil {
+		return
+	}
 	logger.Infof("CloseClientConn() called --------")
 	server.Lock()
 	for c := server.connections.Front(); c != nil; c = c.Next() {
