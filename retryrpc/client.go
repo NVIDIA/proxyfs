@@ -1,29 +1,17 @@
 package retryrpc
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/sys/unix"
+	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
 // TODO - what if RPC was completed on Server1 and before response,
 // proxyfsd fails over to Server2?   Client will resend - not idempotent!!!
-
-// TODO - do we need to retransmit these requests in order?
-
-/*
- * TODO - implement this...
-
-gotDisconnect - who calls - on read/write failure - could be holding lock!!!
-===> should only be two outstanding - one writer and one reader....
-1. set flag that reconnecting so others don't do it
-2. reconnect
-3. loop thru outstanding list of requests incomplete and resend with
-   goroutines which send and wait result and write on chan from send()
-*/
 
 //
 // Send algorithm is:
@@ -35,6 +23,18 @@ gotDisconnect - who calls - on read/write failure - could be holding lock!!!
 //    and call a goroutine to do unmarshalling and notification
 func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
 	var crID uint64
+
+	client.Lock()
+	if client.state == INITIAL {
+
+		// TODO - should this keep retrying the dial?   I assume if it fails
+		// the first time then things will not recover...
+		err = client.dial()
+		if err != nil {
+			return
+		}
+	}
+	client.Unlock()
 
 	// Put request data into structure to be be marshaled into JSON
 	jreq := jsonRequest{Method: method}
@@ -83,11 +83,11 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 // sendToServer packages the request and marshals it before
 // sending to server.
 //
-// TODO - if the send fails, resend the request via the
-// retransmit thread
+// At this point, the client will retry the request until either
+// completes OR the client is shutdown.
 func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
+
 	defer client.goroutineWG.Done()
-	var err error
 
 	// TODO - retransmit ctx in gotDisconnect() routine
 
@@ -103,25 +103,23 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 	// outstandingRequests queue and resend the request.
 	client.outstandingRequest[crID] = ctx
 
+	// TODO - proper place for this comment???
+	// At this point we cannot fail - keep retrying...
+
 	// Send length - how do whole request in one I/O?
 	//
 	// This is how you hton() in Golang
-	err = binary.Write(client.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
+	err := binary.Write(client.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
+		// TODO - make this a log message...
 		fmt.Println("binary.Write failed:", err)
 		client.Unlock()
 
-		// TODO - retransimit code should retry operation and make it
-		// transparent to caller.   For now, just return the error.
-
-		// Legacy code requires the errno to be returned this way.
-		e := fmt.Errorf("errno: %d", unix.ENOTCONN)
-		sendReply(ctx, e)
+		// Just return - the retransmit code will start another
+		// sendToServer() goroutine
+		client.retransmit()
 		return
 	}
-	/*
-		fmt.Printf("CLIENT: Wrote ioreq length: %v err: %v\n", ctx.ioreq.Hdr.Len, err)
-	*/
 
 	// Send JSON request
 	bytesWritten, writeErr := client.tlsConn.Write(ctx.ioreq.JReq)
@@ -130,16 +128,11 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 			bytesWritten, len(ctx.ioreq.JReq), writeErr)
 	}
 	if writeErr != nil {
-		// TODO - handle disconnect or other error????
-		fmt.Printf("CLIENT: Failed WRITE - HANLDE disconnect or other error??\n")
 		client.Unlock()
 
-		// TODO - retransimit code should retry operation and make it
-		// transparent to caller.   For now, just return the error.
-
-		// Legacy code requires the errno to be returned this way.
-		e := fmt.Errorf("errno: %d", unix.ENOTCONN)
-		sendReply(ctx, e)
+		// Just return - the retransmit code will start another
+		// sendToServer() goroutine
+		client.retransmit()
 		return
 	}
 
@@ -200,26 +193,30 @@ func (client *Client) notifyReply(buf []byte) {
 //
 // As soon as it reads a complete response, it launches a goroutine to process
 // the response and notify the blocked Send().
-//
-// TODO - if the read fails - attempt start of retransmitThread???
 func (client *Client) readReplies() {
 	defer client.goroutineWG.Done()
+
+	client.Lock()
+	tlsConn := client.tlsConn
+	client.Unlock()
 
 	for {
 
 		// Wait reply from server
-		buf, getErr := getIO(client.tlsConn)
+		buf, getErr := getIO(tlsConn)
 
 		// This must happen before checking error
 		if client.halting {
-			break
+			return
 		}
 
 		if getErr != nil {
-			// TODO - error handling!
-			// call retransmit thread???
-			logger.Infof("readReplies() - getIO() returned: %v\n", getErr)
-			continue
+			// If we had an error reading call retransmit() and exit
+			// the goroutine.  retransmit()/dial() will have already
+			// started another readReplies() goroutine.
+			logger.Infof("readReplies() - getIO() returned: %v", getErr)
+			client.retransmit()
+			return
 		}
 
 		// We have a reply - let a goroutine do the unmarshalling and
@@ -227,6 +224,87 @@ func (client *Client) readReplies() {
 		client.goroutineWG.Add(1)
 		go client.notifyReply(buf)
 	}
+}
+
+// retransmit is called when a socket related error occurs on the
+// connection to the server.
+//
+// If we have not started recovery, set Client.state = DISCONNECTED,
+// call client.dial(), if successfult set Client.state = CONNECTED
+// and resend all outstandingRequests to the server.
+//
+// If Client.state = DISCONNECTED, means we already started recovery
+// .... race where our request is not sent????  maybe not since we
+// resend outstandingRequests with state CONNECTED...... what is
+// locking... logging so can see it....
+// TODO - call this routine in sendToServer error case....
+// already holding lock?????
+
+// TODO -
+// need gorLaunch() which increment waitGroup and starts goroutine
+
+func (client *Client) retransmit() {
+	client.Lock()
+
+	// If we are the first goroutine to notice the error on the
+	// socket - close the connection and block trying to reconnect.
+	if (client.state == CONNECTED) && (client.halting == false) {
+		client.tlsConn.Close()
+		client.state = DISCONNECTED
+
+		for {
+			// TODO - this locking code is messy - clean it up
+			if client.halting == true {
+				client.Unlock()
+				return
+			}
+			err := client.dial()
+			// If we were able to connect break - otherwise retry
+			// after a delay
+			if err == nil {
+				break
+			}
+			client.Unlock()
+			time.Sleep(100 * time.Millisecond)
+			client.Lock()
+		}
+
+		client.state = CONNECTED
+
+		for crID, ctx := range client.outstandingRequest {
+			client.goroutineWG.Add(1)
+
+			// Note that we are holding the lock so these
+			// goroutines will block until we release it.
+			client.goroutineWG.Add(1)
+			go client.sendToServer(crID, ctx)
+		}
+
+	}
+	client.Unlock()
+}
+
+// dial sets up connection to server
+// It is assumed that the client lock is held.
+func (client *Client) dial() (err error) {
+
+	client.tlsConfig = &tls.Config{
+		RootCAs: client.x509CertPool,
+	}
+
+	// Now dial the server
+	tlsConn, dialErr := tls.Dial("tcp", client.hostPortStr, client.tlsConfig)
+	if dialErr != nil {
+		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
+		return
+	}
+
+	client.tlsConn = tlsConn
+	client.state = CONNECTED
+
+	// Start readResponse goroutine to read responses from server
+	client.goroutineWG.Add(1)
+	go client.readReplies()
 
 	return
 }

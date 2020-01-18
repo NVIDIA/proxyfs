@@ -209,6 +209,10 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	closeGate()
 
+	logger.Infof("Called SignaledStart - jrpcfs----------")
+	// DEBUG - TODO - remove this code
+	// Close some of the client connections.....
+	globals.retryrpcSvr.CloseClientConn()
 	err = nil
 	return
 }

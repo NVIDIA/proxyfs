@@ -176,7 +176,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 		// push the work off on processRequest().
 		//
 		// Writes back on the socket have to be serialized so
-		// pass the per connection mutex.
+		// pass the per connection context.
 		server.goroutineWG.Add(1)
 		go server.processRequest(cCtx, buf)
 	}

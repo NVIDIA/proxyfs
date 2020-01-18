@@ -161,6 +161,17 @@ func (server *Server) Close() {
 	server.completedDoneWG.Wait()
 }
 
+// CloseClientConn - TODO - DEBUG - this is debug code to cause some connections to be closed
+func (server *Server) CloseClientConn() {
+	logger.Infof("CloseClientConn() called --------")
+	server.Lock()
+	for c := server.connections.Front(); c != nil; c = c.Next() {
+		conn := c.Value.(net.Conn)
+		conn.Close()
+	}
+	server.Unlock()
+}
+
 // CompletedCnt returns count of pendingRequests
 //
 // This is only useful for testing.
@@ -176,12 +187,25 @@ func (server *Server) PendingCnt() int {
 }
 
 // Client methods
+type clientState int
+
+const (
+	// INITIAL means the Client struct has just been created
+	INITIAL clientState = iota + 1
+	// DISCONNECTED means the Client has lost the connection to the server
+	DISCONNECTED
+	// CONNECTED means the Client is connected to the server
+	CONNECTED
+)
 
 // Client tracking structure
 type Client struct {
 	sync.Mutex
-	halting          bool
-	currentRequestID uint64 // Last request ID - start from clock
+	state                    clientState
+	halting                  bool
+	hostPortStr              string
+	rootCAx509CertificatePEM []byte
+	currentRequestID         uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	myUniqueID         string             // Unique ID across all clients
@@ -193,49 +217,27 @@ type Client struct {
 	goroutineWG  sync.WaitGroup // Used to track outstanding goroutines
 }
 
+// TODO - pass loggers to Client and Server objects
+
 // NewClient returns a Client structure
-func NewClient(myUniqueID string) *Client {
+func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte) (client *Client, err error) {
 
 	// TODO - if restart client, Client Request ID will be 0.   How know the server
 	// has removed these client IDs from it's queue?  Race condition...
-	c := &Client{myUniqueID: myUniqueID}
-	c.outstandingRequest = make(map[uint64]*reqCtx)
-
-	return c
-}
-
-// TODO - pass loggers to Client and Server objects
-
-// Dial sets up connection to server
-func (client *Client) Dial(ipaddr string, port int, rootCAx509CertificatePEM []byte) (err error) {
+	client = &Client{state: INITIAL, myUniqueID: myUniqueID}
 	portStr := fmt.Sprintf("%d", port)
-	hostPortStr := net.JoinHostPort(ipaddr, portStr)
-
+	client.hostPortStr = net.JoinHostPort(ipaddr, portStr)
+	client.outstandingRequest = make(map[uint64]*reqCtx)
 	client.x509CertPool = x509.NewCertPool()
 
 	// Add cert for root CA to our pool
 	ok := client.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
-		return
+		return nil, err
 	}
 
-	client.tlsConfig = &tls.Config{
-		RootCAs: client.x509CertPool,
-	}
-
-	// Now dial the server
-	client.tlsConn, err = tls.Dial("tcp", hostPortStr, client.tlsConfig)
-	if nil != err {
-		err = fmt.Errorf("tls.Dial() failed: %v", err)
-		return
-	}
-
-	// Start readResponse goroutine to read responses from server
-	client.goroutineWG.Add(1)
-	go client.readReplies()
-
-	return
+	return client, err
 }
 
 // Send the request and block until it has completed
