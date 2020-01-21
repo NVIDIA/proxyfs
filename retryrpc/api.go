@@ -223,8 +223,6 @@ type Client struct {
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
-	// TODO - remove completedRequest!!!
-	completedRequest map[uint64]*reqCtx // Map of outstanding requests sent
 }
 
 // TODO - pass loggers to Client and Server objects
@@ -239,7 +237,6 @@ func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509Certificate
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
 	client.outstandingRequest = make(map[uint64]*reqCtx)
-	client.completedRequest = make(map[uint64]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
 
 	// Add cert for root CA to our pool

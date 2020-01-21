@@ -177,28 +177,12 @@ func (client *Client) notifyReply(buf []byte) {
 	ctx := client.outstandingRequest[crID]
 	delete(client.outstandingRequest, crID)
 
-	if ctx != nil {
-		client.completedRequest[crID] = ctx
-	} else {
-
-		// TODO - remove this code since no way to trim
-		// completedRequest data structure....
-		// Verify we have already seen this request
-		_, ok := client.completedRequest[crID]
-		if !ok {
-			fmt.Printf("SAW reply for request which is NOT on outstanding OR completed request map!!!\n")
-		} else {
-			fmt.Printf("SAW reply for request which IS on completed request map!!!\n")
-			client.Unlock()
-			return
-		}
-
+	if ctx == nil {
+		fmt.Printf("SAW reply for request which is not on outstandingRequest list\n")
+		client.Unlock()
+		return
 	}
 	client.Unlock()
-
-	if ctx == nil {
-		fmt.Printf("buf: %v len(buf): %v jReply: %+v\n", string(buf), len(buf), jReply)
-	}
 
 	// Unmarshal the buf into the original reply structure
 	m := svrResponse{Result: ctx.rpcReply}
