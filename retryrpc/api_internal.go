@@ -65,11 +65,16 @@ type completedLRUEntry struct {
 	timeCompleted time.Time
 }
 
+// Magic number written at the end of the ioHeader.   Used
+// to detect if the complete header has been read.
+const headerMagic uint32 = 0xCAFEFEED
+
 // ioHeader is the header sent on the socket
 type ioHeader struct {
 	Len      uint32 // Number of bytes following header
 	Protocol uint16
 	Version  uint16
+	Magic    uint32 // Magic number - if invalid means have not read complete header
 }
 
 // Request is the structure sent over the wire
@@ -94,6 +99,7 @@ type reqCtx struct {
 	ioreq    ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
 	answer   chan replyCtx
+	genNum   uint64 // Generation number of socket when request sent
 }
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
@@ -133,6 +139,7 @@ func buildIoRequest(method string, jReq jsonRequest) (ioreq *ioRequest, err erro
 	ioreq.Hdr.Len = uint32(len(ioreq.JReq))
 	ioreq.Hdr.Protocol = uint16(JSON)
 	ioreq.Hdr.Version = currentRetryVersion
+	ioreq.Hdr.Magic = headerMagic
 	return
 }
 
@@ -140,6 +147,7 @@ func setupHdrReply(ioreply *ioReply) {
 	ioreply.Hdr.Len = uint32(len(ioreply.JResult))
 	ioreply.Hdr.Protocol = uint16(JSON)
 	ioreply.Hdr.Version = currentRetryVersion
+	ioreply.Hdr.Magic = headerMagic
 	return
 }
 
@@ -152,12 +160,30 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 	var hdr ioHeader
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
+		fmt.Printf("getIO() - binary.Read() returned err: %v\n", err)
+		return
+	}
+
+	if hdr.Magic != headerMagic {
+		fmt.Printf("getIO() - Incomplete read of header-------\n")
+		err = fmt.Errorf("Incomplete read of header")
 		return
 	}
 
 	// Now read the rest of the structure off the wire.
+	var numBytes int
 	buf = make([]byte, hdr.Len)
-	_, err = io.ReadFull(conn, buf)
+	numBytes, err = io.ReadFull(conn, buf)
+	if err != nil {
+		fmt.Printf("getIO() - io.ReadFull() returned err: %v numBytes: %v\n", err, numBytes)
+		return
+	}
+
+	if hdr.Len != uint32(numBytes) {
+		fmt.Printf("getIO() - Incomplete read of body - hdr.Len: %v numBytes: %v\n", hdr.Len, uint32(numBytes))
+		err = fmt.Errorf("Incomplete read of body")
+		return
+	}
 
 	return
 }

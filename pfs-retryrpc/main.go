@@ -36,8 +36,6 @@ func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup) {
 		fmt.Printf("         client.Send(RpcPing) SENT: msg '%v' but received '%s'\n", msg, pingReply.Message)
 		fmt.Printf("         client.Send(RpcPing) len(pingRequest.Message): '%d' i: %v\n", len(pingRequest.Message), i)
 		os.Exit(-1)
-	} else {
-		fmt.Printf("Worked----\n")
 	}
 }
 
@@ -45,8 +43,6 @@ func sendIt(client *retryrpc.Client, i int, sendWg *sync.WaitGroup) {
 func pfsagent(ipAddr string, retryRPCPortString string, aid uint64, agentWg *sync.WaitGroup,
 	sendCnt int) {
 	defer agentWg.Done()
-
-	// TODO - do mount request and get cert...
 
 	// Have client connect to server
 	port, _ := strconv.Atoi(retryRPCPortString)

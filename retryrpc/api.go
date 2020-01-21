@@ -201,23 +201,30 @@ const (
 	CONNECTED
 )
 
+type connectionTracker struct {
+	state                    clientState
+	genNum                   uint64 // Generation number of tlsConn - avoid racing recoveries
+	tlsConfig                *tls.Config
+	tlsConn                  *tls.Conn // Our connection to the server
+	x509CertPool             *x509.CertPool
+	rootCAx509CertificatePEM []byte
+	hostPortStr              string
+}
+
 // Client tracking structure
 type Client struct {
 	sync.Mutex
-	state                    clientState
-	halting                  bool
-	hostPortStr              string
-	rootCAx509CertificatePEM []byte
-	currentRequestID         uint64 // Last request ID - start from clock
+	halting          bool
+	currentRequestID uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
+	connection         connectionTracker
 	myUniqueID         string             // Unique ID across all clients
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
-	tlsConn      *tls.Conn // Our connection to the server
-	x509CertPool *x509.CertPool
-	tlsConfig    *tls.Config
-	goroutineWG  sync.WaitGroup // Used to track outstanding goroutines
+	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
+	// TODO - remove completedRequest!!!
+	completedRequest map[uint64]*reqCtx // Map of outstanding requests sent
 }
 
 // TODO - pass loggers to Client and Server objects
@@ -227,14 +234,16 @@ func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509Certificate
 
 	// TODO - if restart client, Client Request ID will be 0.   How know the server
 	// has removed these client IDs from it's queue?  Race condition...
-	client = &Client{state: INITIAL, myUniqueID: myUniqueID}
+	client = &Client{myUniqueID: myUniqueID}
 	portStr := fmt.Sprintf("%d", port)
-	client.hostPortStr = net.JoinHostPort(ipaddr, portStr)
+	client.connection.state = INITIAL
+	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
 	client.outstandingRequest = make(map[uint64]*reqCtx)
-	client.x509CertPool = x509.NewCertPool()
+	client.completedRequest = make(map[uint64]*reqCtx)
+	client.connection.x509CertPool = x509.NewCertPool()
 
 	// Add cert for root CA to our pool
-	ok := client.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
+	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
 		return nil, err
@@ -255,8 +264,11 @@ func (client *Client) Close() {
 	// This will cause the blocked getIO() in readReplies() to return.
 	client.Lock()
 	client.halting = true
+	if client.connection.state == CONNECTED {
+		client.connection.state = INITIAL
+		client.connection.tlsConn.Close()
+	}
 	client.Unlock()
-	client.tlsConn.Close()
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()

@@ -25,7 +25,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	var crID uint64
 
 	client.Lock()
-	if client.state == INITIAL {
+	if client.connection.state == INITIAL {
 
 		// TODO - should this keep retrying the dial?   I assume if it fails
 		// the first time then things will not recover...
@@ -103,13 +103,18 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 	// outstandingRequests queue and resend the request.
 	client.outstandingRequest[crID] = ctx
 
+	// Record generation number of connection.  It is used during
+	// retransmit to prevent multiple goroutines from closing the
+	// connection and opening a new socket when only one is needed.
+	ctx.genNum = client.connection.genNum
+
 	// TODO - proper place for this comment???
 	// At this point we cannot fail - keep retrying...
 
 	// Send length - how do whole request in one I/O?
 	//
 	// This is how you hton() in Golang
-	err := binary.Write(client.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
+	err := binary.Write(client.connection.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
 		// TODO - make this a log message...
 		fmt.Println("binary.Write failed:", err)
@@ -117,13 +122,15 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 
 		// Just return - the retransmit code will start another
 		// sendToServer() goroutine
-		client.retransmit()
+		client.retransmit(ctx.genNum)
 		return
 	}
 
 	// Send JSON request
-	bytesWritten, writeErr := client.tlsConn.Write(ctx.ioreq.JReq)
+	bytesWritten, writeErr := client.connection.tlsConn.Write(ctx.ioreq.JReq)
+
 	if bytesWritten != len(ctx.ioreq.JReq) {
+		// TODO - make this a log message
 		fmt.Printf("CLIENT: PARTIAL Write! bytesWritten is: %v len(ctx.ioreq.JReq): %v writeErr: %v\n",
 			bytesWritten, len(ctx.ioreq.JReq), writeErr)
 	}
@@ -132,7 +139,7 @@ func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
 
 		// Just return - the retransmit code will start another
 		// sendToServer() goroutine
-		client.retransmit()
+		client.retransmit(ctx.genNum)
 		return
 	}
 
@@ -169,7 +176,29 @@ func (client *Client) notifyReply(buf []byte) {
 	client.Lock()
 	ctx := client.outstandingRequest[crID]
 	delete(client.outstandingRequest, crID)
+
+	if ctx != nil {
+		client.completedRequest[crID] = ctx
+	} else {
+
+		// TODO - remove this code since no way to trim
+		// completedRequest data structure....
+		// Verify we have already seen this request
+		_, ok := client.completedRequest[crID]
+		if !ok {
+			fmt.Printf("SAW reply for request which is NOT on outstanding OR completed request map!!!\n")
+		} else {
+			fmt.Printf("SAW reply for request which IS on completed request map!!!\n")
+			client.Unlock()
+			return
+		}
+
+	}
 	client.Unlock()
+
+	if ctx == nil {
+		fmt.Printf("buf: %v len(buf): %v jReply: %+v\n", string(buf), len(buf), jReply)
+	}
 
 	// Unmarshal the buf into the original reply structure
 	m := svrResponse{Result: ctx.rpcReply}
@@ -197,7 +226,8 @@ func (client *Client) readReplies() {
 	defer client.goroutineWG.Done()
 
 	client.Lock()
-	tlsConn := client.tlsConn
+	tlsConn := client.connection.tlsConn
+	genNum := client.connection.genNum
 	client.Unlock()
 
 	for {
@@ -215,7 +245,7 @@ func (client *Client) readReplies() {
 			// the goroutine.  retransmit()/dial() will have already
 			// started another readReplies() goroutine.
 			logger.Infof("readReplies() - getIO() returned: %v", getErr)
-			client.retransmit()
+			client.retransmit(genNum)
 			return
 		}
 
@@ -243,23 +273,27 @@ func (client *Client) readReplies() {
 // TODO -
 // need gorLaunch() which increment waitGroup and starts goroutine
 
-func (client *Client) retransmit() {
+func (client *Client) retransmit(genNum uint64) {
 	client.Lock()
+
+	// TODO - add check for genNum and making sure only retransmit if
+	// our genNum is higher than current!!!!
+	if genNum < client.connection.genNum {
+		fmt.Printf("RETRY RETRANSMIT!!!! - but already recovered!!!!\n")
+		client.Unlock()
+		return
+	}
 
 	// If we are the first goroutine to notice the error on the
 	// socket - close the connection and block trying to reconnect.
-	if (client.state == CONNECTED) && (client.halting == false) {
-		client.tlsConn.Close()
-		client.state = DISCONNECTED
+	if (client.connection.state == CONNECTED) && (client.halting == false) {
+		fmt.Printf("RETRY RETRANSMIT!!!!\n")
+		client.connection.tlsConn.Close()
+		client.connection.state = DISCONNECTED
 
 		for {
-			// TODO - this locking code is messy - clean it up
-			if client.halting == true {
-				client.Unlock()
-				return
-			}
 			err := client.dial()
-			// If we were able to connect break - otherwise retry
+			// If we were able to connect then break - otherwise retry
 			// after a delay
 			if err == nil {
 				break
@@ -269,7 +303,7 @@ func (client *Client) retransmit() {
 			client.Lock()
 		}
 
-		client.state = CONNECTED
+		client.connection.state = CONNECTED
 
 		for crID, ctx := range client.outstandingRequest {
 			client.goroutineWG.Add(1)
@@ -288,19 +322,20 @@ func (client *Client) retransmit() {
 // It is assumed that the client lock is held.
 func (client *Client) dial() (err error) {
 
-	client.tlsConfig = &tls.Config{
-		RootCAs: client.x509CertPool,
+	client.connection.tlsConfig = &tls.Config{
+		RootCAs: client.connection.x509CertPool,
 	}
 
 	// Now dial the server
-	tlsConn, dialErr := tls.Dial("tcp", client.hostPortStr, client.tlsConfig)
+	tlsConn, dialErr := tls.Dial("tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 	if dialErr != nil {
 		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
 		return
 	}
 
-	client.tlsConn = tlsConn
-	client.state = CONNECTED
+	client.connection.tlsConn = tlsConn
+	client.connection.state = CONNECTED
+	client.connection.genNum++
 
 	// Start readResponse goroutine to read responses from server
 	client.goroutineWG.Add(1)
