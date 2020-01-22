@@ -17,7 +17,6 @@ import (
 var printDebugLogs bool = false
 var debugPutGet bool = false
 
-// TODO - do we need to retransmit responses in order?
 // TODO - test if Register has been called???
 
 func (server *Server) run() {
@@ -82,10 +81,6 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
 		server.Unlock()
-		/* debugging
-		logger.Infof("findQOrCallRPC - request on completedRequest Q - key: %v reply: %v",
-			queueKey, string(v.JResult))
-		*/
 		server.returnResults(v, cCtx, jReq)
 
 	} else {
@@ -103,7 +98,8 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 		} else {
 			// On neither queue - must be new request
 
-			// Call the RPC and return the results
+			// Call the RPC and return the results.  callRPCAndMarshal()
+			// does both for us.
 			//
 			// We pass buf to the call because the request will have to
 			// be unmarshaled again to retrieve the parameters specific to
@@ -139,7 +135,6 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	// RPC.
 	err := server.findQOrCallRPC(cCtx, buf, &jReq)
 	if err != nil {
-		// TODO - error handling
 		logger.Errorf("findQOrCallRPC returned err: %v", err)
 	}
 }
@@ -168,14 +163,14 @@ func (server *Server) serviceClient(conn net.Conn) {
 				getErr, halting)
 
 			// Drop response on the floor.   Client will either reconnect or
-			// this response will age our of the queues.
+			// this response will age out of the queues.
 			return
 		}
 
 		// No sense blocking the read of the next request,
 		// push the work off on processRequest().
 		//
-		// Writes back on the socket have to be serialized so
+		// Writes back on the socket wil have to be serialized so
 		// pass the per connection context.
 		server.goroutineWG.Add(1)
 		go server.processRequest(cCtx, buf)
@@ -197,6 +192,7 @@ func (server *Server) buildAndQPendingCtx(queueKey string, buf []byte, cCtx *con
 }
 
 // TODO - review the locking here to make it simplier
+
 // callRPCAndMarshal calls the RPC and returns results to requestor
 func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonRequest, queueKey string) (err error) {
 
@@ -209,9 +205,6 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	server.buildAndQPendingCtx(queueKey, buf, cCtx, false)
 
 	ma := server.svrMap[jReq.Method]
-	/* Debugging
-	fmt.Printf("MA======: method: %v request: %v reply %v\n", jReq.Method, ma.request, ma.reply)
-	*/
 	if ma != nil {
 
 		// Another unmarshal of buf to find the parameters specific to
@@ -223,7 +216,6 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 		sReq.Params[0] = dummyReq
 		err = json.Unmarshal(buf, &sReq)
 		if err != nil {
-			// TODO - error handling
 			logger.Errorf("Unmarshal sReq: %+v returned err: %v", sReq, err)
 			return
 		}
@@ -232,11 +224,6 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 		// Create the reply structure
 		typOfReply := ma.reply.Elem()
 		myReply := reflect.New(typOfReply)
-
-		/* debugging
-		fmt.Printf("-------------->>>>> reflect.TypeOf(tp.Elem()): %v\n",
-			reflect.TypeOf(myReply.Elem().Interface()))
-		*/
 
 		// Call the method
 		function := ma.methodPtr.Func
@@ -254,6 +241,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 			jReply.ErrStr = e.Error()
 		}
 	} else {
+		// Method does not exist
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
 	}
 
@@ -267,7 +255,9 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	lruEntry := completedLRUEntry{queueKey: queueKey, timeCompleted: time.Now()}
 
 	server.Lock()
-	// connCtx may have changed due to new connection or the RPC may have completed.
+	// connCtx may have changed while we dropped the lock due to new connection or
+	// the RPC may have completed.
+	//
 	// Pull the current one from pendingRequest if queueKey exists
 	pendingCtx := server.pendingRequest[queueKey]
 	if pendingCtx != nil {
@@ -281,6 +271,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 		// Now return the results
 		server.returnResults(reply, currentCCtx, jReq)
 	} else {
+		// pendingRequest was already completed
 		server.Unlock()
 	}
 

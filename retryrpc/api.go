@@ -40,7 +40,7 @@ type Server struct {
 	halting             bool
 	goroutineWG         sync.WaitGroup // Used to track outstanding goroutines
 	connLock            sync.Mutex
-	connections         *list.List // TODO - how used?
+	connections         *list.List
 	connWG              sync.WaitGroup
 	listeners           []net.Listener
 	Creds               *ServerCreds
@@ -101,7 +101,7 @@ func (server *Server) Start() (err error) {
 
 	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)
 	if nil != err {
-		err = fmt.Errorf("tls.Listen() failed: %v", err)
+		logger.Errorf("tls.Listen() failed: %v", err)
 		return
 	}
 
@@ -228,10 +228,15 @@ type Client struct {
 // TODO - pass loggers to Client and Server objects
 
 // NewClient returns a Client structure
+//
+// NOTE: It is assumed that if a client calls NewClient(), it will
+// always use a unique myUniqueID.   Otherwise, the server may have
+// old entries.
+//
+// TODO - purge cache of old entries on server and/or use different
+// starting point for requestID.
 func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte) (client *Client, err error) {
 
-	// TODO - if restart client, Client Request ID will be 0.   How know the server
-	// has removed these client IDs from it's queue?  Race condition...
 	client = &Client{myUniqueID: myUniqueID}
 	portStr := fmt.Sprintf("%d", port)
 	client.connection.state = INITIAL

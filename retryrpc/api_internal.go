@@ -160,12 +160,10 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 	var hdr ioHeader
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
-		fmt.Printf("getIO() - binary.Read() returned err: %v\n", err)
 		return
 	}
 
 	if hdr.Magic != headerMagic {
-		fmt.Printf("getIO() - Incomplete read of header-------\n")
 		err = fmt.Errorf("Incomplete read of header")
 		return
 	}
@@ -175,12 +173,10 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 	buf = make([]byte, hdr.Len)
 	numBytes, err = io.ReadFull(conn, buf)
 	if err != nil {
-		fmt.Printf("getIO() - io.ReadFull() returned err: %v numBytes: %v\n", err, numBytes)
 		return
 	}
 
 	if hdr.Len != uint32(numBytes) {
-		fmt.Printf("getIO() - Incomplete read of body - hdr.Len: %v numBytes: %v\n", hdr.Len, uint32(numBytes))
 		err = fmt.Errorf("Incomplete read of body")
 		return
 	}
@@ -294,7 +290,6 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 		return
 	}
 
-	// Encode the certificate as a PEM?
 	serverX509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverX509CertificateDER})
 
 	serverEd25519PrivateKeyDER, err = x509.MarshalPKCS8PrivateKey(serverEd25519PrivateKey)
