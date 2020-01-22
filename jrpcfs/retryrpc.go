@@ -41,7 +41,6 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 }
 
 func retryRPCServerDown() {
-	logger.Infof("retryRPCServerDown----------------------------------------------")
 	if globals.retryRPCPort == 0 {
 		return
 	}
@@ -50,5 +49,4 @@ func retryRPCServerDown() {
 	rrSvr := globals.retryrpcSvr
 	globals.connLock.Unlock()
 	rrSvr.Close()
-	logger.Infof("retryRPCServerDown - AFTER Close() -------------------------------")
 }

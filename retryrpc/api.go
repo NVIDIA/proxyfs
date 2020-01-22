@@ -73,7 +73,8 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 		panic(err)
 	}
 
-	// TODO - probably want to remove this before checkin
+	// TODO - remove this once we integrate pfs-retryrpc into stress
+	// test framework
 	//
 	// Write our key to a file so test utilities can pick it up without using
 	// the mount API
@@ -101,7 +102,7 @@ func (server *Server) Start() (err error) {
 
 	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)
 	if nil != err {
-		logger.Errorf("tls.Listen() failed: %v", err)
+		err = fmt.Errorf("tls.Listen() failed: %v", err)
 		return
 	}
 
@@ -161,7 +162,8 @@ func (server *Server) Close() {
 	server.completedDoneWG.Wait()
 }
 
-// CloseClientConn - TODO - DEBUG - this is debug code to cause some connections to be closed
+// CloseClientConn - This is debug code to cause some connections to be closed
+// TODO - call this from stress test case to cause retransmits
 func (server *Server) CloseClientConn() {
 	if server == nil {
 		return
