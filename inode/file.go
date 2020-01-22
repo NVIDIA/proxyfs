@@ -878,9 +878,9 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fi
 		}
 	}
 
-	if !patchOnly {
-		// For this case only, make it appear we did precisely one write
-
+	if patchOnly {
+		fileInode.NumWrites++
+	} else {
 		fileInode.NumWrites = 1
 	}
 
