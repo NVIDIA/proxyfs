@@ -196,6 +196,7 @@ func (server *Server) buildAndQPendingCtx(queueKey string, buf []byte, cCtx *con
 	}
 }
 
+// TODO - review the locking here to make it simplier
 // callRPCAndMarshal calls the RPC and returns results to requestor
 func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonRequest, queueKey string) (err error) {
 
@@ -266,18 +267,22 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	lruEntry := completedLRUEntry{queueKey: queueKey, timeCompleted: time.Now()}
 
 	server.Lock()
-	// connCtx may have changed due to new connection.   Pull
-	// the current one from pendingCtx
+	// connCtx may have changed due to new connection or the RPC may have completed.
+	// Pull the current one from pendingRequest if queueKey exists
 	pendingCtx := server.pendingRequest[queueKey]
-	currentCCtx := pendingCtx.cCtx
+	if pendingCtx != nil {
+		currentCCtx := pendingCtx.cCtx
 
-	server.completedRequest[queueKey] = reply
-	server.completedRequestLRU.PushBack(lruEntry)
-	delete(server.pendingRequest, queueKey)
-	server.Unlock()
+		server.completedRequest[queueKey] = reply
+		server.completedRequestLRU.PushBack(lruEntry)
+		delete(server.pendingRequest, queueKey)
+		server.Unlock()
 
-	// Now return the results
-	server.returnResults(reply, currentCCtx, jReq)
+		// Now return the results
+		server.returnResults(reply, currentCCtx, jReq)
+	} else {
+		server.Unlock()
+	}
 
 	return
 }

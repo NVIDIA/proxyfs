@@ -155,7 +155,7 @@ func sendReply(ctx *reqCtx, err error) {
 	ctx.answer <- r
 }
 
-func (client *Client) notifyReply(buf []byte) {
+func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	defer client.goroutineWG.Done()
 
 	// Unmarshal once to get the header fields
@@ -164,7 +164,12 @@ func (client *Client) notifyReply(buf []byte) {
 	if err != nil {
 		// Don't have ctx to reply - only can panic
 		e := fmt.Errorf("notifyReply failed to unmarshal buf: %+v err: %v", string(buf), err)
+		fmt.Printf("%v\n", e)
+
+		/* TODO - verify this
 		logger.PanicfWithError(e, "")
+		*/
+		client.retransmit(genNum)
 		return
 	}
 
@@ -175,23 +180,29 @@ func (client *Client) notifyReply(buf []byte) {
 	crID := jReply.RequestID
 	client.Lock()
 	ctx := client.outstandingRequest[crID]
-	delete(client.outstandingRequest, crID)
 
 	if ctx == nil {
-		fmt.Printf("SAW reply for request which is not on outstandingRequest list\n")
+		fmt.Printf("SAW reply for request which is not on outstandingRequest list - crID: %v\n", crID)
 		client.Unlock()
 		return
 	}
-	client.Unlock()
 
 	// Unmarshal the buf into the original reply structure
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
 		e := fmt.Errorf("notifyReply failed to unmarshal buf: %v err: %v", string(buf), unmarshalErr)
+		fmt.Printf("%v\n", e)
+		/* TODO - verify this
 		logger.PanicfWithError(e, "")
+		*/
+		client.retransmit(genNum)
+		client.Unlock()
 		return
 	}
+
+	delete(client.outstandingRequest, crID)
+	client.Unlock()
 
 	// Give reply to blocked send() - most developers test for nil err so
 	// only set it if there is an error
@@ -236,7 +247,7 @@ func (client *Client) readReplies() {
 		// We have a reply - let a goroutine do the unmarshalling and
 		// sending the reply to blocked Send()
 		client.goroutineWG.Add(1)
-		go client.notifyReply(buf)
+		go client.notifyReply(buf, genNum)
 	}
 }
 
