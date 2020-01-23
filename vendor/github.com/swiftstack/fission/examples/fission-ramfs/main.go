@@ -63,21 +63,26 @@ type inodeStruct struct {
 type xattrMapDummyStruct struct{}
 type dirEntryMapDummyStruct struct{}
 
+type alreadyLoggedIgnoringStruct struct {
+	setAttrInValidFH bool
+}
+
 type globalsStruct struct {
-	tryLock          *tryLockStruct
-	programPath      string
-	mountPoint       string
-	programName      string
-	volumeName       string
-	logger           *log.Logger
-	errChan          chan error
-	xattrMapDummy    *xattrMapDummyStruct
-	dirEntryMapDummy *dirEntryMapDummyStruct
-	inodeMap         map[uint64]*inodeStruct // key is inodeStruct.atr.Ino
-	lastNodeID       uint64                  // valid NodeID's start at 1... but 1 is the RootDir NodeID
-	fhMap            map[uint64]uint64       // key is FH; value is inodeStruct.attr.Ino
-	lastFH           uint64                  // valid FH's start at 1
-	volume           fission.Volume
+	tryLock               *tryLockStruct
+	programPath           string
+	mountPoint            string
+	programName           string
+	volumeName            string
+	logger                *log.Logger
+	errChan               chan error
+	xattrMapDummy         *xattrMapDummyStruct
+	dirEntryMapDummy      *dirEntryMapDummyStruct
+	inodeMap              map[uint64]*inodeStruct // key is inodeStruct.atr.Ino
+	lastNodeID            uint64                  // valid NodeID's start at 1... but 1 is the RootDir NodeID
+	fhMap                 map[uint64]uint64       // key is FH; value is inodeStruct.attr.Ino
+	lastFH                uint64                  // valid FH's start at 1
+	alreadyLoggedIgnoring alreadyLoggedIgnoringStruct
+	volume                fission.Volume
 }
 
 var globals globalsStruct
@@ -168,6 +173,8 @@ func main() {
 
 	globals.fhMap = make(map[uint64]uint64)
 	globals.lastFH = uint64(0)
+
+	globals.alreadyLoggedIgnoring.setAttrInValidFH = false
 
 	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
 
