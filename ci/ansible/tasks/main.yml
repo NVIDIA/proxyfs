@@ -6,8 +6,9 @@
     pkg_ver:
       etcd: "3.3.10"
     golang_versions:
-      current: "go1.12.9"
-      candidate: "go1.13"
+      current: "go1.13.6"
+      candidate: "go1.13.6"
+      latest: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
     active_golang_version: "{{ golang_version | default('current') }}"
     golang_versions_file: "/etc/golang_versions.json"
     go_dir_parent_path: "/usr/local"
@@ -15,20 +16,6 @@
     go_dir_path: "{{ go_dir_parent_path }}/{{ go_dir_name }}"
 
   tasks:
-
-  #
-  # Append "latest" to golang_versions iff it's not different than "current" & "candidate"
-  #
-
-  - set_fact:
-      latest_version: "{{ lookup('url', 'https://golang.org/VERSION?m=text', split_lines=False) }}"
-
-  - name: add latest
-    set_fact:
-      golang_versions: '{{ golang_versions|combine({"latest": latest_version}) }}'
-    when:
-    - latest_version != golang_versions['current']
-    - latest_version != golang_versions['candidate']
 
   #
   # Create SwiftStack user, manage related info
@@ -323,28 +310,28 @@
 
       - name: Make Golang directories in tmpdir
         file:
-          path: "{{ tmpdir.path }}/{{ item.value }}"
+          path: "{{ tmpdir.path }}/{{ item.key }}"
           state: directory
           owner: root
           group: root
           mode: "0775"
         become: yes
         become_user: root
-        with_dict: "{{ golang_versions }}"
-        when: golang_version_dir[item.value] == False
+        with_dict: "{{ golang_version_dir }}"
+        when: item.value == False
 
       - name: Download and untar golang versions
         unarchive:
-          src: https://dl.google.com/go/{{ item.value }}.linux-amd64.tar.gz
+          src: https://dl.google.com/go/{{ item.key }}.linux-amd64.tar.gz
           remote_src: yes
-          dest: "{{ tmpdir.path }}/{{ item.value }}"
-        with_dict: "{{ golang_versions }}"
-        when: golang_version_dir[item.value] == False
+          dest: "{{ tmpdir.path }}/{{ item.key }}"
+        with_dict: "{{ golang_version_dir }}"
+        when: item.value == False
 
       - name: Move untarred directories to {{ go_dir_parent_path }}
-        command: "mv {{ tmpdir.path }}/{{ item.value }}/go {{ go_dir_parent_path }}/{{ item.value }}"
-        with_dict: "{{ golang_versions }}"
-        when: golang_version_dir[item.value] == False
+        command: "mv {{ tmpdir.path }}/{{ item.key }}/go {{ go_dir_parent_path }}/{{ item.key }}"
+        with_dict: "{{ golang_version_dir }}"
+        when: item.value == False
         become: yes
         become_user: root
 

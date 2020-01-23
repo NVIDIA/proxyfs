@@ -90,6 +90,7 @@ func testSetup() []func() {
 		"RamSwiftInfo.MaxObjectNameLength=256",
 		"RamSwiftInfo.AccountListingLimit=10000",
 		"RamSwiftInfo.ContainerListingLimit=10000",
+		"Peer:Peer0.PublicIPAddr=127.0.0.1",
 		"Peer:Peer0.PrivateIPAddr=127.0.0.1",
 		"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 		"Cluster.Peers=Peer0",
@@ -147,8 +148,10 @@ func testSetup() []func() {
 		"PhysicalContainerLayout:SomeContainerLayout2.MaxObjectsPerContainer=1000000",
 		"Logging.LogFilePath=/dev/null",
 		"Logging.LogToConsole=false",
-		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
-		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
+		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
+		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
+		"JSONRPCServer.RetryRPCPort=32357", // ...and similarly here...
+		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.DataPathLogging=false",
 	}
 

@@ -345,6 +345,26 @@ type LookupRequest struct {
 	Basename string
 }
 
+// LookupPlusRequest is the request object for RpcLookupPlus.
+type LookupPlusRequest struct {
+	InodeHandle
+	Basename string
+}
+
+// LookupPlusReply is the reply object for RpcLookupPlus.
+type LookupPlusReply struct {
+	InodeNumber int64
+	StatStruct
+}
+
+// AccessRequest is the request object for RpcAccess.
+type AccessRequest struct {
+	InodeHandle
+	UserID     int32
+	GroupID    int32
+	AccessMode uint32
+}
+
 // MkdirRequest is the request object for RpcMkdir.
 type MkdirRequest struct {
 	InodeHandle
@@ -372,8 +392,11 @@ type MountByAccountNameRequest struct {
 
 // MountByAccountNameReply is the reply object for RpcMountByAccountName.
 type MountByAccountNameReply struct {
-	MountID            MountIDAsString
-	RootDirInodeNumber int64
+	MountID                  MountIDAsString
+	RootDirInodeNumber       int64
+	RetryRPCPublicIPAddr     string
+	RetryRPCPort             uint16
+	RootCAx509CertificatePEM []byte
 }
 
 // MountByVolumeNameRequest is the request object for RpcMountByVolumeName.
@@ -386,8 +409,10 @@ type MountByVolumeNameRequest struct {
 
 // MountByVolumeNameReply is the reply object for RpcMountByVolumeName.
 type MountByVolumeNameReply struct {
-	MountID            MountIDAsString
-	RootDirInodeNumber int64
+	MountID              MountIDAsString
+	RootDirInodeNumber   int64
+	RetryRPCPublicIPAddr string
+	RetryRPCPort         uint16
 }
 
 // ReaddirRequest is the request object for RpcReaddir.

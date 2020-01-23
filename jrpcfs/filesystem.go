@@ -1338,6 +1338,58 @@ func (s *Server) RpcLookup(in *LookupRequest, reply *InodeReply) (err error) {
 	return
 }
 
+func (s *Server) RpcLookupPlus(in *LookupPlusRequest, reply *LookupPlusReply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+
+	ino, err := mountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.Basename)
+	if nil != err {
+		return
+	}
+
+	stat, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino)
+	if nil != err {
+		return
+	}
+
+	reply.InodeNumber = int64(uint64(ino))
+	reply.StatStruct.fsStatToStatStruct(stat)
+
+	return
+}
+
+func (s *Server) RpcAccess(in *AccessRequest, reply *InodeReply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+
+	ok := mountHandle.Access(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), inode.InodeMode(in.AccessMode))
+	if ok {
+		err = nil
+	} else {
+		err = blunder.NewError(blunder.PermDeniedError, "EACCES")
+	}
+
+	return
+}
+
 func (s *Server) RpcMkdir(in *MkdirRequest, reply *InodeReply) (err error) {
 	enterGate()
 	defer leaveGate()
@@ -1404,6 +1456,9 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
+		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
+		reply.RetryRPCPort = globals.retryRPCPort
+		reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 	}
 	return
 }
@@ -1420,6 +1475,8 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 	if err == nil {
 		_, reply.MountID = allocateMountID(mountHandle)
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
+		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
+		reply.RetryRPCPort = globals.retryRPCPort
 	}
 	return
 }
@@ -1929,7 +1986,7 @@ func (s *Server) RpcStatVFS(in *StatVFSRequest, reply *StatVFS) (err error) {
 	return
 }
 
-func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
+func (s *Server) RpcSymlink(in *SymlinkRequest, reply *InodeReply) (err error) {
 	enterGate()
 	defer leaveGate()
 
@@ -1942,7 +1999,8 @@ func (s *Server) RpcSymlink(in *SymlinkRequest, reply *Reply) (err error) {
 		return
 	}
 
-	_, err = mountHandle.Symlink(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, in.Target)
+	ino, err := mountHandle.Symlink(inode.InodeUserID(in.UserID), inode.InodeGroupID(in.GroupID), nil, inode.InodeNumber(in.InodeNumber), in.Basename, in.Target)
+	reply.InodeNumber = int64(uint64(ino))
 	return
 }
 

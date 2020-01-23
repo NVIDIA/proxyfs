@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/fs"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
 func doMountProxyFS() {
@@ -27,12 +27,6 @@ func doMountProxyFS() {
 		AuthGroupID:  0,
 	}
 
-	if globals.config.ReadOnly {
-		mountRequest.MountOptions = uint64(fs.MountReadOnly)
-	} else {
-		mountRequest.MountOptions = 0
-	}
-
 	mountReply = &jrpcfs.MountByAccountNameReply{}
 
 	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
@@ -43,6 +37,28 @@ func doMountProxyFS() {
 
 	globals.mountID = mountReply.MountID
 	globals.rootDirInodeNumber = uint64(mountReply.RootDirInodeNumber)
+	globals.retryRPCPublicIPAddr = mountReply.RetryRPCPublicIPAddr
+	globals.retryRPCPort = mountReply.RetryRPCPort
+	globals.rootCAx509CertificatePEM = mountReply.RootCAx509CertificatePEM
+
+	globals.retryRPCClient, err = retryrpc.NewClient(string(globals.mountID), globals.retryRPCPublicIPAddr, int(globals.retryRPCPort), globals.rootCAx509CertificatePEM)
+	if nil != err {
+		logFatalf("unable to retryRPCClient.NewClient(%v,%v): %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
+	}
+}
+
+func doUnmountProxyFS() {
+	// TODO: Flush outstanding FileInode's
+	// TODO: Tell ProxyFS we are releasing all leases
+	// TODO: Tell ProxyFS we are unmounting
+
+	globals.retryRPCClient.Close()
+}
+
+func doRetryRPCRequest(method string, request interface{}, reply interface{}) (err error) {
+	err = globals.retryRPCClient.Send(method, request, reply)
+
+	return
 }
 
 func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
@@ -117,10 +133,12 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, 1)
 		response, err = globals.httpClient.Do(request)
+		_ = atomic.AddUint64(&globals.metrics.HTTPRequestsInFlight, ^uint64(0))
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestSubmissionFailures, 1)
-			logErrorf("doHTTPRequest() failed to submit request: %v", err)
+			logErrorf("doHTTPRequest(%s %s) failed to submit request: %v", request.Method, request.URL.String(), err)
 			ok = false
 			return
 		}
@@ -129,7 +147,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		_ = response.Body.Close()
 		if nil != err {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestResponseBodyCorruptions, 1)
-			logErrorf("doHTTPRequest() failed to read responseBody: %v", err)
+			logErrorf("doHTTPRequest(%s %s) failed to read responseBody: %v", request.Method, request.URL.String(), err)
 			ok = false
 			return
 		}
@@ -142,17 +160,27 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		if retryIndex >= globals.config.SwiftRetryLimit {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestRetryLimitExceededCount, 1)
-			logWarnf("doHTTPRequest() reached SwiftRetryLimit")
+			logWarnf("doHTTPRequest(%s %s) reached SwiftRetryLimit", request.Method, request.URL.String())
 			ok = false
 			return
 		}
 
 		if http.StatusUnauthorized == response.StatusCode {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestsRequiringReauthorization, 1)
-			logInfof("doHTTPRequest() needs to call updateAuthTokenAndAccountURL()")
+			logInfof("doHTTPRequest(%s %s) needs to call updateAuthTokenAndAccountURL()", request.Method, request.URL.String())
 			updateAuthTokenAndAccountURL()
 		} else {
-			logWarnf("doHTTPRequest() needs to retry due to unexpected http.Status: %s", response.Status)
+			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
+
+			// Close request.Body at this time just in case...
+			//
+			// It appears that net/http.Do() will actually return
+			// even if it has an outstanding Read() call to
+			// request.Body.Read() and calling request.Body.Close()
+			// will give it a chance to force request.Body.Read()
+			// to exit cleanly.
+
+			_ = request.Body.Close()
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])

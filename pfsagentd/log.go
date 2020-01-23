@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 )
@@ -42,8 +43,8 @@ func logf(level string, format string, args ...interface{}) {
 		logMsg         string
 	)
 
-	enhancedFormat = "%-32s %-5s " + format
-	enhancedArgs = append([]interface{}{time.Now().Format(time.RFC3339Nano), level}, args...)
+	enhancedFormat = "[%s][%s][%d][%s] " + format
+	enhancedArgs = append([]interface{}{time.Now().Format(time.RFC3339Nano), globals.config.FUSEVolumeName, os.Getpid(), level}, args...)
 
 	logMsg = fmt.Sprintf(enhancedFormat, enhancedArgs[:]...)
 
@@ -62,4 +63,13 @@ func logf(level string, format string, args ...interface{}) {
 	if globals.config.LogToConsole {
 		fmt.Fprintln(os.Stderr, logMsg)
 	}
+}
+
+func newLogger() *log.Logger {
+	return log.New(&globals, "", 0)
+}
+
+func (dummy *globalsStruct) Write(p []byte) (n int, err error) {
+	logf("FISSION", "%s", string(p[:]))
+	return 0, nil
 }

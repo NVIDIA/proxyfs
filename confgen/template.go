@@ -48,7 +48,7 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 	}
 
 	for _, volumeGroup = range localVolumeGroupMap {
-		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr
+		vipDirPath = initialDirPath + "/" + vipsDirName + "/" + volumeGroup.VirtualIPAddr.String()
 
 		err = os.Mkdir(vipDirPath, confDirPerm)
 		if nil != err {

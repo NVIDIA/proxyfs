@@ -13,11 +13,13 @@ import (
 
 	"bazil.org/fuse"
 
+	"github.com/swiftstack/fission"
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
+	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
@@ -44,16 +46,20 @@ type configStruct struct {
 	DirtyFileLimit               uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
-	ReadOnly                     bool
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
 	LogToConsole                 bool
 	TraceEnabled                 bool
 	HTTPServerIPAddr             string
 	HTTPServerTCPPort            uint16
+	ReadDirPlusEnabled           bool
+	XAttrEnabled                 bool
+	EntryDuration                time.Duration
 	AttrDuration                 time.Duration
 	AttrBlockSize                uint64
-	LookupEntryDuration          time.Duration
 	ReaddirMaxEntries            uint64
+	FUSEMaxBackground            uint16
+	FUSECongestionThreshhold     uint16
+	FUSEMaxWrite                 uint32
 }
 
 type fileInodeLockRequestStruct struct {
@@ -148,17 +154,21 @@ type chunkedPutContextStruct struct {
 	pos                   int              //     ObjectOffset just after last sent chunk
 	sendChan              chan bool        //     Wake-up sendDaemon with a new chunk or to flush
 	wakeChan              chan bool        //     Wake-up Read callback to respond with a chunk and/or return EOF
+	inRead                bool             //     Set when in Read() as a hint to Close() to help Read() cleanly exit
 	flushRequested        bool             //     Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 const (
 	chunkedPutContextSendChanBufferSize = 16
 	chunkedPutContextWakeChanBufferSize = 16
+
+	chunkedPutContextExitReadPollingRate = time.Millisecond
 )
 
 type fileInodeStruct struct {
 	sync.WaitGroup //                                  Used to await completion of all chunkedPutContext's
 	inode.InodeNumber
+	cachedStat          *jrpcfs.StatStruct
 	references          uint64
 	leaseState          fileInodeLeaseStateType
 	sharedLockHolders   *list.List                  // Elements are fileInodeLockRequestStructs.holdersElement's
@@ -186,11 +196,7 @@ type fileInodeStruct struct {
 	dirtyListElement *list.Element //                  Element on globals.fileInodeDirtyList (or nil)
 }
 
-type handleStruct struct {
-	inode.InodeNumber
-	prevDirEntLocation int64 // -1 is used if fuse.ReadRequest on DirInode specifies Offset == 0
-	//                          Otherwise, just assumes caller wants to keep going...
-}
+type fhSetType map[uint64]struct{}
 
 type logSegmentCacheElementStateType uint8
 
@@ -220,41 +226,63 @@ type logSegmentCacheElementStruct struct {
 // In order to utilize Go Reflection, these field names must be capitalized (i.e. Global).
 
 type metricsStruct struct {
-	FUSE_AccessRequest_calls       uint64
-	FUSE_CreateRequest_calls       uint64
-	FUSE_DestroyRequest_calls      uint64
-	FUSE_ExchangeDataRequest_calls uint64
-	FUSE_FlushRequest_calls        uint64
-	FUSE_ForgetRequest_calls       uint64
-	FUSE_FsyncRequest_calls        uint64
-	FUSE_GetattrRequest_calls      uint64
-	FUSE_GetxattrRequest_calls     uint64
-	FUSE_InitRequest_calls         uint64
-	FUSE_InterruptRequest_calls    uint64
-	FUSE_LinkRequest_calls         uint64
-	FUSE_ListxattrRequest_calls    uint64
-	FUSE_LookupRequest_calls       uint64
-	FUSE_MkdirRequest_calls        uint64
-	FUSE_MknodRequest_calls        uint64
-	FUSE_OpenRequest_calls         uint64
-	FUSE_ReadlinkRequest_calls     uint64
-	FUSE_ReleaseRequest_calls      uint64
-	FUSE_RemoveRequest_calls       uint64
-	FUSE_RemovexattrRequest_calls  uint64
-	FUSE_RenameRequest_calls       uint64
-	FUSE_SetattrRequest_calls      uint64
-	FUSE_SetxattrRequest_calls     uint64
-	FUSE_StatfsRequest_calls       uint64
-	FUSE_SymlinkRequest_calls      uint64
+	FUSE_DoLookup_calls      uint64
+	FUSE_DoForget_calls      uint64
+	FUSE_DoGetAttr_calls     uint64
+	FUSE_DoSetAttr_calls     uint64
+	FUSE_DoReadLink_calls    uint64
+	FUSE_DoSymLink_calls     uint64
+	FUSE_DoMkNod_calls       uint64
+	FUSE_DoMkDir_calls       uint64
+	FUSE_DoUnlink_calls      uint64
+	FUSE_DoRmDir_calls       uint64
+	FUSE_DoRename_calls      uint64
+	FUSE_DoLink_calls        uint64
+	FUSE_DoOpen_calls        uint64
+	FUSE_DoRead_calls        uint64
+	FUSE_DoWrite_calls       uint64
+	FUSE_DoStatFS_calls      uint64
+	FUSE_DoRelease_calls     uint64
+	FUSE_DoFSync_calls       uint64
+	FUSE_DoSetXAttr_calls    uint64
+	FUSE_DoGetXAttr_calls    uint64
+	FUSE_DoListXAttr_calls   uint64
+	FUSE_DoRemoveXAttr_calls uint64
+	FUSE_DoFlush_calls       uint64
+	FUSE_DoInit_calls        uint64
+	FUSE_DoOpenDir_calls     uint64
+	FUSE_DoReadDir_calls     uint64
+	FUSE_DoReleaseDir_calls  uint64
+	FUSE_DoFSyncDir_calls    uint64
+	FUSE_DoGetLK_calls       uint64
+	FUSE_DoSetLK_calls       uint64
+	FUSE_DoSetLKW_calls      uint64
+	FUSE_DoAccess_calls      uint64
+	FUSE_DoCreate_calls      uint64
+	FUSE_DoInterrupt_calls   uint64
+	FUSE_DoBMap_calls        uint64
+	FUSE_DoDestroy_calls     uint64
+	FUSE_DoPoll_calls        uint64
+	FUSE_DoBatchForget_calls uint64
+	FUSE_DoFAllocate_calls   uint64
+	FUSE_DoReadDirPlus_calls uint64
+	FUSE_DoRename2_calls     uint64
+	FUSE_DoLSeek_calls       uint64
 
-	FUSE_UnknownRequest_calls uint64
+	FUSE_DoGetAttr_cache_hits   uint64
+	FUSE_DoGetAttr_cache_misses uint64
 
-	FUSE_ReadRequestDirInodeCase_calls  uint64
-	FUSE_ReadRequestFileInodeCase_calls uint64
-	FUSE_WriteRequest_calls             uint64
+	FUSE_DoRead_bytes  uint64
+	FUSE_DoWrite_bytes uint64
 
-	FUSE_ReadRequestFileInodeCase_bytes uint64
-	FUSE_WriteRequest_bytes             uint64
+	FUSE_DoReadDir_entries     uint64
+	FUSE_DoReadDirPlus_entries uint64
+
+	FUSE_DoSetXAttr_bytes  uint64
+	FUSE_DoGetXAttr_bytes  uint64
+	FUSE_DoListXAttr_names uint64
+
+	FUSE_DoBatchForget_nodes uint64
 
 	ReadCacheHits   uint64
 	ReadCacheMisses uint64
@@ -268,12 +296,21 @@ type metricsStruct struct {
 	HTTPRequestRetryLimitExceededCount   uint64
 	HTTPRequestsRequiringReauthorization uint64
 	HTTPRequestRetries                   uint64
+	HTTPRequestsInFlight                 uint64
 }
 
 type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
 	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
+	retryRPCPublicIPAddr            string
+	retryRPCPort                    uint16
+	retryRPCClient                  *retryrpc.Client
+	rootCAx509CertificatePEM        []byte
+	entryValidSec                   uint64
+	entryValidNSec                  uint32
+	attrValidSec                    uint64
+	attrValidNSec                   uint32
 	httpServer                      *http.Server
 	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
@@ -283,16 +320,19 @@ type globalsStruct struct {
 	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
 	mountID                         jrpcfs.MountIDAsString
 	rootDirInodeNumber              uint64
+	fissionErrChan                  chan error
+	fissionVolume                   fission.Volume
 	fuseConn                        *fuse.Conn
 	jrpcLastID                      uint64
 	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
 	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
 	leaseRequestChan                chan *fileInodeLeaseRequestStruct
-	unleasedFileInodeCacheLRU       *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	sharedLeaseFileInodeCacheLRU    *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	exclusiveLeaseFileInodeCacheLRU *list.List // Front() is oldest fileInodeStruct.cacheLRUElement
-	lastHandleID                    fuse.HandleID
-	handleTable                     map[fuse.HandleID]*handleStruct
+	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	exclusiveLeaseFileInodeCacheLRU *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
+	fhToInodeNumberMap              map[uint64]uint64    // Key == FH; Value == InodeNumber
+	inodeNumberToFHMap              map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
+	lastFH                          uint64               // Valid FH's start at 1
 	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
 	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
 	metrics                         *metricsStruct
@@ -433,11 +473,6 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.ReadOnly, err = confMap.FetchOptionValueBool("Agent", "ReadOnly")
-	if nil != err {
-		logFatal(err)
-	}
-
 	err = confMap.VerifyOptionValueIsEmpty("Agent", "LogFilePath")
 	if nil == err {
 		globals.config.LogFilePath = ""
@@ -472,6 +507,21 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.ReadDirPlusEnabled, err = confMap.FetchOptionValueBool("Agent", "ReadDirPlusEnabled")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.XAttrEnabled, err = confMap.FetchOptionValueBool("Agent", "XAttrEnabled")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.EntryDuration, err = confMap.FetchOptionValueDuration("Agent", "EntryDuration")
+	if nil != err {
+		logFatal(err)
+	}
+
 	globals.config.AttrDuration, err = confMap.FetchOptionValueDuration("Agent", "AttrDuration")
 	if nil != err {
 		logFatal(err)
@@ -485,12 +535,22 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatalf("AttrBlockSize must be non-zero and fit in a uint32")
 	}
 
-	globals.config.LookupEntryDuration, err = confMap.FetchOptionValueDuration("Agent", "LookupEntryDuration")
+	globals.config.ReaddirMaxEntries, err = confMap.FetchOptionValueUint64("Agent", "ReaddirMaxEntries")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.ReaddirMaxEntries, err = confMap.FetchOptionValueUint64("Agent", "ReaddirMaxEntries")
+	globals.config.FUSEMaxBackground, err = confMap.FetchOptionValueUint16("Agent", "FUSEMaxBackground")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.FUSECongestionThreshhold, err = confMap.FetchOptionValueUint16("Agent", "FUSECongestionThreshhold")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.FUSEMaxWrite, err = confMap.FetchOptionValueUint32("Agent", "FUSEMaxWrite")
 	if nil != err {
 		logFatal(err)
 	}
@@ -498,6 +558,9 @@ func initializeGlobals(confMap conf.ConfMap) {
 	configJSONified = utils.JSONify(globals.config, true)
 
 	logInfof("\n%s", configJSONified)
+
+	globals.entryValidSec, globals.entryValidNSec = nsToUnixTime(uint64(globals.config.EntryDuration))
+	globals.attrValidSec, globals.attrValidNSec = nsToUnixTime(uint64(globals.config.AttrDuration))
 
 	defaultTransport, ok = http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -544,6 +607,8 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	updateAuthTokenAndAccountURL()
 
+	globals.fissionErrChan = make(chan error)
+
 	globals.jrpcLastID = 1
 
 	globals.fileInodeMap = make(map[inode.InodeNumber]*fileInodeStruct)
@@ -558,8 +623,10 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.sharedLeaseFileInodeCacheLRU = list.New()
 	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
 
-	globals.lastHandleID = 0
-	globals.handleTable = make(map[fuse.HandleID]*handleStruct)
+	globals.fhToInodeNumberMap = make(map[uint64]uint64)
+	globals.inodeNumberToFHMap = make(map[uint64]fhSetType)
+
+	globals.lastFH = 0
 
 	globals.logSegmentCacheMap = make(map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct)
 	globals.logSegmentCacheLRU = list.New()
@@ -582,12 +649,22 @@ func uninitializeGlobals() {
 	leaseRequest.Wait()
 
 	globals.logFile = nil
+	globals.retryRPCPublicIPAddr = ""
+	globals.retryRPCPort = 0
+	globals.retryRPCClient = nil
+	globals.rootCAx509CertificatePEM = []byte{}
+	globals.entryValidSec = 0
+	globals.entryValidNSec = 0
+	globals.attrValidSec = 0
+	globals.attrValidNSec = 0
 	globals.httpServer = nil
 	globals.httpClient = nil
 	globals.retryDelay = nil
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
 	globals.swiftAccountURL = ""
+	globals.fissionErrChan = nil
+	globals.fissionVolume = nil
 	globals.fuseConn = nil
 	globals.jrpcLastID = 0
 	globals.fileInodeMap = nil
@@ -596,8 +673,9 @@ func uninitializeGlobals() {
 	globals.unleasedFileInodeCacheLRU = nil
 	globals.sharedLeaseFileInodeCacheLRU = nil
 	globals.exclusiveLeaseFileInodeCacheLRU = nil
-	globals.lastHandleID = 0
-	globals.handleTable = nil
+	globals.fhToInodeNumberMap = nil
+	globals.inodeNumberToFHMap = nil
+	globals.lastFH = 0
 	globals.logSegmentCacheMap = nil
 	globals.logSegmentCacheLRU = nil
 	globals.metrics = nil
