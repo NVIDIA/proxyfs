@@ -187,7 +187,7 @@ echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba" 
 
 # Install Python tox
 
-pip install tox
+pip install tox==3.5.3
 
 # Setup Swift
 #
