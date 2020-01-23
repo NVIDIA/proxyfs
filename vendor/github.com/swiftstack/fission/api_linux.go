@@ -41,3 +41,9 @@ type SetAttrIn struct {
 	GID       uint32
 	Unused5   uint32
 }
+
+const SetXAttrInFixedPortionSize = 8 // + len(Name) + 1 + len(Data)
+
+const GetXAttrInFixedPortionSize = 8 // + len(Name)
+
+const ListXAttrInSize = 8

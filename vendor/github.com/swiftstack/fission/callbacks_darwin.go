@@ -1,6 +1,7 @@
 package fission
 
 import (
+	"bytes"
 	"fmt"
 	"unsafe"
 )
@@ -57,6 +58,61 @@ func unmarshalSetAttrIn(devFuseFDReadBufPayload []byte) (setAttrIn *SetAttrIn, e
 		ChgTimeNSec:  *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[116])),
 		CrTimeNSec:   *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[120])),
 		Flags:        *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[124])),
+	}
+
+	err = nil
+	return
+}
+
+func unmarshalSetXAttrIn(devFuseFDReadBufPayload []byte) (setXAttrIn *SetXAttrIn, err error) {
+	var (
+		nameDataSplit  [][]byte
+		setXAttrInSize int
+	)
+
+	if len(devFuseFDReadBufPayload) < SetXAttrInFixedPortionSize {
+		err = fmt.Errorf("bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
+		return
+	}
+
+	nameDataSplit = bytes.SplitN(devFuseFDReadBufPayload[SetXAttrInFixedPortionSize:], []byte{0}, 2)
+	if len(nameDataSplit) != 2 {
+		err = fmt.Errorf("bad devFuseFDReadBufPayload")
+		return
+	}
+
+	setXAttrIn = &SetXAttrIn{
+		Size:     *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
+		Flags:    *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[4])),
+		Position: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[8])),
+		Padding:  *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[12])),
+		Name:     cloneByteSlice(nameDataSplit[0], false),
+		Data:     cloneByteSlice(nameDataSplit[1], true),
+	}
+
+	setXAttrInSize = SetXAttrInFixedPortionSize + len(setXAttrIn.Name) + 1 + len(setXAttrIn.Data)
+
+	if len(devFuseFDReadBufPayload) != setXAttrInSize {
+		err = fmt.Errorf("bad Size == %v expected %v", setXAttrIn.Size, setXAttrInSize)
+		return
+	}
+
+	err = nil
+	return
+}
+
+func unmarshalGetXAttrIn(devFuseFDReadBufPayload []byte) (getXAttrIn *GetXAttrIn, err error) {
+	if len(devFuseFDReadBufPayload) < GetXAttrInFixedPortionSize {
+		err = fmt.Errorf("bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
+		return
+	}
+
+	getXAttrIn = &GetXAttrIn{
+		Size:     *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
+		Padding:  *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[4])),
+		Position: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[8])),
+		Padding2: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[12])),
+		Name:     cloneByteSlice(devFuseFDReadBufPayload[GetXAttrInFixedPortionSize:], true),
 	}
 
 	err = nil

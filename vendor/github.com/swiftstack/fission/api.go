@@ -558,21 +558,25 @@ type FSyncIn struct {
 	Padding    uint32
 }
 
-const SetXAttrInFixedPortionSize = 8 // + len(Name) + 1 + len(Data)
+// See api_{darwin|linux}.go for const SetXAttrInFixedPortionSize
 
 type SetXAttrIn struct {
-	Size  uint32 // == len(Name) + 1 + len(Data)
-	Flags uint32
-	Name  []byte
-	Data  []byte // byte(0) separated from Name
+	Size     uint32 // == len(Name) + 1 + len(Data)
+	Flags    uint32
+	Position uint32 // darwin only - set to zero otherwise
+	Padding  uint32 // darwin only
+	Name     []byte
+	Data     []byte // byte(0) separated from Name
 }
 
-const GetXAttrInFixedPortionSize = 8 // + len(Name)
+// See api_{darwin|linux}.go for const GetXAttrInFixedPortionSize
 
 type GetXAttrIn struct {
-	Size    uint32 // == max len(GetXAttrOut.Data)
-	Padding uint32
-	Name    []byte
+	Size     uint32 // == max len(GetXAttrOut.Data)
+	Padding  uint32
+	Position uint32 // darwin only - set to zero otherwise
+	Padding2 uint32 // darwin only
+	Name     []byte
 }
 
 const GetXAttrOutSizeOnlySize = 8
@@ -583,11 +587,12 @@ type GetXAttrOut struct {
 	Data    []byte // only returned if GetXAttrIn.Size != 0
 }
 
-const ListXAttrInSize = 8
+// See api_{darwin|linux}.go for const ListXAttrInSize
 
 type ListXAttrIn struct {
-	Size    uint32 // == max len(ListXAttrOut.Name) with a '\0' between each Name element
-	Padding uint32
+	Size     uint32 // == max len(ListXAttrOut.Name) with a '\0' between each Name element
+	Padding  uint32
+	Padding2 uint64 // darwin only
 }
 
 const ListXAttrOutSizeOnlySize = 8
