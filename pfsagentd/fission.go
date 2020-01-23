@@ -84,7 +84,9 @@ func fixAttrSizes(attr *fission.Attr) {
 		globals.Lock()
 		fileInode, ok = globals.fileInodeMap[inode.InodeNumber(attr.Ino)]
 		if ok {
-			if 0 < fileInode.chunkedPutList.Len() {
+			if 0 == fileInode.chunkedPutList.Len() {
+				attr.Size = fileInode.extentMapFileSize
+			} else {
 				chunkedPutContextElement = fileInode.chunkedPutList.Back()
 				chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
 				attr.Size = chunkedPutContext.fileSize
