@@ -1,5 +1,39 @@
 # ProxyFS Release Notes
 
+## 1.15.0 (January 23, 2020)
+
+### Features:
+
+PFSAgent now uses a new path to ProxyFS for metadata operations that
+bypasses the hop through a Swift Proxy process. This new connection
+is long lived and secured by TLS. Should this connection drop, it will
+be reestablished in such a way that issued metadata requests are only
+executed once.
+
+PFSAgent now utilizes a new "fission" package enabling multithreaded
+upcall servicing whereever possible. Linux will still, under some
+circumstances, serialize what it deems potentially conflicting
+operations.
+
+### Bug Fixes:
+
+Various fixes in PFSAgent write path resulted in an incoherent ExtentMap
+describing a file's contents in Swift such that a subsequent Read could
+read invalid data. This also affected files that are truncated or later
+extended.
+
+### Issues:
+
+PFSAgent currently cannot run successfully on macOS due to some as yet
+unresolved support in package fission.
+
+### Notes:
+
+To expose the TLS Port utilized by PFSAgent, [JSONRPCServer]RetryRPCPort
+specifies the port on the PublicIPAddr of the node hosting ProxyFS. This
+port (on each Swift Proxy node running ProxyFS) must be made accessible
+to any entity running PFSAgent.
+
 ## 1.14.2.1 (December 6, 2019)
 
 ### Bug Fixes:
