@@ -1,9 +1,11 @@
 package retryrpc
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/google/btree"
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
@@ -14,7 +16,8 @@ import (
 // circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
 
-	testServer(t)
+	//	testServer(t)
+	testBtree(t)
 }
 
 type MyType struct {
@@ -107,4 +110,104 @@ func testServer(t *testing.T) {
 
 	// Stop the server before exiting
 	rrSvr.Close()
+}
+
+type RequestID uint64
+
+// Less tests whether the current item is less than the given argument.
+//
+// This must provide a strict weak ordering.
+// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
+// hold one of either a or b in the tree).
+func (a RequestID) Less(b btree.Item) bool {
+	//fmt.Printf("\tLess() - a: %v b.(RequestID): %v return: %v\n", a, b.(RequestID), a < b.(RequestID))
+	return a < b.(RequestID)
+}
+
+/* TODO - test case
+1. simulate responses coming in out of order - 5, 10, 20, 1, 3, 2, etc
+2. find "highest consecutive RequestID - (no gaps in numbers)"
+3. simulate gaps being filled
+4. simulate deleting and asserting that have correct numbers
+5. evaluate storing outstandingRequest as btree or having only numbers in btree
+*/
+
+func setHighestConsecutive(highestConsecutiveNum *RequestID, tr *btree.BTree) {
+	fmt.Printf("setHighestConsecutive()\n")
+	tr.Ascend(func(a btree.Item) bool {
+		r := a.(RequestID)
+		/*
+			c := *highestConsecutiveNum
+		*/
+		fmt.Printf("r is: %v\n", r)
+
+		/*
+			// If this item is a consecutive number then keep going.
+			// Otherwise stop the Ascend now
+			c++
+			if r == *highestConsecutiveNum {
+				*highestConsecutiveNum = r
+				fmt.Printf("highestConsecutiveNum now: %v\n", highestConsecutiveNum)
+				return true
+			}
+		*/
+		if r == tr.Max() {
+			return false
+		}
+		return true
+	})
+	return
+}
+
+func wrapper(tr *btree.BTree, r RequestID) {
+	//fmt.Printf("BEFORE - ReplaceOrInsert(): %v - Min(): %v\n", r, tr.Min())
+	tr.ReplaceOrInsert(r)
+	fmt.Printf("AFTER - ReplaceOrInsert(): %v - Min(): %v\n", r, tr.Min())
+}
+
+func testBtree(t *testing.T) {
+
+	highestConsecutiveNum := RequestID(0)
+
+	assert := assert.New(t)
+	tr := btree.New(2)
+
+	// Simulate requests completing out of order
+	wrapper(tr, RequestID(10))
+	wrapper(tr, RequestID(5))
+	wrapper(tr, RequestID(11))
+
+	fmt.Printf("minimum value: %v\n", tr.Min())
+
+	setHighestConsecutive(&highestConsecutiveNum, tr)
+	assert.Equal(RequestID(0), highestConsecutiveNum)
+
+	// Now fillin first gap
+	wrapper(tr, RequestID(4))
+	wrapper(tr, RequestID(3))
+	wrapper(tr, RequestID(2))
+	wrapper(tr, RequestID(1))
+	fmt.Printf("new minimum value: %v len: %v\n", tr.Min(), tr.Len())
+	assert.Equal(int(7), tr.Len())
+
+	setHighestConsecutive(&highestConsecutiveNum, tr)
+	assert.Equal(RequestID(5), highestConsecutiveNum)
+
+	/*
+		for i := RequestID(0); i < 10; i++ {
+			tr.ReplaceOrInsert(i)
+		}
+		fmt.Println("len:       ", tr.Len())
+		fmt.Println("get3:      ", tr.Get(RequestID(3)))
+		fmt.Println("get100:    ", tr.Get(RequestID(100)))
+		fmt.Println("del4:      ", tr.Delete(RequestID(4)))
+		fmt.Println("del100:    ", tr.Delete(RequestID(100)))
+		fmt.Println("replace5:  ", tr.ReplaceOrInsert(RequestID(5)))
+		fmt.Println("replace100:", tr.ReplaceOrInsert(RequestID(100)))
+		fmt.Println("min:       ", tr.Min())
+		fmt.Println("delmin:    ", tr.DeleteMin())
+		fmt.Println("max:       ", tr.Max())
+		fmt.Println("delmax:    ", tr.DeleteMax())
+		fmt.Println("len:       ", tr.Len())
+	*/
 }
