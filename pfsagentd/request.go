@@ -43,7 +43,7 @@ func doMountProxyFS() {
 
 	globals.retryRPCClient, err = retryrpc.NewClient(string(globals.mountID), globals.retryRPCPublicIPAddr, int(globals.retryRPCPort), globals.rootCAx509CertificatePEM)
 	if nil != err {
-		logFatalf("unable to retryRPCClient.NewClient(%v,%v): %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
+		logFatalf("unable to retryRPCClient.NewClient(%v,%v): SwiftAccountName: %v err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
 	}
 }
 
