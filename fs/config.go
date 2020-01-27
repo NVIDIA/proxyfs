@@ -109,6 +109,8 @@ type globalsStruct struct {
 	VolumeNameUsec     bucketstats.BucketLog2Round
 	WriteUsec          bucketstats.BucketLog2Round
 	WriteBytes         bucketstats.BucketLog2Round
+	WroteUsec          bucketstats.BucketLog2Round
+	WroteBytes         bucketstats.BucketLog2Round
 
 	CreateErrors              bucketstats.Total
 	DefragmentFileErrors      bucketstats.Total
@@ -145,6 +147,7 @@ type globalsStruct struct {
 	SymlinkErrors             bucketstats.Total
 	UnlinkErrors              bucketstats.Total
 	WriteErrors               bucketstats.Total
+	WroteErrors               bucketstats.Total
 
 	DefragmentFileUsec             bucketstats.BucketLog2Round
 	FetchExtentMapChunkUsec        bucketstats.BucketLog2Round

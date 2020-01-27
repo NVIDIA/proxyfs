@@ -204,6 +204,15 @@ func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64,
 		snapShotID    uint64
 	)
 
+	startTime := time.Now()
+	defer func() {
+		globals.GetReadPlanUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetReadPlanBytes.Add(uint64(readPlanBytes))
+		if err != nil {
+			globals.GetReadPlanErrors.Add(1)
+		}
+	}()
+
 	fileInode, err := vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {
 		logger.ErrorWithError(err)
@@ -231,6 +240,13 @@ func (vS *volumeStruct) GetReadPlan(fileInodeNumber InodeNumber, offset *uint64,
 }
 
 func (vS *volumeStruct) getReadPlanHelper(snapShotID uint64, fileInode *inMemoryInodeStruct, requestedOffset *uint64, requestedLength *uint64) (readPlan []ReadPlanStep, readPlanBytes uint64, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.GetReadPlanHelperUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.GetReadPlanHelperBytes.Add(uint64(readPlanBytes))
+	}()
+
 	var (
 		offset uint64
 	)
@@ -404,6 +420,20 @@ func (vS *volumeStruct) FetchExtentMapChunk(fileInodeNumber InodeNumber, fileOff
 		objectName                  string
 		snapShotID                  uint64
 	)
+
+	startTime := time.Now()
+	defer func() {
+		globals.FetchExtentMapChunkUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if extentMapChunk != nil {
+			globals.FetchExtentMapChunkBytes.Add(
+				extentMapChunk.FileOffsetRangeEnd - extentMapChunk.FileOffsetRangeStart)
+		} else {
+			globals.FetchExtentMapChunkBytes.Add(0)
+		}
+		if err != nil {
+			globals.FetchExtentMapChunkErrors.Add(1)
+		}
+	}()
 
 	// Validate args
 
@@ -809,6 +839,18 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 }
 
 func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
+
+	var bytesWritten uint64
+
+	startTime := time.Now()
+	defer func() {
+		globals.WroteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		globals.WroteBytes.Add(bytesWritten)
+		if err != nil {
+			globals.WroteErrors.Add(1)
+		}
+	}()
+
 	if (len(fileOffset) != len(objectOffset)) || (len(objectOffset) != len(length)) {
 		err = fmt.Errorf("Wrote() called with unequal # of fileOffset's (%d), objectOffset's (%d), and length's (%d)", len(fileOffset), len(objectOffset), len(length))
 		return
@@ -863,8 +905,7 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fi
 		}
 	}
 
-	bytesWritten := uint64(0)
-
+	bytesWritten = 0
 	for i, thisLength := range length {
 		if 0 < thisLength {
 			err = recordWrite(fileInode, fileOffset[i], thisLength, logSegmentNumber, objectOffset[i])

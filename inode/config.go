@@ -8,6 +8,7 @@ import (
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -102,6 +103,18 @@ type globalsStruct struct {
 	openLogSegmentLRUHead              *inFlightLogSegmentStruct
 	openLogSegmentLRUTail              *inFlightLogSegmentStruct
 	openLogSegmentLRUItems             uint64
+
+	GetReadPlanUsec           bucketstats.BucketLog2Round
+	GetReadPlanBytes          bucketstats.BucketLog2Round
+	GetReadPlanErrors         bucketstats.Total
+	GetReadPlanHelperUsec     bucketstats.BucketLog2Round
+	GetReadPlanHelperBytes    bucketstats.BucketLog2Round
+	FetchExtentMapChunkUsec   bucketstats.BucketLog2Round
+	FetchExtentMapChunkBytes  bucketstats.BucketLog2Round
+	FetchExtentMapChunkErrors bucketstats.Total
+	WroteUsec                 bucketstats.BucketLog2Round
+	WroteBytes                bucketstats.BucketLog2Round
+	WroteErrors               bucketstats.Total
 }
 
 var globals globalsStruct
@@ -218,6 +231,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.versionV1Buf...)
 
 	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
+	bucketstats.Register("proxyfs.inode", "", &globals)
 
 	err = nil
 	return
@@ -718,6 +733,7 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	bucketstats.UnRegister("proxyfs.inode", "")
 	err = nil
 	return
 }

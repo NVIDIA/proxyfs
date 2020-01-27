@@ -3319,6 +3319,7 @@ Restart:
 }
 
 func (mS *mountStruct) Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error) {
+
 	startTime := time.Now()
 	defer func() {
 		globals.ReadUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
@@ -4170,6 +4171,19 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 }
 
 func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error) {
+	startTime := time.Now()
+	defer func() {
+		globals.WroteUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		var totalBytes uint64
+		for _, bytes := range length {
+			totalBytes += bytes
+		}
+		globals.WroteBytes.Add(totalBytes)
+		if err != nil {
+			globals.WroteErrors.Add(1)
+		}
+	}()
+
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
