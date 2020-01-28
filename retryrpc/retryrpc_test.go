@@ -123,15 +123,18 @@ func (a RequestID) Less(b btree.Item) bool {
 	return a < b.(RequestID)
 }
 
-/* TODO - test case
-5. evaluate storing outstandingRequest as btree or having only numbers in btree
-	== probably only want ints in btree and not complete data structure in
-	case one RPC hangs....
-*/
+// printBTree is for debugging
+func printBTree(tr *btree.BTree, msg string) {
+	tr.Ascend(func(a btree.Item) bool {
+		r := a.(RequestID)
+		fmt.Printf("%v =========== - r is: %v\n", msg, r)
+		return true
+	})
+
+}
 
 func setHighestConsecutive(highestConsecutiveNum *RequestID, tr *btree.BTree) {
-	fmt.Printf("setHighestConsecutive()\n")
-	tr.Ascend(func(a btree.Item) bool {
+	tr.AscendGreaterOrEqual(*highestConsecutiveNum, func(a btree.Item) bool {
 		r := a.(RequestID)
 		c := *highestConsecutiveNum
 
@@ -141,15 +144,24 @@ func setHighestConsecutive(highestConsecutiveNum *RequestID, tr *btree.BTree) {
 		if r == c {
 			*highestConsecutiveNum = r
 		} else {
-			// If not consective just return
-			return false
+			// If we are past the first leaf and we do not have
+			// consecutive numbers than break now instead of going
+			// through rest of tree
+			if r != tr.Min() {
+				return false
+			}
 		}
 		return true
 	})
-}
 
-func wrapper(tr *btree.BTree, r RequestID) {
-	tr.ReplaceOrInsert(r)
+	// Now trim the btree up to highestConsecutiveNum
+	m := tr.Min()
+	if m != nil {
+		i := m.(RequestID)
+		for ; i < *highestConsecutiveNum; i++ {
+			tr.Delete(i)
+		}
+	}
 }
 
 func testBtree(t *testing.T) {
@@ -160,41 +172,32 @@ func testBtree(t *testing.T) {
 	tr := btree.New(2)
 
 	// Simulate requests completing out of order
-	wrapper(tr, RequestID(10))
-	wrapper(tr, RequestID(5))
-	wrapper(tr, RequestID(11))
+	tr.ReplaceOrInsert(RequestID(10))
+	tr.ReplaceOrInsert(RequestID(5))
+	tr.ReplaceOrInsert(RequestID(11))
 
 	setHighestConsecutive(&highestConsecutiveNum, tr)
 	assert.Equal(RequestID(0), highestConsecutiveNum)
 
 	// Now fillin first gap
-	wrapper(tr, RequestID(4))
-	wrapper(tr, RequestID(3))
-	wrapper(tr, RequestID(2))
-	wrapper(tr, RequestID(1))
+	tr.ReplaceOrInsert(RequestID(4))
+	tr.ReplaceOrInsert(RequestID(3))
+	tr.ReplaceOrInsert(RequestID(2))
+	tr.ReplaceOrInsert(RequestID(1))
 	assert.Equal(int(7), tr.Len())
 
 	setHighestConsecutive(&highestConsecutiveNum, tr)
+	assert.Equal(int(3), tr.Len())
 	assert.Equal(RequestID(5), highestConsecutiveNum)
 
-	// Now fillin next set of gaps and getting highestConsecutiveNum
-	wrapper(tr, RequestID(6))
-	wrapper(tr, RequestID(7))
-	wrapper(tr, RequestID(8))
-	wrapper(tr, RequestID(9))
-	assert.Equal(int(11), tr.Len())
+	// Now fillin next set of gaps
+	tr.ReplaceOrInsert(RequestID(6))
+	tr.ReplaceOrInsert(RequestID(7))
+	tr.ReplaceOrInsert(RequestID(8))
+	tr.ReplaceOrInsert(RequestID(9))
+	assert.Equal(int(7), tr.Len())
 
 	setHighestConsecutive(&highestConsecutiveNum, tr)
-	assert.Equal(RequestID(11), highestConsecutiveNum)
-
-	// Now delete client list and btree entry...
-	// TODO - setHighestConsecutive() should probably
-	// delete earlier btree entries since no longer
-	// needed..
-	for i := 1; i < 12; i++ {
-		tr.Delete(RequestID(i))
-	}
-	assert.Equal(int(0), tr.Len())
-	setHighestConsecutive(&highestConsecutiveNum, tr)
+	assert.Equal(int(1), tr.Len())
 	assert.Equal(RequestID(11), highestConsecutiveNum)
 }
