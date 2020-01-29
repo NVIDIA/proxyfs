@@ -218,12 +218,12 @@ type connectionTracker struct {
 type Client struct {
 	sync.Mutex
 	halting          bool
-	currentRequestID uint64 // Last request ID - start from clock
+	currentRequestID requestID // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	connection         connectionTracker
-	myUniqueID         string             // Unique ID across all clients
-	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
+	myUniqueID         string                // Unique ID across all clients
+	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
 	// trimmed
@@ -247,7 +247,7 @@ func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509Certificate
 	portStr := fmt.Sprintf("%d", port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
-	client.outstandingRequest = make(map[uint64]*reqCtx)
+	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
 	client.bt = btree.New(2)
 

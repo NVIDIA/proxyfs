@@ -107,7 +107,7 @@ type reqCtx struct {
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
 	MyUniqueID string         `json:"myuniqueid"` // ID of client
-	RequestID  uint64         `json:"requestid"`  // ID of this request
+	RequestID  requestID      `json:"requestid"`  // ID of this request
 	Method     string         `json:"method"`
 	Params     [1]interface{} `json:"params"`
 }
@@ -115,7 +115,7 @@ type jsonRequest struct {
 // jsonReply is used to marshal an RPC response in/out of JSON
 type jsonReply struct {
 	MyUniqueID string      `json:"myuniqueid"` // ID of client
-	RequestID  uint64      `json:"requestid"`  // ID of this request
+	RequestID  requestID   `json:"requestid"`  // ID of this request
 	ErrStr     string      `json:"errstr"`
 	Result     interface{} `json:"result"`
 }

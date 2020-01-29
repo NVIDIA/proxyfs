@@ -55,8 +55,8 @@ func (server *Server) run() {
 	}
 }
 
-func keyString(myUniqueID string, requestID uint64) string {
-	return fmt.Sprintf("%v:%v", myUniqueID, requestID)
+func keyString(myUniqueID string, rID requestID) string {
+	return fmt.Sprintf("%v:%v", myUniqueID, rID)
 }
 
 // First check if we already completed this request by looking on completed

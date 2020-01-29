@@ -25,7 +25,7 @@ import (
 // 4. readResponses goroutine will read response on socket
 //    and call a goroutine to do unmarshalling and notification
 func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
-	var crID uint64
+	var crID requestID
 
 	client.Lock()
 	if client.connection.state == INITIAL {
@@ -83,7 +83,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 //
 // At this point, the client will retry the request until either it
 // completes OR the client is shutdown.
-func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
+func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
 
 	defer client.goroutineWG.Done()
 
@@ -190,6 +190,9 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 
 	delete(client.outstandingRequest, crID)
 	client.Unlock()
+
+	// Fork off a goroutine to update highestConsecutiveNum
+	go client.updateHighestConsecutiveNum(crID)
 
 	// Give reply to blocked send() - most developers test for nil err so
 	// only set it if there is an error
@@ -330,8 +333,8 @@ func printBTree(tr *btree.BTree, msg string) {
 
 }
 
+// It is assumed the client lock is already held
 func (client *Client) setHighestConsecutive() {
-	client.Lock()
 	client.bt.AscendGreaterOrEqual(client.highestConsecutive, func(a btree.Item) bool {
 		r := a.(requestID)
 		c := client.highestConsecutive
@@ -360,5 +363,15 @@ func (client *Client) setHighestConsecutive() {
 			client.bt.Delete(i)
 		}
 	}
+}
+
+// updateHighestConsecutiveNum takes the requestID and calculates the
+// highestConsective request ID we have seen.  This is done by putting
+// the requestID into a btree of completed requestIDs.  Then calculating
+// the highest consective number seen and updating Client.
+func (client *Client) updateHighestConsecutiveNum(crID requestID) {
+	client.Lock()
+	client.bt.ReplaceOrInsert(crID)
+	client.setHighestConsecutive()
 	client.Unlock()
 }

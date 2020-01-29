@@ -130,30 +130,30 @@ func testBtree(t *testing.T) {
 	assert.Nil(newErr)
 
 	// Simulate requests completing out of order
-	client.bt.ReplaceOrInsert(requestID(10))
-	client.bt.ReplaceOrInsert(requestID(5))
-	client.bt.ReplaceOrInsert(requestID(11))
+	client.updateHighestConsecutiveNum(requestID(10))
+	client.updateHighestConsecutiveNum(requestID(5))
+	client.updateHighestConsecutiveNum(requestID(11))
 
 	client.setHighestConsecutive()
 	assert.Equal(requestID(0), client.highestConsecutive)
 
 	// Now fillin first gap
-	client.bt.ReplaceOrInsert(requestID(4))
-	client.bt.ReplaceOrInsert(requestID(3))
-	client.bt.ReplaceOrInsert(requestID(2))
-	client.bt.ReplaceOrInsert(requestID(1))
-	assert.Equal(int(7), client.bt.Len())
+	client.updateHighestConsecutiveNum(requestID(4))
+	client.updateHighestConsecutiveNum(requestID(3))
+	client.updateHighestConsecutiveNum(requestID(2))
+	client.updateHighestConsecutiveNum(requestID(1))
+	assert.Equal(int(3), client.bt.Len())
 
 	client.setHighestConsecutive()
 	assert.Equal(int(3), client.bt.Len())
 	assert.Equal(requestID(5), client.highestConsecutive)
 
 	// Now fillin next set of gaps
-	client.bt.ReplaceOrInsert(requestID(6))
-	client.bt.ReplaceOrInsert(requestID(7))
-	client.bt.ReplaceOrInsert(requestID(8))
-	client.bt.ReplaceOrInsert(requestID(9))
-	assert.Equal(int(7), client.bt.Len())
+	client.updateHighestConsecutiveNum(requestID(6))
+	client.updateHighestConsecutiveNum(requestID(7))
+	client.updateHighestConsecutiveNum(requestID(8))
+	client.updateHighestConsecutiveNum(requestID(9))
+	assert.Equal(int(1), client.bt.Len())
 
 	client.setHighestConsecutive()
 	assert.Equal(int(1), client.bt.Len())
