@@ -34,6 +34,8 @@ const (
 	currentRetryVersion = 1
 )
 
+type requestID uint64
+
 // connCtx tracks a conn which has been accepted.
 //
 // It also contains the lock used for serialization when

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/btree"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -224,6 +225,9 @@ type Client struct {
 	myUniqueID         string             // Unique ID across all clients
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
+	highestConsecutive requestID // Highest requestID that can be
+	// trimmed
+	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
@@ -245,6 +249,7 @@ func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509Certificate
 	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
 	client.outstandingRequest = make(map[uint64]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
+	client.bt = btree.New(2)
 
 	// Add cert for root CA to our pool
 	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)

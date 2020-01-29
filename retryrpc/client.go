@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/btree"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -304,4 +305,60 @@ func (client *Client) dial() (err error) {
 	go client.readReplies()
 
 	return
+}
+
+// Less tests whether the current item is less than the given argument.
+//
+// This must provide a strict weak ordering.
+// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
+// hold one of either a or b in the tree).
+//
+// NOTE: It is assumed client lock is held when this is called.
+func (a requestID) Less(b btree.Item) bool {
+	return a < b.(requestID)
+}
+
+// printBTree prints the btree contents and is only for debugging
+//
+// NOTE: It is assumed client lock is held when this is called.
+func printBTree(tr *btree.BTree, msg string) {
+	tr.Ascend(func(a btree.Item) bool {
+		r := a.(requestID)
+		fmt.Printf("%v =========== - r is: %v\n", msg, r)
+		return true
+	})
+
+}
+
+func (client *Client) setHighestConsecutive() {
+	client.Lock()
+	client.bt.AscendGreaterOrEqual(client.highestConsecutive, func(a btree.Item) bool {
+		r := a.(requestID)
+		c := client.highestConsecutive
+
+		// If this item is a consecutive number then keep going.
+		// Otherwise stop the Ascend now
+		c++
+		if r == c {
+			client.highestConsecutive = r
+		} else {
+			// If we are past the first leaf and we do not have
+			// consecutive numbers than break now instead of going
+			// through rest of tree
+			if r != client.bt.Min() {
+				return false
+			}
+		}
+		return true
+	})
+
+	// Now trim the btree up to highestConsecutiveNum
+	m := client.bt.Min()
+	if m != nil {
+		i := m.(requestID)
+		for ; i < client.highestConsecutive; i++ {
+			client.bt.Delete(i)
+		}
+	}
+	client.Unlock()
 }

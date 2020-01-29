@@ -1,11 +1,9 @@
 package retryrpc
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
@@ -41,12 +39,22 @@ func (m *MyType) unexportedFunction(i int) {
 	m.field1 = i
 }
 
-// Test basic Server creation and deletion
-func testServer(t *testing.T) {
+func getNewServer() (rrSvr *Server, ip string, p int) {
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
 	)
+
+	// Create a new RetryRPC Server.  Completed request will live on
+	// completedRequests for 10 seconds.
+	rrSvr = NewServer(10*time.Second, ipaddr, port)
+	ip = ipaddr
+	p = port
+	return
+}
+
+// Test basic Server creation and deletion
+func testServer(t *testing.T) {
 	assert := assert.New(t)
 	zero := 0
 	assert.Equal(0, zero)
@@ -55,9 +63,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	// Create a new RetryRPC Server.  Completed request will live on
-	// completedRequests for 10 seconds.
-	rrSvr := NewServer(10*time.Second, ipaddr, port)
+	rrSvr, ipaddr, port := getNewServer()
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -112,92 +118,44 @@ func testServer(t *testing.T) {
 	rrSvr.Close()
 }
 
-type RequestID uint64
-
-// Less tests whether the current item is less than the given argument.
-//
-// This must provide a strict weak ordering.
-// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
-// hold one of either a or b in the tree).
-func (a RequestID) Less(b btree.Item) bool {
-	return a < b.(RequestID)
-}
-
-// printBTree is for debugging
-func printBTree(tr *btree.BTree, msg string) {
-	tr.Ascend(func(a btree.Item) bool {
-		r := a.(RequestID)
-		fmt.Printf("%v =========== - r is: %v\n", msg, r)
-		return true
-	})
-
-}
-
-func setHighestConsecutive(highestConsecutiveNum *RequestID, tr *btree.BTree) {
-	tr.AscendGreaterOrEqual(*highestConsecutiveNum, func(a btree.Item) bool {
-		r := a.(RequestID)
-		c := *highestConsecutiveNum
-
-		// If this item is a consecutive number then keep going.
-		// Otherwise stop the Ascend now
-		c++
-		if r == c {
-			*highestConsecutiveNum = r
-		} else {
-			// If we are past the first leaf and we do not have
-			// consecutive numbers than break now instead of going
-			// through rest of tree
-			if r != tr.Min() {
-				return false
-			}
-		}
-		return true
-	})
-
-	// Now trim the btree up to highestConsecutiveNum
-	m := tr.Min()
-	if m != nil {
-		i := m.(RequestID)
-		for ; i < *highestConsecutiveNum; i++ {
-			tr.Delete(i)
-		}
-	}
-}
-
 func testBtree(t *testing.T) {
-
-	highestConsecutiveNum := RequestID(0)
-
 	assert := assert.New(t)
-	tr := btree.New(2)
+
+	rrSvr, ipaddr, port := getNewServer()
+	assert.NotNil(rrSvr)
+
+	// Setup a client - we only will be targeting the btree
+	client, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	assert.NotNil(client)
+	assert.Nil(newErr)
 
 	// Simulate requests completing out of order
-	tr.ReplaceOrInsert(RequestID(10))
-	tr.ReplaceOrInsert(RequestID(5))
-	tr.ReplaceOrInsert(RequestID(11))
+	client.bt.ReplaceOrInsert(requestID(10))
+	client.bt.ReplaceOrInsert(requestID(5))
+	client.bt.ReplaceOrInsert(requestID(11))
 
-	setHighestConsecutive(&highestConsecutiveNum, tr)
-	assert.Equal(RequestID(0), highestConsecutiveNum)
+	client.setHighestConsecutive()
+	assert.Equal(requestID(0), client.highestConsecutive)
 
 	// Now fillin first gap
-	tr.ReplaceOrInsert(RequestID(4))
-	tr.ReplaceOrInsert(RequestID(3))
-	tr.ReplaceOrInsert(RequestID(2))
-	tr.ReplaceOrInsert(RequestID(1))
-	assert.Equal(int(7), tr.Len())
+	client.bt.ReplaceOrInsert(requestID(4))
+	client.bt.ReplaceOrInsert(requestID(3))
+	client.bt.ReplaceOrInsert(requestID(2))
+	client.bt.ReplaceOrInsert(requestID(1))
+	assert.Equal(int(7), client.bt.Len())
 
-	setHighestConsecutive(&highestConsecutiveNum, tr)
-	assert.Equal(int(3), tr.Len())
-	assert.Equal(RequestID(5), highestConsecutiveNum)
+	client.setHighestConsecutive()
+	assert.Equal(int(3), client.bt.Len())
+	assert.Equal(requestID(5), client.highestConsecutive)
 
 	// Now fillin next set of gaps
-	tr.ReplaceOrInsert(RequestID(6))
-	tr.ReplaceOrInsert(RequestID(7))
-	tr.ReplaceOrInsert(RequestID(8))
-	tr.ReplaceOrInsert(RequestID(9))
-	assert.Equal(int(7), tr.Len())
+	client.bt.ReplaceOrInsert(requestID(6))
+	client.bt.ReplaceOrInsert(requestID(7))
+	client.bt.ReplaceOrInsert(requestID(8))
+	client.bt.ReplaceOrInsert(requestID(9))
+	assert.Equal(int(7), client.bt.Len())
 
-	setHighestConsecutive(&highestConsecutiveNum, tr)
-	assert.Equal(int(1), tr.Len())
-	assert.Equal(RequestID(11), highestConsecutiveNum)
+	client.setHighestConsecutive()
+	assert.Equal(int(1), client.bt.Len())
+	assert.Equal(requestID(11), client.highestConsecutive)
 }
