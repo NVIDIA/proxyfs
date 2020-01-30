@@ -138,6 +138,7 @@ const (
 	chunkedPutContextStateClosed               // Chunked PUT received an http.StatusCreated...
 	//                                              but we cannot yet merge it's ExtentMap updates because
 	//                                              an as-yet un-closed Chunked PUT needs to do so first
+	chunkedPutContextExitReadPollingRate = time.Millisecond
 )
 
 type chunkedPutContextStruct struct {
@@ -157,13 +158,6 @@ type chunkedPutContextStruct struct {
 	inRead                bool             //     Set when in Read() as a hint to Close() to help Read() cleanly exit
 	flushRequested        bool             //     Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
-
-const (
-	chunkedPutContextSendChanBufferSize = 16
-	chunkedPutContextWakeChanBufferSize = 16
-
-	chunkedPutContextExitReadPollingRate = time.Millisecond
-)
 
 type fileInodeStruct struct {
 	sync.WaitGroup //                                  Used to await completion of all chunkedPutContext's
