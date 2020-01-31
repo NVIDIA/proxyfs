@@ -187,6 +187,15 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 
 			grantedLock = fileInode.getExclusiveLock()
 			chunkedPutContext.state = chunkedPutContextStateClosing
+			for {
+				select {
+				case <-chunkedPutContext.sendChan:
+					continue
+				default:
+					goto EscapeSendChanDrain
+				}
+			}
+		EscapeSendChanDrain:
 			grantedLock.release()
 
 			goto PerformFlush
