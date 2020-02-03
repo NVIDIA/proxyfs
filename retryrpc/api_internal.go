@@ -3,6 +3,7 @@
 package retryrpc
 
 import (
+	"container/list"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
@@ -35,6 +36,16 @@ const (
 )
 
 type requestID uint64
+
+// Server side data structure storing per client information
+// such as completed requests, etc
+type myUniqueInfo struct {
+	sync.Mutex
+	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
+	completedRequest    map[string]*ioReply    // Key: "MyUniqueID:RequestID"
+	completedRequestLRU *list.List             // LRU used to remove completed request in ticker
+	highestReplySeen    requestID              // Highest consectutive requestID client has seen
+}
 
 // connCtx tracks a conn which has been accepted.
 //
@@ -106,10 +117,11 @@ type reqCtx struct {
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
-	MyUniqueID string         `json:"myuniqueid"` // ID of client
-	RequestID  requestID      `json:"requestid"`  // ID of this request
-	Method     string         `json:"method"`
-	Params     [1]interface{} `json:"params"`
+	MyUniqueID       string         `json:"myuniqueid"`       // ID of client
+	RequestID        requestID      `json:"requestid"`        // ID of this request
+	HighestReplySeen requestID      `json:"highestReplySeen"` // Used to trim completedRequests on server
+	Method           string         `json:"method"`
+	Params           [1]interface{} `json:"params"`
 }
 
 // jsonReply is used to marshal an RPC response in/out of JSON

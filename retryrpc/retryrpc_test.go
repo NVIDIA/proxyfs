@@ -47,7 +47,7 @@ func getNewServer() (rrSvr *Server, ip string, p int) {
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
-	rrSvr = NewServer(10*time.Second, ipaddr, port)
+	rrSvr = NewServer(10*time.Second, 100*time.Millisecond, ipaddr, port)
 	ip = ipaddr
 	p = port
 	return
@@ -101,6 +101,10 @@ func testServer(t *testing.T) {
 
 	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(2, rrSvr.CompletedCnt())
+
+	// TODO - TODO - TODO....
+	// Verify that the server has seen the updated
+	// highestReplySeen
 
 	// Send an RPC which should return an error
 	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}

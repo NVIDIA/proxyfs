@@ -32,39 +32,37 @@ type ServerCreds struct {
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
-	completedTTL time.Duration          // How long a completed request stays on queue
-	svrMap       map[string]*methodArgs // Key: Method name
-	ipaddr       string                 // IP address server listens too
-	port         int                    // Port of server
-	listener     net.Listener
+	completedLongTTL time.Duration          // How long a completed request stays on queue
+	completedAckTrim time.Duration          // How frequently trim requests acked by client
+	svrMap           map[string]*methodArgs // Key: Method name
+	ipaddr           string                 // IP address server listens too
+	port             int                    // Port of server
+	listener         net.Listener
 
-	halting             bool
-	goroutineWG         sync.WaitGroup // Used to track outstanding goroutines
-	connLock            sync.Mutex
-	connections         *list.List
-	connWG              sync.WaitGroup
-	listeners           []net.Listener
-	Creds               *ServerCreds
-	listenersWG         sync.WaitGroup
-	receiver            reflect.Value          // Package receiver being served
-	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
-	completedRequest    map[string]*ioReply    // Key: "MyUniqueID:RequestID"
-	completedRequestLRU *list.List             // LRU used to remove completed request in ticker
-	completedTickerDone chan bool
-	completedTicker     *time.Ticker
-	completedDoneWG     sync.WaitGroup
+	halting              bool
+	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
+	connLock             sync.Mutex
+	connections          *list.List
+	connWG               sync.WaitGroup
+	listeners            []net.Listener
+	Creds                *ServerCreds
+	listenersWG          sync.WaitGroup
+	receiver             reflect.Value            // Package receiver being served
+	perUniqueIDInfo      map[string]*myUniqueInfo // Key: "MyUniqueID"
+	completedTickerDone  chan bool
+	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
+	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
+	completedDoneWG      sync.WaitGroup
 }
 
 // NewServer creates the Server object
-func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
+func NewServer(ttl time.Duration, shortTrim time.Duration, ipaddr string, port int) *Server {
 	var (
 		err error
 	)
-	server := &Server{ipaddr: ipaddr, port: port, completedTTL: ttl}
+	server := &Server{ipaddr: ipaddr, port: port, completedLongTTL: ttl, completedAckTrim: shortTrim}
 	server.svrMap = make(map[string]*methodArgs)
-	server.pendingRequest = make(map[string]*pendingCtx)
-	server.completedRequest = make(map[string]*ioReply)
-	server.completedRequestLRU = list.New()
+	server.perUniqueIDInfo = make(map[string]*myUniqueInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
@@ -110,7 +108,9 @@ func (server *Server) Start() (err error) {
 	server.listenersWG.Add(1)
 
 	// Start ticker which removes older completedRequests
-	server.completedTicker = time.NewTicker(server.completedTTL)
+	server.completedLongTicker = time.NewTicker(server.completedLongTTL)
+	// Start ticker which removes requests already ACKed by client
+	server.completedShortTicker = time.NewTicker(server.completedAckTrim)
 	server.completedDoneWG.Add(1)
 	go func() {
 		for {
@@ -118,8 +118,12 @@ func (server *Server) Start() (err error) {
 			case <-server.completedTickerDone:
 				server.completedDoneWG.Done()
 				return
-			case t := <-server.completedTicker.C:
-				server.trimCompleted(t)
+			case tl := <-server.completedLongTicker.C:
+				server.trimCompleted(tl)
+				/*
+					case ts := <-server.completedShortTicker.C:
+						server.trimAlreadAcked(ts)
+				*/
 			}
 		}
 	}()
@@ -151,14 +155,17 @@ func (server *Server) Close() {
 	server.closeClientConn()
 	server.goroutineWG.Wait()
 
-	server.Lock()
-	x := len(server.pendingRequest)
-	server.Unlock()
-	if x != 0 {
-		logger.Errorf("pendingRequest count is: %v when should be zero", x)
-	}
+	/*
+			server.Lock()
+			x := len(server.pendingRequest)
+			server.Unlock()
+		if x != 0 {
+			logger.Errorf("pendingRequest count is: %v when should be zero", x)
+		}
+	*/
 
-	server.completedTicker.Stop()
+	server.completedLongTicker.Stop()
+	server.completedShortTicker.Stop()
 	server.completedTickerDone <- true
 	server.completedDoneWG.Wait()
 }
@@ -182,14 +189,20 @@ func (server *Server) CloseClientConn() {
 //
 // This is only useful for testing.
 func (server *Server) CompletedCnt() int {
-	return len(server.completedRequest)
+	/*
+		return len(server.completedRequest)
+	*/
+	return 0
 }
 
 // PendingCnt returns count of pendingRequests
 //
 // This is only useful for testing.
 func (server *Server) PendingCnt() int {
-	return len(server.pendingRequest)
+	/*
+		return len(server.pendingRequest)
+	*/
+	return 0
 }
 
 // Client methods

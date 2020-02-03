@@ -38,7 +38,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	}
 
 	// Put request data into structure to be be marshaled into JSON
-	jreq := jsonRequest{Method: method}
+	jreq := jsonRequest{Method: method, HighestReplySeen: client.highestConsecutive}
 	jreq.Params[0] = rpcRequest
 	jreq.MyUniqueID = client.myUniqueID
 
