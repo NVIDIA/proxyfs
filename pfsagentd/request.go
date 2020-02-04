@@ -55,12 +55,6 @@ func doUnmountProxyFS() {
 	globals.retryRPCClient.Close()
 }
 
-func doRetryRPCRequest(method string, request interface{}, reply interface{}) (err error) {
-	err = globals.retryRPCClient.Send(method, request, reply)
-
-	return
-}
-
 func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
 	var (
 		httpErr         error
@@ -172,7 +166,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		} else {
 			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
 
-			// Close request.Body at this time just in case...
+			// Close request.Body (if any) at this time just in case...
 			//
 			// It appears that net/http.Do() will actually return
 			// even if it has an outstanding Read() call to
@@ -180,7 +174,9 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			// will give it a chance to force request.Body.Read()
 			// to exit cleanly.
 
-			_ = request.Body.Close()
+			if nil != request.Body {
+				_ = request.Body.Close()
+			}
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])
