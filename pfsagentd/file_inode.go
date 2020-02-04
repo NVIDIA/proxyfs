@@ -1449,6 +1449,11 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 		delete(globals.logSegmentCacheMap, logSegmentCacheElementKey)
 		globals.logSegmentCacheLRU.Remove(logSegmentCacheElement.cacheLRUElement)
+
+		// While the above accounting has correctly reported the cache fetch failure,
+		// we cannot continue from this point and must abruptly fail
+
+		logFatalf("unable to complete GET http.Request (,%s,)", url)
 	}
 
 	globals.Unlock()
