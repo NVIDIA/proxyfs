@@ -778,6 +778,12 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
+        # Alternate way to specify bypass mode: /proxyfs/AUTH_acct/...
+        if vrs == 'proxyfs':
+            req.headers['X-Bypass-ProxyFS'] = 'true'
+            req.path_info = req.path_info.replace('/proxyfs/', '/v1/', 1)
+            vrs = 'v1'
+
         if not acc or not constraints.valid_api_version(vrs) or (
                 obj and not con):
             # could be a GET /info request or something made up by some
@@ -822,6 +828,10 @@ class PfsMiddleware(object):
                     return swob.HTTPNotFound(request=req)
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
+            is_bypass_request = (
+                config_true_value(req.headers.get('X-Bypass-ProxyFS')) and
+                self.bypass_mode in ('read-only', 'read-write'))
+
             # For requests that we make to Swift, we have to ensure that any
             # auth callback is not present in the WSGI environment.
             # Authorization typically uses the object path as an input, and
@@ -838,7 +848,9 @@ class PfsMiddleware(object):
                     pop_and_restore(req.environ, 'swift.authorize_override',
                                     False):
                 if auth_cb and req.environ.get('swift.source') != 'PFS':
-                    req.acl = self._fetch_appropriate_acl(ctx)
+                    if not is_bypass_request:
+                        req.acl = self._fetch_appropriate_acl(ctx)
+                    # else, user needs to be swift owner
                     denial_response = auth_cb(ctx.req)
                     if denial_response:
                         return denial_response
@@ -848,19 +860,10 @@ class PfsMiddleware(object):
 
                 # Check whether we ought to bypass. Note that swift_owner
                 # won't be set until we call authorize
-                if config_true_value(req.headers.get('X-Bypass-ProxyFS')) and \
-                        self.bypass_mode in ('read-only', 'read-write') and \
-                        req.environ.get('swift_owner'):
+                if is_bypass_request and req.environ.get('swift_owner'):
                     if self.bypass_mode == 'read-only' and method not in (
                             'GET', 'HEAD'):
                         return swob.HTTPMethodNotAllowed(request=req)
-                    # We needed to do a PFS-namespace container HEAD to get
-                    # the "appropriate" ACL ahead of calling the authorize
-                    # callback, but that almost certainly didn't exist and
-                    # even if it did, it probably gave an inappropriate
-                    # storage policy. Kill the cache entry, or bypassed object
-                    # GETs will likely 404.
-                    clear_info_cache(None, req.environ, acc, con)
                     return self.app
 
                 # Otherwise, dispatch to a helper method
