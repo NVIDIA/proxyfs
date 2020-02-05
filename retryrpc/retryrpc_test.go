@@ -70,12 +70,9 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	rrClnt := NewClient("client 1")
+	rrClnt, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
 	assert.NotNil(rrClnt)
-
-	// Have client connect to server.  Grab the server creds
-	// from the server structure
-	rrClnt.Dial(ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	assert.Nil(newErr)
 
 	// Send an RPC which should return success
 	pingRequest := &rpctest.PingReq{Message: "Ping Me!"}

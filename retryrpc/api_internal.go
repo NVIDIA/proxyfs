@@ -65,11 +65,16 @@ type completedLRUEntry struct {
 	timeCompleted time.Time
 }
 
+// Magic number written at the end of the ioHeader.   Used
+// to detect if the complete header has been read.
+const headerMagic uint32 = 0xCAFEFEED
+
 // ioHeader is the header sent on the socket
 type ioHeader struct {
 	Len      uint32 // Number of bytes following header
 	Protocol uint16
 	Version  uint16
+	Magic    uint32 // Magic number - if invalid means have not read complete header
 }
 
 // Request is the structure sent over the wire
@@ -94,6 +99,7 @@ type reqCtx struct {
 	ioreq    ioRequest // Wrapped request passed to Send()
 	rpcReply interface{}
 	answer   chan replyCtx
+	genNum   uint64 // Generation number of socket when request sent
 }
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
@@ -133,6 +139,7 @@ func buildIoRequest(method string, jReq jsonRequest) (ioreq *ioRequest, err erro
 	ioreq.Hdr.Len = uint32(len(ioreq.JReq))
 	ioreq.Hdr.Protocol = uint16(JSON)
 	ioreq.Hdr.Version = currentRetryVersion
+	ioreq.Hdr.Magic = headerMagic
 	return
 }
 
@@ -140,6 +147,7 @@ func setupHdrReply(ioreply *ioReply) {
 	ioreply.Hdr.Len = uint32(len(ioreply.JResult))
 	ioreply.Hdr.Protocol = uint16(JSON)
 	ioreply.Hdr.Version = currentRetryVersion
+	ioreply.Hdr.Magic = headerMagic
 	return
 }
 
@@ -155,9 +163,23 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 		return
 	}
 
+	if hdr.Magic != headerMagic {
+		err = fmt.Errorf("Incomplete read of header")
+		return
+	}
+
 	// Now read the rest of the structure off the wire.
+	var numBytes int
 	buf = make([]byte, hdr.Len)
-	_, err = io.ReadFull(conn, buf)
+	numBytes, err = io.ReadFull(conn, buf)
+	if err != nil {
+		return
+	}
+
+	if hdr.Len != uint32(numBytes) {
+		err = fmt.Errorf("Incomplete read of body")
+		return
+	}
 
 	return
 }
@@ -199,7 +221,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	commonX509NotAfter = time.Date(timeNow.Year()+99, time.January, 1, 0, 0, 0, 0, timeNow.Location())
 
 	rootCAx509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("rand.Int() [1] failed: %v", err)
 		return
 	}
@@ -220,7 +242,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 
 	// Generate public and private key
 	rootCAEd25519PublicKey, rootCAEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("ed25519.GenerateKey() [1] failed: %v", err)
 		return
 	}
@@ -228,7 +250,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	// Create the certificate with the keys
 	rootCAx509CertificateDER, err = x509.CreateCertificate(rand.Reader,
 		rootCAx509CertificateTemplate, rootCAx509CertificateTemplate, rootCAEd25519PublicKey, rootCAEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.CreateCertificate() [1] failed: %v", err)
 		return
 	}
@@ -236,7 +258,7 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 	serverCreds.RootCAx509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootCAx509CertificateDER})
 
 	serverX509SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("rand.Int() [2] failed: %v", err)
 		return
 	}
@@ -256,23 +278,22 @@ func constructServerCreds(serverIPAddrAsString string) (serverCreds *ServerCreds
 
 	// Generate the server public/private keys
 	serverEd25519PublicKey, serverEd25519PrivateKey, err = ed25519.GenerateKey(nil)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("ed25519.GenerateKey() [2] failed: %v", err)
 		return
 	}
 
 	// Create the server certificate with the server public/private keys
 	serverX509CertificateDER, err = x509.CreateCertificate(rand.Reader, serverX509CertificateTemplate, rootCAx509CertificateTemplate, serverEd25519PublicKey, rootCAEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.CreateCertificate() [2] failed: %v", err)
 		return
 	}
 
-	// Encode the certificate as a PEM?
 	serverX509CertificatePEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverX509CertificateDER})
 
 	serverEd25519PrivateKeyDER, err = x509.MarshalPKCS8PrivateKey(serverEd25519PrivateKey)
-	if nil != err {
+	if err != nil {
 		err = fmt.Errorf("x509.MarshalPKCS8PrivateKey() failed: %v", err)
 		return
 	}

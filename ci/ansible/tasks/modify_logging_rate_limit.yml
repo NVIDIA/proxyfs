@@ -1,0 +1,81 @@
+# Modify logging rate limits. Actually, totally disabling limits, unless
+# we observe any unwanted side effects.
+---
+- name: Change RateLimitInterval in /etc/systemd/journald.conf
+  lineinfile:
+    dest: /etc/systemd/journald.conf
+    state: present
+    regexp: '^#?RateLimitInterval'
+    line: 'RateLimitInterval=0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitInterval in /etc/systemd/journald.conf
+  lineinfile:
+    dest: /etc/systemd/journald.conf
+    state: present
+    line: 'RateLimitInterval=0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitBurst in /etc/systemd/journald.conf
+  lineinfile:
+    dest: /etc/systemd/journald.conf
+    state: present
+    regexp: '^#?RateLimitBurst'
+    line: 'RateLimitBurst=0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitBurst in /etc/systemd/journald.conf
+  lineinfile:
+    dest: /etc/systemd/journald.conf
+    state: present
+    line: 'RateLimitBurst=0'
+  become: yes
+  become_user: root
+
+- name: Restart service systemd-journald
+  service:
+    name: systemd-journald
+    state: restarted
+
+
+- name: Change RateLimitInterval in /etc/rsyslog.conf
+  lineinfile:
+    dest: /etc/rsyslog.conf
+    state: present
+    regexp: '^#?\$imjournalRatelimitInterval'
+    line: '$imjournalRatelimitInterval 0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitInterval in /etc/rsyslog.conf
+  lineinfile:
+    dest: /etc/rsyslog.conf
+    state: present
+    line: '$imjournalRatelimitInterval 0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitBurst in /etc/rsyslog.conf
+  lineinfile:
+    dest: /etc/rsyslog.conf
+    state: present
+    regexp: '^#?\$imjournalRatelimitBurst'
+    line: '$imjournalRatelimitBurst 0'
+  become: yes
+  become_user: root
+
+- name: Change RateLimitBurst in /etc/rsyslog.conf
+  lineinfile:
+    dest: /etc/rsyslog.conf
+    state: present
+    line: '$imjournalRatelimitBurst 0'
+  become: yes
+  become_user: root
+
+- name: Restart service rsyslog
+  service:
+    name: rsyslog
+    state: restarted

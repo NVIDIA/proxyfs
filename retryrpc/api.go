@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"reflect"
 	"sync"
@@ -39,7 +40,7 @@ type Server struct {
 	halting             bool
 	goroutineWG         sync.WaitGroup // Used to track outstanding goroutines
 	connLock            sync.Mutex
-	connections         *list.List // TODO - how used?
+	connections         *list.List
 	connWG              sync.WaitGroup
 	listeners           []net.Listener
 	Creds               *ServerCreds
@@ -71,6 +72,13 @@ func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
 	}
+
+	// TODO - remove this once we integrate pfs-retryrpc into stress
+	// test framework
+	//
+	// Write our key to a file so test utilities can pick it up without using
+	// the mount API
+	ioutil.WriteFile("/tmp/cert.pem", server.Creds.RootCAx509CertificatePEM, 0700)
 
 	return server
 }
@@ -154,6 +162,21 @@ func (server *Server) Close() {
 	server.completedDoneWG.Wait()
 }
 
+// CloseClientConn - This is debug code to cause some connections to be closed
+// TODO - call this from stress test case to cause retransmits
+func (server *Server) CloseClientConn() {
+	if server == nil {
+		return
+	}
+	logger.Infof("CloseClientConn() called --------")
+	server.Lock()
+	for c := server.connections.Front(); c != nil; c = c.Next() {
+		conn := c.Value.(net.Conn)
+		conn.Close()
+	}
+	server.Unlock()
+}
+
 // CompletedCnt returns count of pendingRequests
 //
 // This is only useful for testing.
@@ -169,6 +192,26 @@ func (server *Server) PendingCnt() int {
 }
 
 // Client methods
+type clientState int
+
+const (
+	// INITIAL means the Client struct has just been created
+	INITIAL clientState = iota + 1
+	// DISCONNECTED means the Client has lost the connection to the server
+	DISCONNECTED
+	// CONNECTED means the Client is connected to the server
+	CONNECTED
+)
+
+type connectionTracker struct {
+	state                    clientState
+	genNum                   uint64 // Generation number of tlsConn - avoid racing recoveries
+	tlsConfig                *tls.Config
+	tlsConn                  *tls.Conn // Our connection to the server
+	x509CertPool             *x509.CertPool
+	rootCAx509CertificatePEM []byte
+	hostPortStr              string
+}
 
 // Client tracking structure
 type Client struct {
@@ -177,58 +220,40 @@ type Client struct {
 	currentRequestID uint64 // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
+	connection         connectionTracker
 	myUniqueID         string             // Unique ID across all clients
 	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
-	tlsConn      *tls.Conn // Our connection to the server
-	x509CertPool *x509.CertPool
-	tlsConfig    *tls.Config
-	goroutineWG  sync.WaitGroup // Used to track outstanding goroutines
-}
-
-// NewClient returns a Client structure
-func NewClient(myUniqueID string) *Client {
-
-	// TODO - if restart client, Client Request ID will be 0.   How know the server
-	// has removed these client IDs from it's queue?  Race condition...
-	c := &Client{myUniqueID: myUniqueID}
-	c.outstandingRequest = make(map[uint64]*reqCtx)
-
-	return c
+	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
 // TODO - pass loggers to Client and Server objects
 
-// Dial sets up connection to server
-func (client *Client) Dial(ipaddr string, port int, rootCAx509CertificatePEM []byte) (err error) {
-	portStr := fmt.Sprintf("%d", port)
-	hostPortStr := net.JoinHostPort(ipaddr, portStr)
+// NewClient returns a Client structure
+//
+// NOTE: It is assumed that if a client calls NewClient(), it will
+// always use a unique myUniqueID.   Otherwise, the server may have
+// old entries.
+//
+// TODO - purge cache of old entries on server and/or use different
+// starting point for requestID.
+func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte) (client *Client, err error) {
 
-	client.x509CertPool = x509.NewCertPool()
+	client = &Client{myUniqueID: myUniqueID}
+	portStr := fmt.Sprintf("%d", port)
+	client.connection.state = INITIAL
+	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
+	client.outstandingRequest = make(map[uint64]*reqCtx)
+	client.connection.x509CertPool = x509.NewCertPool()
 
 	// Add cert for root CA to our pool
-	ok := client.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
+	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
-		return
+		return nil, err
 	}
 
-	client.tlsConfig = &tls.Config{
-		RootCAs: client.x509CertPool,
-	}
-
-	// Now dial the server
-	client.tlsConn, err = tls.Dial("tcp", hostPortStr, client.tlsConfig)
-	if nil != err {
-		err = fmt.Errorf("tls.Dial() failed: %v", err)
-		return
-	}
-
-	// Start readResponse goroutine to read responses from server
-	client.goroutineWG.Add(1)
-	go client.readReplies()
-
-	return
+	return client, err
 }
 
 // Send the request and block until it has completed
@@ -243,8 +268,11 @@ func (client *Client) Close() {
 	// This will cause the blocked getIO() in readReplies() to return.
 	client.Lock()
 	client.halting = true
+	if client.connection.state == CONNECTED {
+		client.connection.state = INITIAL
+		client.connection.tlsConn.Close()
+	}
 	client.Unlock()
-	client.tlsConn.Close()
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()

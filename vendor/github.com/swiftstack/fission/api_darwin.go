@@ -51,3 +51,9 @@ type SetAttrIn struct {
 	CrTimeNSec   uint32
 	Flags        uint32
 }
+
+const SetXAttrInFixedPortionSize = 16 // + len(Name) + 1 + len(Data)
+
+const GetXAttrInFixedPortionSize = 16 // + len(Name)
+
+const ListXAttrInSize = 16
