@@ -285,7 +285,7 @@ systemctl start rsyncd.service
 
 rsync rsync://pub@localhost/
 
-# [Setup Swift] Setting up rsync
+# [Setup Swift] Setting up memcached
 
 systemctl enable memcached.service
 systemctl start memcached.service
