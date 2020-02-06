@@ -39,7 +39,7 @@ type requestID uint64
 
 // Server side data structure storing per client information
 // such as completed requests, etc
-type myUniqueInfo struct {
+type clientInfo struct {
 	sync.Mutex
 	pendingRequest           map[requestID]*pendingCtx     // Key: "RequestID"
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"

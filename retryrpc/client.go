@@ -56,6 +56,8 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	// Setup ioreq to write structure on socket to server
 	ioreq, err := buildIoRequest(method, jreq)
 	if err != nil {
+		e := fmt.Errorf("Client buildIoRequest returned err: %v", err)
+		logger.PanicfWithError(e, "")
 		return err
 	}
 

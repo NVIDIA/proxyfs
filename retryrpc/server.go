@@ -67,7 +67,7 @@ func keyString(myUniqueID string, rID requestID) string {
 //
 // Otherwise, call the RPC.  callRPCAndMarshal() takes care
 // of adding the request to the pending queue.
-func (server *Server) findQOrCallRPC(cCtx *connCtx, mui *myUniqueInfo, buf []byte, jReq *jsonRequest) (err error) {
+func (server *Server) findQOrCallRPC(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest) (err error) {
 	rID := jReq.RequestID
 
 	// First check if we already completed this request by looking at
@@ -75,16 +75,16 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, mui *myUniqueInfo, buf []byt
 	// net.Conn if needed.
 
 	// TODO - be careful that drop locks appropriately!!
-	mui.Lock()
-	v, ok := mui.completedRequest[rID]
+	ci.Lock()
+	v, ok := ci.completedRequest[rID]
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
-		mui.Unlock()
+		ci.Unlock()
 		returnResults(v, cCtx, jReq)
 
 	} else {
-		_, ok2 := mui.pendingRequest[rID]
+		_, ok2 := ci.pendingRequest[rID]
 		if ok2 {
 			// Already on pending queue.  Replace the connCtx in the pending queue so
 			// that the goroutine completing the task sends the response back to the
@@ -92,8 +92,8 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, mui *myUniqueInfo, buf []byt
 			// the client before creating a new connection.
 			//
 			// This goroutine simply returns.
-			mui.buildAndQPendingCtx(rID, buf, cCtx, true)
-			mui.Unlock()
+			ci.buildAndQPendingCtx(rID, buf, cCtx, true)
+			ci.Unlock()
 
 		} else {
 			// On neither queue - must be new request
@@ -104,11 +104,11 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, mui *myUniqueInfo, buf []byt
 			// We pass buf to the call because the request will have to
 			// be unmarshaled again to retrieve the parameters specific to
 			// the RPC.
-			mui.Unlock()
+			ci.Unlock()
 
 			// TODO - why return err here if already returned results to
 			// client?
-			err = server.callRPCAndMarshal(cCtx, mui, buf, jReq, rID)
+			err = server.callRPCAndMarshal(cCtx, ci, buf, jReq, rID)
 		}
 	}
 
@@ -131,27 +131,27 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	}
 
 	server.Lock()
-	mui, ok := server.perUniqueIDInfo[jReq.MyUniqueID]
+	ci, ok := server.perClientInfo[jReq.MyUniqueID]
 	if !ok {
-		m := &myUniqueInfo{}
-		m.pendingRequest = make(map[requestID]*pendingCtx)
-		m.completedRequest = make(map[requestID]*completedEntry)
-		m.completedRequestLRU = list.New()
-		server.perUniqueIDInfo[jReq.MyUniqueID] = m
-		mui = m
+		c := &clientInfo{}
+		c.pendingRequest = make(map[requestID]*pendingCtx)
+		c.completedRequest = make(map[requestID]*completedEntry)
+		c.completedRequestLRU = list.New()
+		server.perClientInfo[jReq.MyUniqueID] = c
+		ci = c
 	}
 	server.Unlock()
 
-	mui.Lock()
-	if jReq.HighestReplySeen > mui.highestReplySeen {
-		mui.highestReplySeen = jReq.HighestReplySeen
+	ci.Lock()
+	if jReq.HighestReplySeen > ci.highestReplySeen {
+		ci.highestReplySeen = jReq.HighestReplySeen
 	}
-	mui.Unlock()
+	ci.Unlock()
 
 	// Complete the request either by looking in completed queue,
 	// updating cCtx of pending queue entry or by calling the
 	// RPC.
-	err := server.findQOrCallRPC(cCtx, mui, buf, &jReq)
+	err := server.findQOrCallRPC(cCtx, ci, buf, &jReq)
 	if err != nil {
 		logger.Errorf("findQOrCallRPC returned err: %v", err)
 	}
@@ -198,7 +198,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 // TODO - review the locking here to make it simplier
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndMarshal(cCtx *connCtx, mui *myUniqueInfo, buf []byte, jReq *jsonRequest, rID requestID) (err error) {
+func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest, rID requestID) (err error) {
 
 	// Setup the reply structure with common fields
 	reply := &ioReply{}
@@ -206,7 +206,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, mui *myUniqueInfo, buf []
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
 	// Queue the request
-	mui.buildAndQPendingCtx(rID, buf, cCtx, false)
+	ci.buildAndQPendingCtx(rID, buf, cCtx, false)
 
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
@@ -258,28 +258,28 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, mui *myUniqueInfo, buf []
 
 	lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 
-	mui.Lock()
+	ci.Lock()
 	// connCtx may have changed while we dropped the lock due to new connection or
 	// the RPC may have completed.
 	//
 	// Pull the current one from pendingRequest if queueKey exists
-	pendingCtx := mui.pendingRequest[rID]
+	pendingCtx := ci.pendingRequest[rID]
 	if pendingCtx != nil {
 		currentCCtx := pendingCtx.cCtx
 
 		ce := &completedEntry{reply: reply}
 
-		mui.completedRequest[rID] = ce
-		le := mui.completedRequestLRU.PushBack(lruEntry)
+		ci.completedRequest[rID] = ce
+		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
-		delete(mui.pendingRequest, rID)
-		mui.Unlock()
+		delete(ci.pendingRequest, rID)
+		ci.Unlock()
 
 		// Now return the results
 		returnResults(ce, currentCCtx, jReq)
 	} else {
 		// pendingRequest was already completed
-		mui.Unlock()
+		ci.Unlock()
 	}
 
 	return
@@ -349,7 +349,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 	server.Lock()
 	if long {
 		l := list.New()
-		for k, v := range server.perUniqueIDInfo {
+		for k, v := range server.perClientInfo {
 			n := server.trimTLLBased(k, v, t)
 			totalItems += n
 
@@ -367,17 +367,17 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 		// lock.
 		for e := l.Front(); e != nil; e = e.Next() {
 			key := e.Value.(string)
-			v := server.perUniqueIDInfo[key]
+			v := server.perClientInfo[key]
 
 			v.Lock()
 			if v.isEmpty() {
-				delete(server.perUniqueIDInfo, key)
+				delete(server.perClientInfo, key)
 			}
 			v.Unlock()
 		}
 		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
 	} else {
-		for k, v := range server.perUniqueIDInfo {
+		for k, v := range server.perClientInfo {
 			n := server.trimAClientBasedACK(k, v)
 			totalItems += n
 		}
@@ -389,21 +389,21 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 // on TTL or RequestID acknowledgement from client.
 //
 // NOTE: We assume Server Lock is held
-func (server *Server) trimAClientBasedACK(uniqueID string, mui *myUniqueInfo) (numItems int) {
+func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numItems int) {
 
-	mui.Lock()
+	ci.Lock()
 
 	// Remove from completedRequest completedRequestLRU
-	for h := mui.previousHighestReplySeen + 1; h <= mui.highestReplySeen; h++ {
-		v := mui.completedRequest[h]
-		mui.completedRequestLRU.Remove(v.lruElem)
-		delete(mui.completedRequest, h)
+	for h := ci.previousHighestReplySeen + 1; h <= ci.highestReplySeen; h++ {
+		v := ci.completedRequest[h]
+		ci.completedRequestLRU.Remove(v.lruElem)
+		delete(ci.completedRequest, h)
 		numItems++
 	}
 
 	// Keep track of how far we have trimmed for next run
-	mui.previousHighestReplySeen = mui.highestReplySeen
-	mui.Unlock()
+	ci.previousHighestReplySeen = ci.highestReplySeen
+	ci.Unlock()
 	return
 }
 
@@ -412,15 +412,15 @@ func (server *Server) trimAClientBasedACK(uniqueID string, mui *myUniqueInfo) (n
 // This gets called every ~10 minutes to clean out older entries.
 //
 // NOTE: We assume Server Lock is held
-func (server *Server) trimTLLBased(uniqueID string, mui *myUniqueInfo, t time.Time) (numItems int) {
+func (server *Server) trimTLLBased(uniqueID string, ci *clientInfo, t time.Time) (numItems int) {
 
 	l := list.New()
 
-	mui.Lock()
-	for e := mui.completedRequestLRU.Front(); e != nil; e = e.Next() {
+	ci.Lock()
+	for e := ci.completedRequestLRU.Front(); e != nil; e = e.Next() {
 		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
-			delete(mui.completedRequest, e.Value.(completedLRUEntry).requestID)
+			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
 
 			// Push on local list so don't delete while iterating
 			l.PushBack(e)
@@ -434,10 +434,10 @@ func (server *Server) trimTLLBased(uniqueID string, mui *myUniqueInfo, t time.Ti
 
 	// Now delete from LRU using the local list
 	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
-		tmpE := mui.completedRequestLRU.Front()
-		_ = mui.completedRequestLRU.Remove(tmpE)
+		tmpE := ci.completedRequestLRU.Front()
+		_ = ci.completedRequestLRU.Remove(tmpE)
 
 	}
-	mui.Unlock()
+	ci.Unlock()
 	return
 }

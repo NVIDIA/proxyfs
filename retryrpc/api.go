@@ -47,8 +47,8 @@ type Server struct {
 	listeners            []net.Listener
 	Creds                *ServerCreds
 	listenersWG          sync.WaitGroup
-	receiver             reflect.Value            // Package receiver being served
-	perUniqueIDInfo      map[string]*myUniqueInfo // Key: "MyUniqueID".  Tracks clients
+	receiver             reflect.Value          // Package receiver being served
+	perClientInfo        map[string]*clientInfo // Key: "clientID".  Tracks clients
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
@@ -62,7 +62,7 @@ func NewServer(ttl time.Duration, shortTrim time.Duration, ipaddr string, port i
 	)
 	server := &Server{ipaddr: ipaddr, port: port, completedLongTTL: ttl, completedAckTrim: shortTrim}
 	server.svrMap = make(map[string]*methodArgs)
-	server.perUniqueIDInfo = make(map[string]*myUniqueInfo)
+	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
@@ -178,7 +178,7 @@ func (server *Server) CloseClientConn() {
 //
 // This is only useful for testing.
 func (server *Server) CompletedCnt() (totalCnt int) {
-	for _, v := range server.perUniqueIDInfo {
+	for _, v := range server.perClientInfo {
 		totalCnt += v.completedCnt()
 	}
 	return
@@ -188,7 +188,7 @@ func (server *Server) CompletedCnt() (totalCnt int) {
 //
 // This is only useful for testing.
 func (server *Server) PendingCnt() (totalCnt int) {
-	for _, v := range server.perUniqueIDInfo {
+	for _, v := range server.perClientInfo {
 		totalCnt += v.pendingCnt()
 	}
 	return

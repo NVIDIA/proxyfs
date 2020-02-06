@@ -3,33 +3,33 @@ package retryrpc
 // This file contains functions in the server which
 // keep track of clients.
 
-func (mui *myUniqueInfo) buildAndQPendingCtx(rID requestID, buf []byte, cCtx *connCtx, lockHeld bool) {
+func (ci *clientInfo) buildAndQPendingCtx(rID requestID, buf []byte, cCtx *connCtx, lockHeld bool) {
 	pc := &pendingCtx{buf: buf, cCtx: cCtx}
 
 	if lockHeld == false {
-		mui.Lock()
+		ci.Lock()
 	}
 
-	mui.pendingRequest[rID] = pc
+	ci.pendingRequest[rID] = pc
 
 	if lockHeld == false {
-		mui.Unlock()
+		ci.Unlock()
 	}
 }
 
-// NOTE: This function assumes mui Lock is held
-func (mui *myUniqueInfo) isEmpty() bool {
-	if len(mui.completedRequest) == 0 &&
-		len(mui.pendingRequest) == 0 {
+// NOTE: This function assumes ci Lock is held
+func (ci *clientInfo) isEmpty() bool {
+	if len(ci.completedRequest) == 0 &&
+		len(ci.pendingRequest) == 0 {
 		return true
 	}
 	return false
 }
 
-func (mui *myUniqueInfo) completedCnt() int {
-	return len(mui.completedRequest)
+func (ci *clientInfo) completedCnt() int {
+	return len(ci.completedRequest)
 }
 
-func (mui *myUniqueInfo) pendingCnt() int {
-	return len(mui.pendingRequest)
+func (ci *clientInfo) pendingCnt() int {
+	return len(ci.pendingRequest)
 }
