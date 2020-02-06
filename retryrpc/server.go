@@ -130,7 +130,6 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 		return
 	}
 
-	logger.Infof("processRequest() - highestReplySeen: %v\n", jReq.HighestReplySeen)
 	server.Lock()
 	mui, ok := server.perUniqueIDInfo[jReq.MyUniqueID]
 	if !ok {

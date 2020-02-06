@@ -153,15 +153,6 @@ func (server *Server) Close() {
 	server.closeClientConn()
 	server.goroutineWG.Wait()
 
-	/*
-			server.Lock()
-			x := len(server.pendingRequest)
-			server.Unlock()
-		if x != 0 {
-			logger.Errorf("pendingRequest count is: %v when should be zero", x)
-		}
-	*/
-
 	server.completedLongTicker.Stop()
 	server.completedShortTicker.Stop()
 	server.completedTickerDone <- true
@@ -186,21 +177,21 @@ func (server *Server) CloseClientConn() {
 // CompletedCnt returns count of pendingRequests
 //
 // This is only useful for testing.
-func (server *Server) CompletedCnt() int {
-	/*
-		return len(server.completedRequest)
-	*/
-	return 0
+func (server *Server) CompletedCnt() (totalCnt int) {
+	for _, v := range server.perUniqueIDInfo {
+		totalCnt += v.completedCnt()
+	}
+	return
 }
 
 // PendingCnt returns count of pendingRequests
 //
 // This is only useful for testing.
-func (server *Server) PendingCnt() int {
-	/*
-		return len(server.pendingRequest)
-	*/
-	return 0
+func (server *Server) PendingCnt() (totalCnt int) {
+	for _, v := range server.perUniqueIDInfo {
+		totalCnt += v.pendingCnt()
+	}
+	return
 }
 
 // Client methods

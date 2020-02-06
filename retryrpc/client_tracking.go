@@ -25,3 +25,11 @@ func (mui *myUniqueInfo) isEmpty() bool {
 	}
 	return false
 }
+
+func (mui *myUniqueInfo) completedCnt() int {
+	return len(mui.completedRequest)
+}
+
+func (mui *myUniqueInfo) pendingCnt() int {
+	return len(mui.pendingRequest)
+}
