@@ -41,10 +41,16 @@ type requestID uint64
 // such as completed requests, etc
 type myUniqueInfo struct {
 	sync.Mutex
-	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
-	completedRequest    map[string]*ioReply    // Key: "MyUniqueID:RequestID"
-	completedRequestLRU *list.List             // LRU used to remove completed request in ticker
-	highestReplySeen    requestID              // Highest consectutive requestID client has seen
+	pendingRequest           map[requestID]*pendingCtx     // Key: "RequestID"
+	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
+	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
+	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
+	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
+}
+
+type completedEntry struct {
+	reply   *ioReply
+	lruElem *list.Element
 }
 
 // connCtx tracks a conn which has been accepted.
@@ -74,7 +80,7 @@ type methodArgs struct {
 // completedLRUEntry tracks time entry was completed for
 // expiration from cache
 type completedLRUEntry struct {
-	queueKey      string
+	requestID     requestID
 	timeCompleted time.Time
 }
 

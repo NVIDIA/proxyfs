@@ -210,6 +210,7 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
 		"JSONRPCServer.RetryRPCPort=32357", // ...and similarly here...
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
+		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
 	}
 

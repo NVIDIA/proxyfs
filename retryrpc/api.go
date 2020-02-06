@@ -48,7 +48,7 @@ type Server struct {
 	Creds                *ServerCreds
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value            // Package receiver being served
-	perUniqueIDInfo      map[string]*myUniqueInfo // Key: "MyUniqueID"
+	perUniqueIDInfo      map[string]*myUniqueInfo // Key: "MyUniqueID".  Tracks clients
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
@@ -119,11 +119,9 @@ func (server *Server) Start() (err error) {
 				server.completedDoneWG.Done()
 				return
 			case tl := <-server.completedLongTicker.C:
-				server.trimCompleted(tl)
-				/*
-					case ts := <-server.completedShortTicker.C:
-						server.trimAlreadAcked(ts)
-				*/
+				server.trimCompleted(tl, true)
+			case ts := <-server.completedShortTicker.C:
+				server.trimCompleted(ts, false)
 			}
 		}
 	}()

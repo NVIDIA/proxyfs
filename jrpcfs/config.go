@@ -26,6 +26,7 @@ type globalsStruct struct {
 	fastPortString           string
 	retryRPCPort             uint16
 	retryRPCTTLCompleted     time.Duration
+	retryRPCAckTrim          time.Duration
 	rootCAx509CertificatePEM []byte
 	dataPathLogging          bool
 
@@ -102,6 +103,11 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCTTLCompleted from config file")
 			return
 		}
+		globals.retryRPCAckTrim, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCAckTrim")
+		if nil != err {
+			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCAckTrim from config file")
+			return
+		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 		globals.retryRPCPort = 0
@@ -135,7 +141,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted)
+	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim)
 
 	return
 }
