@@ -150,13 +150,6 @@ func (dummy *testSwiftProxyEmulatorGlobalsStruct) ServeHTTP(responseWriter http.
 		}
 	}
 
-	// Exclude non-emulated paths
-
-	if !strings.HasPrefix(request.URL.Path, "/v1/"+globals.config.SwiftAccountName) {
-		responseWriter.WriteHeader(http.StatusNotFound)
-		return
-	}
-
 	// Reject unauthorized requests
 
 	if request.Header.Get("X-Auth-Token") != testAuthToken {
@@ -231,18 +224,21 @@ func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		err                error
 		getBuf             []byte
 		hostHeader         string
+		noAuthPath         string
 		noAuthRequest      *http.Request
 		noAuthResponse     *http.Response
 		noAuthStatusCode   int
 		rangeHeader        string
 	)
 
-	if authRequest.Header.Get("X-Bypass-Proxyfs") != "true" {
-		authResponseWriter.WriteHeader(http.StatusForbidden)
+	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+globals.config.SwiftAccountName) {
+		authResponseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("GET", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+authRequest.URL.Path, nil)
+	noAuthPath = strings.Replace(authRequest.URL.Path, "proxyfs", "v1", 1)
+
+	noAuthRequest, err = http.NewRequest("GET", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+noAuthPath, nil)
 	if nil != err {
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
 		return
@@ -306,17 +302,20 @@ func doPUT(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 	var (
 		err            error
 		hostHeader     string
+		noAuthPath     string
 		noAuthRequest  *http.Request
 		noAuthResponse *http.Response
 	)
 
-	if authRequest.Header.Get("X-Bypass-Proxyfs") != "true" {
+	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+globals.config.SwiftAccountName) {
 		_ = authRequest.Body.Close()
-		authResponseWriter.WriteHeader(http.StatusForbidden)
+		authResponseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	noAuthRequest, err = http.NewRequest("PUT", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+authRequest.URL.Path, authRequest.Body)
+	noAuthPath = strings.Replace(authRequest.URL.Path, "proxyfs", "v1", 1)
+
+	noAuthRequest, err = http.NewRequest("PUT", testSwiftProxyEmulatorGlobals.ramswiftNoAuthURL+noAuthPath, authRequest.Body)
 	if nil != err {
 		_ = authRequest.Body.Close()
 		authResponseWriter.WriteHeader(http.StatusBadRequest)
@@ -354,6 +353,12 @@ func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 		jrpcRequestBuf  []byte
 		tcpConn         *net.TCPConn
 	)
+
+	if !strings.HasPrefix(request.URL.Path, "/v1/"+globals.config.SwiftAccountName) {
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
 
 	jrpcRequestBuf, err = ioutil.ReadAll(request.Body)
 	_ = request.Body.Close()
