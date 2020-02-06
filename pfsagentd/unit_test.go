@@ -165,13 +165,12 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /auth/v1.0 returned incorrect X-Storage-Url")
 	}
 
-	putContainerRequest, err = http.NewRequest("PUT", globals.swiftAccountURL+"/TestContainer", nil)
+	putContainerRequest, err = http.NewRequest("PUT", globals.swiftAccountBypassURL+"/TestContainer", nil)
 	if nil != err {
 		t.Fatalf("Creating PUT .../TestContainer failed: %v", err)
 	}
 
 	putContainerRequest.Header.Add("X-Auth-Token", testAuthToken)
-	putContainerRequest.Header.Add("X-Bypass-Proxyfs", "true")
 
 	putContainerResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(putContainerRequest)
 	if nil != err {
@@ -181,13 +180,12 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("PUT .../TestContainer returned bad status: %v", putContainerResponse.Status)
 	}
 
-	putObjectRequest, err = http.NewRequest("PUT", globals.swiftAccountURL+"/TestContainer/TestObject", bytes.NewReader([]byte{0x00, 0x01, 0x02, 0x03, 0x04}))
+	putObjectRequest, err = http.NewRequest("PUT", globals.swiftAccountBypassURL+"/TestContainer/TestObject", bytes.NewReader([]byte{0x00, 0x01, 0x02, 0x03, 0x04}))
 	if nil != err {
 		t.Fatalf("Creating PUT .../TestContainer/TestObject failed: %v", err)
 	}
 
 	putObjectRequest.Header.Add("X-Auth-Token", testAuthToken)
-	putObjectRequest.Header.Add("X-Bypass-Proxyfs", "true")
 
 	putObjectResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(putObjectRequest)
 	if nil != err {
@@ -197,13 +195,12 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("PUT .../TestContainer/TestObject returned bad status: %v", putObjectResponse.Status)
 	}
 
-	getObjectRequest, err = http.NewRequest("GET", globals.swiftAccountURL+"/TestContainer/TestObject", nil)
+	getObjectRequest, err = http.NewRequest("GET", globals.swiftAccountBypassURL+"/TestContainer/TestObject", nil)
 	if nil != err {
 		t.Fatalf("Creating GET .../TestContainer/TestObject failed: %v", err)
 	}
 
 	getObjectRequest.Header.Add("X-Auth-Token", testAuthToken)
-	getObjectRequest.Header.Add("X-Bypass-Proxyfs", "true")
 
 	getObjectRequest.Header.Add("Range", "bytes=1-3")
 

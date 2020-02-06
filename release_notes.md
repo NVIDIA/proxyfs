@@ -1,5 +1,27 @@
 # ProxyFS Release Notes
 
+## 1.15.2 (February 5, 2020)
+
+### Bug Fixes:
+
+PFSAgent needing to retry GETs would possibly crash requiring a
+restart. Retries should be expected from time to time.
+
+PFSAgent GETS and PUTs to a Swift Proxy bypass the normal
+translation performed by ProxyFS to gain direct access to
+the LogSegments containing file data. This previously often
+caused 404 Not Found responses due to overwhelming the memcached
+and Swift Container servers for a variety of reasons. This update
+avoids this behavior entirely.
+
+### Notes:
+
+The aforementioned 404 Not Found fix required an update to
+Swift itself. Hence, in order for PFSAgent to operate at
+all, Swift must be at least at version 2.24 that includes
+a new mechanism by which PFSAgent requests the Swift Proxy
+to bypass consulting ProxyFS.
+
 ## 1.15.1 (January 30, 2020)
 
 ### Bug Fixes:
