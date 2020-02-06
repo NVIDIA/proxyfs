@@ -64,8 +64,8 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		jrpcResponse    []byte
 		marshalErr      error
 		ok              bool
-		unmarshalErr    error
 		swiftAccountURL string
+		unmarshalErr    error
 	)
 
 	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
@@ -73,7 +73,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %#v", jrpcMethod, jrpcParam, marshalErr)
 	}
 
-	_, swiftAccountURL = fetchAuthTokenAndAccountURL()
+	_, swiftAccountURL, _ = fetchAuthTokenAndURLs()
 
 	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
 	if nil != httpErr {
@@ -123,7 +123,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	retryIndex = 0
 
 	for {
-		swiftAuthToken, _ = fetchAuthTokenAndAccountURL()
+		swiftAuthToken, _, _ = fetchAuthTokenAndURLs()
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
@@ -186,7 +186,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	}
 }
 
-func fetchAuthTokenAndAccountURL() (swiftAuthToken string, swiftAccountURL string) {
+func fetchAuthTokenAndURLs() (swiftAuthToken string, swiftAccountURL string, swiftAccountBypassURL string) {
 	var (
 		swiftAuthWaitGroup *sync.WaitGroup
 	)
@@ -199,6 +199,7 @@ func fetchAuthTokenAndAccountURL() (swiftAuthToken string, swiftAccountURL strin
 		if nil == swiftAuthWaitGroup {
 			swiftAuthToken = globals.swiftAuthToken
 			swiftAccountURL = globals.swiftAccountURL
+			swiftAccountBypassURL = globals.swiftAccountBypassURL
 			globals.Unlock()
 			return
 		}
@@ -214,8 +215,10 @@ func updateAuthTokenAndAccountURL() {
 		err                         error
 		getRequest                  *http.Request
 		getResponse                 *http.Response
-		swiftAuthToken              string
+		swiftAccountBypassURL       string
+		swiftAccountBypassURLSplit  []string
 		swiftAccountURL             string
+		swiftAuthToken              string
 		swiftStorageAccountURLSplit []string
 		swiftStorageURL             string
 	)
@@ -225,7 +228,7 @@ func updateAuthTokenAndAccountURL() {
 	if nil != globals.swiftAuthWaitGroup {
 		globals.Unlock()
 
-		_, _ = fetchAuthTokenAndAccountURL()
+		_, _, _ = fetchAuthTokenAndURLs()
 
 		return
 	}
@@ -248,6 +251,7 @@ func updateAuthTokenAndAccountURL() {
 		logErrorf("updateAuthTokenAndAccountURL() failed to submit request: %v", err)
 		swiftAuthToken = ""
 		swiftAccountURL = ""
+		swiftAccountBypassURL = ""
 	} else {
 		_, err = ioutil.ReadAll(getResponse.Body)
 		_ = getResponse.Body.Close()
@@ -255,11 +259,13 @@ func updateAuthTokenAndAccountURL() {
 			logErrorf("updateAuthTokenAndAccountURL() failed to read responseBody: %v", err)
 			swiftAuthToken = ""
 			swiftAccountURL = ""
+			swiftAccountBypassURL = ""
 		} else {
 			if http.StatusOK != getResponse.StatusCode {
 				logWarnf("updateAuthTokenAndAccountURL() got unexpected http.Status %s (%d)", getResponse.Status, getResponse.StatusCode)
 				swiftAuthToken = ""
 				swiftAccountURL = ""
+				swiftAccountBypassURL = ""
 			} else {
 				swiftAuthToken = getResponse.Header.Get("X-Auth-Token")
 				swiftStorageURL = getResponse.Header.Get("X-Storage-Url")
@@ -267,6 +273,7 @@ func updateAuthTokenAndAccountURL() {
 				swiftStorageAccountURLSplit = strings.Split(swiftStorageURL, "/")
 				if 0 == len(swiftStorageAccountURLSplit) {
 					swiftAccountURL = ""
+					swiftAccountBypassURL = ""
 				} else {
 					swiftStorageAccountURLSplit[len(swiftStorageAccountURLSplit)-1] = globals.config.SwiftAccountName
 					swiftAccountURL = strings.Join(swiftStorageAccountURLSplit, "/")
@@ -274,6 +281,10 @@ func updateAuthTokenAndAccountURL() {
 					if strings.HasPrefix(swiftAccountURL, "http:") && strings.HasPrefix(getRequest.URL.String(), "https:") {
 						swiftAccountURL = strings.Replace(swiftAccountURL, "http:", "https:", 1)
 					}
+
+					swiftAccountBypassURLSplit = strings.Split(swiftAccountURL, "/")
+					swiftAccountBypassURLSplit[len(swiftStorageAccountURLSplit)-2] = "proxyfs"
+					swiftAccountBypassURL = strings.Join(swiftAccountBypassURLSplit, "/")
 				}
 			}
 		}
@@ -283,6 +294,7 @@ func updateAuthTokenAndAccountURL() {
 
 	globals.swiftAuthToken = swiftAuthToken
 	globals.swiftAccountURL = swiftAccountURL
+	globals.swiftAccountBypassURL = swiftAccountBypassURL
 
 	globals.swiftAuthWaitGroup.Done()
 	globals.swiftAuthWaitGroup = nil

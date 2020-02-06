@@ -312,6 +312,7 @@ type globalsStruct struct {
 	swiftAuthWaitGroup              *sync.WaitGroup
 	swiftAuthToken                  string
 	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
+	swiftAccountBypassURL           string // swiftAccountURL with "v1" replaced by "proxyfs"
 	mountID                         jrpcfs.MountIDAsString
 	rootDirInodeNumber              uint64
 	fissionErrChan                  chan error
@@ -598,6 +599,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
 	globals.swiftAccountURL = ""
+	globals.swiftAccountBypassURL = ""
 
 	updateAuthTokenAndAccountURL()
 
@@ -657,6 +659,7 @@ func uninitializeGlobals() {
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
 	globals.swiftAccountURL = ""
+	globals.swiftAccountBypassURL = ""
 	globals.fissionErrChan = nil
 	globals.fissionVolume = nil
 	globals.fuseConn = nil

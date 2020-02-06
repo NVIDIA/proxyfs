@@ -300,12 +300,11 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 	chunkedPutContext.containerName = containerAndObjectNamesSplit[0]
 	chunkedPutContext.objectName = containerAndObjectNamesSplit[1]
 
-	chunkedPutRequest, err = http.NewRequest(http.MethodPut, globals.swiftAccountURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
+	chunkedPutRequest, err = http.NewRequest(http.MethodPut, globals.swiftAccountBypassURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
 	if nil != err {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to http.NewRequest() failed: %v", err)
 	}
 
-	chunkedPutRequest.Header.Add("X-Bypass-Proxyfs", "true")
 	chunkedPutRequest.Header.Add("Transfer-Encoding", "chunked")
 
 	chunkedPutContext.pos = 0
@@ -1423,7 +1422,7 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	// Issue GET for it
 
-	url = globals.swiftAccountURL + "/" + containerName + "/" + objectName
+	url = globals.swiftAccountBypassURL + "/" + containerName + "/" + objectName
 
 	logSegmentStart = logSegmentCacheElementKey.cacheLineTag * globals.config.ReadCacheLineSize
 	logSegmentEnd = logSegmentStart + globals.config.ReadCacheLineSize - 1
@@ -1433,7 +1432,6 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 		logFatalf("unable to create GET http.Request (,%s,): %v", url)
 	}
 
-	getRequest.Header.Add("X-Bypass-Proxyfs", "true")
 	getRequest.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", logSegmentStart, logSegmentEnd))
 
 	_, logSegmentCacheElement.buf, ok, _ = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
