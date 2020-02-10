@@ -1,5 +1,5 @@
-hash: c2aaa5d924d6659365e2d63abdb5d7a6ce6d2e4f20233730717cb61f2e532b3c
-updated: 2020-01-23T12:09:01.342894-08:00
+hash: 085caff19534031af680c5b253a3fe45a1ea1e875080fb2f8e5703b3445ccf5c
+updated: 2020-02-06T15:28:21.145919-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -36,8 +36,12 @@ imports:
   - ptypes/any
   - ptypes/duration
   - ptypes/timestamp
+- name: github.com/google/btree
+  version: 4030bb1f1f0c35b30ca7009e9ebd06849dd45306
 - name: github.com/google/uuid
   version: c2e93f3ae59f2904160ceaab466009f965df46d6
+- name: github.com/konsorten/go-windows-terminal-sequences
+  version: f55edac94c9bbba5d6182a4be46d86a2c9b5b50e
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/sirupsen/logrus

@@ -7,7 +7,7 @@ import (
 	"github.com/swiftstack/ProxyFS/retryrpc"
 )
 
-func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16, retryRPCTTLCompleted time.Duration) {
+func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16, retryRPCTTLCompleted time.Duration, retryRPCAckTrim time.Duration) {
 	var err error
 
 	if globals.retryRPCPort == 0 {
@@ -15,7 +15,7 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 	}
 
 	// Create a new RetryRPC Server.
-	rrSvr := retryrpc.NewServer(retryRPCTTLCompleted, publicIPAddr, int(retryRPCPort))
+	rrSvr := retryrpc.NewServer(retryRPCTTLCompleted, retryRPCAckTrim, publicIPAddr, int(retryRPCPort))
 
 	// Register jrpcsfs methods with the retryrpc server
 	err = rrSvr.Register(jserver)

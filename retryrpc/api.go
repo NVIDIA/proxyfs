@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/btree"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -31,39 +32,37 @@ type ServerCreds struct {
 // Server tracks the state of the server
 type Server struct {
 	sync.Mutex
-	completedTTL time.Duration          // How long a completed request stays on queue
-	svrMap       map[string]*methodArgs // Key: Method name
-	ipaddr       string                 // IP address server listens too
-	port         int                    // Port of server
-	listener     net.Listener
+	completedLongTTL time.Duration          // How long a completed request stays on queue
+	completedAckTrim time.Duration          // How frequently trim requests acked by client
+	svrMap           map[string]*methodArgs // Key: Method name
+	ipaddr           string                 // IP address server listens too
+	port             int                    // Port of server
+	listener         net.Listener
 
-	halting             bool
-	goroutineWG         sync.WaitGroup // Used to track outstanding goroutines
-	connLock            sync.Mutex
-	connections         *list.List
-	connWG              sync.WaitGroup
-	listeners           []net.Listener
-	Creds               *ServerCreds
-	listenersWG         sync.WaitGroup
-	receiver            reflect.Value          // Package receiver being served
-	pendingRequest      map[string]*pendingCtx // Key: "MyUniqueID:RequestID"
-	completedRequest    map[string]*ioReply    // Key: "MyUniqueID:RequestID"
-	completedRequestLRU *list.List             // LRU used to remove completed request in ticker
-	completedTickerDone chan bool
-	completedTicker     *time.Ticker
-	completedDoneWG     sync.WaitGroup
+	halting              bool
+	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
+	connLock             sync.Mutex
+	connections          *list.List
+	connWG               sync.WaitGroup
+	listeners            []net.Listener
+	Creds                *ServerCreds
+	listenersWG          sync.WaitGroup
+	receiver             reflect.Value          // Package receiver being served
+	perClientInfo        map[string]*clientInfo // Key: "clientID".  Tracks clients
+	completedTickerDone  chan bool
+	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
+	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
+	completedDoneWG      sync.WaitGroup
 }
 
 // NewServer creates the Server object
-func NewServer(ttl time.Duration, ipaddr string, port int) *Server {
+func NewServer(ttl time.Duration, shortTrim time.Duration, ipaddr string, port int) *Server {
 	var (
 		err error
 	)
-	server := &Server{ipaddr: ipaddr, port: port, completedTTL: ttl}
+	server := &Server{ipaddr: ipaddr, port: port, completedLongTTL: ttl, completedAckTrim: shortTrim}
 	server.svrMap = make(map[string]*methodArgs)
-	server.pendingRequest = make(map[string]*pendingCtx)
-	server.completedRequest = make(map[string]*ioReply)
-	server.completedRequestLRU = list.New()
+	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
@@ -109,7 +108,9 @@ func (server *Server) Start() (err error) {
 	server.listenersWG.Add(1)
 
 	// Start ticker which removes older completedRequests
-	server.completedTicker = time.NewTicker(server.completedTTL)
+	server.completedLongTicker = time.NewTicker(server.completedLongTTL)
+	// Start ticker which removes requests already ACKed by client
+	server.completedShortTicker = time.NewTicker(server.completedAckTrim)
 	server.completedDoneWG.Add(1)
 	go func() {
 		for {
@@ -117,8 +118,10 @@ func (server *Server) Start() (err error) {
 			case <-server.completedTickerDone:
 				server.completedDoneWG.Done()
 				return
-			case t := <-server.completedTicker.C:
-				server.trimCompleted(t)
+			case tl := <-server.completedLongTicker.C:
+				server.trimCompleted(tl, true)
+			case ts := <-server.completedShortTicker.C:
+				server.trimCompleted(ts, false)
 			}
 		}
 	}()
@@ -150,14 +153,8 @@ func (server *Server) Close() {
 	server.closeClientConn()
 	server.goroutineWG.Wait()
 
-	server.Lock()
-	x := len(server.pendingRequest)
-	server.Unlock()
-	if x != 0 {
-		logger.Errorf("pendingRequest count is: %v when should be zero", x)
-	}
-
-	server.completedTicker.Stop()
+	server.completedLongTicker.Stop()
+	server.completedShortTicker.Stop()
 	server.completedTickerDone <- true
 	server.completedDoneWG.Wait()
 }
@@ -180,15 +177,21 @@ func (server *Server) CloseClientConn() {
 // CompletedCnt returns count of pendingRequests
 //
 // This is only useful for testing.
-func (server *Server) CompletedCnt() int {
-	return len(server.completedRequest)
+func (server *Server) CompletedCnt() (totalCnt int) {
+	for _, v := range server.perClientInfo {
+		totalCnt += v.completedCnt()
+	}
+	return
 }
 
 // PendingCnt returns count of pendingRequests
 //
 // This is only useful for testing.
-func (server *Server) PendingCnt() int {
-	return len(server.pendingRequest)
+func (server *Server) PendingCnt() (totalCnt int) {
+	for _, v := range server.perClientInfo {
+		totalCnt += v.pendingCnt()
+	}
+	return
 }
 
 // Client methods
@@ -217,13 +220,16 @@ type connectionTracker struct {
 type Client struct {
 	sync.Mutex
 	halting          bool
-	currentRequestID uint64 // Last request ID - start from clock
+	currentRequestID requestID // Last request ID - start from clock
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	connection         connectionTracker
-	myUniqueID         string             // Unique ID across all clients
-	outstandingRequest map[uint64]*reqCtx // Map of outstanding requests sent
+	myUniqueID         string                // Unique ID across all clients
+	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
+	highestConsecutive requestID // Highest requestID that can be
+	// trimmed
+	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
@@ -243,8 +249,9 @@ func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509Certificate
 	portStr := fmt.Sprintf("%d", port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
-	client.outstandingRequest = make(map[uint64]*reqCtx)
+	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
+	client.bt = btree.New(2)
 
 	// Add cert for root CA to our pool
 	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)

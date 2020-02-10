@@ -3,6 +3,7 @@
 package retryrpc
 
 import (
+	"container/list"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
@@ -34,6 +35,24 @@ const (
 	currentRetryVersion = 1
 )
 
+type requestID uint64
+
+// Server side data structure storing per client information
+// such as completed requests, etc
+type clientInfo struct {
+	sync.Mutex
+	pendingRequest           map[requestID]*pendingCtx     // Key: "RequestID"
+	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
+	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
+	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
+	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
+}
+
+type completedEntry struct {
+	reply   *ioReply
+	lruElem *list.Element
+}
+
 // connCtx tracks a conn which has been accepted.
 //
 // It also contains the lock used for serialization when
@@ -61,7 +80,7 @@ type methodArgs struct {
 // completedLRUEntry tracks time entry was completed for
 // expiration from cache
 type completedLRUEntry struct {
-	queueKey      string
+	requestID     requestID
 	timeCompleted time.Time
 }
 
@@ -104,16 +123,17 @@ type reqCtx struct {
 
 // jsonRequest is used to marshal an RPC request in/out of JSON
 type jsonRequest struct {
-	MyUniqueID string         `json:"myuniqueid"` // ID of client
-	RequestID  uint64         `json:"requestid"`  // ID of this request
-	Method     string         `json:"method"`
-	Params     [1]interface{} `json:"params"`
+	MyUniqueID       string         `json:"myuniqueid"`       // ID of client
+	RequestID        requestID      `json:"requestid"`        // ID of this request
+	HighestReplySeen requestID      `json:"highestReplySeen"` // Used to trim completedRequests on server
+	Method           string         `json:"method"`
+	Params           [1]interface{} `json:"params"`
 }
 
 // jsonReply is used to marshal an RPC response in/out of JSON
 type jsonReply struct {
 	MyUniqueID string      `json:"myuniqueid"` // ID of client
-	RequestID  uint64      `json:"requestid"`  // ID of this request
+	RequestID  requestID   `json:"requestid"`  // ID of this request
 	ErrStr     string      `json:"errstr"`
 	Result     interface{} `json:"result"`
 }
