@@ -60,7 +60,7 @@ ruby_block "update_proxy_server_pipeline" do
 
     if File.file?(proxy_server_conf)
       file = Chef::Util::FileEdit.new(proxy_server_conf)
-      file.search_file_replace(/ dlo /, " dlo pfs ")
+      file.search_file_replace(/^( *pipeline\s*=.*?)\s+dlo\s+(?:pfs\s+)?(.*)$/, '\1 dlo pfs \2')
       file.insert_line_if_no_match(/filter.pfs/, "")
       file.insert_line_if_no_match(/filter.pfs/, "[filter:pfs]")
       file.insert_line_if_no_match(/egg.pfs_middleware/, "use = egg:pfs_middleware#pfs")

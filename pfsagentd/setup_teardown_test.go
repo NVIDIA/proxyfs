@@ -18,10 +18,10 @@ import (
 
 const (
 	testDaemonStartPollInterval = 1 * time.Second
-	testProxyFSDaemonHTTPPort   = "53461"
+	testProxyFSDaemonHTTPPort   = "54321"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
-	testSwiftNoAuthPort         = "35262"
+	testSwiftNoAuthPort         = "54322"
 	testSwiftProxyAddr          = "localhost:38080"
 )
 
@@ -91,7 +91,7 @@ func testSetup(t *testing.T) {
 		"Agent.LogToConsole=false",
 		"Agent.TraceEnabled=false",
 		"Agent.HTTPServerIPAddr=127.0.0.1",
-		"Agent.HTTPServerTCPPort=9091",
+		"Agent.HTTPServerTCPPort=54323",
 		"Agent.ReadDirPlusEnabled=false",
 		"Agent.XAttrEnabled=false",
 		"Agent.EntryDuration=10s",
@@ -103,7 +103,7 @@ func testSetup(t *testing.T) {
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
 
 		"Stats.IPAddr=localhost",
-		"Stats.UDPPort=52184",
+		"Stats.UDPPort=54324",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 
@@ -120,7 +120,7 @@ func testSetup(t *testing.T) {
 		"Cluster.WhoAmI=Peer0",
 		"Cluster.Peers=Peer0",
 		"Cluster.ServerGuid=a66488e9-a051-4ff7-865d-87bfb84cc2ae",
-		"Cluster.PrivateClusterUDPPort=18123",
+		"Cluster.PrivateClusterUDPPort=54325",
 		"Cluster.UDPPacketSendSize=1400",
 		"Cluster.UDPPacketRecvSize=1500",
 		"Cluster.UDPPacketCapPerMessage=5",
@@ -206,9 +206,9 @@ func testSetup(t *testing.T) {
 		"FSGlobals.FileExtentMapEvictHighLimit=10010",
 		"FSGlobals.EtcdEnabled=false",
 
-		"JSONRPCServer.TCPPort=12346",      // 12346 instead of 12345 so that test can run if proxyfsd is already running
-		"JSONRPCServer.FastTCPPort=32346",  // ...and similarly here...
-		"JSONRPCServer.RetryRPCPort=32357", // ...and similarly here...
+		"JSONRPCServer.TCPPort=54326",
+		"JSONRPCServer.FastTCPPort=54327",
+		"JSONRPCServer.RetryRPCPort=54328",
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",

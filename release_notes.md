@@ -1,5 +1,92 @@
 # ProxyFS Release Notes
 
+## 1.15.2 (February 5, 2020)
+
+### Bug Fixes:
+
+PFSAgent needing to retry GETs would possibly crash requiring a
+restart. Retries should be expected from time to time.
+
+PFSAgent GETS and PUTs to a Swift Proxy bypass the normal
+translation performed by ProxyFS to gain direct access to
+the LogSegments containing file data. This previously often
+caused 404 Not Found responses due to overwhelming the memcached
+and Swift Container servers for a variety of reasons. This update
+avoids this behavior entirely.
+
+### Notes:
+
+The aforementioned 404 Not Found fix required an update to
+Swift itself. Hence, in order for PFSAgent to operate at
+all, Swift must be at least at version 2.24 that includes
+a new mechanism by which PFSAgent requests the Swift Proxy
+to bypass consulting ProxyFS.
+
+## 1.15.1 (January 30, 2020)
+
+### Bug Fixes:
+
+Overly short [Agent]SwiftTimeout settings resulted in PUT timeouts
+from PFSAgent to Swift that were fatal. The new suggested timeout
+moves from 20s to 10m to avoid this issue.
+
+Very short [Agent]MaxFlushTime settings (e.g. 100ms) resulted in
+a lockup of writes arriving for a file that was in the middle of
+time-triggered flushes. For the previous suggestex timeout of 10s,
+this was very rarely an issue because either clients would flush
+their file writes long before this or they would easily exceed
+MaxFlushSize (suggested value of 10MiB) data triggering a flush.
+By lowering MaxFlushTime, time-triggered flushes would expose the
+condition. This has now ben resolved.
+
+### Issues:
+
+As mentioned above, [Agent]MaxFlushTime settings can be set very
+low (e.g. 100ms). At such short durations, performance on small
+file workloads dramatically improves. This is not well understood
+yet why the system doesn't respond more gracefully to such small
+file workloads, so PFSAgent users should make note to lower this
+value in their previous configurations that probably set MaxFlushTime
+to 10s. Indeed, with the aforemented fix for handling short
+MaxFlushTime settings, the new suggested value is now 200ms.
+
+Continuing from 1.15.0, PFSAgent currently cannot run successfully on
+macOS due to some as yet unresolved support in package fission.
+
+## 1.15.0 (January 23, 2020)
+
+### Features:
+
+PFSAgent now uses a new path to ProxyFS for metadata operations that
+bypasses the hop through a Swift Proxy process. This new connection
+is long lived and secured by TLS. Should this connection drop, it will
+be reestablished in such a way that issued metadata requests are only
+executed once.
+
+PFSAgent now utilizes a new "fission" package enabling multithreaded
+upcall servicing whereever possible. Linux will still, under some
+circumstances, serialize what it deems potentially conflicting
+operations.
+
+### Bug Fixes:
+
+Various fixes in PFSAgent write path resulted in an incoherent ExtentMap
+describing a file's contents in Swift such that a subsequent Read could
+read invalid data. This also affected files that are truncated or later
+extended.
+
+### Issues:
+
+PFSAgent currently cannot run successfully on macOS due to some as yet
+unresolved support in package fission.
+
+### Notes:
+
+To expose the TLS Port utilized by PFSAgent, [JSONRPCServer]RetryRPCPort
+specifies the port on the PublicIPAddr of the node hosting ProxyFS. This
+port (on each Swift Proxy node running ProxyFS) must be made accessible
+to any entity running PFSAgent.
+
 ## 1.14.2.1 (December 6, 2019)
 
 ### Bug Fixes:

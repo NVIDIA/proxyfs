@@ -55,12 +55,6 @@ func doUnmountProxyFS() {
 	globals.retryRPCClient.Close()
 }
 
-func doRetryRPCRequest(method string, request interface{}, reply interface{}) (err error) {
-	err = globals.retryRPCClient.Send(method, request, reply)
-
-	return
-}
-
 func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interface{}) (err error) {
 	var (
 		httpErr         error
@@ -70,8 +64,8 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		jrpcResponse    []byte
 		marshalErr      error
 		ok              bool
-		unmarshalErr    error
 		swiftAccountURL string
+		unmarshalErr    error
 	)
 
 	jrpcRequestID, jrpcRequest, marshalErr = jrpcMarshalRequest(jrpcMethod, jrpcParam)
@@ -79,7 +73,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %#v", jrpcMethod, jrpcParam, marshalErr)
 	}
 
-	_, swiftAccountURL = fetchAuthTokenAndAccountURL()
+	_, swiftAccountURL, _ = fetchAuthTokenAndURLs()
 
 	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
 	if nil != httpErr {
@@ -129,7 +123,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	retryIndex = 0
 
 	for {
-		swiftAuthToken, _ = fetchAuthTokenAndAccountURL()
+		swiftAuthToken, _, _ = fetchAuthTokenAndURLs()
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
@@ -172,7 +166,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		} else {
 			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
 
-			// Close request.Body at this time just in case...
+			// Close request.Body (if any) at this time just in case...
 			//
 			// It appears that net/http.Do() will actually return
 			// even if it has an outstanding Read() call to
@@ -180,7 +174,9 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			// will give it a chance to force request.Body.Read()
 			// to exit cleanly.
 
-			_ = request.Body.Close()
+			if nil != request.Body {
+				_ = request.Body.Close()
+			}
 		}
 
 		time.Sleep(globals.retryDelay[retryIndex])
@@ -190,7 +186,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	}
 }
 
-func fetchAuthTokenAndAccountURL() (swiftAuthToken string, swiftAccountURL string) {
+func fetchAuthTokenAndURLs() (swiftAuthToken string, swiftAccountURL string, swiftAccountBypassURL string) {
 	var (
 		swiftAuthWaitGroup *sync.WaitGroup
 	)
@@ -203,6 +199,7 @@ func fetchAuthTokenAndAccountURL() (swiftAuthToken string, swiftAccountURL strin
 		if nil == swiftAuthWaitGroup {
 			swiftAuthToken = globals.swiftAuthToken
 			swiftAccountURL = globals.swiftAccountURL
+			swiftAccountBypassURL = globals.swiftAccountBypassURL
 			globals.Unlock()
 			return
 		}
@@ -218,8 +215,10 @@ func updateAuthTokenAndAccountURL() {
 		err                         error
 		getRequest                  *http.Request
 		getResponse                 *http.Response
-		swiftAuthToken              string
+		swiftAccountBypassURL       string
+		swiftAccountBypassURLSplit  []string
 		swiftAccountURL             string
+		swiftAuthToken              string
 		swiftStorageAccountURLSplit []string
 		swiftStorageURL             string
 	)
@@ -229,7 +228,7 @@ func updateAuthTokenAndAccountURL() {
 	if nil != globals.swiftAuthWaitGroup {
 		globals.Unlock()
 
-		_, _ = fetchAuthTokenAndAccountURL()
+		_, _, _ = fetchAuthTokenAndURLs()
 
 		return
 	}
@@ -252,6 +251,7 @@ func updateAuthTokenAndAccountURL() {
 		logErrorf("updateAuthTokenAndAccountURL() failed to submit request: %v", err)
 		swiftAuthToken = ""
 		swiftAccountURL = ""
+		swiftAccountBypassURL = ""
 	} else {
 		_, err = ioutil.ReadAll(getResponse.Body)
 		_ = getResponse.Body.Close()
@@ -259,11 +259,13 @@ func updateAuthTokenAndAccountURL() {
 			logErrorf("updateAuthTokenAndAccountURL() failed to read responseBody: %v", err)
 			swiftAuthToken = ""
 			swiftAccountURL = ""
+			swiftAccountBypassURL = ""
 		} else {
 			if http.StatusOK != getResponse.StatusCode {
 				logWarnf("updateAuthTokenAndAccountURL() got unexpected http.Status %s (%d)", getResponse.Status, getResponse.StatusCode)
 				swiftAuthToken = ""
 				swiftAccountURL = ""
+				swiftAccountBypassURL = ""
 			} else {
 				swiftAuthToken = getResponse.Header.Get("X-Auth-Token")
 				swiftStorageURL = getResponse.Header.Get("X-Storage-Url")
@@ -271,6 +273,7 @@ func updateAuthTokenAndAccountURL() {
 				swiftStorageAccountURLSplit = strings.Split(swiftStorageURL, "/")
 				if 0 == len(swiftStorageAccountURLSplit) {
 					swiftAccountURL = ""
+					swiftAccountBypassURL = ""
 				} else {
 					swiftStorageAccountURLSplit[len(swiftStorageAccountURLSplit)-1] = globals.config.SwiftAccountName
 					swiftAccountURL = strings.Join(swiftStorageAccountURLSplit, "/")
@@ -278,6 +281,10 @@ func updateAuthTokenAndAccountURL() {
 					if strings.HasPrefix(swiftAccountURL, "http:") && strings.HasPrefix(getRequest.URL.String(), "https:") {
 						swiftAccountURL = strings.Replace(swiftAccountURL, "http:", "https:", 1)
 					}
+
+					swiftAccountBypassURLSplit = strings.Split(swiftAccountURL, "/")
+					swiftAccountBypassURLSplit[len(swiftStorageAccountURLSplit)-2] = "proxyfs"
+					swiftAccountBypassURL = strings.Join(swiftAccountBypassURLSplit, "/")
 				}
 			}
 		}
@@ -287,6 +294,7 @@ func updateAuthTokenAndAccountURL() {
 
 	globals.swiftAuthToken = swiftAuthToken
 	globals.swiftAccountURL = swiftAccountURL
+	globals.swiftAccountBypassURL = swiftAccountBypassURL
 
 	globals.swiftAuthWaitGroup.Done()
 	globals.swiftAuthWaitGroup = nil

@@ -180,6 +180,13 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 Restart:
 	grantedLockSet.get(globals.tryLock)
 
+	if 0 != (setAttrIn.Valid & fission.SetAttrInValidFH) {
+		if !globals.alreadyLoggedIgnoring.setAttrInValidFH {
+			globals.logger.Printf("func DoSetAttr(,setAttrIn.Valid==0x%08X) ignoring FH bit (0x%08X)", setAttrIn.Valid, fission.SetAttrInValidFH)
+			globals.alreadyLoggedIgnoring.setAttrInValidFH = true
+		}
+	}
+
 	inode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
 		grantedLockSet.freeAll(false)
@@ -234,12 +241,6 @@ Restart:
 	if 0 != (setAttrIn.Valid & fission.SetAttrInValidMTime) {
 		inode.attr.MTimeSec = setAttrIn.MTimeSec
 		inode.attr.MTimeNSec = setAttrIn.MTimeNSec
-	}
-
-	if 0 != (setAttrIn.Valid & fission.SetAttrInValidFH) {
-		grantedLockSet.freeAll(false)
-		errno = syscall.ENOSYS
-		return
 	}
 
 	if 0 != (setAttrIn.Valid & fission.SetAttrInValidATimeNow) {

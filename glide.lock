@@ -53,7 +53,7 @@ imports:
 - name: github.com/swiftstack/cstruct
   version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
 - name: github.com/swiftstack/fission
-  version: 18383511211ccc5edc3be06fa31f527e89a859b1
+  version: c80160e3b00ce3c24b8b7d0e856725bc1eb2033b
 - name: github.com/swiftstack/sortedmap
   version: 6f9ef66702b23f47054e69be97a26feb6e7301b1
 - name: go.etcd.io/etcd

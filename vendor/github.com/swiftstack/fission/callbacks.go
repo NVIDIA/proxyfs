@@ -572,36 +572,14 @@ func (volume *volumeStruct) doFSync(inHeader *InHeader, devFuseFDReadBufPayload 
 
 func (volume *volumeStruct) doSetXAttr(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
 	var (
-		errno          syscall.Errno
-		nameDataSplit  [][]byte
-		setXAttrIn     *SetXAttrIn
-		setXAttrInSize int
+		err        error
+		errno      syscall.Errno
+		setXAttrIn *SetXAttrIn
 	)
 
-	if len(devFuseFDReadBufPayload) < SetXAttrInFixedPortionSize {
-		volume.logger.Printf("Call to doSetXAttr() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
-		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
-		return
-	}
-
-	nameDataSplit = bytes.SplitN(devFuseFDReadBufPayload[SetXAttrInFixedPortionSize:], []byte{0}, 2)
-	if len(nameDataSplit) != 2 {
-		volume.logger.Printf("Call to doSetXAttr() with bad devFuseFDReadBufPayload")
-		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
-		return
-	}
-
-	setXAttrIn = &SetXAttrIn{
-		Size:  *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
-		Flags: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[4])),
-		Name:  cloneByteSlice(nameDataSplit[0], false),
-		Data:  cloneByteSlice(nameDataSplit[1], true),
-	}
-
-	setXAttrInSize = SetXAttrInFixedPortionSize + len(setXAttrIn.Name) + 1 + len(setXAttrIn.Data)
-
-	if len(devFuseFDReadBufPayload) != setXAttrInSize {
-		volume.logger.Printf("Call to doSetXAttr() with bad Size == %v expected %v", setXAttrIn.Size, setXAttrInSize)
+	setXAttrIn, err = unmarshalSetXAttrIn(devFuseFDReadBufPayload)
+	if nil != err {
+		volume.logger.Printf("Call to doSetXAttr() found %v", err)
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
 		return
 	}
@@ -613,22 +591,18 @@ func (volume *volumeStruct) doSetXAttr(inHeader *InHeader, devFuseFDReadBufPaylo
 
 func (volume *volumeStruct) doGetXAttr(inHeader *InHeader, devFuseFDReadBufPayload []byte) {
 	var (
+		err         error
 		errno       syscall.Errno
 		getXAttrIn  *GetXAttrIn
 		getXAttrOut *GetXAttrOut
 		outPayload  []byte
 	)
 
-	if len(devFuseFDReadBufPayload) < GetXAttrInFixedPortionSize {
-		volume.logger.Printf("Call to doGetXAttr() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
+	getXAttrIn, err = unmarshalGetXAttrIn(devFuseFDReadBufPayload)
+	if nil != err {
+		volume.logger.Printf("Call to doGetXAttr() found %v", err)
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
 		return
-	}
-
-	getXAttrIn = &GetXAttrIn{
-		Size:    *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[0])),
-		Padding: *(*uint32)(unsafe.Pointer(&devFuseFDReadBufPayload[4])),
-		Name:    cloneByteSlice(devFuseFDReadBufPayload[GetXAttrInFixedPortionSize:], true),
 	}
 
 	getXAttrOut, errno = volume.callbacks.DoGetXAttr(inHeader, getXAttrIn)

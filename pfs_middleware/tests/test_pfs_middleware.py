@@ -263,12 +263,21 @@ class TestAccountGet(BaseMiddlewareTest):
             'GET', '/v1/AUTH_test', 200, {},
             '000000000000DACA\n000000000000DACC\n')
 
+        # Using header
         req = swob.Request.blank("/v1/AUTH_test", headers={
             "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
         status, _, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
         self.assertEqual(body, b'000000000000DACA\n000000000000DACC\n')
 
+        # Using path
+        req = swob.Request.blank("/proxyfs/AUTH_test", environ={
+            'swift_owner': True})
+        status, _, body = self.call_pfs(req)
+        self.assertEqual(status, '200 OK')
+        self.assertEqual(body, b'000000000000DACA\n000000000000DACC\n')
+
+        # Non-bypass
         req = swob.Request.blank("/v1/AUTH_test", environ={
             'swift_owner': True})
         status, _, body = self.call_pfs(req)
@@ -280,6 +289,7 @@ class TestAccountGet(BaseMiddlewareTest):
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '405 Method Not Allowed')
 
+        # Non-owner
         req = swob.Request.blank("/v1/AUTH_test", headers={
             "X-Bypass-ProxyFS": "true"})
         status, _, body = self.call_pfs(req)

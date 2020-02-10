@@ -398,3 +398,5 @@
       owner: root
       group: root
       mode: '0755'
+
+  - import_tasks: modify_logging_rate_limit.yml

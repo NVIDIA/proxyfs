@@ -187,7 +187,7 @@ echo "export SAMBA_SOURCE=\$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba" 
 
 # Install Python tox
 
-pip install tox
+pip install tox==3.5.3
 
 # Setup Swift
 #
@@ -261,7 +261,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.23.1.3
+git checkout ss-release-2.24.0.1
 pip install wheel
 python setup.py bdist_wheel
 pip install --no-binary cryptography -r requirements.txt
@@ -285,7 +285,7 @@ systemctl start rsyncd.service
 
 rsync rsync://pub@localhost/
 
-# [Setup Swift] Setting up rsync
+# [Setup Swift] Setting up memcached
 
 systemctl enable memcached.service
 systemctl start memcached.service
