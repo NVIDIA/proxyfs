@@ -778,9 +778,10 @@ class PfsMiddleware(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        # Alternate way to specify bypass mode: /proxyfs/AUTH_acct/...
+        # The only way to specify bypass mode: /proxyfs/AUTH_acct/...
+        proxyfs_path = False
         if vrs == 'proxyfs':
-            req.headers['X-Bypass-ProxyFS'] = 'true'
+            proxyfs_path = True
             req.path_info = req.path_info.replace('/proxyfs/', '/v1/', 1)
             vrs = 'v1'
 
@@ -829,7 +830,7 @@ class PfsMiddleware(object):
 
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             is_bypass_request = (
-                config_true_value(req.headers.get('X-Bypass-ProxyFS')) and
+                proxyfs_path and
                 self.bypass_mode in ('read-only', 'read-write'))
 
             # For requests that we make to Swift, we have to ensure that any
