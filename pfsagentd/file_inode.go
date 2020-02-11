@@ -187,15 +187,6 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 
 			grantedLock = fileInode.getExclusiveLock()
 			chunkedPutContext.state = chunkedPutContextStateClosing
-			for {
-				select {
-				case <-chunkedPutContext.sendChan:
-					continue
-				default:
-					goto EscapeSendChanDrain
-				}
-			}
-		EscapeSendChanDrain:
 			grantedLock.release()
 
 			goto PerformFlush
@@ -217,11 +208,26 @@ PerformFlush:
 	chunkedPutContext.wakeChan <- true
 	chunkedPutContext.Wait()
 
-	// Chunked PUT is complete... can we tell ProxyFS about it and dispose of it?
+	// Chunked PUT is complete
 
 	grantedLock = fileInode.getExclusiveLock()
 
 	chunkedPutContext.state = chunkedPutContextStateClosed
+
+	// But first, make sure sendChan is drained
+
+	for {
+		select {
+		case <-chunkedPutContext.sendChan:
+			continue
+		default:
+			goto EscapeSendChanDrain
+		}
+	}
+
+EscapeSendChanDrain:
+
+	// Can we tell ProxyFS about it and dispose of it?
 
 	if nil == chunkedPutContext.chunkedPutListElement.Prev() {
 		// We can record this chunkedPutContext as having completed
