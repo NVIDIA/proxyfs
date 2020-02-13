@@ -1165,7 +1165,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		chunkedPutContextElement *list.Element
 		fileInode                *fileInodeStruct
 		grantedLock              *fileInodeLockRequestStruct
-		sendChanFlushFlag        bool
 		singleObjectExtent       *singleObjectExtentStruct
 	)
 
@@ -1184,7 +1183,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 			buf:            make([]byte, 0),
 			fileInode:      fileInode,
 			state:          chunkedPutContextStateOpen,
-			sendChan:       make(chan bool),
+			sendChan:       make(chan struct{}),
 			wakeChan:       make(chan bool),
 			inRead:         false,
 			flushRequested: false,
@@ -1223,7 +1222,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 				buf:            make([]byte, 0),
 				fileInode:      fileInode,
 				state:          chunkedPutContextStateOpen,
-				sendChan:       make(chan bool),
+				sendChan:       make(chan struct{}),
 				wakeChan:       make(chan bool),
 				inRead:         false,
 				flushRequested: false,
@@ -1253,15 +1252,20 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	chunkedPutContext.buf = append(chunkedPutContext.buf, writeIn.Data...)
 
-	sendChanFlushFlag = (uint64(len(chunkedPutContext.buf)) >= globals.config.MaxFlushSize)
+	select {
+	case chunkedPutContext.sendChan <- struct{}{}:
+		// We just notified sendDaemon()
+	default:
+		// We didn't need to notify sendDaemon()
+	}
 
-	if sendChanFlushFlag {
+	if uint64(len(chunkedPutContext.buf)) >= globals.config.MaxFlushSize {
+		// Time to do a Flush
 		chunkedPutContext.state = chunkedPutContextStateClosing
+		close(chunkedPutContext.sendChan)
 	}
 
 	grantedLock.release()
-
-	chunkedPutContext.sendChan <- sendChanFlushFlag
 
 	fileInode.dereference()
 
