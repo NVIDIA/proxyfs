@@ -294,7 +294,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	for _, volume = range localVolumeMap {
 		if "" != volume.FUSEMountPointName {
 			cmdString := ""
-			cmdString += fmt.Sprintf("if [ ! -d '%s'; then\n", volume.FUSEMountPointName)
+			cmdString += fmt.Sprintf("if [ ! -d '%s' ]; then\n", volume.FUSEMountPointName)
 			cmdString += fmt.Sprintf("    mkdir -p -m 0%03o '%s'\n", fuseDirPerm, volume.FUSEMountPointName)
 			cmdString += fmt.Sprintf("fi\n")
 
