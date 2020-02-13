@@ -209,8 +209,12 @@ PerformFlush:
 
 	for {
 		select {
-		case <-chunkedPutContext.sendChan:
-			continue
+		case _, sendChanOpenOrNonEmpty = <-chunkedPutContext.sendChan:
+			if sendChanOpenOrNonEmpty {
+				continue
+			} else {
+				goto EscapeSendChanDrain
+			}
 		default:
 			goto EscapeSendChanDrain
 		}
