@@ -105,8 +105,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		}
 		globals.retryRPCAckTrim, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCAckTrim")
 		if nil != err {
-			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCAckTrim from config file")
-			return
+			logger.Infof("failed to get JSONRPCServer.RetryRPCAckTrim from config file - defaulting to 100ms")
+			globals.retryRPCAckTrim = 100 * time.Millisecond
 		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
