@@ -293,9 +293,14 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	for _, volume = range localVolumeMap {
 		if "" != volume.FUSEMountPointName {
+			// if the directory exists and the file system is mounted but
+			// proxyfs is not running, the '-d' test will return false and the
+			// mkdir will fail with EEXIST, so append "|| true" to the mkdir
+			// so the script won't fail
 			cmdString := ""
 			cmdString += fmt.Sprintf("if [ ! -d '%s' ]; then\n", volume.FUSEMountPointName)
-			cmdString += fmt.Sprintf("    mkdir -p -m 0%03o '%s'\n", fuseDirPerm, volume.FUSEMountPointName)
+			cmdString += fmt.Sprintf("    mkdir -p -m 0%03o '%s' || true\n",
+				fuseDirPerm, volume.FUSEMountPointName)
 			cmdString += fmt.Sprintf("fi\n")
 
 			_, err = fuseSetupFile.WriteString(cmdString)
