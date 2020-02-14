@@ -6,7 +6,13 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
+
+	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/fission"
 )
 
 var (
@@ -15,6 +21,262 @@ var (
 	testFilePath     string
 	testFileLastByte byte
 )
+
+type testLocksChildStruct struct {
+	fileInode   *fileInodeStruct
+	exclusive   bool
+	locked      bool           // parent should sleep long enough to ensure this value has been set before checking it
+	getDone     sync.WaitGroup // child calls .Done() on this once it's get{Shared|Exclusive}Lock() returns
+	releaseDo   sync.WaitGroup // parent calls .Done() on this when it wants child to call release()
+	releaseDone sync.WaitGroup // child calls .Done() on this once it's release() returns
+}
+
+func (fileInode *fileInodeStruct) testLocksChildStructCreate(exclusive bool) (testLocksChild *testLocksChildStruct) {
+	testLocksChild = &testLocksChildStruct{
+		fileInode: fileInode,
+		exclusive: exclusive,
+		locked:    false,
+	}
+
+	testLocksChild.getDone.Add(1)
+	testLocksChild.releaseDo.Add(1)
+	testLocksChild.releaseDone.Add(1)
+
+	return
+}
+
+func (testLocksChild *testLocksChildStruct) launch() {
+	var (
+		grantedLock *fileInodeLockRequestStruct
+	)
+
+	if testLocksChild.exclusive {
+		grantedLock = testLocksChild.fileInode.getExclusiveLock()
+	} else {
+		grantedLock = testLocksChild.fileInode.getSharedLock()
+	}
+
+	testLocksChild.getDone.Done()
+
+	testLocksChild.locked = true
+
+	testLocksChild.releaseDo.Wait()
+
+	grantedLock.release()
+
+	testLocksChild.locked = false
+
+	testLocksChild.releaseDone.Done()
+}
+
+func TestLocks(t *testing.T) {
+	const (
+		testLocksChildLockedCheckDelay = 250 * time.Millisecond
+		testFileName                   = "testLocksFileName"
+		testLookupUnique               = uint64(0x12345678)
+	)
+	var (
+		err                      error
+		errno                    syscall.Errno
+		inHeader                 *fission.InHeader
+		lookupIn                 *fission.LookupIn
+		lookupOut                *fission.LookupOut
+		testFileInode            *fileInodeStruct
+		testLocksChildExclusive3 *testLocksChildStruct
+		testLocksChildExclusive4 *testLocksChildStruct
+		testLocksChildExclusive6 *testLocksChildStruct
+		testLocksChildShared1    *testLocksChildStruct
+		testLocksChildShared2    *testLocksChildStruct
+		testLocksChildShared5    *testLocksChildStruct
+		testLocksChildShared7    *testLocksChildStruct
+	)
+
+	testSetup(t)
+
+	testFilePath = globals.config.FUSEMountPointPath + "/" + testFileName
+
+	testFile, err = os.Create(testFilePath)
+	if nil != err {
+		t.Fatalf("os.Create(\"%s\") failed: %v", testFilePath, err)
+	}
+	err = testFile.Close()
+	if nil != err {
+		t.Fatalf("testFile.Close() failed: %v", err)
+	}
+
+	inHeader = &fission.InHeader{
+		Len:     uint32(fission.InHeaderSize + len(testFileName)),
+		OpCode:  fission.OpCodeLookup,
+		Unique:  testLookupUnique,
+		NodeID:  1,
+		UID:     0,
+		GID:     0,
+		PID:     0,
+		Padding: 0,
+	}
+
+	lookupIn = &fission.LookupIn{
+		Name: []byte(testFileName),
+	}
+
+	lookupOut, errno = globals.DoLookup(inHeader, lookupIn)
+	if 0 != errno {
+		t.Fatalf("DoLookup() failed: %v", errno)
+	}
+
+	testFileInode = referenceFileInode(inode.InodeNumber(lookupOut.NodeID))
+
+	testLocksChildExclusive3 = testFileInode.testLocksChildStructCreate(true)
+	testLocksChildExclusive4 = testFileInode.testLocksChildStructCreate(true)
+	testLocksChildExclusive6 = testFileInode.testLocksChildStructCreate(true)
+
+	testLocksChildShared1 = testFileInode.testLocksChildStructCreate(false)
+	testLocksChildShared2 = testFileInode.testLocksChildStructCreate(false)
+	testLocksChildShared5 = testFileInode.testLocksChildStructCreate(false)
+	testLocksChildShared7 = testFileInode.testLocksChildStructCreate(false)
+
+	go testLocksChildShared1.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if !testLocksChildShared1.locked {
+		t.Fatalf("testLocksChildShared1.locked should have been true")
+	}
+	testLocksChildShared1.getDone.Wait()
+
+	go testLocksChildShared2.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if !testLocksChildShared2.locked {
+		t.Fatalf("testLocksChildShared2.locked should have been true")
+	}
+	testLocksChildShared2.getDone.Wait()
+
+	go testLocksChildExclusive3.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive3.locked {
+		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	}
+
+	go testLocksChildExclusive4.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive4.locked {
+		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	}
+
+	go testLocksChildShared5.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared5.locked {
+		t.Fatalf("testLocksChildShared5.locked should have been false")
+	}
+
+	go testLocksChildExclusive6.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive6.locked {
+		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	}
+
+	go testLocksChildShared7.launch()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared7.locked {
+		t.Fatalf("testLocksChildShared7.locked should have been false")
+	}
+
+	testLocksChildShared1.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared1.locked {
+		t.Fatalf("testLocksChildShared1.locked should have been false")
+	}
+	testLocksChildShared1.releaseDone.Wait()
+
+	if testLocksChildExclusive3.locked {
+		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	}
+
+	testLocksChildShared2.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared2.locked {
+		t.Fatalf("testLocksChildShared2.locked should have been false")
+	}
+	testLocksChildShared2.releaseDone.Wait()
+
+	if !testLocksChildExclusive3.locked {
+		t.Fatalf("testLocksChildExclusive3.locked should have been true")
+	}
+	if testLocksChildExclusive4.locked {
+		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	}
+
+	testLocksChildExclusive3.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive3.locked {
+		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	}
+	testLocksChildExclusive3.releaseDone.Wait()
+
+	if !testLocksChildExclusive4.locked {
+		t.Fatalf("testLocksChildExclusive4.locked should have been true")
+	}
+	if testLocksChildShared5.locked {
+		t.Fatalf("testLocksChildShared5.locked should have been false")
+	}
+
+	testLocksChildExclusive4.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive4.locked {
+		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	}
+	testLocksChildExclusive4.releaseDone.Wait()
+
+	if !testLocksChildShared5.locked {
+		t.Fatalf("testLocksChildShared5.locked should have been true")
+	}
+	if testLocksChildExclusive6.locked {
+		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	}
+
+	testLocksChildShared5.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared5.locked {
+		t.Fatalf("testLocksChildShared5.locked should have been false")
+	}
+	testLocksChildShared5.releaseDone.Wait()
+
+	if !testLocksChildExclusive6.locked {
+		t.Fatalf("testLocksChildExclusive6.locked should have been true")
+	}
+	if testLocksChildShared7.locked {
+		t.Fatalf("testLocksChildShared7.locked should have been false")
+	}
+
+	testLocksChildExclusive6.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildExclusive6.locked {
+		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	}
+	testLocksChildExclusive6.releaseDone.Wait()
+
+	if !testLocksChildShared7.locked {
+		t.Fatalf("testLocksChildShared7.locked should have been true")
+	}
+
+	testLocksChildShared7.releaseDo.Done()
+	time.Sleep(testLocksChildLockedCheckDelay)
+	if testLocksChildShared7.locked {
+		t.Fatalf("testLocksChildShared7.locked should have been false")
+	}
+	testLocksChildShared7.releaseDone.Wait()
+
+	if testLocksChildShared7.locked {
+		t.Fatalf("testLocksChildShared7.locked should have been false")
+	}
+
+	testFileInode.dereference()
+
+	err = os.Remove(testFilePath)
+	if nil != err {
+		t.Fatalf("os.Remove(testFilePath) failed: %v", err)
+	}
+
+	testTeardown(t)
+}
 
 func TestSimpleWriteReadClose(t *testing.T) {
 	const (
