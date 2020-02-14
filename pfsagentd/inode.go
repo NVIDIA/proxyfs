@@ -276,7 +276,7 @@ func (fileInode *fileInodeStruct) getSharedLock() (grantedLock *fileInodeLockReq
 			continue
 		}
 
-		if nil != fileInode.exclusiveLockHolder {
+		if (nil != fileInode.exclusiveLockHolder) || (0 != fileInode.lockWaiters.Len()) {
 			// Need to block awaiting a release() on a conflicting held or prior pending LockRequest
 			grantedLock.Add(1)
 			grantedLock.waitersElement = fileInode.lockWaiters.PushBack(grantedLock)
@@ -410,6 +410,11 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 	// SharedLock released - see if one pending ExclusiveLock can now be granted
 
 	_ = fileInode.sharedLockHolders.Remove(grantedLock.holdersElement)
+
+	if 0 != fileInode.sharedLockHolders.Len() {
+		globals.Unlock()
+		return
+	}
 
 	nextLockElement = fileInode.lockWaiters.Front()
 
