@@ -33,6 +33,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 		// TODO - should this keep retrying the dial?
 		err = client.dial()
 		if err != nil {
+			client.Unlock()
 			return
 		}
 	}
