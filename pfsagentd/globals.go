@@ -142,21 +142,22 @@ const (
 )
 
 type chunkedPutContextStruct struct {
-	sync.WaitGroup                    //          Used to await completion of performChunkedPut goroutine
+	sync.WaitGroup                    //      Used to await completion of performChunkedPut goroutine
 	containerName  string             //
 	objectName     string             //
-	extentMap      sortedmap.LLRBTree //          Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
-	fileSize       uint64             //          Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
-	//                                              updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
+	extentMap      sortedmap.LLRBTree //      Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
+	fileSize       uint64             //      Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
+	//                                          updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
 	buf                   []byte           //
-	chunkedPutListElement *list.Element    //     FIFO Element of fileInodeStruct.chunkedPutList
+	chunkedPutListElement *list.Element    // FIFO Element of fileInodeStruct.chunkedPutList
 	fileInode             *fileInodeStruct //
-	state                 uint8            //     One of chunkedPutContextState{Open|Closing|Closed}
-	pos                   int              //     ObjectOffset just after last sent chunk
-	sendChan              chan bool        //     Wake-up sendDaemon with a new chunk or to flush
-	wakeChan              chan bool        //     Wake-up Read callback to respond with a chunk and/or return EOF
-	inRead                bool             //     Set when in Read() as a hint to Close() to help Read() cleanly exit
-	flushRequested        bool             //     Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
+	state                 uint8            // One of chunkedPutContextState{Open|Closing|Closed}
+	pos                   int              // ObjectOffset just after last sent chunk
+	sendChan              chan struct{}    // Single element buffered chan to wake up sendDaemon()
+	//                                          will be closed to indicate a flush is requested
+	wakeChan       chan bool //               Wake-up Read callback to respond with a chunk and/or return EOF
+	inRead         bool      //               Set when in Read() as a hint to Close() to help Read() cleanly exit
+	flushRequested bool      //               Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 type fileInodeStruct struct {

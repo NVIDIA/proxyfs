@@ -55,7 +55,7 @@ func main() {
 	if nil == err {
 		os.Exit(0)
 	} else {
-		fmt.Printf("mkproxyfs.Format() returned error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mkproxyfs: Format() returned error: %v\n", err)
 		os.Exit(1)
 	}
 }

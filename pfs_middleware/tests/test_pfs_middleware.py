@@ -263,13 +263,6 @@ class TestAccountGet(BaseMiddlewareTest):
             'GET', '/v1/AUTH_test', 200, {},
             '000000000000DACA\n000000000000DACC\n')
 
-        # Using header
-        req = swob.Request.blank("/v1/AUTH_test", headers={
-            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
-        status, _, body = self.call_pfs(req)
-        self.assertEqual(status, '200 OK')
-        self.assertEqual(body, b'000000000000DACA\n000000000000DACC\n')
-
         # Using path
         req = swob.Request.blank("/proxyfs/AUTH_test", environ={
             'swift_owner': True})
@@ -284,14 +277,13 @@ class TestAccountGet(BaseMiddlewareTest):
         self.assertEqual(status, '200 OK')
         self.assertEqual(body, b'chickens\ncows\ngoats\npigs\n')
 
-        req = swob.Request.blank("/v1/AUTH_test", method='PUT', headers={
-            "X-Bypass-ProxyFS": "true"}, environ={'swift_owner': True})
+        req = swob.Request.blank("/proxyfs/AUTH_test", method='PUT',
+                                 environ={'swift_owner': True})
         status, _, _ = self.call_pfs(req)
         self.assertEqual(status, '405 Method Not Allowed')
 
         # Non-owner
-        req = swob.Request.blank("/v1/AUTH_test", headers={
-            "X-Bypass-ProxyFS": "true"})
+        req = swob.Request.blank("/proxyfs/AUTH_test")
         status, _, body = self.call_pfs(req)
         self.assertEqual(status, '200 OK')
         self.assertEqual(body, b'chickens\ncows\ngoats\npigs\n')

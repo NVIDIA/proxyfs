@@ -55,8 +55,8 @@ func (server *Server) run() {
 	}
 }
 
-func keyString(myUniqueID string, requestID uint64) string {
-	return fmt.Sprintf("%v:%v", myUniqueID, requestID)
+func keyString(myUniqueID string, rID requestID) string {
+	return fmt.Sprintf("%v:%v", myUniqueID, rID)
 }
 
 // First check if we already completed this request by looking on completed
@@ -67,24 +67,24 @@ func keyString(myUniqueID string, requestID uint64) string {
 //
 // Otherwise, call the RPC.  callRPCAndMarshal() takes care
 // of adding the request to the pending queue.
-func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonRequest) (err error) {
-	queueKey := keyString(jReq.MyUniqueID, jReq.RequestID)
+func (server *Server) findQOrCallRPC(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest) (err error) {
+	rID := jReq.RequestID
 
 	// First check if we already completed this request by looking at
 	// completed and pending queues.  Update pending queue with new
 	// net.Conn if needed.
 
 	// TODO - be careful that drop locks appropriately!!
-	server.Lock()
-	v, ok := server.completedRequest[queueKey]
+	ci.Lock()
+	v, ok := ci.completedRequest[rID]
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
-		server.Unlock()
-		server.returnResults(v, cCtx, jReq)
+		ci.Unlock()
+		returnResults(v, cCtx, jReq)
 
 	} else {
-		_, ok2 := server.pendingRequest[queueKey]
+		_, ok2 := ci.pendingRequest[rID]
 		if ok2 {
 			// Already on pending queue.  Replace the connCtx in the pending queue so
 			// that the goroutine completing the task sends the response back to the
@@ -92,8 +92,8 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 			// the client before creating a new connection.
 			//
 			// This goroutine simply returns.
-			server.buildAndQPendingCtx(queueKey, buf, cCtx, true)
-			server.Unlock()
+			ci.buildAndQPendingCtx(rID, buf, cCtx, true)
+			ci.Unlock()
 
 		} else {
 			// On neither queue - must be new request
@@ -104,11 +104,11 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, buf []byte, jReq *jsonReques
 			// We pass buf to the call because the request will have to
 			// be unmarshaled again to retrieve the parameters specific to
 			// the RPC.
-			server.Unlock()
+			ci.Unlock()
 
 			// TODO - why return err here if already returned results to
 			// client?
-			err = server.callRPCAndMarshal(cCtx, buf, jReq, queueKey)
+			err = server.callRPCAndMarshal(cCtx, ci, buf, jReq, rID)
 		}
 	}
 
@@ -130,10 +130,28 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 		return
 	}
 
+	server.Lock()
+	ci, ok := server.perClientInfo[jReq.MyUniqueID]
+	if !ok {
+		c := &clientInfo{}
+		c.pendingRequest = make(map[requestID]*pendingCtx)
+		c.completedRequest = make(map[requestID]*completedEntry)
+		c.completedRequestLRU = list.New()
+		server.perClientInfo[jReq.MyUniqueID] = c
+		ci = c
+	}
+	server.Unlock()
+
+	ci.Lock()
+	if jReq.HighestReplySeen > ci.highestReplySeen {
+		ci.highestReplySeen = jReq.HighestReplySeen
+	}
+	ci.Unlock()
+
 	// Complete the request either by looking in completed queue,
 	// updating cCtx of pending queue entry or by calling the
 	// RPC.
-	err := server.findQOrCallRPC(cCtx, buf, &jReq)
+	err := server.findQOrCallRPC(cCtx, ci, buf, &jReq)
 	if err != nil {
 		logger.Errorf("findQOrCallRPC returned err: %v", err)
 	}
@@ -177,24 +195,10 @@ func (server *Server) serviceClient(conn net.Conn) {
 	}
 }
 
-func (server *Server) buildAndQPendingCtx(queueKey string, buf []byte, cCtx *connCtx, lockHeld bool) {
-	pc := &pendingCtx{buf: buf, cCtx: cCtx}
-
-	if lockHeld == false {
-		server.Lock()
-	}
-
-	server.pendingRequest[queueKey] = pc
-
-	if lockHeld == false {
-		server.Unlock()
-	}
-}
-
 // TODO - review the locking here to make it simplier
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonRequest, queueKey string) (err error) {
+func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest, rID requestID) (err error) {
 
 	// Setup the reply structure with common fields
 	reply := &ioReply{}
@@ -202,7 +206,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
 
 	// Queue the request
-	server.buildAndQPendingCtx(queueKey, buf, cCtx, false)
+	ci.buildAndQPendingCtx(rID, buf, cCtx, false)
 
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
@@ -252,33 +256,36 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, buf []byte, jReq *jsonReq
 
 	}
 
-	lruEntry := completedLRUEntry{queueKey: queueKey, timeCompleted: time.Now()}
+	lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 
-	server.Lock()
+	ci.Lock()
 	// connCtx may have changed while we dropped the lock due to new connection or
 	// the RPC may have completed.
 	//
 	// Pull the current one from pendingRequest if queueKey exists
-	pendingCtx := server.pendingRequest[queueKey]
+	pendingCtx := ci.pendingRequest[rID]
 	if pendingCtx != nil {
 		currentCCtx := pendingCtx.cCtx
 
-		server.completedRequest[queueKey] = reply
-		server.completedRequestLRU.PushBack(lruEntry)
-		delete(server.pendingRequest, queueKey)
-		server.Unlock()
+		ce := &completedEntry{reply: reply}
+
+		ci.completedRequest[rID] = ce
+		le := ci.completedRequestLRU.PushBack(lruEntry)
+		ce.lruElem = le
+		delete(ci.pendingRequest, rID)
+		ci.Unlock()
 
 		// Now return the results
-		server.returnResults(reply, currentCCtx, jReq)
+		returnResults(ce, currentCCtx, jReq)
 	} else {
 		// pendingRequest was already completed
-		server.Unlock()
+		ci.Unlock()
 	}
 
 	return
 }
 
-func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
+func returnResults(ce *completedEntry, cCtx *connCtx,
 	jReq *jsonRequest) {
 
 	// Now write the response back to the client
@@ -300,12 +307,12 @@ func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
 	// The fix is the second thread replaces the contextCtx in the pending queue
 	// entry.  When the first thread completes the RPC, it pulls the most recent
 	// pendingCtx off the pending queue and uses those contents to return the result.
-	if reply != nil {
+	if ce.reply != nil {
 
 		// Write Len back
 		cCtx.Lock()
-		setupHdrReply(reply)
-		binErr := binary.Write(cCtx.conn, binary.BigEndian, reply.Hdr)
+		setupHdrReply(ce.reply)
+		binErr := binary.Write(cCtx.conn, binary.BigEndian, ce.reply.Hdr)
 		if binErr != nil {
 			cCtx.Unlock()
 			logger.Errorf("SERVER: binary.Write failed err: %v", binErr)
@@ -313,7 +320,7 @@ func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
 		}
 
 		// Write JSON reply
-		bytesWritten, writeErr := cCtx.conn.Write(reply.JResult)
+		bytesWritten, writeErr := cCtx.conn.Write(ce.reply.JResult)
 		if writeErr != nil {
 			logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",
 				bytesWritten, writeErr)
@@ -322,20 +329,98 @@ func (server *Server) returnResults(reply *ioReply, cCtx *connCtx,
 	}
 }
 
-// Remove entries older than server.completedTTL
-func (server *Server) trimCompleted(t time.Time) {
+// Close sockets to client so that goroutines wakeup from blocked
+// reads and let the server exit.
+func (server *Server) closeClientConn() {
+	server.connLock.Lock()
+	for e := server.connections.Front(); e != nil; e = e.Next() {
+		conn := e.Value.(net.Conn)
+		conn.Close()
+	}
+	server.connLock.Unlock()
+}
 
+// Loop through all clients and trim up to already ACKed
+func (server *Server) trimCompleted(t time.Time, long bool) {
 	var (
-		numItems int
+		totalItems int
 	)
+
+	server.Lock()
+	if long {
+		l := list.New()
+		for k, v := range server.perClientInfo {
+			n := server.trimTLLBased(k, v, t)
+			totalItems += n
+
+			v.Lock()
+			if v.isEmpty() {
+				l.PushBack(k)
+			}
+			v.Unlock()
+
+		}
+
+		// If the client is no longer active - delete it's entry
+		//
+		// We can only do the check if we are currently holding the
+		// lock.
+		for e := l.Front(); e != nil; e = e.Next() {
+			key := e.Value.(string)
+			v := server.perClientInfo[key]
+
+			v.Lock()
+			if v.isEmpty() {
+				delete(server.perClientInfo, key)
+			}
+			v.Unlock()
+		}
+		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
+	} else {
+		for k, v := range server.perClientInfo {
+			n := server.trimAClientBasedACK(k, v)
+			totalItems += n
+		}
+	}
+	server.Unlock()
+}
+
+// Walk through client and trim completedRequest based either
+// on TTL or RequestID acknowledgement from client.
+//
+// NOTE: We assume Server Lock is held
+func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numItems int) {
+
+	ci.Lock()
+
+	// Remove from completedRequest completedRequestLRU
+	for h := ci.previousHighestReplySeen + 1; h <= ci.highestReplySeen; h++ {
+		v := ci.completedRequest[h]
+		ci.completedRequestLRU.Remove(v.lruElem)
+		delete(ci.completedRequest, h)
+		numItems++
+	}
+
+	// Keep track of how far we have trimmed for next run
+	ci.previousHighestReplySeen = ci.highestReplySeen
+	ci.Unlock()
+	return
+}
+
+// Remove completedRequest/completedRequestLRU entries older than server.completedTTL
+//
+// This gets called every ~10 minutes to clean out older entries.
+//
+// NOTE: We assume Server Lock is held
+func (server *Server) trimTLLBased(uniqueID string, ci *clientInfo, t time.Time) (numItems int) {
 
 	l := list.New()
 
-	server.Lock()
-	for e := server.completedRequestLRU.Front(); e != nil; e = e.Next() {
-		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedTTL)
+	ci.Lock()
+	for e := ci.completedRequestLRU.Front(); e != nil; e = e.Next() {
+		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
-			delete(server.completedRequest, e.Value.(completedLRUEntry).queueKey)
+			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
 
 			// Push on local list so don't delete while iterating
 			l.PushBack(e)
@@ -349,21 +434,10 @@ func (server *Server) trimCompleted(t time.Time) {
 
 	// Now delete from LRU using the local list
 	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
-		tmpE := server.completedRequestLRU.Front()
-		_ = server.completedRequestLRU.Remove(tmpE)
+		tmpE := ci.completedRequestLRU.Front()
+		_ = ci.completedRequestLRU.Remove(tmpE)
 
 	}
-	server.Unlock()
-	logger.Infof("Completed RetryRPCs - Total items trimmed: %v", numItems)
-}
-
-// Close sockets to client so that goroutines wakeup from blocked
-// reads and let the server exit.
-func (server *Server) closeClientConn() {
-	server.connLock.Lock()
-	for e := server.connections.Front(); e != nil; e = e.Next() {
-		conn := e.Value.(net.Conn)
-		conn.Close()
-	}
-	server.connLock.Unlock()
+	ci.Unlock()
+	return
 }

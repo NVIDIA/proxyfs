@@ -1,5 +1,21 @@
 # ProxyFS Release Notes
 
+## 1.15.3 (February 13, 2020)
+
+### Bug Fixes:
+
+A number of hang conditions in PFSAgent when servicing large numbers
+of small file reads and writes have now been addressed.
+
+A new mechanism used by PFSAgent to GET and PUT file data objects
+(LogSegments) avoids the 404 Not Found responses as well as the
+performance impact of unnecessarily invalidating the Swift memcache.
+Swift version 2.24.0.2 is now minimally required.
+
+Buffering RPC responses from ProxyFS to PFSAgent previously could
+exhaust memory in extreme circumstances. This has now been addressed
+by implementing aggressive pruning of this buffer on the ProxyFS end.
+
 ## 1.15.2 (February 5, 2020)
 
 ### Bug Fixes:

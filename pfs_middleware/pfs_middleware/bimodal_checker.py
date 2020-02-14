@@ -145,6 +145,9 @@ class BimodalChecker(object):
         # First, ask Swift if the account is bimodal. This lets us keep
         # non-ProxyFS accounts functional during a ProxyFS outage.
         env_copy = req.environ.copy()
+        if env_copy["PATH_INFO"].startswith("/proxyfs/"):
+            env_copy["PATH_INFO"] = env_copy["PATH_INFO"].replace(
+                "/proxyfs/", "/v1/", 1)
         env_copy[utils.ENV_IS_BIMODAL] = False
         account_info = get_account_info(env_copy, self.app,
                                         swift_source="PFS")
@@ -208,7 +211,8 @@ class BimodalChecker(object):
     def __call__(self, req):
         vrs, acc, con, obj = utils.parse_path(req.path)
 
-        if not acc or not constraints.valid_api_version(vrs):
+        if not acc or not (constraints.valid_api_version(vrs) or
+                           vrs == 'proxyfs'):
             # could be a GET /info request or something made up by some
             # other middleware; get out of the way.
             return self.app

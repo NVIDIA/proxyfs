@@ -24,7 +24,7 @@ def filter_factory(global_conf, **local_conf):
     conf.update(local_conf)
 
     register_swift_info('pfs',
-                        bypass_mode=conf["bypass_mode"])
+                        bypass_mode=conf.get('bypass_mode', 'off'))
 
     def pfs_filter(app):
         return BimodalChecker(S3Compat(PfsMiddleware(app, conf), conf), conf)

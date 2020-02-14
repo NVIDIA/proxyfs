@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/btree"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -24,7 +25,7 @@ import (
 // 4. readResponses goroutine will read response on socket
 //    and call a goroutine to do unmarshalling and notification
 func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
-	var crID uint64
+	var crID requestID
 
 	client.Lock()
 	if client.connection.state == INITIAL {
@@ -37,7 +38,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	}
 
 	// Put request data into structure to be be marshaled into JSON
-	jreq := jsonRequest{Method: method}
+	jreq := jsonRequest{Method: method, HighestReplySeen: client.highestConsecutive}
 	jreq.Params[0] = rpcRequest
 	jreq.MyUniqueID = client.myUniqueID
 
@@ -55,6 +56,8 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	// Setup ioreq to write structure on socket to server
 	ioreq, err := buildIoRequest(method, jreq)
 	if err != nil {
+		e := fmt.Errorf("Client buildIoRequest returned err: %v", err)
+		logger.PanicfWithError(e, "")
 		return err
 	}
 
@@ -82,7 +85,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 //
 // At this point, the client will retry the request until either it
 // completes OR the client is shutdown.
-func (client *Client) sendToServer(crID uint64, ctx *reqCtx) {
+func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
 
 	defer client.goroutineWG.Done()
 
@@ -189,6 +192,9 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 
 	delete(client.outstandingRequest, crID)
 	client.Unlock()
+
+	// Fork off a goroutine to update highestConsecutiveNum
+	go client.updateHighestConsecutiveNum(crID)
 
 	// Give reply to blocked send() - most developers test for nil err so
 	// only set it if there is an error
@@ -304,4 +310,70 @@ func (client *Client) dial() (err error) {
 	go client.readReplies()
 
 	return
+}
+
+// Less tests whether the current item is less than the given argument.
+//
+// This must provide a strict weak ordering.
+// If !a.Less(b) && !b.Less(a), we treat this to mean a == b (i.e. we can only
+// hold one of either a or b in the tree).
+//
+// NOTE: It is assumed client lock is held when this is called.
+func (a requestID) Less(b btree.Item) bool {
+	return a < b.(requestID)
+}
+
+// printBTree prints the btree contents and is only for debugging
+//
+// NOTE: It is assumed client lock is held when this is called.
+func printBTree(tr *btree.BTree, msg string) {
+	tr.Ascend(func(a btree.Item) bool {
+		r := a.(requestID)
+		fmt.Printf("%v =========== - r is: %v\n", msg, r)
+		return true
+	})
+
+}
+
+// It is assumed the client lock is already held
+func (client *Client) setHighestConsecutive() {
+	client.bt.AscendGreaterOrEqual(client.highestConsecutive, func(a btree.Item) bool {
+		r := a.(requestID)
+		c := client.highestConsecutive
+
+		// If this item is a consecutive number then keep going.
+		// Otherwise stop the Ascend now
+		c++
+		if r == c {
+			client.highestConsecutive = r
+		} else {
+			// If we are past the first leaf and we do not have
+			// consecutive numbers than break now instead of going
+			// through rest of tree
+			if r != client.bt.Min() {
+				return false
+			}
+		}
+		return true
+	})
+
+	// Now trim the btree up to highestConsecutiveNum
+	m := client.bt.Min()
+	if m != nil {
+		i := m.(requestID)
+		for ; i < client.highestConsecutive; i++ {
+			client.bt.Delete(i)
+		}
+	}
+}
+
+// updateHighestConsecutiveNum takes the requestID and calculates the
+// highestConsective request ID we have seen.  This is done by putting
+// the requestID into a btree of completed requestIDs.  Then calculating
+// the highest consective number seen and updating Client.
+func (client *Client) updateHighestConsecutiveNum(crID requestID) {
+	client.Lock()
+	client.bt.ReplaceOrInsert(crID)
+	client.setHighestConsecutive()
+	client.Unlock()
 }
