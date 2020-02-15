@@ -117,4 +117,6 @@ RUN cd /liberasurecode && ./autogen.sh && ./configure && make && sudo make insta
 RUN git clone https://github.com/openstack/pyeclib.git
 RUN cd /pyeclib && pip install -e . && pip install -r test-requirements.txt
 
+RUN go get github.com/ory/go-acc github.com/mattn/goveralls
+
 CMD ["/bin/bash", "/gopathroot/src/github.com/swiftstack/ProxyFS/test/container/launch.sh"]

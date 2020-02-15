@@ -15,7 +15,7 @@ clean:
 	done
 
 cover:
-	go test -cover $(gosubdir)
+	go test $(gosubdir) -covermode=atomic -coverprofile=coverage.coverprofile
 
 fmt:
 	go fmt $(gosubdir)
