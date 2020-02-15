@@ -1,5 +1,11 @@
 # ProxyFS Release Notes
 
+## 1.15.4 (February 14, 2020)
+
+### Bug Fixes:
+
+Fixed crash in ProxyFS when pruning acknowledged RPC replies.
+
 ## 1.15.3 (February 13, 2020)
 
 ### Bug Fixes:
