@@ -143,6 +143,11 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	server.Unlock()
 
 	ci.Lock()
+	// Keep track of the highest consecutive requestID seen
+	// by client.  We use this to trim completedRequest list.
+	//
+	// Messages could arrive out of order so only update if
+	// the new request is giving us a higher value.
 	if jReq.HighestReplySeen > ci.highestReplySeen {
 		ci.highestReplySeen = jReq.HighestReplySeen
 	}
@@ -395,10 +400,12 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 
 	// Remove from completedRequest completedRequestLRU
 	for h := ci.previousHighestReplySeen + 1; h <= ci.highestReplySeen; h++ {
-		v := ci.completedRequest[h]
-		ci.completedRequestLRU.Remove(v.lruElem)
-		delete(ci.completedRequest, h)
-		numItems++
+		v, ok := ci.completedRequest[h]
+		if ok {
+			ci.completedRequestLRU.Remove(v.lruElem)
+			delete(ci.completedRequest, h)
+			numItems++
+		}
 	}
 
 	// Keep track of how far we have trimmed for next run
