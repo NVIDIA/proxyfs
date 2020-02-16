@@ -39,4 +39,6 @@ export SAMBA_SOURCE=$GOPATH/src/github.com/swiftstack/ProxyFS/vfs/samba
 cd $GOPATH/src/github.com/swiftstack/ProxyFS
 make ci
 # $COVERALLS_TOKEN must be configured in TravisCI
-goveralls -coverprofile coverage.coverprofile -service travis-ci -repotoken $COVERALLS_TOKEN
+if [ -n "$COVERALLS_TOKEN" ]; then
+    goveralls -coverprofile coverage.coverprofile -service travis-ci -repotoken $COVERALLS_TOKEN
+fi
