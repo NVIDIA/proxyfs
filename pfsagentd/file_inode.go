@@ -61,7 +61,6 @@ func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 		chunkedPutContextElement *list.Element
 		flushWG                  sync.WaitGroup
 		grantedLock              *fileInodeLockRequestStruct
-		sendChanFlushFlag        bool
 	)
 
 	grantedLock = fileInode.getExclusiveLock()
@@ -72,7 +71,7 @@ func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 		return
 	}
 
-	// At lease one Chunked PUT is in flight... so we know we'll have to block later
+	// At least one Chunked PUT is in flight... so we know we'll have to block later
 
 	flushWG.Add(1)
 	_ = fileInode.chunkedPutFlushWaiterList.PushBack(&flushWG)
@@ -81,8 +80,6 @@ func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 
 	if fileInode.flushInProgress {
 		// We do not need to send a flush
-
-		sendChanFlushFlag = false
 	} else {
 		// No explicit flush is in progress... so make it appear so
 
@@ -93,20 +90,14 @@ func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 		chunkedPutContextElement = fileInode.chunkedPutList.Back()
 		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
 
-		sendChanFlushFlag = (chunkedPutContextStateOpen == chunkedPutContext.state)
-
-		if sendChanFlushFlag {
+		if chunkedPutContextStateOpen == chunkedPutContext.state {
+			// We need to trigger a Flush
 			chunkedPutContext.state = chunkedPutContextStateClosing
+			close(chunkedPutContext.sendChan)
 		}
 	}
 
 	grantedLock.release()
-
-	if sendChanFlushFlag {
-		// We earlier determined that we'll be issuing the flush
-
-		chunkedPutContext.sendChan <- true
-	}
 
 	// Finally, wait for the flush to complete
 
@@ -158,11 +149,11 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 		expirationDelay           time.Duration
 		expirationTime            time.Time
 		fileInode                 *fileInodeStruct
-		flushRequested            bool
 		flushWaiterListElement    *list.Element
 		grantedLock               *fileInodeLockRequestStruct
 		nextChunkedPutContext     *chunkedPutContextStruct
 		nextChunkedPutListElement *list.Element
+		sendChanOpenOrNonEmpty    bool
 	)
 
 	fileInode = chunkedPutContext.fileInode
@@ -190,12 +181,12 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 			grantedLock.release()
 
 			goto PerformFlush
-		case flushRequested = <-chunkedPutContext.sendChan:
+		case _, sendChanOpenOrNonEmpty = <-chunkedPutContext.sendChan:
 			// Send non-flushing chunk to *chunkedPutContextStruct.Read()
 
 			chunkedPutContext.wakeChan <- false
 
-			if flushRequested {
+			if !sendChanOpenOrNonEmpty {
 				goto PerformFlush
 			}
 		}
@@ -218,8 +209,12 @@ PerformFlush:
 
 	for {
 		select {
-		case <-chunkedPutContext.sendChan:
-			continue
+		case _, sendChanOpenOrNonEmpty = <-chunkedPutContext.sendChan:
+			if sendChanOpenOrNonEmpty {
+				continue
+			} else {
+				goto EscapeSendChanDrain
+			}
 		default:
 			goto EscapeSendChanDrain
 		}
