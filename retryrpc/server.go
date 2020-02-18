@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
-	"golang.org/x/sys/unix"
 )
 
 // Variable to control debug output
@@ -249,10 +248,10 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byt
 			}
 			jReply.ErrStr = e.Error()
 		}
-	} else {
+	} /* else {
 		// Method does not exist
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
-	}
+	} */
 
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
@@ -264,6 +263,9 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byt
 	lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 
 	ci.Lock()
+
+	// TODO TODO TODO - Why else case???
+
 	// connCtx may have changed while we dropped the lock due to new connection or
 	// the RPC may have completed.
 	//
