@@ -60,6 +60,12 @@ RUN rm -rf /var/cache/yum
 
 RUN rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
+# goveralls needs a more recent version of git than what comes with CentOS 7
+RUN yum -y remove git*
+RUN yum -y install  https://centos7.iuscommunity.org/ius-release.rpm
+RUN yum -y install  git2u-all
+RUN git --version
+
 RUN yum -y --disableexcludes=all install gcc
 RUN yum -y install \
     wget \
@@ -67,7 +73,6 @@ RUN yum -y install \
     sudo \
     json-c-devel \
     fuse \
-    git \
     gcc-c++-4.8.5-16.el7_4.2 \
     python-devel-2.7.5-58.el7 \
     gnutls-devel-3.3.26-9.el7 \
@@ -116,5 +121,7 @@ RUN cd /liberasurecode && ./autogen.sh && ./configure && make && sudo make insta
 
 RUN git clone https://github.com/openstack/pyeclib.git
 RUN cd /pyeclib && pip install -e . && pip install -r test-requirements.txt
+
+RUN go get github.com/ory/go-acc github.com/mattn/goveralls
 
 CMD ["/bin/bash", "/gopathroot/src/github.com/swiftstack/ProxyFS/test/container/launch.sh"]

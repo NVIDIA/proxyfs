@@ -50,6 +50,14 @@ gobinsubdirs = \
 	proxyfsd/proxyfsd \
 	ramswift/ramswift
 
+gobinsubdirsforci = \
+	pfsagentd \
+	mkproxyfs/mkproxyfs \
+	proxyfsd/proxyfsd
+
+gosubdirsforci = $(gopkgsubdirs) $(gobinsubdirsforci);
+gosubdirspathsforci = $(addprefix github.com/swiftstack/ProxyFS/,$(gosubdirsforci))
+
 uname = $(shell uname)
 machine = $(shell uname -m)
 
@@ -57,11 +65,15 @@ ifeq ($(uname),Linux)
     ifeq ($(machine),armv7l)
         all: version fmt pre-generate generate install test
 
+        ci: version fmt pre-generate generate install test cover
+
         minimal: pre-generate generate install
     else
         distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
         all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
+
+        ci: version fmt pre-generate generate install test cover python-test c-clean c-build c-install c-test
 
         all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
 
@@ -70,10 +82,12 @@ ifeq ($(uname),Linux)
 else
     all: version fmt pre-generate generate install test
 
+    ci: version fmt pre-generate generate install test cover
+
     minimal: pre-generate generate install
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test clean cover fmt generate install pre-generate python-test test version
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test ci clean cover fmt generate install pre-generate python-test test version
 
 bench:
 	@set -e; \
@@ -128,12 +142,14 @@ clean:
 
 cover:
 	@set -e; \
-	for gosubdir in $(gopkgsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir cover; \
-	done; \
-	for gosubdir in $(gobinsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir cover; \
-	done
+	go-acc -o coverage.coverprofile $(gosubdirspathsforci)
+# TODO: We're not sure yet how we want to run coverage. Once decided, remove any extra code/comments
+#	for gosubdir in $(gopkgsubdirs); do \
+#		$(MAKE) --no-print-directory -C $$gosubdir cover; \
+#	done; \
+#	for gosubdir in $(gobinsubdirsforci); do \
+#		$(MAKE) --no-print-directory -C $$gosubdir cover; \
+#	done
 
 fmt:
 	@set -e; \
