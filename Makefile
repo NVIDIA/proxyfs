@@ -32,7 +32,6 @@ gopkgsubdirs = \
 
 gobinsubdirs = \
 	cleanproxyfs \
-	confgen/confgen \
 	fsworkout \
 	inodeworkout \
 	pfs-crash \
@@ -45,6 +44,7 @@ gobinsubdirs = \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	pfsworkout \
+	confgen/confgen \
 	evtlog/pfsevtlogd \
 	mkproxyfs/mkproxyfs \
 	proxyfsd/proxyfsd \
@@ -52,6 +52,9 @@ gobinsubdirs = \
 
 gobinsubdirsforci = \
 	pfsagentd \
+	pfsconfjson \
+	pfsconfjsonpacked \
+	confgen/confgen \
 	mkproxyfs/mkproxyfs \
 	proxyfsd/proxyfsd
 
@@ -182,6 +185,7 @@ install:
 pre-generate:
 	@set -e; \
 	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer; \
+	go get -u github.com/ory/go-acc; \
 	for gosubdir in $(gopregeneratesubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
