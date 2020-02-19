@@ -1183,8 +1183,8 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 			buf:            make([]byte, 0),
 			fileInode:      fileInode,
 			state:          chunkedPutContextStateOpen,
-			sendChan:       make(chan struct{}),
-			wakeChan:       make(chan bool),
+			sendChan:       make(chan struct{}, 1),
+			wakeChan:       make(chan struct{}, 1),
 			inRead:         false,
 			flushRequested: false,
 		}
@@ -1222,8 +1222,8 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 				buf:            make([]byte, 0),
 				fileInode:      fileInode,
 				state:          chunkedPutContextStateOpen,
-				sendChan:       make(chan struct{}),
-				wakeChan:       make(chan bool),
+				sendChan:       make(chan struct{}, 1),
+				wakeChan:       make(chan struct{}, 1),
 				inRead:         false,
 				flushRequested: false,
 			}

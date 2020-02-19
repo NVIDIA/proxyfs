@@ -153,11 +153,12 @@ type chunkedPutContextStruct struct {
 	fileInode             *fileInodeStruct //
 	state                 uint8            // One of chunkedPutContextState{Open|Closing|Closed}
 	pos                   int              // ObjectOffset just after last sent chunk
-	sendChan              chan struct{}    // Single element buffered chan to wake up sendDaemon()
+	sendChan              chan struct{}    // Single element buffered chan to wake up *chunkedPutContextStruct.sendDaemon()
 	//                                          will be closed to indicate a flush is requested
-	wakeChan       chan bool //               Wake-up Read callback to respond with a chunk and/or return EOF
-	inRead         bool      //               Set when in Read() as a hint to Close() to help Read() cleanly exit
-	flushRequested bool      //               Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
+	wakeChan chan struct{} //                 Single element buffered chan to wake up *chunkedPutContextStruct.Read()
+	//                                          will be closed to indicate a flush is requested
+	inRead         bool //                    Set when in Read() as a hint to Close() to help Read() cleanly exit
+	flushRequested bool //                    Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 type fileInodeStruct struct {
