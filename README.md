@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.com/swiftstack/ProxyFS.svg?branch=development)](https://travis-ci.com/swiftstack/ProxyFS)
+[![Coverage Status](https://coveralls.io/repos/github/swiftstack/ProxyFS/badge.svg?branch=development)](https://coveralls.io/github/swiftstack/ProxyFS?branch=development)
 
 # ProxyFS
 Integrated File and Object Access for Swift Object Storage
