@@ -54,6 +54,7 @@ _testmain.go
 # test coverage artifacts (see https://blog.golang.org/cover#TOC_5.)
 coverage.out
 count.out
+coverage.coverprofile
 
 # log files
 *.log
