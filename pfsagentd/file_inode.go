@@ -182,9 +182,14 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 
 			goto PerformFlush
 		case _, sendChanOpenOrNonEmpty = <-chunkedPutContext.sendChan:
-			// Send non-flushing chunk to *chunkedPutContextStruct.Read()
+			// Send chunk to *chunkedPutContextStruct.Read()
 
-			chunkedPutContext.wakeChan <- false
+			select {
+			case chunkedPutContext.wakeChan <- struct{}{}:
+				// We just notified Read()
+			default:
+				// We didn't need to notify Read()
+			}
 
 			if !sendChanOpenOrNonEmpty {
 				goto PerformFlush
@@ -194,9 +199,9 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 
 PerformFlush:
 
-	// Send flushing chunk to *chunkedPutContextStruct.Read() & wait for it to finish
+	// Tell *chunkedPutContextStruct.Read() to finish & wait for it to finish
 
-	chunkedPutContext.wakeChan <- true
+	close(chunkedPutContext.wakeChan)
 	chunkedPutContext.Wait()
 
 	// Chunked PUT is complete
@@ -395,13 +400,11 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 
 func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {
 	var (
-		grantedLock *fileInodeLockRequestStruct
+		grantedLock            *fileInodeLockRequestStruct
+		wakeChanOpenOrNonEmpty bool
 	)
 
-	chunkedPutContext.inRead = true
-	defer func() {
-		chunkedPutContext.inRead = false
-	}()
+	_, wakeChanOpenOrNonEmpty = <-chunkedPutContext.wakeChan
 
 	grantedLock = chunkedPutContext.fileInode.getExclusiveLock()
 
@@ -430,21 +433,19 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err err
 
 	grantedLock.release()
 
-	if chunkedPutContext.flushRequested {
-		// Return io.EOF to indicate all chunks have been sent and to close this Chunked PUT
+	// At this point, n == 0... do we need to send EOF?
 
-		err = io.EOF
+	if wakeChanOpenOrNonEmpty {
+		// Nope... we were awoken to send bytes but we'd already sent them
+
+		err = nil
 		return
 	}
 
-	// At this point:
-	//   There was no data in buf to send
-	//   We need to wait for sendDaemon() to wake us up
-	//   Then simply return (n == 0; err == nil) to cause us to be re-entered
+	// Time to send EOF
 
-	chunkedPutContext.flushRequested = <-chunkedPutContext.wakeChan
+	err = io.EOF
 
-	err = nil
 	return
 }
 
@@ -452,7 +453,12 @@ func (chunkedPutContext *chunkedPutContextStruct) Close() (err error) {
 	// Make sure Read() gets a chance to cleanly exit
 
 	if chunkedPutContext.inRead {
-		chunkedPutContext.wakeChan <- false
+		select {
+		case chunkedPutContext.wakeChan <- struct{}{}:
+			// We just notified Read()
+		default:
+			// We didn't need to notify Read()
+		}
 
 		for chunkedPutContext.inRead {
 			time.Sleep(chunkedPutContextExitReadPollingRate)
