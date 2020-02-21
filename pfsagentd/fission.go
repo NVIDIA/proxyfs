@@ -346,6 +346,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		chownRequest             *jrpcfs.ChownRequest
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
+		chunkedPutContextLast    *chunkedPutContextStruct
 		err                      error
 		fileInode                *fileInodeStruct
 		getStatReply             *jrpcfs.StatStruct
@@ -459,6 +460,8 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 		pruneExtentMap(fileInode.extentMap, setAttrIn.Size)
 
+		chunkedPutContextLast = nil
+
 		chunkedPutContextElement = fileInode.chunkedPutList.Front()
 
 		for nil != chunkedPutContextElement {
@@ -467,6 +470,8 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 				logFatalf("chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
 			}
 
+			chunkedPutContextLast = chunkedPutContext
+
 			if chunkedPutContext.fileSize > setAttrIn.Size {
 				chunkedPutContext.fileSize = setAttrIn.Size
 			}
@@ -474,6 +479,16 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 			pruneExtentMap(chunkedPutContext.extentMap, setAttrIn.Size)
 
 			chunkedPutContextElement = chunkedPutContextElement.Next()
+		}
+
+		if nil == chunkedPutContextLast {
+			if fileInode.extentMapFileSize < setAttrIn.Size {
+				fileInode.extentMapFileSize = setAttrIn.Size
+			}
+		} else {
+			if chunkedPutContext.fileSize < setAttrIn.Size {
+				chunkedPutContext.fileSize = setAttrIn.Size
+			}
 		}
 
 		resizeRequest = &jrpcfs.ResizeRequest{
