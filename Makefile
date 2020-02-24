@@ -146,13 +146,6 @@ clean:
 cover:
 	@set -e; \
 	go-acc -o coverage.coverprofile $(gosubdirspathsforci)
-# TODO: We're not sure yet how we want to run coverage. Once decided, remove any extra code/comments
-#	for gosubdir in $(gopkgsubdirs); do \
-#		$(MAKE) --no-print-directory -C $$gosubdir cover; \
-#	done; \
-#	for gosubdir in $(gobinsubdirsforci); do \
-#		$(MAKE) --no-print-directory -C $$gosubdir cover; \
-#	done
 
 fmt:
 	@set -e; \
@@ -185,7 +178,7 @@ install:
 pre-generate:
 	@set -e; \
 	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer; \
-	go get -u github.com/ory/go-acc; \
+	go install github.com/ory/go-acc; \
 	for gosubdir in $(gopregeneratesubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
