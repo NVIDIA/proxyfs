@@ -1,6 +1,6 @@
 # ProxyFS Release Notes
 
-## 1.15.4.2 (February 24, 2020)
+## 1.15.4.3 (February 24, 2020)
 
 Fixed hangs in PFSAgent hit under heavy write loads.
 
