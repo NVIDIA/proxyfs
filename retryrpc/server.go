@@ -176,7 +176,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 
 	for {
 		// Get RPC request
-		buf, getErr := getIO(conn)
+		buf, getErr := getIO(uint64(0), conn)
 		if getErr != nil {
 			server.Lock()
 			halting = server.halting
@@ -319,6 +319,7 @@ func returnResults(ce *completedEntry, cCtx *connCtx,
 		// Write Len back
 		cCtx.Lock()
 		setupHdrReply(ce.reply)
+		cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
 		binErr := binary.Write(cCtx.conn, binary.BigEndian, ce.reply.Hdr)
 		if binErr != nil {
 			cCtx.Unlock()
@@ -327,6 +328,7 @@ func returnResults(ce *completedEntry, cCtx *connCtx,
 		}
 
 		// Write JSON reply
+		cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
 		bytesWritten, writeErr := cCtx.conn.Write(ce.reply.JResult)
 		if writeErr != nil {
 			logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",

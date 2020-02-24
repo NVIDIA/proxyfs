@@ -169,18 +169,18 @@ func (server *Server) Close() {
 }
 
 // CloseClientConn - This is debug code to cause some connections to be closed
-// TODO - call this from stress test case to cause retransmits
+// It is called from a stress test case to cause retransmits
 func (server *Server) CloseClientConn() {
+	logger.Infof("CloseClientConn() called --------")
 	if server == nil {
 		return
 	}
-	logger.Infof("CloseClientConn() called --------")
-	server.Lock()
+	server.connLock.Lock()
 	for c := server.connections.Front(); c != nil; c = c.Next() {
 		conn := c.Value.(net.Conn)
 		conn.Close()
 	}
-	server.Unlock()
+	server.connLock.Unlock()
 }
 
 // CompletedCnt returns count of pendingRequests
@@ -213,6 +213,9 @@ const (
 	DISCONNECTED
 	// CONNECTED means the Client is connected to the server
 	CONNECTED
+	// RETRANSMITTING means a goroutine is in the middle of recovering
+	// from a loss of a connection with the server
+	RETRANSMITTING
 )
 
 type connectionTracker struct {

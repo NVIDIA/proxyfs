@@ -39,7 +39,7 @@ func (m *MyType) unexportedFunction(i int) {
 	m.field1 = i
 }
 
-func getNewServer() (rrSvr *Server, ip string, p int) {
+func getNewServer(t time.Duration) (rrSvr *Server, ip string, p int) {
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
@@ -47,7 +47,7 @@ func getNewServer() (rrSvr *Server, ip string, p int) {
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
-	rrSvr = NewServer(10*time.Second, 100*time.Millisecond, ipaddr, port)
+	rrSvr = NewServer(t, 100*time.Millisecond, ipaddr, port)
 	ip = ipaddr
 	p = port
 	return
@@ -63,7 +63,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer()
+	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -125,7 +125,7 @@ func testServer(t *testing.T) {
 func testBtree(t *testing.T) {
 	assert := assert.New(t)
 
-	rrSvr, ipaddr, port := getNewServer()
+	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree

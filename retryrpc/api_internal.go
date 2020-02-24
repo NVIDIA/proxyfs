@@ -33,6 +33,8 @@ const (
 
 const (
 	currentRetryVersion = 1
+	deadlineIO          = 60 * time.Second // How long to wait on socket for an I/O
+	// TODO - 60 second timeout on deadline should be a tunable...
 )
 
 type requestID uint64
@@ -171,13 +173,15 @@ func setupHdrReply(ioreply *ioReply) {
 	return
 }
 
-func getIO(conn net.Conn) (buf []byte, err error) {
+func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
 	}
 
 	// Read in the header of the request first
 	var hdr ioHeader
+
+	conn.SetDeadline(time.Now().Add(deadlineIO))
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
 		return
@@ -188,9 +192,15 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 		return
 	}
 
+	if hdr.Len == 0 {
+		err = fmt.Errorf("hdr.Len == 0")
+		return
+	}
+
 	// Now read the rest of the structure off the wire.
 	var numBytes int
 	buf = make([]byte, hdr.Len)
+	conn.SetDeadline(time.Now().Add(deadlineIO))
 	numBytes, err = io.ReadFull(conn, buf)
 	if err != nil {
 		return
