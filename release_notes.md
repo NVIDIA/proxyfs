@@ -1,5 +1,12 @@
 # ProxyFS Release Notes
 
+## 1.15.4.2 (February 24, 2020)
+
+Fixed hangs in PFSAgent hit under heavy write loads.
+
+Fixed stale file size reported by stat() for PFSAgent files that
+have been expanded via `truncate --size`.
+
 ## 1.15.4 (February 14, 2020)
 
 ### Bug Fixes:
