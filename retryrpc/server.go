@@ -79,6 +79,7 @@ func (server *Server) findQOrCallRPC(cCtx *connCtx, ci *clientInfo, buf []byte, 
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
+		setupHdrReply(v.reply)
 		ci.Unlock()
 		returnResults(v, cCtx, jReq)
 
@@ -277,6 +278,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byt
 		ce := &completedEntry{reply: reply}
 
 		ci.completedRequest[rID] = ce
+		setupHdrReply(ce.reply)
 		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
 		delete(ci.pendingRequest, rID)
@@ -318,7 +320,6 @@ func returnResults(ce *completedEntry, cCtx *connCtx,
 
 		// Write Len back
 		cCtx.Lock()
-		setupHdrReply(ce.reply)
 		cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
 		binErr := binary.Write(cCtx.conn, binary.BigEndian, ce.reply.Hdr)
 		if binErr != nil {
