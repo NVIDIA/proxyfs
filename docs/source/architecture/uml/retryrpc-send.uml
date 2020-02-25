@@ -1,0 +1,37 @@
+@startuml
+
+title RetryRPC Send - Happy Path
+
+autonumber
+
+box Client
+participant Send
+participant sendToServer
+participant notifyReply
+participant readReplies
+end box
+box Server
+participant serviceClient
+participant processRequest
+end box
+
+Send -> sendToServer:Pkg request, assign\nrequestID goroutine to send.\nWait on channel for\nresponse
+
+sendToServer -> serviceClient: Write hdr and then write\npayload on socket to server
+note left: retransmit() if write of\nhdr or payload fails
+
+serviceClient -> processRequest: Read hdr and payload.\nGoroutine to process RPC
+
+processRequest -> processRequest: Unmarshal RPC, call RPC,\nmarshal response.
+
+processRequest -> readReplies: Write header\nand then payload to client
+note left: retransmit() if write of\nhdr or payload fails
+
+readReplies -> readReplies: Read header and then\npayload off socket.\nCall goroutine to notify\nsender
+
+readReplies -> notifyReply:Unmarshal response.\nWrite response on\nchannel to sender.
+note left: retransmit() if unmarshal of\nhdr or payload fails
+
+Send -> Send:See response on channel and\nreturn response to caller.
+
+@enduml
