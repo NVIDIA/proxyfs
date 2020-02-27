@@ -224,6 +224,8 @@ func (volume *volumeStruct) PutInodeRec(inodeNumber uint64, value []byte) (err e
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	ok, err := volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
@@ -275,6 +277,8 @@ func (volume *volumeStruct) PutInodeRecs(inodeNumbers []uint64, values [][]byte)
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents += uint64(len(inodeNumbers))
+
 	for i, inodeNumber := range inodeNumbers {
 		ok, nonShadowingErr := volume.liveView.inodeRecWrapper.bPlusTree.PatchByKey(inodeNumber, valuesToTree[i])
 		if nil != nonShadowingErr {
@@ -310,6 +314,8 @@ func (volume *volumeStruct) DeleteInodeRec(inodeNumber uint64) (err error) {
 	}()
 
 	volume.Lock()
+
+	volume.checkpointTriggeringEvents++
 
 	_, err = volume.liveView.inodeRecWrapper.bPlusTree.DeleteByKey(inodeNumber)
 
@@ -407,6 +413,8 @@ func (volume *volumeStruct) PutLogSegmentRec(logSegmentNumber uint64, value []by
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	ok, err := volume.liveView.logSegmentRecWrapper.bPlusTree.PatchByKey(logSegmentNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
@@ -452,6 +460,8 @@ func (volume *volumeStruct) DeleteLogSegmentRec(logSegmentNumber uint64) (err er
 
 	volume.Lock()
 	defer volume.Unlock()
+
+	volume.checkpointTriggeringEvents++
 
 	containerNameAsValue, ok, err = volume.liveView.logSegmentRecWrapper.bPlusTree.GetByKey(logSegmentNumber)
 	if nil != err {
@@ -584,6 +594,8 @@ func (volume *volumeStruct) PutBPlusTreeObject(objectNumber uint64, value []byte
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	ok, err := volume.liveView.bPlusTreeObjectWrapper.bPlusTree.PatchByKey(objectNumber, valueToTree)
 	if nil != err {
 		volume.Unlock()
@@ -616,6 +628,8 @@ func (volume *volumeStruct) DeleteBPlusTreeObject(objectNumber uint64) (err erro
 	}()
 
 	volume.Lock()
+
+	volume.checkpointTriggeringEvents++
 
 	_, err = volume.liveView.bPlusTreeObjectWrapper.bPlusTree.DeleteByKey(objectNumber)
 
@@ -911,6 +925,8 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	switch treeType {
 	case InodeRecBPlusTree:
 		treeWrapper = volume.liveView.inodeRecWrapper
@@ -1040,6 +1056,8 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	_, ok, err = volume.viewTreeByName.GetByKey(name)
 	if nil != err {
 		volume.Unlock()
@@ -1084,6 +1102,8 @@ func (volume *volumeStruct) SnapShotCreateByInodeLayer(name string) (id uint64, 
 		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 	}
 	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
+	volume.checkpointTriggeringEvents++
 
 	volumeView = &volumeViewStruct{
 		volume:       volume,
@@ -1277,6 +1297,8 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 
 	volume.Lock()
 
+	volume.checkpointTriggeringEvents++
+
 	value, ok, err = volume.viewTreeByID.GetByKey(id)
 	if nil != err {
 		volume.Unlock()
@@ -1417,6 +1439,8 @@ func (volume *volumeStruct) SnapShotDeleteByInodeLayer(id uint64) (err error) {
 		logger.FatalfWithError(err, "Shutting down to prevent subsequent checkpoints from corrupting Swift")
 	}
 	evtlog.Record(evtlog.FormatHeadhunterCheckpointEndSuccess, volume.volumeName)
+
+	volume.checkpointTriggeringEvents++
 
 	ok, err = volume.viewTreeByNonce.DeleteByKey(deletedVolumeView.nonce)
 	if nil != err {

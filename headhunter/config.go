@@ -132,11 +132,10 @@ type volumeStruct struct {
 	replayLogFileName                       string   //           if != "", use replay log to reduce RPO to zero
 	replayLogFile                           *os.File //           opened on first Put or Delete after checkpoint
 	//                                                            closed/deleted on successful checkpoint
-
-	volumeGroup *volumeGroupStruct
-	served      bool
-
+	volumeGroup                             *volumeGroupStruct
+	served                                  bool
 	defaultReplayLogWriteBuffer             []byte //             used for O_DIRECT writes to replay log
+	checkpointTriggeringEvents              uint64 //             count of events modifying metadata since last checkpoint
 	checkpointChunkedPutContext             swiftclient.ChunkedPutContext
 	checkpointChunkedPutContextObjectNumber uint64 //             ultimately copied to CheckpointObjectTrailerStructObjectNumber
 	eventListeners                          map[VolumeEventListener]struct{}
@@ -535,7 +534,7 @@ func (dummy *globalsStruct) VolumeGroupDestroyed(confMap conf.ConfMap, volumeGro
 }
 
 func (dummy *globalsStruct) VolumeCreated(confMap conf.ConfMap, volumeName string, volumeGroupName string) (err error) {
-	volume := &volumeStruct{volumeName: volumeName, served: false}
+	volume := &volumeStruct{volumeName: volumeName, served: false, checkpointTriggeringEvents: 0}
 	globals.Lock()
 	volumeGroup, ok := globals.volumeGroupMap[volumeGroupName]
 	if !ok {

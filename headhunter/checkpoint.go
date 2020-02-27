@@ -1807,6 +1807,10 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 	volume.maxNonce = (1 << (64 - volume.snapShotIDNumBits)) - 1
 	volume.nextNonce = volume.checkpointHeader.ReservedToNonce
 
+	// Indicate that we've had (at least) one checkpointTriggeringEvent
+
+	volume.checkpointTriggeringEvents++
+
 	// Check for the need to process a Replay Log
 
 	if "" == volume.replayLogFileName {
@@ -1893,6 +1897,8 @@ func (volume *volumeStruct) getCheckpoint(autoFormat bool) (err error) {
 		}
 
 		// Replay Transaction
+
+		volume.checkpointTriggeringEvents++
 
 		replayLogReadBufferPosition = globals.replayLogTransactionFixedPartStructSize
 
@@ -2177,6 +2183,14 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		volumeViewCount                                    int
 		volumeViewIndex                                    int
 	)
+
+	if 0 == volume.checkpointTriggeringEvents {
+		stats.IncrementOperations(&stats.SkippedCheckpoints)
+		err = nil
+		return
+	}
+
+	stats.IncrementOperations(&stats.AttemptedCheckpoints)
 
 	checkpointObjectTrailer = &CheckpointObjectTrailerV3Struct{}
 
@@ -2635,6 +2649,10 @@ func (volume *volumeStruct) putCheckpoint() (err error) {
 		logger.Infof("POST'd checkpointHeaderValue %s for volume %s from putCheckpoint()", checkpointHeaderValue, volume.volumeName)
 	}
 	globals.PutCheckpointPostAndEtcdUsec.Add(uint64(time.Since(startTime2) / time.Microsecond))
+
+	volume.checkpointTriggeringEvents = 0
+
+	stats.IncrementOperations(&stats.CompletedCheckpoints)
 
 	startTime2 = time.Now()
 	// Remove replayLogFile if necessary
