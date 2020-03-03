@@ -1,5 +1,13 @@
 # ProxyFS Release Notes
 
+## 1.15.4.5 (March 2, 2020)
+
+### Notes:
+
+Added a new SwiftRetryDelayVariance setting to PFSAgent to perform
+HTTP Retries at varying backoff delays. This avoids certain lock-step
+pathologic cases when overrunning Swift.
+
 ## 1.15.4.3 (February 24, 2020)
 
 Fixed hangs in PFSAgent hit under heavy write loads.
