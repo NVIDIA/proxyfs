@@ -86,7 +86,8 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 	var sendWg sync.WaitGroup
 
-	var z, r int
+	// var z, r int
+	var z int
 	for i := 0; i < sendCnt; i++ {
 		z = (z + i) * 10
 
@@ -95,10 +96,15 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 		// Occasionally drop the connection to the server to
 		// simulate retransmits
-		r = i % 10
-		if r == 0 && (i != 0) {
+		if i == (sendCnt - 1) {
 			rrSvr.CloseClientConn()
 		}
+		/*
+			r = i % 10
+			if r == 0 && (i != 0) {
+				rrSvr.CloseClientConn()
+			}
+		*/
 	}
 	fmt.Printf("pfsagent: %v sentCnt: %v - now wait=========\n", agentID, sendCnt)
 	sendWg.Wait()

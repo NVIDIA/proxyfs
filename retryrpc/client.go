@@ -146,6 +146,16 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
 func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	defer client.goroutineWG.Done()
 
+	client.Lock()
+	// If this message is from an old socket - throw it away
+	// since the request was resent.
+	if client.connection.genNum != genNum {
+		client.Unlock()
+		fmt.Printf("===========    notifyReply() saw old message - throwing away\n")
+		return
+	}
+	client.Unlock()
+
 	// Unmarshal once to get the header fields
 	jReply := jsonReply{}
 	err := json.Unmarshal(buf, &jReply)

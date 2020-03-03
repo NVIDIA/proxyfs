@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
+	"golang.org/x/sys/unix"
 )
 
 // Variable to control debug output
@@ -58,63 +59,6 @@ func keyString(myUniqueID string, rID requestID) string {
 	return fmt.Sprintf("%v:%v", myUniqueID, rID)
 }
 
-// First check if we already completed this request by looking on completed
-// and pending queues.
-//
-// If the request is on the pending queue then update the
-// net.Conn so the response will be sent to the caller.
-//
-// Otherwise, call the RPC.  callRPCAndMarshal() takes care
-// of adding the request to the pending queue.
-func (server *Server) findQOrCallRPC(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest) (err error) {
-	rID := jReq.RequestID
-
-	// First check if we already completed this request by looking at
-	// completed and pending queues.  Update pending queue with new
-	// net.Conn if needed.
-
-	// TODO - be careful that drop locks appropriately!!
-	ci.Lock()
-	v, ok := ci.completedRequest[rID]
-	if ok {
-		// Already have answer for this in completedRequest queue.
-		// Just return the results.
-		setupHdrReply(v.reply)
-		ci.Unlock()
-		returnResults(v, cCtx, jReq)
-
-	} else {
-		_, ok2 := ci.pendingRequest[rID]
-		if ok2 {
-			// Already on pending queue.  Replace the connCtx in the pending queue so
-			// that the goroutine completing the task sends the response back to the
-			// most recent connection.  Any prior connections will have been closed by
-			// the client before creating a new connection.
-			//
-			// This goroutine simply returns.
-			ci.buildAndQPendingCtx(rID, buf, cCtx, true)
-			ci.Unlock()
-
-		} else {
-			// On neither queue - must be new request
-
-			// Call the RPC and return the results.  callRPCAndMarshal()
-			// does both for us.
-			//
-			// We pass buf to the call because the request will have to
-			// be unmarshaled again to retrieve the parameters specific to
-			// the RPC.
-			ci.Unlock()
-
-			// TODO - why return err here if already returned results to
-			// client?
-			err = server.callRPCAndMarshal(cCtx, ci, buf, jReq, rID)
-		}
-	}
-
-	return
-}
-
 // processRequest is given a request from the client.
 func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	defer server.goroutineWG.Done()
@@ -133,8 +77,8 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	server.Lock()
 	ci, ok := server.perClientInfo[jReq.MyUniqueID]
 	if !ok {
-		c := &clientInfo{}
-		c.pendingRequest = make(map[requestID]*pendingCtx)
+		// First time we have seen this client
+		c := &clientInfo{cCtx: cCtx}
 		c.completedRequest = make(map[requestID]*completedEntry)
 		c.completedRequestLRU = list.New()
 		server.perClientInfo[jReq.MyUniqueID] = c
@@ -142,7 +86,53 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	}
 	server.Unlock()
 
+	// TODO - do we still need the server lock here???? seems like
+	// a deadlock to be holding it....
+
 	ci.Lock()
+
+	// TODO - multiple threads INCLUDING a new connection
+	// could be racing this thread... how serialize?
+	// probably need sqn number sent from client, if current
+	// sqn is higher keep going or return because newer retransmit...
+
+	// Check if existing client with new connection
+	ci.cCtx.Lock()
+	if ci.cCtx.conn != cCtx.conn {
+		ci.cCtx.Unlock()
+		ci.Unlock()
+
+		// New socket - block until prior threads complete
+		// to make the recovery more predictable
+		ci.rpcWG.Wait()
+
+		// RPCs from prior socket have completed - now take over
+		ci.Lock()
+		ci.cCtx = cCtx
+		ci.cCtx.Lock()
+
+		// TODO -
+		// TODO - this has a bug/race with 2 retransmits occurring within
+		// short time frame...
+	}
+	ci.cCtx.Unlock()
+
+	ci.rpcWG.Add(1)
+	// if ok -
+	// Existing client - is this a new socket for this client?
+	//
+	//     if same socket then just handle RPC
+	//
+	//     if different socket and first time seeing new socket
+	//     then do:
+	//			tell old threads not to return results, just complete
+	//             RPCs.   Client side will retry operation.
+	//		    if new operation comes in but still on pending queue then
+	//				update outstanding request with new socket and CLEAR
+	//				flag saying "don't write back results!"
+	//
+	// TODO - should I wait until the prior RPCs finish before proceeding?
+
 	// Keep track of the highest consecutive requestID seen
 	// by client.  We use this to trim completedRequest list.
 	//
@@ -151,15 +141,47 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	if jReq.HighestReplySeen > ci.highestReplySeen {
 		ci.highestReplySeen = jReq.HighestReplySeen
 	}
+
+	// First check if we already completed this request by looking at
+	// completed queue.
+	var ior *ioReply
+	rID := jReq.RequestID
+	ce, ok := ci.completedRequest[rID]
+	if ok {
+		// Already have answer for this in completedRequest queue.
+		// Just return the results.
+		ior = ce.reply
+		setupHdrReply(ce.reply)
+
+	} else {
+		// Call the RPC and return the results.
+		//
+		// We pass buf to the call because the request will have to
+		// be unmarshaled again to retrieve the parameters specific to
+		// the RPC.
+		ci.Unlock()
+
+		ior = server.callRPCAndFormatReply(buf, &jReq)
+
+		// We had to drop the lock before calling the RPC since it
+		// could block.
+		ci.Lock()
+
+		// Update completed queue
+		ce := &completedEntry{reply: ior}
+
+		ci.completedRequest[rID] = ce
+		setupHdrReply(ce.reply)
+		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
+		le := ci.completedRequestLRU.PushBack(lruEntry)
+		ce.lruElem = le
+	}
 	ci.Unlock()
 
-	// Complete the request either by looking in completed queue,
-	// updating cCtx of pending queue entry or by calling the
-	// RPC.
-	err := server.findQOrCallRPC(cCtx, ci, buf, &jReq)
-	if err != nil {
-		logger.Errorf("findQOrCallRPC returned err: %v", err)
-	}
+	// Write results on socket back to client...
+	returnResults(ior, ci.cCtx)
+
+	ci.rpcWG.Done()
 }
 
 // serviceClient gets called when we accept a new connection.
@@ -190,6 +212,13 @@ func (server *Server) serviceClient(conn net.Conn) {
 			return
 		}
 
+		server.Lock()
+		if server.halting == true {
+			server.Unlock()
+			return
+		}
+		server.Unlock()
+
 		// No sense blocking the read of the next request,
 		// push the work off on processRequest().
 		//
@@ -203,15 +232,15 @@ func (server *Server) serviceClient(conn net.Conn) {
 // TODO - review the locking here to make it simplier
 
 // callRPCAndMarshal calls the RPC and returns results to requestor
-func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byte, jReq *jsonRequest, rID requestID) (err error) {
+func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior *ioReply) {
+	var (
+		err error
+	)
 
 	// Setup the reply structure with common fields
 	reply := &ioReply{}
 	rid := jReq.RequestID
 	jReply := &jsonReply{MyUniqueID: jReq.MyUniqueID, RequestID: rid}
-
-	// Queue the request
-	ci.buildAndQPendingCtx(rID, buf, cCtx, false)
 
 	ma := server.svrMap[jReq.Method]
 	if ma != nil {
@@ -225,7 +254,7 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byt
 		sReq.Params[0] = dummyReq
 		err = json.Unmarshal(buf, &sReq)
 		if err != nil {
-			logger.Errorf("Unmarshal sReq: %+v returned err: %v", sReq, err)
+			logger.PanicfWithError(err, "Unmarshal sReq: %+v", sReq)
 			return
 		}
 		req := reflect.ValueOf(dummyReq)
@@ -249,94 +278,49 @@ func (server *Server) callRPCAndMarshal(cCtx *connCtx, ci *clientInfo, buf []byt
 			}
 			jReply.ErrStr = e.Error()
 		}
-	} /* else {
+	} else {
+		// TODO - figure out if this is the correct error
+
 		// Method does not exist
 		jReply.ErrStr = fmt.Sprintf("errno: %d", unix.ENOENT)
-	} */
+	}
 
 	// Convert response into JSON for return trip
 	reply.JResult, err = json.Marshal(jReply)
 	if err != nil {
 		logger.PanicfWithError(err, "Unable to marshal jReply: %+v", jReply)
-
 	}
 
-	lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
-
-	ci.Lock()
-
-	// TODO TODO TODO - Why else case???
-
-	// connCtx may have changed while we dropped the lock due to new connection or
-	// the RPC may have completed.
-	//
-	// Pull the current one from pendingRequest if queueKey exists
-	pendingCtx := ci.pendingRequest[rID]
-	if pendingCtx != nil {
-		currentCCtx := pendingCtx.cCtx
-
-		ce := &completedEntry{reply: reply}
-
-		ci.completedRequest[rID] = ce
-		setupHdrReply(ce.reply)
-		le := ci.completedRequestLRU.PushBack(lruEntry)
-		ce.lruElem = le
-		delete(ci.pendingRequest, rID)
-		ci.Unlock()
-
-		// Now return the results
-		returnResults(ce, currentCCtx, jReq)
-	} else {
-		// pendingRequest was already completed
-		ci.Unlock()
-	}
-
-	return
+	return reply
 }
 
-func returnResults(ce *completedEntry, cCtx *connCtx,
-	jReq *jsonRequest) {
+func returnResults(ior *ioReply, cCtx *connCtx) {
 
 	// Now write the response back to the client
 	//
 	// Serialize multiple goroutines writing on socket back to client
 	// by grabbing a mutex on the context
 
-	// We may not have the correct reply structure if we are retransmitting.
-	//
-	// Consider this scenario:
-	//
-	// t0 receive RPC on socket#1 and put on pending queue
-	// t1 before the RPC is processed, the client disconnects
-	// t2 client reconnects with socket#2
-	// t3 client resends RPC
-	// t4 server receives RPC and checks if the RPC is on pending queue.
-	// It is but still lists socket#1.
-	//
-	// The fix is the second thread replaces the contextCtx in the pending queue
-	// entry.  When the first thread completes the RPC, it pulls the most recent
-	// pendingCtx off the pending queue and uses those contents to return the result.
-	if ce.reply != nil {
-
-		// Write Len back
-		cCtx.Lock()
-		cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
-		binErr := binary.Write(cCtx.conn, binary.BigEndian, ce.reply.Hdr)
-		if binErr != nil {
-			cCtx.Unlock()
-			logger.Errorf("SERVER: binary.Write failed err: %v", binErr)
-			return
-		}
-
-		// Write JSON reply
-		cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
-		bytesWritten, writeErr := cCtx.conn.Write(ce.reply.JResult)
-		if writeErr != nil {
-			logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",
-				bytesWritten, writeErr)
-		}
+	// Write Len back
+	cCtx.Lock()
+	cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
+	binErr := binary.Write(cCtx.conn, binary.BigEndian, ior.Hdr)
+	if binErr != nil {
 		cCtx.Unlock()
+		logger.Errorf("SERVER: binary.Write failed err: %v", binErr)
+		// TODO - close cCtx.conn ?
+		return
 	}
+
+	// Write JSON reply
+	cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
+	bytesWritten, writeErr := cCtx.conn.Write(ior.JResult)
+	if writeErr != nil {
+		logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",
+			bytesWritten, writeErr)
+		// TODO - close cCtx.conn ?
+	}
+	cCtx.Unlock()
 }
 
 // Close sockets to client so that goroutines wakeup from blocked

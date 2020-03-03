@@ -43,7 +43,8 @@ type requestID uint64
 // such as completed requests, etc
 type clientInfo struct {
 	sync.Mutex
-	pendingRequest           map[requestID]*pendingCtx     // Key: "RequestID"
+	cCtx                     *connCtx                      // Current connCtx for client
+	rpcWG                    sync.WaitGroup                // WaitGroup tracking current RPC "threads"
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen

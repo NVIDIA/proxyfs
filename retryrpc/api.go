@@ -158,9 +158,10 @@ func (server *Server) Close() {
 
 	server.listenersWG.Wait()
 
-	// Now close the client sockets to wakeup our blocked readers
-	server.closeClientConn()
 	server.goroutineWG.Wait()
+
+	// Now close the client sockets to wakeup them up
+	server.closeClientConn()
 
 	server.completedLongTicker.Stop()
 	server.completedShortTicker.Stop()
@@ -189,16 +190,6 @@ func (server *Server) CloseClientConn() {
 func (server *Server) CompletedCnt() (totalCnt int) {
 	for _, v := range server.perClientInfo {
 		totalCnt += v.completedCnt()
-	}
-	return
-}
-
-// PendingCnt returns count of pendingRequests
-//
-// This is only useful for testing.
-func (server *Server) PendingCnt() (totalCnt int) {
-	for _, v := range server.perClientInfo {
-		totalCnt += v.pendingCnt()
 	}
 	return
 }

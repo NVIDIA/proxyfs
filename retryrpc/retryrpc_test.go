@@ -14,7 +14,7 @@ import (
 // circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
 
-	//	testServer(t)
+	testServer(t)
 	testBtree(t)
 }
 
@@ -89,8 +89,6 @@ func testServer(t *testing.T) {
 	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
-
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(1, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
@@ -99,7 +97,6 @@ func testServer(t *testing.T) {
 	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(2, rrSvr.CompletedCnt())
 
 	// TODO - TODO - TODO....
@@ -112,7 +109,6 @@ func testServer(t *testing.T) {
 	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(3, rrSvr.CompletedCnt())
 
 	// Stop the client before exiting
