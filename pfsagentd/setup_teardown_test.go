@@ -76,6 +76,7 @@ func testSetup(t *testing.T) {
 		"Agent.SwiftTimeout=20s",
 		"Agent.SwiftRetryLimit=2",
 		"Agent.SwiftRetryDelay=1s",
+		"Agent.SwiftRetryDelayVariance=25",
 		"Agent.SwiftRetryExpBackoff=1.4",
 		"Agent.SwiftConnectionPoolSize=200",
 		"Agent.FetchExtentsFromFileOffset=32",

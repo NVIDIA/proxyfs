@@ -35,6 +35,7 @@ type configStruct struct {
 	SwiftTimeout                 time.Duration
 	SwiftRetryLimit              uint64
 	SwiftRetryDelay              time.Duration
+	SwiftRetryDelayVariance      uint8
 	SwiftRetryExpBackoff         float64
 	SwiftConnectionPoolSize      uint64
 	FetchExtentsFromFileOffset   uint64
@@ -60,6 +61,11 @@ type configStruct struct {
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+}
+
+type retryDelayElementStruct struct {
+	nominal  time.Duration
+	variance time.Duration
 }
 
 type fileInodeLockRequestStruct struct {
@@ -310,7 +316,7 @@ type globalsStruct struct {
 	httpServer                      *http.Server
 	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
-	retryDelay                      []time.Duration
+	retryDelay                      []retryDelayElementStruct
 	swiftAuthWaitGroup              *sync.WaitGroup
 	swiftAuthToken                  string
 	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
@@ -412,6 +418,19 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.config.SwiftRetryDelay, err = confMap.FetchOptionValueDuration("Agent", "SwiftRetryDelay")
 	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.SwiftRetryDelayVariance, err = confMap.FetchOptionValueUint8("Agent", "SwiftRetryDelayVariance")
+	if nil != err {
+		globals.config.SwiftRetryDelayVariance = 25 // TODO: Eventually, just logFatal(err)
+	}
+	if 0 == globals.config.SwiftRetryDelayVariance {
+		err = fmt.Errorf("[Agent]SwiftRetryDelayVariance must be > 0")
+		logFatal(err)
+	}
+	if 100 < globals.config.SwiftRetryDelayVariance {
+		err = fmt.Errorf("[Agent]SwiftRetryDelayVariance (%v) must be <= 100", globals.config.SwiftRetryDelayVariance)
 		logFatal(err)
 	}
 
@@ -589,12 +608,13 @@ func initializeGlobals(confMap conf.ConfMap) {
 		Timeout:   globals.config.SwiftTimeout,
 	}
 
-	globals.retryDelay = make([]time.Duration, globals.config.SwiftRetryLimit)
+	globals.retryDelay = make([]retryDelayElementStruct, globals.config.SwiftRetryLimit)
 
 	nextRetryDelay = globals.config.SwiftRetryDelay
 
 	for retryIndex = 0; retryIndex < globals.config.SwiftRetryLimit; retryIndex++ {
-		globals.retryDelay[retryIndex] = nextRetryDelay
+		globals.retryDelay[retryIndex].nominal = nextRetryDelay
+		globals.retryDelay[retryIndex].variance = nextRetryDelay * time.Duration(globals.config.SwiftRetryDelayVariance) / time.Duration(100)
 		nextRetryDelay = time.Duration(float64(nextRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 

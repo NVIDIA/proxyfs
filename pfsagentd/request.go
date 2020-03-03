@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
@@ -109,6 +110,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 		err              error
 		okStatusCode     int
 		okStatusCodesSet map[int]struct{}
+		retryDelay       time.Duration
 		retryIndex       uint64
 		swiftAuthToken   string
 	)
@@ -179,7 +181,8 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 			}
 		}
 
-		time.Sleep(globals.retryDelay[retryIndex])
+		retryDelay = globals.retryDelay[retryIndex].nominal - time.Duration(rand.Int63n(int64(globals.retryDelay[retryIndex].variance)))
+		time.Sleep(retryDelay)
 		retryIndex++
 
 		_ = atomic.AddUint64(&globals.metrics.HTTPRequestRetries, 1)

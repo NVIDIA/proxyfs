@@ -103,6 +103,10 @@ var (
 
 	HeadhunterBPlusTreeNodeFaults = "proxyfs.headhunter.bptree.node.fault.operations"
 
+	SkippedCheckpoints   = "proxyfs.headhunter.skipped.checkpoint.operations"
+	AttemptedCheckpoints = "proxyfs.headhunter.attempted.checkpoint.operations"
+	CompletedCheckpoints = "proxyfs.headhunter.completed.checkpoint.operations"
+
 	JrpcfsIoWriteOps        = "proxyfs.jrpcfs.write.operations"
 	JrpcfsIoWriteOps4K      = "proxyfs.jrpcfs.write.operations.size-up-to-4KB"
 	JrpcfsIoWriteOps8K      = "proxyfs.jrpcfs.write.operations.size-4KB-to-8KB"
