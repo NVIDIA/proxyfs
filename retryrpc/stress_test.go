@@ -96,15 +96,20 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 		// Occasionally drop the connection to the server to
 		// simulate retransmits
+		/****** - March 3
 		if i == (sendCnt - 1) {
 			rrSvr.CloseClientConn()
 		}
-		/*
+		******/
+		if i == 0 {
+			rrSvr.CloseClientConn()
+		}
+		/*******
 			r = i % 10
 			if r == 0 && (i != 0) {
 				rrSvr.CloseClientConn()
 			}
-		*/
+		********/
 	}
 	fmt.Printf("pfsagent: %v sentCnt: %v - now wait=========\n", agentID, sendCnt)
 	sendWg.Wait()

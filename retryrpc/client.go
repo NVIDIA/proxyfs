@@ -54,7 +54,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	}
 	client.currentRequestID++
 	crID = client.currentRequestID
-	jreq.RequestID = client.currentRequestID
+	jreq.RequestID = crID
 	client.Unlock()
 
 	// Setup ioreq to write structure on socket to server
@@ -146,16 +146,6 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
 func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	defer client.goroutineWG.Done()
 
-	client.Lock()
-	// If this message is from an old socket - throw it away
-	// since the request was resent.
-	if client.connection.genNum != genNum {
-		client.Unlock()
-		fmt.Printf("===========    notifyReply() saw old message - throwing away\n")
-		return
-	}
-	client.Unlock()
-
 	// Unmarshal once to get the header fields
 	jReply := jsonReply{}
 	err := json.Unmarshal(buf, &jReply)
@@ -177,9 +167,16 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	// original request anyway.
 	crID := jReply.RequestID
 	client.Lock()
-	ctx := client.outstandingRequest[crID]
+	// If this message is from an old socket - throw it away
+	// since the request was resent.
+	if client.connection.genNum != genNum {
+		client.Unlock()
+		fmt.Printf("===========    notifyReply() saw old message - throwing away\n")
+		return
+	}
+	ctx, ok := client.outstandingRequest[crID]
 
-	if ctx == nil {
+	if !ok {
 		// Saw reply for request which is no longer on outstandingRequest list
 		// Can happen if handling retransmit
 		client.Unlock()
@@ -190,7 +187,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	m := svrResponse{Result: ctx.rpcReply}
 	unmarshalErr := json.Unmarshal(buf, &m)
 	if unmarshalErr != nil {
-		e := fmt.Errorf("notifyReply failed to unmarshal buf: %v err: %v", string(buf), unmarshalErr)
+		e := fmt.Errorf("notifyReply failed to unmarshal buf: %v err: %v ctx: %v", string(buf), unmarshalErr, ctx)
 		fmt.Printf("%v\n", e)
 
 		// Assume read garbage on socket - close the socket and reconnect
@@ -200,10 +197,6 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	}
 
 	delete(client.outstandingRequest, crID)
-	client.Unlock()
-
-	// Fork off a goroutine to update highestConsecutiveNum
-	go client.updateHighestConsecutiveNum(crID)
 
 	// Give reply to blocked send() - most developers test for nil err so
 	// only set it if there is an error
@@ -211,25 +204,25 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	if jReply.ErrStr != "" {
 		r.err = fmt.Errorf("%v", jReply.ErrStr)
 	}
+	client.Unlock()
+	go fmt.Printf("WAKEUP: crID: %v\n", crID)
 	ctx.answer <- r
+
+	// Fork off a goroutine to update highestConsecutiveNum
+	go client.updateHighestConsecutiveNum(crID)
 }
 
 // readReplies is a goroutine dedicated to reading responses from the server.
 //
 // As soon as it reads a complete response, it launches a goroutine to process
 // the response and notify the blocked Send().
-func (client *Client) readReplies(callingGenNum uint64) {
+func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 	defer client.goroutineWG.Done()
-
-	client.Lock()
-	tlsConn := client.connection.tlsConn
-	genNum := client.connection.genNum
-	client.Unlock()
 
 	for {
 
 		// Wait reply from server
-		buf, getErr := getIO(genNum, tlsConn)
+		buf, getErr := getIO(callingGenNum, tlsConn)
 
 		// This must happen before checking error
 		client.Lock()
@@ -243,7 +236,7 @@ func (client *Client) readReplies(callingGenNum uint64) {
 			// If we had an error reading socket - call retransmit() and exit
 			// the goroutine.  retransmit()/dial() will have already
 			// started another readReplies() goroutine.
-			client.retransmit(genNum)
+			client.retransmit(callingGenNum)
 			return
 		}
 
@@ -251,13 +244,14 @@ func (client *Client) readReplies(callingGenNum uint64) {
 		// sending the reply to blocked Send() so that this routine
 		// can read the next response.
 		client.goroutineWG.Add(1)
-		go client.notifyReply(buf, genNum)
+		go client.notifyReply(buf, callingGenNum)
 	}
 }
 
 // retransmit is called when a socket related error occurs on the
 // connection to the server.
 func (client *Client) retransmit(genNum uint64) {
+	fmt.Printf("retransmit() BEGIN - genNum: %v\n", genNum)
 	client.Lock()
 
 	// Check if we are already processing the socket error via
@@ -334,7 +328,7 @@ func (client *Client) dial() (err error) {
 
 	// Start readResponse goroutine to read responses from server
 	client.goroutineWG.Add(1)
-	go client.readReplies(client.connection.genNum)
+	go client.readReplies(client.connection.genNum, tlsConn)
 
 	return
 }
