@@ -69,14 +69,8 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	ctx := &reqCtx{ioreq: *ioreq, rpcReply: rpcReply}
 	ctx.answer = make(chan replyCtx)
 
-	// Keep track of requests we are sending so we can resend them later as
-	// needed.
-	client.Lock()
-	client.outstandingRequest[crID] = ctx
-	client.Unlock()
-
 	client.goroutineWG.Add(1)
-	go client.sendToServer(crID, ctx)
+	go client.sendToServer(crID, ctx, true)
 
 	// Now wait for response
 	answer := <-ctx.answer
@@ -89,7 +83,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 //
 // At this point, the client will retry the request until either it
 // completes OR the client is shutdown.
-func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
+func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 
 	defer client.goroutineWG.Done()
 
@@ -103,7 +97,11 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx) {
 	//
 	// That should be okay since the restransmit goroutine will walk the
 	// outstandingRequests queue and resend the request.
-	client.outstandingRequest[crID] = ctx
+	//
+	// Don't queue the request if we are retransmitting....
+	if queue == true {
+		client.outstandingRequest[crID] = ctx
+	}
 
 	// Record generation number of connection.  It is used during
 	// retransmit to prevent multiple goroutines from closing the
@@ -205,7 +203,6 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 		r.err = fmt.Errorf("%v", jReply.ErrStr)
 	}
 	client.Unlock()
-	go fmt.Printf("WAKEUP: crID: %v\n", crID)
 	ctx.answer <- r
 
 	// Fork off a goroutine to update highestConsecutiveNum
@@ -298,7 +295,7 @@ func (client *Client) retransmit(genNum uint64) {
 		// Note that we are holding the lock so these
 		// goroutines will block until we release it.
 		client.goroutineWG.Add(1)
-		go client.sendToServer(crID, ctx)
+		go client.sendToServer(crID, ctx, false)
 	}
 	client.Unlock()
 }
