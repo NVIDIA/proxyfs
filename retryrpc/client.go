@@ -248,7 +248,6 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 // retransmit is called when a socket related error occurs on the
 // connection to the server.
 func (client *Client) retransmit(genNum uint64) {
-	fmt.Printf("retransmit() BEGIN - genNum: %v\n", genNum)
 	client.Lock()
 
 	// Check if we are already processing the socket error via

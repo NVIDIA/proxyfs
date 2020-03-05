@@ -86,9 +86,6 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	}
 	server.Unlock()
 
-	// TODO - do we still need the server lock here???? seems like
-	// a deadlock to be holding it....
-
 	ci.Lock()
 
 	// TODO - multiple threads INCLUDING a new connection
@@ -96,17 +93,18 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	// probably need sqn number sent from client, if current
 	// sqn is higher keep going or return because newer retransmit...
 
-	// Check if existing client with new connection
+	// Check if existing client with new connection.  If so,
+	// wait for prior RPCs to complete before proceeding.
 	ci.cCtx.Lock()
 	if ci.cCtx.conn != cCtx.conn {
 		ci.cCtx.Unlock()
 		ci.Unlock()
 
-		// New socket - block until prior threads complete
-		// to make the recovery more predictable
+		// New socket - block until threads from PRIOR connection
+		// complete to make the recovery more predictable
 		ci.rpcWG.Wait()
 
-		// RPCs from prior socket have completed - now take over
+		// RPCs from PRIOR socket have completed - now take over
 		ci.Lock()
 		ci.cCtx = cCtx
 		ci.cCtx.Lock()
