@@ -622,7 +622,7 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 	globals.toStopServingVolumeList = make(map[string]*volumeStruct)
 	globals.toStartServingVolumeList = make(map[string]*volumeStruct)
 
-	// Injest confMap
+	// Ingest confMap
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {

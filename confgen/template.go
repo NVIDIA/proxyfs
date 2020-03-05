@@ -64,11 +64,19 @@ func createSMBConf(initialDirPath string, localVolumeGroupMap volumeGroupMap) (e
 
 		err = globalTplate.Execute(f, volumeGroup)
 		if nil != err {
+			execErr, ok := err.(template.ExecError)
+			if ok {
+				err = execErr.Err
+			}
 			return
 		}
 
 		err = sharesTplate.Execute(f, volumeGroup)
 		if nil != err {
+			execErr, ok := err.(template.ExecError)
+			if ok {
+				err = execErr.Err
+			}
 			return
 		}
 	}

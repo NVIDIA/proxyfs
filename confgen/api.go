@@ -15,6 +15,7 @@
 // assignments. It is the callers responsibility to compute the assignments of VolumeGroups
 // to Peers and either modify the provided `confFilePath` to include PrimaryPeer values or to
 // supply those via the `confOverrides` (e.g. "VolumeGroup:CommonVolumeGroup.PrimaryPeer=Peer0").
+// Note: `PrimaryPeer` is depcrecated and `ServingNode` overrides it, if present.
 package confgen
 
 // EnvMap allows the caller to provide environment-specific paths for various programs invoked

@@ -155,6 +155,9 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	// Determine if underlying accountName is empty
 
 	_, containerList, err = swiftclient.AccountGet(accountName)
+	logger.Infof("mkproxyfs AccountGet(%s) returned %T %+v HTTPCode %+v", accountName,
+		err, err, blunder.HTTPCode(err))
+
 	if nil == err {
 		// accountName exists (possibly auto-created)... consider it empty only if no containers therein
 		isEmpty = (0 == len(containerList))

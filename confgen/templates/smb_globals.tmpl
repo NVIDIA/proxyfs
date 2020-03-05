@@ -31,7 +31,7 @@
 # --------------------------- Temporary Options -------------------------
 # Until we resolve permissions
 {{ $EnabledIfNoAD }}force user = root
-	
+
 
 # --------------------------- Logging Options -----------------------------
 
@@ -72,7 +72,7 @@ winbind nested groups = yes
 {{ $ADDisabledCommentStr }}template shell = /sbin/nologin
 {{ $ADDisabledCommentStr }}domain master = no
 {{ $ADDisabledCommentStr }}preferred master = no
-	  	 	  
+
 {{ $ADDisabledCommentStr }}kerberos method = secrets and keytab
 
 
@@ -83,7 +83,6 @@ winbind nested groups = yes
 
 # --------------------------- ProxyFS Options ---------------------------
 
-	proxyfs:PrivateIPAddr = {{ .VirtualIPAddr }}
-	proxyfs:TCPPort = {{ .SMB.TCPPort }}
-	proxyfs:FastTCPPort = {{ .SMB.FastTCPPort }}
-
+	proxyfs:PrivateIPAddr = {{ .Peer.PrivateIPAddr }}
+	proxyfs:TCPPort = {{ .Peer.TCPPort }}
+	proxyfs:FastTCPPort = {{ .Peer.FastTCPPort }}
