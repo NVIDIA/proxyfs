@@ -1114,51 +1114,56 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 		return
 	}
 
-	if tree.maxKeysPerNode < uint64(llrbLen) {
-		newRightSiblingNode = &btreeNodeStruct{
-			objectNumber:        0, //                                               To be filled in once node is posted
-			objectOffset:        0, //                                               To be filled in once node is posted
-			objectLength:        0, //                                               To be filled in once node is posted
-			items:               0,
-			loaded:              true, //                                            Special case in that objectNumber == 0 means it has no onDisk copy
-			dirty:               true,
-			root:                false, //                                           Note: insertNode.root will also (at least eventually) be false
-			leaf:                insertNode.leaf,
-			tree:                tree,
-			parentNode:          insertNode.parentNode,
-			kvLLRB:              NewLLRBTree(tree.Compare, tree.BPlusTreeCallbacks),
-			nonLeafLeftChild:    nil,
-			rootPrefixSumChild:  nil,
-			prefixSumItems:      0,   //                                             Not applicable to root node
-			prefixSumParent:     nil, //                                             Not applicable to root node
-			prefixSumLeftChild:  nil, //                                             Not applicable to root node
-			prefixSumRightChild: nil, //                                             Not applicable to root node
+	if tree.maxKeysPerNode >= uint64(llrbLen) {
+		err = nil
+		return
+	}
+
+	newRightSiblingNode = &btreeNodeStruct{
+		objectNumber:        0, //                                               To be filled in once node is posted
+		objectOffset:        0, //                                               To be filled in once node is posted
+		objectLength:        0, //                                               To be filled in once node is posted
+		items:               0,
+		loaded:              true, //                                            Special case in that objectNumber == 0 means it has no onDisk copy
+		dirty:               true,
+		root:                false, //                                           Note: insertNode.root will also (at least eventually) be false
+		leaf:                insertNode.leaf,
+		tree:                tree,
+		parentNode:          insertNode.parentNode,
+		kvLLRB:              NewLLRBTree(tree.Compare, tree.BPlusTreeCallbacks),
+		nonLeafLeftChild:    nil,
+		rootPrefixSumChild:  nil,
+		prefixSumItems:      0,   //                                             Not applicable to root node
+		prefixSumParent:     nil, //                                             Not applicable to root node
+		prefixSumLeftChild:  nil, //                                             Not applicable to root node
+		prefixSumRightChild: nil, //                                             Not applicable to root node
+	}
+
+	for {
+		splitKey, splitValue, ok, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("Logic error: insertHere() failed to fetch insertNode's splitKey:splitValue")
+			return
 		}
 
-		for {
-			llrbLen, err = insertNode.kvLLRB.Len()
-			if nil != err {
-				return
-			}
-			if tree.minKeysPerNode >= uint64(llrbLen) {
-				break
-			}
-			splitKey, splitValue, ok, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("Logic error: insertHere() failed to fetch insertNode's splitKey:splitValue")
-				return
-			}
-			ok, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("Logic error: insertHere() failed to delete insertNode's splitKey")
-				return
-			}
+		ok, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
+		if nil != err {
+			return
+		}
+		if !ok {
+			err = fmt.Errorf("Logic error: insertHere() failed to delete insertNode's splitKey")
+			return
+		}
+
+		llrbLen--
+
+		if insertNode.leaf {
+			insertNode.items--
+			newRightSiblingNode.items++
+
 			ok, err = newRightSiblingNode.kvLLRB.Put(splitKey, splitValue)
 			if nil != err {
 				return
@@ -1168,101 +1173,91 @@ func (tree *btreeTreeStruct) insertHere(insertNode *btreeNodeStruct, key Key, va
 				return
 			}
 
-			if insertNode.leaf {
-				insertNode.items--
-				newRightSiblingNode.items++
-			} else {
-				splitValueAsNode = splitValue.(*btreeNodeStruct)
-				insertNode.items -= splitValueAsNode.items
-				newRightSiblingNode.items += splitValueAsNode.items
-				splitValueAsNode.parentNode = newRightSiblingNode
+			if tree.minKeysPerNode == uint64(llrbLen) {
+				break
 			}
-		}
-
-		if !insertNode.leaf {
-			llrbLen, err = insertNode.kvLLRB.Len()
-			if nil != err {
-				return
-			}
-			splitKey, splitValue, ok, err = insertNode.kvLLRB.GetByIndex(llrbLen - 1)
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("Logic error: insertHere() failed to fetch insertNode's splitKey:splitValue")
-				return
-			}
-			ok, err = insertNode.kvLLRB.DeleteByIndex(llrbLen - 1)
-			if nil != err {
-				return
-			}
-			if !ok {
-				err = fmt.Errorf("Logic error: insertHere() failed to delete insertNode's splitKey")
-				return
-			}
-			newRightSiblingNode.nonLeafLeftChild = splitValue.(*btreeNodeStruct)
-
-			insertNode.items -= newRightSiblingNode.nonLeafLeftChild.items
-			newRightSiblingNode.items += newRightSiblingNode.nonLeafLeftChild.items
-			newRightSiblingNode.nonLeafLeftChild.parentNode = newRightSiblingNode
-
-			err = tree.arrangePrefixSumTree(insertNode)
-			if nil != err {
-				return
-			}
-			err = tree.arrangePrefixSumTree(newRightSiblingNode)
-			if nil != err {
-				return
-			}
-		}
-
-		if insertNode.root {
-			insertNode.root = false
-
-			tree.root = &btreeNodeStruct{
-				objectNumber:        0, //                                               To be filled in once new root node is posted
-				objectOffset:        0, //                                               To be filled in once new root node is posted
-				objectLength:        0, //                                               To be filled in once new root node is posted
-				items:               insertNode.items + newRightSiblingNode.items,
-				loaded:              true, //                                            Special case in that objectNumber == 0 means it has no onDisk copy
-				dirty:               true,
-				root:                true,
-				leaf:                false,
-				tree:                tree,
-				parentNode:          nil,
-				kvLLRB:              NewLLRBTree(tree.Compare, tree.BPlusTreeCallbacks),
-				nonLeafLeftChild:    insertNode,
-				rootPrefixSumChild:  nil,
-				prefixSumItems:      0,   //                                             Not applicable to root node
-				prefixSumParent:     nil, //                                             Not applicable to root node
-				prefixSumLeftChild:  nil, //                                             Not applicable to root node
-				prefixSumRightChild: nil, //                                             Not applicable to root node
-			}
-
-			insertNode.parentNode = tree.root
-			newRightSiblingNode.parentNode = tree.root
-
-			tree.root.kvLLRB.Put(splitKey, newRightSiblingNode)
-
-			tree.initNodeAsEvicted(newRightSiblingNode)
-			tree.markNodeDirty(newRightSiblingNode)
-
-			tree.initNodeAsEvicted(tree.root)
-			tree.markNodeDirty(tree.root)
 		} else {
-			err = tree.insertHere(insertNode.parentNode, splitKey, newRightSiblingNode)
-			if nil != err {
-				return
+			splitValueAsNode = splitValue.(*btreeNodeStruct)
+
+			splitValueAsNode.parentNode = newRightSiblingNode
+
+			insertNode.items -= splitValueAsNode.items
+			newRightSiblingNode.items += splitValueAsNode.items
+
+			if tree.minKeysPerNode == uint64(llrbLen) {
+				newRightSiblingNode.nonLeafLeftChild = splitValue.(*btreeNodeStruct)
+
+				break
+			} else {
+				ok, err = newRightSiblingNode.kvLLRB.Put(splitKey, splitValue)
+				if nil != err {
+					return
+				}
+				if !ok {
+					err = fmt.Errorf("Logic error: insertHere() failed to put newRightSiblingNode's splitKey:splitValue")
+					return
+				}
 			}
-
-			tree.initNodeAsEvicted(newRightSiblingNode)
-			tree.markNodeDirty(newRightSiblingNode)
 		}
+	}
 
-		err = tree.rearrangePrefixSumTreeToRoot(insertNode.parentNode)
+	if !insertNode.leaf {
+		err = tree.arrangePrefixSumTree(insertNode)
 		if nil != err {
 			return
 		}
+		err = tree.arrangePrefixSumTree(newRightSiblingNode)
+		if nil != err {
+			return
+		}
+	}
+
+	if insertNode.root {
+		insertNode.root = false
+
+		tree.root = &btreeNodeStruct{
+			objectNumber:        0, //                                               To be filled in once new root node is posted
+			objectOffset:        0, //                                               To be filled in once new root node is posted
+			objectLength:        0, //                                               To be filled in once new root node is posted
+			items:               insertNode.items + newRightSiblingNode.items,
+			loaded:              true, //                                            Special case in that objectNumber == 0 means it has no onDisk copy
+			dirty:               true,
+			root:                true,
+			leaf:                false,
+			tree:                tree,
+			parentNode:          nil,
+			kvLLRB:              NewLLRBTree(tree.Compare, tree.BPlusTreeCallbacks),
+			nonLeafLeftChild:    insertNode,
+			rootPrefixSumChild:  nil,
+			prefixSumItems:      0,   //                                             Not applicable to root node
+			prefixSumParent:     nil, //                                             Not applicable to root node
+			prefixSumLeftChild:  nil, //                                             Not applicable to root node
+			prefixSumRightChild: nil, //                                             Not applicable to root node
+		}
+
+		insertNode.parentNode = tree.root
+		newRightSiblingNode.parentNode = tree.root
+
+		tree.root.kvLLRB.Put(splitKey, newRightSiblingNode)
+
+		tree.initNodeAsEvicted(newRightSiblingNode)
+		tree.markNodeDirty(newRightSiblingNode)
+
+		tree.initNodeAsEvicted(tree.root)
+		tree.markNodeDirty(tree.root)
+	} else {
+		err = tree.insertHere(insertNode.parentNode, splitKey, newRightSiblingNode)
+		if nil != err {
+			return
+		}
+
+		tree.initNodeAsEvicted(newRightSiblingNode)
+		tree.markNodeDirty(newRightSiblingNode)
+	}
+
+	err = tree.rearrangePrefixSumTreeToRoot(insertNode.parentNode)
+	if nil != err {
+		return
 	}
 
 	err = nil

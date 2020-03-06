@@ -1,5 +1,5 @@
-hash: 085caff19534031af680c5b253a3fe45a1ea1e875080fb2f8e5703b3445ccf5c
-updated: 2020-02-06T15:28:21.145919-08:00
+hash: 0de0f667b1effa8f86804f9fab6095c9508db8272701f99c42caa584dd1966f8
+updated: 2020-03-06T14:50:47.783605-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -40,8 +40,6 @@ imports:
   version: 4030bb1f1f0c35b30ca7009e9ebd06849dd45306
 - name: github.com/google/uuid
   version: c2e93f3ae59f2904160ceaab466009f965df46d6
-- name: github.com/konsorten/go-windows-terminal-sequences
-  version: f55edac94c9bbba5d6182a4be46d86a2c9b5b50e
 - name: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - name: github.com/sirupsen/logrus
@@ -55,7 +53,7 @@ imports:
 - name: github.com/swiftstack/fission
   version: c80160e3b00ce3c24b8b7d0e856725bc1eb2033b
 - name: github.com/swiftstack/sortedmap
-  version: 6f9ef66702b23f47054e69be97a26feb6e7301b1
+  version: ea6f0fa04ee55978ef58881c93b2682e2313db93
 - name: go.etcd.io/etcd
   version: 948e276ca73d3eb09391829d8ac317dbda8c07a1
   subpackages:
