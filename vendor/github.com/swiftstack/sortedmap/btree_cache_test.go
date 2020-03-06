@@ -12,16 +12,16 @@ const (
 	testBPlusTreeCacheDelay = 100 * time.Millisecond
 )
 
-type testBPlusTreeStruct struct {
+type cacheBPlusTreeTestContextStruct struct {
 	sync.Mutex
 	nextObjectNumber uint64
 	objectMap        map[uint64][]byte
 }
 
-func (tree *testBPlusTreeStruct) DumpKey(key Key) (keyAsString string, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) DumpKey(key Key) (keyAsString string, err error) {
 	var (
-		ok          bool
 		keyAsUint16 uint16
+		ok          bool
 	)
 
 	keyAsUint16, ok = key.(uint16)
@@ -36,7 +36,7 @@ func (tree *testBPlusTreeStruct) DumpKey(key Key) (keyAsString string, err error
 	return
 }
 
-func (tree *testBPlusTreeStruct) DumpValue(value Value) (valueAsString string, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) DumpValue(value Value) (valueAsString string, err error) {
 	var (
 		ok            bool
 		valueAsUint32 uint32
@@ -54,7 +54,7 @@ func (tree *testBPlusTreeStruct) DumpValue(value Value) (valueAsString string, e
 	return
 }
 
-func (tree *testBPlusTreeStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) GetNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (nodeByteSlice []byte, err error) {
 	var (
 		ok bool
 	)
@@ -80,7 +80,7 @@ func (tree *testBPlusTreeStruct) GetNode(objectNumber uint64, objectOffset uint6
 	return
 }
 
-func (tree *testBPlusTreeStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) PutNode(nodeByteSlice []byte) (objectNumber uint64, objectOffset uint64, err error) {
 	tree.Lock()
 	defer tree.Unlock()
 
@@ -94,7 +94,7 @@ func (tree *testBPlusTreeStruct) PutNode(nodeByteSlice []byte) (objectNumber uin
 	return
 }
 
-func (tree *testBPlusTreeStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
+func (tree *cacheBPlusTreeTestContextStruct) DiscardNode(objectNumber uint64, objectOffset uint64, objectLength uint64) (err error) {
 	var (
 		ok            bool
 		nodeByteSlice []byte
@@ -121,7 +121,7 @@ func (tree *testBPlusTreeStruct) DiscardNode(objectNumber uint64, objectOffset u
 	return
 }
 
-func (tree *testBPlusTreeStruct) PackKey(key Key) (packedKey []byte, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) PackKey(key Key) (packedKey []byte, err error) {
 	var (
 		ok          bool
 		keyAsUint16 uint16
@@ -141,7 +141,7 @@ func (tree *testBPlusTreeStruct) PackKey(key Key) (packedKey []byte, err error) 
 	return
 }
 
-func (tree *testBPlusTreeStruct) UnpackKey(payloadData []byte) (key Key, bytesConsumed uint64, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) UnpackKey(payloadData []byte) (key Key, bytesConsumed uint64, err error) {
 	if len(payloadData) < 2 {
 		err = fmt.Errorf("UnpackKey() called for length %v... expected length of at least 2", len(payloadData))
 		return
@@ -155,7 +155,7 @@ func (tree *testBPlusTreeStruct) UnpackKey(payloadData []byte) (key Key, bytesCo
 	return
 }
 
-func (tree *testBPlusTreeStruct) PackValue(value Value) (packedValue []byte, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) PackValue(value Value) (packedValue []byte, err error) {
 	var (
 		ok            bool
 		valueAsUint32 uint32
@@ -177,7 +177,7 @@ func (tree *testBPlusTreeStruct) PackValue(value Value) (packedValue []byte, err
 	return
 }
 
-func (tree *testBPlusTreeStruct) UnpackValue(payloadData []byte) (value Value, bytesConsumed uint64, err error) {
+func (tree *cacheBPlusTreeTestContextStruct) UnpackValue(payloadData []byte) (value Value, bytesConsumed uint64, err error) {
 	if len(payloadData) < 4 {
 		err = fmt.Errorf("UnpackValue() called for length %v... expected length of at least 4", len(payloadData))
 		return
@@ -198,10 +198,10 @@ func TestBPlusTreeCache(t *testing.T) {
 		treeCache       BPlusTreeCache
 		treeCacheStruct *btreeNodeCacheStruct
 		treeCacheStats  *BPlusTreeCacheStats
-		treeStruct      *testBPlusTreeStruct
+		treeContext     *cacheBPlusTreeTestContextStruct
 	)
 
-	treeStruct = &testBPlusTreeStruct{
+	treeContext = &cacheBPlusTreeTestContextStruct{
 		nextObjectNumber: uint64(0),
 		objectMap:        make(map[uint64][]byte),
 	}
@@ -211,7 +211,7 @@ func TestBPlusTreeCache(t *testing.T) {
 
 	// Consume 1 node for treeA
 
-	treeA = NewBPlusTree(4, CompareUint16, treeStruct, treeCache)
+	treeA = NewBPlusTree(4, CompareUint16, treeContext, treeCache)
 
 	_, _ = treeA.Put(uint16(0x0000), uint32(0x00000000))
 
@@ -242,7 +242,7 @@ func TestBPlusTreeCache(t *testing.T) {
 
 	// Consume 4 nodes for treeB
 
-	treeB = NewBPlusTree(4, CompareUint16, treeStruct, treeCache)
+	treeB = NewBPlusTree(4, CompareUint16, treeContext, treeCache)
 
 	_, _ = treeB.Put(uint16(0x0000), uint32(0x00000000))
 	_, _ = treeB.Put(uint16(0x0001), uint32(0x00000001))
