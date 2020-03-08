@@ -29,6 +29,7 @@ const (
 
 type globalsStruct struct {
 	accountName                        string
+	alsoDump                           bool
 	bPlusTreeCache                     sortedmap.BPlusTreeCache
 	bPlusTreeCacheEvictHighLimit       uint64 // [FSCK]BPlusTreeCacheEvictHighLimit
 	bPlusTreeCacheEvictLowLimit        uint64 // [FSCK]BPlusTreeCacheEvictLowLimit
@@ -121,10 +122,16 @@ func main() {
 			sortedmap.CompareUint64,
 			&globals,
 			globals.bPlusTreeCache)
+		if nil != err {
+			log.Fatalf("loading of InodeRecBPlusTree failed: %v", err)
+		}
+
 		err = bPlusTree.Validate()
 		if nil != err {
 			log.Fatalf("validate of InodeRecBPlusTree failed: %v", err)
 		}
+
+		dumpKeysIfRequested(bPlusTree, "InodeRecBPlusTree")
 	}
 
 	if uint64(0) != globals.checkpointObjectTrailerV3.LogSegmentRecBPlusTreeObjectNumber {
@@ -134,10 +141,16 @@ func main() {
 			sortedmap.CompareUint64,
 			&globals,
 			globals.bPlusTreeCache)
+		if nil != err {
+			log.Fatalf("loading of LogSegmentRecBPlusTree failed: %v", err)
+		}
+
 		err = bPlusTree.Validate()
 		if nil != err {
 			log.Fatalf("validate of LogSegmentRecBPlusTree failed: %v", err)
 		}
+
+		dumpKeysIfRequested(bPlusTree, "LogSegmentRecBPlusTree")
 	}
 
 	if uint64(0) != globals.checkpointObjectTrailerV3.BPlusTreeObjectBPlusTreeObjectNumber {
@@ -147,10 +160,16 @@ func main() {
 			sortedmap.CompareUint64,
 			&globals,
 			globals.bPlusTreeCache)
+		if nil != err {
+			log.Fatalf("loading of BPlusTreeObjectBPlusTree failed: %v", err)
+		}
+
 		err = bPlusTree.Validate()
 		if nil != err {
 			log.Fatalf("validate of BPlusTreeObjectBPlusTree failed: %v", err)
 		}
+
+		dumpKeysIfRequested(bPlusTree, "BPlusTreeObjectBPlusTree")
 	}
 
 	for _, elementOfSnapShotList = range globals.snapShotList {
@@ -161,10 +180,16 @@ func main() {
 				sortedmap.CompareUint64,
 				&globals,
 				globals.bPlusTreeCache)
+			if nil != err {
+				log.Fatalf("loading of SnapShot.ID==%d InodeRecBPlusTree failed: %v", elementOfSnapShotList.ID, err)
+			}
+
 			err = bPlusTree.Validate()
 			if nil != err {
 				log.Fatalf("validate of SnapShot.ID==%d InodeRecBPlusTree failed: %v", elementOfSnapShotList.ID, err)
 			}
+
+			dumpKeysIfRequested(bPlusTree, fmt.Sprintf("InodeRecBPlusTree for SnapShotID==%d", elementOfSnapShotList.ID))
 		}
 
 		if uint64(0) != elementOfSnapShotList.LogSegmentRecBPlusTreeObjectNumber {
@@ -174,10 +199,16 @@ func main() {
 				sortedmap.CompareUint64,
 				&globals,
 				globals.bPlusTreeCache)
+			if nil != err {
+				log.Fatalf("loading of SnapShot.ID==%d LogSegmentRecBPlusTree failed: %v", elementOfSnapShotList.ID, err)
+			}
+
 			err = bPlusTree.Validate()
 			if nil != err {
 				log.Fatalf("validate of SnapShot.ID==%d LogSegmentRecBPlusTree failed: %v", elementOfSnapShotList.ID, err)
 			}
+
+			dumpKeysIfRequested(bPlusTree, fmt.Sprintf("LogSegmentRecBPlusTree for SnapShotID==%d", elementOfSnapShotList.ID))
 		}
 
 		if uint64(0) != elementOfSnapShotList.BPlusTreeObjectBPlusTreeObjectNumber {
@@ -187,10 +218,16 @@ func main() {
 				sortedmap.CompareUint64,
 				&globals,
 				globals.bPlusTreeCache)
+			if nil != err {
+				log.Fatalf("loading of SnapShot.ID==%d BPlusTreeObjectBPlusTree failed: %v", elementOfSnapShotList.ID, err)
+			}
+
 			err = bPlusTree.Validate()
 			if nil != err {
 				log.Fatalf("validate of SnapShot.ID==%d BPlusTreeObjectBPlusTree failed: %v", elementOfSnapShotList.ID, err)
 			}
+
+			dumpKeysIfRequested(bPlusTree, fmt.Sprintf("BPlusTreeObjectBPlusTree for SnapShotID==%d", elementOfSnapShotList.ID))
 		}
 
 		if uint64(0) != elementOfSnapShotList.CreatedObjectsBPlusTreeObjectNumber {
@@ -200,10 +237,16 @@ func main() {
 				sortedmap.CompareUint64,
 				&globals,
 				globals.bPlusTreeCache)
+			if nil != err {
+				log.Fatalf("loading of SnapShot.ID==%d CreatedObjectsBPlusTree failed: %v", elementOfSnapShotList.ID, err)
+			}
+
 			err = bPlusTree.Validate()
 			if nil != err {
 				log.Fatalf("validate of SnapShot.ID==%d CreatedObjectsBPlusTree failed: %v", elementOfSnapShotList.ID, err)
 			}
+
+			dumpKeysIfRequested(bPlusTree, fmt.Sprintf("CreatedObjectsBPlusTree for SnapShotID==%d", elementOfSnapShotList.ID))
 		}
 
 		if uint64(0) != elementOfSnapShotList.DeletedObjectsBPlusTreeObjectNumber {
@@ -213,10 +256,16 @@ func main() {
 				sortedmap.CompareUint64,
 				&globals,
 				globals.bPlusTreeCache)
+			if nil != err {
+				log.Fatalf("loading of SnapShot.ID==%d DeletedObjectsBPlusTree failed: %v", elementOfSnapShotList.ID, err)
+			}
+
 			err = bPlusTree.Validate()
 			if nil != err {
 				log.Fatalf("validate of SnapShot.ID==%d DeletedObjectsBPlusTree failed: %v", elementOfSnapShotList.ID, err)
 			}
+
+			dumpKeysIfRequested(bPlusTree, fmt.Sprintf("DeletedObjectsBPlusTree for SnapShotID==%d", elementOfSnapShotList.ID))
 		}
 	}
 
@@ -228,6 +277,10 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+func usage() {
+	fmt.Printf("%v [-D] <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
 }
 
 func setup() {
@@ -242,13 +295,28 @@ func setup() {
 	)
 
 	if 3 > len(os.Args) {
-		fmt.Printf("%v <volumeName> <confFile> [<confOverride>]*\n", os.Args[0])
+		usage()
 		os.Exit(1)
 	}
 
-	globals.volumeName = os.Args[1]
-	confFile = os.Args[2]
-	confOverrides = os.Args[3:]
+	if "-D" == os.Args[1] {
+		globals.alsoDump = true
+
+		if 4 > len(os.Args) {
+			usage()
+			os.Exit(1)
+		}
+
+		globals.volumeName = os.Args[2]
+		confFile = os.Args[3]
+		confOverrides = os.Args[4:]
+	} else {
+		globals.alsoDump = false
+
+		globals.volumeName = os.Args[1]
+		confFile = os.Args[2]
+		confOverrides = os.Args[3:]
+	}
 
 	volumeSectionName = "Volume:" + globals.volumeName
 
@@ -264,7 +332,7 @@ func setup() {
 
 	globals.noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
 	if nil != err {
-		globals.noAuthIPAddr = "127.0.0.1" // TODO: Eventually just log.Fatal(err)
+		log.Fatal(err)
 	}
 	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
@@ -697,6 +765,48 @@ func consumeCheckpointObjectTrailerV3BufString() (str string, err error) {
 	globals.checkpointObjectTrailerV3BufPos += strLen
 
 	return
+}
+
+func dumpKeysIfRequested(bPlusTree sortedmap.BPlusTree, bPlusTreeName string) {
+	var (
+		err           error
+		itemIndex     int
+		keyAsKey      sortedmap.Key
+		keyAsUint64   uint64
+		numberOfItems int
+		ok            bool
+	)
+
+	if globals.alsoDump {
+		fmt.Printf("%s:\n", bPlusTreeName)
+
+		numberOfItems, err = bPlusTree.Len()
+		if nil != err {
+			log.Fatalf("  bPlusTree.Len() failed: %v", err)
+		}
+
+		if 0 == numberOfItems {
+			fmt.Printf("  <empty>\n")
+			return
+		}
+
+		for itemIndex = 0; itemIndex < numberOfItems; itemIndex++ {
+			keyAsKey, _, ok, err = bPlusTree.GetByIndex(itemIndex)
+			if nil != err {
+				log.Fatalf(" bPlusTree.GetByIndex(%d) failed: %v", itemIndex, err)
+			}
+			if !ok {
+				log.Fatalf(" bPlusTree.GetByIndex(%d) returned !ok", itemIndex)
+			}
+
+			keyAsUint64, ok = keyAsKey.(uint64)
+			if !ok {
+				log.Fatalf(" bPlusTree.GetByIndex(%d) returned non-uint64 Key", itemIndex)
+			}
+
+			fmt.Printf("  0x%016X\n", keyAsUint64)
+		}
+	}
 }
 
 func (dummy *globalsStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
