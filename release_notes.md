@@ -1,5 +1,30 @@
 # ProxyFS Release Notes
 
+## 1.15.5 (March 8, 2020)
+
+### Bug Fixes:
+
+Corrected a B+Tree balance violation (package sortedmap) that could
+result in worse than the theoretical worst-case metadata tree height.
+
+Previously, if a file is `moved` over the top of another file, the
+file being replaced would have its `LinkCount` reduced by one and,
+yet, if the `LinkCount` reached zero would not be erased from the
+volume. As such, the Inode and any of its referenced LogSegments
+would remain in Swift unreferenced. This has now been corrected.
+
+### Notes:
+
+The fix to the B+Tree imbalance bug includes a new pfs-fsck failure
+being reported for currently imbalanced metadata trees. New volumes
+created after the fix has been applied will not suffer from this
+reported corruption that is, otherwise, only a performance impact.
+
+The fix that cleans up an Inode when its `LinkCount` reaches zero,
+once applied, will only correctly clean up Inodes deleted after
+that point. Previously unlinked Inodes will, unfortunately,
+remain in Swift unreferenced.
+
 ## 1.15.4.5 (March 2, 2020)
 
 ### Notes:
