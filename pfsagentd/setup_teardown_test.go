@@ -18,10 +18,10 @@ import (
 
 const (
 	testDaemonStartPollInterval = 1 * time.Second
-	testProxyFSDaemonHTTPPort   = "54321"
+	testProxyFSDaemonHTTPPort   = "15347"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
 	testSwiftNoAuthIPAddr       = "127.0.0.1"
-	testSwiftNoAuthPort         = "54322"
+	testSwiftNoAuthPort         = "38090"
 	testSwiftProxyAddr          = "localhost:38080"
 )
 
