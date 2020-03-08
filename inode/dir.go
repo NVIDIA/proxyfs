@@ -90,7 +90,6 @@ func (vS *volumeStruct) createRootOrSubDir(filePerm InodeMode, userID InodeUserI
 }
 
 func (vS *volumeStruct) CreateDir(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (dirInodeNumber InodeNumber, err error) {
-
 	stats.IncrementOperations(&stats.DirCreateOps)
 
 	dirInodeNumber, err = vS.createRootOrSubDir(filePerm, userID, groupID, false)
@@ -604,12 +603,18 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		}
 	}
 
-	// Finally flush the multi-inode transaction
+	// Flush the multi-inode transaction
 
 	err = vS.flushInodes(inodes)
 	if err != nil {
 		logger.ErrorfWithError(err, "flushInodes(%v) error", inodes)
 		panic(err)
+	}
+
+	// And, if we decremented dstInode.LinkCount to zero, destroy dstInode as well
+
+	if (nil != dstInode) && (0 == dstInode.LinkCount) {
+		err = vS.Destroy(dstInode.InodeNumber)
 	}
 
 	stats.IncrementOperations(&stats.DirRenameSuccessOps)
