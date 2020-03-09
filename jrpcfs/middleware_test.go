@@ -135,7 +135,7 @@ func testSetup() []func() {
 		"Volume:SomeVolume2.InodeCacheEvictInterval=1s",
 		"VolumeGroup:JrpcfsTestVolumeGroup.VolumeList=SomeVolume,SomeVolume2",
 		"VolumeGroup:JrpcfsTestVolumeGroup.VirtualIPAddr=",
-		"VolumeGroup:JrpcfsTestVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:JrpcfsTestVolumeGroup.ServingNode=Peer0",
 		"VolumeGroup:JrpcfsTestVolumeGroup.ReadCacheLineSize=1000000",
 		"VolumeGroup:JrpcfsTestVolumeGroup.ReadCacheWeight=100",
 		"PhysicalContainerLayout:SomeContainerLayout.ContainerStoragePolicy=silver",

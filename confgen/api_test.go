@@ -31,6 +31,7 @@ func TestConfigPath(t *testing.T) {
 
 	// Grab volumes and volume group information
 	_, localVolumeGroupMap, _, _, _, err := fetchVolumeInfo(confMap)
+	assert.Nil(err, "fetchVolumeInfo returned an error")
 
 	// Create temp directory for SMB VG configuration files
 	var tmpDir string

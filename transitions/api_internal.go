@@ -622,7 +622,7 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 	globals.toStopServingVolumeList = make(map[string]*volumeStruct)
 	globals.toStartServingVolumeList = make(map[string]*volumeStruct)
 
-	// Injest confMap
+	// Ingest confMap
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
@@ -639,13 +639,9 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 
 		newCurrentVolumeGroupList[volumeGroupName] = volumeGroup
 
-		volumeGroup.activePeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupName, "PrimaryPeer")
+		volumeGroup.activePeer, err = GetServingNode(confMap, volumeGroupName)
 		if nil != err {
-			if nil == confMap.VerifyOptionValueIsEmpty("VolumeGroup:"+volumeGroupName, "PrimaryPeer") {
-				volumeGroup.activePeer = ""
-			} else {
-				return
-			}
+			return
 		}
 
 		volumeGroup.served = (whoAmI == volumeGroup.activePeer)
@@ -1214,4 +1210,58 @@ func dumpGlobals(indent string) {
 		}
 		fmt.Println()
 	}
+}
+
+// fetchString returns the the value of the specified option in the conf map.
+// If the option does not have a value the empty string is returned.
+//
+func fetchString(confMap conf.ConfMap, section string, value string) (data string, err error) {
+	var (
+		valueAsSlice []string
+	)
+
+	valueAsSlice, err = confMap.FetchOptionValueStringSlice(section, value)
+	if (nil != err) || (0 == len(valueAsSlice)) {
+		data = ""
+		return
+	}
+	if 1 != len(valueAsSlice) {
+		err = fmt.Errorf("Found multiple values for [%s]%s", section, value)
+		return
+	}
+
+	data = valueAsSlice[0]
+	return
+}
+
+func getServingNode(confMap conf.ConfMap, vgName string) (servingNode string, err error) {
+
+	// "ServingNode" overrides "PrimaryPeer" if both are set, but it can be empty
+	// if the VG is not being served.  If neither is set (which can occur if
+	// etcd-mgmt has not assigned a ServingNode yet) then PreferredPeer should be
+	// set.  Skip check for duplicates because a node can serve more than one VG.
+	volumeGroupSection := "VolumeGroup:" + vgName
+	servingNode, err = fetchString(confMap, volumeGroupSection, "ServingNode")
+	if nil == err {
+		return
+	}
+	servingNodeErr := err
+
+	servingNode, err = fetchString(confMap, volumeGroupSection, "PrimaryPeer")
+	if nil == err {
+		return
+	}
+	primaryPeerErr := err
+
+	servingNode = ""
+	_, err = fetchString(confMap, volumeGroupSection, "PreferredPeer")
+	if nil == err {
+		return
+	}
+
+	err = fmt.Errorf(
+		"At least one of 'ServingNode', 'PreferredPeer', and 'PrimaryPeer' must be specified for VG '%s'; "+
+			"ServingNode: %v, PrimaryPeer: %v, PreferredPeer: %v",
+		vgName, servingNodeErr, primaryPeerErr, err)
+	return
 }

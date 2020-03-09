@@ -1,6 +1,6 @@
 // The cleanproxyfs program deletes the headhunter databases and deletes log
-// segments from Swift, thereby creating a "clean slate" for continued testing or
-// development.
+// segments from Swift for all volumes in VolumeGroups owend by "WhoAmI",
+// thereby creating a "clean slate" for continued testing or development.
 package main
 
 import (
@@ -74,27 +74,23 @@ func main() {
 		os.Exit(1)
 	}
 	for _, volumeGroupName := range volumeGroupNameList {
-		volumeGroupSectionName := "VolumeGroup:" + volumeGroupName
-		primaryPeerList, confErr := confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
+		servingNode, confErr := transitions.GetServingNode(confMap, volumeGroupName)
 		if nil != confErr {
-			fmt.Fprintf(os.Stderr, "confMap did not contain %v.PrimaryPeer\n", volumeGroupSectionName)
+			fmt.Fprintf(os.Stderr, "confMap did not contain 'PrimaryPeer' or 'ServingNode' for '%s'\n",
+				volumeGroupName)
 			os.Exit(1)
 		}
-		if 0 == len(primaryPeerList) {
+		if servingNode != whoAmI {
 			continue
-		} else if 1 == len(primaryPeerList) {
-			if whoAmI == primaryPeerList[0] {
-				volumeNameList, confErr := confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
-				if nil != confErr {
-					fmt.Fprintf(os.Stderr, "confMap did not contain %v.VolumeGroupList\n", volumeGroupSectionName)
-					os.Exit(1)
-				}
-				activeVolumeNameList = append(activeVolumeNameList, volumeNameList...)
-			} else {
-				fmt.Fprintf(os.Stderr, "confMap contained multiple values for %v.PrimaryPeer: %v\n", volumeGroupSectionName, primaryPeerList)
-				os.Exit(1)
-			}
 		}
+
+		volumeGroupSectionName := "VolumeGroup:" + volumeGroupName
+		volumeNameList, confErr := confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
+		if nil != confErr {
+			fmt.Fprintf(os.Stderr, "confMap did not contain %v.VolumeGroupList\n", volumeGroupSectionName)
+			os.Exit(1)
+		}
+		activeVolumeNameList = append(activeVolumeNameList, volumeNameList...)
 	}
 
 	// Clean out referenced Swift Accounts

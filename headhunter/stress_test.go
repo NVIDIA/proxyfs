@@ -174,7 +174,7 @@ func TestHeadHunterStress(t *testing.T) {
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
 		"VolumeGroup:TestVolumeGroup.VolumeList=TestVolume",
 		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
-		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:TestVolumeGroup.ServingNode=Peer0",
 		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"FSGlobals.CheckpointHeaderConsensusAttempts=5",
 		"FSGlobals.MountRetryLimit=6",

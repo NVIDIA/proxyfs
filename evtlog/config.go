@@ -164,7 +164,8 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	logger.Infof("evtlog.Signaled(): event logging is now %v (was %v)", settings.eventLogEnabled, globals.eventLogEnabled)
+	logger.Infof("evtlog.SignaledFinish(): event logging is now %v (was %v)",
+		settings.eventLogEnabled, globals.eventLogEnabled)
 
 	if !settings.eventLogEnabled {
 		if !globals.eventLogEnabled {

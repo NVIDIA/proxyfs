@@ -5,6 +5,8 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/swiftstack/ProxyFS/conf"
 )
 
@@ -73,7 +75,7 @@ var testConfStringsToAddVolumeF = []string{
 	"Volume:VolumeF.MaxFlushTime=40s",
 	"Volume:VolumeF.FileDefragmentChunkSize=40000000",
 	"Volume:VolumeF.FileDefragmentChunkDelay=40ms",
-	"VolumeGroup:VG_Two.PrimaryPeer=Peer1",
+	"VolumeGroup:VG_Two.ServingNode=Peer1",
 	"VolumeGroup:VG_Two.ReadCacheLineSize=4000000",
 	"VolumeGroup:VG_Two.ReadCacheWeight=400",
 	"VolumeGroup:VG_Two.VirtualIPAddr=",
@@ -86,7 +88,8 @@ var testConfStringsToAddVolumeG = []string{
 	"Volume:VolumeG.MaxFlushTime=50s",
 	"Volume:VolumeG.FileDefragmentChunkSize=50000000",
 	"Volume:VolumeG.FileDefragmentChunkDelay=50ms",
-	"VolumeGroup:VG_Three.PrimaryPeer=Peer2",
+	"VolumeGroup:VG_Three.ServingNode=Peer2",
+	"VolumeGroup:VG_Three.PrimaryPeer=Peer3",
 	"VolumeGroup:VG_Three.ReadCacheLineSize=5000000",
 	"VolumeGroup:VG_Three.ReadCacheWeight=500",
 	"VolumeGroup:VG_Three.VirtualIPAddr=",
@@ -398,6 +401,51 @@ func testValidateCallbackLog(t *testing.T, testcase string, expectedCallbackLog 
 	}
 }
 
+func testGetServingNode(t *testing.T) {
+	var (
+		testConfMap conf.ConfMap
+		servingNode string
+		err         error
+	)
+	assert := assert.New(t)
+
+	testConfMap, err = conf.MakeConfMapFromStrings(testConfStringsToAddVolumeE)
+	if nil != err {
+		t.Fatalf("conf.MakeConfMapFromStrings() failed: %v", err)
+	}
+
+	vgName := "VG_One"
+	vgSection := "VolumeGroup:" + vgName
+
+	servingNode, err = GetServingNode(testConfMap, vgName)
+	assert.NoError(err, "GetServingNode(\"%s\") #1 returned error", vgName)
+	assert.Equal("Peer0", servingNode, "GetServingNode(\"%s\") #1 returned wrong node", vgName)
+
+	// "ServingNode" overrides "PrimaryPeer"
+	testConfMap[vgSection]["ServingNode"] = conf.ConfMapOption{"Peer7"}
+	servingNode, err = GetServingNode(testConfMap, vgName)
+	assert.NoError(err, "GetServingNode(\"%s\") #2 returned error", vgName)
+	assert.Equal("Peer7", servingNode, "GetServingNode(\"%s\") #1 returned wrong node", vgName)
+
+	// "PrimaryPeer" is not required
+	delete(testConfMap[vgSection], "PrimaryPeer")
+	servingNode, err = GetServingNode(testConfMap, vgName)
+	assert.NoError(err, "GetServingNode(\"%s\") #3 returned error", vgName)
+	assert.Equal("Peer7", servingNode, "GetServingNode(\"%s\") #3 returned wrong node", vgName)
+
+	// But one of "ServingNode" and "PrimaryPeer" is required
+	delete(testConfMap[vgSection], "ServingNode")
+	servingNode, err = GetServingNode(testConfMap, vgName)
+	assert.Error(err, "GetServingNode(\"%s\") #4 did /not/ return an error", vgName)
+
+	// If both are absent but "PreferredPeer" is present, its not an error
+	// (it just means etcd-mgmt hasn't chosen a serving node yet)
+	testConfMap[vgSection]["PreferredPeer"] = conf.ConfMapOption{"Peer9"}
+	servingNode, err = GetServingNode(testConfMap, vgName)
+	assert.NoError(err, "GetServingNode(\"%s\") #5 returned error", vgName)
+	assert.Equal("", servingNode, "GetServingNode(\"%s\") #5 returned wrong node", vgName)
+}
+
 func TestAPI(t *testing.T) {
 	var (
 		err                     error
@@ -405,6 +453,8 @@ func TestAPI(t *testing.T) {
 		testCallbacksInterface2 *testCallbacksInterfaceStruct
 		testConfMap             conf.ConfMap
 	)
+
+	testGetServingNode(t)
 
 	testCallbacksInterface1 = &testCallbacksInterfaceStruct{name: "1", t: t}
 	testCallbacksInterface2 = &testCallbacksInterfaceStruct{name: "2", t: t}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type envSettingsStruct struct {
@@ -82,6 +83,7 @@ type Volume struct {
 	nfsClientMap       NFSClientMap  // Must be empty (no NFS Export) if FUSEMountPointName == ""
 	AccountName        string        // Must be unique
 	SMB                SMBVolume
+	Peer               Peer
 }
 
 type volumeMap map[string]*Volume // Key=volume.volumeName
@@ -111,25 +113,32 @@ type SMBVG struct {
 	ADIDSchema          string
 	AuditLogging        bool // True if any volume in volume group has it enabled
 	BrowserAnnounce     string
-	FastTCPPort         int
 	MapToGuest          string
 	ADRealm             string
 	RPCServerLSARPC     string
 	Security            string
 	ServerMinProtocol   string
-	TCPPort             int
 	WorkGroup           string
 }
 
 // VolumeGroup contains VolumeGroup conf settings
 type VolumeGroup struct {
-	PrimaryPeer     string     //
+	ServingNode     string     // assigned from PrimaryPeer if ServingNode not set
+	Peer            Peer       // peer contact information
 	SMB             SMBVG      // SMB specific settings of the VG
 	VirtualHostName string     // Must be unique
 	VirtualIPAddr   net.IP     // Must be unique
 	VirtualIPMask   *net.IPNet // not necessarily unique
 	VolumeGroupName string     // Must be unique
 	VolumeMap       volumeMap  //
+}
+
+// Information about a peer ... mostly how to contact it.
+type Peer struct {
+	PeerID        string
+	PrivateIPAddr net.IP
+	FastTCPPort   int
+	TCPPort       int
 }
 
 type volumeGroupMap map[string]*VolumeGroup // Key=VolumeGroup.volumeGroupName
@@ -526,24 +535,25 @@ func fetchStringSet(confMap conf.ConfMap, section string, value string, valueSet
 	valueAsSlice, err = confMap.FetchOptionValueStringSlice(section, value)
 	if (nil != err) || (0 == len(valueAsSlice)) {
 		data = ""
-	} else if 1 == len(valueAsSlice) {
-		data = valueAsSlice[0]
-
-		// valueSet nil means caller is not interested in the value being unique
-		if nil != valueSet {
-			_, ok = valueSet[data]
-			if ok {
-				err = fmt.Errorf("Found duplicate [%s]%s (\"%s\")", section, value, data)
-				return
-			}
-
-			valueSet[data] = struct{}{}
-		}
-	} else {
+		return
+	}
+	if 1 != len(valueAsSlice) {
 		err = fmt.Errorf("Found multiple values for [%s]%s", section, value)
 		return
 	}
 
+	data = valueAsSlice[0]
+
+	// valueSet nil means caller is not interested in the value being unique
+	if nil != valueSet {
+		_, ok = valueSet[data]
+		if ok {
+			err = fmt.Errorf("Found duplicate [%s]%s (\"%s\")", section, value, data)
+			return
+		}
+
+		valueSet[data] = struct{}{}
+	}
 	return
 }
 
@@ -604,14 +614,13 @@ func populateVolumeSMB(confMap conf.ConfMap, volumeSection string, volume *Volum
 
 // populateVolumeGroupSMB populates the VolumeGroup with SMB related
 // info
-func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, tcpPort int, fastTCPPort int, volumeGroup *VolumeGroup,
+func populateVolumeGroupSMB(confMap conf.ConfMap, volumeGroupSection string, volumeGroup *VolumeGroup,
 	workGroupSet stringSet) (err error) {
+
 	var (
 		idUint32   uint32
 		mapToGuest []string
 	)
-	volumeGroup.SMB.TCPPort = tcpPort
-	volumeGroup.SMB.FastTCPPort = fastTCPPort
 
 	// We do not verify that the backend is unique
 	volumeGroup.SMB.ADBackEnd, err = fetchStringSet(confMap, volumeGroupSection, "SMBADBackend", nil)
@@ -705,7 +714,6 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	volumeGroupList []string) (err error) {
 	var (
 		accountNameSet                stringSet
-		fastTCPPort                   int
 		fsidSet                       uint64Set
 		fuseMountPointNameSet         stringSet
 		nfsClient                     *NFSClient
@@ -715,7 +723,6 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		nfsExportClientMapSet         stringSet
 		ok                            bool
 		shareNameSet                  stringSet
-		tcpPort                       int
 		virtualHostNameSet            stringSet
 		virtualIPAddrSet              stringSet
 		virtualIPAddr                 string
@@ -729,29 +736,6 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		volumeSection                 string
 		workGroupSet                  stringSet
 	)
-
-	// Fetch tcpPort and fastTCPPort number from config file.
-	//
-	// We store this in each SMBVG since the per volume group template used for generating
-	// smb.conf files needs it.
-	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
-	if nil != confErr {
-		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
-		return
-	}
-	tcpPort, err = strconv.Atoi(portString)
-	if nil != err {
-		return
-	}
-	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
-	if nil != confErr {
-		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
-		return
-	}
-	fastTCPPort, err = strconv.Atoi(fastPortString)
-	if nil != err {
-		return
-	}
 
 	accountNameSet = make(stringSet)
 	fsidSet = make(uint64Set)
@@ -802,16 +786,27 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		// We do not check for duplicates of PrimaryPeer
-		emptySet := make(stringSet)
-		volumeGroup.PrimaryPeer, err = fetchStringSet(confMap, volumeGroupSection, "PrimaryPeer", emptySet)
+		// ServingNode overrides PrimaryPeer if both are set, but can be empty if
+		// the VG is not being served.  If neither is set (which can occur if
+		// etcd-mgmt has not assigned a ServingNode yet) then PreferredPeer should
+		// be set.  Skip check for duplicates because a node can serve more than
+		// one VG.
+		volumeGroup.ServingNode, err = transitions.GetServingNode(confMap, volumeGroupName)
 		if nil != err {
 			return
 		}
 
+		// Fill in the peer (if any) information
+		if volumeGroup.ServingNode != "" {
+
+			volumeGroup.Peer, err = populatePeer(confMap, volumeGroup.ServingNode)
+			if nil != err {
+				return
+			}
+		}
+
 		// Fill in VG SMB information
-		err = populateVolumeGroupSMB(confMap, volumeGroupSection, tcpPort, fastTCPPort, volumeGroup,
-			workGroupSet)
+		err = populateVolumeGroupSMB(confMap, volumeGroupSection, volumeGroup, workGroupSet)
 		if nil != err {
 			return
 		}
@@ -959,7 +954,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 	}
 
 	for volumeGroupName, volumeGroup = range globalVolumeGroupMap {
-		if whoAmI == volumeGroup.PrimaryPeer {
+		if whoAmI == volumeGroup.ServingNode {
 			localVolumeGroupMap[volumeGroupName] = volumeGroup
 			for volumeName, volume = range volumeGroup.VolumeMap {
 				localVolumeMap[volumeName] = volume
@@ -968,6 +963,75 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		for volumeName, volume = range volumeGroup.VolumeMap {
 			globalVolumeMap[volumeName] = volume
 		}
+	}
+	return
+}
+
+// populatePeer returns information about the specified peer (by UUID).  If peerID is the
+// empty string, return information about this peer.
+func populatePeer(confMap conf.ConfMap, peerID string) (peer Peer, err error) {
+
+	if peerID == "" {
+		peerID, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
+		if nil != err {
+			return
+		}
+	}
+	peer.PeerID = peerID
+	peerSection := "Peer:" + peerID
+
+	// Fetch the private IP adress for ProxyFS.  It must be be a valid (parsable) CIDR
+	// notation IP address.  It should be unique, but don't worry about that now.
+	privateIPAddr, err := fetchStringSet(confMap, peerSection, "PrivateIPAddr", nil)
+	if nil != err {
+		return
+	}
+
+	peer.PrivateIPAddr = net.ParseIP(privateIPAddr)
+	if peer.PrivateIPAddr == nil {
+		err = fmt.Errorf("ParseIP() for config file variable [%s][%s] value '%s' failed",
+			peerSection, "PrivateIPAddr", privateIPAddr)
+
+		return
+	}
+
+	// verify the peer has a public IP address and interface (since its serving a
+	// volume gorup it must have one)
+	publicIpAddr, err := fetchStringSet(confMap, peerSection, "PublicIPAddr", nil)
+	if nil != err {
+		return
+	}
+	tmpIPAddr := net.ParseIP(privateIPAddr)
+	if tmpIPAddr == nil {
+		err = fmt.Errorf("ParseIP() for config file variable [%s][%s] value '%s' failed",
+			peerSection, "PublicIPAddr", publicIpAddr)
+		return
+	}
+	_, err = fetchStringSet(confMap, peerSection, "PublicInterface", nil)
+	if nil != err {
+		return
+	}
+
+	// Fetch tcpPort and fastTCPPort number from config file.  This should be the
+	// same for all peers, but do it for each peer anyway.
+	portString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "TCPPort")
+	if nil != confErr {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPPort from config file")
+		return
+	}
+	peer.TCPPort, err = strconv.Atoi(portString)
+	if nil != err {
+		return
+	}
+
+	fastPortString, confErr := confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
+	if nil != confErr {
+		err = fmt.Errorf("failed to get JSONRPCServer.TCPFastPort from config file")
+		return
+	}
+	peer.FastTCPPort, err = strconv.Atoi(fastPortString)
+	if nil != err {
+		return
 	}
 
 	return

@@ -155,6 +155,9 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 	// Determine if underlying accountName is empty
 
 	_, containerList, err = swiftclient.AccountGet(accountName)
+	logger.Infof("mkproxyfs AccountGet(%s) returned %T %+v HTTPCode %+v", accountName,
+		err, err, blunder.HTTPCode(err))
+
 	if nil == err {
 		// accountName exists (possibly auto-created)... consider it empty only if no containers therein
 		isEmpty = (0 == len(containerList))
@@ -297,7 +300,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		"FSGlobals.VolumeGroupList=MKPROXYFS",
 		"VolumeGroup:MKPROXYFS.VolumeList=" + volumeNameToFormat,
 		"VolumeGroup:MKPROXYFS.VirtualIPAddr=",
-		"VolumeGroup:MKPROXYFS.PrimaryPeer=" + whoAmI,
+		"VolumeGroup:MKPROXYFS.ServingNode=" + whoAmI,
 		"Volume:" + volumeNameToFormat + ".AutoFormat=true"})
 	if nil != err {
 		err = fmt.Errorf("failed to retarget config at only %s: %v", volumeNameToFormat, err)

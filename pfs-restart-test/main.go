@@ -13,8 +13,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/swiftstack/ProxyFS/conf"
 	"golang.org/x/sys/unix"
+
+	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 const (
@@ -90,7 +92,7 @@ func setup() {
 		getInfoURL              string
 		mkproxyfsCmd            *exec.Cmd
 		noAuthTCPPort           uint16
-		primaryPeerSlice        []string
+		servingNode             string
 		proxyfsdPrivateIPAddr   string
 		proxyfsdTCPPortAsString string
 		proxyfsdTCPPortAsUint16 uint16
@@ -183,11 +185,11 @@ func setup() {
 	}
 
 	for _, volumeGroupListElement = range volumeGroupList {
-		primaryPeerSlice, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupListElement, "PrimaryPeer")
+		servingNode, err = transitions.GetServingNode(testConfMap, volumeGroupListElement)
 		if nil != err {
-			log.Fatalf("unable to fetch VolumeGroup:%s.PrimaryPeer: %v", volumeGroupListElement, err)
+			log.Fatalf("transitions.GetServingNode(%s) failed: %v", volumeGroupListElement, err)
 		}
-		if (1 == len(primaryPeerSlice)) && (whoAmI == primaryPeerSlice[0]) {
+		if whoAmI == servingNode {
 			volumeList, err = testConfMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupListElement, "VolumeList")
 			if nil != err {
 				log.Fatalf("unable to fetch VolumeGroup:%s.VolumeList: %v", volumeGroupListElement, err)

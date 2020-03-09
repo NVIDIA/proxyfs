@@ -12,13 +12,13 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 
 	globals.lockHoldTimeLimit, err = confMap.FetchOptionValueDuration("TrackedLock", "LockHoldTimeLimit")
 	if err != nil {
-		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' defaulting to '0s': %v", err)
+		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLimit' defaulting to '0s': %v", err)
 		globals.lockHoldTimeLimit = time.Duration(0 * time.Second)
 	}
 
 	// lockHoldTimeLimit must be >= 1 sec or 0
 	if globals.lockHoldTimeLimit < time.Second && globals.lockHoldTimeLimit != 0 {
-		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' value less then 1 sec; defaulting to '40s'")
+		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLimit' value less then 1 sec; defaulting to '40s'")
 		globals.lockHoldTimeLimit = time.Duration(40 * time.Second)
 	}
 
@@ -37,7 +37,7 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 	// if there is no lockHoldTimeLimit then the lock watcher should not run
 	if globals.lockHoldTimeLimit == 0 && globals.lockCheckPeriod != 0 {
 		logger.Warnf("config variable 'TrackedLock.LockCheckPeriod' > 0 but" +
-			" 'TrackedLock.LockHoldTimeLImit' == 0; setting LockCheckPeriod to 0")
+			" 'TrackedLock.LockHoldTimeLimit' == 0; setting LockCheckPeriod to 0")
 		globals.lockCheckPeriod = 0
 	}
 

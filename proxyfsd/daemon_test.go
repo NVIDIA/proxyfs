@@ -97,7 +97,6 @@ func TestDaemon(t *testing.T) {
 		"Volume:CommonVolume.FUSEMountPointName=CommonMountPoint",
 		"Volume:CommonVolume.NFSExportClientMapList=CommonVolumeNFSClient0",
 		"Volume:CommonVolume.SMBShareName=CommonShare",
-		"Volume:CommonVolume.PrimaryPeer=Peer0",
 		"Volume:CommonVolume.AccountName=AUTH_CommonAccount",
 		"Volume:CommonVolume.CheckpointContainerName=.__checkpoint__",
 		"Volume:CommonVolume.CheckpointContainerStoragePolicy=gold",
@@ -123,7 +122,7 @@ func TestDaemon(t *testing.T) {
 
 		"VolumeGroup:CommonVolumeGroup.VolumeList=CommonVolume",
 		"VolumeGroup:CommonVolumeGroup.VirtualIPAddr=",
-		"VolumeGroup:CommonVolumeGroup.PrimaryPeer=Peer0",
+		"VolumeGroup:CommonVolumeGroup.ServingNode=Peer0",
 		"VolumeGroup:CommonVolumeGroup.ReadCacheLineSize=1000000",
 		"VolumeGroup:CommonVolumeGroup.ReadCacheWeight=100",
 
