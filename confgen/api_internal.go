@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/transitions"
 )
 
 type envSettingsStruct struct {
@@ -785,29 +786,14 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		// ServingNode overrides PrimaryPeer if both are set, but it can be empty
-		// if the VG is not being served.  If neither is set (which can occur if
-		// etcd-mgmt has not assigned a ServingNode yet) then PreferredPeer should be
-		// set.  Skip check for duplicates because a node can serve more than one VG.
-		volumeGroup.ServingNode, err = fetchStringSet(confMap, volumeGroupSection, "ServingNode", nil)
+		// ServingNode overrides PrimaryPeer if both are set, but can be empty if
+		// the VG is not being served.  If neither is set (which can occur if
+		// etcd-mgmt has not assigned a ServingNode yet) then PreferredPeer should
+		// be set.  Skip check for duplicates because a node can serve more than
+		// one VG.
+		volumeGroup.ServingNode, err = transitions.GetServingNode(confMap, volumeGroupName)
 		if nil != err {
-			servingNodeErr := err
-
-			volumeGroup.ServingNode, err = fetchStringSet(confMap, volumeGroupSection, "PrimaryPeer", nil)
-			if nil != err {
-				volumeGroup.ServingNode = ""
-				primaryPeerErr := err
-
-				_, err = fetchStringSet(confMap, volumeGroupSection, "PreferredPeer", nil)
-				if nil != err {
-					err = fmt.Errorf(
-						"At least one of 'ServingNode', 'PreferredPeer', and 'PrimaryPeer' "+
-							"must be specified for VG '%s'; "+
-							"ServingNode: %v, PrimaryPeer: %v, PreferredPeer: %v",
-						volumeGroupName, servingNodeErr, primaryPeerErr, err)
-					return
-				}
-			}
+			return
 		}
 
 		// Fill in the peer (if any) information

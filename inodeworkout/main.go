@@ -60,7 +60,7 @@ func main() {
 		err                          error
 		latencyPerOpInMilliSeconds   float64
 		opsPerSecond                 float64
-		primaryPeer                  string
+		servingNode                  string
 		timeAfterMeasuredOperations  time.Time
 		timeBeforeMeasuredOperations time.Time
 		volumeGroupToCheck           string
@@ -164,12 +164,12 @@ func main() {
 	volumeGroupToUse = ""
 
 	for _, volumeGroupToCheck = range volumeGroupList {
-		primaryPeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupToCheck, "PrimaryPeer")
+		servingNode, err = transitions.GetServingNode(confMap, volumeGroupToCheck)
 		if nil != err {
-			fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueString(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToCheck, err)
+			fmt.Fprintf(os.Stderr, "transitions.GetServingNode(%s) failed: %v\n", volumeGroupToCheck, err)
 			os.Exit(1)
 		}
-		if whoAmI == primaryPeer {
+		if whoAmI == servingNode {
 			volumeGroupToUse = volumeGroupToCheck
 			break
 		}
@@ -182,7 +182,7 @@ func main() {
 
 	volumeList, err = confMap.FetchOptionValueStringSlice("VolumeGroup:"+volumeGroupToUse, "VolumeList")
 	if nil != err {
-		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"PrimaryPeer\") failed: %v\n", volumeGroupToUse, err)
+		fmt.Fprintf(os.Stderr, "confMap.FetchOptionValueStringSlice(\"VolumeGroup:%s\", \"VolumeList\") failed: %v\n", volumeGroupToUse, err)
 		os.Exit(1)
 	}
 	if 1 > len(volumeList) {

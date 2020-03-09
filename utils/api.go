@@ -255,7 +255,7 @@ func GetAFnName(level int) string {
 	return extractFnName.FindString(functionObject.Name())
 }
 
-// Return separage strings containing calling function and package
+// Return separate strings containing calling function and package
 //
 // XXX TODO TEMPORARY: also return goroutine id
 //

@@ -300,7 +300,7 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		"FSGlobals.VolumeGroupList=MKPROXYFS",
 		"VolumeGroup:MKPROXYFS.VolumeList=" + volumeNameToFormat,
 		"VolumeGroup:MKPROXYFS.VirtualIPAddr=",
-		"VolumeGroup:MKPROXYFS.PrimaryPeer=" + whoAmI,
+		"VolumeGroup:MKPROXYFS.ServingNode=" + whoAmI,
 		"Volume:" + volumeNameToFormat + ".AutoFormat=true"})
 	if nil != err {
 		err = fmt.Errorf("failed to retarget config at only %s: %v", volumeNameToFormat, err)

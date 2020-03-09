@@ -1226,7 +1226,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	var (
 		err                    error
 		errno                  syscall.Errno
-		primaryPeerList        []string
+		servingNode            string
 		swiftAccountName       string
 		volumeGroupNameList    []string
 		volumeGroupName        string
@@ -1236,7 +1236,7 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 		volumeSectionName      string
 	)
 
-	// Fetch and configure volumes for which "we" are the PrimaryPeer
+	// Fetch and configure volumes for which "we" are the ServingNode
 
 	volumeGroupNameList, err = confMap.FetchOptionValueStringSlice("FSGlobals", "VolumeGroupList")
 	if nil != err {
@@ -1246,18 +1246,12 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 	for _, volumeGroupName = range volumeGroupNameList {
 		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
 
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
+		servingNode, err = transitions.GetServingNode(confMap, volumeGroupName)
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
+			log.Fatalf("transitions.GetServingNode(%s) failed: %v", volumeGroupName, err)
 		}
-		if 0 == len(primaryPeerList) {
+		if globals.whoAmI != servingNode {
 			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI != primaryPeerList[0] {
-				continue
-			}
-		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
 
 		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")
@@ -1298,7 +1292,7 @@ func updateConf(confMap conf.ConfMap) {
 		err                         error
 		noAuthTCPPortUpdate         uint16
 		ok                          bool
-		primaryPeerList             []string
+		servingNode                 string
 		swiftAccountNameListCurrent []string        // element == swiftAccountName
 		swiftAccountNameListUpdate  map[string]bool // key     == swiftAccountName; value is ignored
 		swiftAccountName            string
@@ -1342,7 +1336,7 @@ func updateConf(confMap conf.ConfMap) {
 
 	globals.Unlock()
 
-	// Fetch list of accounts for which "we" are the PrimaryPeer
+	// Fetch list of accounts for which "we" are the ServingNode (formerly PrimaryPeer)
 
 	volumeListUpdate = make([]string, 0)
 
@@ -1354,18 +1348,12 @@ func updateConf(confMap conf.ConfMap) {
 	for _, volumeGroupName = range volumeGroupNameList {
 		volumeGroupSectionName = "VolumeGroup:" + volumeGroupName
 
-		primaryPeerList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "PrimaryPeer")
+		servingNode, err = transitions.GetServingNode(confMap, volumeGroupName)
 		if nil != err {
-			log.Fatalf("failed fetch of %v.PrimaryPeer: %v", volumeGroupSectionName, err)
+			log.Fatalf("transitions.GetServingNode(%s): failed %v", volumeGroupName, err)
 		}
-		if 0 == len(primaryPeerList) {
+		if globals.whoAmI != servingNode {
 			continue
-		} else if 1 == len(primaryPeerList) {
-			if globals.whoAmI != primaryPeerList[0] {
-				continue
-			}
-		} else {
-			log.Fatalf("fetch of %v.PrimaryPeer returned multiple values", volumeGroupSectionName)
 		}
 
 		volumeNameList, err = confMap.FetchOptionValueStringSlice(volumeGroupSectionName, "VolumeList")

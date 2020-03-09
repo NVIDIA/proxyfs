@@ -148,3 +148,13 @@ func Down(confMap conf.ConfMap) (err error) {
 func UpgradeConfMapIfNeeded(confMap conf.ConfMap) (err error) {
 	return upgradeConfMapIfNeeded(confMap)
 }
+
+// GetServingNode returns the node that is serving specified Volume Group.  If
+// both "ServingNode" and "PrimaryPeer" are present in the confmap,
+// "ServingNode" will be chosen.  servingNode string can be "" if no node is
+// currently serving the volume group.  It is an error if the volume group does
+// not exist.
+//
+func GetServingNode(confMap conf.ConfMap, vgName string) (servingNode string, err error) {
+	return getServingNode(confMap, vgName)
+}
