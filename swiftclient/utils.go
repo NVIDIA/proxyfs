@@ -19,14 +19,21 @@ const swiftVersion = "v1"
 
 func drainConnections() {
 	var (
-		connection *connectionStruct
-		volumeName string
+		connection                    *connectionStruct
+		volumeName                    string
+		reservedChunkedConnectionCopy map[string]*connectionStruct
 	)
 
+	globals.reservedChunkedConnectionMutex.Lock()
+	reservedChunkedConnectionCopy = make(map[string]*connectionStruct)
 	for volumeName, connection = range globals.reservedChunkedConnection {
+		reservedChunkedConnectionCopy[volumeName] = connection
+	}
+	for volumeName, connection = range reservedChunkedConnectionCopy {
 		_ = connection.tcpConn.Close()
 		delete(globals.reservedChunkedConnection, volumeName)
 	}
+	globals.reservedChunkedConnectionMutex.Unlock()
 
 	globals.chunkedConnectionPool.Lock()
 	// The following should not be necessary so, as such, will remain commented out
