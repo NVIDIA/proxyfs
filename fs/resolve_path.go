@@ -679,7 +679,7 @@ RestartAfterFollowingSymlink:
 
 					dirEntryInodeType = inode.DirType
 
-					dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateDir(inode.InodeMode(0755), inode.InodeRootUserID, inode.InodeGroupID(0))
+					dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateDir(inode.InodeMode(0777), inode.InodeRootUserID, inode.InodeGroupID(0))
 					if nil != internalErr {
 						err = blunder.NewError(blunder.PermDeniedError, "resolvePath(): failed to create a DirInode: %v", err)
 						return
@@ -695,7 +695,7 @@ RestartAfterFollowingSymlink:
 
 						dirEntryInodeType = inode.FileType
 
-						dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateFile(inode.InodeMode(0644), inode.InodeRootUserID, inode.InodeGroupID(0))
+						dirEntryInodeNumber, internalErr = inodeVolumeHandle.CreateFile(inode.InodeMode(0666), inode.InodeRootUserID, inode.InodeGroupID(0))
 						if nil != internalErr {
 							err = blunder.NewError(blunder.PermDeniedError, "resolvePath(): failed to create a FileInode: %v", err)
 							return
