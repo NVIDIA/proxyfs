@@ -41,6 +41,8 @@ gobinsubdirs = \
 	pfs-stress \
 	pfs-swift-load \
 	pfsagentd \
+	pfsagentConfig \
+	pfsagentConfig/pfsagentConfig \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	pfsworkout \
