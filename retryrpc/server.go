@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/ProxyFS/utils"
 	"golang.org/x/sys/unix"
 )
 
@@ -81,6 +83,7 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 		c := &clientInfo{cCtx: cCtx}
 		c.completedRequest = make(map[requestID]*completedEntry)
 		c.completedRequestLRU = list.New()
+		c.drainingCond = sync.NewCond(&c.drainingMutex)
 		server.perClientInfo[jReq.MyUniqueID] = c
 		ci = c
 	}
@@ -88,48 +91,58 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 
 	ci.Lock()
 
-	// TODO - multiple threads INCLUDING a new connection
-	// could be racing this thread... how serialize?
-	// probably need sqn number sent from client, if current
-	// sqn is higher keep going or return because newer retransmit...
-
 	// Check if existing client with new connection.  If so,
 	// wait for prior RPCs to complete before proceeding.
 	ci.cCtx.Lock()
+	ciConn := &ci.cCtx.conn
+	cCconn := &cCtx.conn
 	if ci.cCtx.conn != cCtx.conn {
 		ci.cCtx.Unlock()
-		ci.Unlock()
 
-		// New socket - block until threads from PRIOR connection
-		// complete to make the recovery more predictable
-		ci.rpcWG.Wait()
+		// Serialize multiple goroutines processing same NEW connection.
+		if ci.drainingRPCs == true {
+			ci.Unlock()
 
-		// RPCs from PRIOR socket have completed - now take over
-		ci.Lock()
-		ci.cCtx = cCtx
-		ci.cCtx.Lock()
+			// This goroutine is not the first to see new connection.
+			// Wait for first goroutine to finish.
+			fmt.Printf("processRequest() - BEFORE COND WAIT\n")
+			ci.drainingMutex.Lock()
+			ci.drainingCond.Wait()
+			ci.drainingMutex.Unlock()
 
-		// TODO -
-		// TODO - this has a bug/race with 2 retransmits occurring within
-		// short time frame...
+			ci.Lock()
+			ci.cCtx.Lock()
+		} else {
+			// First goroutine to see new connection
+			ci.drainingRPCs = true
+			ci.Unlock()
+
+			// New socket - block until threads from PRIOR connection
+			// complete to make the recovery more predictable
+			fmt.Printf("WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
+			ci.cCtx.activeRPCsWG.Wait()
+			fmt.Printf("AFTER WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
+
+			// RPCs from PRIOR socket have completed - now take over with new
+			// connection.
+			//
+			// Two different goroutines using same NEW connection could be racing.
+			// Therefore, only update ci.cCtx if we have not already updated it.
+			ci.Lock()
+			ci.cCtx = cCtx
+
+			// Wakeup other goroutines trying to process new connection
+			fmt.Printf("processRequest() - BEFORE BROADCAST\n")
+			ci.drainingMutex.Lock()
+			ci.drainingCond.Broadcast()
+			ci.drainingMutex.Unlock()
+			ci.cCtx.Lock()
+		}
 	}
 	ci.cCtx.Unlock()
 
-	ci.rpcWG.Add(1)
-	// if ok -
-	// Existing client - is this a new socket for this client?
-	//
-	//     if same socket then just handle RPC
-	//
-	//     if different socket and first time seeing new socket
-	//     then do:
-	//			tell old threads not to return results, just complete
-	//             RPCs.   Client side will retry operation.
-	//		    if new operation comes in but still on pending queue then
-	//				update outstanding request with new socket and CLEAR
-	//				flag saying "don't write back results!"
-	//
-	// TODO - should I wait until the prior RPCs finish before proceeding?
+	fmt.Printf("ADD - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
+	ci.cCtx.activeRPCsWG.Add(1)
 
 	// Keep track of the highest consecutive requestID seen
 	// by client.  We use this to trim completedRequest list.
@@ -179,7 +192,8 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	// Write results on socket back to client...
 	returnResults(ior, ci.cCtx)
 
-	ci.rpcWG.Done()
+	fmt.Printf("DONE - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
+	ci.cCtx.activeRPCsWG.Done()
 }
 
 // serviceClient gets called when we accept a new connection.
@@ -194,6 +208,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
 	}
+	fmt.Printf("serviceClient() ---- got a connection - starting read/write io thread\n")
 
 	for {
 		// Get RPC request
@@ -204,6 +219,8 @@ func (server *Server) serviceClient(conn net.Conn) {
 			server.Unlock()
 			logger.Infof("serviceClient - getIO returned err: %v - halting: %v",
 				getErr, halting)
+
+			// TODO - probaby should just conn.Close() here !!!
 
 			// Drop response on the floor.   Client will either reconnect or
 			// this response will age out of the queues.

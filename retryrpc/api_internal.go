@@ -44,11 +44,13 @@ type requestID uint64
 type clientInfo struct {
 	sync.Mutex
 	cCtx                     *connCtx                      // Current connCtx for client
-	rpcWG                    sync.WaitGroup                // WaitGroup tracking current RPC "threads"
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
 	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
+	drainingRPCs             bool                          // True if draining outstanding RPCs
+	drainingCond             *sync.Cond                    // Condition to serialize new connection for a clientInfo
+	drainingMutex            sync.Mutex                    // Mutex used to serialize new connection for a clientInfo
 }
 
 type completedEntry struct {
@@ -62,7 +64,8 @@ type completedEntry struct {
 // reading or writing on the socket.
 type connCtx struct {
 	sync.Mutex
-	conn net.Conn
+	conn         net.Conn
+	activeRPCsWG sync.WaitGroup // WaitGroup tracking active RPCs from this client on this connection
 }
 
 // pendingCtx tracks an individual request from a client
