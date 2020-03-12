@@ -165,11 +165,11 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 	// original request anyway.
 	crID := jReply.RequestID
 	client.Lock()
+
 	// If this message is from an old socket - throw it away
 	// since the request was resent.
 	if client.connection.genNum != genNum {
 		client.Unlock()
-		fmt.Printf("===========    notifyReply() saw old message - throwing away\n")
 		return
 	}
 	ctx, ok := client.outstandingRequest[crID]

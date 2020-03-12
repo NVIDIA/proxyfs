@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
-	"github.com/swiftstack/ProxyFS/utils"
 	"golang.org/x/sys/unix"
 )
 
@@ -102,7 +101,6 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 
 			// This goroutine is not the first to see new connection.
 			// Wait for first goroutine to finish.
-			fmt.Printf("processRequest() - BEFORE COND WAIT\n")
 			ci.drainingMutex.Lock()
 			ci.drainingCond.Wait()
 			ci.drainingMutex.Unlock()
@@ -115,9 +113,7 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 
 			// New socket - block until threads from PRIOR connection
 			// complete to make the recovery more predictable
-			fmt.Printf("WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
 			currentCtx.activeRPCsWG.Wait()
-			fmt.Printf("AFTER WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
 
 			// RPCs from PRIOR socket have completed - now take over with new
 			// connection.
@@ -128,7 +124,6 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 			ci.cCtx = myConnCtx
 
 			// Wakeup other goroutines trying to process new connection
-			fmt.Printf("processRequest() - BEFORE BROADCAST\n")
 			ci.drainingMutex.Lock()
 			ci.drainingCond.Broadcast()
 			ci.drainingMutex.Unlock()
@@ -183,7 +178,6 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 	// Write results on socket back to client...
 	returnResults(ior, myConnCtx)
 
-	fmt.Printf("DONE - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
 	myConnCtx.activeRPCsWG.Done()
 }
 
@@ -199,7 +193,6 @@ func (server *Server) serviceClient(conn net.Conn) {
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
 	}
-	fmt.Printf("serviceClient() ---- got a connection - starting read/write io thread\n")
 
 	for {
 		// Get RPC request
@@ -234,7 +227,6 @@ func (server *Server) serviceClient(conn net.Conn) {
 
 		// Keep track of how many processRequest() goroutines we have
 		// so that we can wait until they complete when handling retransmits.
-		fmt.Printf("serviceClient() - ADD - cCtx.conn: %v GOID: %v\n", &cCtx.conn, utils.GetGID())
 		cCtx.activeRPCsWG.Add(1)
 		go server.processRequest(cCtx, buf)
 	}
