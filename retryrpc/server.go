@@ -62,7 +62,7 @@ func keyString(myUniqueID string, rID requestID) string {
 }
 
 // processRequest is given a request from the client.
-func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
+func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 	defer server.goroutineWG.Done()
 
 	// We first unmarshal the raw buf to find the method
@@ -80,7 +80,7 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	ci, ok := server.perClientInfo[jReq.MyUniqueID]
 	if !ok {
 		// First time we have seen this client
-		c := &clientInfo{cCtx: cCtx}
+		c := &clientInfo{cCtx: myConnCtx}
 		c.completedRequest = make(map[requestID]*completedEntry)
 		c.completedRequestLRU = list.New()
 		c.drainingCond = sync.NewCond(&c.drainingMutex)
@@ -90,14 +90,11 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	server.Unlock()
 
 	ci.Lock()
+	currentCtx := ci.cCtx
 
 	// Check if existing client with new connection.  If so,
 	// wait for prior RPCs to complete before proceeding.
-	ci.cCtx.Lock()
-	ciConn := &ci.cCtx.conn
-	cCconn := &cCtx.conn
-	if ci.cCtx.conn != cCtx.conn {
-		ci.cCtx.Unlock()
+	if currentCtx.conn != myConnCtx.conn {
 
 		// Serialize multiple goroutines processing same NEW connection.
 		if ci.drainingRPCs == true {
@@ -111,7 +108,6 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 			ci.drainingMutex.Unlock()
 
 			ci.Lock()
-			ci.cCtx.Lock()
 		} else {
 			// First goroutine to see new connection
 			ci.drainingRPCs = true
@@ -119,9 +115,9 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 
 			// New socket - block until threads from PRIOR connection
 			// complete to make the recovery more predictable
-			fmt.Printf("WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
-			ci.cCtx.activeRPCsWG.Wait()
-			fmt.Printf("AFTER WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
+			fmt.Printf("WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
+			currentCtx.activeRPCsWG.Wait()
+			fmt.Printf("AFTER WAIT - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
 
 			// RPCs from PRIOR socket have completed - now take over with new
 			// connection.
@@ -129,20 +125,15 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 			// Two different goroutines using same NEW connection could be racing.
 			// Therefore, only update ci.cCtx if we have not already updated it.
 			ci.Lock()
-			ci.cCtx = cCtx
+			ci.cCtx = myConnCtx
 
 			// Wakeup other goroutines trying to process new connection
 			fmt.Printf("processRequest() - BEFORE BROADCAST\n")
 			ci.drainingMutex.Lock()
 			ci.drainingCond.Broadcast()
 			ci.drainingMutex.Unlock()
-			ci.cCtx.Lock()
 		}
 	}
-	ci.cCtx.Unlock()
-
-	fmt.Printf("ADD - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
-	ci.cCtx.activeRPCsWG.Add(1)
 
 	// Keep track of the highest consecutive requestID seen
 	// by client.  We use this to trim completedRequest list.
@@ -190,10 +181,10 @@ func (server *Server) processRequest(cCtx *connCtx, buf []byte) {
 	ci.Unlock()
 
 	// Write results on socket back to client...
-	returnResults(ior, ci.cCtx)
+	returnResults(ior, myConnCtx)
 
-	fmt.Printf("DONE - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", ciConn, cCconn, utils.GetGID())
-	ci.cCtx.activeRPCsWG.Done()
+	fmt.Printf("DONE - &ci.ctx.conn: %v &cCtx.conn: %v GOID: %v\n", &currentCtx.conn, &myConnCtx.conn, utils.GetGID())
+	myConnCtx.activeRPCsWG.Done()
 }
 
 // serviceClient gets called when we accept a new connection.
@@ -240,6 +231,11 @@ func (server *Server) serviceClient(conn net.Conn) {
 		// Writes back on the socket wil have to be serialized so
 		// pass the per connection context.
 		server.goroutineWG.Add(1)
+
+		// Keep track of how many processRequest() goroutines we have
+		// so that we can wait until they complete when handling retransmits.
+		fmt.Printf("serviceClient() - ADD - cCtx.conn: %v GOID: %v\n", &cCtx.conn, utils.GetGID())
+		cCtx.activeRPCsWG.Add(1)
 		go server.processRequest(cCtx, buf)
 	}
 }
