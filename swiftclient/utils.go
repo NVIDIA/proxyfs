@@ -20,8 +20,8 @@ const swiftVersion = "v1"
 func drainConnections() {
 	var (
 		connection                    *connectionStruct
-		volumeName                    string
 		reservedChunkedConnectionCopy map[string]*connectionStruct
+		volumeName                    string
 	)
 
 	globals.reservedChunkedConnectionMutex.Lock()

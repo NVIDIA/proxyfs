@@ -16,6 +16,7 @@ import (
 	"github.com/swiftstack/fission"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -301,6 +302,15 @@ type metricsStruct struct {
 	HTTPRequestsInFlight                 uint64
 }
 
+type statsStruct struct {
+	FUSEDoReadBytes  bucketstats.BucketLog2Round
+	FUSEDoWriteBytes bucketstats.BucketLog2Round
+
+	LogSegmentGetUsec bucketstats.BucketLog2Round
+
+	LogSegmentPutBytes bucketstats.BucketLog2Round
+}
+
 type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
@@ -339,6 +349,7 @@ type globalsStruct struct {
 	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
 	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
 	metrics                         *metricsStruct
+	stats                           *statsStruct
 }
 
 var globals globalsStruct
@@ -650,6 +661,9 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.logSegmentCacheLRU = list.New()
 
 	globals.metrics = &metricsStruct{}
+	globals.stats = &statsStruct{}
+
+	bucketstats.Register("PFSAgent", "", globals.stats)
 }
 
 func uninitializeGlobals() {
@@ -665,6 +679,8 @@ func uninitializeGlobals() {
 	leaseRequest.Add(1)
 	globals.leaseRequestChan <- leaseRequest
 	leaseRequest.Wait()
+
+	bucketstats.UnRegister("PFSAgent", "")
 
 	globals.logFile = nil
 	globals.retryRPCPublicIPAddr = ""
@@ -698,4 +714,5 @@ func uninitializeGlobals() {
 	globals.logSegmentCacheMap = nil
 	globals.logSegmentCacheLRU = nil
 	globals.metrics = nil
+	globals.stats = nil
 }
