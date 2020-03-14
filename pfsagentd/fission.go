@@ -1072,6 +1072,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_calls, 1)
+	globals.stats.FUSEDoReadBytes.Add(uint64(readIn.Size))
 
 	globals.Lock()
 
@@ -1290,6 +1291,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	}
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_bytes, uint64(writeOut.Size))
+	globals.stats.FUSEDoWriteBytes.Add(uint64(writeOut.Size))
 
 	errno = 0
 	return

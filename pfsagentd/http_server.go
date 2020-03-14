@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/version"
 )
 
@@ -88,6 +89,8 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 		pprof.Trace(responseWriter, request)
 	case "/metrics":
 		serveGetOfMetrics(responseWriter, request)
+	case "/stats":
+		serveGetOfStats(responseWriter, request)
 	case "/version":
 		serveGetOfVersion(responseWriter, request)
 	default:
@@ -232,6 +235,12 @@ func serveGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request
 		line = fmt.Sprintf(format, keyAsString, valueAsString)
 		_, _ = responseWriter.Write([]byte(line))
 	}
+}
+
+func serveGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write([]byte(bucketstats.SprintStats(bucketstats.StatFormatParsable1, "PFSAgent", "")))
 }
 
 func insertInMetricsLLRB(metricsLLRB sortedmap.LLRBTree, metricKey string, metricValueAsUint64 uint64) {

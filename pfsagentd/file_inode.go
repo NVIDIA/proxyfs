@@ -320,6 +320,8 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() failed with unexpected statusCode: %v", statusCode)
 	}
 
+	globals.stats.LogSegmentPutBytes.Add(uint64(len(chunkedPutContext.buf)))
+
 	chunkedPutContext.Done()
 }
 
@@ -1339,6 +1341,8 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 	var (
 		err                                     error
 		getRequest                              *http.Request
+		logSegmentCacheElementGetEndime         time.Time
+		logSegmentCacheElementGetStartTime      time.Time
 		logSegmentCacheElementKey               logSegmentCacheElementKeyStruct
 		logSegmentCacheElementToEvict           *logSegmentCacheElementStruct
 		logSegmentCacheElementToEvictKey        logSegmentCacheElementKeyStruct
@@ -1441,12 +1445,18 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	getRequest.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", logSegmentStart, logSegmentEnd))
 
+	logSegmentCacheElementGetStartTime = time.Now()
+
 	_, logSegmentCacheElement.buf, ok, _ = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
+
+	logSegmentCacheElementGetEndime = time.Now()
 
 	globals.Lock()
 
 	if ok {
 		logSegmentCacheElement.state = logSegmentCacheElementStateGetSuccessful
+
+		globals.stats.LogSegmentGetUsec.Add(uint64(logSegmentCacheElementGetEndime.Sub(logSegmentCacheElementGetStartTime) / time.Microsecond))
 	} else {
 		logSegmentCacheElement.state = logSegmentCacheElementStateGetFailed
 
