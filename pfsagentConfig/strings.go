@@ -7,6 +7,8 @@ const (
 )
 
 const (
+	Version = "0.0.1"
+
 	mainMenuText = `
 This is a utility to set the parameters for your PFSagentd. It can help you set/modify the access credentials or change any runtime parameters.
 Please choose the right option from the menu below:

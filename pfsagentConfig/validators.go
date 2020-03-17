@@ -14,24 +14,24 @@ import (
 // }
 
 // ValidateAccess runs all
-func ValidateAccess() (errorType int, err error) {
+func (cfg PFSagentConfig) ValidateAccess() (errorType int, err error) {
 	mySwiftParams := new(SwiftParams)
-	mySwiftParams.User = confMap["Agent"]["SwiftAuthUser"][0]
-	mySwiftParams.Key = confMap["Agent"]["SwiftAuthKey"][0]
-	mySwiftParams.Account = confMap["Agent"]["SwiftAccountName"][0]
-	mySwiftParams.AuthURL = confMap["Agent"]["SwiftAuthURL"][0]
+	mySwiftParams.User = cfg.confMap["Agent"]["SwiftAuthUser"][0]
+	mySwiftParams.Key = cfg.confMap["Agent"]["SwiftAuthKey"][0]
+	mySwiftParams.Account = cfg.confMap["Agent"]["SwiftAccountName"][0]
+	mySwiftParams.AuthURL = cfg.confMap["Agent"]["SwiftAuthURL"][0]
 
 	err = validateURL(mySwiftParams)
 	if nil != err {
 		errorType = typeAuthURL
 		return
 	}
-	_, err = validateCredentails(mySwiftParams)
+	_, err = cfg.validateCredentails(mySwiftParams)
 	if nil != err {
 		errorType = typeCredentails
 		return
 	}
-	err = validateAccount(mySwiftParams)
+	err = cfg.validateAccount(mySwiftParams)
 	if nil != err {
 		errorType = typeAccount
 		return
@@ -103,8 +103,8 @@ where
 	return nil
 }
 
-func validateCredentails(mySwiftParams *SwiftParams) (authToken string, err error) {
-	authToken, err = GetAuthToken(mySwiftParams)
+func (cfg PFSagentConfig) validateCredentails(mySwiftParams *SwiftParams) (authToken string, err error) {
+	authToken, err = cfg.GetAuthToken(mySwiftParams)
 	if nil != err {
 		return
 	}
@@ -112,8 +112,8 @@ func validateCredentails(mySwiftParams *SwiftParams) (authToken string, err erro
 	return
 }
 
-func validateAccount(mySwiftParams *SwiftParams) error {
-	headers, headErr := GetAccountHeaders(mySwiftParams)
+func (cfg PFSagentConfig) validateAccount(mySwiftParams *SwiftParams) error {
+	headers, headErr := cfg.GetAccountHeaders(mySwiftParams)
 	fmt.Printf("\n\nvalidation succeeded? %v\n\n", nil == headErr)
 	if nil != headErr {
 		return headErr

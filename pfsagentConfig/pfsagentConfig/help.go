@@ -31,10 +31,4 @@ To print this short usage message, type
 `, os.Args[0], defaultConfigPath)
 )
 
-var version = fmt.Sprintf(`
-	pfsagentConfig
-		Client version: %v
-		API version: %v
-`, "0.0.1", "0.0.1")
-
 // `, globalConf.Version, globalConf.APIVersion)

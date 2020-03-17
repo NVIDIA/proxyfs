@@ -13,10 +13,26 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-package main
+package cmd
 
-import "github.com/swiftstack/ProxyFS/pfsagentConfig/pfsagentConfig/cmd"
+import (
+	"fmt"
 
-func main() {
-	cmd.Execute()
+	"github.com/spf13/cobra"
+)
+
+// createCmd represents the create command
+var createCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a new config",
+	RunE:  createRunE,
+}
+
+func createRunE(cmd *cobra.Command, args []string) (err error) {
+	fmt.Println("create called")
+	return
+}
+
+func init() {
+	rootCmd.AddCommand(createCmd)
 }

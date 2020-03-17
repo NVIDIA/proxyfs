@@ -34,7 +34,7 @@ func ConstructStorageURL(mySwiftParams *SwiftParams) (storageURL string, err err
 }
 
 // GetAuthToken retrieves the auth token for the user/key combination
-func GetAuthToken(mySwiftParams *SwiftParams) (authToken string, err error) {
+func (cfg PFSagentConfig) GetAuthToken(mySwiftParams *SwiftParams) (authToken string, err error) {
 	authClient := &http.Client{}
 	authTokenRequest, err := http.NewRequest("GET", mySwiftParams.AuthURL, nil)
 	if nil != err {
@@ -57,13 +57,13 @@ func GetAuthToken(mySwiftParams *SwiftParams) (authToken string, err error) {
 		return
 	}
 	if authTokenResponse.StatusCode > 299 {
-		err = fmt.Errorf("Error response status code from %v\n\tStatus code: %v", confMap["Agent"]["SwiftAuthURL"][0], authTokenResponse.StatusCode)
+		err = fmt.Errorf("Error response status code from %v\n\tStatus code: %v", cfg.confMap["Agent"]["SwiftAuthURL"][0], authTokenResponse.StatusCode)
 		return
 	}
 	authToken = authTokenResponse.Header.Get("X-Auth-Token")
 	// authTokenBody, authTokenBodyReadErr := ioutil.ReadAll(authTokenResponse.Body)
 	if len(authToken) == 0 {
-		err = fmt.Errorf("Error finding auth token in response from %v\n\tResponse: %v", confMap["Agent"]["SwiftAuthURL"][0], authTokenResponse)
+		err = fmt.Errorf("Error finding auth token in response from %v\n\tResponse: %v", cfg.confMap["Agent"]["SwiftAuthURL"][0], authTokenResponse)
 		return
 	}
 	// fmt.Printf("auth token:\n%v\n", authToken)
@@ -71,7 +71,7 @@ func GetAuthToken(mySwiftParams *SwiftParams) (authToken string, err error) {
 }
 
 // GetAccountHeaders retrieves the headers for an account
-func GetAccountHeaders(mySwiftParams *SwiftParams) (headers http.Header, err error) {
+func (cfg PFSagentConfig) GetAccountHeaders(mySwiftParams *SwiftParams) (headers http.Header, err error) {
 	if len(mySwiftParams.StorageURL) == 0 {
 		tempStorageURL, urlErr := ConstructStorageURL(mySwiftParams)
 		if nil != urlErr {
@@ -83,7 +83,7 @@ func GetAccountHeaders(mySwiftParams *SwiftParams) (headers http.Header, err err
 	// fmt.Printf("mySwiftParams.StorageURL: %v\n", mySwiftParams.StorageURL)
 
 	if len(mySwiftParams.AuthToken) == 0 {
-		tempAuthToken, authTokenErr := GetAuthToken(mySwiftParams)
+		tempAuthToken, authTokenErr := cfg.GetAuthToken(mySwiftParams)
 		if nil != authTokenErr {
 			err = authTokenErr
 			return
