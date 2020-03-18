@@ -216,12 +216,15 @@ func (this *Average) Sprint(stringFmt StatStringFormat, pkgName string, statsGro
 // values in bucket n is very slightly larger than 2^n.
 //
 type BucketLog2Round struct {
+	total       uint64 // Ensure 64-bit alignment
 	Name        string
 	NBucket     uint
 	statBuckets [65]uint32
 }
 
 func (this *BucketLog2Round) Add(value uint64) {
+	atomicAddUint64(&this.total, value)
+
 	if value < 256 {
 		idx := log2RoundIdxTable[value]
 		atomic.AddUint32(&this.statBuckets[idx], 1)
@@ -246,17 +249,16 @@ func (this *BucketLog2Round) Increment() {
 }
 
 func (this *BucketLog2Round) CountGet() uint64 {
-	_, _, count, _, _ := bucketCalcStat(this.DistGet())
+	_, _, count, _ := bucketCalcStat(this.DistGet(), this.total)
 	return count
 }
 
 func (this *BucketLog2Round) TotalGet() uint64 {
-	_, _, _, total, _ := bucketCalcStat(this.DistGet())
-	return total
+	return this.total
 }
 
 func (this *BucketLog2Round) AverageGet() uint64 {
-	_, _, _, _, mean := bucketCalcStat(this.DistGet())
+	_, _, _, mean := bucketCalcStat(this.DistGet(), this.total)
 	return mean
 }
 
@@ -269,7 +271,7 @@ func (this *BucketLog2Round) DistGet() []BucketInfo {
 // Return a string with the statistic's value in the specified format.
 //
 func (this *BucketLog2Round) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
-	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet())
+	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet(), this.total)
 }
 
 // BucketLogRoot2Round holds bucketized statistics where the stats value is
@@ -305,12 +307,15 @@ func (this *BucketLog2Round) Sprint(stringFmt StatStringFormat, pkgName string, 
 // average of values in bucket n is slightly larger than sqrt(2)^n.
 //
 type BucketLogRoot2Round struct {
+	total       uint64 // Ensure 64-bit alignment
 	Name        string
 	NBucket     uint
 	statBuckets [128]uint32
 }
 
 func (this *BucketLogRoot2Round) Add(value uint64) {
+	atomicAddUint64(&this.total, value)
+
 	if value < 256 {
 		idx := logRoot2RoundIdxTable[value]
 		atomic.AddUint32(&this.statBuckets[idx], 1)
@@ -335,17 +340,16 @@ func (this *BucketLogRoot2Round) Increment() {
 }
 
 func (this *BucketLogRoot2Round) CountGet() uint64 {
-	_, _, count, _, _ := bucketCalcStat(this.DistGet())
+	_, _, count, _ := bucketCalcStat(this.DistGet(), this.total)
 	return count
 }
 
 func (this *BucketLogRoot2Round) TotalGet() uint64 {
-	_, _, _, total, _ := bucketCalcStat(this.DistGet())
-	return total
+	return this.total
 }
 
 func (this *BucketLogRoot2Round) AverageGet() uint64 {
-	_, _, _, _, mean := bucketCalcStat(this.DistGet())
+	_, _, _, mean := bucketCalcStat(this.DistGet(), this.total)
 	return mean
 }
 
@@ -358,5 +362,5 @@ func (this *BucketLogRoot2Round) DistGet() []BucketInfo {
 // Return a string with the statistic's value in the specified format.
 //
 func (this *BucketLogRoot2Round) Sprint(stringFmt StatStringFormat, pkgName string, statsGroupName string) string {
-	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet())
+	return bucketSprint(stringFmt, pkgName, statsGroupName, this.Name, this.DistGet(), this.total)
 }
