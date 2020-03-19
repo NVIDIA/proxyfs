@@ -5,6 +5,7 @@ package bucketstats
 
 import (
 	"fmt"
+	"math/big"
 	"math/bits"
 	"reflect"
 	"strings"
@@ -368,10 +369,18 @@ func bucketDistMake(nBucket uint, statBuckets []uint32, bucketInfoBase []BucketI
 // o the index of the first entry with a non-zero count
 // o the index + 1 of the last entry with a non-zero count, or zero if no such
 //   bucket exists
-// o the count (number things in buckets), and
+// o the count (number things in buckets)
+// o sum of counts * count_meanVal, and
 // o mean (average)
 //
-func bucketCalcStat(bucketInfo []BucketInfo, total uint64) (firstIdx int, maxIdx int, count uint64, mean uint64) {
+func bucketCalcStat(bucketInfo []BucketInfo) (firstIdx int, maxIdx int, count uint64, sum uint64, mean uint64) {
+
+	var (
+		bigSum     big.Int
+		bigMean    big.Int
+		bigTmp     big.Int
+		bigProduct big.Int
+	)
 
 	// firstIdx is the index of the first bucket with a non-zero count
 	// maxIdx is the index + 1 of the last bucket with a non-zero count, or zero
@@ -387,13 +396,23 @@ func bucketCalcStat(bucketInfo []BucketInfo, total uint64) (firstIdx int, maxIdx
 	for i := firstIdx; i < len(bucketInfo); i += 1 {
 		count += bucketInfo[i].Count
 
+		bigTmp.SetUint64(bucketInfo[i].Count)
+		bigProduct.SetUint64(bucketInfo[i].MeanVal)
+		bigProduct.Mul(&bigProduct, &bigTmp)
+		bigSum.Add(&bigSum, &bigProduct)
+
 		if bucketInfo[i].Count > 0 {
 			maxIdx = i + 1
 		}
 	}
 	if count > 0 {
-		mean = total / count
+		bigTmp.SetUint64(count)
+		bigMean.Div(&bigSum, &bigTmp)
 	}
+
+	// sum will be set to math.MaxUint64 if bigSum overflows
+	mean = bigMean.Uint64()
+	sum = bigSum.Uint64()
 
 	return
 }
@@ -401,20 +420,20 @@ func bucketCalcStat(bucketInfo []BucketInfo, total uint64) (firstIdx int, maxIdx
 // Return a string with the bucketized statistic content in the specified format.
 //
 func bucketSprint(statFmt StatStringFormat, pkgName string, statsGroupName string, fieldName string,
-	bucketInfo []BucketInfo, total uint64) string {
+	bucketInfo []BucketInfo) string {
 
 	var (
 		idx        int
 		statName   string
 		bucketName string
 	)
-	firstIdx, maxIdx, count, mean := bucketCalcStat(bucketInfo, total)
+	firstIdx, maxIdx, count, sum, mean := bucketCalcStat(bucketInfo)
 	statName = statisticName(statFmt, pkgName, statsGroupName, fieldName)
 
 	switch statFmt {
 
 	case StatFormatParsable1:
-		line := fmt.Sprintf("%s avg:%d count:%d total:%d", statName, mean, count, total)
+		line := fmt.Sprintf("%s avg:%d count:%d total:%d", statName, mean, count, sum)
 
 		// bucket names are printed as a number upto 3 digits long and
 		// as a power of 2 after that
