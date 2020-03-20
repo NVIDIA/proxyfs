@@ -79,7 +79,7 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	rrClnt, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	rrClnt, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, nil)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 
@@ -129,7 +129,7 @@ func testBtree(t *testing.T) {
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	client, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	client, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, nil)
 	assert.NotNil(client)
 	assert.Nil(newErr)
 

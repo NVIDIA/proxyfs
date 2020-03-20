@@ -136,6 +136,15 @@ func (server *Server) Run() {
 	go server.run()
 }
 
+// SendCallback sends a message to clientID so that clientID contacts
+// the RPC server.
+//
+// The assumption is that this callback only gets called when the server has
+// an async message for the client
+func (server *Server) SendCallback(clientID string, msg []byte) {
+	// TODO
+}
+
 // Close stops the server
 func (server *Server) Close() {
 	server.Lock()
@@ -233,9 +242,18 @@ type Client struct {
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
+// ClientCallbacks contains the methods required when supporting
+// callbacks from the Server.
+type ClientCallbacks interface {
+	Interrupt(payload []byte)
+}
+
 // TODO - pass loggers to Client and Server objects
 
 // NewClient returns a Client structure
+//
+// If the server wants to send an async message to the client
+// it uses the Interrupt method defined in cb
 //
 // NOTE: It is assumed that if a client calls NewClient(), it will
 // always use a unique myUniqueID.   Otherwise, the server may have
@@ -243,7 +261,7 @@ type Client struct {
 //
 // TODO - purge cache of old entries on server and/or use different
 // starting point for requestID.
-func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte) (client *Client, err error) {
+func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte, cb *ClientCallbacks) (client *Client, err error) {
 
 	client = &Client{myUniqueID: myUniqueID}
 	portStr := fmt.Sprintf("%d", port)
