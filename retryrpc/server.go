@@ -85,6 +85,9 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 		c.drainingCond = sync.NewCond(&c.drainingMutex)
 		server.perClientInfo[jReq.MyUniqueID] = c
 		ci = c
+		myConnCtx.Lock()
+		myConnCtx.ci = ci
+		myConnCtx.Unlock()
 	}
 	server.Unlock()
 
@@ -216,6 +219,24 @@ func (server *Server) serviceClient(conn net.Conn) {
 			server.Unlock()
 			return
 		}
+
+		// If the connection is already shutting down, exit now.
+		cCtx.Lock()
+		ci := cCtx.ci
+		cCtx.Unlock()
+		if ci != nil {
+			ci.Lock()
+			if ci.drainingRPCs == true {
+				ci.Unlock()
+				server.Unlock()
+				return
+			}
+			ci.Unlock()
+		}
+
+		// Keep track of how many processRequest() goroutines we have
+		// so that we can wait until they complete when handling retransmits.
+		cCtx.activeRPCsWG.Add(1)
 		server.Unlock()
 
 		// No sense blocking the read of the next request,
@@ -224,10 +245,6 @@ func (server *Server) serviceClient(conn net.Conn) {
 		// Writes back on the socket wil have to be serialized so
 		// pass the per connection context.
 		server.goroutineWG.Add(1)
-
-		// Keep track of how many processRequest() goroutines we have
-		// so that we can wait until they complete when handling retransmits.
-		cCtx.activeRPCsWG.Add(1)
 		go server.processRequest(cCtx, buf)
 	}
 }

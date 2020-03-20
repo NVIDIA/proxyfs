@@ -66,6 +66,7 @@ type connCtx struct {
 	sync.Mutex
 	conn         net.Conn
 	activeRPCsWG sync.WaitGroup // WaitGroup tracking active RPCs from this client on this connection
+	ci           *clientInfo    // Back pointer to the CI
 }
 
 // pendingCtx tracks an individual request from a client
