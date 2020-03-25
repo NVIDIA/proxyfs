@@ -180,7 +180,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 Restart:
 	grantedLockSet.get(globals.tryLock)
 
-	if 0 != (setAttrIn.Valid & fission.SetAttrInValidFH) {
+	if (0 != (setAttrIn.Valid & fission.SetAttrInValidFH)) && (0 != setAttrIn.FH) {
 		if !globals.alreadyLoggedIgnoring.setAttrInValidFH {
 			globals.logger.Printf("func DoSetAttr(,setAttrIn.Valid==0x%08X) ignoring FH bit (0x%08X)", setAttrIn.Valid, fission.SetAttrInValidFH)
 			globals.alreadyLoggedIgnoring.setAttrInValidFH = true
@@ -406,7 +406,6 @@ Restart:
 		dirEntryMap: nil,
 		fileData:    nil,
 		symlinkData: symLinkIn.Data,
-		fhSet:       make(map[uint64]struct{}),
 	}
 
 	ok, err = dirInode.dirEntryMap.Put(symLinkIn.Name, dirEntInode.attr.Ino)
@@ -541,7 +540,6 @@ Restart:
 		dirEntryMap: sortedmap.NewLLRBTree(sortedmap.CompareByteSlice, globals.dirEntryMapDummy),
 		fileData:    nil,
 		symlinkData: nil,
-		fhSet:       make(map[uint64]struct{}),
 	}
 
 	ok, err = dirEntInode.dirEntryMap.Put([]byte("."), dirEntInode.attr.Ino)
@@ -1151,16 +1149,11 @@ Restart:
 		fileInode.fileData = make([]byte, 0)
 	}
 
-	globals.lastFH++
-
 	openOut = &fission.OpenOut{
-		FH:        globals.lastFH,
+		FH:        0,
 		OpenFlags: fission.FOpenResponseDirectIO,
 		Padding:   0,
 	}
-
-	globals.fhMap[openOut.FH] = fileInode.attr.Ino
-	fileInode.fhSet[openOut.FH] = struct{}{}
 
 	grantedLockSet.freeAll(false)
 
@@ -1170,7 +1163,6 @@ Restart:
 
 func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.ReadIn) (readOut *fission.ReadOut, errno syscall.Errno) {
 	var (
-		fhNodeID           uint64
 		fileInode          *inodeStruct
 		granted            bool
 		grantedLockSet     *grantedLockSetStruct = makeGrantedLockSet()
@@ -1180,13 +1172,6 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[readIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1233,7 +1218,6 @@ Restart:
 
 func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission.WriteIn) (writeOut *fission.WriteOut, errno syscall.Errno) {
 	var (
-		fhNodeID            uint64
 		fileInode           *inodeStruct
 		granted             bool
 		grantedLockSet      *grantedLockSetStruct = makeGrantedLockSet()
@@ -1244,13 +1228,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[writeIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1329,7 +1306,6 @@ func (dummy *globalsStruct) DoStatFS(inHeader *fission.InHeader) (statFSOut *fis
 
 func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fission.ReleaseIn) (errno syscall.Errno) {
 	var (
-		fhNodeID       uint64
 		fileInode      *inodeStruct
 		granted        bool
 		grantedLockSet *grantedLockSetStruct = makeGrantedLockSet()
@@ -1338,13 +1314,6 @@ func (dummy *globalsStruct) DoRelease(inHeader *fission.InHeader, releaseIn *fis
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[releaseIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1365,10 +1334,7 @@ Restart:
 		return
 	}
 
-	delete(globals.fhMap, releaseIn.FH)
-	delete(fileInode.fhSet, releaseIn.FH)
-
-	if (0 == fileInode.attr.NLink) && (0 == len(fileInode.fhSet)) {
+	if 0 == fileInode.attr.NLink {
 		delete(globals.inodeMap, inHeader.NodeID)
 		// Note: Other threads could still be blocked obtaining a lock on fileInode
 	}
@@ -1381,7 +1347,6 @@ Restart:
 
 func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission.FSyncIn) (errno syscall.Errno) {
 	var (
-		fhNodeID       uint64
 		fileInode      *inodeStruct
 		granted        bool
 		grantedLockSet *grantedLockSetStruct = makeGrantedLockSet()
@@ -1390,13 +1355,6 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[fSyncIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1671,7 +1629,6 @@ Restart:
 
 func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission.FlushIn) (errno syscall.Errno) {
 	var (
-		fhNodeID       uint64
 		fileInode      *inodeStruct
 		granted        bool
 		grantedLockSet *grantedLockSetStruct = makeGrantedLockSet()
@@ -1680,13 +1637,6 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[flushIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1718,7 +1668,7 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 		Major:                initIn.Major,
 		Minor:                initIn.Minor,
 		MaxReadAhead:         initIn.MaxReadAhead,
-		Flags:                initIn.Flags & initOutFlagsMask,
+		Flags:                initOutFlagsNearlyAll,
 		MaxBackground:        initOutMaxBackgound,
 		CongestionThreshhold: initOutCongestionThreshhold,
 		MaxWrite:             initOutMaxWrite,
@@ -1758,16 +1708,11 @@ Restart:
 		return
 	}
 
-	globals.lastFH++
-
 	openDirOut = &fission.OpenDirOut{
-		FH:        globals.lastFH,
+		FH:        0,
 		OpenFlags: 0,
 		Padding:   0,
 	}
-
-	globals.fhMap[openDirOut.FH] = dirInode.attr.Ino
-	dirInode.fhSet[openDirOut.FH] = struct{}{}
 
 	grantedLockSet.freeAll(false)
 
@@ -1907,7 +1852,6 @@ Restart:
 func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirIn *fission.ReleaseDirIn) (errno syscall.Errno) {
 	var (
 		dirInode       *inodeStruct
-		fhNodeID       uint64
 		granted        bool
 		grantedLockSet *grantedLockSetStruct = makeGrantedLockSet()
 		ok             bool
@@ -1915,13 +1859,6 @@ func (dummy *globalsStruct) DoReleaseDir(inHeader *fission.InHeader, releaseDirI
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[releaseDirIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	dirInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -1942,10 +1879,7 @@ Restart:
 		return
 	}
 
-	delete(globals.fhMap, releaseDirIn.FH)
-	delete(dirInode.fhSet, releaseDirIn.FH)
-
-	if (0 == dirInode.attr.NLink) && (0 == len(dirInode.fhSet)) {
+	if 0 == dirInode.attr.NLink {
 		delete(globals.inodeMap, inHeader.NodeID)
 		// Note: Other threads could still be blocked obtaining a lock on dirInode
 	}
@@ -1958,7 +1892,6 @@ Restart:
 
 func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *fission.FSyncDirIn) (errno syscall.Errno) {
 	var (
-		fhNodeID       uint64
 		fileInode      *inodeStruct
 		granted        bool
 		grantedLockSet *grantedLockSetStruct = makeGrantedLockSet()
@@ -1967,13 +1900,6 @@ func (dummy *globalsStruct) DoFSyncDir(inHeader *fission.InHeader, fSyncDirIn *f
 
 Restart:
 	grantedLockSet.get(globals.tryLock)
-
-	fhNodeID, ok = globals.fhMap[fSyncDirIn.FH]
-	if fhNodeID != inHeader.NodeID {
-		grantedLockSet.freeAll(false)
-		errno = syscall.EINVAL
-		return
-	}
 
 	fileInode, ok = globals.inodeMap[inHeader.NodeID]
 	if !ok {
@@ -2229,7 +2155,6 @@ Restart:
 		dirEntryMap: nil,
 		fileData:    make([]byte, 0),
 		symlinkData: nil,
-		fhSet:       make(map[uint64]struct{}),
 	}
 
 	ok, err = dirInode.dirEntryMap.Put(createIn.Name, fileInode.attr.Ino)
@@ -2243,8 +2168,6 @@ Restart:
 	}
 
 	globals.inodeMap[fileInode.attr.Ino] = fileInode
-
-	globals.lastFH++
 
 	createOut = &fission.CreateOut{
 		EntryOut: fission.EntryOut{
@@ -2273,13 +2196,10 @@ Restart:
 				Padding:   fileInode.attr.Padding,
 			},
 		},
-		FH:        globals.lastFH,
+		FH:        0,
 		OpenFlags: fission.FOpenResponseDirectIO,
 		Padding:   0,
 	}
-
-	globals.fhMap[createOut.FH] = fileInode.attr.Ino
-	fileInode.fhSet[createOut.FH] = struct{}{}
 
 	grantedLockSet.freeAll(false)
 

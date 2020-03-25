@@ -2,6 +2,7 @@ package fission
 
 import (
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,6 +21,7 @@ type volumeStruct struct {
 	devFuseFDReadSize uint32 // InHeaderSize + WriteInSize + InitOut.MaxWrite
 	devFuseFDReadPool sync.Pool
 	devFuseFD         int
+	devFuseFile       *os.File
 	devFuseFDReaderWG sync.WaitGroup
 	callbacksWG       sync.WaitGroup
 }
@@ -68,6 +70,10 @@ func (volume *volumeStruct) devFuseFDReader() {
 
 		bytesRead, err = syscall.Read(volume.devFuseFD, devFuseFDReadBuf)
 		if nil != err {
+			// First, discard devFuseFDReadBuf
+
+			volume.devFuseFDReadPoolPut(devFuseFDReadBuf)
+
 			if 0 == strings.Compare("operation not permitted", err.Error()) {
 				// Special case... simply retry the Read
 				continue
@@ -81,6 +87,8 @@ func (volume *volumeStruct) devFuseFDReader() {
 			// Signal errChan that we are exiting (passing <nil> if due to close of volume.devFuseFD)
 
 			if 0 == strings.Compare("no such device", err.Error()) {
+				volume.errChan <- nil
+			} else if 0 == strings.Compare("operation not supported by device", err.Error()) {
 				volume.errChan <- nil
 			} else {
 				volume.logger.Printf("Exiting due to /dev/fuse Read err: %v", err)
