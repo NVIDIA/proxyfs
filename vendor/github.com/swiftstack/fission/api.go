@@ -328,7 +328,7 @@ const (
 	OpCodeCreate        = uint32(35)
 	OpCodeInterrupt     = uint32(36) // no reply
 	OpCodeBMap          = uint32(37)
-	OpCodeDestroy       = uint32(38) // no reply
+	OpCodeDestroy       = uint32(38)
 	OpCodeIoCtl         = uint32(39) // unsupported
 	OpCodePoll          = uint32(40)
 	OpCodeNotifyReply   = uint32(41) // unsupported

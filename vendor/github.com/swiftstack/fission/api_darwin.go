@@ -2,7 +2,7 @@ package fission
 
 const AttrSize = 104
 
-type Attr struct { // Note: Must be kept in sync with Attr struct in api_darwin.go
+type Attr struct {
 	Ino        uint64
 	Size       uint64
 	Blocks     uint64
