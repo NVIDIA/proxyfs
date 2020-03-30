@@ -496,6 +496,7 @@ func (volume *volumeStruct) doStatFS(inHeader *InHeader, devFuseFDReadBufPayload
 	if len(devFuseFDReadBufPayload) != 0 {
 		volume.logger.Printf("Call to doStatFS() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
+		return
 	}
 
 	statFSOut, errno = volume.callbacks.DoStatFS(inHeader)
@@ -534,6 +535,7 @@ func (volume *volumeStruct) doRelease(inHeader *InHeader, devFuseFDReadBufPayloa
 	if len(devFuseFDReadBufPayload) != ReleaseInSize {
 		volume.logger.Printf("Call to doRelease() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
+		return
 	}
 
 	releaseIn = &ReleaseIn{
@@ -557,6 +559,7 @@ func (volume *volumeStruct) doFSync(inHeader *InHeader, devFuseFDReadBufPayload 
 	if len(devFuseFDReadBufPayload) != FSyncInSize {
 		volume.logger.Printf("Call to doFSync() with bad len(devFuseFDReadBufPayload) == %v", len(devFuseFDReadBufPayload))
 		volume.devFuseFDWriter(inHeader, syscall.EINVAL)
+		return
 	}
 
 	fSyncIn = &FSyncIn{
