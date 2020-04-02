@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
@@ -38,11 +37,25 @@ func (server *Server) run() {
 		elm := server.connections.PushBack(conn)
 		server.connLock.Unlock()
 
+		// The first message sent on this socket by the client is the uniqueID.
+		// Read that first and create the relevant structures before calling
+		// serviceClient().  We do the cleanup in this routine because there are
+		// race conditions with noisy clients repeatedly reconnected.
+		//
+		// Those race conditions are resolved if we serialize the recovery.
+		cCtx := &connCtx{conn: conn}
+		ci, err := server.getAndCreateClientID(cCtx)
+		if err != nil {
+			fmt.Printf("=====>>>> getAndCreateClientID() returned err: %v\n", err)
+			// Socket already had an error - just loop back
+			continue
+		}
+
 		server.goroutineWG.Add(1)
 		go func(myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
-			server.serviceClient(myConn)
+			server.serviceClient(ci, cCtx)
 
 			server.connLock.Lock()
 			server.connections.Remove(myElm)
@@ -61,7 +74,7 @@ func keyString(myUniqueID string, rID requestID) string {
 }
 
 // processRequest is given a request from the client.
-func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
+func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []byte) {
 	defer server.goroutineWG.Done()
 
 	// We first unmarshal the raw buf to find the method
@@ -75,63 +88,68 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 		return
 	}
 
-	server.Lock()
-	ci, ok := server.perClientInfo[jReq.MyUniqueID]
-	if !ok {
-		// First time we have seen this client
-		c := &clientInfo{cCtx: myConnCtx}
-		c.completedRequest = make(map[requestID]*completedEntry)
-		c.completedRequestLRU = list.New()
-		c.drainingCond = sync.NewCond(&c.drainingMutex)
-		server.perClientInfo[jReq.MyUniqueID] = c
-		ci = c
-		myConnCtx.Lock()
-		myConnCtx.ci = ci
-		myConnCtx.Unlock()
-	}
-	server.Unlock()
+	// TODO - this gets removed!!!
+	/*
+			server.Lock()
+			ci, ok := server.perClientInfo[jReq.MyUniqueID]
+			if !ok {
+				// First time we have seen this client
+				c := &clientInfo{cCtx: myConnCtx}
+				c.completedRequest = make(map[requestID]*completedEntry)
+				c.completedRequestLRU = list.New()
+				c.drainingCond = sync.NewCond(&c.drainingMutex)
+				server.perClientInfo[jReq.MyUniqueID] = c
+				ci = c
+				myConnCtx.Lock()
+				myConnCtx.ci = ci
+				myConnCtx.Unlock()
+			}
+			server.Unlock()
+
+		ci.Lock()
+		currentCtx := ci.cCtx
+
+		// Check if existing client with new connection.  If so,
+		// wait for prior RPCs to complete before proceeding.
+		if currentCtx.conn != myConnCtx.conn {
+
+			// Serialize multiple goroutines processing same NEW connection.
+			if ci.drainingRPCs == true {
+				ci.Unlock()
+
+				// This goroutine is not the first to see new connection.
+				// Wait for first goroutine to finish.
+				ci.drainingMutex.Lock()
+				ci.drainingCond.Wait()
+				ci.drainingMutex.Unlock()
+
+				ci.Lock()
+			} else {
+				// First goroutine to see new connection
+				ci.drainingRPCs = true
+				ci.Unlock()
+
+				// New socket - block until threads from PRIOR connection
+				// complete to make the recovery more predictable
+				currentCtx.activeRPCsWG.Wait()
+
+				// RPCs from PRIOR socket have completed - now take over with new
+				// connection.
+				//
+				// Two different goroutines using same NEW connection could be racing.
+				// Therefore, only update ci.cCtx if we have not already updated it.
+				ci.Lock()
+				ci.cCtx = myConnCtx
+
+				// Wakeup other goroutines trying to process new connection
+				ci.drainingMutex.Lock()
+				ci.drainingCond.Broadcast()
+				ci.drainingMutex.Unlock()
+			}
+		}
+	*/
 
 	ci.Lock()
-	currentCtx := ci.cCtx
-
-	// Check if existing client with new connection.  If so,
-	// wait for prior RPCs to complete before proceeding.
-	if currentCtx.conn != myConnCtx.conn {
-
-		// Serialize multiple goroutines processing same NEW connection.
-		if ci.drainingRPCs == true {
-			ci.Unlock()
-
-			// This goroutine is not the first to see new connection.
-			// Wait for first goroutine to finish.
-			ci.drainingMutex.Lock()
-			ci.drainingCond.Wait()
-			ci.drainingMutex.Unlock()
-
-			ci.Lock()
-		} else {
-			// First goroutine to see new connection
-			ci.drainingRPCs = true
-			ci.Unlock()
-
-			// New socket - block until threads from PRIOR connection
-			// complete to make the recovery more predictable
-			currentCtx.activeRPCsWG.Wait()
-
-			// RPCs from PRIOR socket have completed - now take over with new
-			// connection.
-			//
-			// Two different goroutines using same NEW connection could be racing.
-			// Therefore, only update ci.cCtx if we have not already updated it.
-			ci.Lock()
-			ci.cCtx = myConnCtx
-
-			// Wakeup other goroutines trying to process new connection
-			ci.drainingMutex.Lock()
-			ci.drainingCond.Broadcast()
-			ci.drainingMutex.Unlock()
-		}
-	}
 
 	// Keep track of the highest consecutive requestID seen
 	// by client.  We use this to trim completedRequest list.
@@ -144,24 +162,25 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 
 	// First check if we already completed this request by looking at
 	// completed queue.
-	var ior *ioReply
+	var localIOR ioReply // Local copy to avoid racing retransmit threads
 	rID := jReq.RequestID
 	ce, ok := ci.completedRequest[rID]
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
-		ior = ce.reply
 		setupHdrReply(ce.reply)
+		localIOR = *ce.reply
+		ci.Unlock()
 
 	} else {
+		ci.Unlock()
+
 		// Call the RPC and return the results.
 		//
 		// We pass buf to the call because the request will have to
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
-		ci.Unlock()
-
-		ior = server.callRPCAndFormatReply(buf, &jReq)
+		ior := server.callRPCAndFormatReply(buf, &jReq)
 
 		// We had to drop the lock before calling the RPC since it
 		// could block.
@@ -169,37 +188,128 @@ func (server *Server) processRequest(myConnCtx *connCtx, buf []byte) {
 
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
+		localIOR = *ce.reply
 
 		ci.completedRequest[rID] = ce
 		setupHdrReply(ce.reply)
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
+		ci.Unlock()
 	}
-	ci.Unlock()
 
 	// Write results on socket back to client...
-	returnResults(ior, myConnCtx)
+	returnResults(&localIOR, myConnCtx)
 
 	myConnCtx.activeRPCsWG.Done()
 }
 
+// getAndCreateClientID reads the first message off the new connection.
+// The client will first it's uniqueID in a message.
+// TODO:
+// 1. read myUniqueID off socket
+// 2. verify not exiting ... return error...
+// 3. unmarshal message
+// 4. create clientInfo struct in map
+// 5. return ci and error as needed...
+//
+// TODO - client side - in Dial must resend clientInfo (both first time and
+// after retransmit!!!)
+func (server *Server) getAndCreateClientID(cCtx *connCtx) (ci *clientInfo, err error) {
+
+	fmt.Printf("getAndCreateClientID() - called cCtx: %v\n", cCtx)
+
+	// myUniqueID off wire
+	buf, getErr := getIO(uint64(0), cCtx.conn)
+	if getErr != nil {
+		err = getErr
+		return
+	}
+
+	var connUniqueID string
+	err = json.Unmarshal(buf, &connUniqueID)
+	if err != nil {
+		return
+	}
+
+	fmt.Printf("getAndCreateClientID for clientID: %v cCtx: %v\n", connUniqueID, cCtx)
+
+	// Check if this is the first time we have seen this client
+	server.Lock()
+	lci, ok := server.perClientInfo[connUniqueID]
+	if !ok {
+		// First time we have seen this client
+		c := &clientInfo{cCtx: cCtx, myUniqueID: connUniqueID}
+		c.completedRequest = make(map[requestID]*completedEntry)
+		c.completedRequestLRU = list.New()
+		//c.drainingCond = sync.NewCond(&c.drainingMutex)
+		server.perClientInfo[connUniqueID] = c
+		server.Unlock()
+		ci = c
+		cCtx.Lock()
+		cCtx.ci = ci
+		cCtx.Unlock()
+	} else {
+		server.Unlock()
+		ci = lci
+
+		// Wait for RPCs on existing connection to finish before
+		// setting backpointer in ci to the new connection.
+		ci.cCtx.activeRPCsWG.Wait()
+
+		// Set cCtx back pointer to ci
+		ci.Lock()
+		cCtx.Lock()
+		cCtx.ci = ci
+		cCtx.Unlock()
+
+		ci.cCtx = cCtx
+		ci.Unlock()
+	}
+
+	return ci, err
+}
+
 // serviceClient gets called when we accept a new connection.
 // This means we have a new client connection.
-func (server *Server) serviceClient(conn net.Conn) {
+//
+// This could be either a new client OR it could mean a different
+// connection from an existing client.
+func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	var (
 		halting bool
 	)
 
-	cCtx := &connCtx{conn: conn}
+	/*
+		cCtx := &connCtx{conn: conn}
+	*/
 
 	if printDebugLogs {
 		logger.Infof("got a connection - starting read/write io thread")
 	}
+	fmt.Printf("serviceClient() - got a connection - starting read/write io thread for cCtx: %v\n", cCtx)
 
+	/*
+		// The first message sent on this socket by the client is the uniqueID.
+		// Read that first and create the relevant structures before processing
+		// any messages.
+		ci, err := server.getAndCreateClientID(cCtx)
+		if err != nil {
+			return
+		}
+	*/
+
+	// NOTE: At this point we know:
+	//
+	// 1. If this is the first connection from this client then we have
+	//    created clientInfo
+	//
+	// 2. If we had a prior connection from the client, it has been
+	//    cleaned up and all prior RPCs have completed.  We can use
+	//    the clientInfo from server.perClientInfo[] without worrying .
 	for {
 		// Get RPC request
-		buf, getErr := getIO(uint64(0), conn)
+		buf, getErr := getIO(uint64(0), cCtx.conn)
 		if getErr != nil {
 			server.Lock()
 			halting = server.halting
@@ -220,20 +330,6 @@ func (server *Server) serviceClient(conn net.Conn) {
 			return
 		}
 
-		// If the connection is already shutting down, exit now.
-		cCtx.Lock()
-		ci := cCtx.ci
-		cCtx.Unlock()
-		if ci != nil {
-			ci.Lock()
-			if ci.drainingRPCs == true {
-				ci.Unlock()
-				server.Unlock()
-				return
-			}
-			ci.Unlock()
-		}
-
 		// Keep track of how many processRequest() goroutines we have
 		// so that we can wait until they complete when handling retransmits.
 		cCtx.activeRPCsWG.Add(1)
@@ -245,7 +341,7 @@ func (server *Server) serviceClient(conn net.Conn) {
 		// Writes back on the socket wil have to be serialized so
 		// pass the per connection context.
 		server.goroutineWG.Add(1)
-		go server.processRequest(cCtx, buf)
+		go server.processRequest(ci, cCtx, buf)
 	}
 }
 

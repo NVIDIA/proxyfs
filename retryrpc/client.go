@@ -58,7 +58,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 	client.Unlock()
 
 	// Setup ioreq to write structure on socket to server
-	ioreq, err := buildIoRequest(method, jreq)
+	ioreq, err := buildIoRequest(jreq)
 	if err != nil {
 		e := fmt.Errorf("Client buildIoRequest returned err: %v", err)
 		logger.PanicfWithError(e, "")
@@ -299,8 +299,56 @@ func (client *Client) retransmit(genNum uint64) {
 	client.Unlock()
 }
 
+// TOOD - this routine
+// 1. fills in header
+// 2. sends client info
+// 3. reads response
+// 4. returns error or other as needed
+//
+// NOTE: Client lock is already held during this call.
+// TODO - what issues with retransmit.... assume do not do that
+// automatically... how recover while doing that????
+func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
+
+	// Setup ioreq to write structure on socket to server
+	isreq, err := buildSetIDRequest(client.myUniqueID)
+	if err != nil {
+		e := fmt.Errorf("Client buildSetIDRequest returned err: %v", err)
+		logger.PanicfWithError(e, "")
+		return err
+	}
+
+	// Send header
+	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	err = binary.Write(tlsConn, binary.BigEndian, isreq.Hdr)
+	if err != nil {
+		return
+	}
+
+	// Send MyUniqueID
+	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	bytesWritten, writeErr := tlsConn.Write(isreq.MyUniqueID)
+
+	if uint32(bytesWritten) != isreq.Hdr.Len {
+		e := fmt.Errorf("sendMyInfo length incorrect")
+		err = e
+		return
+	}
+
+	if writeErr != nil {
+		err = writeErr
+		return
+	}
+
+	// Nothing is sent back from server
+
+	return
+}
+
 // dial sets up connection to server
 // It is assumed that the client lock is held.
+//
+// NOTE: Client lock is held
 func (client *Client) dial() (err error) {
 
 	client.connection.tlsConfig = &tls.Config{
@@ -321,6 +369,13 @@ func (client *Client) dial() (err error) {
 	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
 	client.connection.genNum++
+
+	// TODO - what do if connection fails again - loop back
+	// in for loop?
+	err = client.sendMyInfo(tlsConn)
+	if err != nil {
+		return
+	}
 
 	// Start readResponse goroutine to read responses from server
 	client.goroutineWG.Add(1)
