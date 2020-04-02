@@ -299,15 +299,9 @@ func (client *Client) retransmit(genNum uint64) {
 	client.Unlock()
 }
 
-// TOOD - this routine
-// 1. fills in header
-// 2. sends client info
-// 3. reads response
-// 4. returns error or other as needed
+// Send myUniqueID to server
 //
 // NOTE: Client lock is already held during this call.
-// TODO - what issues with retransmit.... assume do not do that
-// automatically... how recover while doing that????
 func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 
 	// Setup ioreq to write structure on socket to server
@@ -370,8 +364,8 @@ func (client *Client) dial() (err error) {
 	client.connection.state = CONNECTED
 	client.connection.genNum++
 
-	// TODO - what do if connection fails again - loop back
-	// in for loop?
+	// Send myUniqueID to server.   If this fails the dial will
+	// be retried.
 	err = client.sendMyInfo(tlsConn)
 	if err != nil {
 		return

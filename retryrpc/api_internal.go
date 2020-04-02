@@ -49,11 +49,6 @@ type clientInfo struct {
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
 	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
-	/*
-		drainingRPCs             bool                          // True if draining outstanding RPCs
-		drainingCond             *sync.Cond                    // Condition to serialize new connection for a clientInfo
-		drainingMutex            sync.Mutex                    // Mutex used to serialize new connection for a clientInfo
-	*/
 }
 
 type completedEntry struct {
