@@ -112,11 +112,12 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
 	err := binary.Write(client.connection.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
+		genNum := ctx.genNum
 		client.Unlock()
 
 		// Just return - the retransmit code will start another
 		// sendToServer() goroutine
-		client.retransmit(ctx.genNum)
+		client.retransmit(genNum)
 		return
 	}
 
