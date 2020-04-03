@@ -23,7 +23,7 @@ func (volume *volumeStruct) DoMount() (err error) {
 		devOsxFusePathList            []string
 		fsnameOption                  string
 		iosizeOption                  string
-		localVolumeOption             string
+		localOption                   string
 		mountOptions                  string
 		noAppleDoubleOption           string
 		noAppleXattrOption            string
@@ -79,7 +79,7 @@ func (volume *volumeStruct) DoMount() (err error) {
 	// Compute mountOptions
 
 	allowOtherOption = "allow_other"
-	localVolumeOption = "local"
+	localOption = "local"
 	noAppleDoubleOption = "noappledouble"
 	noAppleXattrOption = "noapplexattr"
 	fsnameOption = "fsname=" + volume.volumeName
@@ -88,7 +88,7 @@ func (volume *volumeStruct) DoMount() (err error) {
 	iosizeOption = fmt.Sprintf("iosize=%d", volume.initOutMaxWrite)
 
 	mountOptions = allowOtherOption +
-		"," + localVolumeOption +
+		"," + localOption +
 		"," + noAppleDoubleOption +
 		"," + noAppleXattrOption +
 		"," + fsnameOption +

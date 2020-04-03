@@ -18,8 +18,19 @@ import (
 )
 
 const (
-	initOutFlagsMaskReadDirPlusEnabled  = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData | fission.InitFlagsDoReadDirPlus
-	initOutFlagsMaskReadDirPlusDisabled = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData
+	initOutFlagsMaskReadDirPlusDisabled = uint32(0) |
+		fission.InitFlagsAsyncRead |
+		fission.InitFlagsFileOps |
+		fission.InitFlagsAtomicOTrunc |
+		fission.InitFlagsBigWrites |
+		fission.InitFlagsAutoInvalData |
+		fission.InitFlagsParallelDirops |
+		fission.InitFlagsMaxPages |
+		fission.InitFlagsExplicitInvalData
+
+	initOutFlagsMaskReadDirPlusEnabled = initOutFlagsMaskReadDirPlusDisabled |
+		fission.InitFlagsDoReadDirPlus |
+		fission.InitFlagsReaddirplusAuto
 
 	pfsagentFuseSubtype = "PFSAgent"
 )
@@ -33,7 +44,6 @@ func performMountFUSE() {
 		globals.config.FUSEVolumeName,     // volumeName        string
 		globals.config.FUSEMountPointPath, // mountpointDirPath string
 		pfsagentFuseSubtype,               // fuseSubtype       string
-		0,                                 // mountFlags        uintptr
 		globals.config.FUSEMaxWrite,       // initOutMaxWrite   uint32
 		&globals,                          // callbacks         fission.Callbacks
 		newLogger(),                       // logger            *log.Logger
@@ -1635,9 +1645,9 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoInit_calls, 1)
 
 	if globals.config.ReadDirPlusEnabled {
-		initOutFlags = initIn.Flags & initOutFlagsMaskReadDirPlusEnabled
+		initOutFlags = initOutFlagsMaskReadDirPlusEnabled
 	} else {
-		initOutFlags = initIn.Flags & initOutFlagsMaskReadDirPlusDisabled
+		initOutFlags = initOutFlagsMaskReadDirPlusDisabled
 	}
 
 	initOut = &fission.InitOut{

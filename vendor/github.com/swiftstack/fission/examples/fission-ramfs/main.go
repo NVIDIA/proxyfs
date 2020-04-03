@@ -20,8 +20,6 @@ import (
 const (
 	fuseSubtype = "fission-ramfs"
 
-	mountFlags = uintptr(0)
-
 	initOutFlagsNearlyAll = uint32(0) |
 		fission.InitFlagsAsyncRead |
 		fission.InitFlagsFileOps |
@@ -29,25 +27,22 @@ const (
 		fission.InitFlagsBigWrites |
 		fission.InitFlagsAutoInvalData |
 		fission.InitFlagsDoReadDirPlus |
-		fission.InitFlagsNoOpenSupport |
-		fission.InitFlagsAsyncRead |
-		fission.InitFlagsFileOps |
-		fission.InitFlagsAtomicOTrunc |
-		fission.InitFlagsBigWrites |
-		fission.InitFlagsAutoInvalData |
-		fission.InitFlagsDoReadDirPlus |
 		fission.InitFlagsReaddirplusAuto |
-		fission.InitFlagsNoOpenSupport |
 		fission.InitFlagsParallelDirops |
 		fission.InitFlagsMaxPages |
-		fission.InitFlagsNoOpendirSupport |
 		fission.InitFlagsExplicitInvalData
 
 	initOutMaxBackgound         = uint16(100)
 	initOutCongestionThreshhold = uint16(0)
 	initOutMaxWrite             = uint32(128 * 1024) // 128KiB... the max write size in Linux FUSE at this time
 
-	attrBlkSize = 4096
+	attrBlkSize = uint32(4096)
+
+	entryValidSec  = uint64(10)
+	entryValidNSec = uint32(0)
+
+	attrValidSec  = uint64(10)
+	attrValidNSec = uint32(0)
 
 	tryLockBackoffMin = time.Duration(time.Second) // time.Duration(100 * time.Microsecond)
 	tryLockBackoffMax = time.Duration(time.Second) // time.Duration(300 * time.Microsecond)
@@ -189,7 +184,7 @@ func main() {
 
 	globals.alreadyLoggedIgnoring.setAttrInValidFH = false
 
-	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
+	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, initOutMaxWrite, &globals, globals.logger, globals.errChan)
 
 	err = globals.volume.DoMount()
 	if nil != err {

@@ -17,8 +17,6 @@ import (
 const (
 	fuseSubtype = "fission-hellofs"
 
-	mountFlags = uintptr(0)
-
 	initOutFlagsNearlyAll = uint32(0) |
 		fission.InitFlagsAsyncRead |
 		fission.InitFlagsFileOps |
@@ -26,18 +24,9 @@ const (
 		fission.InitFlagsBigWrites |
 		fission.InitFlagsAutoInvalData |
 		fission.InitFlagsDoReadDirPlus |
-		fission.InitFlagsNoOpenSupport |
-		fission.InitFlagsAsyncRead |
-		fission.InitFlagsFileOps |
-		fission.InitFlagsAtomicOTrunc |
-		fission.InitFlagsBigWrites |
-		fission.InitFlagsAutoInvalData |
-		fission.InitFlagsDoReadDirPlus |
 		fission.InitFlagsReaddirplusAuto |
-		fission.InitFlagsNoOpenSupport |
 		fission.InitFlagsParallelDirops |
 		fission.InitFlagsMaxPages |
-		fission.InitFlagsNoOpendirSupport |
 		fission.InitFlagsExplicitInvalData
 
 	initOutMaxBackgound         = uint16(100)
@@ -278,7 +267,7 @@ func main() {
 		},
 	}
 
-	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
+	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, initOutMaxWrite, &globals, globals.logger, globals.errChan)
 
 	err = globals.volume.DoMount()
 	if nil != err {

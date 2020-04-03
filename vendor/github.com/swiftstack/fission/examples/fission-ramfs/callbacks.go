@@ -74,10 +74,10 @@ Restart:
 		EntryOut: fission.EntryOut{
 			NodeID:         dirEntInode.attr.Ino,
 			Generation:     0,
-			EntryValidSec:  0,
-			AttrValidSec:   0,
-			EntryValidNSec: 0,
-			AttrValidNSec:  0,
+			EntryValidSec:  entryValidSec,
+			AttrValidSec:   attrValidSec,
+			EntryValidNSec: entryValidNSec,
+			AttrValidNSec:  attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       dirEntInode.attr.Ino,
 				Size:      dirEntInode.attr.Size,
@@ -93,7 +93,7 @@ Restart:
 				UID:       dirEntInode.attr.UID,
 				GID:       dirEntInode.attr.GID,
 				RDev:      dirEntInode.attr.RDev,
-				BlkSize:   dirEntInode.attr.BlkSize,
+				BlkSize:   attrBlkSize,
 				Padding:   dirEntInode.attr.Padding,
 			},
 		},
@@ -136,8 +136,8 @@ Restart:
 	grantedLockSet.free(globals.tryLock)
 
 	getAttrOut = &fission.GetAttrOut{
-		AttrValidSec:  0,
-		AttrValidNSec: 0,
+		AttrValidSec:  attrValidSec,
+		AttrValidNSec: attrValidNSec,
 		Dummy:         0,
 		Attr: fission.Attr{
 			Ino:       inode.attr.Ino,
@@ -154,7 +154,7 @@ Restart:
 			UID:       inode.attr.UID,
 			GID:       inode.attr.GID,
 			RDev:      inode.attr.RDev,
-			BlkSize:   inode.attr.BlkSize,
+			BlkSize:   attrBlkSize,
 			Padding:   inode.attr.Padding,
 		},
 	}
@@ -236,6 +236,8 @@ Restart:
 			inode.fileData = append(inode.fileData, make([]byte, (setAttrIn.Size-inode.attr.Size))...)
 		}
 		inode.attr.Size = setAttrIn.Size
+		inode.attr.Blocks = inode.attr.Size + uint64(attrBlkSize-1)
+		inode.attr.Blocks /= uint64(attrBlkSize)
 	}
 
 	if 0 != (setAttrIn.Valid & fission.SetAttrInValidATime) {
@@ -261,8 +263,8 @@ Restart:
 	// TODO: Verify it is ok to accept but ignore fission.SetAttrInValidFH in setAttrIn.Valid
 
 	setAttrOut = &fission.SetAttrOut{
-		AttrValidSec:  0,
-		AttrValidNSec: 0,
+		AttrValidSec:  attrValidSec,
+		AttrValidNSec: attrValidNSec,
 		Dummy:         0,
 		Attr: fission.Attr{
 			Ino:       inode.attr.Ino,
@@ -279,7 +281,7 @@ Restart:
 			UID:       inode.attr.UID,
 			GID:       inode.attr.GID,
 			RDev:      inode.attr.RDev,
-			BlkSize:   inode.attr.BlkSize,
+			BlkSize:   attrBlkSize,
 			Padding:   inode.attr.Padding,
 		},
 	}
@@ -426,10 +428,10 @@ Restart:
 		EntryOut: fission.EntryOut{
 			NodeID:         dirEntInode.attr.Ino,
 			Generation:     0,
-			EntryValidSec:  0,
-			AttrValidSec:   0,
-			EntryValidNSec: 0,
-			AttrValidNSec:  0,
+			EntryValidSec:  entryValidSec,
+			AttrValidSec:   attrValidSec,
+			EntryValidNSec: entryValidNSec,
+			AttrValidNSec:  attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       dirEntInode.attr.Ino,
 				Size:      dirEntInode.attr.Size,
@@ -445,7 +447,7 @@ Restart:
 				UID:       dirEntInode.attr.UID,
 				GID:       dirEntInode.attr.GID,
 				RDev:      dirEntInode.attr.RDev,
-				BlkSize:   dirEntInode.attr.BlkSize,
+				BlkSize:   attrBlkSize,
 				Padding:   dirEntInode.attr.Padding,
 			},
 		},
@@ -580,10 +582,10 @@ Restart:
 		EntryOut: fission.EntryOut{
 			NodeID:         dirEntInode.attr.Ino,
 			Generation:     0,
-			EntryValidSec:  0,
-			AttrValidSec:   0,
-			EntryValidNSec: 0,
-			AttrValidNSec:  0,
+			EntryValidSec:  entryValidSec,
+			AttrValidSec:   attrValidSec,
+			EntryValidNSec: entryValidNSec,
+			AttrValidNSec:  attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       dirEntInode.attr.Ino,
 				Size:      dirEntInode.attr.Size,
@@ -599,7 +601,7 @@ Restart:
 				UID:       dirEntInode.attr.UID,
 				GID:       dirEntInode.attr.GID,
 				RDev:      dirEntInode.attr.RDev,
-				BlkSize:   dirEntInode.attr.BlkSize,
+				BlkSize:   attrBlkSize,
 				Padding:   dirEntInode.attr.Padding,
 			},
 		},
@@ -1085,10 +1087,10 @@ Restart:
 		EntryOut: fission.EntryOut{
 			NodeID:         oldInode.attr.Ino,
 			Generation:     0,
-			EntryValidSec:  0,
-			AttrValidSec:   0,
-			EntryValidNSec: 0,
-			AttrValidNSec:  0,
+			EntryValidSec:  entryValidSec,
+			AttrValidSec:   attrValidSec,
+			EntryValidNSec: entryValidNSec,
+			AttrValidNSec:  attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       oldInode.attr.Ino,
 				Size:      oldInode.attr.Size,
@@ -1104,7 +1106,7 @@ Restart:
 				UID:       oldInode.attr.UID,
 				GID:       oldInode.attr.GID,
 				RDev:      oldInode.attr.RDev,
-				BlkSize:   oldInode.attr.BlkSize,
+				BlkSize:   attrBlkSize,
 				Padding:   oldInode.attr.Padding,
 			},
 		},
@@ -1273,6 +1275,9 @@ Restart:
 		fileInode.attr.Size = writeOffsetPlusSize
 	}
 
+	fileInode.attr.Blocks = fileInode.attr.Size + uint64(attrBlkSize-1)
+	fileInode.attr.Blocks /= uint64(attrBlkSize)
+
 	grantedLockSet.freeAll(false)
 
 	writeOut = &fission.WriteOut{
@@ -1334,6 +1339,10 @@ Restart:
 		grantedLockSet.freeAll(false)
 		errno = syscall.EINVAL
 		return
+	}
+
+	if 0 == fileInode.attr.NLink {
+		delete(globals.inodeMap, inHeader.NodeID)
 	}
 
 	grantedLockSet.freeAll(false)
@@ -1876,6 +1885,10 @@ Restart:
 		return
 	}
 
+	if 0 == dirInode.attr.NLink {
+		delete(globals.inodeMap, inHeader.NodeID)
+	}
+
 	grantedLockSet.freeAll(false)
 
 	errno = 0
@@ -2165,10 +2178,10 @@ Restart:
 		EntryOut: fission.EntryOut{
 			NodeID:         fileInode.attr.Ino,
 			Generation:     0,
-			EntryValidSec:  0,
-			AttrValidSec:   0,
-			EntryValidNSec: 0,
-			AttrValidNSec:  0,
+			EntryValidSec:  entryValidSec,
+			AttrValidSec:   attrValidSec,
+			EntryValidNSec: entryValidNSec,
+			AttrValidNSec:  attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       fileInode.attr.Ino,
 				Size:      fileInode.attr.Size,
@@ -2184,7 +2197,7 @@ Restart:
 				UID:       fileInode.attr.UID,
 				GID:       fileInode.attr.GID,
 				RDev:      fileInode.attr.RDev,
-				BlkSize:   fileInode.attr.BlkSize,
+				BlkSize:   attrBlkSize,
 				Padding:   fileInode.attr.Padding,
 			},
 		},
@@ -2323,10 +2336,10 @@ Restart:
 			EntryOut: fission.EntryOut{
 				NodeID:         dirEntInode.attr.Ino,
 				Generation:     0,
-				EntryValidSec:  0,
-				AttrValidSec:   0,
-				EntryValidNSec: 0,
-				AttrValidNSec:  0,
+				EntryValidSec:  entryValidSec,
+				AttrValidSec:   attrValidSec,
+				EntryValidNSec: entryValidNSec,
+				AttrValidNSec:  attrValidNSec,
 				Attr: fission.Attr{
 					Ino:       dirEntInode.attr.Ino,
 					Size:      dirEntInode.attr.Size,
@@ -2342,7 +2355,7 @@ Restart:
 					UID:       dirEntInode.attr.UID,
 					GID:       dirEntInode.attr.GID,
 					RDev:      dirEntInode.attr.RDev,
-					BlkSize:   dirEntInode.attr.BlkSize,
+					BlkSize:   attrBlkSize,
 					Padding:   dirEntInode.attr.Padding,
 				},
 			},
