@@ -62,9 +62,11 @@ type completedEntry struct {
 // reading or writing on the socket.
 type connCtx struct {
 	sync.Mutex
-	conn         net.Conn
-	activeRPCsWG sync.WaitGroup // WaitGroup tracking active RPCs from this client on this connection
-	ci           *clientInfo    // Back pointer to the CI
+	conn                net.Conn
+	activeRPCsWG        sync.WaitGroup // WaitGroup tracking active RPCs from this client on this connection
+	cond                *sync.Cond     // Signal waiting goroutines that serviceClient() has exited
+	serviceClientExited bool
+	ci                  *clientInfo // Back pointer to the CI
 }
 
 // pendingCtx tracks an individual request from a client

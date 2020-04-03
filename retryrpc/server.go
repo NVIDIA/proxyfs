@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
@@ -45,6 +46,7 @@ func (server *Server) run() {
 		//
 		// Those race conditions are resolved if we serialize the recovery.
 		cCtx := &connCtx{conn: conn}
+		cCtx.cond = sync.NewCond(&cCtx.Mutex)
 		ci, err := server.getClientIDAndWait(cCtx)
 		if err != nil {
 			// Socket already had an error - just loop back
@@ -199,8 +201,15 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		server.Unlock()
 		ci = lci
 
-		// Wait for RPCs on existing connection to finish before
-		// setting backpointer in ci to the new connection.
+		// Wait for the serviceClient() goroutine from a prior connection to exit
+		// before proceeding.
+		ci.cCtx.Lock()
+		for ci.cCtx.serviceClientExited != true {
+			ci.cCtx.cond.Wait()
+		}
+		ci.cCtx.Unlock()
+
+		// Now wait for any outstanding RPCs to complete
 		ci.cCtx.activeRPCsWG.Wait()
 
 		// Set cCtx back pointer to ci
@@ -234,6 +243,10 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 
 			// Drop response on the floor.   Client will either reconnect or
 			// this response will age out of the queues.
+			cCtx.Lock()
+			cCtx.serviceClientExited = true
+			cCtx.cond.Broadcast()
+			cCtx.Unlock()
 			return
 		}
 
