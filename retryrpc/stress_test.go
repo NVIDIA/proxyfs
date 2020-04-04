@@ -18,8 +18,8 @@ func TestStress(t *testing.T) {
 
 func testLoop(t *testing.T) {
 	var (
-		agentCount = 10
-		sendCount  = 150
+		agentCount = 15
+		sendCount  = 300
 	)
 	assert := assert.New(t)
 	zero := 0
