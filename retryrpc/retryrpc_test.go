@@ -99,10 +99,6 @@ func testServer(t *testing.T) {
 
 	assert.Equal(2, rrSvr.CompletedCnt())
 
-	// TODO - TODO - TODO....
-	// Verify that the server has seen the updated
-	// highestReplySeen
-
 	// Send an RPC which should return an error
 	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
 	pingReply = &rpctest.PingReply{}

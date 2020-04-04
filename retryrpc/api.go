@@ -172,7 +172,6 @@ func (server *Server) Close() {
 // CloseClientConn - This is debug code to cause some connections to be closed
 // It is called from a stress test case to cause retransmits
 func (server *Server) CloseClientConn() {
-	logger.Infof("CloseClientConn() called --------")
 	if server == nil {
 		return
 	}

@@ -99,11 +99,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 
 	// First check if we already completed this request by looking at
 	// completed queue.
-
-	// Local copy to avoid racing retransmit threads
-	// TODO - is this still needed if we block correctly in serviceClient?
 	var localIOR ioReply
-
 	rID := jReq.RequestID
 	ce, ok := ci.completedRequest[rID]
 	if ok {
@@ -130,7 +126,6 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
 		localIOR = *ce.reply
-
 		ci.completedRequest[rID] = ce
 		setupHdrReply(ce.reply)
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
@@ -166,9 +161,6 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 //    (which could be yet another reconnect for the same client) until the
 //    previous connection has closed down.
 func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err error) {
-
-	fmt.Printf("getClientIDAndWait() - called cCtx: %v\n", cCtx)
-
 	buf, getErr := getIO(uint64(0), cCtx.conn)
 	if getErr != nil {
 		err = getErr
@@ -180,8 +172,6 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 	if err != nil {
 		return
 	}
-
-	fmt.Printf("getClientIDAndWait for clientID: %v cCtx: %v\n", connUniqueID, cCtx)
 
 	// Check if this is the first time we have seen this client
 	server.Lock()
@@ -350,7 +340,7 @@ func returnResults(ior *ioReply, cCtx *connCtx) {
 	if binErr != nil {
 		cCtx.Unlock()
 		logger.Errorf("SERVER: binary.Write failed err: %v", binErr)
-		// TODO - close cCtx.conn ?
+		// Conn will be closed when serviceClient() returns
 		return
 	}
 
@@ -360,7 +350,7 @@ func returnResults(ior *ioReply, cCtx *connCtx) {
 	if writeErr != nil {
 		logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",
 			bytesWritten, writeErr)
-		// TODO - close cCtx.conn ?
+		// Conn will be closed when serviceClient() returns
 	}
 	cCtx.Unlock()
 }
