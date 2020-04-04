@@ -221,6 +221,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 
 		// Wait reply from server
 		buf, getErr := getIO(callingGenNum, tlsConn)
+		//logger.Infof("readReplies getIO returned: %v", getErr)
 
 		// This must happen before checking error
 		client.Lock()
@@ -249,6 +250,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 // retransmit is called when a socket related error occurs on the
 // connection to the server.
 func (client *Client) retransmit(genNum uint64) {
+	//logger.Infof("RETRANSMIT CALLED!!!!")
 	client.Lock()
 
 	// Check if we are already processing the socket error via

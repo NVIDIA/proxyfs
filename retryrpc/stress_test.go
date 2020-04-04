@@ -19,7 +19,7 @@ func TestStress(t *testing.T) {
 func testLoop(t *testing.T) {
 	var (
 		agentCount = 15
-		sendCount  = 300
+		sendCount  = 250
 	)
 	assert := assert.New(t)
 	zero := 0
@@ -75,7 +75,6 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	defer agentWg.Done()
 
 	clientID := fmt.Sprintf("client - %v", agentID)
-	fmt.Printf("pfsagent() - calling NewClient - clientID: %v\n", clientID)
 	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
@@ -99,9 +98,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 			rrSvr.CloseClientConn()
 		}
 	}
-	fmt.Printf("pfsagent: %v sentCnt: %v - now wait=========\n", agentID, sendCnt)
 	sendWg.Wait()
-	fmt.Printf("pfsagent: %v COMPLETED agentWG\n", agentID)
 }
 
 // Start a bunch of "pfsagents" in parallel
@@ -114,8 +111,6 @@ func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, 
 	r := rand.New(rand.NewSource(99))
 	clientSeed := r.Uint64()
 
-	fmt.Printf("parallelAgentSenders - agentCnt: %v\n", agentCnt)
-
 	// Start parallel pfsagents - each agent doing sendCnt parallel sends
 	var agentID uint64
 	for i := 0; i < agentCnt; i++ {
@@ -125,5 +120,4 @@ func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, 
 		go pfsagent(t, rrSrv, ipAddr, port, agentID, &agentWg, sendCnt, rootCAx509CertificatePEM)
 	}
 	agentWg.Wait()
-	fmt.Printf("parallelAgentSenders() - after agentWg.Wait()-----\n")
 }

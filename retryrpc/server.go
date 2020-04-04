@@ -217,19 +217,10 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 
 // serviceClient gets called when we accept a new connection.
 func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
-	var (
-		halting bool
-	)
-
 	for {
 		// Get RPC request
 		buf, getErr := getIO(uint64(0), cCtx.conn)
 		if getErr != nil {
-			server.Lock()
-			halting = server.halting
-			server.Unlock()
-			logger.Infof("serviceClient - getIO returned err: %v - halting: %v",
-				getErr, halting)
 
 			// Drop response on the floor.   Client will either reconnect or
 			// this response will age out of the queues.
@@ -339,19 +330,15 @@ func returnResults(ior *ioReply, cCtx *connCtx) {
 	binErr := binary.Write(cCtx.conn, binary.BigEndian, ior.Hdr)
 	if binErr != nil {
 		cCtx.Unlock()
-		logger.Errorf("SERVER: binary.Write failed err: %v", binErr)
 		// Conn will be closed when serviceClient() returns
 		return
 	}
 
 	// Write JSON reply
+	//
+	// In error case - Conn will be closed when serviceClient() returns
 	cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
-	bytesWritten, writeErr := cCtx.conn.Write(ior.JResult)
-	if writeErr != nil {
-		logger.Errorf("SERVER: conn.Write failed - bytesWritten: %v err: %v",
-			bytesWritten, writeErr)
-		// Conn will be closed when serviceClient() returns
-	}
+	_, _ = cCtx.conn.Write(ior.JResult)
 	cCtx.Unlock()
 }
 
