@@ -252,8 +252,6 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	}
 }
 
-// TODO - review the locking here to make it simplier
-
 // callRPCAndMarshal calls the RPC and returns results to requestor
 func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior *ioReply) {
 	var (

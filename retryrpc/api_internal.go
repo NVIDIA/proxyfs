@@ -208,7 +208,6 @@ func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
 
 	conn.SetDeadline(time.Now().Add(deadlineIO))
 	err = binary.Read(conn, binary.BigEndian, &hdr)
-	//fmt.Printf("binary.Read() returned err: %v\n", err)
 	if err != nil {
 		return
 	}
