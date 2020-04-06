@@ -332,7 +332,7 @@ func setup() {
 
 	globals.noAuthIPAddr, err = confMap.FetchOptionValueString("SwiftClient", "NoAuthIPAddr")
 	if nil != err {
-		log.Fatal(err)
+		globals.noAuthIPAddr = "127.0.0.1" // TODO: Eventually just return
 	}
 	globals.noAuthTCPPort, err = confMap.FetchOptionValueUint16("SwiftClient", "NoAuthTCPPort")
 	if nil != err {
