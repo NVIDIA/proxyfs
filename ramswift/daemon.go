@@ -1185,7 +1185,7 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 							if wasCreated {
 								responseWriter.WriteHeader(http.StatusCreated)
 							} else {
-								responseWriter.WriteHeader(http.StatusAccepted)
+								responseWriter.WriteHeader(http.StatusCreated)
 							}
 						case unix.ENOENT:
 							responseWriter.WriteHeader(http.StatusForbidden)
