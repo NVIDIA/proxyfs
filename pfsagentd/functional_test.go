@@ -340,7 +340,7 @@ func TestRandomOverwrites(t *testing.T) {
 		totalBytes   int64 = 1000
 		minWriteSize int64 = 1
 		maxWriteSize int64 = 10
-		numWrites    int64 = 100000
+		numWrites    int64 = 10000
 		randSeed     int64 = 0x0123456789ABCDEF
 	)
 	var (
