@@ -11,9 +11,20 @@ participant notifyReply
 participant readReplies
 end box
 box Server
+participant run
 participant serviceClient
 participant processRequest
 end box
+
+Send -> run:dial() server
+run -> run:Accept connection
+run -> run:Wait for uniqueID on socket
+Send -> run:Send uniqueID on socket
+Send -> readReplies:Start readReplies goroutine
+
+run -> run:Read uniqueID of new client
+run -> run:Call getClientIDAndWait()\nif new uniqueID create entry in perClientInfo\notherwise drain RPCs on old connection
+run -> serviceClient:Start serviceClient goroutine for new client connection
 
 Send -> sendToServer:Pkg request, assign\nrequestID goroutine to send.\nWait on channel for\nresponse
 
