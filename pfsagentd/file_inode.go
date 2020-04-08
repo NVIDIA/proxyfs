@@ -315,7 +315,7 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 
 	chunkedPutContext.pos = 0
 
-	_, _, ok, statusCode = doHTTPRequest(chunkedPutRequest, http.StatusOK, http.StatusCreated)
+	_, _, ok, statusCode = doHTTPRequest(chunkedPutRequest, http.StatusCreated)
 	if !ok {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() failed with unexpected statusCode: %v", statusCode)
 	}
