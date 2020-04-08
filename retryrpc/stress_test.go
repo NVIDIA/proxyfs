@@ -75,7 +75,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	defer agentWg.Done()
 
 	clientID := fmt.Sprintf("client - %v", agentID)
-	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM)
+	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM, nil)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
 		return
