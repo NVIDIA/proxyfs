@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -74,8 +75,8 @@ func testSetup(t *testing.T) {
 		"Agent.SwiftAuthKey=testing",
 		"Agent.SwiftAccountName=AUTH_test",
 		"Agent.SwiftTimeout=20s",
-		"Agent.SwiftRetryLimit=2",
-		"Agent.SwiftRetryDelay=1s",
+		"Agent.SwiftRetryLimit=10",
+		"Agent.SwiftRetryDelay=10ms",
 		"Agent.SwiftRetryDelayVariance=25",
 		"Agent.SwiftRetryExpBackoff=1.4",
 		"Agent.SwiftConnectionPoolSize=200",
@@ -268,9 +269,23 @@ func testSetup(t *testing.T) {
 
 	initializeGlobals(testConfMap)
 
+	go testSwallowFissionErrChan(t, globals.fissionErrChan)
+
 	doMountProxyFS()
 
 	performMountFUSE()
+}
+
+func testSwallowFissionErrChan(t *testing.T, fissionErrChan chan error) {
+	var (
+		err error
+	)
+
+	err = <-fissionErrChan
+	if nil != err {
+		fmt.Printf("UNDO: fissionErrChan received err: %v\n", err)
+		t.Fatalf("fissionErrChan received err: %v", err)
+	}
 }
 
 func testTeardown(t *testing.T) {

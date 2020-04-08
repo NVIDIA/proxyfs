@@ -1350,6 +1350,7 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 		logSegmentEnd                           uint64
 		logSegmentStart                         uint64
 		ok                                      bool
+		statusCode                              int
 		url                                     string
 	)
 
@@ -1447,7 +1448,10 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	logSegmentCacheElementGetStartTime = time.Now()
 
-	_, logSegmentCacheElement.buf, ok, _ = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
+	_, logSegmentCacheElement.buf, ok, statusCode = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
+	if !ok {
+		logFatalf("fetchLogSegmentCacheLine() failed with unexpected statusCode: %v", statusCode)
+	}
 
 	logSegmentCacheElementGetEndime = time.Now()
 
