@@ -8,8 +8,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/swiftstack/ProxyFS/proxyfsd"
 	"golang.org/x/sys/unix"
+
+	"github.com/swiftstack/ProxyFS/proxyfsd"
 )
 
 func main() {

@@ -80,13 +80,13 @@ func main() {
 
 	performUnmountFUSE()
 
-	// Perform unmount via ProxyFS
-
-	doUnmountProxyFS()
-
 	// Flush all dirty fileInode's
 
 	emptyFileInodeDirtyList()
+
+	// Perform unmount via ProxyFS
+
+	doUnmountProxyFS()
 
 	// Uninitialize globals
 
