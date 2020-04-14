@@ -281,6 +281,8 @@ func testTeardown(t *testing.T) {
 
 	performUnmountFUSE()
 
+	emptyFileInodeDirtyList()
+
 	doUnmountProxyFS()
 
 	uninitializeGlobals()
