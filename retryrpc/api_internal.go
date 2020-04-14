@@ -33,8 +33,10 @@ const (
 
 const (
 	currentRetryVersion = 1
-	deadlineIO          = 60 * time.Second // How long to wait on socket for an I/O
-	// TODO - 60 second timeout on deadline should be a tunable...
+
+	// TODO - deadlineIO and keepAlivePeriod should be tunables
+	deadlineIO      = 60 * time.Second // How long to wait on socket for an I/O
+	keepAlivePeriod = 20 * time.Second // How often to send KEEPALIVE
 )
 
 type requestID uint64
@@ -228,6 +230,7 @@ func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
 	conn.SetDeadline(time.Now().Add(deadlineIO))
 	numBytes, err = io.ReadFull(conn, buf)
 	if err != nil {
+		err = fmt.Errorf("Incomplete read of body")
 		return
 	}
 
