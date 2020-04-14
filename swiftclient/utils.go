@@ -13,6 +13,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 const swiftVersion = "v1"
@@ -544,7 +545,7 @@ func writeHTTPRequestLineAndHeaders(tcpConn *net.TCPConn, method string, path st
 	_, _ = bytesBuffer.WriteString(method + " " + path + " HTTP/1.1\r\n")
 
 	_, _ = bytesBuffer.WriteString("Host: " + globals.noAuthStringAddr + "\r\n")
-	_, _ = bytesBuffer.WriteString("User-Agent: ProxyFS\r\n")
+	_, _ = bytesBuffer.WriteString("User-Agent: ProxyFS " + version.ProxyFSVersion + "\r\n")
 
 	for headerName, headerValues = range headers {
 		_, _ = bytesBuffer.WriteString(headerName + ": ")

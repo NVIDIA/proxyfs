@@ -12,6 +12,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/retryrpc"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 func doMountProxyFS() {
@@ -116,6 +117,8 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.HTTPRequests, 1)
+
+	request.Header["User-Agent"] = []string{"PFSAgent " + version.ProxyFSVersion}
 
 	okStatusCodesSet = make(map[int]struct{})
 	for _, okStatusCode = range okStatusCodes {
