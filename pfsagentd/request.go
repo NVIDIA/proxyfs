@@ -252,6 +252,8 @@ func updateAuthTokenAndAccountURL() {
 	getRequest.Header.Add("X-Auth-User", globals.config.SwiftAuthUser)
 	getRequest.Header.Add("X-Auth-Key", globals.config.SwiftAuthKey)
 
+	getRequest.Header.Add("User-Agent", "PFSAgent "+version.ProxyFSVersion)
+
 	getResponse, err = globals.httpClient.Do(getRequest)
 	if nil != err {
 		logErrorf("updateAuthTokenAndAccountURL() failed to submit request: %v", err)
