@@ -56,17 +56,25 @@ func (testLocksChild *testLocksChildStruct) launch() {
 		grantedLock = testLocksChild.fileInode.getSharedLock()
 	}
 
-	testLocksChild.getDone.Done()
-
 	testLocksChild.locked = true
+	testLocksChild.getDone.Done()
 
 	testLocksChild.releaseDo.Wait()
 
 	grantedLock.release()
 
 	testLocksChild.locked = false
-
 	testLocksChild.releaseDone.Done()
+}
+
+// Simulate another thread holding lock so that we block
+// an exclusive or shared request
+func (testLocksChild *testLocksChildStruct) sleepAndRelease() {
+	// Simulate lock being held for a while
+	time.Sleep(time.Millisecond * 100)
+
+	// Signal blocked launch() to release the lock
+	testLocksChild.releaseDo.Done()
 }
 
 func TestLocks(t *testing.T) {
@@ -135,138 +143,63 @@ func TestLocks(t *testing.T) {
 	testLocksChildShared5 = testFileInode.testLocksChildStructCreate(false)
 	testLocksChildShared7 = testFileInode.testLocksChildStructCreate(false)
 
+	// Setup two goroutines to have SHARED access to file
 	go testLocksChildShared1.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
+	testLocksChildShared1.getDone.Wait()
 	if !testLocksChildShared1.locked {
 		t.Fatalf("testLocksChildShared1.locked should have been true")
 	}
-	testLocksChildShared1.getDone.Wait()
 
 	go testLocksChildShared2.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
+	testLocksChildShared2.getDone.Wait()
 	if !testLocksChildShared2.locked {
 		t.Fatalf("testLocksChildShared2.locked should have been true")
 	}
-	testLocksChildShared2.getDone.Wait()
 
+	// One goroutine wants EXLUSIVE access to the file
+	//
+	// Test that two goroutines with SHARED access can release the file
 	go testLocksChildExclusive3.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
-	}
-
-	go testLocksChildExclusive4.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
-	}
-
-	go testLocksChildShared5.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
-	}
-
-	go testLocksChildExclusive6.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
-	}
-
-	go testLocksChildShared7.launch()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
-	}
-
-	testLocksChildShared1.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared1.locked {
-		t.Fatalf("testLocksChildShared1.locked should have been false")
-	}
-	testLocksChildShared1.releaseDone.Wait()
-
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
-	}
-
-	testLocksChildShared2.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared2.locked {
-		t.Fatalf("testLocksChildShared2.locked should have been false")
-	}
-	testLocksChildShared2.releaseDone.Wait()
-
+	go testLocksChildShared1.sleepAndRelease()
+	go testLocksChildShared2.sleepAndRelease()
+	testLocksChildExclusive3.getDone.Wait()
 	if !testLocksChildExclusive3.locked {
 		t.Fatalf("testLocksChildExclusive3.locked should have been true")
 	}
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
-	}
 
-	testLocksChildExclusive3.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
-	}
-	testLocksChildExclusive3.releaseDone.Wait()
-
+	// Now test that another goroutine can grab the file EXCLUSIVE
+	go testLocksChildExclusive4.launch()
+	go testLocksChildExclusive3.sleepAndRelease()
+	testLocksChildExclusive4.getDone.Wait()
 	if !testLocksChildExclusive4.locked {
 		t.Fatalf("testLocksChildExclusive4.locked should have been true")
 	}
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
-	}
 
-	testLocksChildExclusive4.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
-	}
-	testLocksChildExclusive4.releaseDone.Wait()
-
+	// Test that file can transition from EXCLUSIVE to SHARED
+	go testLocksChildShared5.launch()
+	go testLocksChildExclusive4.sleepAndRelease()
+	testLocksChildShared5.getDone.Wait()
 	if !testLocksChildShared5.locked {
 		t.Fatalf("testLocksChildShared5.locked should have been true")
 	}
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
-	}
 
-	testLocksChildShared5.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
-	}
-	testLocksChildShared5.releaseDone.Wait()
-
+	// Test that file can transition from SHARED to EXCLUSIVE
+	go testLocksChildExclusive6.launch()
+	go testLocksChildShared5.sleepAndRelease()
+	testLocksChildExclusive6.getDone.Wait()
 	if !testLocksChildExclusive6.locked {
 		t.Fatalf("testLocksChildExclusive6.locked should have been true")
 	}
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
-	}
 
-	testLocksChildExclusive6.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
-	}
-	testLocksChildExclusive6.releaseDone.Wait()
-
+	// Test the file can transition from EXCLUSIVE to SHARED
+	go testLocksChildShared7.launch()
+	go testLocksChildExclusive6.sleepAndRelease()
+	testLocksChildShared7.getDone.Wait()
 	if !testLocksChildShared7.locked {
 		t.Fatalf("testLocksChildShared7.locked should have been true")
 	}
 
 	testLocksChildShared7.releaseDo.Done()
-	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
-	}
-	testLocksChildShared7.releaseDone.Wait()
-
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
-	}
 
 	testFileInode.dereference()
 
