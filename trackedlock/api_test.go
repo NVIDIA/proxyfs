@@ -31,6 +31,9 @@ var (
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 	}
 
 	// matches: "trackedlock watcher: *trackedlock.Mutex at 0xc420110000 locked for 2.003s sec rank 0; stack at call to Lock():\ngoroutine 19 [running]:..."
