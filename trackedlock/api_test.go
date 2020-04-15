@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -86,7 +87,7 @@ func TestAPI(t *testing.T) {
 	}
 
 	// validate packge config variables
-	if globals.lockHoldTimeLimit != 2*time.Second {
+	if time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) != 2*time.Second {
 		t.Fatalf("after Up() globals.lockHoldTimeLimi != 2 sec")
 	}
 
@@ -428,10 +429,10 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 		t.Fatalf("time.ParseDuration(%s) failed: %v", lockCheckPeriod, err)
 	}
 
-	if globals.lockHoldTimeLimit != limit || globals.lockCheckPeriod != period {
+	if time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) != limit || time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)) != period {
 		t.Fatalf("lockHoldTimeLimit=%d is not %s or lockCheckPeriod=%d is not %s",
-			globals.lockHoldTimeLimit, lockHoldTimeLimit,
-			globals.lockCheckPeriod, lockCheckPeriod)
+			time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)), lockHoldTimeLimit,
+			time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)), lockCheckPeriod)
 	}
 }
 
