@@ -3,6 +3,7 @@ package trackedlock
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/logger"
@@ -13,8 +14,8 @@ type globalsStruct struct {
 	mapMutex               sync.Mutex                    // protects mutexMap and rwMutexMap
 	mutexMap               map[*MutexTrack]interface{}   // the Mutex like locks  being watched
 	rwMutexMap             map[*RWMutexTrack]interface{} // the RWMutex like locks being watched
-	lockHoldTimeLimit      time.Duration                 // locks held longer then this get logged
-	lockCheckPeriod        time.Duration                 // check locks once each period
+	lockHoldTimeLimit      int64                         // locks held longer then this get logged (time.Duration)
+	lockCheckPeriod        int64                         // check locks once each period (time.Duration)
 	lockWatcherLocksLogged int                           // max overlimit locks logged by lockWatcher()
 	lockCheckChan          <-chan time.Time              // wait here to check on locks
 	stopChan               chan struct{}                 // time to shutdown and go home
@@ -79,7 +80,7 @@ func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 	// the last locked time.  (Recording the current time using time.Now()
 	// is too expensive, but we don't want this lock marked as held too long
 	// if lock tracking is enabled while its locked.)
-	if globals.lockHoldTimeLimit == 0 {
+	if atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 		mt.lockTime = timeZero
 		mt.lockCnt = -1
 		return
@@ -97,7 +98,7 @@ func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 	// add to the list of watched mutexes if anybody is watching -- its only
 	// at this point that we need to know if this a Mutex or RWMutex, and it
 	// only happens when not currently watched
-	if !mt.isWatched && globals.lockCheckPeriod != 0 {
+	if !mt.isWatched && atomic.LoadInt64(&globals.lockCheckPeriod) != 0 {
 		globals.mapMutex.Lock()
 
 		if rwmt != nil {
@@ -118,9 +119,9 @@ func (mt *MutexTrack) unlockTrack(wrappedLock interface{}) {
 
 	// if we're checking the lock hold time and the locking time is recorded
 	// then check it
-	if globals.lockHoldTimeLimit != 0 && !mt.lockTime.IsZero() {
+	if atomic.LoadInt64(&globals.lockHoldTimeLimit) != 0 && !mt.lockTime.IsZero() {
 		now := time.Now()
-		if now.Sub(mt.lockTime) >= globals.lockHoldTimeLimit {
+		if now.Sub(mt.lockTime) >= time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) {
 
 			var buf stackTraceBuf
 			unlockStackTrace := buf[:]
@@ -167,7 +168,7 @@ func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 	// the last locked time.  (Recording the current time using time.Now()
 	// is too expensive, but we don't want this lock marked as held too long
 	// if lock tracking is enabled while its locked.)
-	if globals.lockHoldTimeLimit == 0 {
+	if atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 		rwmt.sharedStateLock.Lock()
 		rwmt.tracker.lockCnt += 1
 		rwmt.tracker.lockTime = timeZero
@@ -200,7 +201,7 @@ func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 	rwmt.tracker.lockCnt += 1
 
 	// add to the list of watched mutexes if anybody is watching
-	if !rwmt.tracker.isWatched && globals.lockCheckPeriod != 0 {
+	if !rwmt.tracker.isWatched && atomic.LoadInt64(&globals.lockCheckPeriod) != 0 {
 
 		globals.mapMutex.Lock()
 		globals.rwMutexMap[rwmt] = wrappedLock
@@ -214,7 +215,7 @@ func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 
 func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 
-	if globals.lockHoldTimeLimit == 0 {
+	if atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 		rwmt.sharedStateLock.Lock()
 
 		// since lock hold time is not being checked, discard any info
@@ -257,7 +258,7 @@ func (rwmt *RWMutexTrack) rUnlockTrack(wrappedLock interface{}) {
 	now := time.Now()
 	rwmt.sharedStateLock.Lock()
 	rLockTime, ok := rwmt.rLockTime[goId]
-	if ok && now.Sub(rLockTime) >= globals.lockHoldTimeLimit {
+	if ok && now.Sub(rLockTime) >= time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) {
 
 		var buf stackTraceBuf
 		stackTrace := buf[:]
@@ -356,9 +357,9 @@ func lockWatcher() {
 		// globals.lockCheckPeriod could be 0).
 		var (
 			longLockHolders = make([]*longLockHolder, 0)
-			longestDuration = globals.lockHoldTimeLimit
+			longestDuration = time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit))
 		)
-		if globals.lockHoldTimeLimit == 0 {
+		if atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 			// ignore locks held less than 10 years
 			longestDuration, _ = time.ParseDuration("24h")
 			longestDuration *= 365 * 10
@@ -385,7 +386,7 @@ func lockWatcher() {
 			// will continue to be valid until the next iteration.
 			if mt.lockCnt == 0 {
 				lastLocked := now.Sub(mt.lockTime)
-				if lastLocked >= globals.lockCheckPeriod {
+				if lastLocked >= time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)) {
 					mt.isWatched = false
 					delete(globals.mutexMap, mt)
 				}
@@ -445,7 +446,7 @@ func lockWatcher() {
 			// drop it from the locks being watched.
 			if rwmt.tracker.lockCnt == 0 {
 				lastLocked := now.Sub(rwmt.tracker.lockTime)
-				if lastLocked >= globals.lockCheckPeriod {
+				if lastLocked >= time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)) {
 					rwmt.tracker.isWatched = false
 					delete(globals.rwMutexMap, rwmt)
 				}
