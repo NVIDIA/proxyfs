@@ -23,9 +23,9 @@ type globalsStruct struct {
 	dlmRWLockType          interface{}                   // set by a callback from the DLM code
 	lockWatcherLocksLogged int                           // max overlimit locks logged by lockWatcher()
 	lockHoldTimeLimit      int64                         // locks held longer then lockHoldTimeLimit
-	// get logged; lockHoldTimeLimit is really a time.Duration but the locking and
-	// unlocking routines need to fetch it atomically so it must be an int64
-	lockCheckPeriod time.Duration // check locks once each period
+	// get logged (in nsec); lockHoldTimeLimit is really a time.Duration but the
+	// and locking unlocking routines need to fetch it atomically so it must be an int64
+	lockCheckPeriod int64 // check locks once each period (in nsec)
 }
 
 var globals globalsStruct
@@ -103,7 +103,7 @@ func (mt *MutexTrack) lockTrack(wrappedLock interface{}, rwmt *RWMutexTrack) {
 	// add to the list of watched mutexes if anybody is watching -- its only
 	// at this point that we need to know if this a Mutex or RWMutex, and it
 	// only happens when not currently watched
-	if !mt.isWatched && globals.lockCheckPeriod != 0 {
+	if !mt.isWatched && atomic.LoadInt64(&globals.lockCheckPeriod) != 0 {
 		globals.mapMutex.Lock()
 
 		if rwmt != nil {
@@ -211,7 +211,7 @@ func (rwmt *RWMutexTrack) rLockTrack(wrappedLock interface{}) {
 	atomic.StoreInt32(&rwmt.tracker.lockCnt, lockCnt)
 
 	// add to the list of watched mutexes if anybody is watching
-	if !rwmt.tracker.isWatched && globals.lockCheckPeriod != 0 {
+	if !rwmt.tracker.isWatched && atomic.LoadInt64(&globals.lockCheckPeriod) != 0 {
 
 		globals.mapMutex.Lock()
 		globals.rwMutexMap[rwmt] = wrappedLock
@@ -407,7 +407,7 @@ func lockWatcher() {
 			lockCnt := atomic.LoadInt32(&mt.lockCnt)
 			if lockCnt == 0 {
 				lastLocked := now.Sub(mt.lockTime)
-				if lastLocked >= globals.lockCheckPeriod {
+				if lastLocked.Nanoseconds() >= atomic.LoadInt64(&globals.lockCheckPeriod) {
 					mt.isWatched = false
 					delete(globals.mutexMap, mt)
 				}
@@ -468,7 +468,7 @@ func lockWatcher() {
 			lockCnt := atomic.LoadInt32(&rwmt.tracker.lockCnt)
 			if lockCnt == 0 {
 				lastLocked := now.Sub(rwmt.tracker.lockTime)
-				if lastLocked >= globals.lockCheckPeriod {
+				if lastLocked.Nanoseconds() >= atomic.LoadInt64(&globals.lockCheckPeriod) {
 					rwmt.tracker.isWatched = false
 					delete(globals.rwMutexMap, rwmt)
 				}

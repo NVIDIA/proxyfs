@@ -434,7 +434,7 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 		t.Fatalf("time.ParseDuration(%s) failed: %v", lockCheckPeriod, err)
 	}
 
-	if time.Duration(globals.lockHoldTimeLimit) != limit || globals.lockCheckPeriod != period {
+	if time.Duration(globals.lockHoldTimeLimit) != limit || time.Duration(globals.lockCheckPeriod) != period {
 		t.Fatalf("lockHoldTimeLimit=%d is not %s or lockCheckPeriod=%d is not %s",
 			globals.lockHoldTimeLimit, lockHoldTimeLimit,
 			globals.lockCheckPeriod, lockCheckPeriod)
