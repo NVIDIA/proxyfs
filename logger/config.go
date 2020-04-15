@@ -65,6 +65,9 @@ func addLogTarget(writer io.Writer) {
 // capturing the output logged by other packages for testing in test cases.
 //
 func (log LogTarget) write(p []byte) (n int, err error) {
+	log.LogBuf.Lock()
+	defer log.LogBuf.Unlock()
+
 	for i := len(log.LogBuf.LogEntries) - 1; i > 0; i-- {
 		log.LogBuf.LogEntries[i] = log.LogBuf.LogEntries[i-1]
 	}
@@ -208,7 +211,12 @@ func parseLogEntry(entry string) (fields map[string]string) {
 //
 // watcherLogMatch = `^trackedlock watcher: (?P<type>[*a-zA-Z0-9_.]+) at (?P<ptr>0x[0-9a-f]+) locked for (?P<time>\d+) sec; stack at (?P<locker>[a-zA-Z0-9_()]+) call:\\n(?P<lockStack>.*)$`
 //
-func parseLogForFunc(logcopy LogTarget, funcName string, logEntryRE *regexp.Regexp, maxEntries int) (fields map[string]string, entryIdx int, err error) {
+func parseLogForFunc(logcopy LogTarget, funcName string, logEntryRE *regexp.Regexp, maxEntries int) (
+	fields map[string]string, entryIdx int, err error) {
+
+	logcopy.LogBuf.Lock()
+	defer logcopy.LogBuf.Unlock()
+
 	if logcopy.LogBuf.TotalEntries < 1 {
 		err = fmt.Errorf("parseLogForFunc(): no log entries")
 		return

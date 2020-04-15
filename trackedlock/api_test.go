@@ -86,7 +86,7 @@ func TestAPI(t *testing.T) {
 	}
 
 	// validate packge config variables
-	if globals.lockHoldTimeLimit != 2*time.Second {
+	if time.Duration(globals.lockHoldTimeLimit) != 2*time.Second {
 		t.Fatalf("after Up() globals.lockHoldTimeLimi != 2 sec")
 	}
 
@@ -209,6 +209,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 	// release testMutex1 and look for the unlock message
 	testMutex1.Unlock()
 	sleep(0.1)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "unlockTrack", unlockLogRE, 3)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for Mutex Unlock(): %s", err.Error())
@@ -225,6 +226,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 	// after releasing testsMutex1 and waiting for the lockwatcher, it
 	// should now identify testMutex2 as the longest held mutex
 	sleep(1)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "lockWatcher", watcherRank0LogRE, 10)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for lockWatcher for testMutex2 at %p: %s",
@@ -243,6 +245,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 	// RWMutex (in shared mode)
 	testMutex2.Unlock()
 	sleep(1.1)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "lockWatcher", watcherRank0LogRE, 3)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for lockWatcher for testRWMutex1: %s", err.Error())
@@ -264,6 +267,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 	// release testRWMutex1 and look for the log message about it
 	testRWMutex1.RUnlock()
 	sleep(0.1)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "rUnlockTrack", rUnlockLogRE, 3)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for testRWMutex1.RUnlock(): %s", err.Error())
@@ -279,6 +283,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 
 	// look for testRWMutex2 as the longest held RWMutex
 	sleep(1.0)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "lockWatcher", watcherRank0LogRE, 3)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for lockWatcher for testRWMutex2: %s", err.Error())
@@ -300,6 +305,7 @@ func testMutexes(t *testing.T, logcopy logger.LogTarget, confMap conf.ConfMap) {
 	// release testRWMutex2 and look for the log message about it
 	testRWMutex2.Unlock()
 	sleep(0.1)
+
 	fields, _, err = logger.ParseLogForFunc(logcopy, "unlockTrack", unlockLogRE, 3)
 	if err != nil {
 		t.Errorf("testMutex: could not find log entry for testRWMutex2.Unlock(): %s", err.Error())
@@ -428,7 +434,7 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 		t.Fatalf("time.ParseDuration(%s) failed: %v", lockCheckPeriod, err)
 	}
 
-	if globals.lockHoldTimeLimit != limit || globals.lockCheckPeriod != period {
+	if time.Duration(globals.lockHoldTimeLimit) != limit || globals.lockCheckPeriod != period {
 		t.Fatalf("lockHoldTimeLimit=%d is not %s or lockCheckPeriod=%d is not %s",
 			globals.lockHoldTimeLimit, lockHoldTimeLimit,
 			globals.lockCheckPeriod, lockCheckPeriod)
@@ -461,19 +467,29 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 //
 func TestReload(t *testing.T) {
 
+	// bring the package up using the default config
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Startup packages involved
+	err = logger.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = globals.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("Up() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	// get a copy of what's written to the log
 	var logcopy logger.LogTarget
 	logcopy.Init(256)
 	logger.AddLogTarget(logcopy)
-
-	var err error
-
-	// bring the package up using the default config
-	confMap, _ := conf.MakeConfMapFromStrings(confStrings)
-	err = globals.Up(confMap)
-	if err != nil {
-		t.Fatalf("Up() failed: %v", err)
-	}
 
 	// transition to step 0: lock tracking disabled; watching disabled
 	updateTrackingState(t, "0s", "0s")

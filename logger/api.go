@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -838,6 +839,7 @@ func AddLogTarget(writer io.Writer) {
 type LogBuffer struct {
 	LogEntries   []string // most recent log entry is [0]
 	TotalEntries int      // count of all entries seen
+	sync.Mutex
 }
 
 type LogTarget struct {

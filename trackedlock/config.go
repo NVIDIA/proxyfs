@@ -1,6 +1,7 @@
 package trackedlock
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -10,17 +11,18 @@ import (
 
 func parseConfMap(confMap conf.ConfMap) (err error) {
 
-	globals.lockHoldTimeLimit, err = confMap.FetchOptionValueDuration("TrackedLock", "LockHoldTimeLimit")
+	lockHoldTimeLimit, err := confMap.FetchOptionValueDuration("TrackedLock", "LockHoldTimeLimit")
 	if err != nil {
 		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' defaulting to '0s': %v", err)
-		globals.lockHoldTimeLimit = time.Duration(0 * time.Second)
+		lockHoldTimeLimit = time.Duration(0 * time.Second)
 	}
 
 	// lockHoldTimeLimit must be >= 1 sec or 0
-	if globals.lockHoldTimeLimit < time.Second && globals.lockHoldTimeLimit != 0 {
+	if lockHoldTimeLimit < time.Second && lockHoldTimeLimit != 0 {
 		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' value less then 1 sec; defaulting to '40s'")
-		globals.lockHoldTimeLimit = time.Duration(40 * time.Second)
+		lockHoldTimeLimit = time.Duration(40 * time.Second)
 	}
+	atomic.StoreInt64(&globals.lockHoldTimeLimit, lockHoldTimeLimit.Nanoseconds())
 
 	globals.lockCheckPeriod, err = confMap.FetchOptionValueDuration("TrackedLock", "LockCheckPeriod")
 	if err != nil {
@@ -42,7 +44,7 @@ func parseConfMap(confMap conf.ConfMap) (err error) {
 	}
 
 	logger.Infof("trackedlock pkg: LockHoldTimeLimit %d sec  LockCheckPeriod %d sec",
-		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
+		lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
 
 	// log information upto 16 locks
 	globals.lockWatcherLocksLogged = 16
@@ -109,7 +111,7 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 	// read the new confmap; if the log period has changed or there was an
 	// error shutdown the old logger prior to starting a new one
 	oldCheckPeriod := globals.lockCheckPeriod
-	oldTimeLimit := globals.lockHoldTimeLimit
+	oldTimeLimit := time.Duration(globals.lockHoldTimeLimit)
 	err = parseConfMap(confMap)
 	if err != nil {
 		logger.ErrorWithError(err, "cannot parse confMap")
@@ -121,13 +123,13 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 	}
 
 	// if no change required, just return
-	if globals.lockCheckPeriod == oldCheckPeriod && globals.lockHoldTimeLimit == oldTimeLimit {
+	if globals.lockCheckPeriod == oldCheckPeriod && globals.lockHoldTimeLimit == oldTimeLimit.Nanoseconds() {
 		return
 	}
 
 	logger.Infof("trackedlock pkg: LockHoldTimeLimit / LockCheckPeriod changed from %d/%d sec to %d/%d sec",
 		oldTimeLimit/time.Second, oldCheckPeriod/time.Second,
-		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
+		globals.lockHoldTimeLimit/time.Second.Nanoseconds(), globals.lockCheckPeriod/time.Second)
 
 	// shutdown the old watcher (if any) and start a new one (if any)
 	if oldCheckPeriod != 0 {

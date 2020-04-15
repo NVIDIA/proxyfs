@@ -3,6 +3,7 @@ package trackedlock
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/swiftstack/ProxyFS/logger"
 )
@@ -122,16 +123,15 @@ func (rwmt *RWMutexTrack) RUnlockTrack(lck interface{}) {
 func (rwmt *RWMutexTrack) DLMUnlockTrack(lck interface{}) {
 	// This uses m.tracker.lockCnt without holding the mutex that protects it.
 	// Because this goroutine holds the lock, it cannot change from -1 to 0
-	// or >0 to 0 (unless there's a bug where another goroutine releases the
-	// lock).  It can change from, say, 1 to 2 or 4 to 3, but that's benign
-	// (let's hope the race detector doesn't complain).
+	// or >0 to 0.  It can change from, say, 1 to 2 or 4 to 3, but that's benign.
+	lockCnt := atomic.LoadInt32(&rwmt.tracker.lockCnt)
 	switch {
-	case rwmt.tracker.lockCnt == -1:
+	case lockCnt == -1:
 		rwmt.unlockTrack(lck)
-	case rwmt.tracker.lockCnt > 0:
+	case lockCnt > 0:
 		rwmt.rUnlockTrack(lck)
 	default:
-		errstring := fmt.Errorf("tracker for RWMutexTrack has illegal lockCnt %d", rwmt.tracker.lockCnt)
+		errstring := fmt.Errorf("tracker for RWMutexTrack has illegal lockCnt %d", lockCnt)
 		logger.PanicfWithError(errstring, "%T lock at %p: %+v", lck, lck, lck)
 	}
 	return
