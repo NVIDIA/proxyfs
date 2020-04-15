@@ -465,19 +465,29 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 //
 func TestReload(t *testing.T) {
 
+	// bring the package up using the default config
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Startup packages involved
+	err = logger.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = globals.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("Up() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	// get a copy of what's written to the log
 	var logcopy logger.LogTarget
 	logcopy.Init(256)
 	logger.AddLogTarget(logcopy)
-
-	var err error
-
-	// bring the package up using the default config
-	confMap, _ := conf.MakeConfMapFromStrings(confStrings)
-	err = globals.Up(confMap)
-	if err != nil {
-		t.Fatalf("Up() failed: %v", err)
-	}
 
 	// transition to step 0: lock tracking disabled; watching disabled
 	updateTrackingState(t, "0s", "0s")
