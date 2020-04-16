@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
+	"os"
 	"time"
 
 	"github.com/google/btree"
@@ -216,6 +218,7 @@ func (client *Client) notifyReply(buf []byte, genNum uint64) {
 // the response and notify the blocked Send().
 func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 	defer client.goroutineWG.Done()
+	var localCnt int
 
 	for {
 
@@ -228,12 +231,22 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 			client.Unlock()
 			return
 		}
+		localCnt = len(client.outstandingRequest)
 		client.Unlock()
 
+		// Ignore timeouts on idle connections while reading header
+		//
+		// We consider a connection to be idle if we have no outstanding requests when
+		// we get the timeout.   Otherwise, we call retransmit.
+		if os.IsTimeout(getErr) == true && localCnt == 0 {
+			continue
+		}
+
 		if getErr != nil {
+
 			// If we had an error reading socket - call retransmit() and exit
-			// the goroutine.  retransmit()/dial() will have already
-			// started another readReplies() goroutine.
+			// the goroutine.  retransmit()/dial() will start another
+			// readReplies() goroutine.
 			client.retransmit(callingGenNum)
 			return
 		}
@@ -351,7 +364,8 @@ func (client *Client) dial() (err error) {
 	}
 
 	// Now dial the server
-	tlsConn, dialErr := tls.Dial("tcp", client.connection.hostPortStr, client.connection.tlsConfig)
+	d := &net.Dialer{KeepAlive: keepAlivePeriod}
+	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 	if dialErr != nil {
 		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
 		return
