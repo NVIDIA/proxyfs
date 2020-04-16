@@ -2,6 +2,7 @@ package inode
 
 import (
 	"fmt"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -69,7 +70,9 @@ type volumeStruct struct {
 	defaultPhysicalContainerLayout *physicalContainerLayoutStruct
 	maxFlushSize                   uint64
 	headhunterVolumeHandle         headhunter.VolumeHandle
-	inodeCache                     sortedmap.LLRBTree //                        key == InodeNumber; value == *inMemoryInodeStruct
+	inodeCache                     sortedmap.LLRBTree //          key == InodeNumber; value == *inMemoryInodeStruct
+	inodeCacheStopChan             chan struct{}
+	inodeCacheWG                   sync.WaitGroup
 	inodeCacheLRUHead              *inMemoryInodeStruct
 	inodeCacheLRUTail              *inMemoryInodeStruct
 	inodeCacheLRUItems             uint64
@@ -605,6 +608,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.headhunterVolumeHandle.RegisterForEvents(volume)
 
 	volume.inodeCache = sortedmap.NewLLRBTree(compareInodeNumber, volume)
+	volume.inodeCacheStopChan = make(chan struct{}, 0)
 	volume.inodeCacheLRUHead = nil
 	volume.inodeCacheLRUTail = nil
 	volume.inodeCacheLRUItems = 0
@@ -652,6 +656,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	stopInodeCacheDiscard(volume)
 
 	volume.inodeCache = nil
+	volume.inodeCacheStopChan = nil
 	volume.inodeCacheLRUHead = nil
 	volume.inodeCacheLRUTail = nil
 	volume.inodeCacheLRUItems = 0
