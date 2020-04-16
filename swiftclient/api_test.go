@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -137,8 +138,8 @@ func TestAPI(t *testing.T) {
 	}
 
 	// additional error injection settings
-	globals.chaosSendChunkFailureRate = 7
-	globals.chaosFetchChunkedPutFailureRate = 2
+	atomic.StoreUint64(&globals.chaosSendChunkFailureRate, 7)
+	atomic.StoreUint64(&globals.chaosFetchChunkedPutFailureRate, 2)
 
 	// Run the tests
 	// t.Run("testRetry", testRetry)
@@ -881,16 +882,16 @@ func testChunkedPut(t *testing.T) {
 
 	// preserve the original settings of these globals that we change
 	var (
-		chaosFetchChunkedPutFailureRate = globals.chaosFetchChunkedPutFailureRate
-		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
-		chaosCloseChunkFailureRate      = globals.chaosCloseChunkFailureRate
+		chaosFetchChunkedPutFailureRate = atomic.LoadUint64(&globals.chaosFetchChunkedPutFailureRate)
+		chaosSendChunkFailureRate       = atomic.LoadUint64(&globals.chaosSendChunkFailureRate)
+		chaosCloseChunkFailureRate      = atomic.LoadUint64(&globals.chaosCloseChunkFailureRate)
 		retryLimitObject                = globals.retryLimitObject
 		chunkedConnectionPoolSize       = globals.chunkedConnectionPool.poolCapacity
 
 		cleanup = func() {
-			globals.chaosFetchChunkedPutFailureRate = chaosFetchChunkedPutFailureRate
-			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
-			globals.chaosCloseChunkFailureRate = chaosCloseChunkFailureRate
+			atomic.StoreUint64(&globals.chaosFetchChunkedPutFailureRate, chaosFetchChunkedPutFailureRate)
+			atomic.StoreUint64(&globals.chaosSendChunkFailureRate, chaosSendChunkFailureRate)
+			atomic.StoreUint64(&globals.chaosCloseChunkFailureRate, chaosCloseChunkFailureRate)
 			globals.retryLimitObject = retryLimitObject
 			resizeChunkedConnectionPool(uint(chunkedConnectionPoolSize))
 		}
@@ -936,9 +937,9 @@ func testChunkedPut(t *testing.T) {
 	// writes to reach 11 Mibyte, it which case the test would fail.
 	// However, the sequence of "random" numbers from randGen is the same
 	// every time so this test always passes (unless the seed is changed).
-	globals.chaosFetchChunkedPutFailureRate = 3
-	globals.chaosSendChunkFailureRate = 20
-	globals.chaosCloseChunkFailureRate = 5
+	atomic.StoreUint64(&globals.chaosFetchChunkedPutFailureRate, 3)
+	atomic.StoreUint64(&globals.chaosSendChunkFailureRate, 20)
+	atomic.StoreUint64(&globals.chaosCloseChunkFailureRate, 5)
 	globals.retryLimitObject = 6
 
 	randGen := rand.New(rand.NewSource(2))
@@ -963,8 +964,8 @@ func testChunkedPut(t *testing.T) {
 	// failure rates (less failures) and increase allowed retries
 	// significantly.  Even so, its possible that a spurious error might
 	// occur (in which case the failure rates could be made even higher).
-	globals.chaosSendChunkFailureRate = globals.chaosSendChunkFailureRate * 3
-	globals.chaosCloseChunkFailureRate = 11
+	atomic.StoreUint64(&globals.chaosSendChunkFailureRate, atomic.LoadUint64(&globals.chaosSendChunkFailureRate)*3)
+	atomic.StoreUint64(&globals.chaosCloseChunkFailureRate, 11)
 	globals.retryLimitObject = 10
 
 	maxThread := 6
@@ -1554,18 +1555,18 @@ func testBadConnection(t *testing.T) {
 
 	// preserve the original settings of these globals that we change
 	var (
-		chaosOpenConnectionFailureRate  = globals.chaosOpenConnectionFailureRate
-		chaosSendChunkFailureRate       = globals.chaosSendChunkFailureRate
-		chaosFetchChunkedPutFailureRate = globals.chaosFetchChunkedPutFailureRate
+		chaosOpenConnectionFailureRate  = atomic.LoadUint32(&globals.chaosOpenConnectionFailureRate)
+		chaosSendChunkFailureRate       = atomic.LoadUint64(&globals.chaosSendChunkFailureRate)
+		chaosFetchChunkedPutFailureRate = atomic.LoadUint64(&globals.chaosFetchChunkedPutFailureRate)
 
 		retryLimitObject             = globals.retryLimitObject
 		retryDelay                   = globals.retryDelay
 		nonChunkedConnectionPoolSize = globals.nonChunkedConnectionPool.poolCapacity
 
 		cleanup = func() {
-			globals.chaosOpenConnectionFailureRate = chaosOpenConnectionFailureRate
-			globals.chaosSendChunkFailureRate = chaosSendChunkFailureRate
-			globals.chaosFetchChunkedPutFailureRate = chaosFetchChunkedPutFailureRate
+			atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, chaosOpenConnectionFailureRate)
+			atomic.StoreUint64(&globals.chaosSendChunkFailureRate, chaosSendChunkFailureRate)
+			atomic.StoreUint64(&globals.chaosFetchChunkedPutFailureRate, chaosFetchChunkedPutFailureRate)
 
 			globals.retryLimitObject = retryLimitObject
 			globals.retryDelay = retryDelay
@@ -1604,8 +1605,8 @@ func testBadConnection(t *testing.T) {
 
 	// create a couple of dozen objects to work with
 	nObject := 24
-	globals.chaosSendChunkFailureRate = 0
-	globals.chaosFetchChunkedPutFailureRate = 0
+	atomic.StoreUint64(&globals.chaosSendChunkFailureRate, 0)
+	atomic.StoreUint64(&globals.chaosFetchChunkedPutFailureRate, 0)
 
 	objSize := 64 * 1024
 	randGen := rand.New(rand.NewSource(2))
@@ -1628,7 +1629,7 @@ func testBadConnection(t *testing.T) {
 	}
 
 	// cause all openConnection calls to fails and close any cached connections
-	globals.chaosOpenConnectionFailureRate = 1
+	atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, 1)
 	drainConnections()
 
 	_, err = ObjectHead(accountName, containerName, objName)
@@ -1662,7 +1663,7 @@ func testBadConnection(t *testing.T) {
 	}()
 	time.Sleep(500 * time.Millisecond)
 
-	globals.chaosOpenConnectionFailureRate = 0
+	atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, 0)
 	rendezvous.Wait()
 
 	// try a batch of HEAD operations in parallel in the same scenario.
@@ -1679,28 +1680,29 @@ func testBadConnection(t *testing.T) {
 	// the requests will succeed, so we need 4 successful retry cycles for all 8 to
 	// succeed.  waiting 60 msec before enabled connections should leave enough time
 	// for all 8 requests to complete.
-	globals.chaosOpenConnectionFailureRate = 1
+	atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, 1)
 	for i := 0; i < 8; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 
 		rendezvous.Add(1)
-		go func() {
-			_, err = ObjectHead(accountName, containerName, objName)
-			if err != nil {
-				fmt.Printf("testBadConnection: HEAD of object %s failed: %v\n", objName, err)
-				t.Error(err)
+		go func(localObjName string) {
+			var localErr error
+			_, localErr = ObjectHead(accountName, containerName, localObjName)
+			if localErr != nil {
+				fmt.Printf("testBadConnection: HEAD of object %s failed: %v\n", localObjName, localErr)
+				t.Error(localErr)
 			}
 
 			rendezvous.Done()
-		}()
+		}(objName)
 	}
 	time.Sleep(60 * time.Millisecond)
 
-	globals.chaosOpenConnectionFailureRate = 0
+	atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, 0)
 	rendezvous.Wait()
 
 	// cleanup the mess we made (objects, container, and account)
-	globals.chaosOpenConnectionFailureRate = 0
+	atomic.StoreUint32(&globals.chaosOpenConnectionFailureRate, 0)
 	for i := 0; i < nObject; i++ {
 		objName = fmt.Sprintf(objNameFmt, i)
 

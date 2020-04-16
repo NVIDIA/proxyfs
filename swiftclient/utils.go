@@ -485,9 +485,9 @@ var openConnectionCallCnt uint32
 // Open a connection to the Swift NoAuth Proxy.
 //
 func openConnection(caller string, connection *connectionStruct) (err error) {
-	if globals.chaosOpenConnectionFailureRate > 0 {
+	if atomic.LoadUint32(&globals.chaosOpenConnectionFailureRate) > 0 {
 		// atomic add only used when testing
-		if atomic.AddUint32(&openConnectionCallCnt, 1)%globals.chaosOpenConnectionFailureRate == 0 {
+		if atomic.AddUint32(&openConnectionCallCnt, 1)%atomic.LoadUint32(&globals.chaosOpenConnectionFailureRate) == 0 {
 			err = fmt.Errorf("Simulated openConnection() error")
 		}
 	}
