@@ -1,18 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"io/ioutil"
-	"math"
-	"math/rand"
 	"os"
 	"sync"
-	"syscall"
-	"testing"
 	"time"
-
-	"github.com/swiftstack/ProxyFS/inode"
-	"github.com/swiftstack/fission"
 )
 
 var (
@@ -77,6 +68,7 @@ func (testLocksChild *testLocksChildStruct) sleepAndRelease() {
 	testLocksChild.releaseDo.Done()
 }
 
+/*
 func TestLocks(t *testing.T) {
 	const (
 		testLocksChildLockedCheckDelay = 250 * time.Millisecond
@@ -579,3 +571,5 @@ func TestExhaustiveOverwrites(t *testing.T) {
 
 	testTeardown(t)
 }
+
+*/
