@@ -9,6 +9,7 @@ package retryrpc
 
 import (
 	"container/list"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -37,14 +38,14 @@ type Server struct {
 	svrMap           map[string]*methodArgs // Key: Method name
 	ipaddr           string                 // IP address server listens too
 	port             int                    // Port of server
-	listener         net.Listener
+	netListener      net.Listener
+	tlsListener      net.Listener
 
 	halting              bool
 	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
 	connLock             sync.Mutex
 	connections          *list.List
 	connWG               sync.WaitGroup
-	listeners            []net.Listener
 	Creds                *ServerCreds
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
@@ -99,11 +100,14 @@ func (server *Server) Start() (err error) {
 		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
-	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)
+	listenConfig := &net.ListenConfig{KeepAlive: keepAlivePeriod}
+	server.netListener, err = listenConfig.Listen(context.Background(), "tcp", hostPortStr)
 	if nil != err {
 		err = fmt.Errorf("tls.Listen() failed: %v", err)
 		return
 	}
+
+	server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
 
 	server.listenersWG.Add(1)
 
@@ -151,9 +155,9 @@ func (server *Server) Close() {
 	server.halting = true
 	server.Unlock()
 
-	err := server.listener.Close()
+	err := server.tlsListener.Close()
 	if err != nil {
-		logger.Errorf("server.listener.Close() returned err: %v", err)
+		logger.Errorf("server.tlsListener.Close() returned err: %v", err)
 	}
 
 	server.listenersWG.Wait()
@@ -178,6 +182,9 @@ func (server *Server) CloseClientConn() {
 	server.connLock.Lock()
 	for c := server.connections.Front(); c != nil; c = c.Next() {
 		conn := c.Value.(net.Conn)
+		/* DEBUG code
+		fmt.Printf("SERVER - closing localaddr conn: %v remoteaddr: %v\n", conn.LocalAddr().String(), conn.RemoteAddr().String())
+		*/
 		conn.Close()
 	}
 	server.connLock.Unlock()

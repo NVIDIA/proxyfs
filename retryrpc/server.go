@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ var debugPutGet bool = false
 func (server *Server) run() {
 	defer server.goroutineWG.Done()
 	for {
-		conn, err := server.listener.Accept()
+		conn, err := server.tlsListener.Accept()
 		if err != nil {
 			if !server.halting {
 				logger.ErrorfWithError(err, "net.Accept failed for Retry RPC listener")
@@ -125,9 +126,9 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
-		localIOR = *ce.reply
 		ci.completedRequest[rID] = ce
 		setupHdrReply(ce.reply)
+		localIOR = *ce.reply
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
@@ -220,7 +221,7 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	for {
 		// Get RPC request
 		buf, getErr := getIO(uint64(0), cCtx.conn)
-		if getErr != nil {
+		if os.IsTimeout(getErr) == false && getErr != nil {
 
 			// Drop response on the floor.   Client will either reconnect or
 			// this response will age out of the queues.
@@ -235,6 +236,11 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 		if server.halting == true {
 			server.Unlock()
 			return
+		}
+
+		if os.IsTimeout(getErr) == true {
+			server.Unlock()
+			continue
 		}
 
 		// Keep track of how many processRequest() goroutines we have
