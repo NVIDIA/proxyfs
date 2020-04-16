@@ -53,7 +53,6 @@ gobinsubdirs = \
 	ramswift/ramswift
 
 gobinsubdirsforci = \
-	pfsagentd \
 	pfsconfjson \
 	pfsconfjsonpacked \
 	confgen/confgen \
