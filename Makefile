@@ -195,7 +195,12 @@ test:
 		$(MAKE) --no-print-directory -C $$gosubdir test; \
 	done; \
 	for gosubdir in $(gobinsubdirs); do \
-		$(MAKE) --no-print-directory -C $$gosubdir test; \
+		if [ $$gosubdir == "pfsagentd" ]; \
+		then \
+			echo "Skipping pfsagentd"; \
+		else \
+			$(MAKE) --no-print-directory -C $$gosubdir test; \
+		fi \
 	done
 
 version:
