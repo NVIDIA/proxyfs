@@ -92,7 +92,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	// Fetch fastPort number from config file
 	globals.fastPortString, err = confMap.FetchOptionValueString("JSONRPCServer", "FastTCPPort")
 	if nil != err {
-		logger.ErrorfWithError(err, "failed to get JSONRPCServer.TCPFastPort from config file")
+		logger.ErrorfWithError(err, "failed to get JSONRPCServer.FastTCPPort from config file")
 		return
 	}
 
