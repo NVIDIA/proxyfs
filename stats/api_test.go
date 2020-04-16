@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 type testGlobalsStruct struct {
+	sync.Mutex  //               Protects access to statsLog
 	t           *testing.T
 	useUDP      bool //          Logically useTCP == !useUDP
 	udpLAddr    *net.UDPAddr
@@ -232,7 +234,9 @@ func testStatsd() {
 				return
 			}
 
+			testGlobals.Lock()
 			testGlobals.statsLog = append(testGlobals.statsLog, string(buf[:bufConsumed]))
+			testGlobals.Unlock()
 		} else { // testGlobals.useTCP
 			testTCPConn, err = testGlobals.tcpListener.AcceptTCP()
 			if nil != err {
@@ -268,7 +272,9 @@ func testStatsd() {
 				return
 			}
 
+			testGlobals.Lock()
 			testGlobals.statsLog = append(testGlobals.statsLog, string(buf[:bufConsumed]))
+			testGlobals.Unlock()
 
 			err = testTCPConn.Close()
 			if nil != err {
@@ -371,11 +377,13 @@ func testVerifyStats() {
 	// Note that this test has been written so that it does not depend on stats
 	// appearing in the same order they are sent in testSendStats().
 
+	statsCountMap = make(map[string]uint16)
+
+	testGlobals.Lock()
+
 	if len(testGlobals.statsLog) != len(expectedStats) {
 		testGlobals.t.Fatalf("verifyStats() failed... wrong number of statsLog elements")
 	}
-
-	statsCountMap = make(map[string]uint16)
 
 	for _, statLine = range testGlobals.statsLog {
 		statCount, ok = statsCountMap[statLine]
@@ -386,6 +394,8 @@ func testVerifyStats() {
 		}
 		statsCountMap[statLine] = statCount
 	}
+
+	testGlobals.Unlock()
 
 	for _, statLine = range expectedStats {
 		statCount, ok = statsCountMap[statLine]
