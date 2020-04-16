@@ -231,7 +231,8 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 			client.Unlock()
 			return
 		}
-		localCnt = len(client.outstandingRequest)
+
+    localCnt = len(client.outstandingRequest)
 		client.Unlock()
 
 		// Ignore timeouts on idle connections while reading header
@@ -241,7 +242,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 		if os.IsTimeout(getErr) == true && localCnt == 0 {
 			continue
 		}
-
+    
 		if getErr != nil {
 
 			// If we had an error reading socket - call retransmit() and exit

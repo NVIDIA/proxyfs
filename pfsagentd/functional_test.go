@@ -23,25 +23,47 @@ var (
 )
 
 type testLocksChildStruct struct {
-	fileInode   *fileInodeStruct
-	exclusive   bool
-	locked      bool           // parent should sleep long enough to ensure this value has been set before checking it
-	getDone     sync.WaitGroup // child calls .Done() on this once it's get{Shared|Exclusive}Lock() returns
-	releaseDo   sync.WaitGroup // parent calls .Done() on this when it wants child to call release()
-	releaseDone sync.WaitGroup // child calls .Done() on this once it's release() returns
+	fileInode    *fileInodeStruct
+	exclusive    bool
+	lockedChan   chan struct{}  // child writes to chan to indicate it has obtained the lock
+	unlockedChan chan struct{}  // child writes to chan to indicate it has released the lock
+	getDone      sync.WaitGroup // child calls .Done() on this once it's get{Shared|Exclusive}Lock() returns
+	releaseDo    sync.WaitGroup // parent calls .Done() on this when it wants child to call release()
+	releaseDone  sync.WaitGroup // child calls .Done() on this once it's release() returns
 }
 
 func (fileInode *fileInodeStruct) testLocksChildStructCreate(exclusive bool) (testLocksChild *testLocksChildStruct) {
 	testLocksChild = &testLocksChildStruct{
-		fileInode: fileInode,
-		exclusive: exclusive,
-		locked:    false,
+		fileInode:    fileInode,
+		exclusive:    exclusive,
+		lockedChan:   make(chan struct{}, 1),
+		unlockedChan: make(chan struct{}, 1),
 	}
 
 	testLocksChild.getDone.Add(1)
 	testLocksChild.releaseDo.Add(1)
 	testLocksChild.releaseDone.Add(1)
 
+	return
+}
+
+func (testLocksChild *testLocksChildStruct) lockObtained() (lockObtained bool) {
+	select {
+	case _ = <-testLocksChild.lockedChan:
+		lockObtained = true
+	default:
+		lockObtained = false
+	}
+	return
+}
+
+func (testLocksChild *testLocksChildStruct) lockReleased() (lockReleased bool) {
+	select {
+	case _ = <-testLocksChild.unlockedChan:
+		lockReleased = true
+	default:
+		lockReleased = false
+	}
 	return
 }
 
@@ -58,13 +80,13 @@ func (testLocksChild *testLocksChildStruct) launch() {
 
 	testLocksChild.getDone.Done()
 
-	testLocksChild.locked = true
+	testLocksChild.lockedChan <- struct{}{}
 
 	testLocksChild.releaseDo.Wait()
 
 	grantedLock.release()
 
-	testLocksChild.locked = false
+	testLocksChild.unlockedChan <- struct{}{}
 
 	testLocksChild.releaseDone.Done()
 }
@@ -137,136 +159,132 @@ func TestLocks(t *testing.T) {
 
 	go testLocksChildShared1.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if !testLocksChildShared1.locked {
-		t.Fatalf("testLocksChildShared1.locked should have been true")
+	if !testLocksChildShared1.lockObtained() {
+		t.Fatalf("testLocksChildShared1.lockObtained() should have been true")
 	}
 	testLocksChildShared1.getDone.Wait()
 
 	go testLocksChildShared2.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if !testLocksChildShared2.locked {
-		t.Fatalf("testLocksChildShared2.locked should have been true")
+	if !testLocksChildShared2.lockObtained() {
+		t.Fatalf("testLocksChildShared2.lockObtained() should have been true")
 	}
 	testLocksChildShared2.getDone.Wait()
 
 	go testLocksChildExclusive3.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	if testLocksChildExclusive3.lockObtained() {
+		t.Fatalf("testLocksChildExclusive3.lockObtained() should have been false")
 	}
 
 	go testLocksChildExclusive4.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	if testLocksChildExclusive4.lockObtained() {
+		t.Fatalf("testLocksChildExclusive4.lockObtained() should have been false")
 	}
 
 	go testLocksChildShared5.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
+	if testLocksChildShared5.lockObtained() {
+		t.Fatalf("testLocksChildShared5.lockObtained() should have been false")
 	}
 
 	go testLocksChildExclusive6.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	if testLocksChildExclusive6.lockObtained() {
+		t.Fatalf("testLocksChildExclusive6.lockObtained() should have been false")
 	}
 
 	go testLocksChildShared7.launch()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
+	if testLocksChildShared7.lockObtained() {
+		t.Fatalf("testLocksChildShared7.lockObtained() should have been false")
 	}
 
 	testLocksChildShared1.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared1.locked {
-		t.Fatalf("testLocksChildShared1.locked should have been false")
+	if !testLocksChildShared1.lockReleased() {
+		t.Fatalf("testLocksChildShared1.lockReleased() should have been true")
 	}
 	testLocksChildShared1.releaseDone.Wait()
 
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	if testLocksChildExclusive3.lockObtained() {
+		t.Fatalf("testLocksChildExclusive3.lockObtained() should have been false")
 	}
 
 	testLocksChildShared2.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared2.locked {
-		t.Fatalf("testLocksChildShared2.locked should have been false")
+	if !testLocksChildShared2.lockReleased() {
+		t.Fatalf("testLocksChildShared2.lockReleased() should have been true")
 	}
 	testLocksChildShared2.releaseDone.Wait()
 
-	if !testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been true")
+	if !testLocksChildExclusive3.lockObtained() {
+		t.Fatalf("testLocksChildExclusive3.lockObtained() should have been true")
 	}
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	if testLocksChildExclusive4.lockObtained() {
+		t.Fatalf("testLocksChildExclusive4.lockObtained() should have been false")
 	}
 
 	testLocksChildExclusive3.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive3.locked {
-		t.Fatalf("testLocksChildExclusive3.locked should have been false")
+	if !testLocksChildExclusive3.lockReleased() {
+		t.Fatalf("testLocksChildExclusive3.lockReleased() should have been true")
 	}
 	testLocksChildExclusive3.releaseDone.Wait()
 
-	if !testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been true")
+	if !testLocksChildExclusive4.lockObtained() {
+		t.Fatalf("testLocksChildExclusive4.lockObtained() should have been true")
 	}
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
+	if testLocksChildShared5.lockObtained() {
+		t.Fatalf("testLocksChildShared5.lockObtained() should have been false")
 	}
 
 	testLocksChildExclusive4.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive4.locked {
-		t.Fatalf("testLocksChildExclusive4.locked should have been false")
+	if !testLocksChildExclusive4.lockReleased() {
+		t.Fatalf("testLocksChildExclusive4.lockReleased() should have been true")
 	}
 	testLocksChildExclusive4.releaseDone.Wait()
 
-	if !testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been true")
+	if !testLocksChildShared5.lockObtained() {
+		t.Fatalf("testLocksChildShared5.lockObtained() should have been true")
 	}
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	if testLocksChildExclusive6.lockObtained() {
+		t.Fatalf("testLocksChildExclusive6.lockObtained() should have been false")
 	}
 
 	testLocksChildShared5.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared5.locked {
-		t.Fatalf("testLocksChildShared5.locked should have been false")
+	if !testLocksChildShared5.lockReleased() {
+		t.Fatalf("testLocksChildShared5.lockReleased() should have been true")
 	}
 	testLocksChildShared5.releaseDone.Wait()
 
-	if !testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been true")
+	if !testLocksChildExclusive6.lockObtained() {
+		t.Fatalf("testLocksChildExclusive6.lockObtained() should have been true")
 	}
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
+	if testLocksChildShared7.lockObtained() {
+		t.Fatalf("testLocksChildShared7.lockObtained() should have been false")
 	}
 
 	testLocksChildExclusive6.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildExclusive6.locked {
-		t.Fatalf("testLocksChildExclusive6.locked should have been false")
+	if !testLocksChildExclusive6.lockReleased() {
+		t.Fatalf("testLocksChildExclusive6.lockReleased() should have been true")
 	}
 	testLocksChildExclusive6.releaseDone.Wait()
 
-	if !testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been true")
+	if !testLocksChildShared7.lockObtained() {
+		t.Fatalf("testLocksChildShared7.lockObtained() should have been true")
 	}
 
 	testLocksChildShared7.releaseDo.Done()
 	time.Sleep(testLocksChildLockedCheckDelay)
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
+	if !testLocksChildShared7.lockReleased() {
+		t.Fatalf("testLocksChildShared7.lockReleased() should have been true")
 	}
 	testLocksChildShared7.releaseDone.Wait()
-
-	if testLocksChildShared7.locked {
-		t.Fatalf("testLocksChildShared7.locked should have been false")
-	}
 
 	testFileInode.dereference()
 
