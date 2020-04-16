@@ -158,9 +158,10 @@ func (server *Server) Close() {
 
 	server.listenersWG.Wait()
 
-	// Now close the client sockets to wakeup our blocked readers
-	server.closeClientConn()
 	server.goroutineWG.Wait()
+
+	// Now close the client sockets to wakeup them up
+	server.closeClientConn()
 
 	server.completedLongTicker.Stop()
 	server.completedShortTicker.Stop()
@@ -169,18 +170,17 @@ func (server *Server) Close() {
 }
 
 // CloseClientConn - This is debug code to cause some connections to be closed
-// TODO - call this from stress test case to cause retransmits
+// It is called from a stress test case to cause retransmits
 func (server *Server) CloseClientConn() {
 	if server == nil {
 		return
 	}
-	logger.Infof("CloseClientConn() called --------")
-	server.Lock()
+	server.connLock.Lock()
 	for c := server.connections.Front(); c != nil; c = c.Next() {
 		conn := c.Value.(net.Conn)
 		conn.Close()
 	}
-	server.Unlock()
+	server.connLock.Unlock()
 }
 
 // CompletedCnt returns count of pendingRequests
@@ -189,16 +189,6 @@ func (server *Server) CloseClientConn() {
 func (server *Server) CompletedCnt() (totalCnt int) {
 	for _, v := range server.perClientInfo {
 		totalCnt += v.completedCnt()
-	}
-	return
-}
-
-// PendingCnt returns count of pendingRequests
-//
-// This is only useful for testing.
-func (server *Server) PendingCnt() (totalCnt int) {
-	for _, v := range server.perClientInfo {
-		totalCnt += v.pendingCnt()
 	}
 	return
 }
@@ -213,6 +203,9 @@ const (
 	DISCONNECTED
 	// CONNECTED means the Client is connected to the server
 	CONNECTED
+	// RETRANSMITTING means a goroutine is in the middle of recovering
+	// from a loss of a connection with the server
+	RETRANSMITTING
 )
 
 type connectionTracker struct {

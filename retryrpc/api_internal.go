@@ -33,6 +33,8 @@ const (
 
 const (
 	currentRetryVersion = 1
+	deadlineIO          = 60 * time.Second // How long to wait on socket for an I/O
+	// TODO - 60 second timeout on deadline should be a tunable...
 )
 
 type requestID uint64
@@ -41,7 +43,8 @@ type requestID uint64
 // such as completed requests, etc
 type clientInfo struct {
 	sync.Mutex
-	pendingRequest           map[requestID]*pendingCtx     // Key: "RequestID"
+	cCtx                     *connCtx                      // Current connCtx for client
+	myUniqueID               string                        // Unique ID of this client
 	completedRequest         map[requestID]*completedEntry // Key: "RequestID"
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
@@ -59,7 +62,11 @@ type completedEntry struct {
 // reading or writing on the socket.
 type connCtx struct {
 	sync.Mutex
-	conn net.Conn
+	conn                net.Conn
+	activeRPCsWG        sync.WaitGroup // WaitGroup tracking active RPCs from this client on this connection
+	cond                *sync.Cond     // Signal waiting goroutines that serviceClient() has exited
+	serviceClientExited bool
+	ci                  *clientInfo // Back pointer to the CI
 }
 
 // pendingCtx tracks an individual request from a client
@@ -96,17 +103,24 @@ type ioHeader struct {
 	Magic    uint32 // Magic number - if invalid means have not read complete header
 }
 
-// Request is the structure sent over the wire
+// ioRequest tracks fields written on wire
 type ioRequest struct {
-	Hdr    ioHeader
-	Method string // Needed by "read" goroutine to create Reply{}
-	JReq   []byte // JSON containing request
+	Hdr  ioHeader
+	JReq []byte // JSON containing request
 }
 
-// Reply is the structure returned over the wire
+// ioReply is the structure returned over the wire
 type ioReply struct {
 	Hdr     ioHeader
 	JResult []byte // JSON containing response
+}
+
+// internalSetIDRequest is the structure sent over the wire
+// when the connection is first made.   This is how the server
+// learns the client ID
+type internalSetIDRequest struct {
+	Hdr        ioHeader
+	MyUniqueID []byte // Client unique ID as byte
 }
 
 type replyCtx struct {
@@ -150,8 +164,8 @@ type svrResponse struct {
 	Result interface{} `json:"result"`
 }
 
-func buildIoRequest(method string, jReq jsonRequest) (ioreq *ioRequest, err error) {
-	ioreq = &ioRequest{Method: method} // Will be needed by Read goroutine
+func buildIoRequest(jReq jsonRequest) (ioreq *ioRequest, err error) {
+	ioreq = &ioRequest{}
 	ioreq.JReq, err = json.Marshal(jReq)
 	if err != nil {
 		return nil, err
@@ -171,13 +185,28 @@ func setupHdrReply(ioreply *ioReply) {
 	return
 }
 
-func getIO(conn net.Conn) (buf []byte, err error) {
+func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err error) {
+	isreq = &internalSetIDRequest{}
+	isreq.MyUniqueID, err = json.Marshal(myUniqueID)
+	if err != nil {
+		return nil, err
+	}
+	isreq.Hdr.Len = uint32(len(isreq.MyUniqueID))
+	isreq.Hdr.Protocol = uint16(JSON)
+	isreq.Hdr.Version = currentRetryVersion
+	isreq.Hdr.Magic = headerMagic
+	return
+}
+
+func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
 	}
 
 	// Read in the header of the request first
 	var hdr ioHeader
+
+	conn.SetDeadline(time.Now().Add(deadlineIO))
 	err = binary.Read(conn, binary.BigEndian, &hdr)
 	if err != nil {
 		return
@@ -188,9 +217,15 @@ func getIO(conn net.Conn) (buf []byte, err error) {
 		return
 	}
 
+	if hdr.Len == 0 {
+		err = fmt.Errorf("hdr.Len == 0")
+		return
+	}
+
 	// Now read the rest of the structure off the wire.
 	var numBytes int
 	buf = make([]byte, hdr.Len)
+	conn.SetDeadline(time.Now().Add(deadlineIO))
 	numBytes, err = io.ReadFull(conn, buf)
 	if err != nil {
 		return
