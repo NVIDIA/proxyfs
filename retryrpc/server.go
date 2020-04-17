@@ -106,7 +106,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	if ok {
 		// Already have answer for this in completedRequest queue.
 		// Just return the results.
-		setupHdrReply(ce.reply)
+		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
 		ci.Unlock()
 
@@ -127,7 +127,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
 		ci.completedRequest[rID] = ce
-		setupHdrReply(ce.reply)
+		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 		le := ci.completedRequestLRU.PushBack(lruEntry)
@@ -162,9 +162,14 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 //    (which could be yet another reconnect for the same client) until the
 //    previous connection has closed down.
 func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err error) {
-	buf, getErr := getIO(uint64(0), cCtx.conn)
+	buf, msgType, getErr := getIO(uint64(0), cCtx.conn)
 	if getErr != nil {
 		err = getErr
+		return
+	}
+
+	if msgType != PassID {
+		err = fmt.Errorf("Server expecting msgType PassID and received: %v", msgType)
 		return
 	}
 
@@ -220,7 +225,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	for {
 		// Get RPC request
-		buf, getErr := getIO(uint64(0), cCtx.conn)
+		buf, msgType, getErr := getIO(uint64(0), cCtx.conn)
 		if os.IsTimeout(getErr) == false && getErr != nil {
 
 			// Drop response on the floor.   Client will either reconnect or
@@ -240,6 +245,11 @@ func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 
 		if os.IsTimeout(getErr) == true {
 			server.Unlock()
+			continue
+		}
+
+		if msgType != RPC {
+			fmt.Printf("serviceClient() received invalid msgType: %v - dropping\n", msgType)
 			continue
 		}
 

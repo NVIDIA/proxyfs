@@ -223,7 +223,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 	for {
 
 		// Wait reply from server
-		buf, getErr := getIO(callingGenNum, tlsConn)
+		buf, msgType, getErr := getIO(callingGenNum, tlsConn)
 
 		// This must happen before checking error
 		client.Lock()
@@ -251,11 +251,27 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 			return
 		}
 
-		// We have a reply - let a goroutine do the unmarshalling and
-		// sending the reply to blocked Send() so that this routine
-		// can read the next response.
-		client.goroutineWG.Add(1)
-		go client.notifyReply(buf, callingGenNum)
+		// Figure out what type of message it is
+		switch msgType {
+		case RPC:
+			// We have a reply to an RPC - let a goroutine do the unmarshalling
+			// and sending the reply to blocked Send() so that this routine
+			// can read the next response.
+			client.goroutineWG.Add(1)
+			go client.notifyReply(buf, callingGenNum)
+
+		case Upcall:
+
+			// Spawn off goroutine to call callback
+			// client.cb.Interrupt()
+			// No return message is necessary - client will call RPC to ACK
+			// if needed.....
+			fmt.Printf("CLIENT - Received Upcall with bytes: %s\n", buf)
+			client.cb.(ClientCallbacks).Interrupt(buf)
+
+		default:
+			fmt.Printf("CLIENT - invalid msgType: %v\n", msgType)
+		}
 	}
 }
 
