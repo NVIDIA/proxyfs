@@ -263,10 +263,11 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 		case Upcall:
 
 			// Spawn off goroutine to call callback
-			// client.cb.Interrupt()
-			// No return message is necessary - client will call RPC to ACK
-			// if needed.....
-			client.cb.(ClientCallbacks).Interrupt(buf)
+			client.goroutineWG.Add(1)
+			go func(buf []byte) {
+				client.cb.(ClientCallbacks).Interrupt(buf)
+				client.goroutineWG.Done()
+			}(buf)
 
 		default:
 			fmt.Printf("CLIENT - invalid msgType: %v\n", msgType)

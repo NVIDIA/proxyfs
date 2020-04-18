@@ -92,7 +92,6 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	sendCnt int, rootCAx509CertificatePEM []byte) {
 	defer agentWg.Done()
 
-	assert := assert.New(t)
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 	clientID := fmt.Sprintf("client - %v", agentID)
@@ -124,12 +123,6 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 		}
 	}
 	sendWg.Wait()
-
-	// This assert could be racey
-	cb.Lock()
-	cnt := cb.interruptCnt
-	cb.Unlock()
-	assert.NotZero(cnt, "We assume at least one upcall was made.")
 }
 
 // Start a bunch of "pfsagents" in parallel
