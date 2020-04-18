@@ -266,7 +266,6 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 			// client.cb.Interrupt()
 			// No return message is necessary - client will call RPC to ACK
 			// if needed.....
-			fmt.Printf("CLIENT - Received Upcall with bytes: %s\n", buf)
 			client.cb.(ClientCallbacks).Interrupt(buf)
 
 		default:

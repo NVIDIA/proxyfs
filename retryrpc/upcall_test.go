@@ -1,7 +1,7 @@
 package retryrpc
 
 import (
-	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,15 +14,17 @@ func TestUpCall(t *testing.T) {
 	testUpCall(t)
 }
 
-// TODO - change stress test to send upcalls???   upcalls are
-// best effort and not queued? correct?
-
 type MyClient struct {
-	// TODO - have either a counter or WG to signal that saw message...
+	sync.Mutex
+	cond        *sync.Cond // Signal that received Interrupt() callback
+	sawCallback bool       // True if Interrupt() was called
 }
 
 func (cb *MyClient) Interrupt(payload []byte) {
-	fmt.Printf("CLIENT - Interrupt() payload: %s\n", payload)
+	cb.Lock()
+	cb.sawCallback = true
+	cb.cond.Broadcast()
+	cb.Unlock()
 	return
 }
 
@@ -55,6 +57,8 @@ func testUpCall(t *testing.T) {
 
 	// Now - setup a client to send requests to the server
 	cb := &MyClient{}
+	cb.cond = sync.NewCond(&cb.Mutex)
+
 	rrClnt, newErr := NewClient(myUniqueClientID, ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, cb)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
@@ -72,10 +76,12 @@ func testUpCall(t *testing.T) {
 	var msg1 []byte = []byte("server msg back to client")
 	rrSvr.SendCallback(myUniqueClientID, msg1)
 
-	// TODO - add test to verify the callback is called....
-	// make part of retryrpc_test.go?
-	// TODO - block until WG/broadcast in cb....
-	time.Sleep(100 * time.Millisecond)
+	// Wait until Interrupt() was called
+	cb.Lock()
+	for cb.sawCallback != true {
+		cb.cond.Wait()
+	}
+	cb.Unlock()
 
 	// Stop the client before exiting
 	rrClnt.Close()

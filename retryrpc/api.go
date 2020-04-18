@@ -150,13 +150,7 @@ func (server *Server) Run() {
 // message is silently dropped on floor.
 func (server *Server) SendCallback(clientID string, msg []byte) {
 
-	// TODO - what if in the middle of draining RPCs on this connection
-	// due to retransmit????
-	// Does it matter????
-
 	// TODO - what if client no longer in list of current clients?
-	// - lookup clientID in list of current clients and call returnResults()
-	// - store enum of type {upcall, RPC} in header?   setupHdr should change
 	var (
 		localIOR ioReply
 	)
@@ -167,7 +161,6 @@ func (server *Server) SendCallback(clientID string, msg []byte) {
 		server.Unlock()
 		return
 	}
-	fmt.Printf("lci: %+v\n", lci)
 	server.Unlock()
 
 	lci.Lock()
