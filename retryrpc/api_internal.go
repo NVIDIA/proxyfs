@@ -97,11 +97,24 @@ type completedLRUEntry struct {
 // to detect if the complete header has been read.
 const headerMagic uint32 = 0xCAFEFEED
 
+// MsgType is the type of message being sent
+type MsgType uint16
+
+const (
+	// RPC represents an RPC from client to server
+	RPC MsgType = iota + 1
+	// Upcall represents an upcall from server to client
+	Upcall
+	// PassID is the message sent by the client to identify itself to server
+	PassID
+)
+
 // ioHeader is the header sent on the socket
 type ioHeader struct {
 	Len      uint32 // Number of bytes following header
 	Protocol uint16
 	Version  uint16
+	Type     MsgType
 	Magic    uint32 // Magic number - if invalid means have not read complete header
 }
 
@@ -175,14 +188,16 @@ func buildIoRequest(jReq jsonRequest) (ioreq *ioRequest, err error) {
 	ioreq.Hdr.Len = uint32(len(ioreq.JReq))
 	ioreq.Hdr.Protocol = uint16(JSON)
 	ioreq.Hdr.Version = currentRetryVersion
+	ioreq.Hdr.Type = RPC
 	ioreq.Hdr.Magic = headerMagic
 	return
 }
 
-func setupHdrReply(ioreply *ioReply) {
+func setupHdrReply(ioreply *ioReply, t MsgType) {
 	ioreply.Hdr.Len = uint32(len(ioreply.JResult))
 	ioreply.Hdr.Protocol = uint16(JSON)
 	ioreply.Hdr.Version = currentRetryVersion
+	ioreply.Hdr.Type = t
 	ioreply.Hdr.Magic = headerMagic
 	return
 }
@@ -196,11 +211,12 @@ func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err erro
 	isreq.Hdr.Len = uint32(len(isreq.MyUniqueID))
 	isreq.Hdr.Protocol = uint16(JSON)
 	isreq.Hdr.Version = currentRetryVersion
+	isreq.Hdr.Type = PassID
 	isreq.Hdr.Magic = headerMagic
 	return
 }
 
-func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
+func getIO(genNum uint64, conn net.Conn) (buf []byte, msgType MsgType, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
 	}
@@ -223,6 +239,7 @@ func getIO(genNum uint64, conn net.Conn) (buf []byte, err error) {
 		err = fmt.Errorf("hdr.Len == 0")
 		return
 	}
+	msgType = hdr.Type
 
 	// Now read the rest of the structure off the wire.
 	var numBytes int

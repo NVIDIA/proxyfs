@@ -46,6 +46,8 @@ func testLoop(t *testing.T) {
 
 	// Start up the agents
 	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+
+	rrSvr.Close()
 }
 
 func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID uint64) {
@@ -69,13 +71,31 @@ func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID
 	assert.Equal(expectedReply, pingReply.Message, "Received different output then expected")
 }
 
+type stressMyClient struct {
+	sync.Mutex
+	cond         *sync.Cond // Signal that received Interrupt() callback
+	sawCallback  bool       // True if Interrupt() was called
+	interruptCnt int        // Count of Interrupt() calls received (best effort)
+}
+
+func (cb *stressMyClient) Interrupt(payload []byte) {
+	cb.Lock()
+	cb.sawCallback = true
+	cb.interruptCnt++
+	cb.cond.Broadcast()
+	cb.Unlock()
+	return
+}
+
 // Represents a pfsagent - sepearate client
 func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint64, agentWg *sync.WaitGroup,
 	sendCnt int, rootCAx509CertificatePEM []byte) {
 	defer agentWg.Done()
 
+	cb := &stressMyClient{}
+	cb.cond = sync.NewCond(&cb.Mutex)
 	clientID := fmt.Sprintf("client - %v", agentID)
-	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM, nil)
+	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM, cb)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
 		return
@@ -85,11 +105,15 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	var sendWg sync.WaitGroup
 
 	var z, r int
+	var msg1 []byte = []byte("server msg back to client")
 	for i := 0; i < sendCnt; i++ {
 		z = (z + i) * 10
 
 		sendWg.Add(1)
-		go sendIt(t, client, z, &sendWg, agentID)
+		go func(z int) {
+			sendIt(t, client, z, &sendWg, agentID)
+			rrSvr.SendCallback(clientID, msg1)
+		}(z)
 
 		// Occasionally drop the connection to the server to
 		// simulate retransmits

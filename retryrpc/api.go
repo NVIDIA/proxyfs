@@ -145,8 +145,32 @@ func (server *Server) Run() {
 //
 // The assumption is that this callback only gets called when the server has
 // an async message for the client
+//
+// The message is "best effort" - if we fail to write on socket then the
+// message is silently dropped on floor.
 func (server *Server) SendCallback(clientID string, msg []byte) {
-	// TODO
+
+	// TODO - what if client no longer in list of current clients?
+	var (
+		localIOR ioReply
+	)
+	server.Lock()
+	lci, ok := server.perClientInfo[clientID]
+	if !ok {
+		fmt.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
+		server.Unlock()
+		return
+	}
+	server.Unlock()
+
+	lci.Lock()
+	currentCtx := lci.cCtx
+	lci.Unlock()
+
+	localIOR.JResult = msg
+	setupHdrReply(&localIOR, Upcall)
+
+	returnResults(&localIOR, currentCtx)
 }
 
 // Close stops the server
@@ -234,6 +258,7 @@ type Client struct {
 	// Handle reset of time?
 	connection         connectionTracker
 	myUniqueID         string                // Unique ID across all clients
+	cb                 interface{}           // Callbacks to client
 	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
@@ -261,9 +286,9 @@ type ClientCallbacks interface {
 //
 // TODO - purge cache of old entries on server and/or use different
 // starting point for requestID.
-func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte, cb *ClientCallbacks) (client *Client, err error) {
+func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte, cb interface{}) (client *Client, err error) {
 
-	client = &Client{myUniqueID: myUniqueID}
+	client = &Client{myUniqueID: myUniqueID, cb: cb}
 	portStr := fmt.Sprintf("%d", port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
