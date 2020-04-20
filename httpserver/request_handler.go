@@ -1602,10 +1602,51 @@ func doGetOfSnapShot(responseWriter http.ResponseWriter, request *http.Request, 
 
 func doPost(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
+	case strings.HasPrefix(request.URL.Path, "/deletions"):
+		doPostOfDeletions(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/trigger"):
 		doPostOfTrigger(responseWriter, request)
 	case strings.HasPrefix(request.URL.Path, "/volume"):
 		doPostOfVolume(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func doPostOfDeletions(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		numPathParts int
+		pathSplit    []string
+	)
+
+	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
+	//                                                  pathSplit[1] should be "deletions" based on how we got here
+	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
+	numPathParts = len(pathSplit) - 1
+	if "" == pathSplit[numPathParts] {
+		numPathParts--
+	}
+
+	if "deletions" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	switch numPathParts {
+	case 2:
+		// Form: /deletions/{pause|resume}
+
+		switch pathSplit[2] {
+		case "pause":
+			headhunter.DisableObjectDeletions()
+			responseWriter.WriteHeader(http.StatusNoContent)
+		case "resume":
+			headhunter.EnableObjectDeletions()
+			responseWriter.WriteHeader(http.StatusNoContent)
+		default:
+			responseWriter.WriteHeader(http.StatusNotFound)
+		}
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 	}
