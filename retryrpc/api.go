@@ -13,7 +13,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"reflect"
 	"sync"
@@ -86,13 +85,6 @@ func NewServer(config *ServerConfig) *Server {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
 	}
-
-	// TODO - remove this once we integrate pfs-retryrpc into stress
-	// test framework
-	//
-	// Write our key to a file so test utilities can pick it up without using
-	// the mount API
-	ioutil.WriteFile("/tmp/cert.pem", server.Creds.RootCAx509CertificatePEM, 0700)
 
 	return server
 }
