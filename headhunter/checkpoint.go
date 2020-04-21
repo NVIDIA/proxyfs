@@ -2801,6 +2801,21 @@ func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteList 
 		err                     error
 	)
 
+RetryCheckForObjectDeleteEnabled:
+	globals.backgroundObjectDeleteActiveWG.Add(1)
+
+	globals.backgroundObjectDeleteRWMutex.RLock()
+
+	if !globals.backgroundObjectDeleteEnabled {
+		// We must block...and retry
+		globals.backgroundObjectDeleteActiveWG.Done()
+		globals.backgroundObjectDeleteRWMutex.RUnlock()
+		globals.backgroundObjectDeleteEnabledWG.Wait()
+		goto RetryCheckForObjectDeleteEnabled
+	}
+
+	globals.backgroundObjectDeleteRWMutex.RUnlock()
+
 	for _, delayedObjectDelete = range delayedObjectDeleteList {
 		delayedObjectDeleteName = utils.Uint64ToHexStr(delayedObjectDelete.objectNumber)
 		if globals.metadataRecycleBin && (delayedObjectDelete.containerName == volume.checkpointContainerName) {
@@ -2823,7 +2838,9 @@ func (volume *volumeStruct) performDelayedObjectDeletes(delayedObjectDeleteList 
 			}
 		}
 	}
+
 	volume.backgroundObjectDeleteWG.Done()
+	globals.backgroundObjectDeleteActiveWG.Done()
 }
 
 func (volume *volumeStruct) openCheckpointChunkedPutContextIfNecessary() (err error) {

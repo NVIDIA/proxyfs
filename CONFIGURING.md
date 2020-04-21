@@ -156,12 +156,12 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | DefaultPhysicalContainerLayout           | Yes          |                    | Yes                      | Yes for newly served volume  |
 |                                           | MaxFlushSize                             | Yes          |                    | Yes                      | Yes for newly served volume  |
 |                                           | MaxFlushTime                             | Yes          |                    | Yes                      | Yes for newly served volume  |
-|                                           | FileDefragmentChunkSize                  | No           | 10485760           | No                       | Yes for newly served volume  |
-|                                           | FileDefragmentChunkDelay                 | No           | 10ms               | No                       | Yes for newly served volume  |
-|                                           | ReportedBlockSize                        | No           | 64Kibi             | No                       | Yes                          |
-|                                           | ReportedFragmentSize                     | No           | 64Kibi             | No                       | Yes                          |
-|                                           | ReportedNumBlocks                        | No           | 100Tebi/64Kibi     | No                       | Yes                          |
-|                                           | ReportedNumInodes                        | No           | 100Gibi            | No                       | Yes                          |
+|                                           | FileDefragmentChunkSize                  | No           | 10485760           | Yes                      | Yes for newly served volume  |
+|                                           | FileDefragmentChunkDelay                 | No           | 10ms               | Yes                      | Yes for newly served volume  |
+|                                           | ReportedBlockSize                        | No           | 64Kibi             | Yes                      | Yes for newly served volume  |
+|                                           | ReportedFragmentSize                     | No           | 64Kibi             | Yes                      | Yes for newly served volume  |
+|                                           | ReportedNumBlocks                        | No           | 100Tebi/64Kibi     | Yes                      | Yes for newly served volume  |
+|                                           | ReportedNumInodes                        | No           | 100Gibi            | Yes                      | Yes for newly served volume  |
 |                                           | SnapShotIDNumBits                        | No           | 10                 | No                       | No                           |
 |                                           | MaxBytesInodeCache                       | No           | 10485760           | Yes                      | Yes for newly served volume  |
 |                                           | InodeCacheEvictInterval                  | No           | 1s                 | Yes                      | Yes for newly served volume  |

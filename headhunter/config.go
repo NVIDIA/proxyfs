@@ -207,6 +207,11 @@ type globalsStruct struct {
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
 
+	backgroundObjectDeleteRWMutex   trackedlock.RWMutex
+	backgroundObjectDeleteEnabled   bool           // used to make {Disable|Enable}ObjectDeletions() idempotent
+	backgroundObjectDeleteEnabledWG sync.WaitGroup // use to awaken blocked performDelayedObjectDeletes() after EnableObjectDeletions() called
+	backgroundObjectDeleteActiveWG  sync.WaitGroup // used to hold off returning from DisableObjectDeletions() until all deletions cease
+
 	FetchNonceUsec                     bucketstats.BucketLog2Round
 	GetInodeRecUsec                    bucketstats.BucketLog2Round
 	GetInodeRecBytes                   bucketstats.BucketLog2Round
@@ -482,6 +487,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.metadataRecycleBinHeader[MetadataRecycleBinHeaderName] = []string{MetadataRecycleBinHeaderValue}
 	}
 
+	// Start off with background object deletions enabled
+
+	globals.backgroundObjectDeleteEnabled = true
+
 	err = nil
 	return
 }
@@ -665,6 +674,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	EnableObjectDeletions() // Otherwise, we will hang
 	return nil
 }
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
