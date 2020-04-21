@@ -104,7 +104,6 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		if nil != err {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10m")
 			globals.retryRPCTTLCompleted = 10 * time.Minute
-			return
 		}
 		globals.retryRPCAckTrim, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCAckTrim")
 		if nil != err {
@@ -125,6 +124,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 		globals.retryRPCPort = 0
 		globals.retryRPCTTLCompleted = time.Duration(0)
+		globals.retryRPCAckTrim = time.Duration(0)
+		globals.retryRPCDeadlineIO = time.Duration(0)
+		globals.retryRPCKEEPALIVEPeriod = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
