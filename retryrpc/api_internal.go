@@ -33,10 +33,6 @@ const (
 
 const (
 	currentRetryVersion = 1
-
-	// TODO - deadlineIO and keepAlivePeriod should be tunables
-	deadlineIO      = 60 * time.Second // How long to wait on socket for an I/O
-	keepAlivePeriod = 20 * time.Second // How often to send KEEPALIVE
 )
 
 type requestID uint64
@@ -216,7 +212,7 @@ func buildSetIDRequest(myUniqueID string) (isreq *internalSetIDRequest, err erro
 	return
 }
 
-func getIO(genNum uint64, conn net.Conn) (buf []byte, msgType MsgType, err error) {
+func getIO(genNum uint64, deadlineIO time.Duration, conn net.Conn) (buf []byte, msgType MsgType, err error) {
 	if printDebugLogs {
 		logger.Infof("conn: %v", conn)
 	}

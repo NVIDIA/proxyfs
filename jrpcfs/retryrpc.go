@@ -15,7 +15,9 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 	}
 
 	// Create a new RetryRPC Server.
-	rrSvr := retryrpc.NewServer(retryRPCTTLCompleted, retryRPCAckTrim, publicIPAddr, int(retryRPCPort))
+	// TODO - add tunable for DeadlineIO and KEEPALIVEPeriod!!!
+	retryConfig := &retryrpc.ServerConfig{LongTrim: retryRPCTTLCompleted, ShortTrim: retryRPCAckTrim, IPAddr: publicIPAddr, Port: int(retryRPCPort)}
+	rrSvr := retryrpc.NewServer(retryConfig)
 
 	// Register jrpcsfs methods with the retryrpc server
 	err = rrSvr.Register(jserver)

@@ -95,7 +95,9 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	cb := &stressMyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 	clientID := fmt.Sprintf("client - %v", agentID)
-	client, err := NewClient(clientID, ipAddr, port, rootCAx509CertificatePEM, cb)
+	clientConfig := &ClientConfig{MyUniqueID: clientID, IPAddr: ipAddr, Port: port,
+		RootCAx509CertificatePEM: rootCAx509CertificatePEM, Callbacks: cb, DeadlineIO: 5 * time.Second}
+	client, err := NewClient(clientConfig)
 	if err != nil {
 		fmt.Printf("Dial() failed with err: %v\n", err)
 		return

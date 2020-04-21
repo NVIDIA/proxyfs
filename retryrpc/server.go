@@ -136,7 +136,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	}
 
 	// Write results on socket back to client...
-	returnResults(&localIOR, myConnCtx)
+	server.returnResults(&localIOR, myConnCtx)
 
 	myConnCtx.activeRPCsWG.Done()
 }
@@ -162,7 +162,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 //    (which could be yet another reconnect for the same client) until the
 //    previous connection has closed down.
 func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err error) {
-	buf, msgType, getErr := getIO(uint64(0), cCtx.conn)
+	buf, msgType, getErr := getIO(uint64(0), server.deadlineIO, cCtx.conn)
 	if getErr != nil {
 		err = getErr
 		return
@@ -225,7 +225,7 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 func (server *Server) serviceClient(ci *clientInfo, cCtx *connCtx) {
 	for {
 		// Get RPC request
-		buf, msgType, getErr := getIO(uint64(0), cCtx.conn)
+		buf, msgType, getErr := getIO(uint64(0), server.deadlineIO, cCtx.conn)
 		if os.IsTimeout(getErr) == false && getErr != nil {
 
 			// Drop response on the floor.   Client will either reconnect or
@@ -331,7 +331,7 @@ func (server *Server) callRPCAndFormatReply(buf []byte, jReq *jsonRequest) (ior 
 	return reply
 }
 
-func returnResults(ior *ioReply, cCtx *connCtx) {
+func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 
 	// Now write the response back to the client
 	//
@@ -340,7 +340,7 @@ func returnResults(ior *ioReply, cCtx *connCtx) {
 
 	// Write Len back
 	cCtx.Lock()
-	cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
+	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
 	binErr := binary.Write(cCtx.conn, binary.BigEndian, ior.Hdr)
 	if binErr != nil {
 		cCtx.Unlock()
@@ -351,7 +351,7 @@ func returnResults(ior *ioReply, cCtx *connCtx) {
 	// Write JSON reply
 	//
 	// In error case - Conn will be closed when serviceClient() returns
-	cCtx.conn.SetDeadline(time.Now().Add(deadlineIO))
+	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
 	_, _ = cCtx.conn.Write(ior.JResult)
 	cCtx.Unlock()
 }

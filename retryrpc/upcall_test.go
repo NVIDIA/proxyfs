@@ -59,7 +59,10 @@ func testUpCall(t *testing.T) {
 	cb := &MyClient{}
 	cb.cond = sync.NewCond(&cb.Mutex)
 
-	rrClnt, newErr := NewClient(myUniqueClientID, ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, cb)
+	clientConfig := &ClientConfig{MyUniqueID: myUniqueClientID, IPAddr: ipaddr, Port: port,
+		RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM, Callbacks: cb,
+		DeadlineIO: 5 * time.Second}
+	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 

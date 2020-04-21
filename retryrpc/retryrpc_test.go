@@ -39,15 +39,17 @@ func (m *MyType) unexportedFunction(i int) {
 	m.field1 = i
 }
 
-func getNewServer(t time.Duration) (rrSvr *Server, ip string, p int) {
+func getNewServer(lt time.Duration) (rrSvr *Server, ip string, p int) {
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
 	)
+	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: "127.0.0.1",
+		Port: 24456, DeadlineIO: 5 * time.Second}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
-	rrSvr = NewServer(t, 100*time.Millisecond, ipaddr, port)
+	rrSvr = NewServer(config)
 	ip = ipaddr
 	p = port
 	return
@@ -79,7 +81,9 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	rrClnt, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, nil)
+	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 
@@ -121,7 +125,9 @@ func testBtree(t *testing.T) {
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	client, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM, nil)
+	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)
 	assert.Nil(newErr)
 

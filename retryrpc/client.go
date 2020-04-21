@@ -111,7 +111,7 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	ctx.genNum = client.connection.genNum
 
 	// Send header
-	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	err := binary.Write(client.connection.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
 	if err != nil {
 		genNum := ctx.genNum
@@ -124,7 +124,7 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	}
 
 	// Send JSON request
-	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	bytesWritten, writeErr := client.connection.tlsConn.Write(ctx.ioreq.JReq)
 
 	if (bytesWritten != len(ctx.ioreq.JReq)) || (writeErr != nil) {
@@ -223,7 +223,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 	for {
 
 		// Wait reply from server
-		buf, msgType, getErr := getIO(callingGenNum, tlsConn)
+		buf, msgType, getErr := getIO(callingGenNum, client.deadlineIO, tlsConn)
 
 		// This must happen before checking error
 		client.Lock()
@@ -343,14 +343,14 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 	}
 
 	// Send header
-	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	err = binary.Write(tlsConn, binary.BigEndian, isreq.Hdr)
 	if err != nil {
 		return
 	}
 
 	// Send MyUniqueID
-	client.connection.tlsConn.SetDeadline(time.Now().Add(deadlineIO))
+	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	bytesWritten, writeErr := tlsConn.Write(isreq.MyUniqueID)
 
 	if uint32(bytesWritten) != isreq.Hdr.Len {
@@ -380,7 +380,7 @@ func (client *Client) dial() (err error) {
 	}
 
 	// Now dial the server
-	d := &net.Dialer{KeepAlive: keepAlivePeriod}
+	d := &net.Dialer{KeepAlive: client.keepalivePeriod}
 	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 	if dialErr != nil {
 		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)

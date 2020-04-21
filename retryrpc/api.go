@@ -53,21 +53,35 @@ type Server struct {
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
+	deadlineIO           time.Duration
+	keepalivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
 }
 
+// ServerConfig is used to configure a retryrpc Server
+type ServerConfig struct {
+	LongTrim        time.Duration // How long the results of an RPC are stored on a Server before removed
+	ShortTrim       time.Duration // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr          string        // IP Address that Server uses to listen
+	Port            int           // Port that Server uses to listen
+	DeadlineIO      time.Duration // How long I/Os on sockets wait even if idle
+	KEEPALIVEPeriod time.Duration // How frequently a KEEPALIVE is sent
+}
+
 // NewServer creates the Server object
-func NewServer(ttl time.Duration, shortTrim time.Duration, ipaddr string, port int) *Server {
+func NewServer(config *ServerConfig) *Server {
 	var (
 		err error
 	)
-	server := &Server{ipaddr: ipaddr, port: port, completedLongTTL: ttl, completedAckTrim: shortTrim}
+	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
+		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
+		keepalivePeriod: config.KEEPALIVEPeriod}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
-	server.Creds, err = constructServerCreds(ipaddr)
+	server.Creds, err = constructServerCreds(server.ipaddr)
 	if err != nil {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
@@ -100,7 +114,7 @@ func (server *Server) Start() (err error) {
 		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
-	listenConfig := &net.ListenConfig{KeepAlive: keepAlivePeriod}
+	listenConfig := &net.ListenConfig{KeepAlive: server.keepalivePeriod}
 	server.netListener, err = listenConfig.Listen(context.Background(), "tcp", hostPortStr)
 	if nil != err {
 		err = fmt.Errorf("tls.Listen() failed: %v", err)
@@ -170,7 +184,7 @@ func (server *Server) SendCallback(clientID string, msg []byte) {
 	localIOR.JResult = msg
 	setupHdrReply(&localIOR, Upcall)
 
-	returnResults(&localIOR, currentCtx)
+	server.returnResults(&localIOR, currentCtx)
 }
 
 // Close stops the server
@@ -257,8 +271,10 @@ type Client struct {
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	connection         connectionTracker
-	myUniqueID         string                // Unique ID across all clients
-	cb                 interface{}           // Callbacks to client
+	myUniqueID         string      // Unique ID across all clients
+	cb                 interface{} // Callbacks to client
+	deadlineIO         time.Duration
+	keepalivePeriod    time.Duration
 	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
@@ -273,7 +289,18 @@ type ClientCallbacks interface {
 	Interrupt(payload []byte)
 }
 
-// TODO - pass loggers to Client and Server objects
+// ClientConfig is used to configure a retryrpc Client
+type ClientConfig struct {
+	MyUniqueID               string
+	IPAddr                   string        // IP Address of Server
+	Port                     int           // Port of Server
+	RootCAx509CertificatePEM []byte        // Root certificate
+	Callbacks                interface{}   // Structure implementing ClientCallbacks
+	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
+	KEEPALIVEPeriod          time.Duration // How frequently a KEEPALIVE is sent
+}
+
+// TODO - pass loggers to Cient and Server objects
 
 // NewClient returns a Client structure
 //
@@ -286,18 +313,19 @@ type ClientCallbacks interface {
 //
 // TODO - purge cache of old entries on server and/or use different
 // starting point for requestID.
-func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte, cb interface{}) (client *Client, err error) {
+func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{myUniqueID: myUniqueID, cb: cb}
-	portStr := fmt.Sprintf("%d", port)
+	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
+		keepalivePeriod: config.KEEPALIVEPeriod, deadlineIO: config.DeadlineIO}
+	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
-	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
+	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
 	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
 	client.bt = btree.New(2)
 
 	// Add cert for root CA to our pool
-	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
+	ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
 		return nil, err
