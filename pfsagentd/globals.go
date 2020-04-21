@@ -62,6 +62,8 @@ type configStruct struct {
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+	RetryRPCDeadlineIO           time.Duration
+	RetryRPCKEEPALIVEPeriod      time.Duration
 }
 
 type retryDelayElementStruct struct {
@@ -578,6 +580,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.FUSEMaxWrite, err = confMap.FetchOptionValueUint32("Agent", "FUSEMaxWrite")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.RetryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCDeadlineIO")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.RetryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCKEEPALIVEPeriod")
 	if nil != err {
 		logFatal(err)
 	}

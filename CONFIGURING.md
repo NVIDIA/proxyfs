@@ -189,7 +189,9 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | DataPathLogging                          | Yes          |                    | Yes                      | No                           |
 |                                           | RetryRPCPort                             | No           | <i>None</i>        | Yes                      | No                           |
 |                                           | RetryRPCTTLCompleted                     | If enabled   |                    | Yes                      | No                           |
-|                                           | retryRPCAckTrim                          | If enabled   |                    | Yes                      | No                           |
+|                                           | RetryRPCAckTrim                          | If enabled   |                    | Yes                      | No                           |
+|                                           | RetryRPCDeadlineIO                       | If enabled   |                    | Yes                      | No                           |
+|                                           | RetryRPCKEEPALIVEPeriod                  | If enabled   |                    | Yes                      | No                           |
 | Logging                                   | LogFilePath                              | No           | <i>None</i>        | Yes                      | No                           |
 |                                           | LogToConsole                             | No           | false              | Yes                      | No                           |
 |                                           | TraceLevelLogging                        | No           | <i>None</i>        | Yes                      | No                           |
