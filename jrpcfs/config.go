@@ -27,6 +27,8 @@ type globalsStruct struct {
 	retryRPCPort             uint16
 	retryRPCTTLCompleted     time.Duration
 	retryRPCAckTrim          time.Duration
+	retryRPCDeadlineIO       time.Duration
+	retryRPCKEEPALIVEPeriod  time.Duration
 	rootCAx509CertificatePEM []byte
 	dataPathLogging          bool
 
@@ -100,18 +102,31 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	if nil == err {
 		globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
 		if nil != err {
-			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCTTLCompleted from config file")
-			return
+			logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10m")
+			globals.retryRPCTTLCompleted = 10 * time.Minute
 		}
 		globals.retryRPCAckTrim, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCAckTrim")
 		if nil != err {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCAckTrim from config file - defaulting to 100ms")
 			globals.retryRPCAckTrim = 100 * time.Millisecond
 		}
+		globals.retryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCDeadlineIO")
+		if nil != err {
+			logger.Infof("failed to get JSONRPCServer.RetryRPCDeadlineIO from config file - defaulting to 60s")
+			globals.retryRPCDeadlineIO = 60 * time.Second
+		}
+		globals.retryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKEEPALIVEPeriod")
+		if nil != err {
+			logger.Infof("failed to get JSONRPCServer.RetryRPCKEEPALIVEPeriod from config file - defaulting to 60s")
+			globals.retryRPCKEEPALIVEPeriod = 60 * time.Second
+		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
 		globals.retryRPCPort = 0
 		globals.retryRPCTTLCompleted = time.Duration(0)
+		globals.retryRPCAckTrim = time.Duration(0)
+		globals.retryRPCDeadlineIO = time.Duration(0)
+		globals.retryRPCKEEPALIVEPeriod = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -141,7 +156,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
-	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim)
+	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
+		globals.retryRPCDeadlineIO, globals.retryRPCKEEPALIVEPeriod)
 
 	return
 }
