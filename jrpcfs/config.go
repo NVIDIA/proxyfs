@@ -102,7 +102,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	if nil == err {
 		globals.retryRPCTTLCompleted, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCTTLCompleted")
 		if nil != err {
-			logger.ErrorfWithError(err, "failed to get JSONRPCServer.RetryRPCTTLCompleted from config file")
+			logger.Infof("failed to get JSONRPCServer.RetryRPCTTLCompleted from config file - defaulting to 10m")
+			globals.retryRPCTTLCompleted = 10 * time.Minute
 			return
 		}
 		globals.retryRPCAckTrim, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCAckTrim")
@@ -113,12 +114,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCDeadlineIO")
 		if nil != err {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCDeadlineIO from config file - defaulting to 60s")
-			globals.retryRPCAckTrim = 60 * time.Second
+			globals.retryRPCDeadlineIO = 60 * time.Second
 		}
 		globals.retryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKEEPALIVEPeriod")
 		if nil != err {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCKEEPALIVEPeriod from config file - defaulting to 60s")
-			globals.retryRPCAckTrim = 60 * time.Second
+			globals.retryRPCKEEPALIVEPeriod = 60 * time.Second
 		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")

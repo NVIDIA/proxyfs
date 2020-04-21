@@ -188,10 +188,10 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | FastTCPPort                              | Yes          |                    | Yes                      | No                           |
 |                                           | DataPathLogging                          | Yes          |                    | Yes                      | No                           |
 |                                           | RetryRPCPort                             | No           | <i>None</i>        | Yes                      | No                           |
-|                                           | RetryRPCTTLCompleted                     | If enabled   |                    | Yes                      | No                           |
-|                                           | RetryRPCAckTrim                          | If enabled   |                    | Yes                      | No                           |
-|                                           | RetryRPCDeadlineIO                       | If enabled   |                    | Yes                      | No                           |
-|                                           | RetryRPCKEEPALIVEPeriod                  | If enabled   |                    | Yes                      | No                           |
+|                                           | RetryRPCTTLCompleted                     | No           | 10m                | Yes                      | No                           |
+|                                           | RetryRPCAckTrim                          | No           | 100ms              | Yes                      | No                           |
+|                                           | RetryRPCDeadlineIO                       | No           | 60s                | Yes                      | No                           |
+|                                           | RetryRPCKEEPALIVEPeriod                  | No           | 60s                | Yes                      | No                           |
 | Logging                                   | LogFilePath                              | No           | <i>None</i>        | Yes                      | No                           |
 |                                           | LogToConsole                             | No           | false              | Yes                      | No                           |
 |                                           | TraceLevelLogging                        | No           | <i>None</i>        | Yes                      | No                           |
