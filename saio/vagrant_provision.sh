@@ -481,7 +481,7 @@ yum -y install tree
 
 # Install and configure a localhost-only one-node etcd cluster
 
-ETCD_VERSION=3.3.10
+ETCD_VERSION=3.4.7
 wget https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
 tar xzf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
 rm -rf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz

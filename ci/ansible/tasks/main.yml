@@ -4,7 +4,7 @@
     - "../vars/{{ env }}.yml"
   vars:
     pkg_ver:
-      etcd: "3.3.10"
+      etcd: "3.4.7"
     golang_versions:
       current: "go1.13.6"
       candidate: "go1.13.6"
