@@ -53,22 +53,6 @@ import:
   - assert
 - package: go.etcd.io/etcd
   version: e694b7bb087538c146e188a29753967d189d202b
-  subpackages:
-  - auth/authpb
-  - clientv3
-  - clientv3/balancer
-  - clientv3/balancer/picker
-  - clientv3/balancer/resolver/endpoint
-  - etcdserver/api/v3rpc/rpctypes
-  - etcdserver/etcdserverpb
-  - mvcc/mvccpb
-  - pkg/logutil
-  - pkg/systemd
-  - pkg/types
-  - raft
-  - raft/quorum
-  - raft/raftpb
-  - raft/tracker
 - package: go.uber.org/atomic
   version: df976f2515e274675050de7b3f42545de80594fd
 - package: go.uber.org/multierr
