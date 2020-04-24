@@ -1,5 +1,5 @@
-hash: 72bfd261da05bc3ce521aa7f4fb8c7516455ddc32e6c31f7701db5dc39cf1af0
-updated: 2020-04-03T16:07:25.521825-07:00
+hash: 806aa381c53d9fe468c0839b6f97f36602a31e58391798f65da757769b0eef1c
+updated: 2020-04-24T04:56:24.576175596Z
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -8,6 +8,10 @@ imports:
   - fuseutil
 - name: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
+- name: github.com/coreos/go-semver
+  version: e214231b295a8ea9479f11b70b35d5acf3556d9b
+  subpackages:
+  - semver
 - name: github.com/coreos/go-systemd
   version: e64a0ec8b42a61e2a9801dc1d0abe539dea79197
   subpackages:
@@ -55,13 +59,15 @@ imports:
 - name: github.com/swiftstack/sortedmap
   version: ea6f0fa04ee55978ef58881c93b2682e2313db93
 - name: go.etcd.io/etcd
-  version: 948e276ca73d3eb09391829d8ac317dbda8c07a1
+  version: e694b7bb087538c146e188a29753967d189d202b
   subpackages:
   - auth/authpb
   - clientv3
   - clientv3/balancer
+  - clientv3/balancer/connectivity
   - clientv3/balancer/picker
   - clientv3/balancer/resolver/endpoint
+  - clientv3/credentials
   - etcdserver/api/v3rpc/rpctypes
   - etcdserver/etcdserverpb
   - mvcc/mvccpb
@@ -69,9 +75,11 @@ imports:
   - pkg/systemd
   - pkg/types
   - raft
+  - raft/confchange
   - raft/quorum
   - raft/raftpb
   - raft/tracker
+  - version
 - name: go.uber.org/atomic
   version: df976f2515e274675050de7b3f42545de80594fd
 - name: go.uber.org/multierr

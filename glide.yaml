@@ -52,7 +52,7 @@ import:
   subpackages:
   - assert
 - package: go.etcd.io/etcd
-  version: 948e276ca73d3eb09391829d8ac317dbda8c07a1
+  version: e694b7bb087538c146e188a29753967d189d202b
   subpackages:
   - auth/authpb
   - clientv3
