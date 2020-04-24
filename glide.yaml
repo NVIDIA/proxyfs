@@ -6,159 +6,56 @@ import:
   version: 1.7.0
 - package: github.com/swiftstack/fission
   version: 1.3.0
+- package: go.etcd.io/etcd
+  version: e694b7bb087538c146e188a29753967d189d202b
 - package: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
-  subpackages:
-  - fs
-  - fuseutil
 - package: github.com/ansel1/merry
   version: 2f92759fd5ad7ea9dc77b73b909b3132b9a5912e
+- package: github.com/coreos/go-semver
+  version: e214231b295a8ea9479f11b70b35d5acf3556d9b
 - package: github.com/coreos/go-systemd
   version: e64a0ec8b42a61e2a9801dc1d0abe539dea79197
-  subpackages:
-  - journal
 - package: github.com/coreos/pkg
   version: 399ea9e2e55f791b6e3d920860dbecb99c3692f0
-  subpackages:
-  - capnslog
 - package: github.com/creachadair/cityhash
   version: 3b32d67a45902637ba0bae69f96a90e1681aac77
-- package: github.com/droundy/goopt
-  version: 0b8effe182da161d81b011aba271507324ecb7ab
 - package: github.com/go-errors/errors
   version: 3afebba5a48dbc89b574d890b6b34d9ee10b4785
 - package: github.com/gogo/protobuf
   version: dadb625850898f31a8e40e83492f4a7132e520a2
-  subpackages:
-  - gogoproto
-  - proto
-  - protoc-gen-gogo/descriptor
 - package: github.com/golang/protobuf
   version: b285ee9cfc6c881bb20c0d8dc73370ea9b9ec90f
-  subpackages:
-  - proto
-  - ptypes
-  - ptypes/any
-  - ptypes/duration
-  - ptypes/timestamp
+- package: github.com/google/btree
+  version: 4030bb1f1f0c35b30ca7009e9ebd06849dd45306
 - package: github.com/google/uuid
   version: c2e93f3ae59f2904160ceaab466009f965df46d6
 - package: github.com/pkg/profile
   version: 5b67d428864e92711fcbd2f8629456121a56d91f
 - package: github.com/sirupsen/logrus
   version: 89742aefa4b206dcf400792f3bd35b542998eb3b
-- package: github.com/stretchr/testify
-  version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f
-  subpackages:
-  - assert
-- package: go.etcd.io/etcd
-  version: 948e276ca73d3eb09391829d8ac317dbda8c07a1
-  subpackages:
-  - auth/authpb
-  - clientv3
-  - clientv3/balancer
-  - clientv3/balancer/picker
-  - clientv3/balancer/resolver/endpoint
-  - etcdserver/api/v3rpc/rpctypes
-  - etcdserver/etcdserverpb
-  - mvcc/mvccpb
-  - pkg/logutil
-  - pkg/systemd
-  - pkg/types
-  - raft
-  - raft/quorum
-  - raft/raftpb
-  - raft/tracker
 - package: go.uber.org/atomic
-  version: df976f2515e274675050de7b3f42545de80594fd
+  version: 845920076a298bdb984fb0f1b86052e4ca0a281c
 - package: go.uber.org/multierr
-  version: 3c4937480c32f4c13a875a1829af76c98ca3d40a
+  version: b587143a48b62b01d337824eab43700af6ffe222
 - package: go.uber.org/zap
   version: 853ac185800f276677ad5ffa70fd7eda356c8d46
-  subpackages:
-  - buffer
-  - internal/bufferpool
-  - internal/color
-  - internal/exit
-  - zapcore
 - package: golang.org/x/crypto
   version: bd6f299fb381e4c3393d1c4b1f0b94f5e77650c8
-  subpackages:
-  - ssh/terminal
 - package: golang.org/x/net
   version: 49e6db1c9ed2b2fdbc57fd579f0ca8f6082350be
-  subpackages:
-  - context
-  - http2
-  - http2/hpack
-  - idna
-  - internal/timeseries
-  - lex/httplex
-  - trace
 - package: golang.org/x/sys
   version: 95c6576299259db960f6c5b9b69ea52422860fce
-  subpackages:
-  - unix
-  - windows
 - package: golang.org/x/text
   version: 342b2e1fbaa52c93f31447ad2c6abc048c63e475
-  subpackages:
-  - secure/bidirule
-  - transform
-  - unicode/bidi
-  - unicode/norm
-- package: golang.org/x/tools
-  version: 958971f5c2bf6dd2927330312acbda0ffd3758a0
-  subpackages:
-  - cmd/stringer
 - package: google.golang.org/genproto
   version: 6af8c5fc6601ab6b41cd32742a65ce2f5bd9db57
-  subpackages:
-  - googleapis/rpc/status
 - package: google.golang.org/grpc
   version: 70e8b380527e63d26e65f8b588edfa4b4ea239f5
-  subpackages:
-  - balancer
-  - balancer/base
-  - balancer/roundrobin
-  - binarylog/grpc_binarylog_v1
-  - codes
-  - connectivity
-  - credentials
-  - credentials/internal
-  - encoding
-  - encoding/proto
-  - grpclog
-  - health/grpc_health_v1
-  - internal
-  - internal/backoff
-  - internal/balancerload
-  - internal/binarylog
-  - internal/channelz
-  - internal/envconfig
-  - internal/grpcrand
-  - internal/grpcsync
-  - internal/syscall
-  - internal/transport
-  - keepalive
-  - metadata
-  - naming
-  - peer
-  - resolver
-  - resolver/dns
-  - resolver/passthrough
-  - serviceconfig
-  - stats
-  - status
-  - tap
-- package: github.com/google/btree
-  version: ~1.0.0
-testImport:
+testImports:
 - package: github.com/davecgh/go-spew
   version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
-  subpackages:
-  - spew
 - package: github.com/pmezard/go-difflib
   version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
-  subpackages:
-  - difflib
+- package: github.com/stretchr/testify
+  version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f
