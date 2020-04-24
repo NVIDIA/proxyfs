@@ -1,5 +1,5 @@
-hash: 854605c52764ae2fb861427b0635942d22910c400accf514f52e6bc8aeebfdf9
-updated: 2020-04-24T20:11:40.403024679Z
+hash: cc86e302f011c6cbca52ec680612ef84d15240eb0d3d32c2d6db86126c77a532
+updated: 2020-04-24T20:52:50.853107412Z
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -140,7 +140,6 @@ imports:
   - encoding
   - encoding/proto
   - grpclog
-  - health/grpc_health_v1
   - internal
   - internal/backoff
   - internal/balancerload

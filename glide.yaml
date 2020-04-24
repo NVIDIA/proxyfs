@@ -99,42 +99,6 @@ import:
   version: 6af8c5fc6601ab6b41cd32742a65ce2f5bd9db57
   subpackages:
   - googleapis/rpc/status
-- package: google.golang.org/grpc
-  version: 70e8b380527e63d26e65f8b588edfa4b4ea239f5
-  subpackages:
-  - balancer
-  - balancer/base
-  - balancer/roundrobin
-  - binarylog/grpc_binarylog_v1
-  - codes
-  - connectivity
-  - credentials
-  - credentials/internal
-  - encoding
-  - encoding/proto
-  - grpclog
-  - health/grpc_health_v1
-  - internal
-  - internal/backoff
-  - internal/balancerload
-  - internal/binarylog
-  - internal/channelz
-  - internal/envconfig
-  - internal/grpcrand
-  - internal/grpcsync
-  - internal/syscall
-  - internal/transport
-  - keepalive
-  - metadata
-  - naming
-  - peer
-  - resolver
-  - resolver/dns
-  - resolver/passthrough
-  - serviceconfig
-  - stats
-  - status
-  - tap
 - package: github.com/google/btree
   version: ~1.0.0
 testImport:
