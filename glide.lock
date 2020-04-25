@@ -1,5 +1,5 @@
-hash: 956e7580e1e2c69eeecb05b6f662796ec1bf844a312f10542f3f3a0da4d74552
-updated: 2020-04-24T17:52:14.196914-07:00
+hash: 5bfe7780f17591f4798eea7fd1b5bc0bfb285493e4b333538504b5e6ca378d79
+updated: 2020-04-24T17:59:13.28348-07:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -112,6 +112,10 @@ imports:
   - transform
   - unicode/bidi
   - unicode/norm
+- name: golang.org/x/tools
+  version: 958971f5c2bf6dd2927330312acbda0ffd3758a0
+  subpackages:
+  - cmd/stringer
 - name: google.golang.org/genproto
   version: 6af8c5fc6601ab6b41cd32742a65ce2f5bd9db57
   subpackages:

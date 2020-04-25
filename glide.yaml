@@ -8,6 +8,8 @@ import:
   version: 1.3.0
 - package: go.etcd.io/etcd
   version: 3.4.7
+- package: golang.org/x/tools/cmd/stringer
+  version: 958971f5c2bf6dd2927330312acbda0ffd3758a0
 - package: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
 - package: github.com/ansel1/merry
