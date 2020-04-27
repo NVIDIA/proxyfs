@@ -831,7 +831,8 @@ class PfsMiddleware(object):
             ctx = RequestContext(req, proxyfsd_addrinfo, acc, con, obj)
             is_bypass_request = (
                 proxyfs_path and
-                self.bypass_mode in ('read-only', 'read-write'))
+                self.bypass_mode in ('read-only', 'read-write') and
+                req.method != "PROXYFS")
 
             # For requests that we make to Swift, we have to ensure that any
             # auth callback is not present in the WSGI environment.

@@ -2,10 +2,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"strings"
+	"os"
+	"os/exec"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,28 +16,38 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/version"
+	"golang.org/x/sys/unix"
 )
+
+const (
+	authPipeReadBufSize = 1024
+)
+
+type authOutStruct struct {
+	AuthToken  string
+	StorageURL string
+}
 
 func doMountProxyFS() {
 	var (
 		err          error
-		mountReply   *jrpcfs.MountByAccountNameReply
-		mountRequest *jrpcfs.MountByAccountNameRequest
+		mountReply   *jrpcfs.MountByVolumeNameReply
+		mountRequest *jrpcfs.MountByVolumeNameRequest
 	)
 
-	mountRequest = &jrpcfs.MountByAccountNameRequest{
-		AccountName:  globals.config.SwiftAccountName,
+	mountRequest = &jrpcfs.MountByVolumeNameRequest{
+		VolumeName:   globals.config.FUSEVolumeName,
 		MountOptions: 0,
 		AuthUserID:   0,
 		AuthGroupID:  0,
 	}
 
-	mountReply = &jrpcfs.MountByAccountNameReply{}
+	mountReply = &jrpcfs.MountByVolumeNameReply{}
 
-	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
+	err = doJRPCRequest("Server.RpcMountByVolumeName", mountRequest, mountReply)
 
 	if nil != err {
-		logFatalf("unable to mount PROXYFS SwiftAccount %v: %v", globals.config.SwiftAccountName, err)
+		logFatalf("unable to mount Volume %v: %v", globals.config.FUSEVolumeName, err)
 	}
 
 	globals.mountID = mountReply.MountID
@@ -48,7 +61,7 @@ func doMountProxyFS() {
 		KEEPALIVEPeriod: globals.config.RetryRPCKEEPALIVEPeriod}
 	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
 	if nil != err {
-		logFatalf("unable to retryRPCClient.NewClient(%v,%v): SwiftAccountName: %v err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.SwiftAccountName, err)
+		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %v err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, err)
 	}
 }
 
@@ -69,7 +82,7 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		jrpcResponse    []byte
 		marshalErr      error
 		ok              bool
-		swiftAccountURL string
+		swiftStorageURL string
 		unmarshalErr    error
 	)
 
@@ -78,9 +91,9 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 		logFatalf("unable to marshal request (jrpcMethod=%s jrpcParam=%v): %#v", jrpcMethod, jrpcParam, marshalErr)
 	}
 
-	_, swiftAccountURL, _ = fetchAuthTokenAndURLs()
+	swiftStorageURL = fetchStorageURL()
 
-	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftAccountURL, bytes.NewReader(jrpcRequest))
+	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftStorageURL, bytes.NewReader(jrpcRequest))
 	if nil != httpErr {
 		logFatalf("unable to create PROXYFS http.Request (jrpcMethod=%s jrpcParam=%#v): %v", jrpcMethod, jrpcParam, httpErr)
 	}
@@ -131,7 +144,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	retryIndex = 0
 
 	for {
-		swiftAuthToken, _, _ = fetchAuthTokenAndURLs()
+		swiftAuthToken = fetchAuthToken()
 
 		request.Header["X-Auth-Token"] = []string{swiftAuthToken}
 
@@ -169,8 +182,8 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 
 		if http.StatusUnauthorized == response.StatusCode {
 			_ = atomic.AddUint64(&globals.metrics.HTTPRequestsRequiringReauthorization, 1)
-			logInfof("doHTTPRequest(%s %s) needs to call updateAuthTokenAndAccountURL()", request.Method, request.URL.String())
-			updateAuthTokenAndAccountURL()
+			logInfof("doHTTPRequest(%s %s) needs to call updateAuthTokenAndStorageURL()", request.Method, request.URL.String())
+			updateAuthTokenAndStorageURL()
 		} else {
 			logWarnf("doHTTPRequest(%s %s) needs to retry due to unexpected http.Status: %s", request.Method, request.URL.String(), response.Status)
 
@@ -195,7 +208,7 @@ func doHTTPRequest(request *http.Request, okStatusCodes ...int) (response *http.
 	}
 }
 
-func fetchAuthTokenAndURLs() (swiftAuthToken string, swiftAccountURL string, swiftAccountBypassURL string) {
+func fetchAuthToken() (swiftAuthToken string) {
 	var (
 		swiftAuthWaitGroup *sync.WaitGroup
 	)
@@ -203,12 +216,16 @@ func fetchAuthTokenAndURLs() (swiftAuthToken string, swiftAccountURL string, swi
 	for {
 		globals.Lock()
 
+		// Make a copy of globals.swiftAuthWaitGroup (if any) thus
+		// avoiding a race where, after the active instance of
+		// updateAuthTokenAndStorageURL() signals completion, it
+		// will erase it from globals (indicating no auth is in
+		// progress anymore)
+
 		swiftAuthWaitGroup = globals.swiftAuthWaitGroup
 
 		if nil == swiftAuthWaitGroup {
 			swiftAuthToken = globals.swiftAuthToken
-			swiftAccountURL = globals.swiftAccountURL
-			swiftAccountBypassURL = globals.swiftAccountBypassURL
 			globals.Unlock()
 			return
 		}
@@ -219,96 +236,292 @@ func fetchAuthTokenAndURLs() (swiftAuthToken string, swiftAccountURL string, swi
 	}
 }
 
-func updateAuthTokenAndAccountURL() {
+func fetchStorageURL() (swiftStorageURL string) {
 	var (
-		err                         error
-		getRequest                  *http.Request
-		getResponse                 *http.Response
-		swiftAccountBypassURL       string
-		swiftAccountBypassURLSplit  []string
-		swiftAccountURL             string
-		swiftAuthToken              string
-		swiftStorageAccountURLSplit []string
-		swiftStorageURL             string
+		swiftAuthWaitGroup *sync.WaitGroup
 	)
+
+	for {
+		globals.Lock()
+
+		// Make a copy of globals.swiftAuthWaitGroup (if any) thus
+		// avoiding a race where, after the active instance of
+		// updateAuthTokenAndStorageURL() signals completion, it
+		// will erase it from globals (indicating no auth is in
+		// progress anymore)
+
+		swiftAuthWaitGroup = globals.swiftAuthWaitGroup
+
+		if nil == swiftAuthWaitGroup {
+			swiftStorageURL = globals.swiftStorageURL
+			globals.Unlock()
+			return
+		}
+
+		globals.Unlock()
+
+		swiftAuthWaitGroup.Wait()
+	}
+}
+
+func updateAuthTokenAndStorageURL() {
+	var (
+		authOut            authOutStruct
+		err                error
+		stderrChanBuf      []byte
+		stderrChanBufChunk []byte
+		stdoutChanBuf      []byte
+		stdoutChanBufChunk []byte
+		swiftAuthWaitGroup *sync.WaitGroup
+	)
+
+	// First check and see if another instance is already in-flight
 
 	globals.Lock()
 
-	if nil != globals.swiftAuthWaitGroup {
+	// Make a copy of globals.swiftAuthWaitGroup (if any) thus
+	// avoiding a race where, after the active instance signals
+	// completion, it will erase it from globals (indicating no
+	// auth is in progress anymore)
+
+	swiftAuthWaitGroup = globals.swiftAuthWaitGroup
+
+	if nil != swiftAuthWaitGroup {
+		// Another instance is already in flight... just await its completion
+
 		globals.Unlock()
 
-		_, _, _ = fetchAuthTokenAndURLs()
+		swiftAuthWaitGroup.Wait()
 
 		return
 	}
+
+	// We will be doing active instance performing the auth,
+	// so create a sync.WaitGroup for other instances and fetches to await
 
 	globals.swiftAuthWaitGroup = &sync.WaitGroup{}
 	globals.swiftAuthWaitGroup.Add(1)
 
 	globals.Unlock()
 
-	getRequest, err = http.NewRequest("GET", globals.config.SwiftAuthURL, nil)
-	if nil != err {
-		logFatal(err)
-	}
+	if nil != globals.authPlugInControl {
+		// There seems to be an active authPlugIn... drain any bytes sent to stdoutChan first
 
-	getRequest.Header.Add("X-Auth-User", globals.config.SwiftAuthUser)
-	getRequest.Header.Add("X-Auth-Key", globals.config.SwiftAuthKey)
+		for {
+			select {
+			case _ = <-globals.authPlugInControl.stdoutChan:
+			default:
+				goto EscapeStdoutChanDrain
+			}
+		}
 
-	getRequest.Header.Add("User-Agent", "PFSAgent "+version.ProxyFSVersion)
+	EscapeStdoutChanDrain:
 
-	getResponse, err = globals.httpClient.Do(getRequest)
-	if nil != err {
-		logErrorf("updateAuthTokenAndAccountURL() failed to submit request: %v", err)
-		swiftAuthToken = ""
-		swiftAccountURL = ""
-		swiftAccountBypassURL = ""
-	} else {
-		_, err = ioutil.ReadAll(getResponse.Body)
-		_ = getResponse.Body.Close()
-		if nil != err {
-			logErrorf("updateAuthTokenAndAccountURL() failed to read responseBody: %v", err)
-			swiftAuthToken = ""
-			swiftAccountURL = ""
-			swiftAccountBypassURL = ""
+		// See if there is anything in stderrChan
+
+		stderrChanBuf = make([]byte, 0, authPipeReadBufSize)
+
+		for {
+			select {
+			case stderrChanBufChunk = <-globals.authPlugInControl.stderrChan:
+				stderrChanBuf = append(stderrChanBuf, stderrChanBufChunk...)
+			default:
+				goto EscapeStderrChanRead1
+			}
+		}
+
+	EscapeStderrChanRead1:
+
+		if 0 < len(stderrChanBuf) {
+			logWarnf("got unexpected authPlugInStderr data: %s", string(stderrChanBuf[:]))
+
+			stopAuthPlugIn()
 		} else {
-			if http.StatusOK != getResponse.StatusCode {
-				logWarnf("updateAuthTokenAndAccountURL() got unexpected http.Status %s (%d)", getResponse.Status, getResponse.StatusCode)
-				swiftAuthToken = ""
-				swiftAccountURL = ""
-				swiftAccountBypassURL = ""
-			} else {
-				swiftAuthToken = getResponse.Header.Get("X-Auth-Token")
-				swiftStorageURL = getResponse.Header.Get("X-Storage-Url")
+			// No errors... so lets try sending a SIGHUP to authPlugIn to request a fresh authorization
 
-				swiftStorageAccountURLSplit = strings.Split(swiftStorageURL, "/")
-				if 0 == len(swiftStorageAccountURLSplit) {
-					swiftAccountURL = ""
-					swiftAccountBypassURL = ""
-				} else {
-					swiftStorageAccountURLSplit[len(swiftStorageAccountURLSplit)-1] = globals.config.SwiftAccountName
-					swiftAccountURL = strings.Join(swiftStorageAccountURLSplit, "/")
+			err = globals.authPlugInControl.cmd.Process.Signal(unix.SIGHUP)
+			if nil != err {
+				logWarnf("got unexpected error sending SIGHUP to authPlugIn: %v", err)
 
-					if strings.HasPrefix(swiftAccountURL, "http:") && strings.HasPrefix(getRequest.URL.String(), "https:") {
-						swiftAccountURL = strings.Replace(swiftAccountURL, "http:", "https:", 1)
-					}
-
-					swiftAccountBypassURLSplit = strings.Split(swiftAccountURL, "/")
-					swiftAccountBypassURLSplit[len(swiftStorageAccountURLSplit)-2] = "proxyfs"
-					swiftAccountBypassURL = strings.Join(swiftAccountBypassURLSplit, "/")
-				}
+				stopAuthPlugIn()
 			}
 		}
 	}
 
+	if nil == globals.authPlugInControl {
+		// Either authPlugIn wasn't (thought to be) running, or it failed above... so (re)start it
+
+		startAuthPlugIn()
+	}
+
+	// Now read authPlugInStdout for a valid JSON-marshalled authOutStruct
+
+	stdoutChanBuf = make([]byte, 0, authPipeReadBufSize)
+
+	for {
+		select {
+		case stdoutChanBufChunk = <-globals.authPlugInControl.stdoutChan:
+			stdoutChanBuf = append(stdoutChanBuf, stdoutChanBufChunk...)
+
+			// Perhaps we've received the entire authOutStruct
+
+			err = json.Unmarshal(stdoutChanBuf, &authOut)
+			if nil == err {
+				// Got a clean JSON-formatted authOutStruct
+
+				goto EscapeFetchAuthOut
+			}
+		case stderrChanBuf = <-globals.authPlugInControl.stderrChan:
+			// Uh oh... started receiving an error... drain it and "error out"
+
+			for {
+				select {
+				case stderrChanBufChunk = <-globals.authPlugInControl.stderrChan:
+					stderrChanBuf = append(stderrChanBuf, stderrChanBufChunk...)
+				default:
+					goto EscapeStderrChanRead2
+				}
+			}
+
+		EscapeStderrChanRead2:
+
+			logWarnf("got unexpected authPlugInStderr data: %s", string(stderrChanBuf[:]))
+
+			authOut.AuthToken = ""
+			authOut.StorageURL = ""
+
+			goto EscapeFetchAuthOut
+		}
+	}
+
+EscapeFetchAuthOut:
+
 	globals.Lock()
 
-	globals.swiftAuthToken = swiftAuthToken
-	globals.swiftAccountURL = swiftAccountURL
-	globals.swiftAccountBypassURL = swiftAccountBypassURL
+	globals.swiftAuthToken = authOut.AuthToken
+	globals.swiftStorageURL = authOut.StorageURL
+
+	// Finally, indicate to waiters we are done and also enable
+	// the next call to updateAuthTokenAndStorageURL() to perform
+	// the auth again
 
 	globals.swiftAuthWaitGroup.Done()
 	globals.swiftAuthWaitGroup = nil
 
 	globals.Unlock()
+}
+
+func authPlugInPipeReader(pipeToRead io.ReadCloser, chanToWrite chan []byte, wg *sync.WaitGroup) {
+	var (
+		buf []byte
+		eof bool
+		err error
+		n   int
+	)
+
+	for {
+		buf = make([]byte, authPipeReadBufSize)
+
+		n, err = pipeToRead.Read(buf)
+		switch err {
+		case nil:
+			eof = false
+		case io.EOF:
+			eof = true
+		default:
+			logFatalf("got unexpected error reading authPlugInPipe: %v", err)
+		}
+
+		if 0 < n {
+			chanToWrite <- buf[:n]
+		}
+
+		if eof {
+			wg.Done()
+			return // Exits this goroutine
+		}
+	}
+}
+
+func startAuthPlugIn() {
+	var (
+		err error
+	)
+
+	globals.authPlugInControl = &authPlugInControlStruct{
+		cmd:        exec.Command(globals.config.PlugInPath, globals.config.PlugInEnvName),
+		stdoutChan: make(chan []byte),
+		stderrChan: make(chan []byte),
+	}
+
+	globals.authPlugInControl.stdoutPipe, err = globals.authPlugInControl.cmd.StdoutPipe()
+	if nil != err {
+		logFatalf("got unexpected error creating authPlugIn stdoutPipe: %v", err)
+	}
+	globals.authPlugInControl.stderrPipe, err = globals.authPlugInControl.cmd.StderrPipe()
+	if nil != err {
+		logFatalf("got unexpected error creating authPlugIn stderrPipe: %v", err)
+	}
+
+	globals.authPlugInControl.wg.Add(2)
+
+	go authPlugInPipeReader(globals.authPlugInControl.stdoutPipe, globals.authPlugInControl.stdoutChan, &globals.authPlugInControl.wg)
+	go authPlugInPipeReader(globals.authPlugInControl.stderrPipe, globals.authPlugInControl.stderrChan, &globals.authPlugInControl.wg)
+
+	if "" != globals.config.PlugInEnvValue {
+		globals.authPlugInControl.cmd.Env = append(os.Environ(), globals.config.PlugInEnvName+"="+globals.config.PlugInEnvValue)
+	}
+
+	err = globals.authPlugInControl.cmd.Start()
+	if nil != err {
+		logFatalf("got unexpected error starting authPlugIn: %v", err)
+	}
+}
+
+func stopAuthPlugIn() {
+	if nil == globals.authPlugInControl {
+		// No authPlugIn running
+		return
+	}
+
+	// Stop authPlugIn (ignore errors since they just indicate authPlugIn failed)
+
+	_ = globals.authPlugInControl.cmd.Process.Signal(unix.SIGTERM)
+
+	_ = globals.authPlugInControl.cmd.Wait()
+
+	// Drain stdoutChan & stderrChan
+
+	for {
+		select {
+		case _ = <-globals.authPlugInControl.stdoutChan:
+		default:
+			goto EscapeStdoutChanDrain
+		}
+	}
+
+EscapeStdoutChanDrain:
+
+	for {
+		select {
+		case _ = <-globals.authPlugInControl.stderrChan:
+		default:
+			goto EscapeStderrChanDrain
+		}
+	}
+
+EscapeStderrChanDrain:
+
+	// Tell stdoutPipe and stderrPipe readers to go away (ignore errors)
+
+	_ = globals.authPlugInControl.stdoutPipe.Close()
+	_ = globals.authPlugInControl.stderrPipe.Close()
+
+	// Wait for stdoutPipe and stderrPipe readers to exit
+
+	globals.authPlugInControl.wg.Wait()
+
+	// Finally, clean out authPlugInControl
+
+	globals.authPlugInControl = nil
 }

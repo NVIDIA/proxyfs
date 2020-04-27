@@ -1038,17 +1038,17 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,true)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{1}, []uint64{0}, []uint64{3}, true)
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,true)")
+	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, true)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{1}, []uint64{0}, []uint64{3}, true) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, true) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	testMetadata.NumWrites = 2
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,true)")
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,true)")
 
 	testFileInodeData, err := testVolumeHandle.Read(fileInodeNumber, 0, 5, nil)
 	if nil != err {
@@ -1225,17 +1225,17 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,false)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{0}, []uint64{0}, []uint64{2}, false)
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,false)")
+	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, fileInodeObjectPath, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	testMetadata.NumWrites = 1
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,false)")
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,false)")
 
 	testFileInodeData, err = testVolumeHandle.Read(fileInodeNumber, 0, 4, nil)
 	if nil != err {
@@ -2165,7 +2165,11 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("ProvisionObject() failed: %v", err)
 	}
-	err = testVolumeHandle.Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, false)
+	_, containerName, objectName, err = utils.PathToAcctContObj(objectPath)
+	if err != nil {
+		t.Fatalf("couldn't parse %v as object path", objectPath)
+	}
+	err = testVolumeHandle.Wrote(fileInode, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false)
 	if nil != err {
 		t.Fatalf("Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
 	}

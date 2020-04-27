@@ -808,7 +808,7 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	return
 }
 
-func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
+func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
 	if (len(fileOffset) != len(objectOffset)) || (len(objectOffset) != len(length)) {
 		err = fmt.Errorf("Wrote() called with unequal # of fileOffset's (%d), objectOffset's (%d), and length's (%d)", len(fileOffset), len(objectOffset), len(length))
 		return
@@ -834,16 +834,7 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, objectPath string, fi
 		}
 	}
 
-	accountName, containerName, logSegmentNumeral, err := utils.PathToAcctContObj(objectPath)
-	if err != nil {
-		return
-	}
-	if accountName != fileInode.volume.accountName {
-		err = fmt.Errorf("Wrote() called indicating a PUT was done to a different Account")
-		logger.ErrorWithError(err)
-		return
-	}
-	logSegmentNumber, err := strconv.ParseUint(logSegmentNumeral, 16, 64)
+	logSegmentNumber, err := strconv.ParseUint(objectName, 16, 64)
 	if err != nil {
 		return
 	}
