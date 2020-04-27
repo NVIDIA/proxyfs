@@ -397,13 +397,22 @@ func TestFetch(t *testing.T) {
 		t.Fatalf("Couldn't add TestNamespace:Test_-_Section.Test_-_OptionGUIDString=12345678-1234-1234-1234-123456789ABC: %v", err)
 	}
 
+	err = confMap.VerifyOptionIsMissing("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice0")
+	if nil != err {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice0 should have verified as missing")
+	}
+	err = confMap.VerifyOptionIsMissing("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice1")
+	if nil == err {
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1 should have verified as not missing")
+	}
+
 	err = confMap.VerifyOptionValueIsEmpty("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice1")
 	if nil != err {
 		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice1 should have verified as empty")
 	}
 	err = confMap.VerifyOptionValueIsEmpty("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice2")
 	if nil == err {
-		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice2 should have verified as empty")
+		t.Fatalf("TestNamespace:Test_-_Section.Test_-_OptionStringSlice2 should have verified as not empty")
 	}
 
 	testStringSlice1, err := confMap.FetchOptionValueStringSlice("TestNamespace:Test_-_Section", "Test_-_OptionStringSlice1")

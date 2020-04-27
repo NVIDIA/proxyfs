@@ -202,16 +202,16 @@ func doInfo(authResponseWriter http.ResponseWriter) {
 }
 
 func doAuth(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
-	if authRequest.Header.Get("X-Auth-User") != globals.config.SwiftAuthUser {
+	if authRequest.Header.Get("X-Auth-User") != testAuthUser {
 		authResponseWriter.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	if authRequest.Header.Get("X-Auth-Key") != globals.config.SwiftAuthKey {
+	if authRequest.Header.Get("X-Auth-Key") != testAuthKey {
 		authResponseWriter.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	authResponseWriter.Header().Add("X-Auth-Token", testAuthToken)
-	authResponseWriter.Header().Add("X-Storage-Url", "http://"+testSwiftProxyAddr+"/v1/"+globals.config.SwiftAccountName)
+	authResponseWriter.Header().Add("X-Storage-Url", "http://"+testSwiftProxyAddr+"/v1/"+testAccountName)
 	authResponseWriter.WriteHeader(http.StatusOK)
 }
 
@@ -231,7 +231,7 @@ func doGET(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		rangeHeader        string
 	)
 
-	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+globals.config.SwiftAccountName) {
+	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+testAccountName) {
 		authResponseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -307,7 +307,7 @@ func doPUT(authResponseWriter http.ResponseWriter, authRequest *http.Request) {
 		noAuthResponse *http.Response
 	)
 
-	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+globals.config.SwiftAccountName) {
+	if !strings.HasPrefix(authRequest.URL.Path, "/proxyfs/"+testAccountName) {
 		_ = authRequest.Body.Close()
 		authResponseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -354,7 +354,7 @@ func doRPC(responseWriter http.ResponseWriter, request *http.Request) {
 		tcpConn         *net.TCPConn
 	)
 
-	if !strings.HasPrefix(request.URL.Path, "/v1/"+globals.config.SwiftAccountName) {
+	if !strings.HasPrefix(request.URL.Path, "/proxyfs/"+testAccountName) {
 		_ = request.Body.Close()
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return

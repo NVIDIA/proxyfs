@@ -40,6 +40,7 @@ gobinsubdirs = \
 	pfs-stress \
 	pfs-swift-load \
 	pfsagentd \
+	pfsagentd/pfsagentd-swift-auth-plugin \
 	pfsagentConfig \
 	pfsagentConfig/pfsagentConfig \
 	pfsconfjson \

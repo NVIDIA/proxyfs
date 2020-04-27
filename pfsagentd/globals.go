@@ -3,11 +3,12 @@ package main
 import (
 	"container/list"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
-	"strings"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -29,10 +30,9 @@ type configStruct struct {
 	FUSEMountPointPath           string // Unless starting with '/', relative to $CWD
 	FUSEUnMountRetryDelay        time.Duration
 	FUSEUnMountRetryCap          uint64
-	SwiftAuthURL                 string // If domain name is used, round-robin among all will be used
-	SwiftAuthUser                string
-	SwiftAuthKey                 string
-	SwiftAccountName             string // Must be a bi-modal account
+	PlugInPath                   string
+	PlugInEnvName                string
+	PlugInEnvValue               string // If "", assume it's already set as desired
 	SwiftTimeout                 time.Duration
 	SwiftRetryLimit              uint64
 	SwiftRetryDelay              time.Duration
@@ -226,6 +226,15 @@ type logSegmentCacheElementStruct struct {
 	buf             []byte
 }
 
+type authPlugInControlStruct struct {
+	cmd        *exec.Cmd
+	stdoutPipe io.ReadCloser
+	stderrPipe io.ReadCloser
+	stdoutChan chan []byte
+	stderrChan chan []byte
+	wg         sync.WaitGroup
+}
+
 // metricsStruct contains Prometheus-styled field names to be output by serveGetOfMetrics().
 //
 // In order to utilize Go Reflection, these field names must be capitalized (i.e. Global).
@@ -329,10 +338,10 @@ type globalsStruct struct {
 	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
 	retryDelay                      []retryDelayElementStruct
-	swiftAuthWaitGroup              *sync.WaitGroup
-	swiftAuthToken                  string
-	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
-	swiftAccountBypassURL           string // swiftAccountURL with "v1" replaced by "proxyfs"
+	authPlugInControl               *authPlugInControlStruct
+	swiftAuthWaitGroup              *sync.WaitGroup // Protected by sync.Mutex of globalsStruct
+	swiftAuthToken                  string          // Protected by swiftAuthWaitGroup
+	swiftStorageURL                 string          // Protected by swiftAuthWaitGroup
 	mountID                         jrpcfs.MountIDAsString
 	rootDirInodeNumber              uint64
 	fissionErrChan                  chan error
@@ -395,28 +404,24 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAuthURL, err = confMap.FetchOptionValueString("Agent", "SwiftAuthURL")
-	if nil != err {
-		logFatal(err)
-	}
-	if !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "http:") && !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "https:") {
-		err = fmt.Errorf("[Agent]SwiftAuthURL (\"%s\") must start with either \"http:\" or \"https:\"", globals.config.SwiftAuthURL)
-		logFatal(err)
-	}
-
-	globals.config.SwiftAuthUser, err = confMap.FetchOptionValueString("Agent", "SwiftAuthUser")
+	globals.config.PlugInPath, err = confMap.FetchOptionValueString("Agent", "PlugInPath")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAuthKey, err = confMap.FetchOptionValueString("Agent", "SwiftAuthKey")
+	globals.config.PlugInEnvName, err = confMap.FetchOptionValueString("Agent", "PlugInEnvName")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAccountName, err = confMap.FetchOptionValueString("Agent", "SwiftAccountName")
-	if nil != err {
-		logFatal(err)
+	err = confMap.VerifyOptionIsMissing("Agent", "PlugInEnvValue")
+	if nil == err {
+		globals.config.PlugInEnvValue = ""
+	} else {
+		globals.config.PlugInEnvValue, err = confMap.FetchOptionValueString("Agent", "PlugInEnvValue")
+		if nil != err {
+			logFatal(err)
+		}
 	}
 
 	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("Agent", "SwiftTimeout")
@@ -641,12 +646,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 		nextRetryDelay = time.Duration(float64(nextRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
+	globals.authPlugInControl = nil
+
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
-	globals.swiftAccountURL = ""
-	globals.swiftAccountBypassURL = ""
-
-	updateAuthTokenAndAccountURL()
+	globals.swiftStorageURL = ""
 
 	globals.fissionErrChan = make(chan error)
 
@@ -694,6 +698,8 @@ func uninitializeGlobals() {
 
 	bucketstats.UnRegister("PFSAgent", "")
 
+	// TODO: kill auth plug-in child (if alive)
+
 	globals.logFile = nil
 	globals.retryRPCPublicIPAddr = ""
 	globals.retryRPCPort = 0
@@ -706,10 +712,10 @@ func uninitializeGlobals() {
 	globals.httpServer = nil
 	globals.httpClient = nil
 	globals.retryDelay = nil
+	globals.authPlugInControl = nil
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
-	globals.swiftAccountURL = ""
-	globals.swiftAccountBypassURL = ""
+	globals.swiftStorageURL = ""
 	globals.fissionErrChan = nil
 	globals.fissionVolume = nil
 	globals.fuseConn = nil

@@ -287,6 +287,7 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 		provisionObjectReply         *jrpcfs.ProvisionObjectReply
 		provisionObjectRequest       *jrpcfs.ProvisionObjectRequest
 		statusCode                   int
+		swiftStorageURL              string
 	)
 
 	provisionObjectRequest = &jrpcfs.ProvisionObjectRequest{
@@ -306,7 +307,9 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 	chunkedPutContext.containerName = containerAndObjectNamesSplit[0]
 	chunkedPutContext.objectName = containerAndObjectNamesSplit[1]
 
-	chunkedPutRequest, err = http.NewRequest(http.MethodPut, globals.swiftAccountBypassURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
+	swiftStorageURL = fetchStorageURL()
+
+	chunkedPutRequest, err = http.NewRequest(http.MethodPut, swiftStorageURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
 	if nil != err {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to http.NewRequest() failed: %v", err)
 	}
@@ -353,10 +356,11 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 			MountID:     globals.mountID,
 			InodeNumber: int64(fileInode.InodeNumber),
 		},
-		ObjectPath:   "/v1/" + globals.config.SwiftAccountName + "/" + chunkedPutContext.containerName + "/" + chunkedPutContext.objectName,
-		FileOffset:   make([]uint64, extentMapLen),
-		ObjectOffset: make([]uint64, extentMapLen),
-		Length:       make([]uint64, extentMapLen),
+		ContainerName: chunkedPutContext.containerName,
+		ObjectName:    chunkedPutContext.objectName,
+		FileOffset:    make([]uint64, extentMapLen),
+		ObjectOffset:  make([]uint64, extentMapLen),
+		Length:        make([]uint64, extentMapLen),
 	}
 
 	for curExtentIndex = 0; curExtentIndex < extentMapLen; curExtentIndex++ {
@@ -1351,6 +1355,7 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 		logSegmentStart                         uint64
 		ok                                      bool
 		statusCode                              int
+		swiftStorageURL                         string
 		url                                     string
 	)
 
@@ -1434,7 +1439,9 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	// Issue GET for it
 
-	url = globals.swiftAccountBypassURL + "/" + containerName + "/" + objectName
+	swiftStorageURL = fetchStorageURL()
+
+	url = swiftStorageURL + "/" + containerName + "/" + objectName
 
 	logSegmentStart = logSegmentCacheElementKey.cacheLineTag * globals.config.ReadCacheLineSize
 	logSegmentEnd = logSegmentStart + globals.config.ReadCacheLineSize - 1
