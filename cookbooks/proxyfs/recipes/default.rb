@@ -499,6 +499,13 @@ link '/usr/bin/pfsagentd' do
   group proxyfs_group
 end
 
+link '/usr/bin/pfsagentd-swift-auth-plugin' do
+  to "#{source_root}/bin/pfsagentd-swift-auth-plugin"
+  link_type :symbolic
+  owner proxyfs_user
+  group proxyfs_group
+end
+
 if ss_packages
   # Creating link to jrpcclient's libs into the new /opt/ss path
   link '/opt/ss/lib64/libproxyfs.so.1.0.0' do
