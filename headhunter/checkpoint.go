@@ -2823,7 +2823,7 @@ RetryCheckForObjectDeleteEnabled:
 				volume.accountName,
 				delayedObjectDelete.containerName,
 				delayedObjectDeleteName,
-				globals.metadataRecycleBinHeader) // UNDO
+				globals.metadataRecycleBinHeader)
 			if nil != err {
 				logger.Errorf("POST %s/%s/%s failed with err: %v", volume.accountName, delayedObjectDelete.containerName, delayedObjectDeleteName, err)
 			}

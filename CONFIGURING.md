@@ -120,7 +120,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | EtcdAutoSyncInterval                     | If enabled   |                    | Yes                      | No                           |
 |                                           | EtcdDialTimeout                          | If enabled   |                    | Yes                      | No                           |
 |                                           | EtcdOpTimeout                            | If enabled   |                    | Yes                      | No                           |
-|                                           | MetadataRecycleBin                       | Yes          |                    | Yes                      | No                           |
+|                                           | MetadataRecycleBin                       | No           | false              | Yes                      | No                           |
 |                                           | SMBUserList                              | No           | <i>None</i>        | Yes                      | Yes                          |
 | VolumeGroup:<i>VolumeGroupName</i>        | VolumeList                               | Yes          |                    | Yes                      | Yes                          |
 |                                           | VirtualIPAddr                            | Yes          |                    | Yes                      | Yes                          |

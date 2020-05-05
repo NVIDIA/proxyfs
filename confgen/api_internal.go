@@ -320,16 +320,10 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 func computePhases(envMap EnvMap, initialDirPath string, confFilePath string, confOverrides []string, phaseOneDirPath string, phaseTwoDirPath string) (err error) {
 	var (
-		envSettings     *envSettingsStruct
 		initialConfMap  conf.ConfMap
 		phaseOneConfMap conf.ConfMap
 		phaseTwoConfMap conf.ConfMap
 	)
-
-	// Fetch environ settings
-
-	envSettings = fetchEnvironSettings(envMap)
-	fmt.Println("UNDO:", envSettings)
 
 	// Load config from initialDirPath
 

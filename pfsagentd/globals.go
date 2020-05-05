@@ -367,13 +367,14 @@ var globals globalsStruct
 
 func initializeGlobals(confMap conf.ConfMap) {
 	var (
-		configJSONified  string
-		customTransport  *http.Transport
-		defaultTransport *http.Transport
-		err              error
-		nextRetryDelay   time.Duration
-		ok               bool
-		retryIndex       uint64
+		configJSONified     string
+		customTransport     *http.Transport
+		defaultTransport    *http.Transport
+		err                 error
+		nextRetryDelay      time.Duration
+		ok                  bool
+		plugInEnvValueSlice []string
+		retryIndex          uint64
 	)
 
 	// Default logging related globals
@@ -418,9 +419,18 @@ func initializeGlobals(confMap conf.ConfMap) {
 	if nil == err {
 		globals.config.PlugInEnvValue = ""
 	} else {
-		globals.config.PlugInEnvValue, err = confMap.FetchOptionValueString("Agent", "PlugInEnvValue")
+		plugInEnvValueSlice, err = confMap.FetchOptionValueStringSlice("Agent", "PlugInEnvValue")
 		if nil != err {
 			logFatal(err)
+		} else {
+			switch len(plugInEnvValueSlice) {
+			case 0:
+				globals.config.PlugInEnvValue = ""
+			case 1:
+				globals.config.PlugInEnvValue = plugInEnvValueSlice[0]
+			default:
+				log.Fatalf("[Agent]PlugInEnvValue must be missing, empty, or single-valued: %#v", plugInEnvValueSlice)
+			}
 		}
 	}
 

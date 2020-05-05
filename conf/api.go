@@ -315,11 +315,6 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 						}
 
 						currentSection[optionName] = replaceUTF8SpacesAndCommasInStrings(optionValuesSplit)
-						if optionName == "PlugInEnvValue" {
-							fmt.Printf("UNDO:       currentLine: %#v\n", currentLine)
-							fmt.Printf("UNDO:      optionValues: %#v\n", optionValues)
-							fmt.Printf("UNDO: optionValuesSplit: %#v\n", optionValuesSplit)
-						}
 					}
 				}
 			}
