@@ -46,6 +46,7 @@ type configStruct struct {
 	SharedFileLimit              uint64
 	ExclusiveFileLimit           uint64
 	DirtyFileLimit               uint64
+	DirtyLogSegmentLimit         uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
@@ -349,7 +350,8 @@ type globalsStruct struct {
 	fuseConn                        *fuse.Conn
 	jrpcLastID                      uint64
 	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
-	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
+	fileInodeDirtyList              *list.List    // LRU of fileInode's with non-empty chunkedPutList
+	fileInodeDirtyLogSegmentChan    chan struct{} // Limits # of in-flight LogSegment Chunked PUTs
 	leaseRequestChan                chan *fileInodeLeaseRequestStruct
 	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
 	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
@@ -367,14 +369,15 @@ var globals globalsStruct
 
 func initializeGlobals(confMap conf.ConfMap) {
 	var (
-		configJSONified     string
-		customTransport     *http.Transport
-		defaultTransport    *http.Transport
-		err                 error
-		nextRetryDelay      time.Duration
-		ok                  bool
-		plugInEnvValueSlice []string
-		retryIndex          uint64
+		configJSONified                   string
+		customTransport                   *http.Transport
+		defaultTransport                  *http.Transport
+		err                               error
+		fileInodeDirtyLogSegmentChanIndex uint64
+		nextRetryDelay                    time.Duration
+		ok                                bool
+		plugInEnvValueSlice               []string
+		retryIndex                        uint64
 	)
 
 	// Default logging related globals
@@ -503,6 +506,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.DirtyFileLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyFileLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.DirtyLogSegmentLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyLogSegmentLimit")
 	if nil != err {
 		logFatal(err)
 	}
@@ -670,6 +678,12 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.fileInodeDirtyList = list.New()
 
+	globals.fileInodeDirtyLogSegmentChan = make(chan struct{}, globals.config.DirtyLogSegmentLimit)
+
+	for fileInodeDirtyLogSegmentChanIndex = 0; fileInodeDirtyLogSegmentChanIndex < globals.config.DirtyLogSegmentLimit; fileInodeDirtyLogSegmentChanIndex++ {
+		globals.fileInodeDirtyLogSegmentChan <- struct{}{}
+	}
+
 	globals.leaseRequestChan = make(chan *fileInodeLeaseRequestStruct)
 
 	go leaseDaemon()
@@ -732,6 +746,7 @@ func uninitializeGlobals() {
 	globals.jrpcLastID = 0
 	globals.fileInodeMap = nil
 	globals.fileInodeDirtyList = nil
+	globals.fileInodeDirtyLogSegmentChan = nil
 	globals.leaseRequestChan = nil
 	globals.unleasedFileInodeCacheLRU = nil
 	globals.sharedLeaseFileInodeCacheLRU = nil

@@ -1196,6 +1196,13 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_calls, 1)
 
+	// Grab quota to start a fresh chunkedPutContext before calling fileInode.getExclusiveLock()
+	// since, in the pathologic case where only fileInode has any outstanding chunkedPutContext's,
+	// they can only be complete()'d while holding fileInode.getExclusiveLock() and we would
+	// deadlock.
+
+	_ = <-globals.fileInodeDirtyLogSegmentChan
+
 	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	grantedLock = fileInode.getExclusiveLock()
 
@@ -1237,7 +1244,9 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
 
 		if chunkedPutContextStateOpen == chunkedPutContext.state {
-			// Use this most recent (and open) chunkedPutContext
+			// Use this most recent (and open) chunkedPutContext... so we can give back our chunkedPutContext quota
+
+			globals.fileInodeDirtyLogSegmentChan <- struct{}{}
 		} else {
 			// Most recent chunkedPutContext is closed, so open a new one
 
