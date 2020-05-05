@@ -314,7 +314,7 @@ func testTeardown(t *testing.T) {
 
 	performUnmountFUSE()
 
-	emptyFileInodeDirtyList()
+	emptyFileInodeDirtyListAndLogSegmentChan()
 
 	doUnmountProxyFS()
 

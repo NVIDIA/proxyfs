@@ -124,21 +124,38 @@ func pruneFileInodeDirtyListIfNecessary() {
 	}
 }
 
-func emptyFileInodeDirtyList() {
+func emptyFileInodeDirtyListAndLogSegmentChan() {
 	var (
-		fileInode        *fileInodeStruct
-		fileInodeElement *list.Element
+		fileInode                         *fileInodeStruct
+		fileInodeDirtyLogSegmentChanIndex uint64
+		fileInodeElement                  *list.Element
 	)
 
 	for {
 		globals.Lock()
+
 		if 0 == globals.fileInodeDirtyList.Len() {
 			// The list is now empty
+
 			globals.Unlock()
+
+			// And globals.config.DirtyLogSegmentLimit should be fully stocked with globals.config.DirtyLogSegmentLimit elements... so empty it also
+
+			for fileInodeDirtyLogSegmentChanIndex = 0; fileInodeDirtyLogSegmentChanIndex < globals.config.DirtyLogSegmentLimit; fileInodeDirtyLogSegmentChanIndex++ {
+				_ = <-globals.fileInodeDirtyLogSegmentChan
+			}
+
+			// And we are done...
+
 			return
 		}
+
+		// Kick off a flush if the first (then next) element of globals.fileInodeDirtyList
+
 		fileInodeElement = globals.fileInodeDirtyList.Front()
+
 		globals.Unlock()
+
 		fileInode = fileInodeElement.Value.(*fileInodeStruct)
 		fileInode.doFlushIfNecessary()
 	}
@@ -402,6 +419,10 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 	fileInode.dereference()
 
 	chunkedPutContext.fileInode.Done()
+
+	// Finally, yield our chunkedPutContext quota
+
+	globals.fileInodeDirtyLogSegmentChan <- struct{}{}
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {

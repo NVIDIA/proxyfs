@@ -86,7 +86,7 @@ func main() {
 
 	// Flush all dirty fileInode's
 
-	emptyFileInodeDirtyList()
+	emptyFileInodeDirtyListAndLogSegmentChan()
 
 	// Perform unmount via ProxyFS
 
