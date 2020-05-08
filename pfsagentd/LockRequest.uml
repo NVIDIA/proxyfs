@@ -1,0 +1,15 @@
+@startuml
+
+scale 800 width
+
+[*] --> None
+
+None --> SharedLockRequested
+SharedLockRequested -> SharedLockGranted
+SharedLockGranted -> None
+
+None --> ExclusiveLockRequested
+ExclusiveLockRequested -> ExclusiveLockGranted
+ExclusiveLockGranted -> None
+
+@enduml
