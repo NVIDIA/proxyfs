@@ -124,21 +124,38 @@ func pruneFileInodeDirtyListIfNecessary() {
 	}
 }
 
-func emptyFileInodeDirtyList() {
+func emptyFileInodeDirtyListAndLogSegmentChan() {
 	var (
-		fileInode        *fileInodeStruct
-		fileInodeElement *list.Element
+		fileInode                         *fileInodeStruct
+		fileInodeDirtyLogSegmentChanIndex uint64
+		fileInodeElement                  *list.Element
 	)
 
 	for {
 		globals.Lock()
+
 		if 0 == globals.fileInodeDirtyList.Len() {
 			// The list is now empty
+
 			globals.Unlock()
+
+			// And globals.config.DirtyLogSegmentLimit should be fully stocked with globals.config.DirtyLogSegmentLimit elements... so empty it also
+
+			for fileInodeDirtyLogSegmentChanIndex = 0; fileInodeDirtyLogSegmentChanIndex < globals.config.DirtyLogSegmentLimit; fileInodeDirtyLogSegmentChanIndex++ {
+				_ = <-globals.fileInodeDirtyLogSegmentChan
+			}
+
+			// And we are done...
+
 			return
 		}
+
+		// Kick off a flush if the first (then next) element of globals.fileInodeDirtyList
+
 		fileInodeElement = globals.fileInodeDirtyList.Front()
+
 		globals.Unlock()
+
 		fileInode = fileInodeElement.Value.(*fileInodeStruct)
 		fileInode.doFlushIfNecessary()
 	}
@@ -287,6 +304,7 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 		provisionObjectReply         *jrpcfs.ProvisionObjectReply
 		provisionObjectRequest       *jrpcfs.ProvisionObjectRequest
 		statusCode                   int
+		swiftStorageURL              string
 	)
 
 	provisionObjectRequest = &jrpcfs.ProvisionObjectRequest{
@@ -306,7 +324,9 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 	chunkedPutContext.containerName = containerAndObjectNamesSplit[0]
 	chunkedPutContext.objectName = containerAndObjectNamesSplit[1]
 
-	chunkedPutRequest, err = http.NewRequest(http.MethodPut, globals.swiftAccountBypassURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
+	swiftStorageURL = fetchStorageURL()
+
+	chunkedPutRequest, err = http.NewRequest(http.MethodPut, swiftStorageURL+"/"+chunkedPutContext.containerName+"/"+chunkedPutContext.objectName, chunkedPutContext)
 	if nil != err {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() call to http.NewRequest() failed: %v", err)
 	}
@@ -315,10 +335,12 @@ func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
 
 	chunkedPutContext.pos = 0
 
-	_, _, ok, statusCode = doHTTPRequest(chunkedPutRequest, http.StatusOK, http.StatusCreated)
+	_, _, ok, statusCode = doHTTPRequest(chunkedPutRequest, http.StatusCreated)
 	if !ok {
 		logFatalf("*chunkedPutContextStruct.performChunkedPut() failed with unexpected statusCode: %v", statusCode)
 	}
+
+	globals.stats.LogSegmentPutBytes.Add(uint64(len(chunkedPutContext.buf)))
 
 	chunkedPutContext.Done()
 }
@@ -351,10 +373,11 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 			MountID:     globals.mountID,
 			InodeNumber: int64(fileInode.InodeNumber),
 		},
-		ObjectPath:   "/v1/" + globals.config.SwiftAccountName + "/" + chunkedPutContext.containerName + "/" + chunkedPutContext.objectName,
-		FileOffset:   make([]uint64, extentMapLen),
-		ObjectOffset: make([]uint64, extentMapLen),
-		Length:       make([]uint64, extentMapLen),
+		ContainerName: chunkedPutContext.containerName,
+		ObjectName:    chunkedPutContext.objectName,
+		FileOffset:    make([]uint64, extentMapLen),
+		ObjectOffset:  make([]uint64, extentMapLen),
+		Length:        make([]uint64, extentMapLen),
 	}
 
 	for curExtentIndex = 0; curExtentIndex < extentMapLen; curExtentIndex++ {
@@ -396,6 +419,10 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 	fileInode.dereference()
 
 	chunkedPutContext.fileInode.Done()
+
+	// Finally, yield our chunkedPutContext quota
+
+	globals.fileInodeDirtyLogSegmentChan <- struct{}{}
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {
@@ -1339,6 +1366,8 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 	var (
 		err                                     error
 		getRequest                              *http.Request
+		logSegmentCacheElementGetEndime         time.Time
+		logSegmentCacheElementGetStartTime      time.Time
 		logSegmentCacheElementKey               logSegmentCacheElementKeyStruct
 		logSegmentCacheElementToEvict           *logSegmentCacheElementStruct
 		logSegmentCacheElementToEvictKey        logSegmentCacheElementKeyStruct
@@ -1346,6 +1375,8 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 		logSegmentEnd                           uint64
 		logSegmentStart                         uint64
 		ok                                      bool
+		statusCode                              int
+		swiftStorageURL                         string
 		url                                     string
 	)
 
@@ -1429,7 +1460,9 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	// Issue GET for it
 
-	url = globals.swiftAccountBypassURL + "/" + containerName + "/" + objectName
+	swiftStorageURL = fetchStorageURL()
+
+	url = swiftStorageURL + "/" + containerName + "/" + objectName
 
 	logSegmentStart = logSegmentCacheElementKey.cacheLineTag * globals.config.ReadCacheLineSize
 	logSegmentEnd = logSegmentStart + globals.config.ReadCacheLineSize - 1
@@ -1441,12 +1474,21 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 	getRequest.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", logSegmentStart, logSegmentEnd))
 
-	_, logSegmentCacheElement.buf, ok, _ = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
+	logSegmentCacheElementGetStartTime = time.Now()
+
+	_, logSegmentCacheElement.buf, ok, statusCode = doHTTPRequest(getRequest, http.StatusOK, http.StatusPartialContent)
+	if !ok {
+		logFatalf("fetchLogSegmentCacheLine() failed with unexpected statusCode: %v", statusCode)
+	}
+
+	logSegmentCacheElementGetEndime = time.Now()
 
 	globals.Lock()
 
 	if ok {
 		logSegmentCacheElement.state = logSegmentCacheElementStateGetSuccessful
+
+		globals.stats.LogSegmentGetUsec.Add(uint64(logSegmentCacheElementGetEndime.Sub(logSegmentCacheElementGetStartTime) / time.Microsecond))
 	} else {
 		logSegmentCacheElement.state = logSegmentCacheElementStateGetFailed
 

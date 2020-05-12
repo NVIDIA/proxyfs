@@ -2706,6 +2706,7 @@ Restart:
 
 func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error) {
 	var (
+		containerName         string
 		dirInodeNumber        inode.InodeNumber
 		dirEntryInodeNumber   inode.InodeNumber
 		dirEntryBasename      string
@@ -2714,6 +2715,7 @@ func (mS *mountStruct) MiddlewarePutComplete(vContainerName string, vObjectPath 
 		heldLocks             *heldLocksStruct
 		inodeVolumeHandle     inode.VolumeHandle = mS.volStruct.inodeVolumeHandle
 		numPObjects           int
+		objectName            string
 		pObjectIndex          int
 		retryRequired         bool
 		stat                  Stat
@@ -2826,16 +2828,24 @@ Restart:
 	fileOffset = 0
 
 	for pObjectIndex = 0; pObjectIndex < numPObjects; pObjectIndex++ {
+		_, containerName, objectName, err = utils.PathToAcctContObj(pObjectPaths[pObjectIndex])
+		if nil != err {
+			heldLocks.free()
+			logger.DebugfIDWithError(internalDebug, err, "MiddlewarePutComplete(): failed utils.PathToAcctContObj(\"%s\") for dirEntryInodeNumber 0x%016X", pObjectPaths[pObjectIndex], dirEntryInodeNumber)
+			return
+		}
+
 		err = inodeVolumeHandle.Wrote(
 			dirEntryInodeNumber,
-			pObjectPaths[pObjectIndex],
+			containerName,
+			objectName,
 			[]uint64{fileOffset},
 			[]uint64{0},
 			[]uint64{pObjectLengths[pObjectIndex]},
 			pObjectIndex > 0) // Initial pObjectIndex == 0 case will implicitly SetSize(,0)
 		if nil != err {
 			heldLocks.free()
-			logger.DebugfIDWithError(internalDebug, err, "MiddlewarePutComplete(): failed Wrote() for dirEntryInodeNumber 0x%016X", dirEntryInodeNumber)
+			logger.DebugfIDWithError(internalDebug, err, "MiddlewarePutComplete(): failed inode.Wrote() for dirEntryInodeNumber 0x%016X", dirEntryInodeNumber)
 			return
 		}
 
@@ -4169,7 +4179,7 @@ func (mS *mountStruct) Write(userID inode.InodeUserID, groupID inode.InodeGroupI
 	return
 }
 
-func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, objectPath string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error) {
+func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error) {
 	mS.volStruct.jobRWMutex.RLock()
 	defer mS.volStruct.jobRWMutex.RUnlock()
 
@@ -4197,7 +4207,7 @@ func (mS *mountStruct) Wrote(userID inode.InodeUserID, groupID inode.InodeGroupI
 	err = mS.volStruct.inodeVolumeHandle.Flush(inodeNumber, false)
 	mS.volStruct.untrackInFlightFileInodeData(inodeNumber, false)
 
-	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, objectPath, fileOffset, objectOffset, length, true)
+	err = mS.volStruct.inodeVolumeHandle.Wrote(inodeNumber, containerName, objectName, fileOffset, objectOffset, length, true)
 
 	return // err, as set by inode.Wrote(), is sufficient
 }

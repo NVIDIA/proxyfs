@@ -235,19 +235,30 @@ chown swift:swift /var/run/swift
 
 # [Setup Swift] Getting the code
 
-yum -y install memcached sqlite xfsprogs \
-               libffi-devel xinetd liberasurecode-devel \
-               openssl-devel python-setuptools \
-               python-coverage python-devel python-nose \
-               pyxattr python-eventlet \
-               python-greenlet python-paste-deploy \
-               python-netifaces python-pip python-dns \
-               python-mock
+yum -y install \
+    memcached \
+    sqlite \
+    xfsprogs \
+    libffi-devel \
+    xinetd \
+    openssl-devel \
+    python-setuptools \
+    python-coverage \
+    python-devel \
+    python-nose \
+    pyxattr \
+    python-eventlet \
+    python-greenlet \
+    python-paste-deploy \
+    python-netifaces \
+    python-pip \
+    python-dns \
+    python-mock
 
 pip install --upgrade setuptools
 
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/29/Everything/x86_64/os/Packages/l/liberasurecode-1.5.0-6.fc29.x86_64.rpm
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/29/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.5.0-6.fc29.x86_64.rpm
+yum -y install https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-1.6.0-3.fc30.x86_64.rpm
+yum -y install https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.6.0-3.fc30.x86_64.rpm
 
 cd ~swift
 git clone -b master --single-branch --depth 1 https://github.com/openstack/python-swiftclient.git
@@ -470,7 +481,7 @@ yum -y install tree
 
 # Install and configure a localhost-only one-node etcd cluster
 
-ETCD_VERSION=3.3.10
+ETCD_VERSION=3.4.7
 wget https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
 tar xzf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz
 rm -rf etcd-v${ETCD_VERSION}-linux-amd64.tar.gz

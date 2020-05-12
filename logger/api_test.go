@@ -30,6 +30,8 @@ func TestAPI(t *testing.T) {
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
 		"Logging.TraceLevelLogging=logger",
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 	}
 
 	confMap, err := conf.MakeConfMapFromStrings(confStrings)

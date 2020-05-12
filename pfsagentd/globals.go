@@ -3,11 +3,12 @@ package main
 import (
 	"container/list"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
-	"strings"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/swiftstack/fission"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -28,10 +30,9 @@ type configStruct struct {
 	FUSEMountPointPath           string // Unless starting with '/', relative to $CWD
 	FUSEUnMountRetryDelay        time.Duration
 	FUSEUnMountRetryCap          uint64
-	SwiftAuthURL                 string // If domain name is used, round-robin among all will be used
-	SwiftAuthUser                string
-	SwiftAuthKey                 string
-	SwiftAccountName             string // Must be a bi-modal account
+	PlugInPath                   string
+	PlugInEnvName                string
+	PlugInEnvValue               string // If "", assume it's already set as desired
 	SwiftTimeout                 time.Duration
 	SwiftRetryLimit              uint64
 	SwiftRetryDelay              time.Duration
@@ -45,6 +46,7 @@ type configStruct struct {
 	SharedFileLimit              uint64
 	ExclusiveFileLimit           uint64
 	DirtyFileLimit               uint64
+	DirtyLogSegmentLimit         uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
@@ -61,6 +63,8 @@ type configStruct struct {
 	FUSEMaxBackground            uint16
 	FUSECongestionThreshhold     uint16
 	FUSEMaxWrite                 uint32
+	RetryRPCDeadlineIO           time.Duration
+	RetryRPCKEEPALIVEPeriod      time.Duration
 }
 
 type retryDelayElementStruct struct {
@@ -223,6 +227,15 @@ type logSegmentCacheElementStruct struct {
 	buf             []byte
 }
 
+type authPlugInControlStruct struct {
+	cmd        *exec.Cmd
+	stdoutPipe io.ReadCloser
+	stderrPipe io.ReadCloser
+	stdoutChan chan []byte
+	stderrChan chan []byte
+	wg         sync.WaitGroup
+}
+
 // metricsStruct contains Prometheus-styled field names to be output by serveGetOfMetrics().
 //
 // In order to utilize Go Reflection, these field names must be capitalized (i.e. Global).
@@ -301,6 +314,15 @@ type metricsStruct struct {
 	HTTPRequestsInFlight                 uint64
 }
 
+type statsStruct struct {
+	FUSEDoReadBytes  bucketstats.BucketLog2Round
+	FUSEDoWriteBytes bucketstats.BucketLog2Round
+
+	LogSegmentGetUsec bucketstats.BucketLog2Round
+
+	LogSegmentPutBytes bucketstats.BucketLog2Round
+}
+
 type globalsStruct struct {
 	sync.Mutex
 	config                          configStruct
@@ -317,10 +339,10 @@ type globalsStruct struct {
 	httpServerWG                    sync.WaitGroup
 	httpClient                      *http.Client
 	retryDelay                      []retryDelayElementStruct
-	swiftAuthWaitGroup              *sync.WaitGroup
-	swiftAuthToken                  string
-	swiftAccountURL                 string // swiftStorageURL with AccountName forced to config.SwiftAccountName
-	swiftAccountBypassURL           string // swiftAccountURL with "v1" replaced by "proxyfs"
+	authPlugInControl               *authPlugInControlStruct
+	swiftAuthWaitGroup              *sync.WaitGroup // Protected by sync.Mutex of globalsStruct
+	swiftAuthToken                  string          // Protected by swiftAuthWaitGroup
+	swiftStorageURL                 string          // Protected by swiftAuthWaitGroup
 	mountID                         jrpcfs.MountIDAsString
 	rootDirInodeNumber              uint64
 	fissionErrChan                  chan error
@@ -328,7 +350,8 @@ type globalsStruct struct {
 	fuseConn                        *fuse.Conn
 	jrpcLastID                      uint64
 	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
-	fileInodeDirtyList              *list.List // LRU of fileInode's with non-empty chunkedPutList
+	fileInodeDirtyList              *list.List    // LRU of fileInode's with non-empty chunkedPutList
+	fileInodeDirtyLogSegmentChan    chan struct{} // Limits # of in-flight LogSegment Chunked PUTs
 	leaseRequestChan                chan *fileInodeLeaseRequestStruct
 	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
 	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
@@ -339,19 +362,22 @@ type globalsStruct struct {
 	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
 	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
 	metrics                         *metricsStruct
+	stats                           *statsStruct
 }
 
 var globals globalsStruct
 
 func initializeGlobals(confMap conf.ConfMap) {
 	var (
-		configJSONified  string
-		customTransport  *http.Transport
-		defaultTransport *http.Transport
-		err              error
-		nextRetryDelay   time.Duration
-		ok               bool
-		retryIndex       uint64
+		configJSONified                   string
+		customTransport                   *http.Transport
+		defaultTransport                  *http.Transport
+		err                               error
+		fileInodeDirtyLogSegmentChanIndex uint64
+		nextRetryDelay                    time.Duration
+		ok                                bool
+		plugInEnvValueSlice               []string
+		retryIndex                        uint64
 	)
 
 	// Default logging related globals
@@ -382,28 +408,33 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAuthURL, err = confMap.FetchOptionValueString("Agent", "SwiftAuthURL")
-	if nil != err {
-		logFatal(err)
-	}
-	if !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "http:") && !strings.HasPrefix(strings.ToLower(globals.config.SwiftAuthURL), "https:") {
-		err = fmt.Errorf("[Agent]SwiftAuthURL (\"%s\") must start with either \"http:\" or \"https:\"", globals.config.SwiftAuthURL)
-		logFatal(err)
-	}
-
-	globals.config.SwiftAuthUser, err = confMap.FetchOptionValueString("Agent", "SwiftAuthUser")
+	globals.config.PlugInPath, err = confMap.FetchOptionValueString("Agent", "PlugInPath")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAuthKey, err = confMap.FetchOptionValueString("Agent", "SwiftAuthKey")
+	globals.config.PlugInEnvName, err = confMap.FetchOptionValueString("Agent", "PlugInEnvName")
 	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.SwiftAccountName, err = confMap.FetchOptionValueString("Agent", "SwiftAccountName")
-	if nil != err {
-		logFatal(err)
+	err = confMap.VerifyOptionIsMissing("Agent", "PlugInEnvValue")
+	if nil == err {
+		globals.config.PlugInEnvValue = ""
+	} else {
+		plugInEnvValueSlice, err = confMap.FetchOptionValueStringSlice("Agent", "PlugInEnvValue")
+		if nil != err {
+			logFatal(err)
+		} else {
+			switch len(plugInEnvValueSlice) {
+			case 0:
+				globals.config.PlugInEnvValue = ""
+			case 1:
+				globals.config.PlugInEnvValue = plugInEnvValueSlice[0]
+			default:
+				log.Fatalf("[Agent]PlugInEnvValue must be missing, empty, or single-valued: %#v", plugInEnvValueSlice)
+			}
+		}
 	}
 
 	globals.config.SwiftTimeout, err = confMap.FetchOptionValueDuration("Agent", "SwiftTimeout")
@@ -475,6 +506,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.DirtyFileLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyFileLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.DirtyLogSegmentLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyLogSegmentLimit")
 	if nil != err {
 		logFatal(err)
 	}
@@ -571,6 +607,16 @@ func initializeGlobals(confMap conf.ConfMap) {
 		logFatal(err)
 	}
 
+	globals.config.RetryRPCDeadlineIO, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCDeadlineIO")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.RetryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("Agent", "RetryRPCKEEPALIVEPeriod")
+	if nil != err {
+		logFatal(err)
+	}
+
 	configJSONified = utils.JSONify(globals.config, true)
 
 	logInfof("\n%s", configJSONified)
@@ -618,12 +664,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 		nextRetryDelay = time.Duration(float64(nextRetryDelay) * globals.config.SwiftRetryExpBackoff)
 	}
 
+	globals.authPlugInControl = nil
+
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
-	globals.swiftAccountURL = ""
-	globals.swiftAccountBypassURL = ""
-
-	updateAuthTokenAndAccountURL()
+	globals.swiftStorageURL = ""
 
 	globals.fissionErrChan = make(chan error)
 
@@ -632,6 +677,12 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.fileInodeMap = make(map[inode.InodeNumber]*fileInodeStruct)
 
 	globals.fileInodeDirtyList = list.New()
+
+	globals.fileInodeDirtyLogSegmentChan = make(chan struct{}, globals.config.DirtyLogSegmentLimit)
+
+	for fileInodeDirtyLogSegmentChanIndex = 0; fileInodeDirtyLogSegmentChanIndex < globals.config.DirtyLogSegmentLimit; fileInodeDirtyLogSegmentChanIndex++ {
+		globals.fileInodeDirtyLogSegmentChan <- struct{}{}
+	}
 
 	globals.leaseRequestChan = make(chan *fileInodeLeaseRequestStruct)
 
@@ -650,6 +701,9 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.logSegmentCacheLRU = list.New()
 
 	globals.metrics = &metricsStruct{}
+	globals.stats = &statsStruct{}
+
+	bucketstats.Register("PFSAgent", "", globals.stats)
 }
 
 func uninitializeGlobals() {
@@ -666,6 +720,10 @@ func uninitializeGlobals() {
 	globals.leaseRequestChan <- leaseRequest
 	leaseRequest.Wait()
 
+	bucketstats.UnRegister("PFSAgent", "")
+
+	// TODO: kill auth plug-in child (if alive)
+
 	globals.logFile = nil
 	globals.retryRPCPublicIPAddr = ""
 	globals.retryRPCPort = 0
@@ -678,16 +736,17 @@ func uninitializeGlobals() {
 	globals.httpServer = nil
 	globals.httpClient = nil
 	globals.retryDelay = nil
+	globals.authPlugInControl = nil
 	globals.swiftAuthWaitGroup = nil
 	globals.swiftAuthToken = ""
-	globals.swiftAccountURL = ""
-	globals.swiftAccountBypassURL = ""
+	globals.swiftStorageURL = ""
 	globals.fissionErrChan = nil
 	globals.fissionVolume = nil
 	globals.fuseConn = nil
 	globals.jrpcLastID = 0
 	globals.fileInodeMap = nil
 	globals.fileInodeDirtyList = nil
+	globals.fileInodeDirtyLogSegmentChan = nil
 	globals.leaseRequestChan = nil
 	globals.unleasedFileInodeCacheLRU = nil
 	globals.sharedLeaseFileInodeCacheLRU = nil
@@ -698,4 +757,5 @@ func uninitializeGlobals() {
 	globals.logSegmentCacheMap = nil
 	globals.logSegmentCacheLRU = nil
 	globals.metrics = nil
+	globals.stats = nil
 }

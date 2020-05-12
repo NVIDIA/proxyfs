@@ -165,11 +165,11 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 }
 
 func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
-	globals.statChan = nil
-
 	globals.stopChan <- true
 
 	_ = <-globals.doneChan
+
+	globals.statChan = nil
 
 	err = nil
 

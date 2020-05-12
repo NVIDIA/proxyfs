@@ -1052,9 +1052,9 @@ func objectFetchChunkedPutContext(accountName string, containerName string, obje
 	headers["Transfer-Encoding"] = []string{"chunked"}
 
 	// check for chaos error generation (testing only)
-	if globals.chaosFetchChunkedPutFailureRate > 0 &&
+	if atomic.LoadUint64(&globals.chaosFetchChunkedPutFailureRate) > 0 &&
 		(atomic.AddUint64(&objectFetchChunkedPutContextCnt, 1)%
-			globals.chaosFetchChunkedPutFailureRate == 0) {
+			atomic.LoadUint64(&globals.chaosFetchChunkedPutFailureRate) == 0) {
 		err = fmt.Errorf("swiftclient.objectFetchChunkedPutContext returning simulated error")
 	} else {
 		err = writeHTTPRequestLineAndHeaders(connection.tcpConn, "PUT", "/"+swiftVersion+"/"+pathEscape(accountName, containerName, objectName), headers)
@@ -1218,9 +1218,9 @@ func (chunkedPutContext *chunkedPutContextStruct) closeHelper() (err error) {
 
 	httpStatus, headers, err = readHTTPStatusAndHeaders(chunkedPutContext.connection.tcpConn)
 
-	chunkedPutCloseCnt++
-	if globals.chaosCloseChunkFailureRate > 0 &&
-		chunkedPutCloseCnt%globals.chaosCloseChunkFailureRate == 0 {
+	atomic.AddUint64(&chunkedPutCloseCnt, 1)
+	if atomic.LoadUint64(&globals.chaosCloseChunkFailureRate) > 0 &&
+		atomic.LoadUint64(&chunkedPutCloseCnt)%atomic.LoadUint64(&globals.chaosCloseChunkFailureRate) == 0 {
 		err = fmt.Errorf("chunkedPutContextStruct.closeHelper(): readHTTPStatusAndHeaders() simulated error")
 	}
 	if nil != err {
@@ -1456,9 +1456,9 @@ func (chunkedPutContext *chunkedPutContextStruct) retry() (err error) {
 		}
 
 		// check for chaos error generation (testing only)
-		chunkedPutSendRetryCnt++
-		if globals.chaosSendChunkFailureRate > 0 &&
-			chunkedPutSendRetryCnt%globals.chaosSendChunkFailureRate == 0 {
+		atomic.AddUint64(&chunkedPutSendRetryCnt, 1)
+		if atomic.LoadUint64(&globals.chaosSendChunkFailureRate) > 0 &&
+			atomic.LoadUint64(&chunkedPutSendRetryCnt)%atomic.LoadUint64(&globals.chaosSendChunkFailureRate) == 0 {
 
 			nChunk, _ := chunkedPutContext.bytesPutTree.Len()
 			err = fmt.Errorf("chunkedPutContextStruct.retry(): "+
@@ -1714,9 +1714,9 @@ func (chunkedPutContext *chunkedPutContextStruct) SendChunk(buf []byte) (err err
 	}
 
 	// check for chaos error generation (testing only)
-	chunkedPutSendCnt++
-	if globals.chaosSendChunkFailureRate > 0 &&
-		chunkedPutSendCnt%globals.chaosSendChunkFailureRate == 0 {
+	atomic.AddUint64(&chunkedPutSendCnt, 1)
+	if atomic.LoadUint64(&globals.chaosSendChunkFailureRate) > 0 &&
+		atomic.LoadUint64(&chunkedPutSendCnt)%atomic.LoadUint64(&globals.chaosSendChunkFailureRate) == 0 {
 		err = fmt.Errorf("chunkedPutContextStruct.SendChunk(): writeHTTPPutChunk() simulated error")
 	} else {
 		err = writeHTTPPutChunk(chunkedPutContext.connection.tcpConn, buf)

@@ -70,6 +70,8 @@ type globalsStruct struct {
 	whoAmI                          string
 	noAuthTCPPort                   uint16
 	noAuthAddr                      string
+	noAuthHTTPServer                *http.Server
+	noAuthHTTPServerWG              sync.WaitGroup
 	swiftAccountMap                 map[string]*swiftAccountStruct // key is swiftAccountStruct.name, value is *swiftAccountStruct
 	accountMethodCount              methodStruct
 	containerMethodCount            methodStruct
@@ -1185,7 +1187,7 @@ func doPut(responseWriter http.ResponseWriter, request *http.Request) {
 							if wasCreated {
 								responseWriter.WriteHeader(http.StatusCreated)
 							} else {
-								responseWriter.WriteHeader(http.StatusAccepted)
+								responseWriter.WriteHeader(http.StatusCreated)
 							}
 						case unix.ENOENT:
 							responseWriter.WriteHeader(http.StatusForbidden)
@@ -1222,7 +1224,7 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 	}
 }
 
-func serveNoAuthSwift(confMap conf.ConfMap) {
+func setupNoAuthSwift(confMap conf.ConfMap) {
 	var (
 		err                    error
 		errno                  syscall.Errno
@@ -1288,9 +1290,18 @@ func serveNoAuthSwift(confMap conf.ConfMap) {
 
 	fetchSwiftInfo(confMap)
 
-	// Launch HTTP Server on the requested noAuthTCPPort
+	// Create HTTP Server on the requested noAuthTCPPort
 
-	http.ListenAndServe(globals.noAuthAddr, httpRequestHandler{})
+	globals.noAuthHTTPServer = &http.Server{
+		Addr:    globals.noAuthAddr,
+		Handler: httpRequestHandler{},
+	}
+}
+
+func serveNoAuthSwift() {
+	_ = globals.noAuthHTTPServer.ListenAndServe()
+
+	globals.noAuthHTTPServerWG.Done()
 }
 
 func updateConf(confMap conf.ConfMap) {
@@ -1580,7 +1591,9 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 
 	// Kick off NoAuth Swift Proxy Emulator
 
-	go serveNoAuthSwift(confMap)
+	setupNoAuthSwift(confMap)
+	globals.noAuthHTTPServerWG.Add(1)
+	go serveNoAuthSwift()
 
 	// Wait for serveNoAuthSwift() to begin serving
 
@@ -1636,6 +1649,10 @@ func Daemon(confFile string, confStrings []string, signalHandlerIsArmedWG *sync.
 			updateConf(confMap)
 		} else {
 			// signalReceived either SIGINT or SIGTERM... so just exit
+
+			err = globals.noAuthHTTPServer.Close()
+
+			globals.noAuthHTTPServerWG.Wait()
 
 			globals = nil
 

@@ -89,8 +89,8 @@ type Callbacks interface {
 // FUSE upcalls (e.g. as a result of an intentional DoUnmount() call or some unexpected error reading
 // from /dev/fuse).
 //
-func NewVolume(volumeName string, mountpointDirPath string, fuseSubtype string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume) {
-	volume = newVolume(volumeName, mountpointDirPath, fuseSubtype, mountFlags, initOutMaxWrite, callbacks, logger, errChan)
+func NewVolume(volumeName string, mountpointDirPath string, fuseSubtype string, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume Volume) {
+	volume = newVolume(volumeName, mountpointDirPath, fuseSubtype, initOutMaxWrite, callbacks, logger, errChan)
 	return
 }
 
@@ -328,7 +328,7 @@ const (
 	OpCodeCreate        = uint32(35)
 	OpCodeInterrupt     = uint32(36) // no reply
 	OpCodeBMap          = uint32(37)
-	OpCodeDestroy       = uint32(38) // no reply
+	OpCodeDestroy       = uint32(38)
 	OpCodeIoCtl         = uint32(39) // unsupported
 	OpCodePoll          = uint32(40)
 	OpCodeNotifyReply   = uint32(41) // unsupported

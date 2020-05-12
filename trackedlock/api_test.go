@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -30,6 +31,9 @@ var (
 		"Stats.UDPPort=52184",
 		"Stats.BufferLength=100",
 		"Stats.MaxLatency=1s",
+
+		"Logging.LogFilePath=/dev/null",
+		"Logging.LogToConsole=false",
 	}
 
 	// matches: "trackedlock watcher: *trackedlock.Mutex at 0xc420110000 locked for 2.003s sec rank 0; stack at call to Lock():\ngoroutine 19 [running]:..."
@@ -86,7 +90,7 @@ func TestAPI(t *testing.T) {
 	}
 
 	// validate packge config variables
-	if globals.lockHoldTimeLimit != 2*time.Second {
+	if time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) != 2*time.Second {
 		t.Fatalf("after Up() globals.lockHoldTimeLimi != 2 sec")
 	}
 
@@ -428,10 +432,10 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 		t.Fatalf("time.ParseDuration(%s) failed: %v", lockCheckPeriod, err)
 	}
 
-	if globals.lockHoldTimeLimit != limit || globals.lockCheckPeriod != period {
+	if time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) != limit || time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)) != period {
 		t.Fatalf("lockHoldTimeLimit=%d is not %s or lockCheckPeriod=%d is not %s",
-			globals.lockHoldTimeLimit, lockHoldTimeLimit,
-			globals.lockCheckPeriod, lockCheckPeriod)
+			time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)), lockHoldTimeLimit,
+			time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)), lockCheckPeriod)
 	}
 }
 
@@ -461,19 +465,29 @@ func updateTrackingState(t *testing.T, lockHoldTimeLimit string, lockCheckPeriod
 //
 func TestReload(t *testing.T) {
 
+	// bring the package up using the default config
+	confMap, err := conf.MakeConfMapFromStrings(confStrings)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	// Startup packages involved
+	err = logger.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("logger.Up(confMap) failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
+	err = globals.Up(confMap)
+	if nil != err {
+		tErr := fmt.Sprintf("Up() failed: %v", err)
+		t.Fatalf(tErr)
+	}
+
 	// get a copy of what's written to the log
 	var logcopy logger.LogTarget
 	logcopy.Init(256)
 	logger.AddLogTarget(logcopy)
-
-	var err error
-
-	// bring the package up using the default config
-	confMap, _ := conf.MakeConfMapFromStrings(confStrings)
-	err = globals.Up(confMap)
-	if err != nil {
-		t.Fatalf("Up() failed: %v", err)
-	}
 
 	// transition to step 0: lock tracking disabled; watching disabled
 	updateTrackingState(t, "0s", "0s")

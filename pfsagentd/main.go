@@ -21,15 +21,6 @@ func main() {
 		log.Fatalf("no .conf file specified")
 	}
 
-	// Arm signal handler used to indicate termination and wait on it
-	//
-	// Note: signalled chan must be buffered to avoid race with window between
-	// arming handler and blocking on the chan read
-
-	signalChan = make(chan os.Signal, 1)
-
-	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
-
 	// Parse arguments (at this point, logging goes only to the console)
 
 	globals.logFile = nil
@@ -46,9 +37,22 @@ func main() {
 		log.Fatalf("failed to apply config overrides: %v", err)
 	}
 
+	// Arm signal handler used to indicate termination and wait on it
+	//
+	// Note: signalled chan must be buffered to avoid race with window between
+	// arming handler and blocking on the chan read
+
+	signalChan = make(chan os.Signal, 1)
+
+	signal.Notify(signalChan, unix.SIGINT, unix.SIGTERM, unix.SIGHUP)
+
 	// Initialize globals
 
 	initializeGlobals(confMap)
+
+	// Trigger initial auth plug-in invocation
+
+	updateAuthTokenAndStorageURL()
 
 	// Perform mount via ProxyFS
 
@@ -80,13 +84,17 @@ func main() {
 
 	performUnmountFUSE()
 
+	// Flush all dirty fileInode's
+
+	emptyFileInodeDirtyListAndLogSegmentChan()
+
 	// Perform unmount via ProxyFS
 
 	doUnmountProxyFS()
 
-	// Flush all dirty fileInode's
+	// Terminate authPlugIn
 
-	emptyFileInodeDirtyList()
+	stopAuthPlugIn()
 
 	// Uninitialize globals
 

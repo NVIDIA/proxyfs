@@ -1,6 +1,7 @@
 package trackedlock
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
@@ -9,40 +10,47 @@ import (
 )
 
 func parseConfMap(confMap conf.ConfMap) (err error) {
+	var (
+		lockCheckPeriod   time.Duration
+		lockHoldTimeLimit time.Duration
+	)
 
-	globals.lockHoldTimeLimit, err = confMap.FetchOptionValueDuration("TrackedLock", "LockHoldTimeLimit")
+	lockHoldTimeLimit, err = confMap.FetchOptionValueDuration("TrackedLock", "LockHoldTimeLimit")
 	if err != nil {
 		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' defaulting to '0s': %v", err)
-		globals.lockHoldTimeLimit = time.Duration(0 * time.Second)
+		lockHoldTimeLimit = time.Duration(0 * time.Second)
 	}
 
 	// lockHoldTimeLimit must be >= 1 sec or 0
-	if globals.lockHoldTimeLimit < time.Second && globals.lockHoldTimeLimit != 0 {
+	if lockHoldTimeLimit < time.Second && lockHoldTimeLimit != 0 {
 		logger.Warnf("config variable 'TrackedLock.LockHoldTimeLImit' value less then 1 sec; defaulting to '40s'")
-		globals.lockHoldTimeLimit = time.Duration(40 * time.Second)
+		lockHoldTimeLimit = time.Duration(40 * time.Second)
 	}
 
-	globals.lockCheckPeriod, err = confMap.FetchOptionValueDuration("TrackedLock", "LockCheckPeriod")
+	lockCheckPeriod, err = confMap.FetchOptionValueDuration("TrackedLock", "LockCheckPeriod")
 	if err != nil {
 		logger.Warnf("config variable 'TrackedLock.LockCheckPeriod' defaulting to '0s': %v", err)
-		globals.lockCheckPeriod = time.Duration(0 * time.Second)
+		lockCheckPeriod = time.Duration(0 * time.Second)
 	}
 
 	// lockCheckPeriod must be >= 1 sec or 0
-	if globals.lockCheckPeriod < time.Second && globals.lockCheckPeriod != 0 {
+	if lockCheckPeriod < time.Second && lockCheckPeriod != 0 {
 		logger.Warnf("config variable 'TrackedLock.LockCheckPeriod' value less then 1 sec; defaulting to '20s'")
-		globals.lockCheckPeriod = time.Duration(20 * time.Second)
+		lockCheckPeriod = time.Duration(20 * time.Second)
 	}
 
 	// if there is no lockHoldTimeLimit then the lock watcher should not run
-	if globals.lockHoldTimeLimit == 0 && globals.lockCheckPeriod != 0 {
+	if lockHoldTimeLimit == 0 && lockCheckPeriod != 0 {
 		logger.Warnf("config variable 'TrackedLock.LockCheckPeriod' > 0 but" +
 			" 'TrackedLock.LockHoldTimeLImit' == 0; setting LockCheckPeriod to 0")
-		globals.lockCheckPeriod = 0
+		lockCheckPeriod = 0
 	}
 
+	atomic.StoreInt64(&globals.lockHoldTimeLimit, int64(lockHoldTimeLimit))
+	atomic.StoreInt64(&globals.lockCheckPeriod, int64(lockCheckPeriod))
+
 	logger.Infof("trackedlock pkg: LockHoldTimeLimit %d sec  LockCheckPeriod %d sec",
-		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
+		lockHoldTimeLimit/time.Second, lockCheckPeriod/time.Second)
 
 	// log information upto 16 locks
 	globals.lockWatcherLocksLogged = 16
@@ -77,12 +85,12 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	// if the lock checker is disabled or there's no time limit then
 	// there's no need to start the watcher
-	if globals.lockCheckPeriod == 0 || globals.lockHoldTimeLimit == 0 {
+	if atomic.LoadInt64(&globals.lockCheckPeriod) == 0 || atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 		return
 	}
 
 	// watch the locks to see if they are held too long
-	globals.lockCheckTicker = time.NewTicker(globals.lockCheckPeriod)
+	globals.lockCheckTicker = time.NewTicker(time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)))
 	globals.lockCheckChan = globals.lockCheckTicker.C
 	go lockWatcher()
 
@@ -108,8 +116,8 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 
 	// read the new confmap; if the log period has changed or there was an
 	// error shutdown the old logger prior to starting a new one
-	oldCheckPeriod := globals.lockCheckPeriod
-	oldTimeLimit := globals.lockHoldTimeLimit
+	oldCheckPeriod := time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod))
+	oldTimeLimit := time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit))
 	err = parseConfMap(confMap)
 	if err != nil {
 		logger.ErrorWithError(err, "cannot parse confMap")
@@ -121,13 +129,13 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 	}
 
 	// if no change required, just return
-	if globals.lockCheckPeriod == oldCheckPeriod && globals.lockHoldTimeLimit == oldTimeLimit {
+	if time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)) == oldCheckPeriod && time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit)) == oldTimeLimit {
 		return
 	}
 
 	logger.Infof("trackedlock pkg: LockHoldTimeLimit / LockCheckPeriod changed from %d/%d sec to %d/%d sec",
 		oldTimeLimit/time.Second, oldCheckPeriod/time.Second,
-		globals.lockHoldTimeLimit/time.Second, globals.lockCheckPeriod/time.Second)
+		time.Duration(atomic.LoadInt64(&globals.lockHoldTimeLimit))/time.Second, time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod))/time.Second)
 
 	// shutdown the old watcher (if any) and start a new one (if any)
 	if oldCheckPeriod != 0 {
@@ -151,11 +159,11 @@ func (dummy *globalsStruct) updateStateFromConfMap(confMap conf.ConfMap) (err er
 		}
 	}
 
-	if globals.lockCheckPeriod == 0 || globals.lockHoldTimeLimit == 0 {
+	if atomic.LoadInt64(&globals.lockCheckPeriod) == 0 || atomic.LoadInt64(&globals.lockHoldTimeLimit) == 0 {
 		return
 	}
 
-	globals.lockCheckTicker = time.NewTicker(globals.lockCheckPeriod)
+	globals.lockCheckTicker = time.NewTicker(time.Duration(atomic.LoadInt64(&globals.lockCheckPeriod)))
 	globals.lockCheckChan = globals.lockCheckTicker.C
 	go lockWatcher()
 

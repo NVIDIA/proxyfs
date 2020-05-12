@@ -954,7 +954,7 @@ func (s *Server) RpcWrote(in *WroteRequest, reply *WroteReply) (err error) {
 
 	mountHandle, err := lookupMountHandleByMountIDAsString(in.MountID)
 	if nil == err {
-		err = mountHandle.Wrote(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.ObjectPath, in.FileOffset, in.ObjectOffset, in.Length)
+		err = mountHandle.Wrote(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.ContainerName, in.ObjectName, in.FileOffset, in.ObjectOffset, in.Length)
 	}
 
 	return
@@ -1477,6 +1477,7 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 		reply.RootDirInodeNumber = int64(uint64(inode.RootDirInodeNumber))
 		reply.RetryRPCPublicIPAddr = globals.publicIPAddr
 		reply.RetryRPCPort = globals.retryRPCPort
+		reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 	}
 	return
 }

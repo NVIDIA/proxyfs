@@ -409,10 +409,11 @@ type MountByVolumeNameRequest struct {
 
 // MountByVolumeNameReply is the reply object for RpcMountByVolumeName.
 type MountByVolumeNameReply struct {
-	MountID              MountIDAsString
-	RootDirInodeNumber   int64
-	RetryRPCPublicIPAddr string
-	RetryRPCPort         uint16
+	MountID                  MountIDAsString
+	RootDirInodeNumber       int64
+	RetryRPCPublicIPAddr     string
+	RetryRPCPort             uint16
+	RootCAx509CertificatePEM []byte
 }
 
 // ReaddirRequest is the request object for RpcReaddir.
@@ -831,10 +832,11 @@ type ProvisionObjectReply struct {
 
 type WroteRequest struct {
 	InodeHandle
-	ObjectPath   string
-	FileOffset   []uint64
-	ObjectOffset []uint64
-	Length       []uint64
+	ContainerName string
+	ObjectName    string
+	FileOffset    []uint64
+	ObjectOffset  []uint64
+	Length        []uint64
 }
 
 type WroteReply struct {

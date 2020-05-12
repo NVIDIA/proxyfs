@@ -17,6 +17,9 @@ import (
 )
 
 const (
+	testAccountName             = "AUTH_test"
+	testAuthKey                 = "testing"
+	testAuthUser                = "test:tester"
 	testDaemonStartPollInterval = 1 * time.Second
 	testProxyFSDaemonHTTPPort   = "15347"
 	testProxyFSDaemonIPAddr     = "127.0.0.1"
@@ -41,6 +44,7 @@ func testSetup(t *testing.T) {
 		testConfMap                    conf.ConfMap
 		testConfStrings                []string
 		testDir                        string
+		testPlugInEnvValue             string
 		versionResponse                *http.Response
 	)
 
@@ -64,18 +68,27 @@ func testSetup(t *testing.T) {
 		t.Fatalf("os.Mkdir() failed: %v", err)
 	}
 
+	testPlugInEnvValue = "{\"AuthURL\":\"http://"
+	testPlugInEnvValue += testSwiftProxyAddr
+	testPlugInEnvValue += "/auth/v1.0\"\\u002C\"AuthUser\":\""
+	testPlugInEnvValue += testAuthUser
+	testPlugInEnvValue += "\"\\u002C\"AuthKey\":\""
+	testPlugInEnvValue += testAuthKey
+	testPlugInEnvValue += "\"\\u002C\"Account\":\""
+	testPlugInEnvValue += testAccountName
+	testPlugInEnvValue += "\"}"
+
 	testConfStrings = []string{
 		"Agent.FUSEVolumeName=CommonVolume",
 		"Agent.FUSEMountPointPath=PfsAgentMountPointPath",
 		"Agent.FUSEUnMountRetryDelay=100ms",
 		"Agent.FUSEUnMountRetryCap=100",
-		"Agent.SwiftAuthURL=http://" + testSwiftProxyAddr + "/auth/v1.0",
-		"Agent.SwiftAuthUser=test:tester",
-		"Agent.SwiftAuthKey=testing",
-		"Agent.SwiftAccountName=AUTH_test",
+		"Agent.PlugInPath=/dev/null", // Using hard-coded AUTH
+		"Agent.PlugInEnvName=SwiftAuthBlob",
+		"Agent.PlugInEnvValue=" + testPlugInEnvValue,
 		"Agent.SwiftTimeout=20s",
-		"Agent.SwiftRetryLimit=2",
-		"Agent.SwiftRetryDelay=1s",
+		"Agent.SwiftRetryLimit=10",
+		"Agent.SwiftRetryDelay=10ms",
 		"Agent.SwiftRetryDelayVariance=25",
 		"Agent.SwiftRetryExpBackoff=1.4",
 		"Agent.SwiftConnectionPoolSize=200",
@@ -102,6 +115,8 @@ func testSetup(t *testing.T) {
 		"Agent.FUSEMaxBackground=100",
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
+		"Agent.RetryRPCDeadlineIO=60s",
+		"Agent.RetryRPCKEEPALIVEPeriod=60s",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=54324",
@@ -268,9 +283,27 @@ func testSetup(t *testing.T) {
 
 	initializeGlobals(testConfMap)
 
+	// Fake out that plug-in auth has already obtained AuthToken & StorageURL
+
+	globals.swiftAuthToken = testAuthToken
+	globals.swiftStorageURL = "http://" + testSwiftProxyAddr + "/proxyfs/" + testAccountName
+
+	go testSwallowFissionErrChan(t, globals.fissionErrChan)
+
 	doMountProxyFS()
 
 	performMountFUSE()
+}
+
+func testSwallowFissionErrChan(t *testing.T, fissionErrChan chan error) {
+	var (
+		err error
+	)
+
+	err = <-fissionErrChan
+	if nil != err {
+		t.Fatalf("fissionErrChan received err: %v", err)
+	}
 }
 
 func testTeardown(t *testing.T) {
@@ -280,6 +313,8 @@ func testTeardown(t *testing.T) {
 	)
 
 	performUnmountFUSE()
+
+	emptyFileInodeDirtyListAndLogSegmentChan()
 
 	doUnmountProxyFS()
 

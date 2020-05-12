@@ -93,9 +93,9 @@ func TestSwiftProxyEmulation(t *testing.T) {
 	testSetup(t)
 
 	for {
-		swiftAccountURLSplit = strings.Split(globals.swiftAccountURL, "/")
+		swiftAccountURLSplit = strings.Split(globals.swiftStorageURL, "/")
 		if len(swiftAccountURLSplit) >= 3 {
-			infoURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "info"), "/")
+			infoURL = strings.Join(append(strings.Split(globals.swiftStorageURL, "/")[:3], "info"), "/")
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -134,15 +134,15 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /info returned unexpected swiftInfo")
 	}
 
-	authURL = strings.Join(append(strings.Split(globals.swiftAccountURL, "/")[:3], "auth", "v1.0"), "/")
+	authURL = strings.Join(append(strings.Split(globals.swiftStorageURL, "/")[:3], "auth", "v1.0"), "/")
 
 	authRequest, err = http.NewRequest("GET", authURL, nil)
 	if nil != err {
 		t.Fatalf("Creating GET /auth/v1.0 http.Request failed: %v", err)
 	}
 
-	authRequest.Header.Add("X-Auth-User", globals.config.SwiftAuthUser)
-	authRequest.Header.Add("X-Auth-Key", globals.config.SwiftAuthKey)
+	authRequest.Header.Add("X-Auth-User", testAuthUser)
+	authRequest.Header.Add("X-Auth-Key", testAuthKey)
 
 	authResponse, err = testSwiftProxyEmulatorGlobals.httpClient.Do(authRequest)
 	if nil != err {
@@ -161,11 +161,11 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("GET /auth/v1.0 returned incorrect X-Auth-Token")
 	}
 
-	if "http://"+testSwiftProxyAddr+"/v1/"+globals.config.SwiftAccountName != authResponse.Header.Get("X-Storage-Url") {
+	if "http://"+testSwiftProxyAddr+"/v1/"+testAccountName != authResponse.Header.Get("X-Storage-Url") {
 		t.Fatalf("GET /auth/v1.0 returned incorrect X-Storage-Url")
 	}
 
-	putContainerRequest, err = http.NewRequest("PUT", globals.swiftAccountBypassURL+"/TestContainer", nil)
+	putContainerRequest, err = http.NewRequest("PUT", globals.swiftStorageURL+"/TestContainer", nil)
 	if nil != err {
 		t.Fatalf("Creating PUT .../TestContainer failed: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("PUT .../TestContainer returned bad status: %v", putContainerResponse.Status)
 	}
 
-	putObjectRequest, err = http.NewRequest("PUT", globals.swiftAccountBypassURL+"/TestContainer/TestObject", bytes.NewReader([]byte{0x00, 0x01, 0x02, 0x03, 0x04}))
+	putObjectRequest, err = http.NewRequest("PUT", globals.swiftStorageURL+"/TestContainer/TestObject", bytes.NewReader([]byte{0x00, 0x01, 0x02, 0x03, 0x04}))
 	if nil != err {
 		t.Fatalf("Creating PUT .../TestContainer/TestObject failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("PUT .../TestContainer/TestObject returned bad status: %v", putObjectResponse.Status)
 	}
 
-	getObjectRequest, err = http.NewRequest("GET", globals.swiftAccountBypassURL+"/TestContainer/TestObject", nil)
+	getObjectRequest, err = http.NewRequest("GET", globals.swiftStorageURL+"/TestContainer/TestObject", nil)
 	if nil != err {
 		t.Fatalf("Creating GET .../TestContainer/TestObject failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestSwiftProxyEmulation(t *testing.T) {
 		t.Fatalf("Marshaling pingReq failed: %v", err)
 	}
 
-	pingRequest, err = http.NewRequest("PROXYFS", globals.swiftAccountURL, bytes.NewReader(pingReqBuf))
+	pingRequest, err = http.NewRequest("PROXYFS", globals.swiftStorageURL, bytes.NewReader(pingReqBuf))
 	if nil != err {
 		t.Fatalf("Creating PROXYFS pingReq failed: %v", err)
 	}

@@ -22,25 +22,27 @@ class MetaMiddleware(object):
         hToDel = list()
         vToAdd = list()
         for h in env:
-             if h.upper() == 'HTTP_X_PROXYFS_BIMODAL':
+            if h.upper() == 'HTTP_X_PROXYFS_BIMODAL':
                 hToDel.append(h)
                 vToAdd.append(env[h])
         for h in hToDel:
             del env[h]
         for v in vToAdd:
-            env['HTTP_X_ACCOUNT_SYSMETA_PROXYFS_BIMODAL'] = v # only last one, if multiple, will determine value
+            # NB: only last one, if multiple, will determine value
+            env['HTTP_X_ACCOUNT_SYSMETA_PROXYFS_BIMODAL'] = v
 
         def meta_response(status, response_headers, exc_info=None):
             hvToDel = list()
             vToAdd = list()
-            for (h,v) in response_headers:
+            for (h, v) in response_headers:
                 if h.upper() == 'X-ACCOUNT-SYSMETA-PROXYFS-BIMODAL':
-                    hvToDel.append((h,v))
+                    hvToDel.append((h, v))
                     vToAdd.append(v)
             for hv in hvToDel:
                 response_headers.remove(hv)
             for v in vToAdd:
-                response_headers.append(('X-ProxyFS-BiModal',v)) # potentially multiple instances of same header
+                # potentially multiple instances of same header
+                response_headers.append(('X-ProxyFS-BiModal', v))
             return start_response(status, response_headers, exc_info)
 
         return self.app(env, meta_response)

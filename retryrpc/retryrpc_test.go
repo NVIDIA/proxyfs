@@ -14,7 +14,7 @@ import (
 // circular dependency if the test was in retryrpc.
 func TestRetryRPC(t *testing.T) {
 
-	//	testServer(t)
+	testServer(t)
 	testBtree(t)
 }
 
@@ -39,15 +39,17 @@ func (m *MyType) unexportedFunction(i int) {
 	m.field1 = i
 }
 
-func getNewServer() (rrSvr *Server, ip string, p int) {
+func getNewServer(lt time.Duration) (rrSvr *Server, ip string, p int) {
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
 	)
+	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: "127.0.0.1",
+		Port: 24456, DeadlineIO: 5 * time.Second}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
-	rrSvr = NewServer(10*time.Second, 100*time.Millisecond, ipaddr, port)
+	rrSvr = NewServer(config)
 	ip = ipaddr
 	p = port
 	return
@@ -63,7 +65,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer()
+	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -79,7 +81,9 @@ func testServer(t *testing.T) {
 	rrSvr.Run()
 
 	// Now - setup a client to send requests to the server
-	rrClnt, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	rrClnt, newErr := NewClient(clientConfig)
 	assert.NotNil(rrClnt)
 	assert.Nil(newErr)
 
@@ -89,8 +93,6 @@ func testServer(t *testing.T) {
 	sendErr := rrClnt.Send("RpcPing", pingRequest, pingReply)
 	assert.Nil(sendErr)
 	assert.Equal("pong 8 bytes", pingReply.Message)
-
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(1, rrSvr.CompletedCnt())
 
 	// Send an RPC which should return an error
@@ -99,12 +101,7 @@ func testServer(t *testing.T) {
 	sendErr = rrClnt.Send("RpcPingWithError", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(2, rrSvr.CompletedCnt())
-
-	// TODO - TODO - TODO....
-	// Verify that the server has seen the updated
-	// highestReplySeen
 
 	// Send an RPC which should return an error
 	pingRequest = &rpctest.PingReq{Message: "Ping Me!"}
@@ -112,7 +109,6 @@ func testServer(t *testing.T) {
 	sendErr = rrClnt.Send("RpcInvalidMethod", pingRequest, pingReply)
 	assert.NotNil(sendErr)
 
-	assert.Equal(0, rrSvr.PendingCnt())
 	assert.Equal(3, rrSvr.CompletedCnt())
 
 	// Stop the client before exiting
@@ -125,11 +121,13 @@ func testServer(t *testing.T) {
 func testBtree(t *testing.T) {
 	assert := assert.New(t)
 
-	rrSvr, ipaddr, port := getNewServer()
+	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
-	client, newErr := NewClient("client 1", ipaddr, port, rrSvr.Creds.RootCAx509CertificatePEM)
+	clientConfig := &ClientConfig{MyUniqueID: "client 1", IPAddr: ipaddr, Port: port, RootCAx509CertificatePEM: rrSvr.Creds.RootCAx509CertificatePEM,
+		Callbacks: nil, DeadlineIO: 5 * time.Second}
+	client, newErr := NewClient(clientConfig)
 	assert.NotNil(client)
 	assert.Nil(newErr)
 

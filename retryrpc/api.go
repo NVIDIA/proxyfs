@@ -9,10 +9,10 @@ package retryrpc
 
 import (
 	"container/list"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"reflect"
 	"sync"
@@ -37,14 +37,14 @@ type Server struct {
 	svrMap           map[string]*methodArgs // Key: Method name
 	ipaddr           string                 // IP address server listens too
 	port             int                    // Port of server
-	listener         net.Listener
+	netListener      net.Listener
+	tlsListener      net.Listener
 
 	halting              bool
 	goroutineWG          sync.WaitGroup // Used to track outstanding goroutines
 	connLock             sync.Mutex
 	connections          *list.List
 	connWG               sync.WaitGroup
-	listeners            []net.Listener
 	Creds                *ServerCreds
 	listenersWG          sync.WaitGroup
 	receiver             reflect.Value          // Package receiver being served
@@ -52,32 +52,39 @@ type Server struct {
 	completedTickerDone  chan bool
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
+	deadlineIO           time.Duration
+	keepalivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
 }
 
+// ServerConfig is used to configure a retryrpc Server
+type ServerConfig struct {
+	LongTrim        time.Duration // How long the results of an RPC are stored on a Server before removed
+	ShortTrim       time.Duration // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr          string        // IP Address that Server uses to listen
+	Port            int           // Port that Server uses to listen
+	DeadlineIO      time.Duration // How long I/Os on sockets wait even if idle
+	KEEPALIVEPeriod time.Duration // How frequently a KEEPALIVE is sent
+}
+
 // NewServer creates the Server object
-func NewServer(ttl time.Duration, shortTrim time.Duration, ipaddr string, port int) *Server {
+func NewServer(config *ServerConfig) *Server {
 	var (
 		err error
 	)
-	server := &Server{ipaddr: ipaddr, port: port, completedLongTTL: ttl, completedAckTrim: shortTrim}
+	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
+		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
+		keepalivePeriod: config.KEEPALIVEPeriod}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
 	server.connections = list.New()
 
-	server.Creds, err = constructServerCreds(ipaddr)
+	server.Creds, err = constructServerCreds(server.ipaddr)
 	if err != nil {
 		logger.Errorf("Construction of server credentials failed with err: %v", err)
 		panic(err)
 	}
-
-	// TODO - remove this once we integrate pfs-retryrpc into stress
-	// test framework
-	//
-	// Write our key to a file so test utilities can pick it up without using
-	// the mount API
-	ioutil.WriteFile("/tmp/cert.pem", server.Creds.RootCAx509CertificatePEM, 0700)
 
 	return server
 }
@@ -99,11 +106,14 @@ func (server *Server) Start() (err error) {
 		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
-	server.listener, err = tls.Listen("tcp", hostPortStr, tlsConfig)
+	listenConfig := &net.ListenConfig{KeepAlive: server.keepalivePeriod}
+	server.netListener, err = listenConfig.Listen(context.Background(), "tcp", hostPortStr)
 	if nil != err {
 		err = fmt.Errorf("tls.Listen() failed: %v", err)
 		return
 	}
+
+	server.tlsListener = tls.NewListener(server.netListener, tlsConfig)
 
 	server.listenersWG.Add(1)
 
@@ -136,22 +146,56 @@ func (server *Server) Run() {
 	go server.run()
 }
 
+// SendCallback sends a message to clientID so that clientID contacts
+// the RPC server.
+//
+// The assumption is that this callback only gets called when the server has
+// an async message for the client
+//
+// The message is "best effort" - if we fail to write on socket then the
+// message is silently dropped on floor.
+func (server *Server) SendCallback(clientID string, msg []byte) {
+
+	// TODO - what if client no longer in list of current clients?
+	var (
+		localIOR ioReply
+	)
+	server.Lock()
+	lci, ok := server.perClientInfo[clientID]
+	if !ok {
+		fmt.Printf("SERVER: SendCallback() - unable to find client UniqueID: %v\n", clientID)
+		server.Unlock()
+		return
+	}
+	server.Unlock()
+
+	lci.Lock()
+	currentCtx := lci.cCtx
+	lci.Unlock()
+
+	localIOR.JResult = msg
+	setupHdrReply(&localIOR, Upcall)
+
+	server.returnResults(&localIOR, currentCtx)
+}
+
 // Close stops the server
 func (server *Server) Close() {
 	server.Lock()
 	server.halting = true
 	server.Unlock()
 
-	err := server.listener.Close()
+	err := server.tlsListener.Close()
 	if err != nil {
-		logger.Errorf("server.listener.Close() returned err: %v", err)
+		logger.Errorf("server.tlsListener.Close() returned err: %v", err)
 	}
 
 	server.listenersWG.Wait()
 
-	// Now close the client sockets to wakeup our blocked readers
-	server.closeClientConn()
 	server.goroutineWG.Wait()
+
+	// Now close the client sockets to wakeup them up
+	server.closeClientConn()
 
 	server.completedLongTicker.Stop()
 	server.completedShortTicker.Stop()
@@ -160,18 +204,20 @@ func (server *Server) Close() {
 }
 
 // CloseClientConn - This is debug code to cause some connections to be closed
-// TODO - call this from stress test case to cause retransmits
+// It is called from a stress test case to cause retransmits
 func (server *Server) CloseClientConn() {
 	if server == nil {
 		return
 	}
-	logger.Infof("CloseClientConn() called --------")
-	server.Lock()
+	server.connLock.Lock()
 	for c := server.connections.Front(); c != nil; c = c.Next() {
 		conn := c.Value.(net.Conn)
+		/* DEBUG code
+		fmt.Printf("SERVER - closing localaddr conn: %v remoteaddr: %v\n", conn.LocalAddr().String(), conn.RemoteAddr().String())
+		*/
 		conn.Close()
 	}
-	server.Unlock()
+	server.connLock.Unlock()
 }
 
 // CompletedCnt returns count of pendingRequests
@@ -180,16 +226,6 @@ func (server *Server) CloseClientConn() {
 func (server *Server) CompletedCnt() (totalCnt int) {
 	for _, v := range server.perClientInfo {
 		totalCnt += v.completedCnt()
-	}
-	return
-}
-
-// PendingCnt returns count of pendingRequests
-//
-// This is only useful for testing.
-func (server *Server) PendingCnt() (totalCnt int) {
-	for _, v := range server.perClientInfo {
-		totalCnt += v.pendingCnt()
 	}
 	return
 }
@@ -204,6 +240,9 @@ const (
 	DISCONNECTED
 	// CONNECTED means the Client is connected to the server
 	CONNECTED
+	// RETRANSMITTING means a goroutine is in the middle of recovering
+	// from a loss of a connection with the server
+	RETRANSMITTING
 )
 
 type connectionTracker struct {
@@ -224,7 +263,10 @@ type Client struct {
 	// tick at mount and increment from there?
 	// Handle reset of time?
 	connection         connectionTracker
-	myUniqueID         string                // Unique ID across all clients
+	myUniqueID         string      // Unique ID across all clients
+	cb                 interface{} // Callbacks to client
+	deadlineIO         time.Duration
+	keepalivePeriod    time.Duration
 	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
@@ -233,9 +275,29 @@ type Client struct {
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
 }
 
-// TODO - pass loggers to Client and Server objects
+// ClientCallbacks contains the methods required when supporting
+// callbacks from the Server.
+type ClientCallbacks interface {
+	Interrupt(payload []byte)
+}
+
+// ClientConfig is used to configure a retryrpc Client
+type ClientConfig struct {
+	MyUniqueID               string
+	IPAddr                   string        // IP Address of Server
+	Port                     int           // Port of Server
+	RootCAx509CertificatePEM []byte        // Root certificate
+	Callbacks                interface{}   // Structure implementing ClientCallbacks
+	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
+	KEEPALIVEPeriod          time.Duration // How frequently a KEEPALIVE is sent
+}
+
+// TODO - pass loggers to Cient and Server objects
 
 // NewClient returns a Client structure
+//
+// If the server wants to send an async message to the client
+// it uses the Interrupt method defined in cb
 //
 // NOTE: It is assumed that if a client calls NewClient(), it will
 // always use a unique myUniqueID.   Otherwise, the server may have
@@ -243,18 +305,19 @@ type Client struct {
 //
 // TODO - purge cache of old entries on server and/or use different
 // starting point for requestID.
-func NewClient(myUniqueID string, ipaddr string, port int, rootCAx509CertificatePEM []byte) (client *Client, err error) {
+func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{myUniqueID: myUniqueID}
-	portStr := fmt.Sprintf("%d", port)
+	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
+		keepalivePeriod: config.KEEPALIVEPeriod, deadlineIO: config.DeadlineIO}
+	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
-	client.connection.hostPortStr = net.JoinHostPort(ipaddr, portStr)
+	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
 	client.outstandingRequest = make(map[requestID]*reqCtx)
 	client.connection.x509CertPool = x509.NewCertPool()
 	client.bt = btree.New(2)
 
 	// Add cert for root CA to our pool
-	ok := client.connection.x509CertPool.AppendCertsFromPEM(rootCAx509CertificatePEM)
+	ok := client.connection.x509CertPool.AppendCertsFromPEM(config.RootCAx509CertificatePEM)
 	if !ok {
 		err = fmt.Errorf("x509CertPool.AppendCertsFromPEM() returned !ok")
 		return nil, err

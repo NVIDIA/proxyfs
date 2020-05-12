@@ -198,14 +198,19 @@ type globalsStruct struct {
 	etcdDialTimeout      time.Duration
 	etcdOpTimeout        time.Duration
 
-	metadataRecycleBin       bool                // UNDO
-	metadataRecycleBinHeader map[string][]string // UNDO
+	metadataRecycleBin       bool
+	metadataRecycleBinHeader map[string][]string
 
 	etcdClient *etcd.Client
 	etcdKV     etcd.KV
 
 	volumeGroupMap map[string]*volumeGroupStruct // key == volumeGroupStruct.name
 	volumeMap      map[string]*volumeStruct      // key == volumeStruct.volumeName
+
+	backgroundObjectDeleteRWMutex   trackedlock.RWMutex
+	backgroundObjectDeleteEnabled   bool           // used to make {Disable|Enable}ObjectDeletions() idempotent
+	backgroundObjectDeleteEnabledWG sync.WaitGroup // use to awaken blocked performDelayedObjectDeletes() after EnableObjectDeletions() called
+	backgroundObjectDeleteActiveWG  sync.WaitGroup // used to hold off returning from DisableObjectDeletions() until all deletions cease
 
 	FetchNonceUsec                     bucketstats.BucketLog2Round
 	GetInodeRecUsec                    bucketstats.BucketLog2Round
@@ -471,16 +476,20 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.etcdKV = etcd.NewKV(globals.etcdClient)
 	}
 
-	// Record temporary MetadataRecycleBin setting [UNDO]
+	// Record MetadataRecycleBin setting
 
 	globals.metadataRecycleBin, err = confMap.FetchOptionValueBool("FSGlobals", "MetadataRecycleBin")
 	if nil != err {
-		globals.metadataRecycleBin = false // UNDO: Eventually just return or, perhaps, set to true
+		globals.metadataRecycleBin = false // TODO: Eventually just return or, perhaps, set to true
 	}
 	if globals.metadataRecycleBin {
 		globals.metadataRecycleBinHeader = make(map[string][]string)
 		globals.metadataRecycleBinHeader[MetadataRecycleBinHeaderName] = []string{MetadataRecycleBinHeaderValue}
 	}
+
+	// Start off with background object deletions enabled
+
+	globals.backgroundObjectDeleteEnabled = true
 
 	err = nil
 	return
@@ -665,6 +674,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
+	EnableObjectDeletions() // Otherwise, we will hang
 	return nil
 }
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {

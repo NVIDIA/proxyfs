@@ -2,6 +2,7 @@ package fission
 
 import (
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -12,7 +13,6 @@ type volumeStruct struct {
 	volumeName        string
 	mountpointDirPath string
 	fuseSubtype       string
-	mountFlags        uintptr
 	initOutMaxWrite   uint32
 	callbacks         Callbacks
 	logger            *log.Logger
@@ -20,16 +20,16 @@ type volumeStruct struct {
 	devFuseFDReadSize uint32 // InHeaderSize + WriteInSize + InitOut.MaxWrite
 	devFuseFDReadPool sync.Pool
 	devFuseFD         int
+	devFuseFile       *os.File
 	devFuseFDReaderWG sync.WaitGroup
 	callbacksWG       sync.WaitGroup
 }
 
-func newVolume(volumeName string, mountpointDirPath string, fuseSubtype string, mountFlags uintptr, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume *volumeStruct) {
+func newVolume(volumeName string, mountpointDirPath string, fuseSubtype string, initOutMaxWrite uint32, callbacks Callbacks, logger *log.Logger, errChan chan error) (volume *volumeStruct) {
 	volume = &volumeStruct{
 		volumeName:        volumeName,
 		mountpointDirPath: mountpointDirPath,
 		fuseSubtype:       fuseSubtype,
-		mountFlags:        mountFlags,
 		initOutMaxWrite:   initOutMaxWrite,
 		callbacks:         callbacks,
 		logger:            logger,
@@ -66,8 +66,19 @@ func (volume *volumeStruct) devFuseFDReader() {
 	for {
 		devFuseFDReadBuf = volume.devFuseFDReadPoolGet()
 
+	RetrySyscallRead:
 		bytesRead, err = syscall.Read(volume.devFuseFD, devFuseFDReadBuf)
 		if nil != err {
+			// First check for EINTR
+
+			if 0 == strings.Compare("interrupted system call", err.Error()) {
+				goto RetrySyscallRead
+			}
+
+			// Now that we are not retrying syscall.Read(), discard devFuseFDReadBuf
+
+			volume.devFuseFDReadPoolPut(devFuseFDReadBuf)
+
 			if 0 == strings.Compare("operation not permitted", err.Error()) {
 				// Special case... simply retry the Read
 				continue
@@ -81,6 +92,8 @@ func (volume *volumeStruct) devFuseFDReader() {
 			// Signal errChan that we are exiting (passing <nil> if due to close of volume.devFuseFD)
 
 			if 0 == strings.Compare("no such device", err.Error()) {
+				volume.errChan <- nil
+			} else if 0 == strings.Compare("operation not supported by device", err.Error()) {
 				volume.errChan <- nil
 			} else {
 				volume.logger.Printf("Exiting due to /dev/fuse Read err: %v", err)
@@ -262,6 +275,7 @@ func (volume *volumeStruct) devFuseFDWriter(inHeader *InHeader, errno syscall.Er
 
 	// Finally, send iovec to /dev/fuse
 
+RetrySyscallWriteV:
 	bytesWritten, _, errno = syscall.Syscall(
 		syscall.SYS_WRITEV,
 		uintptr(volume.devFuseFD),
@@ -272,6 +286,9 @@ func (volume *volumeStruct) devFuseFDWriter(inHeader *InHeader, errno syscall.Er
 			volume.logger.Printf("Write to /dev/fuse returned bad bytesWritten: %v", bytesWritten)
 		}
 	} else {
+		if syscall.EINTR == errno {
+			goto RetrySyscallWriteV
+		}
 		volume.logger.Printf("Write to /dev/fuse returned bad errno: %v", errno)
 	}
 }

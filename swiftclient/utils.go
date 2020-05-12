@@ -13,20 +13,28 @@ import (
 
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
+	"github.com/swiftstack/ProxyFS/version"
 )
 
 const swiftVersion = "v1"
 
 func drainConnections() {
 	var (
-		connection *connectionStruct
-		volumeName string
+		connection                    *connectionStruct
+		reservedChunkedConnectionCopy map[string]*connectionStruct
+		volumeName                    string
 	)
 
+	globals.reservedChunkedConnectionMutex.Lock()
+	reservedChunkedConnectionCopy = make(map[string]*connectionStruct)
 	for volumeName, connection = range globals.reservedChunkedConnection {
+		reservedChunkedConnectionCopy[volumeName] = connection
+	}
+	for volumeName, connection = range reservedChunkedConnectionCopy {
 		_ = connection.tcpConn.Close()
 		delete(globals.reservedChunkedConnection, volumeName)
 	}
+	globals.reservedChunkedConnectionMutex.Unlock()
 
 	globals.chunkedConnectionPool.Lock()
 	// The following should not be necessary so, as such, will remain commented out
@@ -477,9 +485,9 @@ var openConnectionCallCnt uint32
 // Open a connection to the Swift NoAuth Proxy.
 //
 func openConnection(caller string, connection *connectionStruct) (err error) {
-	if globals.chaosOpenConnectionFailureRate > 0 {
+	if atomic.LoadUint32(&globals.chaosOpenConnectionFailureRate) > 0 {
 		// atomic add only used when testing
-		if atomic.AddUint32(&openConnectionCallCnt, 1)%globals.chaosOpenConnectionFailureRate == 0 {
+		if atomic.AddUint32(&openConnectionCallCnt, 1)%atomic.LoadUint32(&globals.chaosOpenConnectionFailureRate) == 0 {
 			err = fmt.Errorf("Simulated openConnection() error")
 		}
 	}
@@ -537,7 +545,7 @@ func writeHTTPRequestLineAndHeaders(tcpConn *net.TCPConn, method string, path st
 	_, _ = bytesBuffer.WriteString(method + " " + path + " HTTP/1.1\r\n")
 
 	_, _ = bytesBuffer.WriteString("Host: " + globals.noAuthStringAddr + "\r\n")
-	_, _ = bytesBuffer.WriteString("User-Agent: ProxyFS\r\n")
+	_, _ = bytesBuffer.WriteString("User-Agent: ProxyFS " + version.ProxyFSVersion + "\r\n")
 
 	for headerName, headerValues = range headers {
 		_, _ = bytesBuffer.WriteString(headerName + ": ")

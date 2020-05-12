@@ -20,14 +20,29 @@ import (
 const (
 	fuseSubtype = "fission-ramfs"
 
-	mountFlags = uintptr(0)
+	initOutFlagsNearlyAll = uint32(0) |
+		fission.InitFlagsAsyncRead |
+		fission.InitFlagsFileOps |
+		fission.InitFlagsAtomicOTrunc |
+		fission.InitFlagsBigWrites |
+		fission.InitFlagsAutoInvalData |
+		fission.InitFlagsDoReadDirPlus |
+		fission.InitFlagsReaddirplusAuto |
+		fission.InitFlagsParallelDirops |
+		fission.InitFlagsMaxPages |
+		fission.InitFlagsExplicitInvalData
 
-	initOutFlagsMask            = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData | fission.InitFlagsDoReadDirPlus
 	initOutMaxBackgound         = uint16(100)
 	initOutCongestionThreshhold = uint16(0)
 	initOutMaxWrite             = uint32(128 * 1024) // 128KiB... the max write size in Linux FUSE at this time
 
-	attrBlkSize = 4096
+	attrBlkSize = uint32(4096)
+
+	entryValidSec  = uint64(10)
+	entryValidNSec = uint32(0)
+
+	attrValidSec  = uint64(10)
+	attrValidNSec = uint32(0)
 
 	tryLockBackoffMin = time.Duration(time.Second) // time.Duration(100 * time.Microsecond)
 	tryLockBackoffMax = time.Duration(time.Second) // time.Duration(300 * time.Microsecond)
@@ -52,12 +67,11 @@ type grantedLockSetStruct struct {
 
 type inodeStruct struct {
 	tryLock     *tryLockStruct
-	attr        fission.Attr        // (attr.Mode&syscall.S_IFMT) must be one of syscall.{S_IFDIR|S_IFREG|S_IFLNK}
-	xattrMap    sortedmap.LLRBTree  // key is xattr Name ([]byte); value is xattr Data ([]byte)
-	dirEntryMap sortedmap.LLRBTree  // [S_IFDIR only] key is basename of dirEntry ([]byte); value is attr.Ino (uint64)
-	fileData    []byte              // [S_IFREG only] zero-filled up to attr.Size contents of file
-	symlinkData []byte              // [S_IFLNK only] target path of symlink
-	fhSet       map[uint64]struct{} // key is FH
+	attr        fission.Attr       // (attr.Mode&syscall.S_IFMT) must be one of syscall.{S_IFDIR|S_IFREG|S_IFLNK}
+	xattrMap    sortedmap.LLRBTree // key is xattr Name ([]byte); value is xattr Data ([]byte)
+	dirEntryMap sortedmap.LLRBTree // [S_IFDIR only] key is basename of dirEntry ([]byte); value is attr.Ino (uint64)
+	fileData    []byte             // [S_IFREG only] zero-filled up to attr.Size contents of file
+	symlinkData []byte             // [S_IFLNK only] target path of symlink
 }
 
 type xattrMapDummyStruct struct{}
@@ -79,8 +93,6 @@ type globalsStruct struct {
 	dirEntryMapDummy      *dirEntryMapDummyStruct
 	inodeMap              map[uint64]*inodeStruct // key is inodeStruct.atr.Ino
 	lastNodeID            uint64                  // valid NodeID's start at 1... but 1 is the RootDir NodeID
-	fhMap                 map[uint64]uint64       // key is FH; value is inodeStruct.attr.Ino
-	lastFH                uint64                  // valid FH's start at 1
 	alreadyLoggedIgnoring alreadyLoggedIgnoringStruct
 	volume                fission.Volume
 }
@@ -143,7 +155,6 @@ func main() {
 		dirEntryMap: sortedmap.NewLLRBTree(sortedmap.CompareByteSlice, globals.dirEntryMapDummy),
 		fileData:    nil,
 		symlinkData: nil,
-		fhSet:       make(map[uint64]struct{}),
 	}
 
 	ok, err = rootInode.dirEntryMap.Put([]byte("."), uint64(1))
@@ -171,12 +182,9 @@ func main() {
 
 	globals.lastNodeID = uint64(1) // since we used NodeID 1 for the RootDir NodeID
 
-	globals.fhMap = make(map[uint64]uint64)
-	globals.lastFH = uint64(0)
-
 	globals.alreadyLoggedIgnoring.setAttrInValidFH = false
 
-	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, mountFlags, initOutMaxWrite, &globals, globals.logger, globals.errChan)
+	globals.volume = fission.NewVolume(globals.volumeName, globals.mountPoint, fuseSubtype, initOutMaxWrite, &globals, globals.logger, globals.errChan)
 
 	err = globals.volume.DoMount()
 	if nil != err {

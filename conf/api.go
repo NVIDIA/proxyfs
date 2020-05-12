@@ -58,7 +58,7 @@ const rightBracket = "(\\])"
 const sectionName = "([0-9A-Za-z_\\-/:\\.]+)"
 const separator = "([ \t]+|([ \t]*,[ \t]*))"
 const token = "(([0-9A-Za-z_\\*\\-/:\\.\\[\\]]+)\\$?)"
-const value = "(([0-9A-Za-z_=\\*\\-\\+/:\\.\\[\\]]+)\\$?)"
+const value = "(([0-9A-Za-z_=\\*\\-\\+/:\\.\\[\\]\\\"\\{\\}\\\\]+)\\$?)"
 const whiteSpace = "([ \t]+)"
 
 // A string to load looks like:
@@ -159,7 +159,7 @@ func (confMap ConfMap) UpdateFromString(confString string) (err error) {
 		confMap[sectionName] = section
 	}
 
-	section[optionName] = optionValuesSplit
+	section[optionName] = replaceUTF8SpacesAndCommasInStrings(optionValuesSplit)
 
 	// If we reach here, confString successfully processed
 
@@ -229,7 +229,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 		if '\n' == lastRune {
 			// Terminate currentLine adding (non-empty) trimmed version to confFileLines
 
-			currentLineNumber += 1
+			currentLineNumber++
 
 			if confFileBytesLineOffsetStart < confFileBytesOffset {
 				currentLine = string(confFileBytes[confFileBytesLineOffsetStart:confFileBytesOffset])
@@ -314,7 +314,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 							confMap[currentSectionName] = currentSection
 						}
 
-						currentSection[optionName] = optionValuesSplit
+						currentSection[optionName] = replaceUTF8SpacesAndCommasInStrings(optionValuesSplit)
 					}
 				}
 			}
@@ -411,7 +411,25 @@ func (confMap ConfMap) Dump() (buf string) {
 	return
 }
 
-// VerifyOptionValueIsEmpty returns an error if [sectionName]valueName's string value is not empty
+// VerifyOptionIsMissing returns an error if [sectionName]optionName exists
+func (confMap ConfMap) VerifyOptionIsMissing(sectionName string, optionName string) (err error) {
+	section, ok := confMap[sectionName]
+	if !ok {
+		err = fmt.Errorf("[%v] missing", sectionName)
+		return
+	}
+
+	_, ok = section[optionName]
+	if ok {
+		err = fmt.Errorf("[%v]%v exists", sectionName, optionName)
+	} else {
+		err = nil
+	}
+
+	return
+}
+
+// VerifyOptionValueIsEmpty returns an error if [sectionName]optionName's value is not empty
 func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName string) (err error) {
 	section, ok := confMap[sectionName]
 	if !ok {
@@ -434,7 +452,7 @@ func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName s
 	return
 }
 
-// FetchOptionValueStringSlice returns [sectionName]valueName's string values as a []string
+// FetchOptionValueStringSlice returns [sectionName]optionName's string values as a []string
 func (confMap ConfMap) FetchOptionValueStringSlice(sectionName string, optionName string) (optionValue []string, err error) {
 	optionValue = []string{}
 
@@ -455,7 +473,7 @@ func (confMap ConfMap) FetchOptionValueStringSlice(sectionName string, optionNam
 	return
 }
 
-// FetchOptionValueString returns [sectionName]valueName's single string value
+// FetchOptionValueString returns [sectionName]optionName's single string value
 func (confMap ConfMap) FetchOptionValueString(sectionName string, optionName string) (optionValue string, err error) {
 	optionValue = ""
 
@@ -475,7 +493,7 @@ func (confMap ConfMap) FetchOptionValueString(sectionName string, optionName str
 	return
 }
 
-// FetchOptionValueBase64String returns [sectionName]valueName's single string value Base64-decoded
+// FetchOptionValueBase64String returns [sectionName]optionName's single string value Base64-decoded
 func (confMap ConfMap) FetchOptionValueBase64String(sectionName string, optionName string) (optionValue string, err error) {
 	var (
 		base64DecodedOptionValue []byte
@@ -497,7 +515,7 @@ func (confMap ConfMap) FetchOptionValueBase64String(sectionName string, optionNa
 	return
 }
 
-// FetchOptionValueBase64StringSlice returns [sectionName]valueName's string values as a []string each element Base64-decoded
+// FetchOptionValueBase64StringSlice returns [sectionName]optionName's string values as a []string each element Base64-decoded
 func (confMap ConfMap) FetchOptionValueBase64StringSlice(sectionName string, optionName string) (optionValue []string, err error) {
 	var (
 		base64DecodedOptionValueElement []byte
@@ -525,7 +543,7 @@ func (confMap ConfMap) FetchOptionValueBase64StringSlice(sectionName string, opt
 	return
 }
 
-// FetchOptionValueBool returns [sectionName]valueName's single string value converted to a bool
+// FetchOptionValueBool returns [sectionName]optionName's single string value converted to a bool
 func (confMap ConfMap) FetchOptionValueBool(sectionName string, optionName string) (optionValue bool, err error) {
 	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
 	if nil != err {
@@ -556,7 +574,7 @@ func (confMap ConfMap) FetchOptionValueBool(sectionName string, optionName strin
 	return
 }
 
-// FetchOptionValueUint8 returns [sectionName]valueName's single string value converted to a uint8
+// FetchOptionValueUint8 returns [sectionName]optionName's single string value converted to a uint8
 func (confMap ConfMap) FetchOptionValueUint8(sectionName string, optionName string) (optionValue uint8, err error) {
 	optionValue = 0
 
@@ -577,7 +595,7 @@ func (confMap ConfMap) FetchOptionValueUint8(sectionName string, optionName stri
 	return
 }
 
-// FetchOptionValueUint16 returns [sectionName]valueName's single string value converted to a uint16
+// FetchOptionValueUint16 returns [sectionName]optionName's single string value converted to a uint16
 func (confMap ConfMap) FetchOptionValueUint16(sectionName string, optionName string) (optionValue uint16, err error) {
 	optionValue = 0
 
@@ -598,7 +616,7 @@ func (confMap ConfMap) FetchOptionValueUint16(sectionName string, optionName str
 	return
 }
 
-// FetchOptionValueUint32 returns [sectionName]valueName's single string value converted to a uint32
+// FetchOptionValueUint32 returns [sectionName]optionName's single string value converted to a uint32
 func (confMap ConfMap) FetchOptionValueUint32(sectionName string, optionName string) (optionValue uint32, err error) {
 	optionValue = 0
 
@@ -619,7 +637,7 @@ func (confMap ConfMap) FetchOptionValueUint32(sectionName string, optionName str
 	return
 }
 
-// FetchOptionValueUint64 returns [sectionName]valueName's single string value converted to a uint64
+// FetchOptionValueUint64 returns [sectionName]optionName's single string value converted to a uint64
 func (confMap ConfMap) FetchOptionValueUint64(sectionName string, optionName string) (optionValue uint64, err error) {
 	optionValue = 0
 
@@ -640,7 +658,7 @@ func (confMap ConfMap) FetchOptionValueUint64(sectionName string, optionName str
 	return
 }
 
-// FetchOptionValueFloat32 returns [sectionName]valueName's single string value converted to a float32
+// FetchOptionValueFloat32 returns [sectionName]optionName's single string value converted to a float32
 func (confMap ConfMap) FetchOptionValueFloat32(sectionName string, optionName string) (optionValue float32, err error) {
 	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
 	if nil != err {
@@ -658,7 +676,7 @@ func (confMap ConfMap) FetchOptionValueFloat32(sectionName string, optionName st
 	return
 }
 
-// FetchOptionValueFloat64 returns [sectionName]valueName's single string value converted to a float32
+// FetchOptionValueFloat64 returns [sectionName]optionName's single string value converted to a float32
 func (confMap ConfMap) FetchOptionValueFloat64(sectionName string, optionName string) (optionValue float64, err error) {
 	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
 	if nil != err {
@@ -675,7 +693,7 @@ func (confMap ConfMap) FetchOptionValueFloat64(sectionName string, optionName st
 	return
 }
 
-// FetchOptionValueFloatScaledToUint32 returns [sectionName]valueName's single string value converted to a float64, multiplied by the uint32 multiplier, as a uint32
+// FetchOptionValueFloatScaledToUint32 returns [sectionName]optionName's single string value converted to a float64, multiplied by the uint32 multiplier, as a uint32
 func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, optionName string, multiplier uint32) (optionValue uint32, err error) {
 	optionValue = 0
 
@@ -708,7 +726,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint32(sectionName string, o
 	return
 }
 
-// FetchOptionValueFloatScaledToUint64 returns [sectionName]valueName's single string value converted to a float64, multiplied by the uint64 multiplier, as a uint64
+// FetchOptionValueFloatScaledToUint64 returns [sectionName]optionName's single string value converted to a float64, multiplied by the uint64 multiplier, as a uint64
 func (confMap ConfMap) FetchOptionValueFloatScaledToUint64(sectionName string, optionName string, multiplier uint64) (optionValue uint64, err error) {
 	optionValue = 0
 
@@ -741,7 +759,7 @@ func (confMap ConfMap) FetchOptionValueFloatScaledToUint64(sectionName string, o
 	return
 }
 
-// FetchOptionValueDuration returns [sectionName]valueName's single string value converted to a time.Duration
+// FetchOptionValueDuration returns [sectionName]optionName's single string value converted to a time.Duration
 func (confMap ConfMap) FetchOptionValueDuration(sectionName string, optionName string) (optionValue time.Duration, err error) {
 	optionValueString, err := confMap.FetchOptionValueString(sectionName, optionName)
 	if nil != err {
@@ -763,7 +781,7 @@ func (confMap ConfMap) FetchOptionValueDuration(sectionName string, optionName s
 	return
 }
 
-// FetchOptionValueUUID returns [sectionName]valueName's single string value converted to a UUID ([16]byte)
+// FetchOptionValueUUID returns [sectionName]optionName's single string value converted to a UUID ([16]byte)
 //
 // From RFC 4122, a UUID string is defined as follows:
 //
@@ -935,4 +953,30 @@ func (confMap ConfMap) DumpConfMapToFile(confFilePath string, perm os.FileMode) 
 	err = ioutil.WriteFile(confFilePath, bufToOutput, perm)
 
 	return // err as returned from ioutil.WriteFile() suffices here
+}
+
+func replaceUTF8SpacesAndCommasInString(src string) (dst string) {
+	dst = strings.ReplaceAll(src, "\\u0020", " ")
+	dst = strings.ReplaceAll(dst, "\\U0020", " ")
+	dst = strings.ReplaceAll(dst, "\\u002C", ",")
+	dst = strings.ReplaceAll(dst, "\\U002C", ",")
+	dst = strings.ReplaceAll(dst, "\\u002c", ",")
+	dst = strings.ReplaceAll(dst, "\\U002c", ",")
+
+	return
+}
+
+func replaceUTF8SpacesAndCommasInStrings(src []string) (dst []string) {
+	var (
+		element      string
+		elementIndex int
+	)
+
+	dst = make([]string, len(src))
+
+	for elementIndex, element = range src {
+		dst[elementIndex] = replaceUTF8SpacesAndCommasInString(element)
+	}
+
+	return
 }

@@ -34,13 +34,14 @@ import (
 	"go.etcd.io/etcd/mvcc/mvccpb"
 	"go.etcd.io/etcd/pkg/schedule"
 	"go.etcd.io/etcd/pkg/testutil"
+	"go.etcd.io/etcd/pkg/traceutil"
 
 	"go.uber.org/zap"
 )
 
 func TestStoreRev(t *testing.T) {
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer s.Close()
 	defer os.Remove(tmpPath)
 
@@ -331,7 +332,7 @@ func TestStoreCompact(t *testing.T) {
 	key2 := newTestKeyBytes(revision{2, 0}, false)
 	b.tx.rangeRespc <- rangeResp{[][]byte{key1, key2}, nil}
 
-	s.Compact(3)
+	s.Compact(traceutil.TODO(), 3)
 	s.fifoSched.WaitFinish(1)
 
 	if s.compactMainRev != 3 {
@@ -390,7 +391,7 @@ func TestStoreRestore(t *testing.T) {
 	s.restore()
 
 	if s.compactMainRev != 3 {
-		t.Errorf("compact rev = %d, want 5", s.compactMainRev)
+		t.Errorf("compact rev = %d, want 3", s.compactMainRev)
 	}
 	if s.currentRev != 5 {
 		t.Errorf("current rev = %v, want 5", s.currentRev)
@@ -424,7 +425,7 @@ func TestRestoreDelete(t *testing.T) {
 	defer func() { restoreChunkKeys = oldChunk }()
 
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer os.Remove(tmpPath)
 
 	keys := make(map[string]struct{})
@@ -450,7 +451,7 @@ func TestRestoreDelete(t *testing.T) {
 	}
 	s.Close()
 
-	s = NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s = NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer s.Close()
 	for i := 0; i < 20; i++ {
 		ks := fmt.Sprintf("foo-%d", i)
@@ -472,7 +473,7 @@ func TestRestoreContinueUnfinishedCompaction(t *testing.T) {
 	tests := []string{"recreate", "restore"}
 	for _, test := range tests {
 		b, tmpPath := backend.NewDefaultTmpBackend()
-		s0 := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+		s0 := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 		defer os.Remove(tmpPath)
 
 		s0.Put([]byte("foo"), []byte("bar"), lease.NoLease)
@@ -492,7 +493,7 @@ func TestRestoreContinueUnfinishedCompaction(t *testing.T) {
 		var s *store
 		switch test {
 		case "recreate":
-			s = NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+			s = NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 		case "restore":
 			s0.Restore(b)
 			s = s0
@@ -534,7 +535,7 @@ type hashKVResult struct {
 // TestHashKVWhenCompacting ensures that HashKV returns correct hash when compacting.
 func TestHashKVWhenCompacting(t *testing.T) {
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer os.Remove(tmpPath)
 
 	rev := 10000
@@ -582,7 +583,7 @@ func TestHashKVWhenCompacting(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 100; i >= 0; i-- {
-			_, err := s.Compact(int64(rev - 1 - i))
+			_, err := s.Compact(traceutil.TODO(), int64(rev-1-i))
 			if err != nil {
 				t.Error(err)
 			}
@@ -602,14 +603,14 @@ func TestHashKVWhenCompacting(t *testing.T) {
 // correct hash value with latest revision.
 func TestHashKVZeroRevision(t *testing.T) {
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer os.Remove(tmpPath)
 
-	rev := 1000
+	rev := 10000
 	for i := 2; i <= rev; i++ {
 		s.Put([]byte("foo"), []byte(fmt.Sprintf("bar%d", i)), lease.NoLease)
 	}
-	if _, err := s.Compact(int64(rev / 2)); err != nil {
+	if _, err := s.Compact(traceutil.TODO(), int64(rev/2)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -635,11 +636,11 @@ func TestTxnPut(t *testing.T) {
 	vals := createBytesSlice(bytesN, sliceN)
 
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer cleanup(s, b, tmpPath)
 
 	for i := 0; i < sliceN; i++ {
-		txn := s.Write()
+		txn := s.Write(traceutil.TODO())
 		base := int64(i + 2)
 		if rev := txn.Put(keys[i], vals[i], lease.NoLease); rev != base {
 			t.Errorf("#%d: rev = %d, want %d", i, rev, base)
@@ -651,14 +652,14 @@ func TestTxnPut(t *testing.T) {
 // TestConcurrentReadNotBlockingWrite ensures Read does not blocking Write after its creation
 func TestConcurrentReadNotBlockingWrite(t *testing.T) {
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer os.Remove(tmpPath)
 
 	// write something to read later
 	s.Put([]byte("foo"), []byte("bar"), lease.NoLease)
 
 	// readTx simulates a long read request
-	readTx1 := s.Read()
+	readTx1 := s.Read(traceutil.TODO())
 
 	// write should not be blocked by reads
 	done := make(chan struct{})
@@ -673,7 +674,7 @@ func TestConcurrentReadNotBlockingWrite(t *testing.T) {
 	}
 
 	// readTx2 simulates a short read request
-	readTx2 := s.Read()
+	readTx2 := s.Read(traceutil.TODO())
 	ro := RangeOptions{Limit: 1, Rev: 0, Count: false}
 	ret, err := readTx2.Range([]byte("foo"), nil, ro)
 	if err != nil {
@@ -720,7 +721,7 @@ func TestConcurrentReadTxAndWrite(t *testing.T) {
 		mu                   sync.Mutex // mu protectes committedKVs
 	)
 	b, tmpPath := backend.NewDefaultTmpBackend()
-	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil)
+	s := NewStore(zap.NewExample(), b, &lease.FakeLessor{}, nil, StoreConfig{})
 	defer os.Remove(tmpPath)
 
 	var wg sync.WaitGroup
@@ -730,7 +731,7 @@ func TestConcurrentReadTxAndWrite(t *testing.T) {
 			defer wg.Done()
 			time.Sleep(time.Duration(mrand.Intn(100)) * time.Millisecond) // random starting time
 
-			tx := s.Write()
+			tx := s.Write(traceutil.TODO())
 			numOfPuts := mrand.Intn(maxNumOfPutsPerWrite) + 1
 			var pendingKvs kvs
 			for j := 0; j < numOfPuts; j++ {
@@ -756,7 +757,7 @@ func TestConcurrentReadTxAndWrite(t *testing.T) {
 			mu.Lock()
 			wKVs := make(kvs, len(committedKVs))
 			copy(wKVs, committedKVs)
-			tx := s.Read()
+			tx := s.Read(traceutil.TODO())
 			mu.Unlock()
 			// get all keys in backend store, and compare with wKVs
 			ret, err := tx.Range([]byte("\x00000000"), []byte("\xffffffff"), RangeOptions{})
@@ -846,6 +847,7 @@ func newFakeStore() *store {
 		indexCompactRespc:     make(chan map[revision]struct{}, 1),
 	}
 	s := &store{
+		cfg:            StoreConfig{CompactionBatchLimit: 10000},
 		b:              b,
 		le:             &lease.FakeLessor{},
 		kvindex:        fi,

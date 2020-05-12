@@ -84,3 +84,39 @@ func FetchVolumeHandle(volumeName string) (volumeHandle VolumeHandle, err error)
 
 	return
 }
+
+// DisableObjectDeletions prevents objects from being deleted until EnableObjectDeletions() is called
+func DisableObjectDeletions() {
+	globals.backgroundObjectDeleteRWMutex.Lock()
+
+	if !globals.backgroundObjectDeleteEnabled {
+		// Already disabled... just exit
+		globals.backgroundObjectDeleteRWMutex.Unlock()
+		return
+	}
+
+	globals.backgroundObjectDeleteEnabled = false
+
+	globals.backgroundObjectDeleteEnabledWG.Add(1)
+
+	globals.backgroundObjectDeleteRWMutex.Unlock()
+
+	globals.backgroundObjectDeleteActiveWG.Wait()
+}
+
+// EnableObjectDeletions resumes background object deletion blocked by a prior call to DisableObjectDeletions()
+func EnableObjectDeletions() {
+	globals.backgroundObjectDeleteRWMutex.Lock()
+
+	if globals.backgroundObjectDeleteEnabled {
+		// Already enabled... just exit
+		globals.backgroundObjectDeleteRWMutex.Unlock()
+		return
+	}
+
+	globals.backgroundObjectDeleteEnabled = true
+
+	globals.backgroundObjectDeleteEnabledWG.Done()
+
+	globals.backgroundObjectDeleteRWMutex.Unlock()
+}

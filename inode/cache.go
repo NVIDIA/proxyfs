@@ -101,9 +101,16 @@ func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSe
 			volume.volumeName, volume.inodeCacheLRUTickerInterval, volume.inodeCacheLRUMaxBytes)
 
 		// Start ticker for inode cache discard thread
+		volume.inodeCacheWG.Add(1)
 		go func() {
-			for range volume.inodeCacheLRUTicker.C {
-				_, _, _, _ = volume.inodeCacheDiscard()
+			for {
+				select {
+				case _ = <-volume.inodeCacheLRUTicker.C:
+					_, _, _, _ = volume.inodeCacheDiscard()
+				case _, _ = <-volume.inodeCacheStopChan:
+					volume.inodeCacheWG.Done()
+					return
+				}
 			}
 		}()
 	} else {
@@ -118,6 +125,8 @@ func startInodeCacheDiscard(confMap conf.ConfMap, volume *volumeStruct, volumeSe
 func stopInodeCacheDiscard(volume *volumeStruct) {
 	if volume.inodeCacheLRUTicker != nil {
 		volume.inodeCacheLRUTicker.Stop()
+		close(volume.inodeCacheStopChan)
+		volume.inodeCacheWG.Wait()
 		logger.Infof("Inode cache discard ticker for 'volume: %v' stopped.",
 			volume.volumeName)
 	}

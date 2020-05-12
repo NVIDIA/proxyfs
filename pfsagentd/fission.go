@@ -18,8 +18,19 @@ import (
 )
 
 const (
-	initOutFlagsMaskReadDirPlusEnabled  = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData | fission.InitFlagsDoReadDirPlus
-	initOutFlagsMaskReadDirPlusDisabled = fission.InitFlagsAsyncRead | fission.InitFlagsBigWrites | fission.InitFlagsDontMask | fission.InitFlagsAutoInvalData
+	initOutFlagsMaskReadDirPlusDisabled = uint32(0) |
+		fission.InitFlagsAsyncRead |
+		fission.InitFlagsFileOps |
+		fission.InitFlagsAtomicOTrunc |
+		fission.InitFlagsBigWrites |
+		fission.InitFlagsAutoInvalData |
+		fission.InitFlagsParallelDirops |
+		fission.InitFlagsMaxPages |
+		fission.InitFlagsExplicitInvalData
+
+	initOutFlagsMaskReadDirPlusEnabled = initOutFlagsMaskReadDirPlusDisabled |
+		fission.InitFlagsDoReadDirPlus |
+		fission.InitFlagsReaddirplusAuto
 
 	pfsagentFuseSubtype = "PFSAgent"
 )
@@ -33,7 +44,6 @@ func performMountFUSE() {
 		globals.config.FUSEVolumeName,     // volumeName        string
 		globals.config.FUSEMountPointPath, // mountpointDirPath string
 		pfsagentFuseSubtype,               // fuseSubtype       string
-		0,                                 // mountFlags        uintptr
 		globals.config.FUSEMaxWrite,       // initOutMaxWrite   uint32
 		&globals,                          // callbacks         fission.Callbacks
 		newLogger(),                       // logger            *log.Logger
@@ -1072,6 +1082,7 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_calls, 1)
+	globals.stats.FUSEDoReadBytes.Add(uint64(readIn.Size))
 
 	globals.Lock()
 
@@ -1185,6 +1196,13 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_calls, 1)
 
+	// Grab quota to start a fresh chunkedPutContext before calling fileInode.getExclusiveLock()
+	// since, in the pathologic case where only fileInode has any outstanding chunkedPutContext's,
+	// they can only be complete()'d while holding fileInode.getExclusiveLock() and we would
+	// deadlock.
+
+	_ = <-globals.fileInodeDirtyLogSegmentChan
+
 	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	grantedLock = fileInode.getExclusiveLock()
 
@@ -1226,7 +1244,9 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
 
 		if chunkedPutContextStateOpen == chunkedPutContext.state {
-			// Use this most recent (and open) chunkedPutContext
+			// Use this most recent (and open) chunkedPutContext... so we can give back our chunkedPutContext quota
+
+			globals.fileInodeDirtyLogSegmentChan <- struct{}{}
 		} else {
 			// Most recent chunkedPutContext is closed, so open a new one
 
@@ -1290,6 +1310,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	}
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_bytes, uint64(writeOut.Size))
+	globals.stats.FUSEDoWriteBytes.Add(uint64(writeOut.Size))
 
 	errno = 0
 	return
@@ -1633,9 +1654,9 @@ func (dummy *globalsStruct) DoInit(inHeader *fission.InHeader, initIn *fission.I
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoInit_calls, 1)
 
 	if globals.config.ReadDirPlusEnabled {
-		initOutFlags = initIn.Flags & initOutFlagsMaskReadDirPlusEnabled
+		initOutFlags = initOutFlagsMaskReadDirPlusEnabled
 	} else {
-		initOutFlags = initIn.Flags & initOutFlagsMaskReadDirPlusDisabled
+		initOutFlags = initOutFlagsMaskReadDirPlusDisabled
 	}
 
 	initOut = &fission.InitOut{

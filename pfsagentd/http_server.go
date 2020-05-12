@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/version"
 )
 
@@ -76,6 +79,8 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 	path = strings.TrimRight(request.URL.Path, "/")
 
 	switch path {
+	case "/config":
+		serveGetOfConfig(responseWriter, request)
 	case "/debug/pprof":
 		pprof.Index(responseWriter, request)
 	case "/debug/pprof/cmdline":
@@ -88,10 +93,46 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 		pprof.Trace(responseWriter, request)
 	case "/metrics":
 		serveGetOfMetrics(responseWriter, request)
+	case "/stats":
+		serveGetOfStats(responseWriter, request)
 	case "/version":
 		serveGetOfVersion(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func serveGetOfConfig(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		confMapJSON       bytes.Buffer
+		confMapJSONPacked []byte
+		ok                bool
+		paramList         []string
+		sendPackedConfig  bool
+	)
+
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedConfig = false
+		} else {
+			sendPackedConfig = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		sendPackedConfig = false
+	}
+
+	confMapJSONPacked, _ = json.Marshal(globals.config)
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	if sendPackedConfig {
+		_, _ = responseWriter.Write(confMapJSONPacked)
+	} else {
+		json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
+		_, _ = responseWriter.Write(confMapJSON.Bytes())
+		_, _ = responseWriter.Write([]byte("\n"))
 	}
 }
 
@@ -232,6 +273,12 @@ func serveGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request
 		line = fmt.Sprintf(format, keyAsString, valueAsString)
 		_, _ = responseWriter.Write([]byte(line))
 	}
+}
+
+func serveGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write([]byte(bucketstats.SprintStats(bucketstats.StatFormatParsable1, "PFSAgent", "")))
 }
 
 func insertInMetricsLLRB(metricsLLRB sortedmap.LLRBTree, metricKey string, metricValueAsUint64 uint64) {
