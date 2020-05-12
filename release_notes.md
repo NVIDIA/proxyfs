@@ -1,5 +1,34 @@
 # ProxyFS Release Notes
 
+## 1.16.0 (May 12, 2020)
+
+### Features:
+
+Added support for a pluggable Authentication mechanism in
+PFSAgent. See the README.md files in both pfsagentd/ and
+pfsagentd/pfsagentd-swift-auth-plugin/ for details.
+
+Updated PFSAgent to tune mount initialization to obtimize parallel requests.
+
+Object API will create directories and files readable and writeable
+by anybody from the file side.
+
+Added performance stats and config reporting to PFSAgent HTTPServer.
+
+User Agent used in Swift API calls now customized to identify ProxyFS
+and PFSAgent specifically.
+
+### Bug Fixes:
+
+Added missing write flow control to PFSAgent to limit RAM footprint
+and avoid overrunning Swift.
+
+Fixed incorrect flushing during PFSAgent dismount.
+
+### Notes:
+
+See new CONFIGURING.md to learn about configuring ProxyFS.
+
 ## 1.15.5 (March 8, 2020)
 
 ### Bug Fixes:
