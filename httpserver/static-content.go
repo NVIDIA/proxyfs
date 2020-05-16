@@ -7,7 +7,7 @@ package httpserver
 //go:generate make-static-content httpserver bootstrapDotCSS           text/css                      s static-content/bootstrap.min.css                                  bootstrap_dot_min_dot_css_.go
 
 //go:generate make-static-content httpserver bootstrapDotJS            application/javascript        s static-content/bootstrap.min.js                                   bootstrap_dot_min_dot_js_.go
-//go:generate make-static-content httpserver jqueryDotJS               application/javascript        s static-content/jquery-3.2.1.min.js                                jquery_underline_3_dot_2_dot_1_dot_min_dot_js_.go
+//go:generate make-static-content httpserver jqueryDotJS               application/javascript        s static-content/jquery.min.js                                      jquery_dot_min_dot_js_.go
 //go:generate make-static-content httpserver popperDotJS               application/javascript        b static-content/popper.min.js                                      popper_dot_min_dot_js_.go
 
 //go:generate make-static-content httpserver openIconicBootstrapDotCSS text/css                      s static-content/open-iconic/font/css/open-iconic-bootstrap.min.css open_iconic_bootstrap_dot_css_.go

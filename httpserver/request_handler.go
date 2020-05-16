@@ -143,7 +143,7 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfConfig(responseWriter, request)
 	case "/index.html" == path:
 		doGetOfIndexDotHTML(responseWriter, request)
-	case "/jquery-3.2.1.min.js" == path:
+	case "/jquery.min.js" == path:
 		responseWriter.Header().Set("Content-Type", jqueryDotJSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
 		_, _ = responseWriter.Write([]byte(jqueryDotJSContent))
