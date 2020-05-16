@@ -5,6 +5,7 @@ generatedfiles := \
 	bootstrap_dot_min_dot_js_.go \
 	jsontree_dot_js_.go \
 	jquery_dot_min_dot_js_.go \
+	jquery_underline_3_dot_2_dot_1_dot_min_dot_js_.go \
 	open_iconic_bootstrap_dot_css_.go \
 	open_iconic_dot_eot_.go \
 	open_iconic_dot_otf_.go \
