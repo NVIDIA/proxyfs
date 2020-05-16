@@ -99,6 +99,7 @@ func testSetup(t *testing.T) {
 		"Agent.SharedFileLimit=1000",
 		"Agent.ExclusiveFileLimit=100",
 		"Agent.DirtyFileLimit=50",
+		"Agent.DirtyLogSegmentLimit=50",
 		"Agent.MaxFlushSize=10485760",
 		"Agent.MaxFlushTime=10s",
 		"Agent.LogFilePath=",
