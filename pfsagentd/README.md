@@ -161,15 +161,15 @@ sending the value of [Agent]PlugInEnvName as Arg1. If [Agent]PlugInEnvValue is
 specified, it will also ensure the ENV variable named will be set to this
 value in the plug-in's process.
 
-At that point, and at any time subsequently receiving a `SIGHUP`, the plug-in
-will perform the authentication (or renewal) step. The result will be used
-to generate two pieces of information:
+At that point, and at any time subsequently receiving a byte via os.Stdin, the
+plug-in will perform the authentication (or renewal) step. The result will
+be used to generate two pieces of information:
 
 * X-Auth-Token - to be used by PFSAgent in all subsequent Swift API calls (GETs, PUTs, and Mouunt JSON RPC requests)
 * StorageURL - to form the first portion of any such Swift API path
 
 The response (either at start-up or following reception of a
-`SIGHUP`) is sent to os.Stdout as a UTF-8 encoded JSON object:
+byte via os.Stdin) is sent to os.Stdout as a UTF-8 encoded JSON object:
 
 ```
 {
@@ -178,6 +178,6 @@ The response (either at start-up or following reception of a
 }
 ```
 
-At PFSAgent termination, the plug-in should be sent either a `SIGINT` or a `SIGTERM`.
-This will trigger the plug-in to also exit (perhaps after cleaning up any
-not-to-be-persisted details of its execution).
+At PFSAgent termination, the plug-in should see os.Stdin close.
+This should trigger the plug-in to also exit (perhaps after
+cleaning up any not-to-be-persisted details of its execution).
