@@ -3,13 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 
 	"github.com/swiftstack/ProxyFS/version"
-	"golang.org/x/sys/unix"
 )
 
 type authInStruct struct {
@@ -24,14 +23,17 @@ type authOutStruct struct {
 	StorageURL string
 }
 
+const (
+	stdinReadSize = 1
+)
+
 func main() {
 	var (
 		authIn         authInStruct
 		err            error
 		plugInEnvName  string
 		plugInEnvValue string
-		signalReceived os.Signal
-		signalChan     chan os.Signal
+		stdinReadBuf   []byte
 	)
 
 	switch len(os.Args) {
@@ -58,19 +60,19 @@ func main() {
 
 	performAuth(&authIn)
 
-	signalChan = make(chan os.Signal, 1)
-	signal.Notify(signalChan, unix.SIGHUP, unix.SIGINT, unix.SIGTERM)
+	stdinReadBuf = make([]byte, stdinReadSize)
 
 	for {
-		signalReceived = <-signalChan
-
-		switch signalReceived {
-		case unix.SIGHUP:
+		stdinReadBuf = stdinReadBuf[:stdinReadSize]
+		_, err = os.Stdin.Read(stdinReadBuf)
+		if nil == err {
 			performAuth(&authIn)
-		case unix.SIGINT:
-			os.Exit(0)
-		case unix.SIGTERM:
-			os.Exit(0)
+		} else {
+			if io.EOF == err {
+				os.Exit(0)
+			}
+			fmt.Fprintf(os.Stderr, "os.Stdin.Read(stdinReadBuf) failed: %v\n", err)
+			os.Exit(1)
 		}
 	}
 }

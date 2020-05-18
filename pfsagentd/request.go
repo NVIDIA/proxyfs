@@ -17,7 +17,6 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/version"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -346,9 +345,9 @@ func updateAuthTokenAndStorageURL() {
 
 			stopAuthPlugIn()
 		} else {
-			// No errors... so lets try sending a SIGHUP to authPlugIn to request a fresh authorization
+			// No errors... so lets try sending a byte to authPlugIn to request a fresh authorization
 
-			err = globals.authPlugInControl.cmd.Process.Signal(unix.SIGHUP)
+			_, err = globals.authPlugInControl.stdinPipe.Write([]byte{0})
 			if nil != err {
 				logWarnf("got unexpected error sending SIGHUP to authPlugIn: %v", err)
 
@@ -463,6 +462,10 @@ func startAuthPlugIn() {
 		stderrChan: make(chan []byte),
 	}
 
+	globals.authPlugInControl.stdinPipe, err = globals.authPlugInControl.cmd.StdinPipe()
+	if nil != err {
+		logFatalf("got unexpected error creating authPlugIn stdinPipe: %v", err)
+	}
 	globals.authPlugInControl.stdoutPipe, err = globals.authPlugInControl.cmd.StdoutPipe()
 	if nil != err {
 		logFatalf("got unexpected error creating authPlugIn stdoutPipe: %v", err)
@@ -495,7 +498,7 @@ func stopAuthPlugIn() {
 
 	// Stop authPlugIn (ignore errors since they just indicate authPlugIn failed)
 
-	_ = globals.authPlugInControl.cmd.Process.Signal(unix.SIGTERM)
+	_ = globals.authPlugInControl.stdinPipe.Close()
 
 	_ = globals.authPlugInControl.cmd.Wait()
 

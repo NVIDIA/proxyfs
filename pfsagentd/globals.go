@@ -229,6 +229,7 @@ type logSegmentCacheElementStruct struct {
 
 type authPlugInControlStruct struct {
 	cmd        *exec.Cmd
+	stdinPipe  io.WriteCloser
 	stdoutPipe io.ReadCloser
 	stderrPipe io.ReadCloser
 	stdoutChan chan []byte
