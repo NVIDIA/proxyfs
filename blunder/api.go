@@ -97,6 +97,7 @@ const (
 // Errors that map to constants already defined above
 const (
 	NotActiveError        FsError = NotFoundError
+	BadLeaseRequest       FsError = InvalidArgError
 	BadMountIDError       FsError = InvalidArgError
 	BadMountVolumeError   FsError = InvalidArgError
 	NotFileError          FsError = IsDirError

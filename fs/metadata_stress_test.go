@@ -21,7 +21,7 @@ var testDirInodeNumber inode.InodeNumber
 func testSetupForStress(t *testing.T, starvationMode bool) {
 	var err error
 	testSetup(t, starvationMode)
-	testDirInodeNumber, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, testDirName, inode.PosixModePerm)
+	testDirInodeNumber, err = testVolumeStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, testDirName, inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Failed to create %s: %v", testDirName, err)
 	}
@@ -183,16 +183,16 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 		fName = name1 + "-" + strconv.Itoa(localLoopCount)
 		switch fileRequest.opType {
 		case createLoopTestOp:
-			_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName, inode.PosixModePerm)
+			_, err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName, inode.PosixModePerm)
 		case lookupPathLoopTestOp:
-			_, err = testMountStruct.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fName)
+			_, err = testVolumeStruct.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fName)
 		case readdirLoopTestOp:
 			areMoreEntries = true
 			lastBasename = ""
 			maxEntries = 10
 			totalEntriesRead = 0 // Useful for debugging
 			for areMoreEntries {
-				dirEnts, numEntries, more, err = testMountStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, maxEntries, lastBasename)
+				dirEnts, numEntries, more, err = testVolumeStruct.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, maxEntries, lastBasename)
 				if nil != err {
 					return
 				}
@@ -206,7 +206,7 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 			maxEntries = 10
 			totalEntriesRead = 0 // Useful for debugging
 			for areMoreEntries {
-				containerEnts, err = testMountStruct.MiddlewareGetContainer(testDirName, maxEntries, lastBasename, "", "", "")
+				containerEnts, err = testVolumeStruct.MiddlewareGetContainer(testDirName, maxEntries, lastBasename, "", "", "")
 				if nil != err {
 					return
 				}
@@ -218,12 +218,12 @@ func loopOp(fileRequest *testRequest, threadID int, inodeNumber inode.InodeNumbe
 				}
 			}
 		case unlinkLoopTestOp:
-			err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
+			err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fName)
 		case reWriteNoFlushLoopTestOp:
-			_, _ = testMountStruct.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fileRequest.offset, *fileRequest.bufPtr, nil)
+			_, _ = testVolumeStruct.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, fileRequest.offset, *fileRequest.bufPtr, nil)
 		case seqWriteNoFlushLoopTestOp:
 			offset = fileRequest.length * uint64(localLoopCount)
-			_, _ = testMountStruct.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, offset, *fileRequest.bufPtr, nil)
+			_, _ = testVolumeStruct.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, offset, *fileRequest.bufPtr, nil)
 		}
 		localLoopCount++
 		infiniteLoopCount++
@@ -286,7 +286,7 @@ func threadNode(threadID int) {
 
 		case createTestOp:
 			response := &testResponse{}
-			response.inodeNumber, response.err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber,
+			response.inodeNumber, response.err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber,
 				name1, inode.PosixModePerm)
 			threadMap[threadID].operationStatus <- response
 
@@ -303,7 +303,7 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case mkdirTestOp:
-			newInodeNumber, err := testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
+			newInodeNumber, err := testVolumeStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1, inode.PosixModePerm)
 			response := &testResponse{err: err, inodeNumber: newInodeNumber}
 			threadMap[threadID].operationStatus <- response
 
@@ -320,12 +320,12 @@ func threadNode(threadID int) {
 			threadMap[threadID].operationStatus <- response
 
 		case rmdirTestOp:
-			err := testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
+			err := testVolumeStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 
 		case unlinkTestOp:
-			err := testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
+			err := testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumber, name1)
 			response := &testResponse{err: err}
 			threadMap[threadID].operationStatus <- response
 

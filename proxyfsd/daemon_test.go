@@ -32,7 +32,6 @@ func TestDaemon(t *testing.T) {
 		err                                   error
 		errChan                               chan error
 		execArgs                              []string
-		mountHandle                           fs.MountHandle
 		ramswiftDoneChan                      chan bool
 		ramswiftSignalHandlerIsArmedWG        sync.WaitGroup
 		readData                              []byte
@@ -40,6 +39,7 @@ func TestDaemon(t *testing.T) {
 		testVersionConfFile                   *os.File
 		testVersionConfFileName               string
 		toReadFileInodeNumber                 inode.InodeNumber
+		volumeHandle                          fs.VolumeHandle
 		wg                                    sync.WaitGroup
 	)
 
@@ -152,6 +152,9 @@ func TestDaemon(t *testing.T) {
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.MinLeaseDuration=250ms",
+		"JSONRPCServer.LeaseInterruptInterval=250ms",
+		"JSONRPCServer.LeaseInterruptLimit=20",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
@@ -203,12 +206,12 @@ func TestDaemon(t *testing.T) {
 
 	// Write to the volume (with no flush so that only time-based/restart flush is performed)
 
-	mountHandle, err = fs.MountByVolumeName("CommonVolume", fs.MountOptions(0))
+	volumeHandle, err = fs.FetchVolumeHandleByVolumeName("CommonVolume")
 	if nil != err {
-		t.Fatalf("fs.MountByVolumeName() failed [case 1]: %v", err)
+		t.Fatalf("fs.FetchVolumeHandleByVolumeName() failed [case 1]: %v", err)
 	}
 
-	createdFileInodeNumber, err = mountHandle.Create(
+	createdFileInodeNumber, err = volumeHandle.Create(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,
@@ -220,7 +223,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Create() failed: %v", err)
 	}
 
-	bytesWritten, err = mountHandle.Write(
+	bytesWritten, err = volumeHandle.Write(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,
@@ -238,7 +241,7 @@ func TestDaemon(t *testing.T) {
 
 	// Verify written data before restart
 
-	toReadFileInodeNumber, err = mountHandle.Lookup(
+	toReadFileInodeNumber, err = volumeHandle.Lookup(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,
@@ -249,7 +252,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Lookup() failed [case 1]: %v", err)
 	}
 
-	readData, err = mountHandle.Read(
+	readData, err = volumeHandle.Read(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,
@@ -292,12 +295,12 @@ func TestDaemon(t *testing.T) {
 
 	// Verify written data after restart
 
-	mountHandle, err = fs.MountByVolumeName("CommonVolume", fs.MountOptions(0))
+	volumeHandle, err = fs.FetchVolumeHandleByVolumeName("CommonVolume")
 	if nil != err {
-		t.Fatalf("fs.MountByVolumeName() failed [case 2]: %v", err)
+		t.Fatalf("fs.FetchVolumeHandleByVolumeName() failed [case 2]: %v", err)
 	}
 
-	toReadFileInodeNumber, err = mountHandle.Lookup(
+	toReadFileInodeNumber, err = volumeHandle.Lookup(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,
@@ -308,7 +311,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("fs.Lookup() failed [case 2]: %v", err)
 	}
 
-	readData, err = mountHandle.Read(
+	readData, err = volumeHandle.Read(
 		inode.InodeRootUserID,
 		inode.InodeGroupID(0),
 		nil,

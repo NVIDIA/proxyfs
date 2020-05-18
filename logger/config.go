@@ -133,19 +133,6 @@ func Up(confMap conf.ConfMap) (err error) {
 	return nil
 }
 
-func Down(confMap conf.ConfMap) (err error) {
-	// We open and close our own logfile
-	if logFile != nil {
-		// Sync() flushes data cached in the kernel to disk, which is
-		// really only useful if the OS were to crash soon
-		logFile.Sync()
-		logFile.Close()
-	}
-	logTargets.Clear()
-	err = nil
-	return
-}
-
 func SignaledStart(confMap conf.ConfMap) (err error) {
 	err = nil
 	return
@@ -156,6 +143,19 @@ func SignaledFinish(confMap conf.ConfMap) (err error) {
 	if nil == err {
 		err = Up(confMap)
 	}
+	return
+}
+
+func Down(confMap conf.ConfMap) (err error) {
+	// We open and close our own logfile
+	if logFile != nil {
+		// Sync() flushes data cached in the kernel to disk, which is
+		// really only useful if the OS were to crash soon
+		logFile.Sync()
+		logFile.Close()
+	}
+	logTargets.Clear()
+	err = nil
 	return
 }
 

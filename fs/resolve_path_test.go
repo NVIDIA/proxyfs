@@ -71,15 +71,15 @@ func TestResolvePath(t *testing.T) {
 
 	testSetup(t, false)
 
-	testContainer, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "TestResolvePathContainer", inode.PosixModePerm)
+	testContainer, err = testVolumeStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "TestResolvePathContainer", inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Mkdir(,,,,\"TestResolvePathContainer\",) failed: %v", err)
 	}
-	fileA, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "FileA", inode.PosixModePerm)
+	fileA, err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "FileA", inode.PosixModePerm)
 	if nil != err {
 		t.Fatalf("Create(,,,,\"FileA\",) failed: %v", err)
 	}
-	symlinkA, err = testMountStruct.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "SymlinkA", "FileA")
+	symlinkA, err = testVolumeStruct.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "SymlinkA", "FileA")
 	if nil != err {
 		t.Fatalf("Symlink(,,,,\"SymlinkA\",) failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestResolvePath(t *testing.T) {
 	heldLocks = newHeldLocks()
 
 	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
-		testMountStruct.resolvePath(
+		testVolumeStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
 			heldLocks,
@@ -121,7 +121,7 @@ func TestResolvePath(t *testing.T) {
 	heldLocks = newHeldLocks()
 
 	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
-		testMountStruct.resolvePath(
+		testVolumeStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
 			heldLocks,
@@ -155,7 +155,7 @@ func TestResolvePath(t *testing.T) {
 	heldLocks = newHeldLocks()
 
 	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
-		testMountStruct.resolvePath(
+		testVolumeStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/SymlinkA",
 			heldLocks,
@@ -192,7 +192,7 @@ func TestResolvePath(t *testing.T) {
 	heldLocks = newHeldLocks()
 
 	dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, dirEntryInodeType, retryRequired, err =
-		testMountStruct.resolvePath(
+		testVolumeStruct.resolvePath(
 			inode.RootDirInodeNumber,
 			"/TestResolvePathContainer/DirA/FileB",
 			heldLocks,
@@ -230,7 +230,7 @@ func TestResolvePath(t *testing.T) {
 
 	heldLocks.free()
 
-	dirEntryInodeNumber, err = testMountStruct.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "DirA")
+	dirEntryInodeNumber, err = testVolumeStruct.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "DirA")
 	if nil != err {
 		t.Fatalf("Lookup(,,,,\"DirA\") failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestResolvePath(t *testing.T) {
 		t.Fatalf("Lookup(,,,,\"DirA\") returned 0x%016X... expected 0x%016X", dirEntryInodeNumber, dirA)
 	}
 
-	dirEntryInodeNumber, err = testMountStruct.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirA, "FileB")
+	dirEntryInodeNumber, err = testVolumeStruct.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirA, "FileB")
 	if nil != err {
 		t.Fatalf("Lookup(,,,,\"FileB\") failed: %v", err)
 	}
@@ -248,23 +248,23 @@ func TestResolvePath(t *testing.T) {
 
 	// Destroy directory hierachy underneath "/TestResolvePathContainer/"
 
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirA, "FileB")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirA, "FileB")
 	if nil != err {
 		t.Fatalf("Unlink(,,,,\"FileB\") failed: %v", err)
 	}
-	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "DirA")
+	err = testVolumeStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "DirA")
 	if nil != err {
 		t.Fatalf("Rmdir(,,,,\"DirA\") failed: %v", err)
 	}
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "SymlinkA")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "SymlinkA")
 	if nil != err {
 		t.Fatalf("Unlink(,,,,\"SymlinkA\") failed: %v", err)
 	}
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "FileA")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainer, "FileA")
 	if nil != err {
 		t.Fatalf("Unlink(,,,,\"FileA\") failed: %v", err)
 	}
-	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "TestResolvePathContainer")
+	err = testVolumeStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "TestResolvePathContainer")
 	if nil != err {
 		t.Fatalf("Rmdir(,,,,\"TestResolvePathContainer\") failed: %v", err)
 	}
@@ -293,23 +293,23 @@ func TestCanonicalizePath(t *testing.T) {
 
 	testSetup(t, false)
 
-	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName", inode.PosixModePerm)
+	_, err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName", inode.PosixModePerm)
 	if nil != err {
 		t.Fatal(err)
 	}
-	containerInodeNumber, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName", inode.PosixModePerm)
+	containerInodeNumber, err = testVolumeStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName", inode.PosixModePerm)
 	if nil != err {
 		t.Fatal(err)
 	}
-	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName", inode.PosixModePerm)
+	_, err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName", inode.PosixModePerm)
 	if nil != err {
 		t.Fatal(err)
 	}
-	directoryInodeNumber, err = testMountStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName", inode.PosixModePerm)
+	directoryInodeNumber, err = testVolumeStruct.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName", inode.PosixModePerm)
 	if nil != err {
 		t.Fatal(err)
 	}
-	_, err = testMountStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName", inode.PosixModePerm)
+	_, err = testVolumeStruct.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName", inode.PosixModePerm)
 	if nil != err {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func TestCanonicalizePath(t *testing.T) {
 	}
 
 	for _, testCanonicalizePathItem = range testCanonicalizePathList {
-		canonicalizedPathSplit, dirInodeIndex, err = testMountStruct.canonicalizePathAndLocateLeafDirInode(testCanonicalizePathItem.path)
+		canonicalizedPathSplit, dirInodeIndex, err = testVolumeStruct.canonicalizePathAndLocateLeafDirInode(testCanonicalizePathItem.path)
 		if testCanonicalizePathItem.shouldSucceed {
 			if nil == err {
 				if len(canonicalizedPathSplit) != len(testCanonicalizePathItem.canonicalizedPathSplit) {
@@ -396,23 +396,23 @@ func TestCanonicalizePath(t *testing.T) {
 		}
 	}
 
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, directoryInodeNumber, "DirectoryFileName")
 	if nil != err {
 		t.Fatal(err)
 	}
-	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName")
+	err = testVolumeStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "DirectoryName")
 	if nil != err {
 		t.Fatal(err)
 	}
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerInodeNumber, "ContainerFileName")
 	if nil != err {
 		t.Fatal(err)
 	}
-	err = testMountStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName")
+	err = testVolumeStruct.Rmdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "ContainerName")
 	if nil != err {
 		t.Fatal(err)
 	}
-	err = testMountStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName")
+	err = testVolumeStruct.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, "RootFileName")
 	if nil != err {
 		t.Fatal(err)
 	}

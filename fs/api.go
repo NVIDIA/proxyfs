@@ -11,8 +11,6 @@ import (
 	"github.com/swiftstack/ProxyFS/utils"
 )
 
-type MountID uint64
-
 // ReadRangeIn is the ReadPlan range requested
 //
 // Either Offset or Len can be omitted, but not both. Those correspond
@@ -97,12 +95,6 @@ type FlockStruct struct {
 	Pid    uint64
 }
 
-type MountOptions uint64
-
-const (
-	MountReadOnly MountOptions = 1 << iota
-)
-
 type StatKey uint64
 
 const (
@@ -153,19 +145,19 @@ type JobHandle interface {
 	Info() (info []string)
 }
 
-// Mount handle interface
+// Volume handle interface
 
-func MountByAccountName(accountName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
-	mountHandle, err = mountByAccountName(accountName, mountOptions)
+func FetchVolumeHandleByAccountName(accountName string) (volumeHandle VolumeHandle, err error) {
+	volumeHandle, err = fetchVolumeHandleByAccountName(accountName)
 	return
 }
 
-func MountByVolumeName(volumeName string, mountOptions MountOptions) (mountHandle MountHandle, err error) {
-	mountHandle, err = mountByVolumeName(volumeName, mountOptions)
+func FetchVolumeHandleByVolumeName(volumeName string) (volumeHandle VolumeHandle, err error) {
+	volumeHandle, err = fetchVolumeHandleByVolumeName(volumeName)
 	return
 }
 
-type MountHandle interface {
+type VolumeHandle interface {
 	Access(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, accessMode inode.InodeMode) (accessReturn bool)
 	CallInodeToProvisionObject() (pPath string, err error)
 	Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error)

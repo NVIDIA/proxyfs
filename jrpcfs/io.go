@@ -363,7 +363,7 @@ func makeReq(bytes []byte, req *ioRequest) {
 
 func ioHandle(conn net.Conn) {
 	var (
-		mountHandle fs.MountHandle
+		volumeHandle fs.VolumeHandle
 	)
 
 	// NOTE: This function runs in a goroutine and only processes
@@ -407,9 +407,9 @@ func ioHandle(conn net.Conn) {
 			}
 
 			profiler.AddEventNow("before fs.Write()")
-			mountHandle, err = lookupMountHandleByMountIDAsByteArray(ctx.req.mountID)
+			volumeHandle, err = lookupVolumeHandleByMountIDAsByteArray(ctx.req.mountID)
 			if err == nil {
-				ctx.resp.ioSize, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
+				ctx.resp.ioSize, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.data, profiler)
 			}
 			profiler.AddEventNow("after fs.Write()")
 
@@ -425,9 +425,9 @@ func ioHandle(conn net.Conn) {
 			}
 
 			profiler.AddEventNow("before fs.Read()")
-			mountHandle, err = lookupMountHandleByMountIDAsByteArray(ctx.req.mountID)
+			volumeHandle, err = lookupVolumeHandleByMountIDAsByteArray(ctx.req.mountID)
 			if err == nil {
-				ctx.data, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
+				ctx.data, err = volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(ctx.req.inodeID), ctx.req.offset, ctx.req.length, profiler)
 			}
 			profiler.AddEventNow("after fs.Read()")
 

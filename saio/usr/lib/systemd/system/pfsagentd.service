@@ -3,7 +3,7 @@ Description=PFSAgent service
 After=proxyfsd.service
 
 [Service]
-Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin
+Environment=PATH=/usr/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/sbin:/bin:/vagrant/bin
 Environment=GOTRACEBACK=crash
 LimitCORE=infinity
 ExecStart=/vagrant/bin/pfsagentd /vagrant/src/github.com/swiftstack/ProxyFS/pfsagentd/pfsagent.conf

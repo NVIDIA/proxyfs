@@ -154,6 +154,9 @@ func testSetup() []func() {
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.MinLeaseDuration=250ms",
+		"JSONRPCServer.LeaseInterruptInterval=250ms",
+		"JSONRPCServer.LeaseInterruptLimit=20",
 	}
 
 	tempDir, err = ioutil.TempDir("", "jrpcfs_test")
@@ -181,49 +184,43 @@ func testSetup() []func() {
 		panic(fmt.Sprintf("transitions.Up() failed: %v", err))
 	}
 
-	// Unfortunately, we cannot call the jrpcfs Up() method here since it will start the RPC server.
-	// Therefore, we have to do this step here.
-	if globals.bimodalMountMap == nil {
-		globals.bimodalMountMap = make(map[string]fs.MountHandle)
-	}
-
 	return cleanupFuncs
 }
 
 func fsStatPath(accountName string, path string) fs.Stat {
-	_, _, _, _, mountHandle, err := mountIfNotMounted(accountName)
+	_, _, _, _, volumeHandle, err := parseVirtPath(accountName)
 	if err != nil {
 		panic(err)
 	}
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, path)
+	ino, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, path)
 	if err != nil {
 		panic(err)
 	}
-	stats, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino)
+	stats, err := volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino)
 	if err != nil {
 		panic(err)
 	}
 	return stats
 }
 
-func fsMkDir(mountHandle fs.MountHandle, parentDirInode inode.InodeNumber, newDirName string) (createdInode inode.InodeNumber) {
-	createdInode, err := mountHandle.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, newDirName, inode.PosixModePerm)
+func fsMkDir(volumeHandle fs.VolumeHandle, parentDirInode inode.InodeNumber, newDirName string) (createdInode inode.InodeNumber) {
+	createdInode, err := volumeHandle.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, newDirName, inode.PosixModePerm)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create %v: %v", newDirName, err))
 	}
 	return
 }
 
-func fsCreateFile(mountHandle fs.MountHandle, parentDirInode inode.InodeNumber, newFileName string) (createdInode inode.InodeNumber) {
-	createdInode, err := mountHandle.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, newFileName, inode.PosixModePerm)
+func fsCreateFile(volumeHandle fs.VolumeHandle, parentDirInode inode.InodeNumber, newFileName string) (createdInode inode.InodeNumber) {
+	createdInode, err := volumeHandle.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, newFileName, inode.PosixModePerm)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create file %v: %v", newFileName, err))
 	}
 	return
 }
 
-func fsCreateSymlink(mountHandle fs.MountHandle, parentDirInode inode.InodeNumber, symlinkName string, symlinkTarget string) {
-	_, err := mountHandle.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, symlinkName, symlinkTarget)
+func fsCreateSymlink(volumeHandle fs.VolumeHandle, parentDirInode inode.InodeNumber, symlinkName string, symlinkTarget string) {
+	_, err := volumeHandle.Symlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInode, symlinkName, symlinkTarget)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create symlink %s -> %s: %v", symlinkName, symlinkTarget, err))
 	}
@@ -278,30 +275,30 @@ func middlewarePutLocation(t *testing.T, server *Server, newPutPath string, expe
 func makeSomeFilesAndSuch() {
 	// we should have enough stuff up now that we can actually make
 	// some files and directories and such
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
-	cInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c")
-	cNestedInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c-nested")
-	fsCreateSymlink(mountHandle, inode.RootDirInodeNumber, "c-symlink", "c")
+	cInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c")
+	cNestedInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c-nested")
+	fsCreateSymlink(volumeHandle, inode.RootDirInodeNumber, "c-symlink", "c")
 
-	err = mountHandle.MiddlewarePost("", "c", []byte("metadata for c"), []byte{})
+	err = volumeHandle.MiddlewarePost("", "c", []byte("metadata for c"), []byte{})
 	if err != nil {
 		panic(err)
 	}
-	_ = fsMkDir(mountHandle, inode.RootDirInodeNumber, "c-no-metadata")
-	_ = fsMkDir(mountHandle, cInode, "empty-directory")
+	_ = fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c-no-metadata")
+	_ = fsMkDir(volumeHandle, cInode, "empty-directory")
 
-	readmeInode := fsCreateFile(mountHandle, cInode, "README")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
-	err = mountHandle.MiddlewarePost("", "c/README", []byte("metadata for c/README"), []byte{})
+	readmeInode := fsCreateFile(volumeHandle, cInode, "README")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode, 0, []byte("who am I kidding? nobody reads these."), nil)
+	err = volumeHandle.MiddlewarePost("", "c/README", []byte("metadata for c/README"), []byte{})
 	if err != nil {
 		panic(err)
 	}
 
-	animalsInode := fsMkDir(mountHandle, cInode, "animals")
+	animalsInode := fsMkDir(volumeHandle, cInode, "animals")
 	files := map[string]string{
 		"dog.txt":      "dog goes woof",
 		"cat.txt":      "cat goes meow",
@@ -312,17 +309,17 @@ func makeSomeFilesAndSuch() {
 		"elephant.txt": "elephant goes toot",
 	}
 	for fileName, fileContents := range files {
-		fileInode := fsCreateFile(mountHandle, animalsInode, fileName)
+		fileInode := fsCreateFile(volumeHandle, animalsInode, fileName)
 
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
 	}
 
-	plantsInode := fsMkDir(mountHandle, cInode, "plants")
-	ino := fsCreateFile(mountHandle, cInode, "plants-README")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, []byte("nah"), nil)
+	plantsInode := fsMkDir(volumeHandle, cInode, "plants")
+	ino := fsCreateFile(volumeHandle, cInode, "plants-README")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, []byte("nah"), nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to write file plants-README: %v", err))
 	}
@@ -336,83 +333,83 @@ func makeSomeFilesAndSuch() {
 	}
 
 	for fileName, fileContents := range files {
-		fileInode := fsCreateFile(mountHandle, plantsInode, fileName)
+		fileInode := fsCreateFile(volumeHandle, plantsInode, fileName)
 
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
 	}
 
-	fsCreateSymlink(mountHandle, cInode, "plants-symlink", "plants")
-	fsCreateSymlink(mountHandle, plantsInode, "eggplant.txt-symlink", "eggplant.txt")
+	fsCreateSymlink(volumeHandle, cInode, "plants-symlink", "plants")
+	fsCreateSymlink(volumeHandle, plantsInode, "eggplant.txt-symlink", "eggplant.txt")
 
 	// Put some deeply nested things in c-nested. This listing is a
 	// shortened version of a real directory tree that exposed a bug.
-	fsCreateFile(mountHandle, cNestedInode, ".DS_Store")
-	dotGitInode := fsMkDir(mountHandle, cNestedInode, ".git")
-	fsCreateFile(mountHandle, dotGitInode, ".DS_Store")
-	fsCreateFile(mountHandle, dotGitInode, "COMMIT_EDITMSG")
-	fsCreateFile(mountHandle, dotGitInode, "FETCH_HEAD")
-	fsCreateFile(mountHandle, dotGitInode, "HEAD")
-	fsCreateFile(mountHandle, dotGitInode, "ORIG_HEAD")
-	fsCreateFile(mountHandle, dotGitInode, "index")
-	dotGitHooks := fsMkDir(mountHandle, dotGitInode, "hooks")
-	fsCreateFile(mountHandle, dotGitHooks, ".DS_Store")
-	fsCreateFile(mountHandle, dotGitHooks, "applypatch-msg.sample")
-	fsCreateFile(mountHandle, dotGitHooks, "commit-msg.sample")
-	dotGitLogs := fsMkDir(mountHandle, dotGitInode, "logs")
-	fsCreateFile(mountHandle, dotGitLogs, ".DS_Store")
-	fsCreateFile(mountHandle, dotGitLogs, "HEAD")
-	dotGitLogsRefs := fsMkDir(mountHandle, dotGitLogs, "refs")
-	fsCreateFile(mountHandle, dotGitLogsRefs, ".DS_Store")
-	fsCreateFile(mountHandle, dotGitLogsRefs, "stash")
-	dotGitLogsRefsHeads := fsMkDir(mountHandle, dotGitLogsRefs, "heads")
-	fsCreateFile(mountHandle, dotGitLogsRefsHeads, ".DS_Store")
-	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "development")
-	fsCreateFile(mountHandle, dotGitLogsRefsHeads, "stable")
+	fsCreateFile(volumeHandle, cNestedInode, ".DS_Store")
+	dotGitInode := fsMkDir(volumeHandle, cNestedInode, ".git")
+	fsCreateFile(volumeHandle, dotGitInode, ".DS_Store")
+	fsCreateFile(volumeHandle, dotGitInode, "COMMIT_EDITMSG")
+	fsCreateFile(volumeHandle, dotGitInode, "FETCH_HEAD")
+	fsCreateFile(volumeHandle, dotGitInode, "HEAD")
+	fsCreateFile(volumeHandle, dotGitInode, "ORIG_HEAD")
+	fsCreateFile(volumeHandle, dotGitInode, "index")
+	dotGitHooks := fsMkDir(volumeHandle, dotGitInode, "hooks")
+	fsCreateFile(volumeHandle, dotGitHooks, ".DS_Store")
+	fsCreateFile(volumeHandle, dotGitHooks, "applypatch-msg.sample")
+	fsCreateFile(volumeHandle, dotGitHooks, "commit-msg.sample")
+	dotGitLogs := fsMkDir(volumeHandle, dotGitInode, "logs")
+	fsCreateFile(volumeHandle, dotGitLogs, ".DS_Store")
+	fsCreateFile(volumeHandle, dotGitLogs, "HEAD")
+	dotGitLogsRefs := fsMkDir(volumeHandle, dotGitLogs, "refs")
+	fsCreateFile(volumeHandle, dotGitLogsRefs, ".DS_Store")
+	fsCreateFile(volumeHandle, dotGitLogsRefs, "stash")
+	dotGitLogsRefsHeads := fsMkDir(volumeHandle, dotGitLogsRefs, "heads")
+	fsCreateFile(volumeHandle, dotGitLogsRefsHeads, ".DS_Store")
+	fsCreateFile(volumeHandle, dotGitLogsRefsHeads, "development")
+	fsCreateFile(volumeHandle, dotGitLogsRefsHeads, "stable")
 
-	aInode := fsMkDir(mountHandle, cNestedInode, "a")
-	fsCreateFile(mountHandle, aInode, "b-1")
-	fsCreateFile(mountHandle, aInode, "b-2")
-	abInode := fsMkDir(mountHandle, aInode, "b")
-	fsCreateFile(mountHandle, abInode, "c-1")
-	fsCreateFile(mountHandle, abInode, "c-2")
-	abcInode := fsMkDir(mountHandle, abInode, "c")
-	fsCreateFile(mountHandle, abcInode, "d-1")
-	fsCreateFile(mountHandle, abcInode, "d-2")
+	aInode := fsMkDir(volumeHandle, cNestedInode, "a")
+	fsCreateFile(volumeHandle, aInode, "b-1")
+	fsCreateFile(volumeHandle, aInode, "b-2")
+	abInode := fsMkDir(volumeHandle, aInode, "b")
+	fsCreateFile(volumeHandle, abInode, "c-1")
+	fsCreateFile(volumeHandle, abInode, "c-2")
+	abcInode := fsMkDir(volumeHandle, abInode, "c")
+	fsCreateFile(volumeHandle, abcInode, "d-1")
+	fsCreateFile(volumeHandle, abcInode, "d-2")
 
 	// SomeVolume2 is set up for testing account listings
-	mountHandle2, err := fs.MountByVolumeName("SomeVolume2", fs.MountOptions(0))
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "alpha")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "bravo")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "charlie")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "delta")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "echo")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "foxtrot")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "golf")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "hotel")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "india")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "juliet")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "kilo")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "lima")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "mancy")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "november")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "oscar")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "papa")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "quebec")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "romeo")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "sierra")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "tango")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "uniform")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "victor")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "whiskey")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "xray")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "yankee")
-	_ = fsMkDir(mountHandle2, inode.RootDirInodeNumber, "zulu")
-	_ = fsCreateFile(mountHandle2, inode.RootDirInodeNumber, "alice.txt")
-	_ = fsCreateFile(mountHandle2, inode.RootDirInodeNumber, "bob.txt")
-	_ = fsCreateFile(mountHandle2, inode.RootDirInodeNumber, "carol.txt")
+	volumeHandle2, err := fs.FetchVolumeHandleByVolumeName("SomeVolume2")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "alpha")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "bravo")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "charlie")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "delta")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "echo")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "foxtrot")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "golf")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "hotel")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "india")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "juliet")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "kilo")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "lima")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "mancy")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "november")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "oscar")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "papa")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "quebec")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "romeo")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "sierra")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "tango")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "uniform")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "victor")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "whiskey")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "xray")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "yankee")
+	_ = fsMkDir(volumeHandle2, inode.RootDirInodeNumber, "zulu")
+	_ = fsCreateFile(volumeHandle2, inode.RootDirInodeNumber, "alice.txt")
+	_ = fsCreateFile(volumeHandle2, inode.RootDirInodeNumber, "bob.txt")
+	_ = fsCreateFile(volumeHandle2, inode.RootDirInodeNumber, "carol.txt")
 }
 
 func TestMain(m *testing.M) {
@@ -1053,47 +1050,47 @@ func testRpcDelete(t *testing.T, server *Server) {
 	middlewareCreateContainer(t, server, testVerAccountContainerName, blunder.SuccessError)
 
 	// Create an object which is a directory and see if we can delete it via bimodal.
-	_, _, _, _, mountHandle, err := mountIfNotMounted(testVerAccountName)
+	_, _, _, _, volumeHandle, err := parseVirtPath(testVerAccountName)
 	assert.Nil(err)
 
-	cInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainerName)
+	cInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainerName)
 	assert.Nil(err)
 
 	var emptyDir string = "empty-directory"
-	_ = fsMkDir(mountHandle, cInode, emptyDir)
+	_ = fsMkDir(volumeHandle, cInode, emptyDir)
 
 	err = middlewareDeleteObject(server, emptyDir)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, emptyDir)
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, emptyDir)
 	assert.NotNil(err)
 
 	// Now create an object which is a file and see if we can delete it via bimodal.
 	var emptyFile string = "empty-file"
-	_ = fsCreateFile(mountHandle, cInode, emptyFile)
+	_ = fsCreateFile(volumeHandle, cInode, emptyFile)
 
 	err = middlewareDeleteObject(server, emptyFile)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, emptyFile)
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, emptyFile)
 	assert.NotNil(err)
 
 	// Now create a directory with one file in it and prove we can remove file and
 	// then directory.
 	var aDir string = "dir1"
-	aDirInode := fsMkDir(mountHandle, cInode, aDir)
-	_ = fsCreateFile(mountHandle, aDirInode, emptyFile)
+	aDirInode := fsMkDir(volumeHandle, cInode, aDir)
+	_ = fsCreateFile(volumeHandle, aDirInode, emptyFile)
 
 	err = middlewareDeleteObject(server, aDir+"/"+emptyFile)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, "/"+aDir+"/"+emptyFile)
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, "/"+aDir+"/"+emptyFile)
 	assert.NotNil(err)
 
 	err = middlewareDeleteObject(server, aDir)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, "/"+aDir)
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, "/"+aDir)
 	assert.NotNil(err)
 
 	// Now delete the container
@@ -1124,35 +1121,35 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	// d1/crackle
 	// d1/pop
 	// d1-symlink -> d1
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
-	tlInode := fsCreateFile(mountHandle, containerInode, "top-level.txt")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, tlInode, 0, []byte("conusance-callboy"), nil)
+	tlInode := fsCreateFile(volumeHandle, containerInode, "top-level.txt")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, tlInode, 0, []byte("conusance-callboy"), nil)
 
-	d1Inode := fsMkDir(mountHandle, containerInode, "d1")
+	d1Inode := fsMkDir(volumeHandle, containerInode, "d1")
 	files := map[string]string{
 		"snap":    "contents of snap",
 		"crackle": "contents of crackle",
 		"pop":     "contents of pop",
 	}
 	for fileName, fileContents := range files {
-		fileInode := fsCreateFile(mountHandle, d1Inode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
+		fileInode := fsCreateFile(volumeHandle, d1Inode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileContents), nil)
 		if err != nil {
 			panic(fmt.Sprintf("failed to write file %s: %v", fileName, err))
 		}
 	}
 
-	fsCreateSymlink(mountHandle, containerInode, "d1-symlink", "d1")
-	fsCreateSymlink(mountHandle, d1Inode, "snap-symlink", "snap")
-	fsCreateSymlink(mountHandle, d1Inode, "pop-symlink", "./pop")
+	fsCreateSymlink(volumeHandle, containerInode, "d1-symlink", "d1")
+	fsCreateSymlink(volumeHandle, d1Inode, "snap-symlink", "snap")
+	fsCreateSymlink(volumeHandle, d1Inode, "pop-symlink", "./pop")
 
-	fsCreateSymlink(mountHandle, d1Inode, "dot-symlink", ".")
+	fsCreateSymlink(volumeHandle, d1Inode, "dot-symlink", ".")
 
 	// Symlinks in the directory portion of the name are followed
 	deleteRequest := DeleteReq{
@@ -1162,7 +1159,7 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	err = s.RpcDelete(&deleteRequest, &deleteResponse)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/crackle")
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/crackle")
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.NotFoundError))
 
@@ -1175,9 +1172,9 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	err = s.RpcDelete(&deleteRequest, &deleteResponse)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/snap")
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/snap")
 	assert.Nil(err)
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/snap-symlink")
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/snap-symlink")
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.NotFoundError))
 
@@ -1189,9 +1186,9 @@ func TestRpcDeleteSymlinks(t *testing.T) {
 	err = s.RpcDelete(&deleteRequest, &deleteResponse)
 	assert.Nil(err)
 
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/pop")
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/pop")
 	assert.Nil(err)
-	_, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/pop-symlink")
+	_, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/d1/pop-symlink")
 	assert.NotNil(err)
 	assert.True(blunder.Is(err, blunder.NotFoundError))
 }
@@ -1202,7 +1199,7 @@ func testRpcPost(t *testing.T, server *Server) {
 	// We assume that the container already exists since currently we cannot
 	// delete the container.
 
-	_, _, _, _, mountHandle, err := mountIfNotMounted(testVerAccountName)
+	_, _, _, _, volumeHandle, err := parseVirtPath(testVerAccountName)
 	assert.Nil(err)
 
 	// POST to account with empty string for account
@@ -1242,14 +1239,14 @@ func testRpcPost(t *testing.T, server *Server) {
 
 	// Now POST to account/container/object after creating an object which
 	// is a directory and one which is a file.
-	cInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainerName)
+	cInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, testContainerName)
 	assert.Nil(err)
 	var emptyDir string = "empty-directory"
-	_ = fsMkDir(mountHandle, cInode, emptyDir)
+	_ = fsMkDir(volumeHandle, cInode, emptyDir)
 	var emptyFile string = "empty-file"
-	_ = fsCreateFile(mountHandle, cInode, emptyFile)
+	_ = fsCreateFile(volumeHandle, cInode, emptyFile)
 	var emptyFileSymlink string = "empty-file-symlink"
-	fsCreateSymlink(mountHandle, cInode, emptyFileSymlink, emptyFile)
+	fsCreateSymlink(volumeHandle, cInode, emptyFileSymlink, emptyFile)
 
 	virtPath = testVerAccountContainerName + "/" + emptyDir
 	newContMetaData = []byte("object emptyDir metadata")
@@ -1270,7 +1267,7 @@ func testRpcPost(t *testing.T, server *Server) {
 	err = middlewarePost(server, virtPath, newContMetaData, oldContMetaData)
 	assert.Nil(err)
 
-	headResponse, err := mountHandle.MiddlewareHeadResponse(testContainerName + "/" + emptyFile)
+	headResponse, err := volumeHandle.MiddlewareHeadResponse(testContainerName + "/" + emptyFile)
 	assert.Nil(err)
 	assert.Equal(newContMetaData, headResponse.Metadata)
 
@@ -1302,7 +1299,7 @@ func testNameLength(t *testing.T, server *Server) {
 
 // Tests for RpcPutLocation and RpcPutComplete together; an object PUT
 // calls both
-func testPutObjectSetup(t *testing.T) (*assert.Assertions, *Server, string, fs.MountHandle) {
+func testPutObjectSetup(t *testing.T) (*assert.Assertions, *Server, string, fs.VolumeHandle) {
 	// Just some common setup crud
 
 	// We can't delete containers, so we grab a name and hope that it
@@ -1310,17 +1307,17 @@ func testPutObjectSetup(t *testing.T) (*assert.Assertions, *Server, string, fs.M
 	// almost certainly okay.)
 	containerName := fmt.Sprintf("mware-TestPutObject-%d", time.Now().UnixNano())
 
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
-	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	assert := assert.New(t)
 
 	server := &Server{}
 
-	return assert, server, containerName, mountHandle
+	return assert, server, containerName, volumeHandle
 }
 
 // Helper function to put a file into Swift using RpcPutLocation / RpcPutComplete plus an HTTP PUT request
@@ -1374,7 +1371,7 @@ func putFileInSwift(server *Server, virtPath string, objData []byte, objMetadata
 }
 
 func TestPutObjectSimple(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "toplevel.bin"
 	objData := []byte("hello world\n")
@@ -1385,19 +1382,19 @@ func TestPutObjectSimple(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 
-	headResponse, err := mountHandle.MiddlewareHeadResponse(containerName + "/" + objName)
+	headResponse, err := volumeHandle.MiddlewareHeadResponse(containerName + "/" + objName)
 	assert.Nil(err)
 	assert.Equal([]byte(objMetadata), headResponse.Metadata)
 }
 
 func TestPutObjectInAllNewSubdirs(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "d1/d2/d3/d4/nested.bin"
 	objData := []byte("hello nested world\n")
@@ -1408,23 +1405,23 @@ func TestPutObjectInAllNewSubdirs(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
 
 func TestPutObjectInSomeNewSubdirs(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	// make d1 and d1/d2, but leave creation of the rest to the RPC call
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
+	containerInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
 	if err != nil {
 		panic(err)
 	}
-	d1Inode := fsMkDir(mountHandle, containerInode, "exists-d1")
-	_ = fsMkDir(mountHandle, d1Inode, "exists-d2")
+	d1Inode := fsMkDir(volumeHandle, containerInode, "exists-d1")
+	_ = fsMkDir(volumeHandle, d1Inode, "exists-d2")
 
 	objName := "exists-d1/exists-d2/d3/d4/nested.bin"
 	objData := []byte("hello nested world\n")
@@ -1435,15 +1432,15 @@ func TestPutObjectInSomeNewSubdirs(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
 
 func TestPutObjectOverwriteFile(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "overwritten.bin"
 	objData1 := []byte("hello world 1\n")
@@ -1456,29 +1453,29 @@ func TestPutObjectOverwriteFile(t *testing.T) {
 	err = putFileInSwift(server, objVirtPath, objData2, objMetadata)
 	assert.Nil(err)
 
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData2, contents)
 }
 
 func TestPutObjectOverwriteDirectory(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "dir-with-stuff-in-it"
 	objData := []byte("irrelevant")
 	objMetadata := []byte("won't get written")
 	objVirtPath := testVerAccountName + "/" + containerName + "/" + objName
 
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
+	containerInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
 	if err != nil {
 		panic(err)
 	}
-	dirInodeNumber := fsMkDir(mountHandle, containerInode, "dir-with-stuff-in-it")
+	dirInodeNumber := fsMkDir(volumeHandle, containerInode, "dir-with-stuff-in-it")
 
-	fileInodeNumber := fsCreateFile(mountHandle, dirInodeNumber, "stuff.txt")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, 0, []byte("churches, lead, small rocks, apples"), nil)
+	fileInodeNumber := fsCreateFile(volumeHandle, dirInodeNumber, "stuff.txt")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, 0, []byte("churches, lead, small rocks, apples"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1489,34 +1486,34 @@ func TestPutObjectOverwriteDirectory(t *testing.T) {
 
 	// remove the file in the directory and the put should succeed,
 	// replacing the directory with a file
-	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+	err = volumeHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		dirInodeNumber, "stuff.txt")
 	assert.Nil(err)
 
 	err = putFileInSwift(server, objVirtPath, objData, objMetadata)
 	assert.Nil(err)
 
-	dirInodeNumber, err = mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
+	dirInodeNumber, err = volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil,
 		containerName+"/"+objName)
 	assert.Nil(err)
 
-	statResult, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber)
+	statResult, err := volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber)
 	assert.Nil(err)
 	assert.Equal(statResult[fs.StatFType], uint64(inode.FileType))
 }
 
 func TestPutObjectSymlinkedDir(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
+	containerInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
 	if err != nil {
 		panic(err)
 	}
-	d1Inode := fsMkDir(mountHandle, containerInode, "d1")
-	d2Inode := fsMkDir(mountHandle, d1Inode, "d2")
-	fsCreateSymlink(mountHandle, d1Inode, "d2-symlink", "./d2")
-	fsCreateSymlink(mountHandle, d1Inode, "dot-symlink", ".")
-	fsCreateSymlink(mountHandle, d2Inode, "abs-container-symlink", "/"+containerName)
+	d1Inode := fsMkDir(volumeHandle, containerInode, "d1")
+	d2Inode := fsMkDir(volumeHandle, d1Inode, "d2")
+	fsCreateSymlink(volumeHandle, d1Inode, "d2-symlink", "./d2")
+	fsCreateSymlink(volumeHandle, d1Inode, "dot-symlink", ".")
+	fsCreateSymlink(volumeHandle, d2Inode, "abs-container-symlink", "/"+containerName)
 
 	objName := "d1/d2-symlink/abs-container-symlink/d1/dot-symlink/dot-symlink/d2/d3/thing.dat"
 	objData := []byte("kamik-defensory")
@@ -1527,21 +1524,21 @@ func TestPutObjectSymlinkedDir(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"d1/d2/d3/thing.dat")
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"d1/d2/d3/thing.dat")
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
 
 func TestPutObjectOverwriteSymlink(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
+	containerInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
 	if err != nil {
 		panic(err)
 	}
-	fsCreateSymlink(mountHandle, containerInode, "thing.dat", "somewhere-else")
+	fsCreateSymlink(volumeHandle, containerInode, "thing.dat", "somewhere-else")
 
 	objName := "thing.dat"
 	objData := []byte("cottontop-aleuroscope")
@@ -1552,30 +1549,30 @@ func TestPutObjectOverwriteSymlink(t *testing.T) {
 	assert.Nil(err) // sanity check
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"somewhere-else")
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+"somewhere-else")
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal(objData, contents)
 }
 
 func TestPutObjectFileInDirPath(t *testing.T) {
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "d1/d2/actually-a-file/d3/d4/stuff.txt"
 	objData := []byte("irrelevant")
 	objMetadata := []byte("won't get written")
 	objVirtPath := testVerAccountName + "/" + containerName + "/" + objName
 
-	containerInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
+	containerInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName)
 	if err != nil {
 		panic(err)
 	}
-	d1InodeNumber := fsMkDir(mountHandle, containerInode, "d1")
-	d2InodeNumber := fsMkDir(mountHandle, d1InodeNumber, "d2")
+	d1InodeNumber := fsMkDir(volumeHandle, containerInode, "d1")
+	d2InodeNumber := fsMkDir(volumeHandle, d1InodeNumber, "d2")
 
-	fileInodeNumber := fsCreateFile(mountHandle, d2InodeNumber, "actually-a-file")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, 0, []byte("not a directory"), nil)
+	fileInodeNumber := fsCreateFile(volumeHandle, d2InodeNumber, "actually-a-file")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, 0, []byte("not a directory"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -1588,7 +1585,7 @@ func TestPutObjectFileInDirPath(t *testing.T) {
 func TestPutObjectCompound(t *testing.T) {
 	// In this test, we put data into two different log segments, but
 	// the data is for the same file
-	assert, server, containerName, mountHandle := testPutObjectSetup(t)
+	assert, server, containerName, volumeHandle := testPutObjectSetup(t)
 
 	objName := "helloworld.txt"
 	objMetadata := []byte("{}")
@@ -1677,20 +1674,20 @@ func TestPutObjectCompound(t *testing.T) {
 	}
 
 	// The file should exist now, so we can verify its attributes
-	theInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
+	theInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/"+objName)
 	assert.Nil(err)
-	contents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
+	contents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("hello world!"), contents)
 	assert.Equal(uint64(theInode), uint64(putCompleteResp.InodeNumber))
 	// 2 is the number of log segments we wrote
 	assert.Equal(uint64(2), putCompleteResp.NumWrites)
 
-	headResponse, err := mountHandle.MiddlewareHeadResponse(containerName + "/" + objName)
+	headResponse, err := volumeHandle.MiddlewareHeadResponse(containerName + "/" + objName)
 	assert.Nil(err)
 	assert.Equal([]byte(objMetadata), headResponse.Metadata)
 
-	statResult, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode)
+	statResult, err := volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, theInode)
 	assert.Nil(err)
 	assert.Equal(statResult[fs.StatMTime], putCompleteResp.ModificationTime)
 	assert.Equal(statResult[fs.StatCTime], putCompleteResp.AttrChangeTime)
@@ -1724,22 +1721,22 @@ func TestRpcGetObjectMetadata(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "covetingly-ahead"
 
-	cInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
-	readmeInode := fsCreateFile(mountHandle, cInode, "README")
+	cInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
+	readmeInode := fsCreateFile(volumeHandle, cInode, "README")
 
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode, 0, []byte("unsurpassably-Rigelian"), nil)
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode, 0, []byte("unsurpassably-Rigelian"), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	statResult, err := mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode)
+	statResult, err := volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, readmeInode)
 	if err != nil {
 		panic(err)
 	}
@@ -1767,7 +1764,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	// We're not actually going to test any read plans here; that is tested elsewhere.
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1803,54 +1800,54 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 	//  /c4/d1/symlink-d2 -> d2
 	//  /c4/d1/d2/symlink-kitten.png -> /c1/kitten.png
 
-	c1Inode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c1")
-	c2Inode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c2")
-	c3Inode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c3")
-	c4Inode := fsMkDir(mountHandle, inode.RootDirInodeNumber, "c4")
+	c1Inode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c1")
+	c2Inode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c2")
+	c3Inode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c3")
+	c4Inode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, "c4")
 
-	fileInode := fsCreateFile(mountHandle, c1Inode, "kitten.png")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("if this were a real kitten, it would be cute"), nil)
+	fileInode := fsCreateFile(volumeHandle, c1Inode, "kitten.png")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("if this were a real kitten, it would be cute"), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-1", "kitten.png")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-2", "symlink-1")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-3", "symlink-2")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-4", "symlink-3")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-5", "symlink-4")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-6", "symlink-5")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-7", "symlink-6")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-8", "symlink-7")
-	fsCreateSymlink(mountHandle, c1Inode, "symlink-9", "symlink-8")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-1", "kitten.png")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-2", "symlink-1")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-3", "symlink-2")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-4", "symlink-3")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-5", "symlink-4")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-6", "symlink-5")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-7", "symlink-6")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-8", "symlink-7")
+	fsCreateSymlink(volumeHandle, c1Inode, "symlink-9", "symlink-8")
 
-	fileInode = fsCreateFile(mountHandle, c2Inode, "10-bytes")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("abcdefghij"), nil)
+	fileInode = fsCreateFile(volumeHandle, c2Inode, "10-bytes")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("abcdefghij"), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	fsCreateSymlink(mountHandle, c2Inode, "symlink-10-bytes", "10-bytes")
-	fsCreateSymlink(mountHandle, c2Inode, "symlink-20-bytes", "/c3/20-bytes")
-	fsCreateSymlink(mountHandle, c2Inode, "symlink-20-bytes-indirect", "symlink-20-bytes")
+	fsCreateSymlink(volumeHandle, c2Inode, "symlink-10-bytes", "10-bytes")
+	fsCreateSymlink(volumeHandle, c2Inode, "symlink-20-bytes", "/c3/20-bytes")
+	fsCreateSymlink(volumeHandle, c2Inode, "symlink-20-bytes-indirect", "symlink-20-bytes")
 
-	fileInode = fsCreateFile(mountHandle, c3Inode, "20-bytes")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("abcdefghijklmnopqrst"), nil)
+	fileInode = fsCreateFile(volumeHandle, c3Inode, "20-bytes")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte("abcdefghijklmnopqrst"), nil)
 	if err != nil {
 		panic(err)
 	}
 
-	fsCreateSymlink(mountHandle, c3Inode, "symlink-20-bytes-double-indirect", "/c2/symlink-20-bytes-indirect")
-	fsCreateSymlink(mountHandle, c3Inode, "symlink-c2", "/c2")
-	fsCreateSymlink(mountHandle, c3Inode, "cycle-a", "cycle-b")
-	fsCreateSymlink(mountHandle, c3Inode, "cycle-b", "cycle-c")
-	fsCreateSymlink(mountHandle, c3Inode, "cycle-c", "cycle-a")
+	fsCreateSymlink(volumeHandle, c3Inode, "symlink-20-bytes-double-indirect", "/c2/symlink-20-bytes-indirect")
+	fsCreateSymlink(volumeHandle, c3Inode, "symlink-c2", "/c2")
+	fsCreateSymlink(volumeHandle, c3Inode, "cycle-a", "cycle-b")
+	fsCreateSymlink(volumeHandle, c3Inode, "cycle-b", "cycle-c")
+	fsCreateSymlink(volumeHandle, c3Inode, "cycle-c", "cycle-a")
 
-	c4d1Inode := fsMkDir(mountHandle, c4Inode, "d1")
-	c4d1d2Inode := fsMkDir(mountHandle, c4d1Inode, "d2")
-	fsCreateSymlink(mountHandle, c4Inode, "symlink-d1", "d1")
-	fsCreateSymlink(mountHandle, c4d1Inode, "symlink-d2", "d2")
-	fsCreateSymlink(mountHandle, c4d1d2Inode, "symlink-kitten.png", "/c1/kitten.png")
+	c4d1Inode := fsMkDir(volumeHandle, c4Inode, "d1")
+	c4d1d2Inode := fsMkDir(volumeHandle, c4d1Inode, "d2")
+	fsCreateSymlink(volumeHandle, c4Inode, "symlink-d1", "d1")
+	fsCreateSymlink(volumeHandle, c4d1Inode, "symlink-d2", "d2")
+	fsCreateSymlink(volumeHandle, c4d1d2Inode, "symlink-kitten.png", "/c1/kitten.png")
 	// Test setup complete
 
 	// Test following a single symlink to a file in the same directory
@@ -1923,7 +1920,7 @@ func TestRpcGetObjectSymlinkFollowing(t *testing.T) {
 func TestRpcPutContainer(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	_, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -1985,7 +1982,7 @@ func TestRpcPutContainer(t *testing.T) {
 func TestRpcPutContainerTooLong(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	_, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	_, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2007,13 +2004,13 @@ func TestRpcPutContainerTooLong(t *testing.T) {
 func TestRpcMiddlewareMkdir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 	containerName := "rpc-middleware-mkdir-container"
 
-	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 	dirName := "rpc-middleware-mkdir-test"
 	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
 	dirMetadata := []byte("some metadata b5fdbc4a0f1484225fcb7aa64b1e6b94")
@@ -2051,13 +2048,13 @@ func TestRpcMiddlewareMkdir(t *testing.T) {
 func TestRpcMiddlewareMkdirNested(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 	containerName := "rpc-middleware-mkdir-container-nested"
 
-	fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 	dirName := "some/deeply/nested/dir"
 	dirPath := testVerAccountName + "/" + containerName + "/" + dirName
 	dirMetadata := []byte("some metadata eeef146ba9e5875cb52b047ba4f03660")
@@ -2084,7 +2081,7 @@ func TestRpcMiddlewareMkdirNested(t *testing.T) {
 func TestRpcCoalesce(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
@@ -2095,15 +2092,15 @@ func TestRpcCoalesce(t *testing.T) {
 
 	destinationPath := containerAPath + "/" + "combined-file"
 
-	containerAInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerAName)
-	containerBInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerBName)
+	containerAInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerAName)
+	containerBInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerBName)
 
-	containerADir1Inode := fsMkDir(mountHandle, containerAInode, "dir1")
-	containerADir1Dir2Inode := fsMkDir(mountHandle, containerADir1Inode, "dir2")
+	containerADir1Inode := fsMkDir(volumeHandle, containerAInode, "dir1")
+	containerADir1Dir2Inode := fsMkDir(volumeHandle, containerADir1Inode, "dir2")
 
 	fileA1Path := "/" + containerAName + "/dir1/dir2/a1"
-	fileA1Inode := fsCreateFile(mountHandle, containerADir1Dir2Inode, "a1")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileA1Inode, 0, []byte("red "), nil)
+	fileA1Inode := fsCreateFile(volumeHandle, containerADir1Dir2Inode, "a1")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileA1Inode, 0, []byte("red "), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -2111,15 +2108,15 @@ func TestRpcCoalesce(t *testing.T) {
 	// Element paths are relative to the account, but the destination path is absolute. It's a little weird, but it
 	// means we don't have to worry about element paths pointing to different accounts.
 	fileA2Path := "/" + containerAName + "/dir1/dir2/a2"
-	fileA2Inode := fsCreateFile(mountHandle, containerADir1Dir2Inode, "a2")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileA2Inode, 0, []byte("orange "), nil)
+	fileA2Inode := fsCreateFile(volumeHandle, containerADir1Dir2Inode, "a2")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileA2Inode, 0, []byte("orange "), nil)
 	if err != nil {
 		panic(err)
 	}
 
 	fileBPath := "/" + containerBName + "/b"
-	fileBInode := fsCreateFile(mountHandle, containerBInode, "b")
-	_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileBInode, 0, []byte("yellow"), nil)
+	fileBInode := fsCreateFile(volumeHandle, containerBInode, "b")
+	_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileBInode, 0, []byte("yellow"), nil)
 	if err != nil {
 		panic(err)
 	}
@@ -2138,7 +2135,7 @@ func TestRpcCoalesce(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	combinedInode, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerAName+"/combined-file")
+	combinedInode, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerAName+"/combined-file")
 	assert.Nil(err)
 	assert.Equal(uint64(combinedInode), uint64(coalesceReply.InodeNumber))
 	assert.True(coalesceReply.NumWrites > 0)
@@ -2146,7 +2143,7 @@ func TestRpcCoalesce(t *testing.T) {
 	assert.True(coalesceReply.ModificationTime > timeBeforeRequest)
 	assert.True(coalesceReply.ModificationTime == coalesceReply.AttrChangeTime)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, combinedInode, 0, 99999, nil)
+	combinedContents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, combinedInode, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow"), combinedContents)
 }
@@ -2154,21 +2151,21 @@ func TestRpcCoalesce(t *testing.T) {
 func TestRpcCoalesceOverwrite(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-Callynteria-sapor"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/" + "combined"
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2186,7 +2183,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 	coalesceReply := CoalesceReply{}
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	combinedContents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 
@@ -2204,7 +2201,7 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	combinedContents, err = mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
+	combinedContents, err = volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(coalesceReply.InodeNumber), 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("green blue indigo violet "), combinedContents)
 
@@ -2213,27 +2210,27 @@ func TestRpcCoalesceOverwrite(t *testing.T) {
 func TestRpcCoalesceOverwriteDir(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-speller-spinally"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/" + "combined"
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	combinedInode := fsMkDir(mountHandle, containerInode, "combined")
+	combinedInode := fsMkDir(volumeHandle, containerInode, "combined")
 
 	// Create the file
 	coalesceRequest := CoalesceReq{
@@ -2249,33 +2246,33 @@ func TestRpcCoalesceOverwriteDir(t *testing.T) {
 	assert.NotNil(err)
 
 	// The old dir is still there
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/combined")
+	ino, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/combined")
 	assert.Equal(combinedInode, ino)
 }
 
 func TestRpcCoalesceMakesDirs(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-subsaturation-rowy"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/a/b/c/d/e/f/combined"
 
 	// The directory structure partially exists, but not totally
-	aInode := fsMkDir(mountHandle, containerInode, "a")
-	bInode := fsMkDir(mountHandle, aInode, "b")
-	fsMkDir(mountHandle, bInode, "c")
+	aInode := fsMkDir(volumeHandle, containerInode, "a")
+	bInode := fsMkDir(volumeHandle, aInode, "b")
+	fsMkDir(volumeHandle, bInode, "c")
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2294,11 +2291,11 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/b/c/d/e/f/combined")
+	ino, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/b/c/d/e/f/combined")
 	assert.Nil(err)
 	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
+	combinedContents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
@@ -2306,28 +2303,28 @@ func TestRpcCoalesceMakesDirs(t *testing.T) {
 func TestRpcCoalesceSymlinks(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-salpingian-utilizer"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/a/b-sl/abs-a-sl/b-sl/c/combined"
 
 	// The directory structure partially exists, but not totally
-	aInode := fsMkDir(mountHandle, containerInode, "a")
-	fsCreateSymlink(mountHandle, aInode, "b-sl", "b")
-	bInode := fsMkDir(mountHandle, aInode, "b")
-	fsCreateSymlink(mountHandle, bInode, "abs-a-sl", "/"+containerName+"/a")
-	fsMkDir(mountHandle, bInode, "c")
+	aInode := fsMkDir(volumeHandle, containerInode, "a")
+	fsCreateSymlink(volumeHandle, aInode, "b-sl", "b")
+	bInode := fsMkDir(volumeHandle, aInode, "b")
+	fsCreateSymlink(volumeHandle, bInode, "abs-a-sl", "/"+containerName+"/a")
+	fsMkDir(volumeHandle, bInode, "c")
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2346,11 +2343,11 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/b/c/combined")
+	ino, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/b/c/combined")
 	assert.Nil(err)
 	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
+	combinedContents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
@@ -2358,25 +2355,25 @@ func TestRpcCoalesceSymlinks(t *testing.T) {
 func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-Clathrus-playmonger"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/a/busted/c/combined"
 
 	// The directory structure partially exists, but not totally
-	aInode := fsMkDir(mountHandle, containerInode, "a")
-	fsCreateSymlink(mountHandle, aInode, "busted", "this-symlink-is-broken")
+	aInode := fsMkDir(volumeHandle, containerInode, "a")
+	fsCreateSymlink(volumeHandle, aInode, "busted", "this-symlink-is-broken")
 
 	filesToWrite := []string{"red", "orange", "yellow", "green", "blue", "indigo", "violet"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -2395,11 +2392,11 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 	err = server.RpcCoalesce(&coalesceRequest, &coalesceReply)
 	assert.Nil(err)
 
-	ino, err := mountHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/this-symlink-is-broken/c/combined")
+	ino, err := volumeHandle.LookupPath(inode.InodeRootUserID, inode.InodeGroupID(0), nil, containerName+"/a/this-symlink-is-broken/c/combined")
 	assert.Nil(err)
 	assert.Equal(inode.InodeNumber(coalesceReply.InodeNumber), ino)
 
-	combinedContents, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
+	combinedContents, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, ino, 0, 99999, nil)
 	assert.Nil(err)
 	assert.Equal([]byte("red orange yellow "), combinedContents) // sanity check
 }
@@ -2407,25 +2404,25 @@ func TestRpcCoalesceBrokenSymlink(t *testing.T) {
 func TestRpcCoalesceSubdirOfAFile(t *testing.T) {
 	server := &Server{}
 	assert := assert.New(t)
-	mountHandle, err := fs.MountByVolumeName("SomeVolume", fs.MountOptions(0))
+	volumeHandle, err := fs.FetchVolumeHandleByVolumeName("SomeVolume")
 	if nil != err {
 		panic(fmt.Sprintf("failed to mount SomeVolume: %v", err))
 	}
 
 	containerName := "rpc-coalesce-fanam-outswim"
 	containerPath := testVerAccountName + "/" + containerName
-	containerInode := fsMkDir(mountHandle, inode.RootDirInodeNumber, containerName)
+	containerInode := fsMkDir(volumeHandle, inode.RootDirInodeNumber, containerName)
 
 	destinationPath := containerPath + "/a/b-is-a-file/c/combined"
 
 	// The directory structure partially exists, but not totally
-	aInode := fsMkDir(mountHandle, containerInode, "a")
-	fsCreateFile(mountHandle, aInode, "b-is-a-file")
+	aInode := fsMkDir(volumeHandle, containerInode, "a")
+	fsCreateFile(volumeHandle, aInode, "b-is-a-file")
 
 	filesToWrite := []string{"red", "orange", "yellow"}
 	for _, fileName := range filesToWrite {
-		fileInode := fsCreateFile(mountHandle, containerInode, fileName)
-		_, err = mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
+		fileInode := fsCreateFile(volumeHandle, containerInode, fileName)
+		_, err = volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInode, 0, []byte(fileName+" "), nil)
 		if err != nil {
 			panic(err)
 		}

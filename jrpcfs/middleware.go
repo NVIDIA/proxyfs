@@ -17,47 +17,25 @@ import (
 // NOTE: These functions should only verify the arguments and then call
 // functions in package fs since there may be fs locking required.
 
-// Utility function to mount account if not already mounted and return needed fields
-func mountIfNotMounted(virtPath string) (accountName string, containerName string, objectName string, volumeName string, mountHandle fs.MountHandle, err error) {
+// parseVirtPath extracts path components and fetches the corresponding fs.VolumeHandle from virtPath
+func parseVirtPath(virtPath string) (accountName string, vContainerName string, vObjectName string, volumeName string, volumeHandle fs.VolumeHandle, err error) {
 
-	// Extract vAccount and vContainer from VirtPath
-	accountName, containerName, objectName, err = utils.PathToAcctContObj(virtPath)
-	if err != nil {
-		return "", "", "", "", nil, err
+	// Extract Account, vContainer, and vObject from VirtPath
+	accountName, vContainerName, vObjectName, err = utils.PathToAcctContObj(virtPath)
+	if nil != err {
+		return
 	}
 
-	// Map vAccountName to a volumeName
-	volumeName, ok := fs.AccountNameToVolumeName(accountName)
-	if !ok {
-		err = fmt.Errorf("%v is not a recognized accountName", accountName)
-		return "", "", "", "", nil, err
+	// Map accountName to volumeHandle
+	volumeHandle, err = fs.FetchVolumeHandleByAccountName(accountName)
+	if nil != err {
+		return
 	}
 
-	// Multiple middleware threads could be attempting to mount the volume at the same time.
-	//
-	// fs.Mount() allows this since the fs wants to support read-only and read-write mounts from Samba.
-	// However, this results in two different mountHandle's for the different jrpcfs threads supporting middleware.
-	//
-	// Therefore, jrpcfs has to do its own serialization and store the result in globals.bimodalMountMap.
-	globals.mapsLock.Lock()
-	defer globals.mapsLock.Unlock()
+	// Map volumeHandle to volumeName
+	volumeName = volumeHandle.VolumeName()
 
-	// Is volume mounted for this user?  If is, return the results.
-	mountHandle, ok = globals.bimodalMountMap[volumeName]
-	if ok {
-		return accountName, containerName, objectName, volumeName, mountHandle, err
-	}
-
-	// We have not already mounted it, mount it now and store result in bimodalMountMap
-	// TODO - add proper mountOpts
-	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
-	if err != nil {
-		logger.DebugfIDWithError(internalDebug, err, "fs.Mount() of acct: %v container: %v failed!", accountName, containerName)
-		return accountName, containerName, objectName, volumeName, nil, err
-	}
-
-	globals.bimodalMountMap[volumeName] = mountHandle
-	return accountName, containerName, objectName, volumeName, mountHandle, err
+	return
 }
 
 // RpcCreateContainer is used by Middleware to PUT of a container.
@@ -73,7 +51,7 @@ func (s *Server) RpcCreateContainer(in *CreateContainerRequest, reply *CreateCon
 	// The blunder error package supports this, we just need to add some helper functions.
 	//defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	accountName, containerName, _, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	accountName, containerName, _, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	// Validate the components of the containerName
 	err = fs.ValidateFullPath(containerName)
@@ -87,7 +65,7 @@ func (s *Server) RpcCreateContainer(in *CreateContainerRequest, reply *CreateCon
 	}
 
 	// Make the directory
-	_, err = mountHandle.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, containerName, inode.PosixModePerm)
+	_, err = volumeHandle.Mkdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, containerName, inode.PosixModePerm)
 
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.Mkdir() of acct: %v vContainerName: %v failed!", accountName, containerName)
@@ -104,7 +82,7 @@ func (s *Server) RpcDelete(in *DeleteReq, reply *DeleteReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, containerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	parentDir, baseName := splitPath(containerName + "/" + objectName)
 
@@ -115,7 +93,7 @@ func (s *Server) RpcDelete(in *DeleteReq, reply *DeleteReply) (err error) {
 	}
 
 	// Call fs to delete the baseName if it is a file or an empty directory.
-	err = mountHandle.MiddlewareDelete(parentDir, baseName)
+	err = volumeHandle.MiddlewareDelete(parentDir, baseName)
 
 	return err
 }
@@ -126,13 +104,13 @@ func (s *Server) RpcGetAccount(in *GetAccountReq, reply *GetAccountReply) (err e
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, _, _, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, _, _, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 	if err != nil {
 		logger.ErrorfWithError(err, "RpcGetAccount: error mounting share for %s", in.VirtPath)
 		return err
 	}
 
-	entries, mtime, ctime, err := mountHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker, in.EndMarker)
+	entries, mtime, ctime, err := volumeHandle.MiddlewareGetAccount(in.MaxEntries, in.Marker, in.EndMarker)
 	if err != nil {
 		return err
 	}
@@ -148,7 +126,7 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, vContainerName, vObjectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, vContainerName, vObjectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 	if err != nil {
 		logger.ErrorfWithError(err, "RpcHead: error mounting share for %s", in.VirtPath)
 		return err
@@ -159,7 +137,7 @@ func (s *Server) RpcHead(in *HeadReq, reply *HeadReply) (err error) {
 		entityPath = entityPath + "/" + vObjectName
 	}
 
-	resp, err := mountHandle.MiddlewareHeadResponse(entityPath)
+	resp, err := volumeHandle.MiddlewareHeadResponse(entityPath)
 	if err != nil {
 		if !blunder.Is(err, blunder.NotFoundError) {
 			logger.ErrorfWithError(err, "RpcHead: error retrieving metadata for %s", in.VirtPath)
@@ -184,17 +162,17 @@ func (s *Server) RpcGetContainer(in *GetContainerReq, reply *GetContainerReply) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, vContainerName, _, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, vContainerName, _, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 	if err != nil {
 		logger.ErrorfWithError(err, "RpcGetContainer: error mounting share for %s", in.VirtPath)
 		return err
 	}
 
-	entries, err := mountHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.EndMarker, in.Prefix, in.Delimiter)
+	entries, err := volumeHandle.MiddlewareGetContainer(vContainerName, in.MaxEntries, in.Marker, in.EndMarker, in.Prefix, in.Delimiter)
 	if err != nil {
 		return err
 	}
-	resp, err := mountHandle.MiddlewareHeadResponse(vContainerName)
+	resp, err := volumeHandle.MiddlewareHeadResponse(vContainerName)
 	if err != nil {
 		return err
 	}
@@ -211,11 +189,11 @@ func (s *Server) RpcGetObject(in *GetObjectReq, reply *GetObjectReply) (err erro
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, vContainerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, vContainerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	mountRelativePath := vContainerName + "/" + objectName
 
-	resp, err := mountHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
+	resp, err := volumeHandle.MiddlewareGetObject(mountRelativePath, in.ReadEntsIn, &reply.ReadEntsOut)
 	if err != nil {
 		if !blunder.Is(err, blunder.NotFoundError) {
 			logger.ErrorfWithError(err, "RpcGetObject(): error retrieving metadata for %s", in.VirtPath)
@@ -239,7 +217,7 @@ func (s *Server) RpcPost(in *MiddlewarePostReq, reply *MiddlewarePostReply) (err
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 
-	accountName, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	accountName, containerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	// Don't allow a POST on an invalid account or on just an account
 	if accountName == "" || containerName == "" {
@@ -256,7 +234,7 @@ func (s *Server) RpcPost(in *MiddlewarePostReq, reply *MiddlewarePostReply) (err
 		parentDir, baseName = splitPath(containerName)
 	}
 
-	err = mountHandle.MiddlewarePost(parentDir, baseName, in.NewMetaData, in.OldMetaData)
+	err = volumeHandle.MiddlewarePost(parentDir, baseName, in.NewMetaData, in.OldMetaData)
 
 	return err
 
@@ -267,7 +245,7 @@ func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkd
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 
-	_, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, containerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	// Require a reference to an object; you can't create a container with this method.
 	if objectName == "" {
@@ -277,7 +255,7 @@ func (s *Server) RpcMiddlewareMkdir(in *MiddlewareMkdirReq, reply *MiddlewareMkd
 		return err
 	}
 
-	mtime, ctime, inodeNumber, numWrites, err := mountHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
+	mtime, ctime, inodeNumber, numWrites, err := volumeHandle.MiddlewareMkdir(containerName, objectName, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
 	reply.InodeNumber = int64(uint64(inodeNumber))
@@ -293,11 +271,11 @@ func (s *Server) RpcPutComplete(in *PutCompleteReq, reply *PutCompleteReply) (er
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, containerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	// Call fs to complete the creation of the inode for the file and
 	// the directories.
-	mtime, ctime, ino, numWrites, err := mountHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
+	mtime, ctime, ino, numWrites, err := volumeHandle.MiddlewarePutComplete(containerName, objectName, in.PhysPaths, in.PhysLengths, in.Metadata)
 	reply.ModificationTime = mtime
 	reply.AttrChangeTime = ctime
 	reply.InodeNumber = int64(uint64(ino))
@@ -317,7 +295,7 @@ func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (er
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 
-	accountName, containerName, objectName, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	accountName, containerName, objectName, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	// Validate the components of the objectName
 	err = fs.ValidateFullPath(containerName + "/" + objectName)
@@ -332,7 +310,7 @@ func (s *Server) RpcPutLocation(in *PutLocationReq, reply *PutLocationReply) (er
 	}
 
 	// Via fs package, ask inode package to provision object
-	reply.PhysPath, err = mountHandle.CallInodeToProvisionObject()
+	reply.PhysPath, err = volumeHandle.CallInodeToProvisionObject()
 
 	if err != nil {
 		logger.DebugfIDWithError(internalDebug, err, "fs.CallInodeToProvisionObject() of acct: %v container: %v failed!", accountName, containerName)
@@ -349,12 +327,12 @@ func (s *Server) RpcPutContainer(in *PutContainerReq, reply *PutContainerReply) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, containerName, _, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, containerName, _, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 	if err != nil {
 		return err
 	}
 
-	err = mountHandle.MiddlewarePutContainer(containerName, in.OldMetadata, in.NewMetadata)
+	err = volumeHandle.MiddlewarePutContainer(containerName, in.OldMetadata, in.NewMetadata)
 	return err
 }
 
@@ -368,11 +346,11 @@ func (s *Server) RpcCoalesce(in *CoalesceReq, reply *CoalesceReply) (err error) 
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
 	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
 
-	_, destContainer, destObject, _, mountHandle, err := mountIfNotMounted(in.VirtPath)
+	_, destContainer, destObject, _, volumeHandle, err := parseVirtPath(in.VirtPath)
 
 	var ino uint64
 	ino, reply.NumWrites, reply.AttrChangeTime, reply.ModificationTime, err =
-		mountHandle.MiddlewareCoalesce(
+		volumeHandle.MiddlewareCoalesce(
 			destContainer+"/"+destObject, in.NewMetaData, in.ElementAccountRelativePaths)
 	reply.InodeNumber = int64(ino)
 	return

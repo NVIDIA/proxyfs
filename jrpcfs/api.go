@@ -416,6 +416,13 @@ type MountByVolumeNameReply struct {
 	RootCAx509CertificatePEM []byte
 }
 
+// UnmountRequest is the request object for RpcUnmount.
+//
+// Note that all leases are implicitly released as part of servicing this request.
+type UnmountRequest struct {
+	MountID MountIDAsString
+}
+
 // ReaddirRequest is the request object for RpcReaddir.
 type ReaddirRequest struct {
 	InodeHandle
@@ -892,4 +899,73 @@ type SnapShotLookupByNameRequest struct {
 // SnapShotLookupByNameReply is the reply object for RpcSnapShotLookupByName
 type SnapShotLookupByNameReply struct {
 	SnapShot headhunter.SnapShotStruct
+}
+
+// LeaseRequestType specifies the requested lease operation
+//
+type LeaseRequestType uint32
+
+const (
+	LeaseRequestTypeShared    LeaseRequestType = iota // Currently unleased, requesting SharedLease
+	LeaseRequestTypePromote                           // Currently SharedLease held, requesting promoting to ExclusiveLease
+	LeaseRequestTypeExclusive                         // Currently unleased, requesting ExclusiveLease
+	LeaseRequestTypeDemote                            // Currently ExclusiveLease held, requesting demotion to SharedLease
+	LeaseRequestTypeRelease                           // Currently SharedLease or ExclusiveLease held, releasing it
+)
+
+// LeaseRequest is the request object for RpcLease
+//
+type LeaseRequest struct {
+	InodeHandle
+	LeaseRequestType // One of LeaseRequestType*
+}
+
+// LeaseReplyType specifies the acknowledgement that the requested lease operation
+// has been completed or denied (e.g. when a Promotion request cannot be satisfied
+// and the client will soon be receiving a LeaseInterruptTypeRelease)
+//
+type LeaseReplyType uint32
+
+const (
+	LeaseReplyTypeDenied    LeaseReplyType = iota // Request denied (e.g. Promotion deadlock avoidance)
+	LeaseReplyTypeShared                          // SharedLease granted
+	LeaseReplyTypePromoted                        // SharedLease promoted to ExclusiveLease
+	LeaseReplyTypeExclusive                       // ExclusiveLease granted
+	LeaseReplyTypeDemoted                         // ExclusiveLease demoted to SharedLease
+	LeaseReplyTypeReleased                        // SharedLease or ExclusiveLease released
+)
+
+// LeaseReply is the reply object for RpcLease
+//
+type LeaseReply struct {
+	LeaseReplyType // One of LeaseReplyType*
+}
+
+// RPCInterruptType specifies the action (unmount, demotion, or release) requested by ProxyFS
+// of the client in an RpcInterrupt "upcall" to indicate that a lease or leases must be demoted
+// or released
+//
+type RPCInterruptType uint32
+
+const (
+	// RPCInterruptTypeUnmount indicates all Leases should be released (after performing necessary
+	// state saving RPCs) and the client should unmount
+	//
+	RPCInterruptTypeUnmount RPCInterruptType = iota
+
+	// RPCInterruptTypeDemote indicates the specified LeaseHandle should (at least) be demoted
+	// from Exclusive to Shared (after performing necessary state saving RPCs)
+	//
+	RPCInterruptTypeDemote
+
+	// RPCInterruptTypeRelease indicates the specified LeaseHandle should be released (after
+	// performing state saving RPCs and invalidating such cached state)
+	//
+	RPCInterruptTypeRelease
+)
+
+// RPCInterrupt is the "upcall" mechanism used by ProxyFS to interrupt the client
+type RPCInterrupt struct {
+	RPCInterruptType       // One of RPCInterruptType*
+	InodeNumber      int64 // if RPCInterruptType == RPCInterruptTypeUnmount, InodeNumber == 0 (ignored)
 }

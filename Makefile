@@ -36,6 +36,7 @@ gobinsubdirs = \
 	inodeworkout \
 	pfs-crash \
 	pfs-fsck \
+	pfs-jrpc \
 	pfs-restart-test \
 	pfs-stress \
 	pfs-swift-load \
@@ -91,7 +92,9 @@ else
     minimal: pre-generate generate install
 endif
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test ci clean cover fmt generate install pre-generate python-test test version
+pfsagent: pre-generate generate pfsagent-install
+
+.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test ci clean cover fmt generate install pfsagent pfsagent-install pre-generate python-test test version
 
 bench:
 	@set -e; \
@@ -176,6 +179,10 @@ install:
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
+
+pfsagent-install:
+	$(MAKE) --no-print-directory -C pfsagentd install
+	$(MAKE) --no-print-directory -C pfsagentd/pfsagentd-swift-auth-plugin install
 
 pre-generate:
 	@set -e; \

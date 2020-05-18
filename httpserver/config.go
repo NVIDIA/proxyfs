@@ -67,7 +67,7 @@ type JobStatusJSONPackedStruct struct {
 type volumeStruct struct {
 	trackedlock.Mutex
 	name                   string
-	fsMountHandle          fs.MountHandle
+	fsVolumeHandle         fs.VolumeHandle
 	inodeVolumeHandle      inode.VolumeHandle
 	headhunterVolumeHandle headhunter.VolumeHandle
 	fsckActiveJob          *jobStruct
@@ -177,7 +177,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
 	}
 
-	volume.fsMountHandle, err = fs.MountByVolumeName(volume.name, 0)
+	volume.fsVolumeHandle, err = fs.FetchVolumeHandleByVolumeName(volume.name)
 	if nil != err {
 		return
 	}
@@ -264,6 +264,10 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	globals.Unlock()
 
 	return // return err from globals.volumeLLRB.DeleteByKey sufficient
+}
+
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {

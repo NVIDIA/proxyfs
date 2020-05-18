@@ -673,6 +673,9 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	EnableObjectDeletions() // Otherwise, we will hang
 	return nil

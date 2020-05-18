@@ -138,6 +138,8 @@ truncate -s 1GB /srv/swift-disk
 mkfs.xfs -f /srv/swift-disk
 mkdir -p /srv/$SAIT_INSTANCE/node/sdb$SAIT_INSTANCE
 echo "/srv/swift-disk /srv/$SAIT_INSTANCE/node/sdb$SAIT_INSTANCE xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
+mount /srv/$SAIT_INSTANCE/node/sdb$SAIT_INSTANCE
+chown swift:swift /srv/$SAIT_INSTANCE/node/sdb$SAIT_INSTANCE
 
 # Create Swift temporary file dir
 
@@ -198,7 +200,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.25.0.3
+git checkout ss-release-2.25.0.4
 pip install wheel
 python setup.py bdist_wheel
 pip install --no-binary cryptography -r requirements.txt
@@ -383,6 +385,10 @@ yum -y install dstat
 # Install tree
 
 yum -y install tree
+
+# Install jq... a very handy JSON parser
+
+yum -y install jq
 
 # Install and configure a localhost-only one-node etcd cluster
 

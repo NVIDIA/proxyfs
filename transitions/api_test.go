@@ -517,6 +517,10 @@ func TestAPI(t *testing.T) {
 		"Move VolumeB from Peer0 to Peer1",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.VolumeToBeUnserved(,VolumeB) called"},
+			[]string{
+				"testCallbacksInterface1.VolumeToBeUnserved(,VolumeB) called"},
+			[]string{
 				"testCallbacksInterface2.SignaledStart() called"},
 			[]string{
 				"testCallbacksInterface1.SignaledStart() called"},
@@ -642,6 +646,10 @@ func TestAPI(t *testing.T) {
 	testValidateCallbackLog(t,
 		"Destroy VolumeD",
 		[][]string{
+			[]string{
+				"testCallbacksInterface2.VolumeToBeUnserved(,VolumeD) called"},
+			[]string{
+				"testCallbacksInterface1.VolumeToBeUnserved(,VolumeD) called"},
 			[]string{
 				"testCallbacksInterface2.SignaledStart() called"},
 			[]string{
@@ -812,6 +820,12 @@ func TestAPI(t *testing.T) {
 		"Perform Down() sequence",
 		[][]string{
 			[]string{
+				"testCallbacksInterface2.VolumeToBeUnserved(,VolumeA) called",
+				"testCallbacksInterface2.VolumeToBeUnserved(,VolumeE) called"},
+			[]string{
+				"testCallbacksInterface1.VolumeToBeUnserved(,VolumeA) called",
+				"testCallbacksInterface1.VolumeToBeUnserved(,VolumeE) called"},
+			[]string{
 				"testCallbacksInterface2.SignaledStart() called"},
 			[]string{
 				"testCallbacksInterface1.SignaledStart() called"},
@@ -909,6 +923,13 @@ func (testCallbacksInterface *testCallbacksInterfaceStruct) ServeVolume(confMap 
 
 func (testCallbacksInterface *testCallbacksInterfaceStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	logMessage := fmt.Sprintf("testCallbacksInterface%s.UnserveVolume(,%s) called", testCallbacksInterface.name, volumeName)
+	testCallbacksInterface.t.Logf("  %s", logMessage)
+	testCallbackLog = append(testCallbackLog, logMessage)
+	return nil
+}
+
+func (testCallbacksInterface *testCallbacksInterfaceStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	logMessage := fmt.Sprintf("testCallbacksInterface%s.VolumeToBeUnserved(,%s) called", testCallbacksInterface.name, volumeName)
 	testCallbacksInterface.t.Logf("  %s", logMessage)
 	testCallbackLog = append(testCallbackLog, logMessage)
 	return nil

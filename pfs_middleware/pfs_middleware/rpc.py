@@ -31,6 +31,7 @@ allow_read_only = {
     "Server.RpcGetObject",
     "Server.RpcGetStat",
     "Server.RpcGetXAttr",
+    "Server.RpcLease",
     "Server.RpcListXAttr",
     "Server.RpcLookup",
     "Server.RpcLookupPlus",
@@ -43,6 +44,7 @@ allow_read_only = {
     "Server.RpcReaddir",
     "Server.RpcStatVFS",
     "Server.RpcType",
+    "Server.RpcUnmount",
 }
 
 allow_read_write = {
@@ -59,6 +61,7 @@ allow_read_write = {
     "Server.RpcGetObject",
     "Server.RpcGetStat",
     "Server.RpcGetXAttr",
+    "Server.RpcLease",
     "Server.RpcLink",
     "Server.RpcListXAttr",
     "Server.RpcLog",
@@ -94,6 +97,7 @@ allow_read_write = {
     "Server.RpcSymlink",
     "Server.RpcType",
     "Server.RpcUnlink",
+    "Server.RpcUnmount",
     "Server.RpcWrote",
 }
 
