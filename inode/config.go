@@ -692,6 +692,11 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	err = nil
+	return
+}
+
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	var (
 		volume *volumeStruct

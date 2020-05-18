@@ -230,6 +230,9 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.MinLeaseDuration=250ms",
+		"JSONRPCServer.LeaseInterruptInterval=250ms",
+		"JSONRPCServer.LeaseInterruptLimit=20",
 	}
 
 	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxAccountNameLength="+strconv.FormatUint(testMaxAccountNameLength, 10))

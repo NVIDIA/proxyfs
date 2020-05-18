@@ -40,6 +40,7 @@ type Callbacks interface {
 	VolumeDestroyed(confMap conf.ConfMap, volumeName string) (err error)
 	ServeVolume(confMap conf.ConfMap, volumeName string) (err error)
 	UnserveVolume(confMap conf.ConfMap, volumeName string) (err error)
+	VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error)
 	SignaledStart(confMap conf.ConfMap) (err error)
 	SignaledFinish(confMap conf.ConfMap) (err error)
 	Down(confMap conf.ConfMap) (err error)
@@ -111,6 +112,7 @@ func Up(confMap conf.ConfMap) (err error) {
 // these volume sets, the following callbacks will be issued to each of the packages
 // that have registered with package transitions:
 //
+//   VolumeToBeUnserved()   - reverse registration order (for each such volume)
 //   SignaledStart()        - reverse registration order
 //   VolumeGroupCreated()   -         registration order (for each such volume group)
 //   VolumeCreated()        -         registration order (for each such volume)
@@ -134,10 +136,11 @@ func Signaled(confMap conf.ConfMap) (err error) {
 // Prior to the Down() callbacks, the following subset of the callbacks triggered
 // by a call to Signaled() will be made as if the prior confMap were empty:
 //
+//   VolumeToBeUnserved()   - reverse registration order (for each such volume)
 //   SignaledStart()        - reverse registration order
-//   UnserveVolume()        - reverse registration order (for each such volume group)
+//   UnserveVolume()        - reverse registration order (for each such volume)
 //   VolumeDestroyed()      - reverse registration order (for each such volume)
-//   VolumeGroupDestroyed() - reverse registration order (for each such volume)
+//   VolumeGroupDestroyed() - reverse registration order (for each such volume group)
 //
 func Down(confMap conf.ConfMap) (err error) {
 	return down(confMap)

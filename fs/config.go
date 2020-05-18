@@ -27,12 +27,6 @@ type inFlightFileInodeDataStruct struct {
 // Note: There are potentially multiple initiators of this signal
 const inFlightFileInodeDataControlBuffering = 100
 
-type mountStruct struct {
-	id        MountID
-	options   MountOptions
-	volStruct *volumeStruct
-}
-
 type volumeStruct struct {
 	dataMutex                trackedlock.Mutex
 	volumeName               string
@@ -46,7 +40,6 @@ type volumeStruct struct {
 	reportedNumInodes        uint64 // Used for Total, Free, and Avail
 	FLockMap                 map[inode.InodeNumber]*list.List
 	inFlightFileInodeDataMap map[inode.InodeNumber]*inFlightFileInodeDataStruct
-	mountList                []MountID
 	jobRWMutex               trackedlock.RWMutex
 	inodeVolumeHandle        inode.VolumeHandle
 	headhunterVolumeHandle   headhunter.VolumeHandle
@@ -65,9 +58,8 @@ type globalsStruct struct {
 	tryLockSerializationThreshhold uint64
 	symlinkMax                     uint16
 
-	volumeMap                 map[string]*volumeStruct // key == volumeStruct.volumeName
-	mountMap                  map[MountID]*mountStruct
-	lastMountID               MountID
+	volumeMap map[string]*volumeStruct // key == volumeStruct.volumeName
+
 	inFlightFileInodeDataList *list.List
 	serializedBackoffList     *list.List
 
@@ -177,8 +169,8 @@ type globalsStruct struct {
 	MiddlewarePutCompleteErrors      bucketstats.Total
 	MiddlewarePutContainerErrors     bucketstats.Total
 
-	MountUsec                               bucketstats.BucketLog2Round
-	MountErrors                             bucketstats.BucketLog2Round
+	FetchVolumeHandleUsec                   bucketstats.BucketLog2Round
+	FetchVolumeHandleErrors                 bucketstats.BucketLog2Round
 	ValidateVolumeUsec                      bucketstats.BucketLog2Round
 	ScrubVolumeUsec                         bucketstats.BucketLog2Round
 	ValidateBaseNameUsec                    bucketstats.BucketLog2Round
@@ -214,15 +206,14 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	}
 
 	globals.volumeMap = make(map[string]*volumeStruct)
-	globals.mountMap = make(map[MountID]*mountStruct)
-	globals.lastMountID = MountID(0)
+
 	globals.inFlightFileInodeDataList = list.New()
 	globals.serializedBackoffList = list.New()
 
 	bucketstats.Register("proxyfs.fs", "", &globals)
 
 	err = nil
-	return
+	return nil
 }
 
 func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroupName string, activePeer string, virtualIPAddr string) (err error) {
@@ -255,7 +246,6 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		volumeName:               volumeName,
 		FLockMap:                 make(map[inode.InodeNumber]*list.List),
 		inFlightFileInodeDataMap: make(map[inode.InodeNumber]*inFlightFileInodeDataStruct),
-		mountList:                make([]MountID, 0),
 	}
 
 	volumeSectionName = "Volume:" + volumeName
@@ -311,12 +301,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 
 	globals.volumeMap[volumeName] = volume
 
-	return nil
+	err = nil
+	return
 }
 
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		id     MountID
 		ok     bool
 		volume *volumeStruct
 	)
@@ -328,18 +318,17 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		return
 	}
 
-	for _, id = range volume.mountList {
-		delete(globals.mountMap, id)
-	}
-
 	volume.untrackInFlightFileInodeDataAll()
 
 	delete(globals.volumeMap, volumeName)
 
 	err = nil
-	return nil
+	return
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	return nil
 }
@@ -354,10 +343,6 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 
 	if 0 != len(globals.volumeMap) {
 		err = fmt.Errorf("fs.Down() called with 0 != len(globals.volumeMap")
-		return
-	}
-	if 0 != len(globals.mountMap) {
-		err = fmt.Errorf("fs.Down() called with 0 != len(globals.mountMap")
 		return
 	}
 	if 0 != globals.inFlightFileInodeDataList.Len() {

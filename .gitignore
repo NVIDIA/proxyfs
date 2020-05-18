@@ -78,3 +78,7 @@ nodes/
 
 # IDE-related stuff
 .idea
+
+# pfs-jrpc cache
+
+pfs-jrpc.env

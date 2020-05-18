@@ -212,7 +212,7 @@ do
     mkdir -p /srv/$node/node/sdb$drive
     echo "/srv/swift-disk-$drive /srv/$node/node/sdb$drive xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
     mount /srv/$node/node/sdb$drive
-    sudo chown swift:swift /srv/$node/node/sdb$drive
+    chown swift:swift /srv/$node/node/sdb$drive
 done
 
 # Create Swift temporary file dir
@@ -484,6 +484,10 @@ yum -y install dstat
 # Install tree
 
 yum -y install tree
+
+# Install jq... a very handy JSON parser
+
+yum -y install jq
 
 # Install and configure a localhost-only one-node etcd cluster
 

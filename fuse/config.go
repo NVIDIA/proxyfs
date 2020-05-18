@@ -130,6 +130,13 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	// TODO: Might want to actually FUSE Unmount right here
+
+	err = nil
+	return
+}
+
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	closeGate()
 
@@ -191,10 +198,10 @@ func performMount(volume *volumeStruct) (err error) {
 		curRetryCount                 uint32
 		lazyUnmountCmd                *exec.Cmd
 		missing                       bool
-		mountHandle                   fs.MountHandle
 		mountPointContainingDirDevice int64
 		mountPointDevice              int64
 		mountPointNameBase            string
+		volumeHandle                  fs.VolumeHandle
 	)
 
 	volume.mounted = false
@@ -266,12 +273,12 @@ func performMount(volume *volumeStruct) (err error) {
 		return
 	}
 
-	mountHandle, err = fs.MountByVolumeName(volume.volumeName, fs.MountOptions(0))
+	volumeHandle, err = fs.FetchVolumeHandleByVolumeName(volume.volumeName)
 	if nil != err {
 		return
 	}
 
-	fs := &ProxyFUSE{mountHandle: mountHandle}
+	fs := &ProxyFUSE{volumeHandle: volumeHandle}
 
 	// We synchronize the mounting of the mount point to make sure our FUSE goroutine
 	// has reached the point that it can service requests.

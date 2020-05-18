@@ -204,6 +204,10 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return nil
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+
 // PauseAndContract does nothing (lock tracking is not changed until SignalFinish() call)
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	return

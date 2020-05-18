@@ -34,7 +34,7 @@ type rwSizeEachStruct struct {
 	fsTimes          rwTimesStruct
 	inodeTimes       rwTimesStruct
 	swiftclientTimes rwTimesStruct
-	MountHandle      fs.MountHandle    // Only used if all threads use same file
+	VolumeHandle     fs.VolumeHandle   // Only used if all threads use same file
 	FileInodeNumber  inode.InodeNumber // Only used if all threads use same file
 	ObjectPath       string            // Only used if all threads use same object
 }
@@ -394,7 +394,7 @@ func main() {
 			// If we are doing the operations on the same file for all threads, create the file now.
 			if doSameFile {
 				// Save off MountHandle and FileInodeNumber in rwSizeEach since all threads need this
-				err, rwSizeEach.MountHandle, rwSizeEach.FileInodeNumber, fileName = createFsFile()
+				err, rwSizeEach.VolumeHandle, rwSizeEach.FileInodeNumber, fileName = createFsFile()
 				if nil != err {
 					// In an error, no point in continuing.  Just break from this for loop.
 					break
@@ -452,7 +452,7 @@ func main() {
 
 			// Remove file if all threads used same file
 			if doSameFile {
-				_ = unlinkFsFile(rwSizeEach.MountHandle, fileName)
+				_ = unlinkFsFile(rwSizeEach.VolumeHandle, fileName)
 			}
 
 			rwSizeEach.fsTimes.writeDuration = timeAfterWrites.Sub(timeBeforeWrites)
@@ -825,10 +825,10 @@ func fuseWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64) {
 	stepErrChan <- nil
 }
 
-func createFsFile() (err error, mountHandle fs.MountHandle, fileInodeNumber inode.InodeNumber, fileName string) {
-	mountHandle, err = fs.MountByVolumeName(volumeName, fs.MountOptions(0))
+func createFsFile() (err error, volumeHandle fs.VolumeHandle, fileInodeNumber inode.InodeNumber, fileName string) {
+	volumeHandle, err = fs.FetchVolumeHandleByVolumeName(volumeName)
 	if nil != err {
-		stepErrChan <- fmt.Errorf("fs.MountByVolumeName(\"%v\", fs.MountOptions(0), \"\") failed: %v\n", volumeName, err)
+		stepErrChan <- fmt.Errorf("fs.FetchVolumeHandleByVolumeName(\"%v\") failed: %v\n", volumeName, err)
 		return
 	}
 
@@ -836,7 +836,7 @@ func createFsFile() (err error, mountHandle fs.MountHandle, fileInodeNumber inod
 
 	fileName = fmt.Sprintf("%s%016X", basenamePrefix, nonce)
 
-	fileInodeNumber, err = mountHandle.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, fileName, inode.PosixModePerm)
+	fileInodeNumber, err = volumeHandle.Create(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, fileName, inode.PosixModePerm)
 	if nil != err {
 		stepErrChan <- fmt.Errorf("fs.Create(,,,, fileName==\"%s\", inode.PosixModePerm) failed: %v\n", fileName, err)
 		return
@@ -844,8 +844,8 @@ func createFsFile() (err error, mountHandle fs.MountHandle, fileInodeNumber inod
 	return
 }
 
-func unlinkFsFile(mountHandle fs.MountHandle, fileName string) (err error) {
-	err = mountHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, fileName)
+func unlinkFsFile(volumeHandle fs.VolumeHandle, fileName string) (err error) {
+	err = volumeHandle.Unlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.RootDirInodeNumber, fileName)
 	if nil != err {
 		stepErrChan <- fmt.Errorf("fs.Unlink(,,,, rootInodeNumber, \"%v\") failed: %v\n", fileName, err)
 		return
@@ -854,20 +854,22 @@ func unlinkFsFile(mountHandle fs.MountHandle, fileName string) (err error) {
 }
 
 func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool, doRandomIO bool) {
-	var err error
-	var mountHandle fs.MountHandle
-	var fileInodeNumber inode.InodeNumber
-	var fileName string
+	var (
+		err             error
+		fileInodeNumber inode.InodeNumber
+		fileName        string
+		volumeHandle    fs.VolumeHandle
+	)
 
 	if !doSameFile {
 		// Create the file for this thread
-		err, mountHandle, fileInodeNumber, fileName = createFsFile()
+		err, volumeHandle, fileInodeNumber, fileName = createFsFile()
 		if nil != err {
 			return
 		}
 	} else {
 		// File was already created during main()
-		mountHandle = rwSizeEach.MountHandle
+		volumeHandle = rwSizeEach.VolumeHandle
 		fileInodeNumber = rwSizeEach.FileInodeNumber
 	}
 	rwSizeRequested := rwSizeEach.KiB * 1024
@@ -896,7 +898,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 				// to make sure we do not go past end of file.
 				rwOffset = rand.Int63n(int64(rwSizeTotal - rwSizeRequested))
 			}
-			rwSizeDelivered, err := mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, uint64(rwOffset), bufWritten, nil)
+			rwSizeDelivered, err := volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, uint64(rwOffset), bufWritten, nil)
 			if nil != err {
 				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
@@ -909,7 +911,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 	} else {
 
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			rwSizeDelivered, err := mountHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, bufWritten, nil)
+			rwSizeDelivered, err := volumeHandle.Write(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, bufWritten, nil)
 			if nil != err {
 				stepErrChan <- fmt.Errorf("fs.Write(,,,, fileInodeNumber, rwOffset, bufWritten) failed: %v\n", err)
 				return
@@ -921,7 +923,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 		}
 	}
 
-	err = mountHandle.Flush(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber)
+	err = volumeHandle.Flush(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber)
 	if nil != err {
 		stepErrChan <- fmt.Errorf("fs.Flush(,,,, fileInodeNumber) failed: %v\n", err)
 		return
@@ -938,7 +940,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 			// Calculate random offset
 			rwOffset := uint64(rand.Int63n(int64(rwSizeTotal - rwSizeRequested)))
 
-			bufRead, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
 				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
@@ -950,7 +952,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 		}
 	} else {
 		for rwOffset := uint64(0); rwOffset < rwSizeTotal; rwOffset += rwSizeRequested {
-			bufRead, err := mountHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
+			bufRead, err := volumeHandle.Read(inode.InodeRootUserID, inode.InodeGroupID(0), nil, fileInodeNumber, rwOffset, rwSizeRequested, nil)
 			if nil != err {
 				stepErrChan <- fmt.Errorf("fs.Read(,,,, fileInodeNumber, rwOffset, rwSizeRequested) failed: %v\n", err)
 				return
@@ -966,7 +968,7 @@ func fsWorkout(rwSizeEach *rwSizeEachStruct, threadIndex uint64, doSameFile bool
 	_ = <-doNextStepChan
 
 	if !doSameFile {
-		err = unlinkFsFile(mountHandle, fileName)
+		err = unlinkFsFile(volumeHandle, fileName)
 		if nil != err {
 			return
 		}

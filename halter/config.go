@@ -57,6 +57,9 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	return nil
 }
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	return nil
 }

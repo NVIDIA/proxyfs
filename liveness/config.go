@@ -256,6 +256,9 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	return nil
 }
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
 
 // SignaledStart will be used to halt the cluster leadership process. This is to support
 // SIGHUP handling incorporates all confMap changes are incorporated... not just during a restart.

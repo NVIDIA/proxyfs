@@ -16,15 +16,15 @@ import (
 )
 
 type Dir struct {
-	mountHandle fs.MountHandle
-	inodeNumber inode.InodeNumber
+	volumeHandle fs.VolumeHandle
+	inodeNumber  inode.InodeNumber
 }
 
 func (d Dir) Access(ctx context.Context, req *fuselib.AccessRequest) error {
 	enterGate()
 	defer leaveGate()
 
-	if d.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber, inode.InodeMode(req.Mask)) {
+	if d.volumeHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber, inode.InodeMode(req.Mask)) {
 		return nil
 	} else {
 		return newFuseError(blunder.NewError(blunder.PermDeniedError, "EACCES"))
@@ -39,7 +39,7 @@ func (d Dir) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	stat, err = d.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber)
+	stat, err = d.volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -75,7 +75,7 @@ func (d Dir) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fus
 	enterGate()
 	defer leaveGate()
 
-	stat, err = d.mountHandle.Getstat(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber)
+	stat, err = d.volumeHandle.Getstat(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, d.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -114,7 +114,7 @@ func (d Dir) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fus
 		statUpdates[fs.StatCRTime] = uint64(req.Crtime.UnixNano())
 	}
 
-	err = d.mountHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, statUpdates)
+	err = d.volumeHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, statUpdates)
 	if nil != err {
 		err = newFuseError(err)
 	}
@@ -126,36 +126,36 @@ func (d Dir) Lookup(ctx context.Context, name string) (fusefslib.Node, error) {
 	enterGate()
 	defer leaveGate()
 
-	childInodeNumber, err := d.mountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, name)
+	childInodeNumber, err := d.volumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, name)
 	if err != nil {
 		return nil, fuselib.ENOENT
 	}
 
-	isDir, err := d.mountHandle.IsDir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
+	isDir, err := d.volumeHandle.IsDir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isDir {
-		return Dir{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
+		return Dir{volumeHandle: d.volumeHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
 
-	isFile, err := d.mountHandle.IsFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
+	isFile, err := d.volumeHandle.IsFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isFile {
-		return File{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
+		return File{volumeHandle: d.volumeHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
 
-	isSymlink, err := d.mountHandle.IsSymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
+	isSymlink, err := d.volumeHandle.IsSymlink(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if isSymlink {
-		return Symlink{mountHandle: d.mountHandle, inodeNumber: childInodeNumber}, nil
+		return Symlink{volumeHandle: d.volumeHandle, inodeNumber: childInodeNumber}, nil
 	} else if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
 
-	actualType, err := d.mountHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
+	actualType, err := d.volumeHandle.GetType(inode.InodeRootUserID, inode.InodeGroupID(0), nil, childInodeNumber)
 	if err != nil {
 		err = newFuseError(err)
 		return nil, err
@@ -194,7 +194,7 @@ func (d Dir) ReadDirAll(ctx context.Context) ([]fuselib.Dirent, error) {
 		var readCount uint64
 		var err error
 
-		readEntries, readCount, more, err = d.mountHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, 1024, lastEntryName)
+		readEntries, readCount, more, err = d.volumeHandle.Readdir(inode.InodeRootUserID, inode.InodeGroupID(0), nil, d.inodeNumber, 1024, lastEntryName)
 		if err != nil {
 			logger.ErrorfWithError(err, "Error in ReadDirAll")
 			return nil, fuselib.EIO
@@ -222,9 +222,9 @@ func (d Dir) Remove(ctx context.Context, req *fuselib.RemoveRequest) (err error)
 	defer leaveGate()
 
 	if req.Dir {
-		err = d.mountHandle.Rmdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name)
+		err = d.volumeHandle.Rmdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name)
 	} else {
-		err = d.mountHandle.Unlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name)
+		err = d.volumeHandle.Unlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name)
 	}
 	if nil != err {
 		err = newFuseError(err)
@@ -243,12 +243,12 @@ func (d Dir) Mknod(ctx context.Context, req *fuselib.MknodRequest) (fusefslib.No
 		err = newFuseError(err)
 		return nil, err
 	}
-	inodeNumber, err := d.mountHandle.Create(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, inode.InodeMode(req.Mode))
+	inodeNumber, err := d.volumeHandle.Create(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, inode.InodeMode(req.Mode))
 	if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
-	file := File{mountHandle: d.mountHandle, inodeNumber: inodeNumber}
+	file := File{volumeHandle: d.volumeHandle, inodeNumber: inodeNumber}
 	return file, nil
 }
 
@@ -262,12 +262,12 @@ func (d Dir) Create(ctx context.Context, req *fuselib.CreateRequest, resp *fusel
 		err = newFuseError(err)
 		return nil, nil, err
 	}
-	inodeNumber, err := d.mountHandle.Create(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, inode.InodeMode(req.Mode))
+	inodeNumber, err := d.volumeHandle.Create(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, inode.InodeMode(req.Mode))
 	if err != nil {
 		err = newFuseError(err)
 		return nil, nil, err
 	}
-	file := File{mountHandle: d.mountHandle, inodeNumber: inodeNumber}
+	file := File{volumeHandle: d.volumeHandle, inodeNumber: inodeNumber}
 	return file, file, nil
 }
 
@@ -275,7 +275,7 @@ func (d Dir) Flush(ctx context.Context, req *fuselib.FlushRequest) error {
 	enterGate()
 	defer leaveGate()
 
-	err := d.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber)
+	err := d.volumeHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber)
 	if err != nil {
 		err = newFuseError(err)
 	}
@@ -286,7 +286,7 @@ func (d Dir) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 	enterGate()
 	defer leaveGate()
 
-	err := d.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
+	err := d.volumeHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil,
 		d.inodeNumber)
 	if err != nil {
 		err = newFuseError(err)
@@ -299,12 +299,12 @@ func (d Dir) Mkdir(ctx context.Context, req *fuselib.MkdirRequest) (fusefslib.No
 	defer leaveGate()
 
 	trimmedMode := inode.InodeMode(req.Mode) & inode.PosixModePerm
-	newDirInodeNumber, err := d.mountHandle.Mkdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, trimmedMode)
+	newDirInodeNumber, err := d.volumeHandle.Mkdir(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.Name, trimmedMode)
 	if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
-	return Dir{mountHandle: d.mountHandle, inodeNumber: newDirInodeNumber}, nil
+	return Dir{volumeHandle: d.volumeHandle, inodeNumber: newDirInodeNumber}, nil
 }
 
 func (d Dir) Rename(ctx context.Context, req *fuselib.RenameRequest, newDir fusefslib.Node) error {
@@ -315,7 +315,7 @@ func (d Dir) Rename(ctx context.Context, req *fuselib.RenameRequest, newDir fuse
 	if !ok {
 		return fuselib.EIO
 	}
-	err := d.mountHandle.Rename(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.OldName, dstDir.inodeNumber, req.NewName)
+	err := d.volumeHandle.Rename(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.OldName, dstDir.inodeNumber, req.NewName)
 	if err != nil {
 		err = newFuseError(err)
 	}
@@ -326,13 +326,13 @@ func (d Dir) Symlink(ctx context.Context, req *fuselib.SymlinkRequest) (fusefsli
 	enterGate()
 	defer leaveGate()
 
-	symlinkInodeNumber, err := d.mountHandle.Symlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.NewName, req.Target)
+	symlinkInodeNumber, err := d.volumeHandle.Symlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.NewName, req.Target)
 	if err != nil {
 		err = newFuseError(err)
 		return nil, err
 	}
 
-	return Symlink{mountHandle: d.mountHandle, inodeNumber: symlinkInodeNumber}, nil
+	return Symlink{volumeHandle: d.volumeHandle, inodeNumber: symlinkInodeNumber}, nil
 }
 
 func (d Dir) Link(ctx context.Context, req *fuselib.LinkRequest, old fusefslib.Node) (fusefslib.Node, error) {
@@ -345,7 +345,7 @@ func (d Dir) Link(ctx context.Context, req *fuselib.LinkRequest, old fusefslib.N
 		return nil, err
 	}
 
-	err := d.mountHandle.Link(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.NewName, oldFile.inodeNumber)
+	err := d.volumeHandle.Link(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, d.inodeNumber, req.NewName, oldFile.inodeNumber)
 	if err != nil {
 		err = newFuseError(err)
 	}
