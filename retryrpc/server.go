@@ -21,6 +21,18 @@ var debugPutGet bool = false
 
 // TODO - test if Register has been called???
 
+func (server *Server) closeClient(myConn net.Conn, myElm *list.Element) {
+
+	server.connLock.Lock()
+	server.connections.Remove(myElm)
+
+	// There is a race condition where the connection could have been
+	// closed in Down().  However, closing it twice is okay.
+	myConn.Close()
+	server.connLock.Unlock()
+	server.connWG.Done()
+}
+
 func (server *Server) run() {
 	defer server.goroutineWG.Done()
 	for {
@@ -51,6 +63,12 @@ func (server *Server) run() {
 		ci, err := server.getClientIDAndWait(cCtx)
 		if err != nil {
 			// Socket already had an error - just loop back
+			logger.Warnf("getClientIDAndWait() from client addr: %v returned err: %v\n", conn.RemoteAddr(), err)
+
+			// Sleep to block over active clients from pounding on us
+			time.Sleep(1 * time.Second)
+
+			server.closeClient(conn, elm)
 			continue
 		}
 
@@ -60,14 +78,7 @@ func (server *Server) run() {
 
 			server.serviceClient(ci, cCtx)
 
-			server.connLock.Lock()
-			server.connections.Remove(myElm)
-
-			// There is a race condition where the connection could have been
-			// closed in Down().  However, closing it twice is okay.
-			myConn.Close()
-			server.connLock.Unlock()
-			server.connWG.Done()
+			server.closeClient(conn, elm)
 		}(conn, elm)
 	}
 }
