@@ -1,5 +1,19 @@
 # ProxyFS Release Notes
 
+## 1.16.1 (May 26, 2020)
+
+### Bug Fixes:
+
+Stale versions of PFSAgent were able to generate a connection storm against
+ProxyFS resulting in exploding the number of open files for the ProxyFS
+process. This update prevents that condition and generates log entries to
+indicate which PFSAgent clients are out of date.
+
+If one ProxyFS peer is stuck handling a SIGHUP, a subsequent ProxyFS instance
+could indefinitely block in its SIGHUP simply waiting for the first instance
+to resolve its issue (or be terminated). At most, this condition can now delay
+the second ProxyFS by only one second (see Cluster.MaxRequestDuration).
+
 ## 1.16.0 (May 12, 2020)
 
 ### Features:
