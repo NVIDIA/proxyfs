@@ -215,6 +215,11 @@ func livenessCheckServingPeer(servingPeer *internalServingPeerReportStruct) {
 		return
 	}
 
+	err = tcpConn.SetDeadline(time.Now().Add(globals.maxRequestDuration))
+	if nil != err {
+		return
+	}
+
 	_, err = tcpConn.Write(pingReqBuf)
 	if nil != err {
 		return

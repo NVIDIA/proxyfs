@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/version"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -30,24 +30,32 @@ type authOutStruct struct {
 
 func doMountProxyFS() {
 	var (
-		err          error
-		mountReply   *jrpcfs.MountByVolumeNameReply
-		mountRequest *jrpcfs.MountByVolumeNameRequest
+		accountName          string
+		err                  error
+		mountReply           *jrpcfs.MountByAccountNameReply
+		mountRequest         *jrpcfs.MountByAccountNameRequest
+		swiftStorageURL      string
+		swiftStorageURLSplit []string
 	)
 
-	mountRequest = &jrpcfs.MountByVolumeNameRequest{
-		VolumeName:   globals.config.FUSEVolumeName,
+	swiftStorageURL = fetchStorageURL()
+
+	swiftStorageURLSplit = strings.Split(swiftStorageURL, "/")
+
+	accountName = swiftStorageURLSplit[4]
+
+	mountRequest = &jrpcfs.MountByAccountNameRequest{
+		AccountName:  accountName,
 		MountOptions: 0,
 		AuthUserID:   0,
 		AuthGroupID:  0,
 	}
 
-	mountReply = &jrpcfs.MountByVolumeNameReply{}
+	mountReply = &jrpcfs.MountByAccountNameReply{}
 
-	err = doJRPCRequest("Server.RpcMountByVolumeName", mountRequest, mountReply)
-
+	err = doJRPCRequest("Server.RpcMountByAccountName", mountRequest, mountReply)
 	if nil != err {
-		logFatalf("unable to mount Volume %v: %v", globals.config.FUSEVolumeName, err)
+		logFatalf("unable to mount Volume %s (Account: %s): %v", globals.config.FUSEVolumeName, accountName, err)
 	}
 
 	globals.mountID = mountReply.MountID
@@ -61,7 +69,7 @@ func doMountProxyFS() {
 		KEEPALIVEPeriod: globals.config.RetryRPCKEEPALIVEPeriod}
 	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
 	if nil != err {
-		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %v err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, err)
+		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %s (Account: %s) err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, accountName, err)
 	}
 }
 
@@ -337,9 +345,9 @@ func updateAuthTokenAndStorageURL() {
 
 			stopAuthPlugIn()
 		} else {
-			// No errors... so lets try sending a SIGHUP to authPlugIn to request a fresh authorization
+			// No errors... so lets try sending a byte to authPlugIn to request a fresh authorization
 
-			err = globals.authPlugInControl.cmd.Process.Signal(unix.SIGHUP)
+			_, err = globals.authPlugInControl.stdinPipe.Write([]byte{0})
 			if nil != err {
 				logWarnf("got unexpected error sending SIGHUP to authPlugIn: %v", err)
 
@@ -454,6 +462,10 @@ func startAuthPlugIn() {
 		stderrChan: make(chan []byte),
 	}
 
+	globals.authPlugInControl.stdinPipe, err = globals.authPlugInControl.cmd.StdinPipe()
+	if nil != err {
+		logFatalf("got unexpected error creating authPlugIn stdinPipe: %v", err)
+	}
 	globals.authPlugInControl.stdoutPipe, err = globals.authPlugInControl.cmd.StdoutPipe()
 	if nil != err {
 		logFatalf("got unexpected error creating authPlugIn stdoutPipe: %v", err)
@@ -486,7 +498,7 @@ func stopAuthPlugIn() {
 
 	// Stop authPlugIn (ignore errors since they just indicate authPlugIn failed)
 
-	_ = globals.authPlugInControl.cmd.Process.Signal(unix.SIGTERM)
+	_ = globals.authPlugInControl.stdinPipe.Close()
 
 	_ = globals.authPlugInControl.cmd.Wait()
 

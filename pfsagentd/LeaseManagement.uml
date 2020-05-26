@@ -42,7 +42,7 @@ ExclusiveLeaseGrantedRecently --> ExclusiveLeaseGrantedRecently : "ExclusiveLeas
 ExclusiveLeaseGrantedRecently --> None : "ExclusiveLease release\n(nothing pending)"
 
 ExclusiveLeaseGrantedLongAgo --> ExclusiveLeaseDemoting : SharedLease request pending
-ExclusiveLeaseGrantedLongAgo --> ExclusiveLeaseReleasing : ExclusiveLease requent pending
+ExclusiveLeaseGrantedLongAgo --> ExclusiveLeaseReleasing : ExclusiveLease request pending
 ExclusiveLeaseGrantedLongAgo --> None: "ExclusiveLease\nrelease"
 
 ExclusiveLeaseDemoting --> SharedLeaseGrantedRecently : "ExclusiveLease\ndemote or release"

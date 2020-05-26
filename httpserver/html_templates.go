@@ -96,7 +96,7 @@ const indexDotHTMLTemplate string = `<!doctype html>
         </div>
       </div>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
   </body>
@@ -152,7 +152,7 @@ const configTemplate string = `<!doctype html>
       </h1>
       <pre class="code" id="json_data"></pre>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script src="/jsontree.js"></script>
@@ -218,7 +218,7 @@ const metricsTemplate string = `<!doctype html>
         <tbody id="metrics-data"></tbody>
       </table>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
@@ -233,7 +233,7 @@ const metricsTemplate string = `<!doctype html>
       var getTabBarButtonMarkup = function(prefix, text, active) {
         var button_markup = "";
         button_markup += "          <label class=\"btn btn-sm btn-primary" + (active ? " active" : "") + "\" onclick=\"newPrefixSelected('" + prefix + "');\">\n";
-        button_markup += "            <input type=\"radio\" name=\"options\" id=\"option-" + prefix + "\" autocomplete=\"off\" checked> " + text + "\n";
+        button_markup += "            <input type=\"radio\" name=\"options\" id=\"option-" + prefix + "\"> " + text + "\n";
         button_markup += "          </label>\n";
         return button_markup;
       };
@@ -364,7 +364,7 @@ const volumeListPerVolumeTemplate string = `          <tr>
 const volumeListBottom string = `        </tbody>
       </table>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
   </body>
@@ -456,7 +456,7 @@ const snapShotsBottomTemplate string = `        </tbody>
       </table>
       <br />
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
@@ -703,7 +703,7 @@ const jobsStartJobButtonTemplate string = `    <form method="post" action="/volu
     </form>
 `
 
-const jobsBottom string = `    <script src="/jquery-3.2.1.min.js"></script>
+const jobsBottom string = `    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
   </body>
@@ -763,7 +763,7 @@ const jobTemplate string = `<!doctype html>
       <br>
       <dl class="row" id="job-info"></dl>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
@@ -909,7 +909,7 @@ const layoutReportTableBottom string = `        </tbody>
 `
 
 const layoutReportBottom string = `    <div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
@@ -1011,7 +1011,7 @@ const extentMapTemplate string = `<!doctype html>
         <tbody id="extent-map-data"></tbody>
       </table>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
@@ -1218,7 +1218,7 @@ const triggerTableRowTemplate string = `          <tr>
 const triggerBottom string = `        </tbody>
       </table>
     </div>
-    <script src="/jquery-3.2.1.min.js"></script>
+    <script src="/jquery.min.js"></script>
     <script src="/popper.min.js"></script>
     <script src="/bootstrap.min.js"></script>
     <script type="text/javascript">
