@@ -26,11 +26,6 @@ PROJECTS = {
         'dir': ['../swift', 'saio'],
         'container': 'doc',
     },
-    'swift-specs': {
-        'root': '/vagrant/swift-specs/doc/',
-        'dir': ['../'],
-        'container': 'specs',
-    },
     'swiftclient': {
         'root': '/vagrant/python-swiftclient/doc/',
         'dir': [],
