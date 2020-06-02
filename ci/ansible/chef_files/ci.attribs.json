@@ -28,8 +28,6 @@
   "swiftclient_repo_branch": "master",
   "swift_bench_repo": "git://github.com/openstack/swift-bench.git",
   "swift_bench_repo_branch": "master",
-  "swift_specs_repo": "git://github.com/openstack/swift-specs.git",
-  "swift_specs_repo_branch": "master",
   "extra_key": "",
   "source_root": "/home/swiftstack/provisioning",
   "use_swiftstack_packages": false
