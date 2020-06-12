@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -42,6 +43,7 @@ type HeartBeatRequestStruct struct {
 	MsgType    MsgType //              == MsgTypeHeartBeatRequest
 	MsgTag     uint64  //              Used for matching this HeartBeatRequestStruct to a subsequent HeartBeatResponseStruct
 	LeaderTerm uint64
+	NewRWMode  inode.RWModeType     // One of inode.RWModeNormal, inode.RWModeNoWrite, or inode.RWModeReadOnly
 	ToObserve  *ObservingPeerStruct // VolumeStruct.State & VolumeStruct.LastCheckTime are ignored
 }
 

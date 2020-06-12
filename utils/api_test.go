@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"container/list"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -320,4 +322,48 @@ func TestStopwatch(t *testing.T) {
 	assert.True(sw3.StopTime.IsZero())             // Stop time isn't set yet
 	assert.Equal(int64(sw3.ElapsedTime), int64(0)) // Elapsed time isn't set yet
 	assert.True(sw3.IsRunning)                     // stopwatch is running
+}
+
+func TestRandomizeList(t *testing.T) {
+	var (
+		l *list.List
+		n int
+	)
+
+	for n = 0; n <= 20; n++ {
+		l = testPopulateListOfInts(n)
+		RandomizeList(l)
+		// testDumpListOfInts(l)
+	}
+}
+
+func testPopulateListOfInts(n int) (l *list.List) {
+	var (
+		lev int
+	)
+
+	l = list.New()
+
+	for lev = 0; lev < n; lev++ {
+		l.PushBack(lev)
+	}
+
+	return
+}
+
+func testDumpListOfInts(l *list.List) {
+	var (
+		le  *list.Element
+		lev int
+	)
+
+	le = l.Front()
+
+	for le != nil {
+		lev = le.Value.(int)
+		fmt.Printf(" %d", lev)
+		le = le.Next()
+	}
+
+	fmt.Println()
 }

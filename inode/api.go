@@ -132,6 +132,14 @@ const (
 	SnapShotDirName = ".snapshot"
 )
 
+type RWModeType uint8
+
+const (
+	RWModeNormal   RWModeType = iota // All reads, writes, etc... should be allowed
+	RWModeNoWrite                    // Same as modeNormal except Write() & ProvisionObject() should fail
+	RWModeReadOnly                   // No operations that modify state (data or metadata) should be allowed
+)
+
 func (de *DirEntry) Size() int {
 	// sizeof(InodeNumber) + sizeof(InodeType) + sizeof(DirLocation) + string data + null byte delimiter
 	return int(unsafe.Sizeof(de.InodeNumber)) + int(unsafe.Sizeof(de.Type)) + int(unsafe.Sizeof(de.NextDirLocation)) + len(de.Basename) + 1
@@ -234,4 +242,12 @@ type VolumeHandle interface {
 
 	CreateSymlink(target string, filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (symlinkInodeNumber InodeNumber, err error)
 	GetSymlink(symlinkInodeNumber InodeNumber) (target string, err error)
+}
+
+// SetRWMode sets the package to either allow all read/write operations (RWModeNormal),
+// allow all except Write() and ProvisionObject() operations (RWModeNoWrite), or
+// disallow any data or metadata operations (RWModeReadOnly).
+func SetRWMode(rwMode RWModeType) (err error) {
+	err = setRWMode(rwMode)
+	return
 }

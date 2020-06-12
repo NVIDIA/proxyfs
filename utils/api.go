@@ -3,6 +3,7 @@ package utils
 
 import (
 	"bytes"
+	"container/list"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
@@ -746,6 +747,41 @@ func FetchRandomByteSlice(len int) (randByteSlice []byte) {
 	}
 
 	return
+}
+
+func RandomizeList(theList *list.List) {
+	var (
+		nextElement              *list.Element
+		originalListElementIndex int
+		pass                     int
+		randByteSlice            []byte
+		theListLen               int
+		thisElement              *list.Element
+	)
+
+	theListLen = theList.Len()
+
+	if theListLen < 2 {
+		return
+	}
+
+	for pass = 0; pass < 2; pass++ {
+		thisElement = theList.Front()
+
+		randByteSlice = FetchRandomByteSlice(theListLen - 1)
+
+		for originalListElementIndex = 0; originalListElementIndex < (theListLen - 1); originalListElementIndex++ {
+			nextElement = thisElement.Next()
+
+			if randByteSlice[originalListElementIndex] < 0x80 {
+				theList.MoveToFront(thisElement)
+			} else {
+				theList.MoveToBack(thisElement)
+			}
+
+			thisElement = nextElement
+		}
+	}
 }
 
 func JSONify(input interface{}, indentify bool) (output string) {

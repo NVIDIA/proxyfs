@@ -90,6 +90,11 @@ func (vS *volumeStruct) createRootOrSubDir(filePerm InodeMode, userID InodeUserI
 }
 
 func (vS *volumeStruct) CreateDir(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (dirInodeNumber InodeNumber, err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	stats.IncrementOperations(&stats.DirCreateOps)
 
 	dirInodeNumber, err = vS.createRootOrSubDir(filePerm, userID, groupID, false)
@@ -169,6 +174,11 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 		snapShotIDType headhunter.SnapShotIDType
 		targetInode    *inMemoryInodeStruct
 	)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	if (RootDirInodeNumber == dirInodeNumber) && (SnapShotDirName == basename) {
 		err = blunder.NewError(blunder.InvalidArgError, "Link() to /%v not allowed", SnapShotDirName)
@@ -314,6 +324,11 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 		untargetInodeNumber InodeNumber
 	)
 
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	if (RootDirInodeNumber == dirInodeNumber) && (SnapShotDirName == basename) {
 		err = blunder.NewError(blunder.InvalidArgError, "Unlink() of /%v not allowed", SnapShotDirName)
 		return
@@ -389,6 +404,11 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 }
 
 func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	if (RootDirInodeNumber == srcDirInodeNumber) && (SnapShotDirName == srcBasename) {
 		err = blunder.NewError(blunder.InvalidArgError, "Move() from /%v not allowed", SnapShotDirName)
 		return

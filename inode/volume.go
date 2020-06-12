@@ -14,6 +14,11 @@ func (vS *volumeStruct) GetFSID() (fsid uint64) {
 }
 
 func (vS *volumeStruct) SnapShotCreate(name string) (id uint64, err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	if ("." == name) || (".." == name) {
 		err = fmt.Errorf("SnapShot cannot be named either '.' or '..'")
 		return
@@ -37,6 +42,11 @@ func (vS *volumeStruct) SnapShotDelete(id uint64) (err error) {
 		valueAsValue                        sortedmap.Value
 		valueAsInodeStructPtr               *inMemoryInodeStruct
 	)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	vS.Lock()
 	err = vS.headhunterVolumeHandle.SnapShotDeleteByInodeLayer(id)

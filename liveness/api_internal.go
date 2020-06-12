@@ -5,23 +5,6 @@ import (
 	"sync"
 )
 
-/*
-type FetchLivenessReportRequestStruct struct {
-	MsgType MsgType // == MsgTypeFetchLivenessReportRequest
-	//                 Used to request Liveness Report from who we think is the Leader
-	MsgTag      uint64 // Used for matching this FetchLivenessReportRequestStruct to a subsequent FetchLivenessReportResponseStruct
-	CurrentTerm uint64
-}
-type FetchLivenessReportResponseStruct struct {
-	MsgType        MsgType               // == MsgTypeFetchLivenessReportResponse
-	MsgTag         uint64                // Used for matching this FetchLivenessReportResponseStruct to a previous FetchLivenessReportRequestStruct
-	CurrentTerm    uint64                // == LeaderTerm if Success === true (by definition)
-	CurrentLeader  string                // If Success == false, this is who should actually be contacted for this (if known)
-	Success        bool                  // == true if Leader is responding; == false if we are not the Leader
-	LivenessReport *LivenessReportStruct // Liveness Report as collected by Leader
-}
-func sendRequest(peer *peerStruct, msgTag uint64, requestContext interface{}, requestMsg interface{}, callback func(request *requestStruct)) (err error) {
-*/
 func fetchLivenessReport() (livenessReport *LivenessReportStruct) {
 	var (
 		err                         error
@@ -133,12 +116,14 @@ func convertExternalToInternalLivenessReport(externalLivenessReport *LivenessRep
 
 func convertInternalToExternalObservingPeerReport(internalObservingPeerReport *internalObservingPeerReportStruct) (externalObservingPeer *ObservingPeerStruct) {
 	var (
-		internalServingPeerReport *internalServingPeerReportStruct
-		internalVolumeGroupReport *internalVolumeGroupReportStruct
-		internalVolumeReport      *internalVolumeReportStruct
-		servingPeer               *ServingPeerStruct
-		volume                    *VolumeStruct
-		volumeGroup               *VolumeGroupStruct
+		internalReconEndpointReport *internalReconEndpointReportStruct
+		internalServingPeerReport   *internalServingPeerReportStruct
+		internalVolumeGroupReport   *internalVolumeGroupReportStruct
+		internalVolumeReport        *internalVolumeReportStruct
+		reconEndpoint               *ReconEndpointStruct
+		servingPeer                 *ServingPeerStruct
+		volume                      *VolumeStruct
+		volumeGroup                 *VolumeGroupStruct
 	)
 
 	if nil == internalObservingPeerReport {
@@ -147,8 +132,9 @@ func convertInternalToExternalObservingPeerReport(internalObservingPeerReport *i
 	}
 
 	externalObservingPeer = &ObservingPeerStruct{
-		Name:        internalObservingPeerReport.name,
-		ServingPeer: make([]*ServingPeerStruct, 0, len(internalObservingPeerReport.servingPeer)),
+		Name:          internalObservingPeerReport.name,
+		ServingPeer:   make([]*ServingPeerStruct, 0, len(internalObservingPeerReport.servingPeer)),
+		ReconEndpoint: make([]*ReconEndpointStruct, 0, len(internalObservingPeerReport.reconEndpoint)),
 	}
 
 	for _, internalServingPeerReport = range internalObservingPeerReport.servingPeer {
@@ -183,17 +169,28 @@ func convertInternalToExternalObservingPeerReport(internalObservingPeerReport *i
 		externalObservingPeer.ServingPeer = append(externalObservingPeer.ServingPeer, servingPeer)
 	}
 
+	for _, internalReconEndpointReport = range internalObservingPeerReport.reconEndpoint {
+		reconEndpoint = &ReconEndpointStruct{
+			IPAddrPort:             internalReconEndpointReport.ipAddrPort,
+			MaxDiskUsagePercentage: internalReconEndpointReport.maxDiskUsagePercentage,
+		}
+
+		externalObservingPeer.ReconEndpoint = append(externalObservingPeer.ReconEndpoint, reconEndpoint)
+	}
+
 	return
 }
 
 func convertExternalToInternalObservingPeerReport(externalObservingPeer *ObservingPeerStruct) (internalObservingPeerReport *internalObservingPeerReportStruct) {
 	var (
-		internalServingPeerReport *internalServingPeerReportStruct
-		internalVolumeGroupReport *internalVolumeGroupReportStruct
-		internalVolumeReport      *internalVolumeReportStruct
-		servingPeer               *ServingPeerStruct
-		volume                    *VolumeStruct
-		volumeGroup               *VolumeGroupStruct
+		internalReconEndpointReport *internalReconEndpointReportStruct
+		internalServingPeerReport   *internalServingPeerReportStruct
+		internalVolumeGroupReport   *internalVolumeGroupReportStruct
+		internalVolumeReport        *internalVolumeReportStruct
+		reconEndpoint               *ReconEndpointStruct
+		servingPeer                 *ServingPeerStruct
+		volume                      *VolumeStruct
+		volumeGroup                 *VolumeGroupStruct
 	)
 
 	if nil == externalObservingPeer {
@@ -202,8 +199,9 @@ func convertExternalToInternalObservingPeerReport(externalObservingPeer *Observi
 	}
 
 	internalObservingPeerReport = &internalObservingPeerReportStruct{
-		name:        externalObservingPeer.Name,
-		servingPeer: make(map[string]*internalServingPeerReportStruct),
+		name:          externalObservingPeer.Name,
+		servingPeer:   make(map[string]*internalServingPeerReportStruct),
+		reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
 	}
 
 	for _, servingPeer = range externalObservingPeer.ServingPeer {
@@ -239,6 +237,16 @@ func convertExternalToInternalObservingPeerReport(externalObservingPeer *Observi
 		}
 
 		internalObservingPeerReport.servingPeer[internalServingPeerReport.name] = internalServingPeerReport
+	}
+
+	for _, reconEndpoint = range externalObservingPeer.ReconEndpoint {
+		internalReconEndpointReport = &internalReconEndpointReportStruct{
+			observingPeer:          internalObservingPeerReport,
+			ipAddrPort:             reconEndpoint.IPAddrPort,
+			maxDiskUsagePercentage: reconEndpoint.MaxDiskUsagePercentage,
+		}
+
+		internalObservingPeerReport.reconEndpoint[internalReconEndpointReport.ipAddrPort] = internalReconEndpointReport
 	}
 
 	return
