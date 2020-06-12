@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -347,6 +348,12 @@ func doFollower() {
 						// In case this is the first, record .currentLeader
 						globals.currentLeader = peer
 						globals.currentVote = nil
+						// Update RWMode
+						globals.curRWMode = msgAsHeartBeatRequest.NewRWMode
+						err = inode.SetRWMode(globals.curRWMode)
+						if nil != err {
+							logger.FatalfWithError(err, "inode.SetRWMode(%d) failed", globals.curRWMode)
+						}
 						// Compute msgAsHeartBeatResponse.Observed & reset globals.myObservingPeerReport
 						globals.Lock()
 						observedPeerReport = convertInternalToExternalObservingPeerReport(globals.myObservingPeerReport)
@@ -372,6 +379,12 @@ func doFollower() {
 						// We missed out on Leader election, so record .currentLeader
 						globals.currentLeader = peer
 						globals.currentVote = nil
+						// Update RWMode
+						globals.curRWMode = msgAsHeartBeatRequest.NewRWMode
+						err = inode.SetRWMode(globals.curRWMode)
+						if nil != err {
+							logger.FatalfWithError(err, "inode.SetRWMode(%d) failed", globals.curRWMode)
+						}
 						// Compute msgAsHeartBeatResponse.Observed & reset globals.myObservingPeerReport
 						globals.Lock()
 						observedPeerReport = convertInternalToExternalObservingPeerReport(globals.myObservingPeerReport)
@@ -544,6 +557,7 @@ func doLeader() {
 		heartbeatSuccessfulResponses                  uint64
 		heartbeatSuccessfulResponsesRequiredForQuorum uint64
 		livenessReportThisHeartBeat                   *internalLivenessReportStruct
+		maxDiskUsagePercentage                        uint8
 		msgAsFetchLivenessReportRequest               *FetchLivenessReportRequestStruct
 		msgAsFetchLivenessReportResponse              *FetchLivenessReportResponseStruct
 		msgAsHeartBeatRequest                         *HeartBeatRequestStruct
@@ -555,6 +569,7 @@ func doLeader() {
 		observingPeerReport                           *internalObservingPeerReportStruct
 		quorumMembersLastHeartBeat                    []string
 		quorumMembersThisHeartBeat                    []string
+		reconEndpointReport                           *internalReconEndpointReportStruct
 		recvMsgQueueElement                           *recvMsgQueueElementStruct
 		timeNow                                       time.Time
 	)
@@ -569,8 +584,9 @@ func doLeader() {
 
 	globals.Lock()
 	globals.myObservingPeerReport = &internalObservingPeerReportStruct{
-		name:        globals.whoAmI,
-		servingPeer: make(map[string]*internalServingPeerReportStruct),
+		name:          globals.whoAmI,
+		servingPeer:   make(map[string]*internalServingPeerReportStruct),
+		reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
 	}
 	globals.Unlock()
 	globals.livenessCheckerControlChan <- true
@@ -612,6 +628,7 @@ func doLeader() {
 					MsgType:    MsgTypeHeartBeatRequest,
 					MsgTag:     heartbeatMsgTag,
 					LeaderTerm: globals.currentTerm,
+					NewRWMode:  globals.curRWMode,
 					ToObserve:  convertInternalToExternalObservingPeerReport(livenessReportThisHeartBeat.observingPeer[peer.name]),
 				}
 
@@ -799,7 +816,32 @@ func doLeader() {
 			}
 		case <-time.After(heartbeatDurationRemaining):
 			if heartbeatSuccessfulResponses >= heartbeatSuccessfulResponsesRequiredForQuorum {
-				// Just loop back and issue a fresh HeartBeat
+				// Compute new RWMode
+
+				maxDiskUsagePercentage = 0
+
+				for _, observingPeerReport = range globals.livenessReport.observingPeer {
+					for _, reconEndpointReport = range observingPeerReport.reconEndpoint {
+						if reconEndpointReport.maxDiskUsagePercentage > maxDiskUsagePercentage {
+							maxDiskUsagePercentage = reconEndpointReport.maxDiskUsagePercentage
+						}
+					}
+				}
+
+				if maxDiskUsagePercentage >= globals.swiftReconReadOnlyThreshold {
+					globals.curRWMode = inode.RWModeReadOnly
+				} else if maxDiskUsagePercentage >= globals.swiftReconNoWriteThreshold {
+					globals.curRWMode = inode.RWModeNoWrite
+				} else {
+					globals.curRWMode = inode.RWModeNormal
+				}
+
+				err = inode.SetRWMode(globals.curRWMode)
+				if nil != err {
+					logger.FatalfWithError(err, "inode.SetRWMode(%d) failed", globals.curRWMode)
+				}
+
+				// Now just loop back and issue a fresh HeartBeat
 			} else {
 				// Quorum lost... convert to Candidate state
 				globals.nextState = doCandidate

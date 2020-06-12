@@ -139,6 +139,45 @@ func compareInodeNumber(key1 sortedmap.Key, key2 sortedmap.Key) (result int, err
 	return
 }
 
+func setRWMode(rwMode RWModeType) (err error) {
+	if rwMode != globals.rwMode {
+		switch rwMode {
+		case RWModeNormal:
+			stats.IncrementOperations(&stats.ReconCheckTriggeredNormalMode)
+		case RWModeNoWrite:
+			stats.IncrementOperations(&stats.ReconCheckTriggeredNoWriteMode)
+		case RWModeReadOnly:
+			stats.IncrementOperations(&stats.ReconCheckTriggeredReadOnlyMode)
+		default:
+			err = fmt.Errorf("SetRWMode(rwMode==%d) not allowed... must be one of RWModeNormal(%d), RWModeNoWrite(%d), or RWModeReadOnly(%d)", rwMode, RWModeNormal, RWModeNoWrite, RWModeReadOnly)
+			return
+		}
+
+		globals.rwMode = rwMode
+	}
+
+	err = nil
+	return
+}
+
+func enforceRWMode(enforceNoWriteMode bool) (err error) {
+	var (
+		rwModeCopy RWModeType
+	)
+
+	rwModeCopy = globals.rwMode
+
+	if rwModeCopy == RWModeReadOnly {
+		err = blunder.NewError(globals.readOnlyThresholdErrno, globals.readOnlyThresholdErrnoString)
+	} else if enforceNoWriteMode && (rwModeCopy == RWModeNoWrite) {
+		err = blunder.NewError(globals.noWriteThresholdErrno, globals.noWriteThresholdErrnoString)
+	} else {
+		err = nil
+	}
+
+	return
+}
+
 func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode *inMemoryInodeStruct, ok bool, err error) {
 	var (
 		bytesConsumedByCorruptionDetected uint64
@@ -1116,6 +1155,11 @@ func (vS *volumeStruct) Access(inodeNumber InodeNumber, userID InodeUserID, grou
 }
 
 func (vS *volumeStruct) ProvisionObject() (objectPath string, err error) {
+	err = enforceRWMode(true)
+	if nil != err {
+		return
+	}
+
 	containerName, objectNumber, err := vS.provisionObject()
 	if nil != err {
 		return
@@ -1132,6 +1176,11 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 		inode *inMemoryInodeStruct
 		ok    bool
 	)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	inode, ok, err = vS.inodeCacheFetch(inodeNumber)
 	if (nil != err) || !ok {
@@ -1156,6 +1205,11 @@ func (vS *volumeStruct) Purge(inodeNumber InodeNumber) (err error) {
 
 func (vS *volumeStruct) Destroy(inodeNumber InodeNumber) (err error) {
 	logger.Tracef("inode.Destroy(): volume '%s' inode %d", vS.volumeName, inodeNumber)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
@@ -1391,6 +1445,11 @@ func (vS *volumeStruct) GetLinkCount(inodeNumber InodeNumber) (linkCount uint64,
 
 // SetLinkCount is used to adjust the LinkCount property to match current reference count during FSCK TreeWalk.
 func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetLinkCount() on non-LiveView inodeNumber not allowed")
@@ -1426,6 +1485,11 @@ func (vS *volumeStruct) SetLinkCount(inodeNumber InodeNumber, linkCount uint64) 
 }
 
 func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime time.Time) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetCreationTime() on non-LiveView inodeNumber not allowed")
@@ -1461,6 +1525,11 @@ func (vS *volumeStruct) SetCreationTime(inodeNumber InodeNumber, CreationTime ti
 }
 
 func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, ModificationTime time.Time) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetModificationTime() on non-LiveView inodeNumber not allowed")
@@ -1497,6 +1566,11 @@ func (vS *volumeStruct) SetModificationTime(inodeNumber InodeNumber, Modificatio
 }
 
 func (vS *volumeStruct) SetAccessTime(inodeNumber InodeNumber, accessTime time.Time) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetAccessTime() on non-LiveView inodeNumber not allowed")
@@ -1564,6 +1638,11 @@ func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode,
 }
 
 func (vS *volumeStruct) SetPermMode(inodeNumber InodeNumber, filePerm InodeMode) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetPermMode() on non-LiveView inodeNumber not allowed")
@@ -1608,6 +1687,11 @@ func (vS *volumeStruct) SetPermMode(inodeNumber InodeNumber, filePerm InodeMode)
 }
 
 func (vS *volumeStruct) SetOwnerUserID(inodeNumber InodeNumber, userID InodeUserID) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetOwnerUserID() on non-LiveView inodeNumber not allowed")
@@ -1646,6 +1730,11 @@ func (vS *volumeStruct) SetOwnerUserID(inodeNumber InodeNumber, userID InodeUser
 }
 
 func (vS *volumeStruct) SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID InodeUserID, groupID InodeGroupID) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetOwnerUserIDGroupID() on non-LiveView inodeNumber not allowed")
@@ -1685,6 +1774,11 @@ func (vS *volumeStruct) SetOwnerUserIDGroupID(inodeNumber InodeNumber, userID In
 }
 
 func (vS *volumeStruct) SetOwnerGroupID(inodeNumber InodeNumber, groupID InodeGroupID) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetOwnerGroupID() on non-LiveView inodeNumber not allowed")
@@ -1762,6 +1856,11 @@ func (vS *volumeStruct) GetStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("PutStream() on non-LiveView inodeNumber not allowed")
@@ -1804,6 +1903,11 @@ func (vS *volumeStruct) PutStream(inodeNumber InodeNumber, inodeStreamName strin
 }
 
 func (vS *volumeStruct) DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("DeleteStream() on non-LiveView inodeNumber not allowed")
@@ -1881,6 +1985,11 @@ func (vS *volumeStruct) FetchFragmentationReport(inodeNumber InodeNumber) (fragm
 }
 
 func (vS *volumeStruct) Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	err = fmt.Errorf("Optimize not yet implemented")
 	return
 }

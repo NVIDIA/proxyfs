@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
@@ -47,6 +48,11 @@ const (
 	LogLevelMax            = uint64(4)
 
 	LogLevelDefault = LogLevelNone
+
+	DefaultSwiftReconNoWriteThreshold   = 80
+	DefaultSwiftReconReadOnlyThreshold  = 90
+	DefaultSwiftConfDir                 = "/etc/swift"
+	DefaultSwiftReconChecksPerConfCheck = 10
 )
 
 type volumeStruct struct {
@@ -104,9 +110,16 @@ type internalServingPeerReportStruct struct {
 	volumeGroup   map[string]*internalVolumeGroupReportStruct // Key = internalVolumeGroupReportStruct.name
 }
 
+type internalReconEndpointReportStruct struct {
+	observingPeer          *internalObservingPeerReportStruct
+	ipAddrPort             string
+	maxDiskUsagePercentage uint8
+}
+
 type internalObservingPeerReportStruct struct {
-	name        string
-	servingPeer map[string]*internalServingPeerReportStruct // Key = internalServingPeerReportStruct.name
+	name          string
+	servingPeer   map[string]*internalServingPeerReportStruct   // Key = internalServingPeerReportStruct.name
+	reconEndpoint map[string]*internalReconEndpointReportStruct // Key = internalReconEndpointReportStruct.ipAddrPort
 }
 
 type internalLivenessReportStruct struct {
@@ -115,46 +128,53 @@ type internalLivenessReportStruct struct {
 
 type globalsStruct struct {
 	trackedlock.Mutex
-	active                     bool
-	whoAmI                     string
-	myPublicIPAddr             net.IP
-	myPrivateIPAddr            net.IP
-	myUDPAddr                  *net.UDPAddr
-	myUDPConn                  *net.UDPConn
-	myVolumeGroupMap           map[string]*volumeGroupStruct // Key == volumeGroupStruct.name
-	peersByName                map[string]*peerStruct        // Key == peerStruct.name
-	peersByTuple               map[string]*peerStruct        // Key == peerStruct.udpAddr.String() (~= peerStruct.tuple)
-	udpPacketSendSize          uint64
-	udpPacketSendPayloadSize   uint64
-	udpPacketRecvSize          uint64
-	udpPacketRecvPayloadSize   uint64
-	udpPacketCapPerMessage     uint8
-	sendMsgMessageSizeMax      uint64
-	heartbeatDuration          time.Duration
-	heartbeatMissLimit         uint64
-	heartbeatMissDuration      time.Duration
-	messageQueueDepthPerPeer   uint64
-	maxRequestDuration         time.Duration
-	livenessCheckRedundancy    uint64
-	logLevel                   uint64
-	jsonRPCServerPort          uint16
-	crc64ECMATable             *crc64.Table
-	nextNonce                  uint64 //                        Randomly initialized... skips 0
-	recvMsgsDoneChan           chan struct{}
-	recvMsgQueue               *list.List //                    FIFO ordered
-	recvMsgChan                chan struct{}
-	requestsByExpirationTime   *list.List                //     FIFO ordered
-	requestsByMsgTag           map[uint64]*requestStruct //     Key == requestStruct.msgTag
-	requestExpirerStartChan    chan struct{}             //     Signaled when inserting the first element of requestsByExpirationTime
-	requestExpirerStopChan     chan struct{}             //     Signaled when asking requestExpirer() to halt
-	requestExpirerDone         sync.WaitGroup            //     Signaled when requestExpirer() has exited
-	currentLeader              *peerStruct
-	currentVote                *peerStruct
-	currentTerm                uint64
-	nextState                  func()
-	stateMachineStopChan       chan struct{}
-	stateMachineDone           sync.WaitGroup
-	livenessCheckerControlChan chan bool //                     Send true  to trigger livenessChecker() to recompute polling schedule
+	active                         bool
+	whoAmI                         string
+	myPublicIPAddr                 net.IP
+	myPrivateIPAddr                net.IP
+	myUDPAddr                      *net.UDPAddr
+	myUDPConn                      *net.UDPConn
+	myVolumeGroupMap               map[string]*volumeGroupStruct // Key == volumeGroupStruct.name
+	peersByName                    map[string]*peerStruct        // Key == peerStruct.name
+	peersByTuple                   map[string]*peerStruct        // Key == peerStruct.udpAddr.String() (~= peerStruct.tuple)
+	udpPacketSendSize              uint64
+	udpPacketSendPayloadSize       uint64
+	udpPacketRecvSize              uint64
+	udpPacketRecvPayloadSize       uint64
+	udpPacketCapPerMessage         uint8
+	sendMsgMessageSizeMax          uint64
+	heartbeatDuration              time.Duration
+	heartbeatMissLimit             uint64
+	heartbeatMissDuration          time.Duration
+	messageQueueDepthPerPeer       uint64
+	maxRequestDuration             time.Duration
+	livenessCheckRedundancy        uint64
+	logLevel                       uint64
+	jsonRPCServerPort              uint16
+	swiftReconNoWriteThreshold     uint8
+	swiftReconReadOnlyThreshold    uint8
+	swiftConfDir                   string
+	swiftReconChecksPerConfCheck   uint64
+	swiftReconChecksUntilConfCheck uint64
+	swiftConfFileMap               map[string]time.Time // Key == os.FileInfo.Name(); Value == os.FileInfo.ModTime()
+	swiftReconEndpointSet          map[string]struct{}  // Key == IPAddrPort of ReconEndpoint
+	crc64ECMATable                 *crc64.Table
+	nextNonce                      uint64 //                        Randomly initialized... skips 0
+	recvMsgsDoneChan               chan struct{}
+	recvMsgQueue                   *list.List //                    FIFO ordered
+	recvMsgChan                    chan struct{}
+	requestsByExpirationTime       *list.List                //     FIFO ordered
+	requestsByMsgTag               map[uint64]*requestStruct //     Key == requestStruct.msgTag
+	requestExpirerStartChan        chan struct{}             //     Signaled when inserting the first element of requestsByExpirationTime
+	requestExpirerStopChan         chan struct{}             //     Signaled when asking requestExpirer() to halt
+	requestExpirerDone             sync.WaitGroup            //     Signaled when requestExpirer() has exited
+	currentLeader                  *peerStruct
+	currentVote                    *peerStruct
+	currentTerm                    uint64
+	nextState                      func()
+	stateMachineStopChan           chan struct{}
+	stateMachineDone               sync.WaitGroup
+	livenessCheckerControlChan     chan bool //                     Send true  to trigger livenessChecker() to recompute polling schedule
 	//                                                          Send false to trigger livenessChecker() to exit
 	livenessCheckerWG          sync.WaitGroup
 	volumeToCheckList          []*volumeStruct
@@ -162,6 +182,7 @@ type globalsStruct struct {
 	emptyServingPeerToCheckSet map[string]struct{} //           List (in "set" form) of ServingPeers (by name) with no VolumeGroups
 	myObservingPeerReport      *internalObservingPeerReportStruct
 	livenessReport             *internalLivenessReportStruct
+	curRWMode                  inode.RWModeType
 }
 
 var globals globalsStruct
@@ -198,6 +219,9 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.requestsByMsgTag = make(map[uint64]*requestStruct)
 	globals.requestExpirerStartChan = make(chan struct{}, 1)
 	globals.requestExpirerStopChan = make(chan struct{}, 1)
+
+	globals.curRWMode = inode.RWModeNormal
+	inode.SetRWMode(globals.curRWMode)
 
 	globals.requestExpirerDone.Add(1)
 	go requestExpirer()
@@ -272,6 +296,13 @@ func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 			stillDeactivating = false
 		}
 	}
+
+	// Clear out Swift recon settings and computed details
+
+	globals.swiftReconNoWriteThreshold = 101  // Never enforce NoWrite Mode
+	globals.swiftReconReadOnlyThreshold = 101 // Never enforce ReadOnly Mode
+	globals.swiftConfDir = ""
+	globals.swiftReconChecksPerConfCheck = 0 // Disabled
 
 	// Free up remaining allocated resources
 
@@ -708,14 +739,72 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		}
 	}
 
-	// Fetch remaining ConfMap data
+	// Fetch JSON RPC Port to be used when polling Peers
 
 	globals.jsonRPCServerPort, err = confMap.FetchOptionValueUint16("JSONRPCServer", "TCPPort")
 	if nil != err {
 		return
 	}
 
+	// Fetch Swift recon settings
+
+	err = confMap.VerifyOptionIsMissing("SwiftClient", "SwiftReconChecksPerConfCheck")
+	if nil == err {
+		logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconChecksPerConfCheck... defaulting to %d", DefaultSwiftReconChecksPerConfCheck)
+		globals.swiftReconChecksPerConfCheck = DefaultSwiftReconChecksPerConfCheck
+	} else {
+		globals.swiftReconChecksPerConfCheck, err = confMap.FetchOptionValueUint64("SwiftClient", "SwiftReconChecksPerConfCheck")
+		if nil != err {
+			logger.ErrorfWithError(err, "Unable to parse [SwiftClient]SwiftReconChecksPerConfCheck")
+			return
+		}
+	}
+
+	if 0 == globals.swiftReconChecksPerConfCheck {
+		logger.Warnf("[SwiftClient]SwiftReconChecksPerConfCheck == 0... disabling recon checks")
+	} else {
+		globals.swiftReconNoWriteThreshold, err = confMap.FetchOptionValueUint8("SwiftClient", "SwiftReconNoWriteThreshold")
+		if nil == err {
+			if 100 < globals.swiftReconNoWriteThreshold {
+				err = fmt.Errorf("[SwiftClient]SwiftReconNoWriteThreshold cannot be greater than 100")
+				return
+			}
+		} else {
+			logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconNoWriteThreshold... defaulting to %d", DefaultSwiftReconNoWriteThreshold)
+			globals.swiftReconNoWriteThreshold = DefaultSwiftReconNoWriteThreshold
+		}
+
+		globals.swiftReconReadOnlyThreshold, err = confMap.FetchOptionValueUint8("SwiftClient", "SwiftReconReadOnlyThreshold")
+		if nil == err {
+			if 100 < globals.swiftReconReadOnlyThreshold {
+				err = fmt.Errorf("[SwiftClient]SwiftReconReadOnlyThreshold cannot be greater than 100")
+				return
+			}
+			if globals.swiftReconReadOnlyThreshold < globals.swiftReconNoWriteThreshold {
+				err = fmt.Errorf("[SwiftClient]SwiftReconReadOnlyThreshold cannot be less than [SwiftClient]SwiftReconNoWriteThreshold")
+				return
+			}
+		} else {
+			if globals.swiftReconNoWriteThreshold > DefaultSwiftReconReadOnlyThreshold {
+				logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconReadOnlyThreadhold... defaulting to %d", globals.swiftReconNoWriteThreshold)
+				globals.swiftReconReadOnlyThreshold = globals.swiftReconNoWriteThreshold
+			} else {
+				logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconReadOnlyThreadhold... defaulting to %d", DefaultSwiftReconReadOnlyThreshold)
+				globals.swiftReconReadOnlyThreshold = DefaultSwiftReconReadOnlyThreshold
+			}
+		}
+
+		globals.swiftConfDir, err = confMap.FetchOptionValueString("SwiftClient", "SwiftConfDir")
+		if nil != err {
+			logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftConfDir... defaulting to %s", DefaultSwiftConfDir)
+			globals.swiftConfDir = DefaultSwiftConfDir
+		}
+	}
+
 	// Initialize remaining globals
+
+	globals.swiftReconChecksUntilConfCheck = 0 // First ReconCheck will trigger a ConfCheck
+	globals.swiftConfFileMap = make(map[string]time.Time)
 
 	globals.recvMsgQueue = list.New()
 
