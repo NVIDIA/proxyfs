@@ -198,25 +198,27 @@ pip install tox==3.5.3
 useradd --user-group --groups wheel swift
 chmod 755 ~swift
 
-# Using a loopback device for storage
+# Using loopback devices for storage
 
 mkdir -p /srv
-truncate -s 0 /srv/swift-disk
-truncate -s 10GB /srv/swift-disk
-mkfs.xfs -f /srv/swift-disk
-echo "/srv/swift-disk /mnt/sdb1 xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
-mkdir -p /mnt/sdb1
-mount /mnt/sdb1
-sudo mkdir /mnt/sdb1/1 /mnt/sdb1/2 /mnt/sdb1/3 /mnt/sdb1/4
-chown swift:swift /mnt/sdb1/*
-for x in {1..4}; do ln -s /mnt/sdb1/$x /srv/$x; done
-mkdir -p /srv/1/node/sdb1 /srv/1/node/sdb5 /srv/1/node/sdb9 \
-         /srv/2/node/sdb2 /srv/2/node/sdb6 /srv/2/node/sdbA \
-         /srv/3/node/sdb3 /srv/3/node/sdb7 /srv/3/node/sdbB \
-         /srv/4/node/sdb4 /srv/4/node/sdb8 /srv/4/node/sdbC \
-         /var/run/swift
+
+for x in 11 22 33 44 15 26 37 48 19 2A 3B 4C
+do
+    node=${x:0:1}
+    drive=${x:1:1}
+    truncate -s 0 /srv/swift-disk-$drive
+    truncate -s 1GB /srv/swift-disk-$drive
+    mkfs.xfs -f /srv/swift-disk-$drive
+    mkdir -p /srv/$node/node/sdb$drive
+    echo "/srv/swift-disk-$drive /srv/$node/node/sdb$drive xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
+    mount /srv/$node/node/sdb$drive
+    sudo chown swift:swift /srv/$node/node/sdb$drive
+done
+
+# Create Swift temporary file dir
+
+mkdir -p /var/run/swift
 chown -R swift:swift /var/run/swift
-for x in {1..4}; do chown -R swift:swift /srv/$x/; done
 
 # [Setup Swift] Common Post-Device Setup (Add /var boot-time provisioning to /etc/rc.d/rc.local)
 
@@ -512,11 +514,13 @@ EOF
 
 systemctl daemon-reload
 
-# All done
-
-echo "SAIO for ProxyFS provisioned"
+# Add some VIPs
 
 ip addr add dev enp0s8 172.28.128.21/24
 ip addr add dev enp0s8 172.28.128.22/24
 ip addr add dev enp0s8 172.28.128.23/24
 ip addr add dev enp0s8 172.28.128.24/24
+
+# All done
+
+echo "SAIO for ProxyFS provisioned"
