@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	/* DEBUG for pprof
 	_ "net/http/pprof"
+	*/
 
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
