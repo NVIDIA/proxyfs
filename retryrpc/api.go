@@ -55,16 +55,18 @@ type Server struct {
 	deadlineIO           time.Duration
 	keepalivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
+	dontStartTrimmers    bool // Used for testing
 }
 
 // ServerConfig is used to configure a retryrpc Server
 type ServerConfig struct {
-	LongTrim        time.Duration // How long the results of an RPC are stored on a Server before removed
-	ShortTrim       time.Duration // How frequently completed and ACKed RPCs results are removed from Server
-	IPAddr          string        // IP Address that Server uses to listen
-	Port            int           // Port that Server uses to listen
-	DeadlineIO      time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod time.Duration // How frequently a KEEPALIVE is sent
+	LongTrim          time.Duration // How long the results of an RPC are stored on a Server before removed
+	ShortTrim         time.Duration // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr            string        // IP Address that Server uses to listen
+	Port              int           // Port that Server uses to listen
+	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
+	KEEPALIVEPeriod   time.Duration // How frequently a KEEPALIVE is sent
+	dontStartTrimmers bool          // Used for testing
 }
 
 // NewServer creates the Server object
@@ -74,7 +76,7 @@ func NewServer(config *ServerConfig) *Server {
 	)
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepalivePeriod: config.KEEPALIVEPeriod}
+		keepalivePeriod: config.KEEPALIVEPeriod, dontStartTrimmers: config.dontStartTrimmers}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -117,24 +119,39 @@ func (server *Server) Start() (err error) {
 
 	server.listenersWG.Add(1)
 
-	// Start ticker which removes older completedRequests
-	server.completedLongTicker = time.NewTicker(server.completedLongTTL)
-	// Start ticker which removes requests already ACKed by client
-	server.completedShortTicker = time.NewTicker(server.completedAckTrim)
+	// Some of the unit tests disable starting trimmers
+	if !server.dontStartTrimmers {
+		// Start ticker which removes older completedRequests
+		server.completedLongTicker = time.NewTicker(server.completedLongTTL)
+		// Start ticker which removes requests already ACKed by client
+		server.completedShortTicker = time.NewTicker(server.completedAckTrim)
+	}
 	server.completedDoneWG.Add(1)
-	go func() {
-		for {
-			select {
-			case <-server.completedTickerDone:
-				server.completedDoneWG.Done()
-				return
-			case tl := <-server.completedLongTicker.C:
-				server.trimCompleted(tl, true)
-			case ts := <-server.completedShortTicker.C:
-				server.trimCompleted(ts, false)
+	if !server.dontStartTrimmers {
+		go func() {
+			for {
+				select {
+				case <-server.completedTickerDone:
+					server.completedDoneWG.Done()
+					return
+				case tl := <-server.completedLongTicker.C:
+					server.trimCompleted(tl, true)
+				case ts := <-server.completedShortTicker.C:
+					server.trimCompleted(ts, false)
+				}
 			}
-		}
-	}()
+		}()
+	} else {
+		go func() {
+			for {
+				select {
+				case <-server.completedTickerDone:
+					server.completedDoneWG.Done()
+					return
+				}
+			}
+		}()
+	}
 
 	return err
 }
@@ -197,8 +214,10 @@ func (server *Server) Close() {
 	// Now close the client sockets to wakeup them up
 	server.closeClientConn()
 
-	server.completedLongTicker.Stop()
-	server.completedShortTicker.Stop()
+	if !server.dontStartTrimmers {
+		server.completedLongTicker.Stop()
+		server.completedShortTicker.Stop()
+	}
 	server.completedTickerDone <- true
 	server.completedDoneWG.Wait()
 }

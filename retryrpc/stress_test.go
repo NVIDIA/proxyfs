@@ -7,13 +7,25 @@ import (
 	"testing"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
 
 func TestStress(t *testing.T) {
 
+	/*
+		 * DEBUG - used to debug memory leaks
+		 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
+		 * to look at memory inuse
+		// Start the ws that listens for pprof requests
+		go http.ListenAndServe("localhost:12123", nil)
+	*/
+
 	testLoop(t)
+	testLoopClientAckTrim(t)
+	testLoopTTLTrim(t)
 }
 
 func testLoop(t *testing.T) {
@@ -29,7 +41,7 @@ func testLoop(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipAddr, port := getNewServer(65 * time.Second)
+	rrSvr, ipAddr, port := getNewServer(65*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -48,6 +60,141 @@ func testLoop(t *testing.T) {
 	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	rrSvr.Close()
+}
+
+// testLoopClientAckTrim tests that we are correctly trimming messages
+// based on the shorter term trimmer.   The shorter term trimmer relies
+// on the client code saying "this is the highest consecutive sqn we have
+// seen".   Then the server can throw away messages up to and including the
+// highest consecutive sqn.
+func testLoopClientAckTrim(t *testing.T) {
+	var (
+		agentCount = 15
+		sendCount  = 250
+	)
+	assert := assert.New(t)
+	zero := 0
+	assert.Equal(0, zero)
+
+	// Create new rpctest server - needed for calling
+	// RPCs
+	myJrpcfs := rpctest.NewServer()
+
+	whenTTL := 10 * time.Millisecond
+	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	assert.NotNil(rrSvr)
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err := rrSvr.Register(myJrpcfs)
+	assert.Nil(err)
+
+	// Start listening for requests on the ipaddr/port
+	startErr := rrSvr.Start()
+	assert.Nil(startErr, "startErr is not nil")
+
+	// Tell server to start accepting and processing requests
+	rrSvr.Run()
+
+	// Start up the agents
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+
+	// Now for both trimmers to run
+	tm := time.Now()
+
+	// First the 100ms trimmer - this will leave 1 entry on completed request queue
+	// for each agent since there is no remaining client request to say it is completed.
+	//
+	// We need the TTL timer to clean up the last entry
+	rrSvr.trimCompleted(tm, false)
+	assert.Equal(agentCount, cntNotTrimmed(rrSvr), "Should have agentCount messages remaining")
+
+	// Make sure the queue messages will be old enough to be trimmed
+	time.Sleep(whenTTL)
+
+	// Now the TTL timer to cleanup the last
+	tmTTL := time.Now()
+	rrSvr.trimCompleted(tmTTL, true)
+
+	// All messages should be trimmed at this point
+	assert.Equal(0, cntNotTrimmed(rrSvr), "Still have incomplete messages")
+
+	/*
+		 *  DEBUG - allows user to use pprof to check for memory leaks
+		// The caller of this test will block and we can check for memory leaks with pprof
+		fmt.Printf("\n=========== SLEEP 5 minutes ===================\n")
+		time.Sleep(5 * time.Minute)
+	*/
+
+	rrSvr.Close()
+}
+
+func testLoopTTLTrim(t *testing.T) {
+	var (
+		agentCount = 15
+		sendCount  = 250
+	)
+	assert := assert.New(t)
+	zero := 0
+	assert.Equal(0, zero)
+
+	// Create new rpctest server - needed for calling
+	// RPCs
+	myJrpcfs := rpctest.NewServer()
+
+	whenTTL := 10 * time.Millisecond
+	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	assert.NotNil(rrSvr)
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err := rrSvr.Register(myJrpcfs)
+	assert.Nil(err)
+
+	// Start listening for requests on the ipaddr/port
+	startErr := rrSvr.Start()
+	assert.Nil(startErr, "startErr is not nil")
+
+	// Tell server to start accepting and processing requests
+	rrSvr.Run()
+
+	// Start up the agents
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+
+	// Use the TTL trimmer to remove all messages after guaranteeing we are
+	// past time when they should be removed
+	time.Sleep(whenTTL)
+	tmTTL := time.Now()
+	rrSvr.trimCompleted(tmTTL, true)
+
+	assert.Equal(0, cntNotTrimmed(rrSvr), "Still have incomplete messages")
+
+	/*
+		 * DEBUG - all time for pprof tool to be used for tracking down memory leaks
+		// The caller of this test will block and we can check for memory leaks with pprof
+		fmt.Printf("\n=========== SLEEP 5 minutes ===================\n")
+		time.Sleep(5 * time.Minute)
+	*/
+
+	rrSvr.Close()
+}
+
+func cntNotTrimmed(server *Server) (numItems int) {
+	server.Lock()
+	for _, ci := range server.perClientInfo {
+		ci.Lock()
+		if len(ci.completedRequest) != 0 {
+			numItems += len(ci.completedRequest)
+		} else {
+			if ci.completedRequestLRU.Len() != 0 {
+				numItems += ci.completedRequestLRU.Len()
+			}
+		}
+		ci.Unlock()
+	}
+	server.Unlock()
+
+	return
 }
 
 func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID uint64) {
@@ -109,6 +256,14 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	var z, r int
 	var msg1 []byte = []byte("server msg back to client")
 	for i := 0; i < sendCnt; i++ {
+
+		if i == sendCnt-1 {
+			// Give server time to process messages.   This last
+			// call to pfsagent() should approximately send the
+			// highestConsecutive set to sendCnt - 1.
+			time.Sleep(10 * time.Second)
+		}
+
 		z = (z + i) * 10
 
 		sendWg.Add(1)

@@ -453,31 +453,22 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 //
 // NOTE: We assume Server Lock is held
 func (server *Server) trimTLLBased(uniqueID string, ci *clientInfo, t time.Time) (numItems int) {
-
-	l := list.New()
-
 	ci.Lock()
-	for e := ci.completedRequestLRU.Front(); e != nil; e = e.Next() {
+	for e := ci.completedRequestLRU.Front(); e != nil; {
 		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
 			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
 
-			// Push on local list so don't delete while iterating
-			l.PushBack(e)
+			eTmp := e
+			e = e.Next()
+			_ = ci.completedRequestLRU.Remove(eTmp)
+			numItems++
 		} else {
 			// Oldest is in front so just break
 			break
 		}
 	}
 
-	numItems = l.Len()
-
-	// Now delete from LRU using the local list
-	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
-		tmpE := ci.completedRequestLRU.Front()
-		_ = ci.completedRequestLRU.Remove(tmpE)
-
-	}
 	ci.Unlock()
 	return
 }
