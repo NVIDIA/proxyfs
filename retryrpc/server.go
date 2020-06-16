@@ -76,9 +76,15 @@ func (server *Server) run() {
 		go func(myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
+			logger.Infof("Servicing client: %v address: %v\n", ci.myUniqueID, myConn.RemoteAddr())
 			server.serviceClient(ci, cCtx)
 
+			logger.Infof("Closing client: %v address: %v\n", ci.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(conn, elm)
+
+			// TODO - should we call both trims on this client to release freeable memory now?
+			// Wait until we fully debug memory leak
+
 		}(conn, elm)
 	}
 }
