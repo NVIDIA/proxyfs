@@ -47,6 +47,16 @@ type clientInfo struct {
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
 	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
+	// TODO - debug
+	// add to 10 min timer message
+	cntAddCompleted  int           // Number added to completed list
+	cntRmCompleted   int           // Number removed from completed list
+	longestRPC       time.Duration // Time of longest RPC
+	largestReplySize int           // Largest RPC reply size completed
+	numRPCcompleted  int           // Number of RPCs which completed - incremented after call returns
+	numRPCretried    int           // Number of RPCs which were just pulled from completed list
+	numRPCattempted  int           // Number of RPCs attempted - may be completed or in process
+	numRPCinprocess  int           // Number presently calling RPC - decremented when completed
 }
 
 type completedEntry struct {
