@@ -3,13 +3,14 @@ package retryrpc
 import (
 	"fmt"
 	"math/rand"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	/* DEBUG for pprof
+	 */
 	_ "net/http/pprof"
-	*/
 
 	"github.com/stretchr/testify/assert"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
@@ -18,16 +19,17 @@ import (
 func TestStress(t *testing.T) {
 
 	/*
-		 * DEBUG - used to debug memory leaks
-		 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
-		 * to look at memory inuse
-		// Start the ws that listens for pprof requests
-		go http.ListenAndServe("localhost:12123", nil)
-	*/
+	 * DEBUG - used to debug memory leaks
+	 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
+	 * to look at memory inuse
+	 */
+	// Start the ws that listens for pprof requests
+	go http.ListenAndServe("localhost:12123", nil)
 
 	testLoop(t)
 	testLoopClientAckTrim(t)
 	testLoopTTLTrim(t)
+	testSendLargeRPC(t)
 }
 
 func testLoop(t *testing.T) {
@@ -59,7 +61,7 @@ func testLoop(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	rrSvr.Close()
 }
@@ -99,7 +101,7 @@ func testLoopClientAckTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	// Now for both trimmers to run
 	tm := time.Now()
@@ -161,7 +163,7 @@ func testLoopTTLTrim(t *testing.T) {
 	rrSvr.Run()
 
 	// Start up the agents
-	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPing", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
 
 	// Use the TTL trimmer to remove all messages after guaranteeing we are
 	// past time when they should be removed
@@ -181,6 +183,70 @@ func testLoopTTLTrim(t *testing.T) {
 	rrSvr.Close()
 }
 
+func testSendLargeRPC(t *testing.T) {
+	var (
+		agentCount = 15
+		sendCount  = 250
+	)
+	assert := assert.New(t)
+	zero := 0
+	assert.Equal(0, zero)
+
+	// Create new rpctest server - needed for calling
+	// RPCs
+	myJrpcfs := rpctest.NewServer()
+
+	whenTTL := 10 * time.Millisecond
+	rrSvr, ipAddr, port := getNewServer(whenTTL, true)
+	assert.NotNil(rrSvr)
+
+	// Register the Server - sets up the methods supported by the
+	// server
+	err := rrSvr.Register(myJrpcfs)
+	assert.Nil(err)
+
+	// Start listening for requests on the ipaddr/port
+	startErr := rrSvr.Start()
+	assert.Nil(startErr, "startErr is not nil")
+
+	// Tell server to start accepting and processing requests
+	rrSvr.Run()
+
+	// Start up the agents
+	parallelAgentSenders(t, rrSvr, ipAddr, port, agentCount, "RpcPingLarge", sendCount, rrSvr.Creds.RootCAx509CertificatePEM)
+
+	// Now for both trimmers to run
+	tm := time.Now()
+
+	// First the 100ms trimmer - this will leave 1 entry on completed request queue
+	// for each agent since there is no remaining client request to say it is completed.
+	//
+	// We need the TTL timer to clean up the last entry
+	rrSvr.trimCompleted(tm, false)
+	assert.Equal(agentCount, cntNotTrimmed(rrSvr), "Should have agentCount messages remaining")
+
+	// Make sure the queue messages will be old enough to be trimmed
+	time.Sleep(whenTTL)
+
+	// Now the TTL timer to cleanup the last
+	tmTTL := time.Now()
+	rrSvr.trimCompleted(tmTTL, true)
+
+	/*
+		 * DEBUG - sleep for a time for pprof tool to be used for tracking down memory leaks
+		// The caller of this test will block and we can check for memory leaks with pprof
+		fmt.Printf("\n=========== SLEEP 5 minutes ===================\n")
+		time.Sleep(5 * time.Minute)
+	*/
+
+	// All messages should be trimmed at this point
+	assert.Equal(0, cntNotTrimmed(rrSvr), "Still have incomplete messages")
+
+	rrSvr.Close()
+}
+
+// testLoopClientAckTrim tests that we are correctly trimming messages
+
 func cntNotTrimmed(server *Server) (numItems int) {
 	server.Lock()
 	for _, ci := range server.perClientInfo {
@@ -199,10 +265,7 @@ func cntNotTrimmed(server *Server) (numItems int) {
 	return
 }
 
-func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID uint64) {
-	assert := assert.New(t)
-	defer sendWg.Done()
-
+func ping(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
 	// Send a ping RPC and print the results
 	msg := fmt.Sprintf("Ping Me - %v", i)
 	pingRequest := &rpctest.PingReq{Message: msg}
@@ -218,6 +281,30 @@ func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID
 		fmt.Printf("         client.Send(RpcPing) len(pingRequest.Message): '%d' i: %v\n", len(pingRequest.Message), i)
 	}
 	assert.Equal(expectedReply, pingReply.Message, "Received different output then expected")
+}
+
+// pingLarge responds to the RPC with a large packet
+func pingLarge(t *testing.T, client *Client, i int, agentID uint64, assert *assert.Assertions) {
+	// Send a ping RPC and print the results
+	msg := fmt.Sprintf("Ping Me - %v", i)
+	pingRequest := &rpctest.PingReq{Message: msg}
+	pingReply := &rpctest.PingReply{}
+	err := client.Send("RpcPing", pingRequest, pingReply)
+	assert.Nil(err, "client.Send() returned an error")
+}
+
+func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID uint64, method string) {
+	assert := assert.New(t)
+	defer sendWg.Done()
+
+	switch method {
+	case "RpcPing":
+		ping(t, client, i, agentID, assert)
+		break
+	case "RpcPingLarge":
+		pingLarge(t, client, i, agentID, assert)
+		break
+	}
 }
 
 type stressMyClient struct {
@@ -237,8 +324,8 @@ func (cb *stressMyClient) Interrupt(payload []byte) {
 }
 
 // Represents a pfsagent - sepearate client
-func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint64, agentWg *sync.WaitGroup,
-	sendCnt int, rootCAx509CertificatePEM []byte) {
+func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint64, method string,
+	agentWg *sync.WaitGroup, sendCnt int, rootCAx509CertificatePEM []byte) {
 	defer agentWg.Done()
 
 	cb := &stressMyClient{}
@@ -270,7 +357,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 		sendWg.Add(1)
 		go func(z int) {
-			sendIt(t, client, z, &sendWg, agentID)
+			sendIt(t, client, z, &sendWg, agentID, method)
 			rrSvr.SendCallback(clientID, msg1)
 		}(z)
 
@@ -286,7 +373,7 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 
 // Start a bunch of "pfsagents" in parallel
 func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, agentCnt int,
-	sendCnt int, rootCAx509CertificatePEM []byte) {
+	method string, sendCnt int, rootCAx509CertificatePEM []byte) {
 
 	var agentWg sync.WaitGroup
 
@@ -300,7 +387,7 @@ func parallelAgentSenders(t *testing.T, rrSrv *Server, ipAddr string, port int, 
 		agentID = clientSeed + uint64(i)
 
 		agentWg.Add(1)
-		go pfsagent(t, rrSrv, ipAddr, port, agentID, &agentWg, sendCnt, rootCAx509CertificatePEM)
+		go pfsagent(t, rrSrv, ipAddr, port, agentID, method, &agentWg, sendCnt, rootCAx509CertificatePEM)
 	}
 	agentWg.Wait()
 }
