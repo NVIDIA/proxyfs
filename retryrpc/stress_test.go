@@ -3,7 +3,6 @@ package retryrpc
 import (
 	"fmt"
 	"math/rand"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -19,12 +18,12 @@ import (
 func TestStress(t *testing.T) {
 
 	/*
-	 * DEBUG - used to debug memory leaks
-	 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
-	 * to look at memory inuse
-	 */
-	// Start the ws that listens for pprof requests
-	go http.ListenAndServe("localhost:12123", nil)
+		 * DEBUG - used to debug memory leaks
+		 * Run " go tool pprof  http://localhost:12123/debug/pprof/heap"
+		 * to look at memory inuse
+		// Start the ws that listens for pprof requests
+		go http.ListenAndServe("localhost:12123", nil)
+	*/
 
 	testLoop(t)
 	testLoopClientAckTrim(t)
