@@ -431,14 +431,14 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 		// lock.
 		for e := l.Front(); e != nil; e = e.Next() {
 			key := e.Value.(string)
-			v := server.perClientInfo[key]
+			ci := server.perClientInfo[key]
 
-			v.Lock()
-			if v.isEmpty() {
+			ci.Lock()
+			if ci.isEmpty() && ci.cCtx.serviceClientExited == true {
 				delete(server.perClientInfo, key)
-				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", v.myUniqueID)
+				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
-			v.Unlock()
+			ci.Unlock()
 		}
 		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
 	} else {
