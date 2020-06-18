@@ -502,11 +502,12 @@ func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 		}
 	}
 	s := ci.stats
-	logger.Infof("ID: %v completedRequest len: %v completedRequestLRU len: %v previousHighestReplySeen: %v highestReplySeen: %v ",
-		"largestReplySize: %v largestReplySizeMethod: %v numRPCcompleted: %v numRPCretried: %v numRPCattempted: %v ",
+	logger.Infof("ID: %v completedRequest len: %v completedRequestLRU len: %v previousHighestReplySeen: %v highestReplySeen: %v "+
+		"largestReplySize: %v largestReplySizeMethod: %v numRPCcompleted: %v numRPCretried: %v numRPCattempted: %v "+
 		"numRPCinprocess: %v longest RPC: %v longest RPC Method: %v cntAddCompleted: %v cntRmCompleted: %v",
-		ci.myUniqueID, len(ci.completedRequest), ci.completedRequestLRU.Len(), s.largestReplySizeMethod, s.numRPCcompleted,
-		s.numRPCretried, s.numRPCattempted, s.numRPCinprocess, s.longestRPC, s.longestRPCMethod, s.cntAddCompleted, s.cntRmCompleted)
+		ci.myUniqueID, len(ci.completedRequest), ci.completedRequestLRU.Len(), ci.previousHighestReplySeen, ci.highestReplySeen,
+		s.largestReplySize, s.largestReplySizeMethod, s.numRPCcompleted, s.numRPCretried, s.numRPCattempted, s.numRPCinprocess,
+		s.longestRPC, s.longestRPCMethod, s.cntAddCompleted, s.cntRmCompleted)
 
 	ci.Unlock()
 	return
