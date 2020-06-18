@@ -82,8 +82,8 @@ func (server *Server) run() {
 			logger.Infof("Closing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(conn, elm)
 
-			// TODO - should we call both trims on this client to release freeable memory now?
-			// Wait until we fully debug memory leak
+			// The clientInfo for this client will first be trimmed and then later
+			// deleted from the list of server.perClientInfo by the TTL trimmer.
 
 		}(conn, elm)
 	}
