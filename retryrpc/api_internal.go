@@ -37,6 +37,20 @@ const (
 
 type requestID uint64
 
+// Useful stats for the clientInfo instance
+type statsInfo struct {
+	cntAddCompleted        uint64        // Number added to completed list
+	cntRmCompleted         uint64        // Number removed from completed list
+	longestRPC             time.Duration // Time of longest RPC
+	longestRPCMethod       string        // Method of longest RPC
+	largestReplySize       int           // Largest RPC reply size completed
+	largestReplySizeMethod string        // Method of largest RPC reply size completed
+	numRPCcompleted        uint64        // Number of RPCs which completed - incremented after call returns
+	numRPCretried          uint64        // Number of RPCs which were just pulled from completed list
+	numRPCattempted        uint64        // Number of RPCs attempted - may be completed or in process
+	numRPCinprocess        uint64        // Number presently calling RPC - decremented when completed
+}
+
 // Server side data structure storing per client information
 // such as completed requests, etc
 type clientInfo struct {
@@ -47,16 +61,7 @@ type clientInfo struct {
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
 	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
-	// TODO - debug
-	// add to 10 min timer message
-	cntAddCompleted  int           // Number added to completed list
-	cntRmCompleted   int           // Number removed from completed list
-	longestRPC       time.Duration // Time of longest RPC
-	largestReplySize int           // Largest RPC reply size completed
-	numRPCcompleted  int           // Number of RPCs which completed - incremented after call returns
-	numRPCretried    int           // Number of RPCs which were just pulled from completed list
-	numRPCattempted  int           // Number of RPCs attempted - may be completed or in process
-	numRPCinprocess  int           // Number presently calling RPC - decremented when completed
+	stats                    statsInfo
 }
 
 type completedEntry struct {
