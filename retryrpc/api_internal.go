@@ -48,7 +48,7 @@ type statsInfo struct {
 	numRPCcompleted        uint64        // Number of RPCs which completed - incremented after call returns
 	numRPCretried          uint64        // Number of RPCs which were just pulled from completed list
 	numRPCattempted        uint64        // Number of RPCs attempted - may be completed or in process
-	numRPCinprocess        uint64        // Number presently calling RPC - decremented when completed
+	numRPCinprocess        uint64        // Number of RPCs presently calling RPC - decremented when completed
 }
 
 // Server side data structure storing per client information

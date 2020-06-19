@@ -288,21 +288,28 @@ func pingLarge(t *testing.T, client *Client, i int, agentID uint64, assert *asse
 	msg := fmt.Sprintf("Ping Me - %v", i)
 	pingRequest := &rpctest.PingReq{Message: msg}
 	pingReply := &rpctest.PingReply{}
-	err := client.Send("RpcPing", pingRequest, pingReply)
+	err := client.Send("RpcPingLarge", pingRequest, pingReply)
 	assert.Nil(err, "client.Send() returned an error")
 }
 
-func sendIt(t *testing.T, client *Client, i int, sendWg *sync.WaitGroup, agentID uint64, method string) {
+func sendIt(t *testing.T, client *Client, z int, sendCnt int, sendWg *sync.WaitGroup, prevWg *sync.WaitGroup, agentID uint64, method string, i int) {
+
 	assert := assert.New(t)
 	defer sendWg.Done()
 
 	switch method {
 	case "RpcPing":
-		ping(t, client, i, agentID, assert)
+		ping(t, client, z, agentID, assert)
 		break
 	case "RpcPingLarge":
-		pingLarge(t, client, i, agentID, assert)
+		pingLarge(t, client, z, agentID, assert)
 		break
+	}
+
+	// The last send is blocked until the previous send has completed.   This
+	// is how we test the short trimmer.
+	if i <= (sendCnt - 2) {
+		prevWg.Done()
 	}
 }
 
@@ -339,26 +346,49 @@ func pfsagent(t *testing.T, rrSvr *Server, ipAddr string, port int, agentID uint
 	}
 	defer client.Close()
 
+	// WG to verify all messages sent
 	var sendWg sync.WaitGroup
+
+	// WG to verify all but the last send() has been sent and
+	// received.   This is needed to test the consecutive sequence
+	// trimmer is working.
+	var prevWg sync.WaitGroup
 
 	var z, r int
 	var msg1 []byte = []byte("server msg back to client")
 	for i := 0; i < sendCnt; i++ {
 
-		if i == sendCnt-1 {
-			// Give server time to process messages.   This last
-			// call to pfsagent() should approximately send the
-			// highestConsecutive set to sendCnt - 1.
-			time.Sleep(10 * time.Second)
-		}
-
 		z = (z + i) * 10
 
+		if i == (sendCnt - 1) {
+			// Give server time to process messages.   This last
+			// call gets us closer to highestConsecutive set to sendCnt - 1.
+			prevWg.Wait()
+
+			// The highest consecutive number is updated in the background with
+			// a goroutine when send() returns.
+			//
+			// Therefore, we loop waiting for it to hit (sendCnt - 1)
+			for {
+				var currentHighest requestID
+				client.Lock()
+				currentHighest = client.highestConsecutive
+				client.Unlock()
+
+				if int(currentHighest) == (sendCnt - 1) {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		} else {
+			prevWg.Add(1)
+		}
+
 		sendWg.Add(1)
-		go func(z int) {
-			sendIt(t, client, z, &sendWg, agentID, method)
+		go func(z int, i int) {
+			sendIt(t, client, z, sendCnt, &sendWg, &prevWg, agentID, method, i)
 			rrSvr.SendCallback(clientID, msg1)
-		}(z)
+		}(z, i)
 
 		// Occasionally drop the connection to the server to
 		// simulate retransmits
