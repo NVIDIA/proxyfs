@@ -76,9 +76,15 @@ func (server *Server) run() {
 		go func(myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
+			logger.Infof("Servicing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
 			server.serviceClient(ci, cCtx)
 
+			logger.Infof("Closing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(conn, elm)
+
+			// The clientInfo for this client will first be trimmed and then later
+			// deleted from the list of server.perClientInfo by the TTL trimmer.
+
 		}(conn, elm)
 	}
 }
@@ -108,6 +114,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	if jReq.HighestReplySeen > ci.highestReplySeen {
 		ci.highestReplySeen = jReq.HighestReplySeen
 	}
+	ci.stats.numRPCattempted++
 
 	// First check if we already completed this request by looking at
 	// completed queue.
@@ -119,9 +126,11 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// Just return the results.
 		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
+		ci.stats.numRPCretried++
 		ci.Unlock()
 
 	} else {
+		ci.stats.numRPCinprocess++
 		ci.Unlock()
 
 		// Call the RPC and return the results.
@@ -129,17 +138,32 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// We pass buf to the call because the request will have to
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
+		startRPC := time.Now()
 		ior := server.callRPCAndFormatReply(buf, &jReq)
+		endRPC := time.Now()
 
 		// We had to drop the lock before calling the RPC since it
 		// could block.
 		ci.Lock()
+		dur := endRPC.Sub(startRPC)
+		if dur > ci.stats.longestRPC {
+			ci.stats.longestRPCMethod = jReq.Method
+			ci.stats.longestRPC = dur
+		}
+		ci.stats.numRPCinprocess--
+		ci.stats.numRPCcompleted++
 
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
 		ci.completedRequest[rID] = ce
+		ci.stats.cntAddCompleted++
 		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
+		l := len(ior.JResult)
+		if l > ci.stats.largestReplySize {
+			ci.stats.largestReplySizeMethod = jReq.Method
+			ci.stats.largestReplySize = l
+		}
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
@@ -363,7 +387,11 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	//
 	// In error case - Conn will be closed when serviceClient() returns
 	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
-	_, _ = cCtx.conn.Write(ior.JResult)
+	cnt, e := cCtx.conn.Write(ior.JResult)
+	if e != nil {
+		logger.Infof("returnResults() returned err: %v cnt: %v length of JResult: %v", e, cnt, len(ior.JResult))
+	}
+
 	cCtx.Unlock()
 }
 
@@ -388,7 +416,7 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 	if long {
 		l := list.New()
 		for k, v := range server.perClientInfo {
-			n := server.trimTLLBased(k, v, t)
+			n := server.trimTLLBased(v, t)
 			totalItems += n
 
 			v.Lock()
@@ -405,13 +433,16 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 		// lock.
 		for e := l.Front(); e != nil; e = e.Next() {
 			key := e.Value.(string)
-			v := server.perClientInfo[key]
+			ci := server.perClientInfo[key]
 
-			v.Lock()
-			if v.isEmpty() {
+			ci.Lock()
+			ci.cCtx.Lock()
+			if ci.isEmpty() && ci.cCtx.serviceClientExited == true {
 				delete(server.perClientInfo, key)
+				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
-			v.Unlock()
+			ci.cCtx.Unlock()
+			ci.Unlock()
 		}
 		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
 	} else {
@@ -437,6 +468,7 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 		if ok {
 			ci.completedRequestLRU.Remove(v.lruElem)
 			delete(ci.completedRequest, h)
+			ci.stats.cntRmCompleted++
 			numItems++
 		}
 	}
@@ -452,32 +484,31 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 // This gets called every ~10 minutes to clean out older entries.
 //
 // NOTE: We assume Server Lock is held
-func (server *Server) trimTLLBased(uniqueID string, ci *clientInfo, t time.Time) (numItems int) {
-
-	l := list.New()
-
+func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 	ci.Lock()
-	for e := ci.completedRequestLRU.Front(); e != nil; e = e.Next() {
+	for e := ci.completedRequestLRU.Front(); e != nil; {
 		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
 			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
+			ci.stats.cntRmCompleted++
 
-			// Push on local list so don't delete while iterating
-			l.PushBack(e)
+			eTmp := e
+			e = e.Next()
+			_ = ci.completedRequestLRU.Remove(eTmp)
+			numItems++
 		} else {
 			// Oldest is in front so just break
 			break
 		}
 	}
+	s := ci.stats
+	logger.Infof("ID: %v completedRequest len: %v completedRequestLRU len: %v previousHighestReplySeen: %v highestReplySeen: %v "+
+		"largestReplySize: %v largestReplySizeMethod: %v numRPCcompleted: %v numRPCretried: %v numRPCattempted: %v "+
+		"numRPCinprocess: %v longest RPC: %v longest RPC Method: %v cntAddCompleted: %v cntRmCompleted: %v",
+		ci.myUniqueID, len(ci.completedRequest), ci.completedRequestLRU.Len(), ci.previousHighestReplySeen, ci.highestReplySeen,
+		s.largestReplySize, s.largestReplySizeMethod, s.numRPCcompleted, s.numRPCretried, s.numRPCattempted, s.numRPCinprocess,
+		s.longestRPC, s.longestRPCMethod, s.cntAddCompleted, s.cntRmCompleted)
 
-	numItems = l.Len()
-
-	// Now delete from LRU using the local list
-	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
-		tmpE := ci.completedRequestLRU.Front()
-		_ = ci.completedRequestLRU.Remove(tmpE)
-
-	}
 	ci.Unlock()
 	return
 }
