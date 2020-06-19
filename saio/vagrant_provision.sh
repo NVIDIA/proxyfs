@@ -445,6 +445,10 @@ EOF
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/proxyfsd.service /usr/lib/systemd/system/.
 cp /vagrant/src/github.com/swiftstack/ProxyFS/saio/usr/lib/systemd/system/pfsagentd.service /usr/lib/systemd/system/.
 
+# Place symlink in root's $PATH to locate pfsagentd-swift-auth-plugin referenced without a path
+
+ln -s /vagrant/bin/pfsagentd-swift-auth-plugin /usr/bin/pfsagentd-swift-auth-plugin
+
 # Enable Samba service in an SELinux environment
 
 yum -y install policycoreutils-python
