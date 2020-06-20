@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -39,16 +40,17 @@ type requestID uint64
 
 // Useful stats for the clientInfo instance
 type statsInfo struct {
-	cntAddCompleted        uint64        // Number added to completed list
-	cntRmCompleted         uint64        // Number removed from completed list
-	longestRPC             time.Duration // Time of longest RPC
-	longestRPCMethod       string        // Method of longest RPC
-	largestReplySize       int           // Largest RPC reply size completed
-	largestReplySizeMethod string        // Method of largest RPC reply size completed
-	numRPCcompleted        uint64        // Number of RPCs which completed - incremented after call returns
-	numRPCretried          uint64        // Number of RPCs which were just pulled from completed list
-	numRPCattempted        uint64        // Number of RPCs attempted - may be completed or in process
-	numRPCinprocess        uint64        // Number of RPCs presently calling RPC - decremented when completed
+	AddCompleted           bucketstats.Total           // Number added to completed list
+	RmCompleted            bucketstats.Total           // Number removed from completed list
+	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
+	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
+	longestRPC             time.Duration               // Time of longest RPC
+	longestRPCMethod       string                      // Method of longest RPC
+	largestReplySize       uint64                      // Tracks largest RPC reply size
+	largestReplySizeMethod string                      // Method of largest RPC reply size completed
+	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
+	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
+	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
 }
 
 // Server side data structure storing per client information
