@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -220,6 +221,14 @@ func (server *Server) Close() {
 	}
 	server.completedTickerDone <- true
 	server.completedDoneWG.Wait()
+
+	// Cleanup bucketstats so that unit tests can run
+	for _, ci := range server.perClientInfo {
+		ci.Lock()
+		bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
+		ci.Unlock()
+
+	}
 }
 
 // CloseClientConn - This is debug code to cause some connections to be closed
