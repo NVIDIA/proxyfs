@@ -30,9 +30,15 @@ type ServingPeerStruct struct {
 	VolumeGroup   []*VolumeGroupStruct
 }
 
+type ReconEndpointStruct struct {
+	IPAddrPort             string
+	MaxDiskUsagePercentage uint8
+}
+
 type ObservingPeerStruct struct {
-	Name        string
-	ServingPeer []*ServingPeerStruct
+	Name          string
+	ServingPeer   []*ServingPeerStruct
+	ReconEndpoint []*ReconEndpointStruct
 }
 
 type LivenessReportStruct struct {

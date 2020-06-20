@@ -1,11 +1,19 @@
 package liveness
 
 import (
+	"bytes"
+	"compress/gzip"
 	"container/list"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"math/big"
 	"net"
+	"net/http"
+	"os"
 	"reflect"
+	"regexp"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/jrpcfs"
@@ -26,6 +34,20 @@ type pingReplyStruct struct {
 	Error  string           `json:"error"`
 }
 
+type ringFilePayloadJSONDevStruct struct {
+	IP   string `json:"ip"`
+	Port uint16 `json:"port"`
+}
+
+type ringFilePayloadJSONStruct struct {
+	Devs []*ringFilePayloadJSONDevStruct `json:"devs"`
+}
+
+type reconDevReportStruct struct {
+	Size int64 `json:"size"`
+	Used int64 `json:"used"`
+}
+
 const maxRPCReplySize = 4096
 
 func livenessChecker() {
@@ -37,6 +59,7 @@ func livenessChecker() {
 		err                             error
 		livenessCheckerControlChanValue bool
 		myObservingPeerReport           *internalObservingPeerReportStruct
+		reconEndpoint                   *internalReconEndpointReportStruct
 		servingPeer                     *internalServingPeerReportStruct
 		volume                          *internalVolumeReportStruct
 		volumeGroup                     *internalVolumeGroupReportStruct
@@ -78,28 +101,22 @@ func livenessChecker() {
 			checkEntityList = list.New()
 
 			for _, servingPeer = range myObservingPeerReport.servingPeer {
-				if utils.FetchRandomBool() {
-					_ = checkEntityList.PushFront(servingPeer)
-				} else {
-					_ = checkEntityList.PushBack(servingPeer)
-				}
+				_ = checkEntityList.PushBack(servingPeer)
 
 				for _, volumeGroup = range servingPeer.volumeGroup {
-					if utils.FetchRandomBool() {
-						_ = checkEntityList.PushFront(volumeGroup)
-					} else {
-						_ = checkEntityList.PushBack(volumeGroup)
-					}
+					_ = checkEntityList.PushBack(volumeGroup)
 
 					for _, volume = range volumeGroup.volume {
-						if utils.FetchRandomBool() {
-							_ = checkEntityList.PushFront(volume)
-						} else {
-							_ = checkEntityList.PushBack(volume)
-						}
+						_ = checkEntityList.PushBack(volume)
 					}
 				}
 			}
+
+			for _, reconEndpoint = range myObservingPeerReport.reconEndpoint {
+				_ = checkEntityList.PushBack(reconEndpoint)
+			}
+
+			utils.RandomizeList(checkEntityList)
 
 			// Compute number of entities to check & time between each check
 			// Allow for one extra time slice to hopefully get all entities checked
@@ -120,6 +137,8 @@ func livenessChecker() {
 					livenessCheckVolumeGroup(entityToCheck.Value.(*internalVolumeGroupReportStruct))
 				case reflect.TypeOf(volume):
 					livenessCheckVolume(entityToCheck.Value.(*internalVolumeReportStruct))
+				case reflect.TypeOf(reconEndpoint):
+					livenessCheckReconEndpoint(entityToCheck.Value.(*internalReconEndpointReportStruct))
 				default:
 					err = fmt.Errorf("Unrecognized reflect.TypeOf(entityToCheck.Value): %v", reflect.TypeOf(entityToCheck.Value))
 					panic(err)
@@ -291,15 +310,85 @@ func livenessCheckVolume(volume *internalVolumeReportStruct) {
 	// TODO: Implement livenessCheckVolume()
 }
 
+func livenessCheckReconEndpoint(reconEndpoint *internalReconEndpointReportStruct) {
+	var (
+		bigDividend         *big.Int
+		bigDivisor          *big.Int
+		bigQuotient         *big.Int
+		bigRemainder        *big.Int
+		devUtilization      uint8
+		err                 error
+		quotient            int64
+		reconDevReport      *reconDevReportStruct
+		reconDevReportSlice []*reconDevReportStruct
+		reconResp           *http.Response
+		reconRespBody       []byte
+		remainder           int64
+		url                 string
+	)
+
+	reconEndpoint.maxDiskUsagePercentage = 0
+
+	url = fmt.Sprintf("http://%s/recon/diskusage", reconEndpoint.ipAddrPort)
+
+	reconResp, err = http.Get(url)
+	if nil == err {
+		reconRespBody, err = ioutil.ReadAll(reconResp.Body)
+		if nil == err {
+			if http.StatusOK == reconResp.StatusCode {
+				reconDevReportSlice = make([]*reconDevReportStruct, 0)
+				err = json.Unmarshal(reconRespBody, &reconDevReportSlice)
+				if nil == err {
+					for _, reconDevReport = range reconDevReportSlice {
+						if (reconDevReport.Used > 0) && (reconDevReport.Size > 0) && (reconDevReport.Used <= reconDevReport.Size) {
+							bigDividend = new(big.Int).Mul(big.NewInt(100), big.NewInt(reconDevReport.Used))
+							bigDivisor = big.NewInt(reconDevReport.Size)
+							bigQuotient = new(big.Int).Quo(bigDividend, bigDivisor)
+							bigRemainder = new(big.Int).Rem(bigDividend, bigDivisor)
+							quotient = bigQuotient.Int64()
+							remainder = bigRemainder.Int64()
+							if 0 == remainder {
+								devUtilization = uint8(quotient)
+							} else {
+								devUtilization = uint8(quotient) + 1
+							}
+							if devUtilization > reconEndpoint.maxDiskUsagePercentage {
+								reconEndpoint.maxDiskUsagePercentage = devUtilization
+							}
+						} else {
+							logger.Warnf("livenessCheckReconEndpoint() GET to %s got responseBody with unreasonable used and size values", url)
+						}
+					}
+				} else {
+					logger.WarnfWithError(err, "livenessCheckReconEndpoint() GET to %s got response.Body with invalid JSON", url)
+				}
+			} else {
+				logger.WarnfWithError(err, "livenessCheckReconEndpoint() GET to %s got bad status: %s", url, reconResp.Status)
+			}
+		} else {
+			logger.WarnfWithError(err, "livenessCheckReconEndpoint() GET to %s response.Body() read failed", url)
+		}
+		err = reconResp.Body.Close()
+		if nil != err {
+			logger.WarnfWithError(err, "livenessCheckReconEndpoint() GET to %s response.Body.Close() failed", url)
+		}
+	} else {
+		logger.WarnfWithError(err, "livenessCheckReconEndpoint() failed to issue GET to %s", url)
+	}
+}
+
 // computeLivenessCheckAssignments takes a list of ObservingPeer and produces a
 // template internalLivenessReport that is to be filled in by this collection of peers.
-// While the elements of the resultant internalLivenessReport have State and LastCheckTime
-// fields, these are ignored as they will ultimately be filled in by each ObservingPeer.
-// The livenessCheckRedundancy is used to ensure that each ServingPeer, VolumeGroup,
-// and Volume is adequately covered. As every Volume is part of a VolumeGroup and every
-// VolumeGroup is assigned to a single ServingPeer, this amounts to just dolling out
-// the Volumes to ObervingPeers with the required livenessCheckRedundancy. That said,
-// it is a bit misleading for an ObservingPeer to report that a VolumeGroup is "alive"
+// While the elements of the resultant internalLivenessReport have State, LastCheckTime,
+// and MaxDiskUsagePercentage fields, these are ignored as they will ultimately be filled
+// in by each ObservingPeer. The livenessCheckRedundancy is used to ensure that each
+// ServingPeer, VolumeGroup, Volume, and ReconEndpoint is adequately covered. As every
+// Volume is part of a VolumeGroup and every VolumeGroup is assigned to a single ServingPeer,
+// this amounts to just dolling out the Volumes to ObervingPeers with the required
+// livenessCheckRedundancy. Similarly, the ReconEndpoints are dolled out with this
+// same livenessCheckRedundancy.
+//
+// It is a bit misleading for an ObservingPeer to report that a VolumeGroup is "alive"
 // when not all of that VolumeGroup's Volumes have been checked. Similarly, it is a
 // bit misleading for an ObservingPeer to report that a ServingPeer is "alive" when
 // not all of that ServingPeer's VolumeGroups have been checked. Therefore, to get an
@@ -310,19 +399,42 @@ func livenessCheckVolume(volume *internalVolumeReportStruct) {
 // VolumeGroups assigned will still be in the resultant internalLivenessReport.
 func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLivenessReport *internalLivenessReportStruct) {
 	var (
+		alreadyInSwiftReconEndpointIAddrSet   bool
+		curSwiftConfFileMap                   map[string]time.Time
 		effectiveLivenessCheckRedundancy      uint64
 		effectiveLivenessCheckRedundancyIndex uint64
 		err                                   error
+		fileInfo                              os.FileInfo
+		fileInfoSlice                         []os.FileInfo
+		fileInfoModTime                       time.Time
+		fileInfoName                          string
+		inSwiftConfFileMap                    bool
 		internalObservingPeerReport           *internalObservingPeerReportStruct
+		internalReconEndpointReport           *internalReconEndpointReportStruct
 		internalServingPeerReport             *internalServingPeerReportStruct
 		internalVolumeGroupReport             *internalVolumeGroupReportStruct
 		internalVolumeReport                  *internalVolumeReportStruct
+		matchedRingFilename                   bool
+		needToUpdateSwiftConfFileMap          bool
 		notYetAdded                           bool
 		observingPeerIndex                    uint64
 		observingPeerName                     string
 		ok                                    bool
+		prevFileInfoModTime                   time.Time
+		ringFileData                          []byte
+		ringFileName                          string
+		ringFileMagic                         []byte
+		ringFilePayload                       []byte
+		ringFilePayloadJSON                   *ringFilePayloadJSONStruct
+		ringFilePayloadJSONDev                *ringFilePayloadJSONDevStruct
+		ringFilePayloadLen                    int32
+		ringFileReader                        *gzip.Reader
+		ringFileReadLen                       int
+		ringFileVersion                       uint16
 		servingPeer                           *peerStruct
 		servingPeerName                       string
+		swiftReconEndpoint                    string
+		swiftReconEndpointIPAddrSet           map[string]struct{}
 		volumeGroup                           *volumeGroupStruct
 		volumeGroupName                       string
 		volumeName                            string
@@ -333,6 +445,138 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 		err = fmt.Errorf("computeLivenessCheckAssignments(): len(observingPeerNameList) cannot be zero")
 		panic(err)
 	}
+
+	// Determine reconEndpoints
+
+	if 0 == globals.swiftReconChecksPerConfCheck {
+		globals.swiftReconEndpointSet = make(map[string]struct{})
+	} else {
+		if 0 == globals.swiftReconChecksUntilConfCheck {
+			// Time to potentially refresh globals.swiftConfFileMap & globals.swiftReconEndpointSet
+
+			globals.swiftReconChecksUntilConfCheck = globals.swiftReconChecksPerConfCheck
+
+			fileInfoSlice, err = ioutil.ReadDir(globals.swiftConfDir)
+			if nil != err {
+				logger.FatalfWithError(err, "Unable to read [SwiftClient]SwiftConfDir (%s)", globals.swiftConfDir)
+			}
+
+			curSwiftConfFileMap = make(map[string]time.Time)
+
+			for _, fileInfo = range fileInfoSlice {
+				fileInfoName = fileInfo.Name()
+				switch fileInfoName {
+				case "account.ring.gz":
+					matchedRingFilename = true
+				case "container.ring.gz":
+					matchedRingFilename = true
+				default:
+					matchedRingFilename, err = regexp.MatchString("^object.*\\.ring\\.gz$", fileInfoName)
+					if nil != err {
+						logger.FatalfWithError(err, "Unexpected failure calling regexp.MatchString()")
+					}
+				}
+
+				if matchedRingFilename {
+					curSwiftConfFileMap[fileInfoName] = fileInfo.ModTime()
+				}
+			}
+
+			if len(globals.swiftConfFileMap) != len(curSwiftConfFileMap) {
+				needToUpdateSwiftConfFileMap = true
+			} else {
+				needToUpdateSwiftConfFileMap = false
+				for fileInfoName, fileInfoModTime = range curSwiftConfFileMap {
+					prevFileInfoModTime, inSwiftConfFileMap = globals.swiftConfFileMap[fileInfoName]
+					if !inSwiftConfFileMap || (fileInfoModTime != prevFileInfoModTime) {
+						needToUpdateSwiftConfFileMap = true
+					}
+				}
+			}
+
+			if needToUpdateSwiftConfFileMap {
+				// We must refresh globals.swiftConfFileMap & globals.swiftReconEndpointSet
+
+				globals.swiftConfFileMap = curSwiftConfFileMap
+
+				swiftReconEndpointIPAddrSet = make(map[string]struct{})
+				globals.swiftReconEndpointSet = make(map[string]struct{})
+
+				for ringFileName = range globals.swiftConfFileMap {
+					ringFileData, err = ioutil.ReadFile(globals.swiftConfDir + "/" + ringFileName)
+					if nil == err {
+						ringFileReader, err = gzip.NewReader(bytes.NewReader(ringFileData))
+						if nil == err {
+							ringFileMagic = make([]byte, 4)
+							ringFileReadLen, err = ringFileReader.Read(ringFileMagic)
+							if nil == err {
+								if ringFileReadLen == len(ringFileMagic) {
+									if bytes.Equal([]byte("R1NG"), ringFileMagic) {
+										err = binary.Read(ringFileReader, binary.BigEndian, &ringFileVersion)
+										if nil == err {
+											if 1 == ringFileVersion {
+												err = binary.Read(ringFileReader, binary.BigEndian, &ringFilePayloadLen)
+												if nil == err {
+													ringFilePayload = make([]byte, ringFilePayloadLen)
+													ringFileReadLen, err = ringFileReader.Read(ringFilePayload)
+													if nil == err {
+														if ringFileReadLen == len(ringFilePayload) {
+															ringFilePayloadJSON = &ringFilePayloadJSONStruct{}
+															err = json.Unmarshal(ringFilePayload, ringFilePayloadJSON)
+															if nil == err {
+																for _, ringFilePayloadJSONDev = range ringFilePayloadJSON.Devs {
+																	_, alreadyInSwiftReconEndpointIAddrSet = swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP]
+																	if !alreadyInSwiftReconEndpointIAddrSet {
+																		swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP] = struct{}{}
+																		swiftReconEndpoint = fmt.Sprintf("%s:%d", ringFilePayloadJSONDev.IP, ringFilePayloadJSONDev.Port)
+																		globals.swiftReconEndpointSet[swiftReconEndpoint] = struct{}{}
+																	}
+																}
+															} else {
+																logger.WarnfWithError(err, "Unable to json.Unmarshal ringFilePayload from ring file %s", fileInfoName)
+															}
+														} else {
+															logger.Warnf("Misread of ringFilePayload from ring file %s", fileInfoName)
+														}
+													} else {
+														logger.WarnfWithError(err, "Unable to read ringFilePayload from ring file %s", fileInfoName)
+													}
+												} else {
+													logger.WarnfWithError(err, "Unable to read ringFilePayloadLen from ring file %s", fileInfoName)
+												}
+											} else {
+												logger.Warnf("Value of ringFileVersion unexpected from ring file %s", fileInfoName)
+											}
+										} else {
+											logger.WarnfWithError(err, "Unable to read ringFileVersion from ring file %s", fileInfoName)
+										}
+									} else {
+										logger.Warnf("Value of ringFileMagic unexpected from ring file %s", fileInfoName)
+									}
+								} else {
+									logger.Warnf("Misread of ringFileMagic from ring file %s", fileInfoName)
+								}
+							} else {
+								logger.WarnfWithError(err, "Unable to read ringFileMagic from ring file %s", fileInfoName)
+							}
+							err = ringFileReader.Close()
+							if nil != err {
+								logger.WarnfWithError(err, "Unable to close gzip.Reader from ring file %s", fileInfoName)
+							}
+						} else {
+							logger.WarnfWithError(err, "Unable to create gzip.Reader from ring file %s", fileInfoName)
+						}
+					} else {
+						logger.WarnfWithError(err, "Unable to read ring file %s", fileInfoName)
+					}
+				}
+			}
+		} else {
+			globals.swiftReconChecksUntilConfCheck--
+		}
+	}
+
+	// Prepare fresh internalLivenessReport
 
 	internalLivenessReport = &internalLivenessReportStruct{
 		observingPeer: make(map[string]*internalObservingPeerReportStruct),
@@ -372,8 +616,9 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 				internalObservingPeerReport, ok = internalLivenessReport.observingPeer[observingPeerName]
 				if !ok {
 					internalObservingPeerReport = &internalObservingPeerReportStruct{
-						name:        observingPeerName,
-						servingPeer: make(map[string]*internalServingPeerReportStruct),
+						name:          observingPeerName,
+						servingPeer:   make(map[string]*internalServingPeerReportStruct),
+						reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
 					}
 					internalLivenessReport.observingPeer[observingPeerName] = internalObservingPeerReport
 				}
@@ -445,8 +690,9 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 				internalObservingPeerReport, ok = internalLivenessReport.observingPeer[observingPeerName]
 				if !ok {
 					internalObservingPeerReport = &internalObservingPeerReportStruct{
-						name:        observingPeerName,
-						servingPeer: make(map[string]*internalServingPeerReportStruct),
+						name:          observingPeerName,
+						servingPeer:   make(map[string]*internalServingPeerReportStruct),
+						reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
 					}
 					internalLivenessReport.observingPeer[observingPeerName] = internalObservingPeerReport
 				}
@@ -507,8 +753,9 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 				internalObservingPeerReport, ok = internalLivenessReport.observingPeer[observingPeerName]
 				if !ok {
 					internalObservingPeerReport = &internalObservingPeerReportStruct{
-						name:        observingPeerName,
-						servingPeer: make(map[string]*internalServingPeerReportStruct),
+						name:          observingPeerName,
+						servingPeer:   make(map[string]*internalServingPeerReportStruct),
+						reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
 					}
 					internalLivenessReport.observingPeer[observingPeerName] = internalObservingPeerReport
 				}
@@ -543,6 +790,55 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 		}
 	}
 
+	// Iterate through observingPeerNameList effectiveLivenessCheckRedundancy times scheduling ReconEndpoints
+
+	for effectiveLivenessCheckRedundancyIndex = 0; effectiveLivenessCheckRedundancyIndex < effectiveLivenessCheckRedundancy; effectiveLivenessCheckRedundancyIndex++ {
+		for swiftReconEndpoint = range globals.swiftReconEndpointSet {
+			// Add volumeToCheck to currently indexed ObservingPeer
+
+			notYetAdded = true // Avoid duplicate assignments
+
+			for notYetAdded {
+				observingPeerName = observingPeerNameList[observingPeerIndex]
+
+				internalObservingPeerReport, ok = internalLivenessReport.observingPeer[observingPeerName]
+				if !ok {
+					internalObservingPeerReport = &internalObservingPeerReportStruct{
+						name:          observingPeerName,
+						servingPeer:   make(map[string]*internalServingPeerReportStruct),
+						reconEndpoint: make(map[string]*internalReconEndpointReportStruct),
+					}
+					internalLivenessReport.observingPeer[observingPeerName] = internalObservingPeerReport
+				}
+
+				_, ok = internalObservingPeerReport.reconEndpoint[swiftReconEndpoint]
+
+				if ok {
+					// Need to step to the next ObservingPeer because this one is already watching this ReconEndpoint
+				} else {
+					// New ReconEndpoint for this ObservingPeer... so add it
+
+					internalReconEndpointReport = &internalReconEndpointReportStruct{
+						observingPeer:          internalObservingPeerReport,
+						ipAddrPort:             swiftReconEndpoint,
+						maxDiskUsagePercentage: 0,
+					}
+
+					internalObservingPeerReport.reconEndpoint[swiftReconEndpoint] = internalReconEndpointReport
+
+					notYetAdded = false
+				}
+
+				// Cycle to next ObservingPeer
+
+				observingPeerIndex++
+				if observingPeerIndex == uint64(len(observingPeerNameList)) {
+					observingPeerIndex = 0
+				}
+			}
+		}
+	}
+
 	return
 }
 
@@ -561,17 +857,19 @@ func mergeObservingPeerReportIntoLivenessReport(internalObservingPeerReport *int
 
 func updateMyObservingPeerReportWhileLocked(internalObservingPeerReport *internalObservingPeerReportStruct) {
 	var (
-		ok                 bool
-		servingPeerName    string
-		servingPeerNameSet map[string]struct{}
-		servingPeerNew     *internalServingPeerReportStruct
-		servingPeerOld     *internalServingPeerReportStruct
-		volumeGroupName    string
-		volumeGroupNameSet map[string]struct{}
-		volumeGroupNew     *internalVolumeGroupReportStruct
-		volumeGroupOld     *internalVolumeGroupReportStruct
-		volumeName         string
-		volumeNameSet      map[string]struct{}
+		ok                         bool
+		reconEndpointIPAddrPort    string
+		reconEndpointIPAddrPortSet map[string]struct{}
+		servingPeerName            string
+		servingPeerNameSet         map[string]struct{}
+		servingPeerNew             *internalServingPeerReportStruct
+		servingPeerOld             *internalServingPeerReportStruct
+		volumeGroupName            string
+		volumeGroupNameSet         map[string]struct{}
+		volumeGroupNew             *internalVolumeGroupReportStruct
+		volumeGroupOld             *internalVolumeGroupReportStruct
+		volumeName                 string
+		volumeNameSet              map[string]struct{}
 	)
 
 	if (nil == globals.myObservingPeerReport) || (nil == internalObservingPeerReport) {
@@ -676,6 +974,34 @@ func updateMyObservingPeerReportWhileLocked(internalObservingPeerReport *interna
 						lastCheckTime: time.Time{},
 					}
 				}
+			}
+		}
+	}
+
+	// Remove any ReconEndpoints from globals.myObservingPeerReport missing from internalObservingPeerReport
+
+	reconEndpointIPAddrPortSet = make(map[string]struct{})
+
+	for reconEndpointIPAddrPort = range globals.myObservingPeerReport.reconEndpoint {
+		_, ok = internalObservingPeerReport.reconEndpoint[reconEndpointIPAddrPort]
+		if !ok {
+			reconEndpointIPAddrPortSet[reconEndpointIPAddrPort] = struct{}{}
+		}
+	}
+
+	for reconEndpointIPAddrPort = range reconEndpointIPAddrPortSet {
+		delete(globals.myObservingPeerReport.reconEndpoint, reconEndpointIPAddrPort)
+	}
+
+	// Add any ReconEndpoints from internalObservingPeerReport missing from globals.myObservingPeerReport
+
+	for reconEndpointIPAddrPort = range internalObservingPeerReport.reconEndpoint {
+		_, ok = globals.myObservingPeerReport.reconEndpoint[reconEndpointIPAddrPort]
+		if !ok {
+			globals.myObservingPeerReport.reconEndpoint[reconEndpointIPAddrPort] = &internalReconEndpointReportStruct{
+				observingPeer:          globals.myObservingPeerReport,
+				ipAddrPort:             reconEndpointIPAddrPort,
+				maxDiskUsagePercentage: 0,
 			}
 		}
 	}

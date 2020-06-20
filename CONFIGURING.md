@@ -93,6 +93,12 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | ChunkedConnectionPoolSize                | Yes          |                    | Yes                      | No                           |
 |                                           | NonChunkedConnectionPoolSize             | Yes          |                    | Yes                      | No                           |
 |                                           | ChecksumChunkedPutChunks                 | No           | false              | Yes                      | Yes                          |
+|                                           | SwiftReconNoWriteThreshold               | No           | 80                 | Yes                      | Yes                          |
+|                                           | SwiftReconNoWriteErrno                   | No           | ENOSPC             | Yes                      | Yes                          |
+|                                           | SwiftReconReadOnlyThreshold              | No           | 90                 | Yes                      | Yes                          |
+|                                           | SwiftReconReadOnlyErrno                  | No           | EROFS              | Yes                      | Yes                          |
+|                                           | SwiftConfDir                             | No           | /etc/swift         | Yes                      | Yes                          |
+|                                           | SwiftReconChecksPerConfCheck             | No           | 10                 | Yes                      | Yes                          |
 | FSGlobals                                 | VolumeGroupList                          | Yes          |                    | Yes                      | Yes                          |
 |                                           | CheckpointHeaderConsensusAttempts        | No           | 5                  | Yes                      | No                           |
 |                                           | MountRetryLimit                          | No           | 6                  | Yes                      | No                           |
