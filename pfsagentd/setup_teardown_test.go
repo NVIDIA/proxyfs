@@ -117,7 +117,7 @@ func testSetup(t *testing.T) {
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
 		"Agent.RetryRPCDeadlineIO=60s",
-		"Agent.RetryRPCKEEPALIVEPeriod=60s",
+		"Agent.RetryRPCKeepAlivePeriod=60s",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=54324",

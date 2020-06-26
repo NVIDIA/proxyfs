@@ -66,7 +66,7 @@ func doMountProxyFS() {
 
 	retryrpcConfig := &retryrpc.ClientConfig{MyUniqueID: string(globals.mountID), IPAddr: globals.retryRPCPublicIPAddr, Port: int(globals.retryRPCPort),
 		RootCAx509CertificatePEM: globals.rootCAx509CertificatePEM, DeadlineIO: globals.config.RetryRPCDeadlineIO,
-		KEEPALIVEPeriod: globals.config.RetryRPCKEEPALIVEPeriod}
+		KeepAlivePeriod: globals.config.RetryRPCKeepAlivePeriod}
 	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
 	if nil != err {
 		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %s (Account: %s) err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, accountName, err)

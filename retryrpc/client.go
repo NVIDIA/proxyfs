@@ -380,7 +380,7 @@ func (client *Client) dial() (err error) {
 	}
 
 	// Now dial the server
-	d := &net.Dialer{KeepAlive: client.keepalivePeriod}
+	d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
 	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 	if dialErr != nil {
 		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)

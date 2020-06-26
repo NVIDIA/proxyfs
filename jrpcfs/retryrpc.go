@@ -9,7 +9,7 @@ import (
 
 func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 	retryRPCTTLCompleted time.Duration, retryRPCAckTrim time.Duration,
-	retryRPCDeadlineIO time.Duration, retryRPCKEEPALIVEPeriod time.Duration) {
+	retryRPCDeadlineIO time.Duration, retryRPCKeepAlivePeriod time.Duration) {
 
 	var err error
 
@@ -19,7 +19,7 @@ func retryRPCServerUp(jserver *Server, publicIPAddr string, retryRPCPort uint16,
 
 	// Create a new RetryRPC Server.
 	retryConfig := &retryrpc.ServerConfig{LongTrim: retryRPCTTLCompleted, ShortTrim: retryRPCAckTrim, IPAddr: publicIPAddr,
-		Port: int(retryRPCPort), DeadlineIO: retryRPCDeadlineIO, KEEPALIVEPeriod: retryRPCKEEPALIVEPeriod}
+		Port: int(retryRPCPort), DeadlineIO: retryRPCDeadlineIO, KeepAlivePeriod: retryRPCKeepAlivePeriod}
 
 	rrSvr := retryrpc.NewServer(retryConfig)
 
