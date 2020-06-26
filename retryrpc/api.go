@@ -54,7 +54,7 @@ type Server struct {
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
 	deadlineIO           time.Duration
-	keepalivePeriod      time.Duration
+	keepAlivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
 	dontStartTrimmers    bool // Used for testing
 }
@@ -66,7 +66,7 @@ type ServerConfig struct {
 	IPAddr            string        // IP Address that Server uses to listen
 	Port              int           // Port that Server uses to listen
 	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod   time.Duration // How frequently a KEEPALIVE is sent
+	KeepAlivePeriod   time.Duration // How frequently a KEEPALIVE is sent
 	dontStartTrimmers bool          // Used for testing
 }
 
@@ -77,7 +77,7 @@ func NewServer(config *ServerConfig) *Server {
 	)
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepalivePeriod: config.KEEPALIVEPeriod, dontStartTrimmers: config.dontStartTrimmers}
+		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -109,7 +109,7 @@ func (server *Server) Start() (err error) {
 		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
-	listenConfig := &net.ListenConfig{KeepAlive: server.keepalivePeriod}
+	listenConfig := &net.ListenConfig{KeepAlive: server.keepAlivePeriod}
 	server.netListener, err = listenConfig.Listen(context.Background(), "tcp", hostPortStr)
 	if nil != err {
 		err = fmt.Errorf("tls.Listen() failed: %v", err)
@@ -294,7 +294,7 @@ type Client struct {
 	myUniqueID         string      // Unique ID across all clients
 	cb                 interface{} // Callbacks to client
 	deadlineIO         time.Duration
-	keepalivePeriod    time.Duration
+	keepAlivePeriod    time.Duration
 	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
@@ -317,7 +317,7 @@ type ClientConfig struct {
 	RootCAx509CertificatePEM []byte        // Root certificate
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod          time.Duration // How frequently a KEEPALIVE is sent
+	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
 }
 
 // TODO - pass loggers to Cient and Server objects
@@ -336,7 +336,7 @@ type ClientConfig struct {
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
 	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
-		keepalivePeriod: config.KEEPALIVEPeriod, deadlineIO: config.DeadlineIO}
+		keepAlivePeriod: config.KeepAlivePeriod, deadlineIO: config.DeadlineIO}
 	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)

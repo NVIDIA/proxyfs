@@ -28,7 +28,7 @@ type globalsStruct struct {
 	retryRPCTTLCompleted     time.Duration
 	retryRPCAckTrim          time.Duration
 	retryRPCDeadlineIO       time.Duration
-	retryRPCKEEPALIVEPeriod  time.Duration
+	retryRPCKeepAlivePeriod  time.Duration
 	rootCAx509CertificatePEM []byte
 	dataPathLogging          bool
 
@@ -115,10 +115,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCDeadlineIO from config file - defaulting to 60s")
 			globals.retryRPCDeadlineIO = 60 * time.Second
 		}
-		globals.retryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKEEPALIVEPeriod")
+		globals.retryRPCKeepAlivePeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKeepAlivePeriod")
 		if nil != err {
-			logger.Infof("failed to get JSONRPCServer.RetryRPCKEEPALIVEPeriod from config file - defaulting to 60s")
-			globals.retryRPCKEEPALIVEPeriod = 60 * time.Second
+			logger.Infof("failed to get JSONRPCServer.RetryRPCKeepAlivePeriod from config file - defaulting to 60s")
+			globals.retryRPCKeepAlivePeriod = 60 * time.Second
 		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
@@ -126,7 +126,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCTTLCompleted = time.Duration(0)
 		globals.retryRPCAckTrim = time.Duration(0)
 		globals.retryRPCDeadlineIO = time.Duration(0)
-		globals.retryRPCKEEPALIVEPeriod = time.Duration(0)
+		globals.retryRPCKeepAlivePeriod = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -157,7 +157,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 	// Init Retry RPC server
 	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
-		globals.retryRPCDeadlineIO, globals.retryRPCKEEPALIVEPeriod)
+		globals.retryRPCDeadlineIO, globals.retryRPCKeepAlivePeriod)
 
 	return
 }

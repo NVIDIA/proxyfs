@@ -197,7 +197,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | RetryRPCTTLCompleted                     | No           | 10m                | Yes                      | No                           |
 |                                           | RetryRPCAckTrim                          | No           | 100ms              | Yes                      | No                           |
 |                                           | RetryRPCDeadlineIO                       | No           | 60s                | Yes                      | No                           |
-|                                           | RetryRPCKEEPALIVEPeriod                  | No           | 60s                | Yes                      | No                           |
+|                                           | RetryRPCKeepAlivePeriod                  | No           | 60s                | Yes                      | No                           |
 | Logging                                   | LogFilePath                              | No           | <i>None</i>        | Yes                      | No                           |
 |                                           | LogToConsole                             | No           | false              | Yes                      | No                           |
 |                                           | TraceLevelLogging                        | No           | <i>None</i>        | Yes                      | No                           |
