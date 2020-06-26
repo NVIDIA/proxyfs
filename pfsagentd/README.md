@@ -71,7 +71,6 @@ FUSEMaxBackground:                                          100
 FUSECongestionThreshhold:                                     0
 FUSEMaxWrite:                                            131072
 RetryRPCDeadlineIO:                                         60s
-RetryRPCKEEPALIVEPeriod:                                    60s
 ```
 
 In the above example, some important fields are as follows:

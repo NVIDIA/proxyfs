@@ -66,7 +66,6 @@ type ServerConfig struct {
 	IPAddr            string        // IP Address that Server uses to listen
 	Port              int           // Port that Server uses to listen
 	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod   time.Duration // How frequently a KEEPALIVE is sent
 	dontStartTrimmers bool          // Used for testing
 }
 
@@ -75,9 +74,14 @@ func NewServer(config *ServerConfig) *Server {
 	var (
 		err error
 	)
-	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
-		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepalivePeriod: config.KEEPALIVEPeriod, dontStartTrimmers: config.dontStartTrimmers}
+	server := &Server{
+		ipaddr:            config.IPAddr,
+		port:              config.Port,
+		completedLongTTL:  config.LongTrim,
+		completedAckTrim:  config.ShortTrim,
+		deadlineIO:        config.DeadlineIO,
+		dontStartTrimmers: config.dontStartTrimmers,
+	}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -317,7 +321,6 @@ type ClientConfig struct {
 	RootCAx509CertificatePEM []byte        // Root certificate
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod          time.Duration // How frequently a KEEPALIVE is sent
 }
 
 // TODO - pass loggers to Cient and Server objects
@@ -335,8 +338,11 @@ type ClientConfig struct {
 // starting point for requestID.
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
-	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
-		keepalivePeriod: config.KEEPALIVEPeriod, deadlineIO: config.DeadlineIO}
+	client = &Client{
+		myUniqueID: config.MyUniqueID,
+		cb:         config.Callbacks,
+		deadlineIO: config.DeadlineIO,
+	}
 	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)
