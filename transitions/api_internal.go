@@ -33,24 +33,32 @@ type volumeGroupStruct struct {
 	volumeList    map[string]*volumeStruct // Key: volumeStruct.name
 }
 
+type confMapDeltaStruct struct {
+	volumeGroupList       map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+	servedVolumeGroupList map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+	remoteVolumeGroupList map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+
+	createdVolumeGroupList   map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+	movedVolumeGroupList     map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+	destroyedVolumeGroupList map[string]*volumeGroupStruct // Key: volumeGroupStruct.name
+
+	volumeList       map[string]*volumeStruct // Key: volumeStruct.name
+	servedVolumeList map[string]*volumeStruct // Key: volumeStruct.name
+	remoteVolumeList map[string]*volumeStruct // Key: volumeStruct.name
+
+	createdVolumeList   map[string]*volumeStruct // Key: volumeStruct.name
+	movedVolumeList     map[string]*volumeStruct // Key: volumeStruct.name
+	destroyedVolumeList map[string]*volumeStruct // Key: volumeStruct.name
+
+	toStopServingVolumeList  map[string]*volumeStruct // Key: volumeStruct.name
+	toStartServingVolumeList map[string]*volumeStruct // Key: volumeStruct.name
+}
+
 type globalsStruct struct {
-	sync.Mutex               //                                    Used only for protecting insertions into registration{List|Set} during init() phase
-	registrationList         *list.List
-	registrationSet          map[string]*registrationItemStruct // Key: registrationItemStruct.packageName
-	currentVolumeGroupList   map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	servedVolumeGroupList    map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	remoteVolumeGroupList    map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	createdVolumeGroupList   map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	movedVolumeGroupList     map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	destroyedVolumeGroupList map[string]*volumeGroupStruct      // Key: volumeGroupStruct.name
-	currentVolumeList        map[string]*volumeStruct           // Key: volumeStruct.name
-	servedVolumeList         map[string]*volumeStruct           // Key: volumeStruct.name
-	remoteVolumeList         map[string]*volumeStruct           // Key: volumeStruct.name
-	createdVolumeList        map[string]*volumeStruct           // Key: volumeStruct.name
-	movedVolumeList          map[string]*volumeStruct           // Key: volumeStruct.name
-	destroyedVolumeList      map[string]*volumeStruct           // Key: volumeStruct.name
-	toStopServingVolumeList  map[string]*volumeStruct           // Key: volumeStruct.name
-	toStartServingVolumeList map[string]*volumeStruct           // Key: volumeStruct.name
+	sync.Mutex          //                                    Used only for protecting insertions into registration{List|Set} during init() phase
+	registrationList    *list.List
+	registrationSet     map[string]*registrationItemStruct // Key: registrationItemStruct.packageName
+	currentConfMapDelta *confMapDeltaStruct
 }
 
 var globals globalsStruct
@@ -83,6 +91,7 @@ func register(packageName string, callbacks Callbacks) {
 
 func up(confMap conf.ConfMap) (err error) {
 	var (
+		newConfMapDelta                        *confMapDeltaStruct
 		registrationItem                       *registrationItemStruct
 		registrationListElement                *list.Element
 		registrationListPackageNameStringSlice []string
@@ -101,35 +110,50 @@ func up(confMap conf.ConfMap) (err error) {
 		}
 	}()
 
-	globals.currentVolumeGroupList = make(map[string]*volumeGroupStruct)
-	globals.servedVolumeGroupList = make(map[string]*volumeGroupStruct)
-	globals.remoteVolumeGroupList = make(map[string]*volumeGroupStruct)
+	globals.currentConfMapDelta = &confMapDeltaStruct{
+		volumeGroupList:       make(map[string]*volumeGroupStruct),
+		servedVolumeGroupList: make(map[string]*volumeGroupStruct),
+		remoteVolumeGroupList: make(map[string]*volumeGroupStruct),
 
-	globals.currentVolumeList = make(map[string]*volumeStruct)
-	globals.servedVolumeList = make(map[string]*volumeStruct)
-	globals.remoteVolumeList = make(map[string]*volumeStruct)
+		createdVolumeGroupList:   make(map[string]*volumeGroupStruct),
+		movedVolumeGroupList:     make(map[string]*volumeGroupStruct),
+		destroyedVolumeGroupList: make(map[string]*volumeGroupStruct),
 
-	err = computeConfMapDelta(confMap)
+		volumeList:       make(map[string]*volumeStruct),
+		servedVolumeList: make(map[string]*volumeStruct),
+		remoteVolumeList: make(map[string]*volumeStruct),
+
+		createdVolumeList:   make(map[string]*volumeStruct),
+		movedVolumeList:     make(map[string]*volumeStruct),
+		destroyedVolumeList: make(map[string]*volumeStruct),
+
+		toStopServingVolumeList:  make(map[string]*volumeStruct),
+		toStartServingVolumeList: make(map[string]*volumeStruct),
+	}
+
+	newConfMapDelta, err = computeConfMapDelta(confMap)
 	if nil != err {
 		return
 	}
 
-	if 0 != len(globals.movedVolumeGroupList) {
+	if 0 != len(newConfMapDelta.movedVolumeGroupList) {
 		err = fmt.Errorf("transitions.Up() did not expect movedVolumeGroupList to be non-empty")
 		return
 	}
-	if 0 != len(globals.destroyedVolumeGroupList) {
+	if 0 != len(newConfMapDelta.destroyedVolumeGroupList) {
 		err = fmt.Errorf("transitions.Up() did not expect destroyedVolumeGroupList to be non-empty")
 		return
 	}
-	if 0 != len(globals.movedVolumeList) {
+	if 0 != len(newConfMapDelta.movedVolumeList) {
 		err = fmt.Errorf("transitions.Up() did not expect movedVolumeList to be non-empty")
 		return
 	}
-	if 0 != len(globals.destroyedVolumeList) {
+	if 0 != len(newConfMapDelta.destroyedVolumeList) {
 		err = fmt.Errorf("transitions.Up() did not expect destroyedVolumeList to be non-empty")
 		return
 	}
+
+	globals.currentConfMapDelta = newConfMapDelta
 
 	// Issue Callbacks.Up() calls from Front() to Back() of globals.registrationList
 
@@ -167,7 +191,7 @@ func up(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeGroupName, volumeGroup = range globals.createdVolumeGroupList {
+		for volumeGroupName, volumeGroup = range globals.currentConfMapDelta.createdVolumeGroupList {
 			logger.Tracef("transitions.Up() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			err = registrationItem.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
@@ -185,7 +209,7 @@ func up(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.createdVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.createdVolumeList {
 			logger.Tracef("transitions.Up() calling %s.VolumeCreated(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
 			err = registrationItem.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
@@ -203,7 +227,7 @@ func up(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.servedVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.servedVolumeList {
 			logger.Tracef("transitions.Up() calling %s.ServeVolume(,%s)", registrationItem.packageName, volumeName)
 			err = registrationItem.callbacks.ServeVolume(confMap, volumeName)
 			if nil != err {
@@ -236,6 +260,7 @@ func up(confMap conf.ConfMap) (err error) {
 
 func signaled(confMap conf.ConfMap) (err error) {
 	var (
+		newConfMapDelta         *confMapDeltaStruct
 		registrationItem        *registrationItemStruct
 		registrationListElement *list.Element
 		volume                  *volumeStruct
@@ -253,9 +278,29 @@ func signaled(confMap conf.ConfMap) (err error) {
 		}
 	}()
 
-	err = computeConfMapDelta(confMap)
+	newConfMapDelta, err = computeConfMapDelta(confMap)
 	if nil != err {
 		return
+	}
+
+	globals.currentConfMapDelta = newConfMapDelta
+
+	// Issue Callbacks.VolumeToBeUnserved() calls from Back() to Front() of globals.registrationList
+
+	registrationListElement = globals.registrationList.Back()
+
+	for nil != registrationListElement {
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		for volumeName = range globals.currentConfMapDelta.toStopServingVolumeList {
+			logger.Tracef("transitions.Signaled() calling %s.VolumeToBeUnserved(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.VolumeToBeUnserved(confMap, volumeName)
+			if nil != err {
+				logger.Errorf("transitions.Signaled() call to %s.VolumeToBeUnserved(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.VolumeToBeUnserved(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				return
+			}
+		}
+		registrationListElement = registrationListElement.Prev()
 	}
 
 	// Issue Callbacks.SignaledStart() calls from Back() to Front() of globals.registrationList
@@ -280,7 +325,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName = range globals.toStopServingVolumeList {
+		for volumeName = range globals.currentConfMapDelta.toStopServingVolumeList {
 			logger.Tracef("transitions.Signaled() calling %s.UnserveVolume(,%s)", registrationItem.packageName, volumeName)
 			err = registrationItem.callbacks.UnserveVolume(confMap, volumeName)
 			if nil != err {
@@ -298,7 +343,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeGroupName, volumeGroup = range globals.createdVolumeGroupList {
+		for volumeGroupName, volumeGroup = range globals.currentConfMapDelta.createdVolumeGroupList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupCreated(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			err = registrationItem.callbacks.VolumeGroupCreated(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
@@ -316,7 +361,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.createdVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.createdVolumeList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeCreated(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
 			err = registrationItem.callbacks.VolumeCreated(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
@@ -334,7 +379,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeGroupName, volumeGroup = range globals.movedVolumeGroupList {
+		for volumeGroupName, volumeGroup = range globals.currentConfMapDelta.movedVolumeGroupList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupMoved(,%s,%s,%s)", registrationItem.packageName, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			err = registrationItem.callbacks.VolumeGroupMoved(confMap, volumeGroupName, volumeGroup.activePeer, volumeGroup.virtualIPAddr)
 			if nil != err {
@@ -352,7 +397,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.movedVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.movedVolumeList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeMoved(,%s,%s)", registrationItem.packageName, volumeName, volume.volumeGroup.name)
 			err = registrationItem.callbacks.VolumeMoved(confMap, volumeName, volume.volumeGroup.name)
 			if nil != err {
@@ -370,7 +415,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.destroyedVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.destroyedVolumeList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeDestroyed(,%s)", registrationItem.packageName, volumeName)
 			err = registrationItem.callbacks.VolumeDestroyed(confMap, volumeName)
 			if nil != err {
@@ -388,7 +433,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeGroupName = range globals.destroyedVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.destroyedVolumeGroupList {
 			logger.Tracef("transitions.Signaled() calling %s.VolumeGroupDestroyed(,%s)", registrationItem.packageName, volumeGroupName)
 			err = registrationItem.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
 			if nil != err {
@@ -406,7 +451,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName, volume = range globals.toStartServingVolumeList {
+		for volumeName, volume = range globals.currentConfMapDelta.toStartServingVolumeList {
 			if volume.served {
 				logger.Tracef("transitions.Signaled() calling %s.ServeVolume(,%s)", registrationItem.packageName, volumeGroupName)
 				err = registrationItem.callbacks.ServeVolume(confMap, volumeName)
@@ -441,6 +486,7 @@ func signaled(confMap conf.ConfMap) (err error) {
 
 func down(confMap conf.ConfMap) (err error) {
 	var (
+		newConfMapDelta         *confMapDeltaStruct
 		registrationItem        *registrationItemStruct
 		registrationListElement *list.Element
 		volumeGroupName         string
@@ -455,34 +501,54 @@ func down(confMap conf.ConfMap) (err error) {
 		}
 	}()
 
-	err = computeConfMapDelta(confMap)
+	newConfMapDelta, err = computeConfMapDelta(confMap)
 	if nil != err {
 		return
 	}
 
-	if 0 != len(globals.createdVolumeGroupList) {
+	if 0 != len(newConfMapDelta.createdVolumeGroupList) {
 		err = fmt.Errorf("transitions.Down() did not expect createdVolumeGroupList to be non-empty")
 		return
 	}
-	if 0 != len(globals.movedVolumeGroupList) {
+	if 0 != len(newConfMapDelta.movedVolumeGroupList) {
 		err = fmt.Errorf("transitions.Down() did not expect movedVolumeGroupList to be non-empty")
 		return
 	}
-	if 0 != len(globals.destroyedVolumeGroupList) {
+	if 0 != len(newConfMapDelta.destroyedVolumeGroupList) {
 		err = fmt.Errorf("transitions.Down() did not expect destroyedVolumeGroupList to be non-empty")
 		return
 	}
-	if 0 != len(globals.createdVolumeList) {
+	if 0 != len(newConfMapDelta.createdVolumeList) {
 		err = fmt.Errorf("transitions.Down() did not expect createdVolumeList to be non-empty")
 		return
 	}
-	if 0 != len(globals.movedVolumeList) {
+	if 0 != len(newConfMapDelta.movedVolumeList) {
 		err = fmt.Errorf("transitions.Down() did not expect movedVolumeList to be non-empty")
 		return
 	}
-	if 0 != len(globals.destroyedVolumeList) {
+	if 0 != len(newConfMapDelta.destroyedVolumeList) {
 		err = fmt.Errorf("transitions.Down() did not expect destroyedVolumeList to be non-empty")
 		return
+	}
+
+	globals.currentConfMapDelta = newConfMapDelta
+
+	// Issue Callbacks.VolumeToBeUnserved() calls from Back() to Front() of globals.registrationList
+
+	registrationListElement = globals.registrationList.Back()
+
+	for nil != registrationListElement {
+		registrationItem = registrationListElement.Value.(*registrationItemStruct)
+		for volumeName = range globals.currentConfMapDelta.servedVolumeList {
+			logger.Tracef("transitions.Signaled() calling %s.VolumeToBeUnserved(,%s)", registrationItem.packageName, volumeName)
+			err = registrationItem.callbacks.VolumeToBeUnserved(confMap, volumeName)
+			if nil != err {
+				logger.Errorf("transitions.Signaled() call to %s.VolumeToBeUnserved(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				err = fmt.Errorf("%s.VolumeToBeUnserved(,%s) failed: %v", registrationItem.packageName, volumeName, err)
+				return
+			}
+		}
+		registrationListElement = registrationListElement.Prev()
 	}
 
 	// Issue Callbacks.SignaledStart() calls from Back() to Front() of globals.registrationList
@@ -507,7 +573,7 @@ func down(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName = range globals.servedVolumeList {
+		for volumeName = range globals.currentConfMapDelta.servedVolumeList {
 			logger.Tracef("transitions.Down() calling %s.UnserveVolume(,%s)", registrationItem.packageName, volumeName)
 			err = registrationItem.callbacks.UnserveVolume(confMap, volumeName)
 			if nil != err {
@@ -525,7 +591,7 @@ func down(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeName = range globals.currentVolumeList {
+		for volumeName = range globals.currentConfMapDelta.volumeList {
 			logger.Tracef("transitions.Down() calling %s.VolumeDestroyed(,%s)", registrationItem.packageName, volumeName)
 			err = registrationItem.callbacks.VolumeDestroyed(confMap, volumeName)
 			if nil != err {
@@ -543,7 +609,7 @@ func down(confMap conf.ConfMap) (err error) {
 
 	for nil != registrationListElement {
 		registrationItem = registrationListElement.Value.(*registrationItemStruct)
-		for volumeGroupName = range globals.currentVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.volumeGroupList {
 			logger.Tracef("transitions.Down() calling %s.VolumeGroupDestroyed(,%s)", registrationItem.packageName, volumeGroupName)
 			err = registrationItem.callbacks.VolumeGroupDestroyed(confMap, volumeGroupName)
 			if nil != err {
@@ -574,24 +640,18 @@ func down(confMap conf.ConfMap) (err error) {
 	return
 }
 
-func computeConfMapDelta(confMap conf.ConfMap) (err error) {
+func computeConfMapDelta(confMap conf.ConfMap) (newConfMapDelta *confMapDeltaStruct, err error) {
 	var (
-		fsGlobalsVolumeGroupList  []string
-		newCurrentVolumeGroupList map[string]*volumeGroupStruct
-		newCurrentVolumeList      map[string]*volumeStruct
-		newRemoteVolumeGroupList  map[string]*volumeGroupStruct
-		newRemoteVolumeList       map[string]*volumeStruct
-		newServedVolumeGroupList  map[string]*volumeGroupStruct
-		newServedVolumeList       map[string]*volumeStruct
-		ok                        bool
-		volume                    *volumeStruct
-		volumeGroup               *volumeGroupStruct
-		volumeGroupName           string
-		volumeGroupVolumeList     []string
-		volumeGroupPreviously     *volumeGroupStruct
-		volumeName                string
-		volumePreviously          *volumeStruct
-		whoAmI                    string
+		fsGlobalsVolumeGroupList []string
+		ok                       bool
+		volume                   *volumeStruct
+		volumeGroup              *volumeGroupStruct
+		volumeGroupName          string
+		volumeGroupVolumeList    []string
+		volumeGroupPreviously    *volumeGroupStruct
+		volumeName               string
+		volumePreviously         *volumeStruct
+		whoAmI                   string
 	)
 
 	// TODO: Remove call to upgradeConfMapIfNeeded() once backwards compatibility is no longer required
@@ -601,26 +661,28 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 		return
 	}
 
-	// Initialize lists used in computation (those in globalsStruct are actually the func output)
+	// Initialize lists used in computation
 
-	newCurrentVolumeGroupList = make(map[string]*volumeGroupStruct)
-	newServedVolumeGroupList = make(map[string]*volumeGroupStruct)
-	newRemoteVolumeGroupList = make(map[string]*volumeGroupStruct)
+	newConfMapDelta = &confMapDeltaStruct{
+		volumeGroupList:       make(map[string]*volumeGroupStruct),
+		servedVolumeGroupList: make(map[string]*volumeGroupStruct),
+		remoteVolumeGroupList: make(map[string]*volumeGroupStruct),
 
-	globals.createdVolumeGroupList = make(map[string]*volumeGroupStruct)
-	globals.movedVolumeGroupList = make(map[string]*volumeGroupStruct)
-	globals.destroyedVolumeGroupList = make(map[string]*volumeGroupStruct)
+		createdVolumeGroupList:   make(map[string]*volumeGroupStruct),
+		movedVolumeGroupList:     make(map[string]*volumeGroupStruct),
+		destroyedVolumeGroupList: make(map[string]*volumeGroupStruct),
 
-	newCurrentVolumeList = make(map[string]*volumeStruct)
-	newServedVolumeList = make(map[string]*volumeStruct)
-	newRemoteVolumeList = make(map[string]*volumeStruct)
+		volumeList:       make(map[string]*volumeStruct),
+		servedVolumeList: make(map[string]*volumeStruct),
+		remoteVolumeList: make(map[string]*volumeStruct),
 
-	globals.createdVolumeList = make(map[string]*volumeStruct)
-	globals.movedVolumeList = make(map[string]*volumeStruct)
-	globals.destroyedVolumeList = make(map[string]*volumeStruct)
+		createdVolumeList:   make(map[string]*volumeStruct),
+		movedVolumeList:     make(map[string]*volumeStruct),
+		destroyedVolumeList: make(map[string]*volumeStruct),
 
-	globals.toStopServingVolumeList = make(map[string]*volumeStruct)
-	globals.toStartServingVolumeList = make(map[string]*volumeStruct)
+		toStopServingVolumeList:  make(map[string]*volumeStruct),
+		toStartServingVolumeList: make(map[string]*volumeStruct),
+	}
 
 	// Injest confMap
 
@@ -637,7 +699,7 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 	for _, volumeGroupName = range fsGlobalsVolumeGroupList {
 		volumeGroup = &volumeGroupStruct{name: volumeGroupName, volumeList: make(map[string]*volumeStruct)}
 
-		newCurrentVolumeGroupList[volumeGroupName] = volumeGroup
+		newConfMapDelta.volumeGroupList[volumeGroupName] = volumeGroup
 
 		volumeGroup.activePeer, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupName, "PrimaryPeer")
 		if nil != err {
@@ -651,9 +713,9 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 		volumeGroup.served = (whoAmI == volumeGroup.activePeer)
 
 		if volumeGroup.served {
-			newServedVolumeGroupList[volumeGroupName] = volumeGroup
+			newConfMapDelta.servedVolumeGroupList[volumeGroupName] = volumeGroup
 		} else {
-			newRemoteVolumeGroupList[volumeGroupName] = volumeGroup
+			newConfMapDelta.remoteVolumeGroupList[volumeGroupName] = volumeGroup
 		}
 
 		volumeGroup.virtualIPAddr, err = confMap.FetchOptionValueString("VolumeGroup:"+volumeGroupName, "VirtualIPAddr")
@@ -673,12 +735,12 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 		for _, volumeName = range volumeGroupVolumeList {
 			volume = &volumeStruct{name: volumeName, served: volumeGroup.served, volumeGroup: volumeGroup}
 
-			newCurrentVolumeList[volumeName] = volume
+			newConfMapDelta.volumeList[volumeName] = volume
 
 			if volume.served {
-				newServedVolumeList[volumeName] = volume
+				newConfMapDelta.servedVolumeList[volumeName] = volume
 			} else {
-				newRemoteVolumeList[volumeName] = volume
+				newConfMapDelta.remoteVolumeList[volumeName] = volume
 			}
 
 			volumeGroup.volumeList[volumeName] = volume
@@ -687,97 +749,91 @@ func computeConfMapDelta(confMap conf.ConfMap) (err error) {
 
 	// Compute changes to VolumeGroupList
 
-	for volumeGroupName, volumeGroup = range newCurrentVolumeGroupList {
-		volumeGroupPreviously, ok = globals.currentVolumeGroupList[volumeGroupName]
+	for volumeGroupName, volumeGroup = range newConfMapDelta.volumeGroupList {
+		volumeGroupPreviously, ok = globals.currentConfMapDelta.volumeGroupList[volumeGroupName]
 		if ok {
 			if volumeGroupPreviously.activePeer != volumeGroup.activePeer {
-				globals.movedVolumeGroupList[volumeGroupName] = volumeGroup
+				newConfMapDelta.movedVolumeGroupList[volumeGroupName] = volumeGroup
 			}
 		} else {
-			globals.createdVolumeGroupList[volumeGroupName] = volumeGroup
+			newConfMapDelta.createdVolumeGroupList[volumeGroupName] = volumeGroup
 		}
 	}
 
-	for volumeGroupName, volumeGroup = range globals.currentVolumeGroupList {
-		_, ok = newCurrentVolumeGroupList[volumeGroupName]
+	for volumeGroupName, volumeGroup = range globals.currentConfMapDelta.volumeGroupList {
+		_, ok = newConfMapDelta.volumeGroupList[volumeGroupName]
 		if !ok {
-			globals.destroyedVolumeGroupList[volumeGroupName] = volumeGroup
+			newConfMapDelta.destroyedVolumeGroupList[volumeGroupName] = volumeGroup
 		}
 	}
 
 	// Compute changes to VolumeList
 
-	for volumeName, volume = range newCurrentVolumeList {
-		volumePreviously, ok = globals.currentVolumeList[volumeName]
+	for volumeName, volume = range newConfMapDelta.volumeList {
+		volumePreviously, ok = globals.currentConfMapDelta.volumeList[volumeName]
 		if ok {
 			if volumePreviously.volumeGroup.name != volume.volumeGroup.name {
-				globals.movedVolumeList[volumeName] = volume
+				newConfMapDelta.movedVolumeList[volumeName] = volume
 			}
 		} else {
-			globals.createdVolumeList[volumeName] = volume
+			newConfMapDelta.createdVolumeList[volumeName] = volume
 		}
 	}
 
-	for volumeName, volume = range globals.currentVolumeList {
-		_, ok = newCurrentVolumeList[volumeName]
+	for volumeName, volume = range globals.currentConfMapDelta.volumeList {
+		_, ok = newConfMapDelta.volumeList[volumeName]
 		if !ok {
-			globals.destroyedVolumeList[volumeName] = volume
+			newConfMapDelta.destroyedVolumeList[volumeName] = volume
 		}
 	}
 
 	// Compute to{Stop|Start}ServingVolumeList
 
-	for volumeName, volume = range globals.destroyedVolumeList {
-		_, ok = globals.servedVolumeList[volumeName]
+	for volumeName, volume = range newConfMapDelta.destroyedVolumeList {
+		_, ok = globals.currentConfMapDelta.servedVolumeList[volumeName]
 		if ok {
-			globals.toStopServingVolumeList[volumeName] = volume
+			newConfMapDelta.toStopServingVolumeList[volumeName] = volume
 		}
 	}
-	for volumeName, volume = range globals.movedVolumeList {
-		_, ok = globals.servedVolumeList[volumeName]
+	for volumeName, volume = range newConfMapDelta.movedVolumeList {
+		_, ok = globals.currentConfMapDelta.servedVolumeList[volumeName]
 		if ok {
-			globals.toStopServingVolumeList[volumeName] = volume
+			newConfMapDelta.toStopServingVolumeList[volumeName] = volume
 		}
 	}
-	for _, volumeGroup = range globals.movedVolumeGroupList {
+	for _, volumeGroup = range newConfMapDelta.movedVolumeGroupList {
 		for volumeName, volume = range volumeGroup.volumeList {
-			_, ok = globals.servedVolumeList[volumeName]
+			_, ok = globals.currentConfMapDelta.servedVolumeList[volumeName]
 			if ok {
-				globals.toStopServingVolumeList[volumeName] = volume
+				newConfMapDelta.toStopServingVolumeList[volumeName] = volume
 			}
 		}
 	}
 
-	for _, volumeGroup = range globals.movedVolumeGroupList {
+	for _, volumeGroup = range newConfMapDelta.movedVolumeGroupList {
 		for volumeName, volume = range volumeGroup.volumeList {
-			_, ok = newServedVolumeList[volumeName]
+			_, ok = newConfMapDelta.servedVolumeList[volumeName]
 			if ok {
-				globals.toStartServingVolumeList[volumeName] = volume
+				newConfMapDelta.toStartServingVolumeList[volumeName] = volume
 			}
 		}
 	}
-	for volumeName, volume = range globals.movedVolumeList {
-		_, ok = newServedVolumeList[volumeName]
+	for volumeName, volume = range newConfMapDelta.movedVolumeList {
+		_, ok = newConfMapDelta.servedVolumeList[volumeName]
 		if ok {
-			globals.toStartServingVolumeList[volumeName] = volume
+			newConfMapDelta.toStartServingVolumeList[volumeName] = volume
 		}
 	}
-	for volumeName, volume = range globals.createdVolumeList {
-		_, ok = newServedVolumeList[volumeName]
+	for volumeName, volume = range newConfMapDelta.createdVolumeList {
+		_, ok = newConfMapDelta.servedVolumeList[volumeName]
 		if ok {
-			globals.toStartServingVolumeList[volumeName] = volume
+			newConfMapDelta.toStartServingVolumeList[volumeName] = volume
 		}
 	}
 
-	// Finally, update {current|served|remote}Volume{|Group}List fields in globalsStruct
+	// All done
 
-	globals.currentVolumeGroupList = newCurrentVolumeGroupList
-	globals.servedVolumeGroupList = newServedVolumeGroupList
-	globals.remoteVolumeGroupList = newRemoteVolumeGroupList
-	globals.currentVolumeList = newCurrentVolumeList
-	globals.servedVolumeList = newServedVolumeList
-	globals.remoteVolumeList = newRemoteVolumeList
-
+	err = nil
 	return
 }
 
@@ -1037,6 +1093,10 @@ func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) UnserveVolume(co
 	return nil
 }
 
+func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil
+}
+
 func (loggerCallbacksInterface *loggerCallbacksInterfaceStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	return logger.SignaledStart(confMap)
 }
@@ -1073,11 +1133,11 @@ func dumpGlobals(indent string) {
 		fmt.Println()
 	}
 
-	if 0 == len(globals.currentVolumeGroupList) {
-		fmt.Printf("%scurrentVolumeGroupList: <empty>\n", indent)
+	if 0 == len(globals.currentConfMapDelta.volumeGroupList) {
+		fmt.Printf("%svolumeGroupList: <empty>\n", indent)
 	} else {
-		fmt.Printf("%scurrentVolumeGroupList:\n", indent)
-		for volumeGroupName, volumeGroup = range globals.currentVolumeGroupList {
+		fmt.Printf("%svolumeGroupList:\n", indent)
+		for volumeGroupName, volumeGroup = range globals.currentConfMapDelta.volumeGroupList {
 			fmt.Printf("%s  %+v [volumeList:", indent, volumeGroup)
 			for volumeName = range volumeGroup.volumeList {
 				fmt.Printf(" %s", volumeName)
@@ -1086,130 +1146,130 @@ func dumpGlobals(indent string) {
 		}
 	}
 
-	if 0 == len(globals.servedVolumeGroupList) {
+	if 0 == len(globals.currentConfMapDelta.servedVolumeGroupList) {
 		fmt.Printf("%sservedVolumeGroupList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sservedVolumeGroupList:", indent)
-		for volumeGroupName = range globals.servedVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.servedVolumeGroupList {
 			fmt.Printf(" %s", volumeGroupName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.remoteVolumeGroupList) {
+	if 0 == len(globals.currentConfMapDelta.remoteVolumeGroupList) {
 		fmt.Printf("%sremoteVolumeGroupList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sremoteVolumeGroupList:", indent)
-		for volumeGroupName = range globals.remoteVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.remoteVolumeGroupList {
 			fmt.Printf(" %s", volumeGroupName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.createdVolumeGroupList) {
+	if 0 == len(globals.currentConfMapDelta.createdVolumeGroupList) {
 		fmt.Printf("%screatedVolumeGroupList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%screatedVolumeGroupList:", indent)
-		for volumeGroupName = range globals.createdVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.createdVolumeGroupList {
 			fmt.Printf(" %s", volumeGroupName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.movedVolumeGroupList) {
+	if 0 == len(globals.currentConfMapDelta.movedVolumeGroupList) {
 		fmt.Printf("%smovedVolumeGroupList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%smovedVolumeGroupList:", indent)
-		for volumeGroupName = range globals.movedVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.movedVolumeGroupList {
 			fmt.Printf(" %s", volumeGroupName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.destroyedVolumeGroupList) {
+	if 0 == len(globals.currentConfMapDelta.destroyedVolumeGroupList) {
 		fmt.Printf("%sdestroyedVolumeGroupList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sdestroyedVolumeGroupList:", indent)
-		for volumeGroupName = range globals.destroyedVolumeGroupList {
+		for volumeGroupName = range globals.currentConfMapDelta.destroyedVolumeGroupList {
 			fmt.Printf(" %s", volumeGroupName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.currentVolumeList) {
-		fmt.Printf("%scurrentVolumeList: <empty>\n", indent)
+	if 0 == len(globals.currentConfMapDelta.volumeList) {
+		fmt.Printf("%svolumeList: <empty>\n", indent)
 	} else {
-		fmt.Printf("%scurrentVolumeList:\n", indent)
-		for volumeName, volume = range globals.currentVolumeList {
+		fmt.Printf("%svolumeList:\n", indent)
+		for volumeName, volume = range globals.currentConfMapDelta.volumeList {
 			fmt.Printf("%s  %+v [volumeGroup: %s]\n", indent, volume, volume.volumeGroup.name)
 		}
 	}
 
-	if 0 == len(globals.servedVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.servedVolumeList) {
 		fmt.Printf("%sservedVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sservedVolumeList:", indent)
-		for volumeName = range globals.servedVolumeList {
+		for volumeName = range globals.currentConfMapDelta.servedVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.remoteVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.remoteVolumeList) {
 		fmt.Printf("%sremoteVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sremoteVolumeList:", indent)
-		for volumeName = range globals.remoteVolumeList {
+		for volumeName = range globals.currentConfMapDelta.remoteVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.createdVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.createdVolumeList) {
 		fmt.Printf("%screatedVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%screatedVolumeList:", indent)
-		for volumeName = range globals.createdVolumeList {
+		for volumeName = range globals.currentConfMapDelta.createdVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.movedVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.movedVolumeList) {
 		fmt.Printf("%smovedVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%smovedVolumeList:", indent)
-		for volumeName = range globals.movedVolumeList {
+		for volumeName = range globals.currentConfMapDelta.movedVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.destroyedVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.destroyedVolumeList) {
 		fmt.Printf("%sdestroyedVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%sdestroyedVolumeList:", indent)
-		for volumeName = range globals.destroyedVolumeList {
+		for volumeName = range globals.currentConfMapDelta.destroyedVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.toStopServingVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.toStopServingVolumeList) {
 		fmt.Printf("%stoStopServingVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%stoStopServingVolumeList:", indent)
-		for volumeName = range globals.toStopServingVolumeList {
+		for volumeName = range globals.currentConfMapDelta.toStopServingVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()
 	}
 
-	if 0 == len(globals.toStartServingVolumeList) {
+	if 0 == len(globals.currentConfMapDelta.toStartServingVolumeList) {
 		fmt.Printf("%stoStartServingVolumeList: <empty>\n", indent)
 	} else {
 		fmt.Printf("%stoStartServingVolumeList:", indent)
-		for volumeName = range globals.toStartServingVolumeList {
+		for volumeName = range globals.currentConfMapDelta.toStartServingVolumeList {
 			fmt.Printf(" %s", volumeName)
 		}
 		fmt.Println()

@@ -81,6 +81,9 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.TCPPort=12346",     // 12346 instead of 12345 so that test can run if proxyfsd is already running
 		"JSONRPCServer.FastTCPPort=32346", // ...and similarly here...
 		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.MinLeaseDuration=250ms",
+		"JSONRPCServer.LeaseInterruptInterval=250ms",
+		"JSONRPCServer.LeaseInterruptLimit=20",
 		"RamSwiftInfo.MaxAccountNameLength=256",
 		"RamSwiftInfo.MaxContainerNameLength=256",
 		"RamSwiftInfo.MaxObjectNameLength=1024",

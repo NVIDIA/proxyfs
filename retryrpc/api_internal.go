@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -37,6 +38,21 @@ const (
 
 type requestID uint64
 
+// Useful stats for the clientInfo instance
+type statsInfo struct {
+	AddCompleted           bucketstats.Total           // Number added to completed list
+	RmCompleted            bucketstats.Total           // Number removed from completed list
+	RPCLenUsec             bucketstats.BucketLog2Round // Tracks length of RPCs
+	ReplySize              bucketstats.BucketLog2Round // Tracks completed RPC reply size
+	longestRPC             time.Duration               // Time of longest RPC
+	longestRPCMethod       string                      // Method of longest RPC
+	largestReplySize       uint64                      // Tracks largest RPC reply size
+	largestReplySizeMethod string                      // Method of largest RPC reply size completed
+	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
+	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
+	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
+}
+
 // Server side data structure storing per client information
 // such as completed requests, etc
 type clientInfo struct {
@@ -47,6 +63,7 @@ type clientInfo struct {
 	completedRequestLRU      *list.List                    // LRU used to remove completed request in ticker
 	highestReplySeen         requestID                     // Highest consectutive requestID client has seen
 	previousHighestReplySeen requestID                     // Previous highest consectutive requestID client has seen
+	stats                    statsInfo
 }
 
 type completedEntry struct {

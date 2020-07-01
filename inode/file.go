@@ -22,6 +22,11 @@ type fileExtentStruct struct {
 }
 
 func (vS *volumeStruct) CreateFile(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (fileInodeNumber InodeNumber, err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	fileInode, err := vS.createFileInode(filePerm, userID, groupID)
 	if err != nil {
 		return 0, err
@@ -761,6 +766,11 @@ func recordWrite(fileInode *inMemoryInodeStruct, fileOffset uint64, length uint6
 }
 
 func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error) {
+	err = enforceRWMode(true)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("Write() on non-LiveView fileInodeNumber not allowed")
@@ -809,6 +819,11 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 }
 
 func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	if (len(fileOffset) != len(objectOffset)) || (len(objectOffset) != len(length)) {
 		err = fmt.Errorf("Wrote() called with unequal # of fileOffset's (%d), objectOffset's (%d), and length's (%d)", len(fileOffset), len(objectOffset), len(length))
 		return
@@ -887,6 +902,11 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string,
 }
 
 func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	snapShotIDType, _, _ := vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(fileInodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
 		err = fmt.Errorf("SetSize() on non-LiveView fileInodeNumber not allowed")
@@ -921,6 +941,11 @@ func (vS *volumeStruct) SetSize(fileInodeNumber InodeNumber, size uint64) (err e
 }
 
 func (vS *volumeStruct) Flush(fileInodeNumber InodeNumber, andPurge bool) (err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	fileInode, ok, err := vS.fetchInode(fileInodeNumber)
 	if nil != err {
 		// this indicates disk corruption or software bug
@@ -1003,10 +1028,7 @@ func (vS *volumeStruct) resetFileInodeInMemory(fileInode *inMemoryInodeStruct) (
 	return
 }
 
-func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string,
-	metaData []byte, elements []*CoalesceElement) (
-	attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error) {
-
+func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error) {
 	var (
 		alreadyInInodeMap                  bool
 		coalesceTime                       time.Time
@@ -1028,6 +1050,11 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 		ok                                 bool
 		snapShotIDType                     headhunter.SnapShotIDType
 	)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	// Validate all referenced {Dir|File}Inodes
 
@@ -1244,6 +1271,11 @@ func (vS *volumeStruct) DefragmentFile(fileInodeNumber InodeNumber, startingFile
 		chunkSizeCapped uint64
 		fileInode       *inMemoryInodeStruct
 	)
+
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
 
 	fileInode, err = vS.fetchInodeType(fileInodeNumber, FileType)
 	if nil != err {

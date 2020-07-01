@@ -17,19 +17,19 @@ import (
 
 var (
 	testConfMap          conf.ConfMap
-	testMountStruct      *mountStruct // our global mountStruct to be used in tests
-	testRamswiftDoneChan chan bool    // our test chan used during testTeardown() to know ramswift is, indeed, down
+	testRamswiftDoneChan chan bool     // our test chan used during testTeardown() to know ramswift is, indeed, down
+	testVolumeStruct     *volumeStruct // our global volumeStruct to be used in tests
 )
 
 func testSetup(t *testing.T, starvationMode bool) {
 	var (
 		err                    error
-		mountHandle            MountHandle
 		ok                     bool
 		signalHandlerIsArmedWG sync.WaitGroup
 		testConfMapStrings     []string
 		testConfUpdateStrings  []string
 		testDir                string
+		testVolumeHandle       VolumeHandle
 	)
 
 	testDir, err = ioutil.TempDir(os.TempDir(), "ProxyFS_test_fs_")
@@ -155,11 +155,11 @@ func testSetup(t *testing.T, starvationMode bool) {
 		t.Fatalf("transitions.Up() failed: %v", err)
 	}
 
-	mountHandle, err = MountByVolumeName("TestVolume", MountOptions(0))
+	testVolumeHandle, err = FetchVolumeHandleByVolumeName("TestVolume")
 	if nil != err {
-		t.Fatalf("fs.Mount() failed: %v", err)
+		t.Fatalf("fs.FetchVolumeHandleByVolumeName() failed: %v", err)
 	}
-	testMountStruct, ok = mountHandle.(*mountStruct)
+	testVolumeStruct, ok = testVolumeHandle.(*volumeStruct)
 	if !ok {
 		t.Fatalf("fs.Mount() returned !ok")
 	}

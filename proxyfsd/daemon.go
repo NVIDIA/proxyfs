@@ -144,6 +144,7 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 			if signalReceived != unix.SIGTERM && signalReceived != unix.SIGINT {
 				logger.Errorf("proxyfsd received unexpected signal: %v", signalReceived)
 			}
+
 			return
 		}
 

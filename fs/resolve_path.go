@@ -192,7 +192,7 @@ func (heldLocks *heldLocksStruct) free() {
 //
 //     heldLocks.free()
 //
-func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options resolvePathOption) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, dirEntryInodeType inode.InodeType, retryRequired bool, err error) {
+func (vS *volumeStruct) resolvePath(startingInodeNumber inode.InodeNumber, path string, heldLocks *heldLocksStruct, options resolvePathOption) (dirInodeNumber inode.InodeNumber, dirEntryInodeNumber inode.InodeNumber, dirEntryBasename string, dirEntryInodeType inode.InodeType, retryRequired bool, err error) {
 	var (
 		dirEntryInodeLock                 *dlm.RWLockStruct
 		dirEntryInodeLockAlreadyExclusive bool
@@ -241,7 +241,7 @@ func (mS *mountStruct) resolvePath(startingInodeNumber inode.InodeNumber, path s
 	// Setup shortcuts/contants
 
 	dlmCallerID = dlm.GenerateCallerID()
-	inodeVolumeHandle = mS.volStruct.inodeVolumeHandle
+	inodeVolumeHandle = vS.inodeVolumeHandle
 
 	// Prepare for SymlinkInode-restart handling on canonicalized path
 
@@ -965,7 +965,7 @@ func reCanonicalizePathForSymlink(canonicalizedPathSplit []string, symlinkIndex 
 //
 // Note that a dirInodeIndex == -1 is possible
 //
-func (mS *mountStruct) canonicalizePathAndLocateLeafDirInode(path string) (canonicalizedPathSplit []string, dirInodeIndex int, err error) {
+func (vS *volumeStruct) canonicalizePathAndLocateLeafDirInode(path string) (canonicalizedPathSplit []string, dirInodeIndex int, err error) {
 	var (
 		dirEntryInodeType     inode.InodeType
 		heldLocks             *heldLocksStruct
@@ -991,7 +991,7 @@ Restart:
 	heldLocks = newHeldLocks()
 
 	_, _, _, dirEntryInodeType, retryRequired, err =
-		mS.resolvePath(
+		vS.resolvePath(
 			inode.RootDirInodeNumber,
 			strings.Join(canonicalizedPathSplit, "/"),
 			heldLocks,

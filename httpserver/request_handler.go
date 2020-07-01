@@ -1030,14 +1030,14 @@ func doDefrag(responseWriter http.ResponseWriter, request *http.Request, request
 	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
 		dirInodeNumber = dirEntryInodeNumber
 
-		dirEntryInodeNumber, err = requestState.volume.fsMountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
+		dirEntryInodeNumber, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusNotFound)
 			return
 		}
 	}
 
-	err = requestState.volume.fsMountHandle.DefragmentFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber)
+	err = requestState.volume.fsVolumeHandle.DefragmentFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber)
 
 	if nil == err {
 		responseWriter.WriteHeader(http.StatusOK)
@@ -1087,7 +1087,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 
 	for ; pathPartIndex < requestState.numPathParts; pathPartIndex++ {
 		dirInodeNumber = dirEntryInodeNumber
-		dirEntryInodeNumber, err = requestState.volume.fsMountHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
+		dirEntryInodeNumber, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirInodeNumber, requestState.pathSplit[pathPartIndex+1])
 		if nil != err {
 			if requestState.formatResponseAsJSON {
 				responseWriter.WriteHeader(http.StatusNotFound)
@@ -1102,7 +1102,7 @@ func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requ
 		}
 	}
 
-	extentMapChunk, err = requestState.volume.fsMountHandle.FetchExtentMapChunk(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber, uint64(0), math.MaxInt64, int64(0))
+	extentMapChunk, err = requestState.volume.fsVolumeHandle.FetchExtentMapChunk(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber, uint64(0), math.MaxInt64, int64(0))
 	if nil != err {
 		if requestState.formatResponseAsJSON {
 			responseWriter.WriteHeader(http.StatusNotFound)

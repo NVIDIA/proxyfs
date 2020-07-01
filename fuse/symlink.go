@@ -14,8 +14,8 @@ import (
 )
 
 type Symlink struct {
-	mountHandle fs.MountHandle
-	inodeNumber inode.InodeNumber
+	volumeHandle fs.VolumeHandle
+	inodeNumber  inode.InodeNumber
 }
 
 func (s Symlink) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
@@ -26,7 +26,7 @@ func (s Symlink) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	stat, err = s.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, s.inodeNumber)
+	stat, err = s.volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, s.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -62,7 +62,7 @@ func (s Symlink) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp 
 	enterGate()
 	defer leaveGate()
 
-	stat, err = s.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
+	stat, err = s.volumeHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -101,7 +101,7 @@ func (s Symlink) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp 
 		statUpdates[fs.StatCRTime] = uint64(req.Crtime.UnixNano())
 	}
 
-	err = s.mountHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber, statUpdates)
+	err = s.volumeHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber, statUpdates)
 	if nil != err {
 		err = newFuseError(err)
 	}
@@ -114,7 +114,7 @@ func (s Symlink) Fsync(ctx context.Context, req *fuselib.FsyncRequest) error {
 }
 
 func (s Symlink) Readlink(ctx context.Context, req *fuselib.ReadlinkRequest) (string, error) {
-	target, err := s.mountHandle.Readsymlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
+	target, err := s.volumeHandle.Readsymlink(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, s.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 	}

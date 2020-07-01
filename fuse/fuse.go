@@ -14,12 +14,12 @@ import (
 )
 
 type ProxyFUSE struct {
-	mountHandle fs.MountHandle
-	wg          sync.WaitGroup // Used to synchronize mount
+	volumeHandle fs.VolumeHandle
+	wg           sync.WaitGroup // Used to synchronize mount
 }
 
 func (pfs *ProxyFUSE) Root() (fusefslib.Node, error) {
-	root := Dir{mountHandle: pfs.mountHandle, inodeNumber: inode.RootDirInodeNumber}
+	root := Dir{volumeHandle: pfs.volumeHandle, inodeNumber: inode.RootDirInodeNumber}
 
 	// Signal any waiters that we have completed mounting the volume.
 	// We know this because this call is only made after the user level FUSE
@@ -32,7 +32,7 @@ func (pfs *ProxyFUSE) Statfs(ctx context.Context, req *fuselib.StatfsRequest, re
 	enterGate()
 	defer leaveGate()
 
-	statvfs, err := pfs.mountHandle.StatVfs()
+	statvfs, err := pfs.volumeHandle.StatVfs()
 	if err != nil {
 		return newFuseError(err)
 	}

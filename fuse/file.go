@@ -15,15 +15,15 @@ import (
 )
 
 type File struct {
-	mountHandle fs.MountHandle
-	inodeNumber inode.InodeNumber
+	volumeHandle fs.VolumeHandle
+	inodeNumber  inode.InodeNumber
 }
 
 func (f File) Access(ctx context.Context, req *fuselib.AccessRequest) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	if f.mountHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, f.inodeNumber, inode.InodeMode(req.Mask)) {
+	if f.volumeHandle.Access(inode.InodeUserID(req.Uid), inode.InodeGroupID(req.Gid), nil, f.inodeNumber, inode.InodeMode(req.Mask)) {
 		err = nil
 	} else {
 		err = newFuseError(blunder.NewError(blunder.PermDeniedError, "EACCES"))
@@ -40,7 +40,7 @@ func (f File) Attr(ctx context.Context, attr *fuselib.Attr) (err error) {
 	enterGate()
 	defer leaveGate()
 
-	stat, err = f.mountHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, f.inodeNumber)
+	stat, err = f.volumeHandle.Getstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -78,7 +78,7 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 	enterGate()
 	defer leaveGate()
 
-	stat, err = f.mountHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
+	stat, err = f.volumeHandle.Getstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 		return
@@ -117,14 +117,14 @@ func (f File) Setattr(ctx context.Context, req *fuselib.SetattrRequest, resp *fu
 		statUpdates[fs.StatCRTime] = uint64(req.Crtime.UnixNano())
 	}
 
-	err = f.mountHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, statUpdates)
+	err = f.volumeHandle.Setstat(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, statUpdates)
 	if nil != err {
 		err = newFuseError(err)
 		return
 	}
 
 	if 0 != (fuselib.SetattrSize & req.Valid) {
-		err = f.mountHandle.Resize(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, req.Size)
+		err = f.volumeHandle.Resize(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, req.Size)
 		if nil != err {
 			err = newFuseError(err)
 			return
@@ -151,7 +151,7 @@ func (f File) Fsync(ctx context.Context, req *fuselib.FsyncRequest) (err error) 
 	enterGate()
 	defer leaveGate()
 
-	err = f.mountHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
+	err = f.volumeHandle.Flush(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber)
 	if nil != err {
 		err = newFuseError(err)
 	}
@@ -162,7 +162,7 @@ func (f File) Read(ctx context.Context, req *fuselib.ReadRequest, resp *fuselib.
 	enterGate()
 	defer leaveGate()
 
-	buf, err := f.mountHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
+	buf, err := f.volumeHandle.Read(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), uint64(req.Size), nil)
 	if err != nil && err != io.EOF {
 		err = newFuseError(err)
 		return
@@ -183,7 +183,7 @@ func (f File) Write(ctx context.Context, req *fuselib.WriteRequest, resp *fuseli
 	bufferedData := make([]byte, len(req.Data), len(req.Data))
 	copy(bufferedData, req.Data)
 
-	size, err := f.mountHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), bufferedData, nil)
+	size, err := f.volumeHandle.Write(inode.InodeUserID(req.Header.Uid), inode.InodeGroupID(req.Header.Gid), nil, f.inodeNumber, uint64(req.Offset), bufferedData, nil)
 	if nil == err {
 		resp.Size = int(size)
 	} else {

@@ -93,6 +93,12 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | ChunkedConnectionPoolSize                | Yes          |                    | Yes                      | No                           |
 |                                           | NonChunkedConnectionPoolSize             | Yes          |                    | Yes                      | No                           |
 |                                           | ChecksumChunkedPutChunks                 | No           | false              | Yes                      | Yes                          |
+|                                           | SwiftReconNoWriteThreshold               | No           | 80                 | Yes                      | Yes                          |
+|                                           | SwiftReconNoWriteErrno                   | No           | ENOSPC             | Yes                      | Yes                          |
+|                                           | SwiftReconReadOnlyThreshold              | No           | 90                 | Yes                      | Yes                          |
+|                                           | SwiftReconReadOnlyErrno                  | No           | EROFS              | Yes                      | Yes                          |
+|                                           | SwiftConfDir                             | No           | /etc/swift         | Yes                      | Yes                          |
+|                                           | SwiftReconChecksPerConfCheck             | No           | 10                 | Yes                      | Yes                          |
 | FSGlobals                                 | VolumeGroupList                          | Yes          |                    | Yes                      | Yes                          |
 |                                           | CheckpointHeaderConsensusAttempts        | No           | 5                  | Yes                      | No                           |
 |                                           | MountRetryLimit                          | No           | 6                  | Yes                      | No                           |
@@ -191,7 +197,10 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | RetryRPCTTLCompleted                     | No           | 10m                | Yes                      | No                           |
 |                                           | RetryRPCAckTrim                          | No           | 100ms              | Yes                      | No                           |
 |                                           | RetryRPCDeadlineIO                       | No           | 60s                | Yes                      | No                           |
-|                                           | RetryRPCKEEPALIVEPeriod                  | No           | 60s                | Yes                      | No                           |
+|                                           | RetryRPCKeepAlivePeriod                  | No           | 60s                | Yes                      | No                           |
+|                                           | MinLeaseDuration                         | No           | 250ms              | Yes                      | No                           |
+|                                           | LeaseInterruptInterval                   | No           | 250ms              | Yes                      | No                           |
+|                                           | LeaseInterruptLimit                      | No           | 20                 | Yes                      | No                           |
 | Logging                                   | LogFilePath                              | No           | <i>None</i>        | Yes                      | No                           |
 |                                           | LogToConsole                             | No           | false              | Yes                      | No                           |
 |                                           | TraceLevelLogging                        | No           | <i>None</i>        | Yes                      | No                           |

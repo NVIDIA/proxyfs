@@ -13,6 +13,12 @@ import (
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
+const (
+	ConnectionRetryDelayMultiplier = 2
+	ConnectionRetryInitialDelay    = 100 * time.Millisecond
+	ConnectionRetryLimit           = 8
+)
+
 // TODO - what if RPC was completed on Server1 and before response,
 // proxyfsd fails over to Server2?   Client will resend - not idempotent
 // This is outside of our initial requirements but something we should
@@ -27,10 +33,17 @@ import (
 // 4. readResponses goroutine will read response on socket
 //    and call a goroutine to do unmarshalling and notification
 func (client *Client) send(method string, rpcRequest interface{}, rpcReply interface{}) (err error) {
-	var crID requestID
+	var (
+		connectionRetryCount int
+		connectionRetryDelay time.Duration
+		crID                 requestID
+	)
 
 	client.Lock()
 	if client.connection.state == INITIAL {
+
+		connectionRetryCount = 0
+		connectionRetryDelay = ConnectionRetryInitialDelay
 
 		for {
 			err = client.dial()
@@ -38,8 +51,17 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 				break
 			}
 			client.Unlock()
-			time.Sleep(100 * time.Millisecond)
+			connectionRetryCount++
+			if connectionRetryCount > ConnectionRetryLimit {
+				err = fmt.Errorf("In send(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
+				logger.PanicfWithError(err, "")
+			}
+			time.Sleep(connectionRetryDelay)
+			connectionRetryDelay *= ConnectionRetryDelayMultiplier
 			client.Lock()
+			if client.connection.state != INITIAL {
+				break
+			}
 		}
 	}
 
@@ -278,6 +300,11 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 // retransmit is called when a socket related error occurs on the
 // connection to the server.
 func (client *Client) retransmit(genNum uint64) {
+	var (
+		connectionRetryCount int
+		connectionRetryDelay time.Duration
+	)
+
 	client.Lock()
 
 	// Check if we are already processing the socket error via
@@ -297,8 +324,11 @@ func (client *Client) retransmit(genNum uint64) {
 
 	// We are the first goroutine to notice the error on the
 	// socket - close the connection and start trying to reconnect.
-	client.connection.tlsConn.Close()
+	_ = client.connection.tlsConn.Close()
 	client.connection.state = RETRANSMITTING
+
+	connectionRetryCount = 0
+	connectionRetryDelay = ConnectionRetryInitialDelay
 
 	for {
 		err := client.dial()
@@ -308,8 +338,13 @@ func (client *Client) retransmit(genNum uint64) {
 			break
 		}
 		client.Unlock()
-		time.Sleep(100 * time.Millisecond)
-
+		connectionRetryCount++
+		if connectionRetryCount > ConnectionRetryLimit {
+			err = fmt.Errorf("In retransmit(), ConnectionRetryLimit (%v) on calling dial() exceeded", ConnectionRetryLimit)
+			logger.PanicfWithError(err, "")
+		}
+		time.Sleep(connectionRetryDelay)
+		connectionRetryDelay *= ConnectionRetryDelayMultiplier
 		client.Lock()
 		// While the lock was dropped we may be halting....
 		if client.halting == true {
@@ -317,8 +352,6 @@ func (client *Client) retransmit(genNum uint64) {
 			return
 		}
 	}
-
-	client.connection.state = CONNECTED
 
 	for crID, ctx := range client.outstandingRequest {
 		// Note that we are holding the lock so these
@@ -374,13 +407,14 @@ func (client *Client) sendMyInfo(tlsConn *tls.Conn) (err error) {
 //
 // NOTE: Client lock is held
 func (client *Client) dial() (err error) {
+	var entryState = client.connection.state
 
 	client.connection.tlsConfig = &tls.Config{
 		RootCAs: client.connection.x509CertPool,
 	}
 
 	// Now dial the server
-	d := &net.Dialer{KeepAlive: client.keepalivePeriod}
+	d := &net.Dialer{KeepAlive: client.keepAlivePeriod}
 	tlsConn, dialErr := tls.DialWithDialer(d, "tcp", client.connection.hostPortStr, client.connection.tlsConfig)
 	if dialErr != nil {
 		err = fmt.Errorf("tls.Dial() failed: %v", dialErr)
@@ -391,6 +425,7 @@ func (client *Client) dial() (err error) {
 		client.connection.tlsConn.Close()
 		client.connection.tlsConn = nil
 	}
+
 	client.connection.tlsConn = tlsConn
 	client.connection.state = CONNECTED
 	client.connection.genNum++
@@ -399,6 +434,9 @@ func (client *Client) dial() (err error) {
 	// be retried.
 	err = client.sendMyInfo(tlsConn)
 	if err != nil {
+		_ = client.connection.tlsConn.Close()
+		client.connection.tlsConn = nil
+		client.connection.state = entryState
 		return
 	}
 

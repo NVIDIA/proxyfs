@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/retryrpc/rpctest"
 )
 
@@ -16,6 +17,7 @@ func TestRetryRPC(t *testing.T) {
 
 	testServer(t)
 	testBtree(t)
+	testStatsAndBucketstats(t)
 }
 
 type MyType struct {
@@ -39,13 +41,13 @@ func (m *MyType) unexportedFunction(i int) {
 	m.field1 = i
 }
 
-func getNewServer(lt time.Duration) (rrSvr *Server, ip string, p int) {
+func getNewServer(lt time.Duration, dontStartTrimmers bool) (rrSvr *Server, ip string, p int) {
 	var (
 		ipaddr = "127.0.0.1"
 		port   = 24456
 	)
 	config := &ServerConfig{LongTrim: lt, ShortTrim: 100 * time.Millisecond, IPAddr: "127.0.0.1",
-		Port: 24456, DeadlineIO: 5 * time.Second}
+		Port: 24456, DeadlineIO: 5 * time.Second, dontStartTrimmers: dontStartTrimmers}
 
 	// Create a new RetryRPC Server.  Completed request will live on
 	// completedRequests for 10 seconds.
@@ -65,7 +67,7 @@ func testServer(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
+	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the
@@ -121,7 +123,7 @@ func testServer(t *testing.T) {
 func testBtree(t *testing.T) {
 	assert := assert.New(t)
 
-	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
+	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Setup a client - we only will be targeting the btree
@@ -160,4 +162,67 @@ func testBtree(t *testing.T) {
 	client.setHighestConsecutive()
 	assert.Equal(int(1), client.bt.Len())
 	assert.Equal(requestID(11), client.highestConsecutive)
+}
+
+// Per pfsagent statistics
+type clientStats struct {
+	AddCompleted           bucketstats.Total           // Number added to completed list
+	RmCompleted            bucketstats.Total           // Number removed from completed list
+	RPCLenUsec             bucketstats.BucketLog2Round // Average times of RPCs
+	LongestRPCMethod       string                      // Method of longest RPC
+	ReplySize              bucketstats.BucketLog2Round // Largest RPC reply size completed
+	LargestReplySizeMethod string                      // Method of largest RPC reply size completed
+	RPCcompleted           bucketstats.Total           // Number of RPCs which completed - incremented after call returns
+	RPCretried             bucketstats.Total           // Number of RPCs which were just pulled from completed list
+	RPCattempted           bucketstats.Total           // Number of RPCs attempted - may be completed or in process
+	RPCinprocess           bucketstats.Total           // Number of RPCs presently calling RPC - decremented when completed
+}
+
+// Test use of bucketstats package
+func testStatsAndBucketstats(t *testing.T) {
+	var (
+		myClient1       clientStats
+		myUniqueClient1 = "1111111"
+
+		myClient2       clientStats
+		myUniqueClient2 = "2222222"
+	)
+
+	// Register from bucketstats from pfsagent #1
+	bucketstats.Register("proxyfs.retryrpc", myUniqueClient1, &myClient1)
+
+	// Register from bucketstats from pfsagent #2
+	bucketstats.Register("proxyfs.retryrpc", myUniqueClient2, &myClient2)
+
+	// Completed list stats
+	myClient1.AddCompleted.Add(1)
+	myClient1.RmCompleted.Add(1)
+
+	// RPC counts
+	myClient1.RPCcompleted.Add(1)
+	myClient1.RPCretried.Add(1)
+	myClient1.RPCattempted.Add(1)
+	myClient1.RPCinprocess.Add(1)
+
+	// Track duration of all RPCs in a graph
+	start := time.Now()
+	time.Sleep(10 * time.Millisecond)
+	myClient1.RPCLenUsec.Add(uint64(time.Since(start) / time.Microsecond))
+	myClient1.ReplySize.Add(8192)
+
+	// Example of pfsagent #2
+	myClient2.RPCcompleted.Add(1)
+	myClient2.RPCretried.Add(1)
+	myClient2.RPCattempted.Add(1)
+	myClient2.RPCinprocess.Add(1)
+
+	// Dump stats
+	/* DEBUG ONLY -
+	fmt.Printf("pfsagent #1: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", myUniqueClient1))
+	fmt.Printf("pfsagent #2: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", myUniqueClient2))
+	*/
+
+	// Unregister clients from bucketstats
+	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient1)
+	bucketstats.UnRegister("proxyfs.retryrpc", myUniqueClient2)
 }

@@ -40,7 +40,7 @@ func testUpCall(t *testing.T) {
 	// RPCs
 	myJrpcfs := rpctest.NewServer()
 
-	rrSvr, ipaddr, port := getNewServer(10 * time.Second)
+	rrSvr, ipaddr, port := getNewServer(10*time.Second, false)
 	assert.NotNil(rrSvr)
 
 	// Register the Server - sets up the methods supported by the

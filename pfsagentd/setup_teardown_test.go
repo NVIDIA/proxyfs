@@ -117,7 +117,7 @@ func testSetup(t *testing.T) {
 		"Agent.FUSECongestionThreshhold=0",
 		"Agent.FUSEMaxWrite=131072", // Linux max... 128KiB is good enough for testing
 		"Agent.RetryRPCDeadlineIO=60s",
-		"Agent.RetryRPCKEEPALIVEPeriod=60s",
+		"Agent.RetryRPCKeepAlivePeriod=60s",
 
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=54324",
@@ -160,6 +160,7 @@ func testSetup(t *testing.T) {
 		"SwiftClient.RetryExpBackoffObject=2.0",
 		"SwiftClient.ChunkedConnectionPoolSize=64",
 		"SwiftClient.NonChunkedConnectionPoolSize=32",
+		"SwiftClient.SwiftReconChecksPerConfCheck=0",
 
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerStoragePolicy=silver",
 		"PhysicalContainerLayout:PhysicalContainerLayoutReplicated3Way.ContainerNamePrefix=Replicated3Way_",
@@ -229,6 +230,9 @@ func testSetup(t *testing.T) {
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
+		"JSONRPCServer.MinLeaseDuration=250ms",
+		"JSONRPCServer.LeaseInterruptInterval=250ms",
+		"JSONRPCServer.LeaseInterruptLimit=20",
 	}
 
 	testConfStrings = append(testConfStrings, "RamSwiftInfo.MaxAccountNameLength="+strconv.FormatUint(testMaxAccountNameLength, 10))

@@ -63,6 +63,7 @@ const (
 	NotPermError          FsError = FsError(int(unix.EPERM))        // Operation not permitted
 	NotFoundError         FsError = FsError(int(unix.ENOENT))       // No such file or directory
 	IOError               FsError = FsError(int(unix.EIO))          // I/O error
+	ReadOnlyError         FsError = FsError(int(unix.EROFS))        // Read-only file system
 	TooBigError           FsError = FsError(int(unix.E2BIG))        // Argument list too long
 	TooManyArgsError      FsError = FsError(int(unix.E2BIG))        // Arg list too long
 	BadFileError          FsError = FsError(int(unix.EBADF))        // Bad file number
@@ -81,7 +82,6 @@ const (
 	FileTooLargeError     FsError = FsError(int(unix.EFBIG))        // File too large
 	NoSpaceError          FsError = FsError(int(unix.ENOSPC))       // No space left on device
 	BadSeekError          FsError = FsError(int(unix.ESPIPE))       // Illegal seek
-	ReadOnlyError         FsError = FsError(int(unix.EROFS))        // Read-only file system
 	TooManyLinksError     FsError = FsError(int(unix.EMLINK))       // Too many links
 	OutOfRangeError       FsError = FsError(int(unix.ERANGE))       // Math result not representable
 	NameTooLongError      FsError = FsError(int(unix.ENAMETOOLONG)) // File name too long
@@ -97,6 +97,7 @@ const (
 // Errors that map to constants already defined above
 const (
 	NotActiveError        FsError = NotFoundError
+	BadLeaseRequest       FsError = InvalidArgError
 	BadMountIDError       FsError = InvalidArgError
 	BadMountVolumeError   FsError = InvalidArgError
 	NotFileError          FsError = IsDirError

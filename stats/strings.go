@@ -88,6 +88,11 @@ var (
 
 	DirFileBPlusTreeNodeFaults = "proxyfs.inode.payload.node.fault.operations"
 
+	ReconChecks                     = "proxyfs.inode.recon.intervals"
+	ReconCheckTriggeredNormalMode   = "proxyfs.inode.recon.triggered.normal.mode"
+	ReconCheckTriggeredNoWriteMode  = "proxyfs.inode.recon.triggered.no.write.mode"
+	ReconCheckTriggeredReadOnlyMode = "proxyfs.inode.recon.triggered.read.only.mode"
+
 	InodeTryLockBackoffOps           = "proxyfs.fs.trylock.backoff.operations"
 	InodeTryLockDelayedBackoffOps    = "proxyfs.fs.trylock.delayed.backoff.operations"
 	InodeTryLockSerializedBackoffOps = "proxyfs.fs.trylock.serialized.backoff.operations"

@@ -9,8 +9,10 @@ import (
 	"github.com/swiftstack/cstruct"
 	"github.com/swiftstack/sortedmap"
 
+	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/headhunter"
+	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/trackedlock"
 	"github.com/swiftstack/ProxyFS/transitions"
@@ -82,6 +84,13 @@ type volumeStruct struct {
 	snapShotPolicy                 *snapShotPolicyStruct
 }
 
+const (
+	defaultNoWriteErrno        = blunder.NoSpaceError
+	defaultNoWriteErrnoString  = "ENOSPC"
+	defaultReadOnlyErrno       = blunder.ReadOnlyError
+	defaultReadOnlyErrnoString = "EROFS"
+)
+
 type globalsStruct struct {
 	trackedlock.Mutex
 	whoAmI                             string
@@ -105,6 +114,11 @@ type globalsStruct struct {
 	openLogSegmentLRUHead              *inFlightLogSegmentStruct
 	openLogSegmentLRUTail              *inFlightLogSegmentStruct
 	openLogSegmentLRUItems             uint64
+	noWriteThresholdErrno              blunder.FsError // either blunder.NotPermError or blunder.ReadOnlyError or blunder.NoSpaceError
+	noWriteThresholdErrnoString        string          // either "EPERM" or "EROFS" or "ENOSPC"
+	readOnlyThresholdErrno             blunder.FsError // either blunder.NotPermError or blunder.ReadOnlyError or blunder.NoSpaceError
+	readOnlyThresholdErrnoString       string          // either "EPERM" or "EROFS" or "ENOSPC"
+	rwMode                             RWModeType      // One of RWMode{Normal|NoWrite|ReadOnly}
 }
 
 var globals globalsStruct
@@ -221,6 +235,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.inodeRecDefaultPreambleBuf = append(globals.inodeRecDefaultPreambleBuf, globals.versionV1Buf...)
 
 	swiftclient.SetStarvationCallbackFunc(chunkedPutConnectionPoolStarvationCallback)
+
+	globals.rwMode = RWModeNormal
 
 	err = nil
 	return
@@ -676,6 +692,11 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
 }
 
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	err = nil
+	return
+}
+
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 	var (
 		volume *volumeStruct
@@ -694,8 +715,54 @@ func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 
 func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	var (
-		volume *volumeStruct
+		swiftReconNoWriteErrno  string
+		swiftReconReadOnlyErrno string
+		volume                  *volumeStruct
 	)
+
+	swiftReconNoWriteErrno, err = confMap.FetchOptionValueString("SwiftClient", "SwiftReconNoWriteErrno")
+	if nil == err {
+		switch swiftReconNoWriteErrno {
+		case "EPERM":
+			globals.noWriteThresholdErrno = blunder.NotPermError
+			globals.noWriteThresholdErrnoString = "EPERM"
+		case "EROFS":
+			globals.noWriteThresholdErrno = blunder.ReadOnlyError
+			globals.noWriteThresholdErrnoString = "EROFS"
+		case "ENOSPC":
+			globals.noWriteThresholdErrno = blunder.NoSpaceError
+			globals.noWriteThresholdErrnoString = "ENOSPC"
+		default:
+			err = fmt.Errorf("[SwiftClient]SwiftReconReadOnlyErrno must be either EPERM or EROFS or ENOSPC")
+			return
+		}
+	} else {
+		logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconNoWriteErrno... defaulting to %s", defaultNoWriteErrno)
+		globals.noWriteThresholdErrno = defaultNoWriteErrno
+		globals.noWriteThresholdErrnoString = defaultNoWriteErrnoString
+	}
+
+	swiftReconReadOnlyErrno, err = confMap.FetchOptionValueString("SwiftClient", "SwiftReconReadOnlyErrno")
+	if nil == err {
+		switch swiftReconReadOnlyErrno {
+		case "EPERM":
+			globals.readOnlyThresholdErrno = blunder.NotPermError
+			globals.readOnlyThresholdErrnoString = "EPERM"
+		case "EROFS":
+			globals.readOnlyThresholdErrno = blunder.ReadOnlyError
+			globals.readOnlyThresholdErrnoString = "EROFS"
+		case "ENOSPC":
+			globals.readOnlyThresholdErrno = blunder.NoSpaceError
+			globals.readOnlyThresholdErrnoString = "ENOSPC"
+		default:
+			err = fmt.Errorf("[SwiftClient]SwiftReconReadOnlyErrno must be either EPERM or EROFS or ENOSPC")
+			return
+		}
+	} else {
+		logger.WarnfWithError(err, "Unable to fetch [SwiftClient]SwiftReconReadOnlyErrno... defaulting to %s", defaultReadOnlyErrno)
+		globals.readOnlyThresholdErrno = defaultReadOnlyErrno
+		globals.readOnlyThresholdErrnoString = defaultReadOnlyErrnoString
+	}
 
 	for _, volume = range globals.volumeMap {
 		if volume.served {

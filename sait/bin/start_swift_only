@@ -1,0 +1,17 @@
+#!/bin/bash
+
+sudo mount -a
+
+echo "Shutting down services and mount points..."
+/vagrant/src/github.com/swiftstack/ProxyFS/sait/bin/unmount_and_stop_pfs
+echo
+echo "Bringing up services..."
+if [ -f /usr/bin/systemctl ]; then
+    # Centos
+    sudo /usr/bin/systemctl start memcached
+    sudo /usr/bin/swift-init main start
+else
+    # Ubuntu (not tested!)
+    sudo /usr/sbin/service memcached start
+    sudo /usr/bin/swift-init main start
+fi

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -53,18 +54,20 @@ type Server struct {
 	completedLongTicker  *time.Ticker // Longer ~10 minute timer to trim
 	completedShortTicker *time.Ticker // Shorter ~100ms timer to trim known completed
 	deadlineIO           time.Duration
-	keepalivePeriod      time.Duration
+	keepAlivePeriod      time.Duration
 	completedDoneWG      sync.WaitGroup
+	dontStartTrimmers    bool // Used for testing
 }
 
 // ServerConfig is used to configure a retryrpc Server
 type ServerConfig struct {
-	LongTrim        time.Duration // How long the results of an RPC are stored on a Server before removed
-	ShortTrim       time.Duration // How frequently completed and ACKed RPCs results are removed from Server
-	IPAddr          string        // IP Address that Server uses to listen
-	Port            int           // Port that Server uses to listen
-	DeadlineIO      time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod time.Duration // How frequently a KEEPALIVE is sent
+	LongTrim          time.Duration // How long the results of an RPC are stored on a Server before removed
+	ShortTrim         time.Duration // How frequently completed and ACKed RPCs results are removed from Server
+	IPAddr            string        // IP Address that Server uses to listen
+	Port              int           // Port that Server uses to listen
+	DeadlineIO        time.Duration // How long I/Os on sockets wait even if idle
+	KeepAlivePeriod   time.Duration // How frequently a KEEPALIVE is sent
+	dontStartTrimmers bool          // Used for testing
 }
 
 // NewServer creates the Server object
@@ -74,7 +77,7 @@ func NewServer(config *ServerConfig) *Server {
 	)
 	server := &Server{ipaddr: config.IPAddr, port: config.Port, completedLongTTL: config.LongTrim,
 		completedAckTrim: config.ShortTrim, deadlineIO: config.DeadlineIO,
-		keepalivePeriod: config.KEEPALIVEPeriod}
+		keepAlivePeriod: config.KeepAlivePeriod, dontStartTrimmers: config.dontStartTrimmers}
 	server.svrMap = make(map[string]*methodArgs)
 	server.perClientInfo = make(map[string]*clientInfo)
 	server.completedTickerDone = make(chan bool)
@@ -106,7 +109,7 @@ func (server *Server) Start() (err error) {
 		Certificates: []tls.Certificate{server.Creds.serverTLSCertificate},
 	}
 
-	listenConfig := &net.ListenConfig{KeepAlive: server.keepalivePeriod}
+	listenConfig := &net.ListenConfig{KeepAlive: server.keepAlivePeriod}
 	server.netListener, err = listenConfig.Listen(context.Background(), "tcp", hostPortStr)
 	if nil != err {
 		err = fmt.Errorf("tls.Listen() failed: %v", err)
@@ -117,24 +120,39 @@ func (server *Server) Start() (err error) {
 
 	server.listenersWG.Add(1)
 
-	// Start ticker which removes older completedRequests
-	server.completedLongTicker = time.NewTicker(server.completedLongTTL)
-	// Start ticker which removes requests already ACKed by client
-	server.completedShortTicker = time.NewTicker(server.completedAckTrim)
+	// Some of the unit tests disable starting trimmers
+	if !server.dontStartTrimmers {
+		// Start ticker which removes older completedRequests
+		server.completedLongTicker = time.NewTicker(server.completedLongTTL)
+		// Start ticker which removes requests already ACKed by client
+		server.completedShortTicker = time.NewTicker(server.completedAckTrim)
+	}
 	server.completedDoneWG.Add(1)
-	go func() {
-		for {
-			select {
-			case <-server.completedTickerDone:
-				server.completedDoneWG.Done()
-				return
-			case tl := <-server.completedLongTicker.C:
-				server.trimCompleted(tl, true)
-			case ts := <-server.completedShortTicker.C:
-				server.trimCompleted(ts, false)
+	if !server.dontStartTrimmers {
+		go func() {
+			for {
+				select {
+				case <-server.completedTickerDone:
+					server.completedDoneWG.Done()
+					return
+				case tl := <-server.completedLongTicker.C:
+					server.trimCompleted(tl, true)
+				case ts := <-server.completedShortTicker.C:
+					server.trimCompleted(ts, false)
+				}
 			}
-		}
-	}()
+		}()
+	} else {
+		go func() {
+			for {
+				select {
+				case <-server.completedTickerDone:
+					server.completedDoneWG.Done()
+					return
+				}
+			}
+		}()
+	}
 
 	return err
 }
@@ -197,10 +215,20 @@ func (server *Server) Close() {
 	// Now close the client sockets to wakeup them up
 	server.closeClientConn()
 
-	server.completedLongTicker.Stop()
-	server.completedShortTicker.Stop()
+	if !server.dontStartTrimmers {
+		server.completedLongTicker.Stop()
+		server.completedShortTicker.Stop()
+	}
 	server.completedTickerDone <- true
 	server.completedDoneWG.Wait()
+
+	// Cleanup bucketstats so that unit tests can run
+	for _, ci := range server.perClientInfo {
+		ci.Lock()
+		bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
+		ci.Unlock()
+
+	}
 }
 
 // CloseClientConn - This is debug code to cause some connections to be closed
@@ -266,7 +294,7 @@ type Client struct {
 	myUniqueID         string      // Unique ID across all clients
 	cb                 interface{} // Callbacks to client
 	deadlineIO         time.Duration
-	keepalivePeriod    time.Duration
+	keepAlivePeriod    time.Duration
 	outstandingRequest map[requestID]*reqCtx // Map of outstanding requests sent
 	// or to be sent to server.  Key is assigned from currentRequestID
 	highestConsecutive requestID // Highest requestID that can be
@@ -289,7 +317,7 @@ type ClientConfig struct {
 	RootCAx509CertificatePEM []byte        // Root certificate
 	Callbacks                interface{}   // Structure implementing ClientCallbacks
 	DeadlineIO               time.Duration // How long I/Os on sockets wait even if idle
-	KEEPALIVEPeriod          time.Duration // How frequently a KEEPALIVE is sent
+	KeepAlivePeriod          time.Duration // How frequently a KEEPALIVE is sent
 }
 
 // TODO - pass loggers to Cient and Server objects
@@ -308,7 +336,7 @@ type ClientConfig struct {
 func NewClient(config *ClientConfig) (client *Client, err error) {
 
 	client = &Client{myUniqueID: config.MyUniqueID, cb: config.Callbacks,
-		keepalivePeriod: config.KEEPALIVEPeriod, deadlineIO: config.DeadlineIO}
+		keepAlivePeriod: config.KeepAlivePeriod, deadlineIO: config.DeadlineIO}
 	portStr := fmt.Sprintf("%d", config.Port)
 	client.connection.state = INITIAL
 	client.connection.hostPortStr = net.JoinHostPort(config.IPAddr, portStr)

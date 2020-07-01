@@ -8,6 +8,11 @@ import (
 )
 
 func (vS *volumeStruct) CreateSymlink(target string, filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (symlinkInodeNumber InodeNumber, err error) {
+	err = enforceRWMode(false)
+	if nil != err {
+		return
+	}
+
 	// Create file mode out of file permissions plus inode type
 	fileMode, err := determineMode(filePerm, SymlinkType)
 	if err != nil {

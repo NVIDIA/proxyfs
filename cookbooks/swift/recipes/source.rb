@@ -45,13 +45,6 @@ execute "git swift" do
   action :run
 end
 
-execute "git swift-specs" do
-  cwd "#{node['source_root']}"
-  command "sudo -u #{node['swift_user']} git clone -b #{node['swift_specs_repo_branch']} #{node['swift_specs_repo']}"
-  creates "#{node['source_root']}/swift-specs"
-  action :run
-end
-
 execute "fix semantic_version error from testtools" do
   command "pip install --upgrade testtools"
 end
@@ -83,12 +76,6 @@ execute "python-swift-install" do
   if not node['full_reprovision']
     creates "/usr/local/lib/python2.7/dist-packages/swift.egg-link"
   end
-  action :run
-end
-
-execute "swift-specs-install" do
-  cwd "#{node['source_root']}/swift-specs"
-  command "pip install -r requirements.txt"
   action :run
 end
 

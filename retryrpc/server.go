@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 	"golang.org/x/sys/unix"
 )
@@ -76,9 +77,15 @@ func (server *Server) run() {
 		go func(myConn net.Conn, myElm *list.Element) {
 			defer server.goroutineWG.Done()
 
+			logger.Infof("Servicing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
 			server.serviceClient(ci, cCtx)
 
+			logger.Infof("Closing client: %v address: %v", ci.myUniqueID, myConn.RemoteAddr())
 			server.closeClient(conn, elm)
+
+			// The clientInfo for this client will first be trimmed and then later
+			// deleted from the list of server.perClientInfo by the TTL trimmer.
+
 		}(conn, elm)
 	}
 }
@@ -108,6 +115,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 	if jReq.HighestReplySeen > ci.highestReplySeen {
 		ci.highestReplySeen = jReq.HighestReplySeen
 	}
+	ci.stats.RPCattempted.Add(1)
 
 	// First check if we already completed this request by looking at
 	// completed queue.
@@ -119,6 +127,7 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// Just return the results.
 		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
+		ci.stats.RPCretried.Add(1)
 		ci.Unlock()
 
 	} else {
@@ -129,17 +138,32 @@ func (server *Server) processRequest(ci *clientInfo, myConnCtx *connCtx, buf []b
 		// We pass buf to the call because the request will have to
 		// be unmarshaled again to retrieve the parameters specific to
 		// the RPC.
+		startRPC := time.Now()
 		ior := server.callRPCAndFormatReply(buf, &jReq)
+		ci.stats.RPCLenUsec.Add(uint64(time.Since(startRPC) / time.Microsecond))
+		ci.stats.RPCcompleted.Add(1)
 
 		// We had to drop the lock before calling the RPC since it
 		// could block.
 		ci.Lock()
+		dur := time.Since(startRPC)
+		if dur > ci.stats.longestRPC {
+			ci.stats.longestRPCMethod = jReq.Method
+			ci.stats.longestRPC = dur
+		}
 
 		// Update completed queue
 		ce := &completedEntry{reply: ior}
 		ci.completedRequest[rID] = ce
+		ci.stats.AddCompleted.Add(1)
 		setupHdrReply(ce.reply, RPC)
 		localIOR = *ce.reply
+		sz := uint64(len(ior.JResult))
+		if sz > ci.stats.largestReplySize {
+			ci.stats.largestReplySizeMethod = jReq.Method
+			ci.stats.largestReplySize = sz
+		}
+		ci.stats.ReplySize.Add(sz)
 		lruEntry := completedLRUEntry{requestID: rID, timeCompleted: time.Now()}
 		le := ci.completedRequestLRU.PushBack(lruEntry)
 		ce.lruElem = le
@@ -204,6 +228,8 @@ func (server *Server) getClientIDAndWait(cCtx *connCtx) (ci *clientInfo, err err
 		cCtx.Lock()
 		cCtx.ci = ci
 		cCtx.Unlock()
+
+		bucketstats.Register("proxyfs.retryrpc", c.myUniqueID, &c.stats)
 	} else {
 		server.Unlock()
 		ci = lci
@@ -363,7 +389,11 @@ func (server *Server) returnResults(ior *ioReply, cCtx *connCtx) {
 	//
 	// In error case - Conn will be closed when serviceClient() returns
 	cCtx.conn.SetDeadline(time.Now().Add(server.deadlineIO))
-	_, _ = cCtx.conn.Write(ior.JResult)
+	cnt, e := cCtx.conn.Write(ior.JResult)
+	if e != nil {
+		logger.Infof("returnResults() returned err: %v cnt: %v length of JResult: %v", e, cnt, len(ior.JResult))
+	}
+
 	cCtx.Unlock()
 }
 
@@ -387,15 +417,15 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 	server.Lock()
 	if long {
 		l := list.New()
-		for k, v := range server.perClientInfo {
-			n := server.trimTLLBased(k, v, t)
+		for k, ci := range server.perClientInfo {
+			n := server.trimTLLBased(ci, t)
 			totalItems += n
 
-			v.Lock()
-			if v.isEmpty() {
+			ci.Lock()
+			if ci.isEmpty() {
 				l.PushBack(k)
 			}
-			v.Unlock()
+			ci.Unlock()
 
 		}
 
@@ -405,18 +435,22 @@ func (server *Server) trimCompleted(t time.Time, long bool) {
 		// lock.
 		for e := l.Front(); e != nil; e = e.Next() {
 			key := e.Value.(string)
-			v := server.perClientInfo[key]
+			ci := server.perClientInfo[key]
 
-			v.Lock()
-			if v.isEmpty() {
+			ci.Lock()
+			ci.cCtx.Lock()
+			if ci.isEmpty() && ci.cCtx.serviceClientExited == true {
+				bucketstats.UnRegister("proxyfs.retryrpc", ci.myUniqueID)
 				delete(server.perClientInfo, key)
+				logger.Infof("Trim - DELETE inactive clientInfo with ID: %v", ci.myUniqueID)
 			}
-			v.Unlock()
+			ci.cCtx.Unlock()
+			ci.Unlock()
 		}
 		logger.Infof("Trimmed completed RetryRpcs - Total: %v", totalItems)
 	} else {
-		for k, v := range server.perClientInfo {
-			n := server.trimAClientBasedACK(k, v)
+		for k, ci := range server.perClientInfo {
+			n := server.trimAClientBasedACK(k, ci)
 			totalItems += n
 		}
 	}
@@ -437,6 +471,7 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 		if ok {
 			ci.completedRequestLRU.Remove(v.lruElem)
 			delete(ci.completedRequest, h)
+			ci.stats.RmCompleted.Add(1)
 			numItems++
 		}
 	}
@@ -452,32 +487,27 @@ func (server *Server) trimAClientBasedACK(uniqueID string, ci *clientInfo) (numI
 // This gets called every ~10 minutes to clean out older entries.
 //
 // NOTE: We assume Server Lock is held
-func (server *Server) trimTLLBased(uniqueID string, ci *clientInfo, t time.Time) (numItems int) {
-
-	l := list.New()
-
+func (server *Server) trimTLLBased(ci *clientInfo, t time.Time) (numItems int) {
 	ci.Lock()
-	for e := ci.completedRequestLRU.Front(); e != nil; e = e.Next() {
+	for e := ci.completedRequestLRU.Front(); e != nil; {
 		eTime := e.Value.(completedLRUEntry).timeCompleted.Add(server.completedLongTTL)
 		if eTime.Before(t) {
 			delete(ci.completedRequest, e.Value.(completedLRUEntry).requestID)
+			ci.stats.RmCompleted.Add(1)
 
-			// Push on local list so don't delete while iterating
-			l.PushBack(e)
+			eTmp := e
+			e = e.Next()
+			_ = ci.completedRequestLRU.Remove(eTmp)
+			numItems++
 		} else {
 			// Oldest is in front so just break
 			break
 		}
 	}
+	s := ci.stats
+	logger.Infof("ID: %v largestReplySize: %v largestReplySizeMethod: %v longest RPC: %v longest RPC Method: %v",
+		ci.myUniqueID, s.largestReplySize, s.largestReplySizeMethod, s.longestRPC, s.longestRPCMethod)
 
-	numItems = l.Len()
-
-	// Now delete from LRU using the local list
-	for e2 := l.Front(); e2 != nil; e2 = e2.Next() {
-		tmpE := ci.completedRequestLRU.Front()
-		_ = ci.completedRequestLRU.Remove(tmpE)
-
-	}
 	ci.Unlock()
 	return
 }

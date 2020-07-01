@@ -9,42 +9,119 @@ import (
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/fs"
+	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/retryrpc"
 	"github.com/swiftstack/ProxyFS/transitions"
 )
 
+type leaseRequestOperationStruct struct {
+	mount      *mountStruct
+	inodeLease *inodeLeaseStruct
+	LeaseRequestType
+	replyChan chan *LeaseReply
+}
+
+type leaseRequestStateType uint32
+
+const (
+	leaseRequestStateNone leaseRequestStateType = iota
+	leaseRequestStateSharedRequested
+	leaseRequestStateSharedGranted
+	leaseRequestStateSharedPromoting
+	leaseRequestStateSharedReleasing
+	leaseRequestStateExclusiveRequested
+	leaseRequestStateExclusiveGranted
+	leaseRequestStateExclusiveDemoting
+	leaseRequestStateExclusiveReleasing
+)
+
+type leaseRequestStruct struct {
+	mount        *mountStruct
+	inodeLease   *inodeLeaseStruct
+	requestState leaseRequestStateType
+	listElement  *list.Element // used when on one of inodeList.*List's
+}
+
+type inodeLeaseStateType uint32
+
+const (
+	inodeLeaseStateNone inodeLeaseStateType = iota
+	inodeLeaseStateSharedGrantedRecently
+	inodeLeaseStateSharedGrantedLongAgo
+	inodeLeaseStateSharedReleasing
+	inodeLeaseStateSharedExpired
+	inodeLeaseStateExclusiveGrantedRecently
+	inodeLeaseStateExclusiveGrantedLongAgo
+	inodeLeaseStateExclusiveReleasing
+	inodeLeaseStateExclusiveDemoting
+	inodeLeaseStateExclusiveExpired
+)
+
+type inodeLeaseStruct struct {
+	volume      *volumeStruct
+	inodeNumber inode.InodeNumber
+	leaseState  inodeLeaseStateType
+
+	requestChan chan *leaseRequestOperationStruct // if closed, this is an order to revoke/reject all leaseRequestStruct's in *Holder* & requestedList
+
+	sharedHoldersList    *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestStateSharedGranted
+	promotingHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateSharedPromoting
+	exclusiveHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateExclusiveGranted
+	demotingHolder       *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateExclusiveDemoting
+	releasingHoldersList *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Releasing
+	requestedList        *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Requested
+
+	lastGrantTime time.Time // records the time at which the last exclusive or shared holder was set/added-to exclusiveHolder/sharedHoldersList
+}
+
+type mountStruct struct {
+	volume             *volumeStruct
+	mountIDAsByteArray MountIDAsByteArray
+	mountIDAsString    MountIDAsString
+	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
+}
+
+type volumeStruct struct {
+	volumeName                   string
+	volumeHandle                 fs.VolumeHandle
+	acceptingMounts              bool
+	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct     // key == mountStruct.mountIDAsByteArray
+	mountMapByMountIDAsString    map[MountIDAsString]*mountStruct        // key == mountStruct.mountIDAsString
+	inodeLeaseMap                map[inode.InodeNumber]*inodeLeaseStruct // key == inodeLeaseStruct.inodeNumber
+	leaseHandlerWG               sync.WaitGroup                          // .Add(1) each inodeLease insertion into inodeLeaseMap
+	//                                                                      .Done() each inodeLease after it is removed from inodeLeaseMap
+}
+
 type globalsStruct struct {
-	mapsLock sync.Mutex   // protects volumeMap/mountIDMap/bimodalMountMap
-	gate     sync.RWMutex // API Requests RLock()/RUnlock()
-	//                       confMap changes Lock()/Unlock()
+	gate sync.RWMutex //   API Requests RLock()/RUnlock()
+	//                     confMap changes Lock()/Unlock()
 
-	whoAmI                   string
-	publicIPAddr             string
-	privateIPAddr            string
-	portString               string
-	fastPortString           string
-	retryRPCPort             uint16
-	retryRPCTTLCompleted     time.Duration
-	retryRPCAckTrim          time.Duration
-	retryRPCDeadlineIO       time.Duration
-	retryRPCKEEPALIVEPeriod  time.Duration
-	rootCAx509CertificatePEM []byte
-	dataPathLogging          bool
+	volumesLock sync.Mutex // protects mountMapByMountIDAsByteArray & mountMapByMountIDAsString
+	//                        as well as each volumeStruct/mountStruct map
 
-	// Map used to enumerate volumes served by this peer
-	volumeMap map[string]bool // key == volumeName; value is ignored
+	whoAmI                  string
+	publicIPAddr            string
+	privateIPAddr           string
+	portString              string
+	fastPortString          string
+	retryRPCPort            uint16
+	retryRPCTTLCompleted    time.Duration
+	retryRPCAckTrim         time.Duration
+	retryRPCDeadlineIO      time.Duration
+	retryRPCKeepAlivePeriod time.Duration
+	minLeaseDuration        time.Duration
+	leaseInterruptInterval  time.Duration
+	leaseInterruptLimit     uint32
+	dataPathLogging         bool
 
-	// Map used to store volumes by ID already mounted for bimodal support
-	// TODO: These never get purged !!!
-	mountIDAsByteArrayMap map[MountIDAsByteArray]fs.MountHandle
-	mountIDAsStringMap    map[MountIDAsString]fs.MountHandle
-
-	// Map used to store volumes by name already mounted for bimodal support
-	bimodalMountMap map[string]fs.MountHandle // key == volumeName
+	volumeMap                    map[string]*volumeStruct            // key == volumeStruct.volumeName
+	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct // key == mountStruct.mountIDAsByteArray
+	mountMapByMountIDAsString    map[MountIDAsString]*mountStruct    // key == mountStruct.mountIDAsString
 
 	// RetryRPC server
-	retryrpcSvr *retryrpc.Server
+	retryrpcSvr              *retryrpc.Server
+	rootCAx509CertificatePEM []byte
 
 	// Connection list and listener list to close during shutdown:
 	halting     bool
@@ -62,10 +139,9 @@ func init() {
 }
 
 func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
-	globals.volumeMap = make(map[string]bool)
-	globals.mountIDAsByteArrayMap = make(map[MountIDAsByteArray]fs.MountHandle)
-	globals.mountIDAsStringMap = make(map[MountIDAsString]fs.MountHandle)
-	globals.bimodalMountMap = make(map[string]fs.MountHandle)
+	globals.volumeMap = make(map[string]*volumeStruct)
+	globals.mountMapByMountIDAsByteArray = make(map[MountIDAsByteArray]*mountStruct)
+	globals.mountMapByMountIDAsString = make(map[MountIDAsString]*mountStruct)
 
 	// Fetch IPAddrs from config file
 	globals.whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
@@ -115,10 +191,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 			logger.Infof("failed to get JSONRPCServer.RetryRPCDeadlineIO from config file - defaulting to 60s")
 			globals.retryRPCDeadlineIO = 60 * time.Second
 		}
-		globals.retryRPCKEEPALIVEPeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKEEPALIVEPeriod")
+		globals.retryRPCKeepAlivePeriod, err = confMap.FetchOptionValueDuration("JSONRPCServer", "RetryRPCKeepAlivePeriod")
 		if nil != err {
-			logger.Infof("failed to get JSONRPCServer.RetryRPCKEEPALIVEPeriod from config file - defaulting to 60s")
-			globals.retryRPCKEEPALIVEPeriod = 60 * time.Second
+			logger.Infof("failed to get JSONRPCServer.RetryRPCKeepAlivePeriod from config file - defaulting to 60s")
+			globals.retryRPCKeepAlivePeriod = 60 * time.Second
 		}
 	} else {
 		logger.Infof("failed to get JSONRPCServer.RetryRPCPort from config file - skipping......")
@@ -126,7 +202,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		globals.retryRPCTTLCompleted = time.Duration(0)
 		globals.retryRPCAckTrim = time.Duration(0)
 		globals.retryRPCDeadlineIO = time.Duration(0)
-		globals.retryRPCKEEPALIVEPeriod = time.Duration(0)
+		globals.retryRPCKeepAlivePeriod = time.Duration(0)
 	}
 
 	// Set data path logging level to true, so that all trace logging is controlled by settings
@@ -139,6 +215,22 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 		return
 	}
 
+	globals.minLeaseDuration, err = confMap.FetchOptionValueDuration("JSONRPCServer", "MinLeaseDuration")
+	if nil != err {
+		logger.Infof("failed to get JSONRPCServer.MinLeaseDuration from config file - defaulting to 250ms")
+		globals.minLeaseDuration = 250 * time.Millisecond
+	}
+	globals.leaseInterruptInterval, err = confMap.FetchOptionValueDuration("JSONRPCServer", "LeaseInterruptInterval")
+	if nil != err {
+		logger.Infof("failed to get JSONRPCServer.LeaseInterruptInterval from config file - defaulting to 250ms")
+		globals.leaseInterruptInterval = 250 * time.Millisecond
+	}
+	globals.leaseInterruptLimit, err = confMap.FetchOptionValueUint32("JSONRPCServer", "LeaseInterruptLimit")
+	if nil != err {
+		logger.Infof("failed to get JSONRPCServer.LeaseInterruptLimit from config file - defaulting to 20")
+		globals.leaseInterruptLimit = 20
+	}
+
 	// Ensure gate starts out in the Exclusively Locked state
 	closeGate()
 
@@ -148,16 +240,14 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.halting = false
 
 	// Init JSON RPC server stuff
-
-	// jsonRpcServerUp(globals.privateIPAddr, globals.portString)
-	jsonRpcServerUp("0.0.0.0", globals.portString)
+	jsonRpcServerUp(globals.privateIPAddr, globals.portString)
 
 	// Now kick off our other, faster RPC server
 	ioServerUp(globals.privateIPAddr, globals.fastPortString)
 
 	// Init Retry RPC server
 	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
-		globals.retryRPCDeadlineIO, globals.retryRPCKEEPALIVEPeriod)
+		globals.retryRPCDeadlineIO, globals.retryRPCKeepAlivePeriod)
 
 	return
 }
@@ -182,7 +272,39 @@ func (dummy *globalsStruct) VolumeDestroyed(confMap conf.ConfMap, volumeName str
 }
 
 func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string) (err error) {
-	globals.volumeMap[volumeName] = true
+	var (
+		currentlyInVolumeMap bool
+		volume               *volumeStruct
+		volumeHandle         fs.VolumeHandle
+	)
+
+	globals.volumesLock.Lock()
+
+	_, currentlyInVolumeMap = globals.volumeMap[volumeName]
+	if currentlyInVolumeMap {
+		globals.volumesLock.Unlock()
+		err = fmt.Errorf("Cannot be told to ServeVolume(,\"%s\") twice", volumeName)
+		return
+	}
+
+	volumeHandle, err = fs.FetchVolumeHandleByVolumeName(volumeName)
+	if nil != err {
+		globals.volumesLock.Unlock()
+		return
+	}
+
+	volume = &volumeStruct{
+		volumeName:                   volumeName,
+		volumeHandle:                 volumeHandle,
+		acceptingMounts:              true,
+		mountMapByMountIDAsByteArray: make(map[MountIDAsByteArray]*mountStruct),
+		mountMapByMountIDAsString:    make(map[MountIDAsString]*mountStruct),
+		inodeLeaseMap:                make(map[inode.InodeNumber]*inodeLeaseStruct),
+	}
+
+	globals.volumeMap[volumeName] = volume
+
+	globals.volumesLock.Unlock()
 
 	err = nil
 	return
@@ -190,42 +312,46 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
 	var (
-		mountHandle                    fs.MountHandle
-		mountIDAsByteArray             MountIDAsByteArray
-		mountIDAsString                MountIDAsString
-		toRemoveMountIDAsByteArrayList []MountIDAsByteArray
-		toRemoveMountIDAsStringList    []MountIDAsString
+		currentlyInVolumeMap bool
+		mountIDAsByteArray   MountIDAsByteArray
+		mountIDAsString      MountIDAsString
+		volume               *volumeStruct
 	)
 
-	toRemoveMountIDAsByteArrayList = make([]MountIDAsByteArray, 0, len(globals.mountIDAsByteArrayMap))
+	globals.volumesLock.Lock()
 
-	for mountIDAsByteArray, mountHandle = range globals.mountIDAsByteArrayMap {
-		if mountHandle.VolumeName() == volumeName {
-			toRemoveMountIDAsByteArrayList = append(toRemoveMountIDAsByteArrayList, mountIDAsByteArray)
-		}
+	volume, currentlyInVolumeMap = globals.volumeMap[volumeName]
+	if !currentlyInVolumeMap {
+		globals.volumesLock.Unlock()
+		err = fmt.Errorf("Cannot be told to UnserveVolume(,\"%s\") a non-served volume", volumeName)
+		return
 	}
 
-	for _, mountIDAsByteArray = range toRemoveMountIDAsByteArrayList {
-		delete(globals.mountIDAsByteArrayMap, mountIDAsByteArray)
-	}
+	volume.acceptingMounts = false
 
-	toRemoveMountIDAsStringList = make([]MountIDAsString, 0, len(globals.mountIDAsStringMap))
-
-	for mountIDAsString, mountHandle = range globals.mountIDAsStringMap {
-		if mountHandle.VolumeName() == volumeName {
-			toRemoveMountIDAsStringList = append(toRemoveMountIDAsStringList, mountIDAsString)
-		}
-	}
-
-	for _, mountIDAsString = range toRemoveMountIDAsStringList {
-		delete(globals.mountIDAsStringMap, mountIDAsString)
-	}
+	// TODO: Lease Management changes - somehow while *not* holding volumesLock.Lock():
+	//         Prevent new lease requests
+	//         Fail outstanding lease requests
+	//         Revoke granted leases
 
 	delete(globals.volumeMap, volumeName)
-	delete(globals.bimodalMountMap, volumeName)
+
+	for mountIDAsByteArray = range volume.mountMapByMountIDAsByteArray {
+		delete(globals.mountMapByMountIDAsByteArray, mountIDAsByteArray)
+	}
+
+	for mountIDAsString = range volume.mountMapByMountIDAsString {
+		delete(globals.mountMapByMountIDAsString, mountIDAsString)
+	}
+
+	globals.volumesLock.Unlock()
 
 	err = nil
 	return
+}
+
+func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
+	return nil // TODO: this is where we get a chance to tell our clients to unmount !!!
 }
 
 func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
@@ -247,16 +373,12 @@ func (dummy *globalsStruct) Down(confMap conf.ConfMap) (err error) {
 		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.volumeMap)")
 		return
 	}
-	if 0 != len(globals.mountIDAsByteArrayMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountIDAsByteArrayMap)")
+	if 0 != len(globals.mountMapByMountIDAsByteArray) {
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountMapByMountIDAsByteArray)")
 		return
 	}
-	if 0 != len(globals.mountIDAsStringMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountIDAsStringMap)")
-		return
-	}
-	if 0 != len(globals.bimodalMountMap) {
-		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.bimodalMountMap)")
+	if 0 != len(globals.mountMapByMountIDAsString) {
+		err = fmt.Errorf("jrpcfs.Down() called with 0 != len(globals.mountMapByMountIDAsString)")
 		return
 	}
 

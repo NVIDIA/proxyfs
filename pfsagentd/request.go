@@ -39,6 +39,9 @@ func doMountProxyFS() {
 	)
 
 	swiftStorageURL = fetchStorageURL()
+	if "" == swiftStorageURL {
+		logFatalf("unable to fetchStorageURL()")
+	}
 
 	swiftStorageURLSplit = strings.Split(swiftStorageURL, "/")
 
@@ -66,7 +69,7 @@ func doMountProxyFS() {
 
 	retryrpcConfig := &retryrpc.ClientConfig{MyUniqueID: string(globals.mountID), IPAddr: globals.retryRPCPublicIPAddr, Port: int(globals.retryRPCPort),
 		RootCAx509CertificatePEM: globals.rootCAx509CertificatePEM, DeadlineIO: globals.config.RetryRPCDeadlineIO,
-		KEEPALIVEPeriod: globals.config.RetryRPCKEEPALIVEPeriod}
+		KeepAlivePeriod: globals.config.RetryRPCKeepAlivePeriod}
 	globals.retryRPCClient, err = retryrpc.NewClient(retryrpcConfig)
 	if nil != err {
 		logFatalf("unable to retryRPCClient.NewClient(%v,%v): Volume: %s (Account: %s) err: %v", globals.retryRPCPublicIPAddr, globals.retryRPCPort, globals.config.FUSEVolumeName, accountName, err)
@@ -74,9 +77,26 @@ func doMountProxyFS() {
 }
 
 func doUnmountProxyFS() {
+	var (
+		err            error
+		unmountReply   *jrpcfs.Reply
+		unmountRequest *jrpcfs.UnmountRequest
+	)
+
 	// TODO: Flush outstanding FileInode's
 	// TODO: Tell ProxyFS we are releasing all leases
 	// TODO: Tell ProxyFS we are unmounting
+
+	unmountRequest = &jrpcfs.UnmountRequest{
+		MountID: globals.mountID,
+	}
+
+	unmountReply = &jrpcfs.Reply{}
+
+	err = doJRPCRequest("Server.RpcUnmount", unmountRequest, unmountReply)
+	if nil != err {
+		logFatalf("unable to unmount Volume %s: %v", globals.config.FUSEVolumeName, err)
+	}
 
 	globals.retryRPCClient.Close()
 }
@@ -100,6 +120,9 @@ func doJRPCRequest(jrpcMethod string, jrpcParam interface{}, jrpcResult interfac
 	}
 
 	swiftStorageURL = fetchStorageURL()
+	if "" == swiftStorageURL {
+		logFatalf("unable to fetchStorageURL()")
+	}
 
 	httpRequest, httpErr = http.NewRequest("PROXYFS", swiftStorageURL, bytes.NewReader(jrpcRequest))
 	if nil != httpErr {
