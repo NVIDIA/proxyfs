@@ -1,5 +1,40 @@
 # ProxyFS Release Notes
 
+## 1.16.2 (July 1, 2020)
+
+### Bug Fixes:
+
+Memory leak in ProxyFS when PFSAgent is in use has been resolved.
+
+PFSAgent's Swift Auth PlugIn now may be located in the provisioned
+SAIO search path of both the root and vagrant users.
+
+### Features:
+
+Detection of available space on each Swift device (Account, Container,
+and Object) is now enabled. If any device utilization crosses either of
+two thresholds, access to all Volumes will be restricted. The first
+threshold prevents writes to files in the file system. Since there are
+many more operations that actually consume device space (even deletes),
+exceeding the second threshold converts all Volumes to be read-only.
+The "/liveness" URL (in the embedded HTTPServer in ProxyFS) will now
+also report the disk space utilization of each Swift device as well.
+
+In addition to the one-node SAIO VM already present, a new three-node
+SAIT ("Swift All In Three") set of VMs are now presented. This enables
+testing ProxyFS Cluster functionality.
+
+### Notes:
+
+This release also includes initial work in support of the Lease Management
+feature that will ultimately enable multiple PFSAgent instances to safely
+share read/write access to a common ProxyFS Volume. The new RPC is simply
+called "Lease" (i.e. Server.RpcLease) but remains non-functional at this
+point. Such functionality also includes an "upcall" mechanism such that
+ProxyFS may inform a PFSAgent instance of important events requiring their
+response (e.g. a conflicting Lease is needed by another PFSAgent instance,
+or the Volume is leaving and requires the PFSAgent to unmount it).
+
 ## 1.16.1 (May 26, 2020)
 
 ### Bug Fixes:
