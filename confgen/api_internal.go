@@ -140,7 +140,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		exportsFile                    *os.File
 		fuseSetupFile                  *os.File
 		initialConfMap                 conf.ConfMap
-		localVolumeGroupMap            volumeGroupMap
+		localSMBVolumeGroupMap         volumeGroupMap
 		localVolumeMap                 volumeMap
 		nfsClient                      *NFSClient
 		smbUsersSetupFile              *os.File
@@ -181,7 +181,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	// Fetch pertinent data from Initial Config
 
-	_, localVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
+	_, localSMBVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
 	if nil != err {
 		return
 	}
@@ -269,7 +269,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	}
 
 	// Create per VG smb.conf files
-	err = createSMBConf(initialDirPath, localVolumeGroupMap)
+	err = createSMBConf(initialDirPath, localSMBVolumeGroupMap)
 	if nil != err {
 		// TODO - logging
 		return
@@ -948,7 +948,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	return
 }
 
-func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap,
+func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localSMBVolumeGroupMap volumeGroupMap,
 	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
 	err error) {
 	var (
@@ -971,7 +971,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		return
 	}
 
-	localVolumeGroupMap = make(volumeGroupMap)
+	localSMBVolumeGroupMap = make(volumeGroupMap)
 	localVolumeMap = make(volumeMap)
 	globalVolumeMap = make(volumeMap)
 
@@ -982,9 +982,17 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 
 	for volumeGroupName, volumeGroup = range globalVolumeGroupMap {
 		if whoAmI == volumeGroup.PrimaryPeer {
-			localVolumeGroupMap[volumeGroupName] = volumeGroup
 			for volumeName, volume = range volumeGroup.VolumeMap {
 				localVolumeMap[volumeName] = volume
+			}
+
+			var shared bool
+			shared, err = IsVolumeGroupSharedSMB(confMap, volumeGroupName)
+			if nil != err {
+				return
+			}
+			if shared {
+				localSMBVolumeGroupMap[volumeGroupName] = volumeGroup
 			}
 		}
 		for volumeName, volume = range volumeGroup.VolumeMap {
