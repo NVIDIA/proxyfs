@@ -519,9 +519,15 @@ func fetchStringSet(confMap conf.ConfMap, section string, value string, valueSet
 	)
 
 	valueAsSlice, err = confMap.FetchOptionValueStringSlice(section, value)
-	if (nil != err) || (0 == len(valueAsSlice)) {
+	if err != nil {
+		return
+	}
+
+	if 0 == len(valueAsSlice) {
 		data = ""
-	} else if 1 == len(valueAsSlice) {
+		return
+	}
+	if 1 == len(valueAsSlice) {
 		data = valueAsSlice[0]
 
 		// valueSet nil means caller is not interested in the value being unique
@@ -814,14 +820,6 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection,
 				"VirtualHostname", virtualHostNameSet)
 			if nil != err {
-				return
-			}
-		} else {
-			// should we really flag this as an error?
-			if virtualIPAddr != "" {
-				err = fmt.Errorf(
-					"VolumeGroup '%s' is not shared via NFS or SMB but has a Virtual IP '%s'",
-					volumeGroupName, virtualIPAddr)
 				return
 			}
 		}
