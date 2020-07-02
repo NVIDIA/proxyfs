@@ -31,6 +31,7 @@ func TestConfigPath(t *testing.T) {
 
 	// Grab volumes and volume group information
 	_, localVolumeGroupMap, _, _, _, err := fetchVolumeInfo(confMap)
+	assert.Nil(err, "fetchVolumeInfo should succeed")
 
 	// Create temp directory for SMB VG configuration files
 	var tmpDir string
@@ -47,4 +48,50 @@ func TestConfigPath(t *testing.T) {
 
 	err = os.RemoveAll(tmpDir)
 	assert.Nil(err, "Remove of generated directory returned err error")
+}
+
+// Test the IsVolumeShared*() and IsVolumeGroupShared* functions.
+func TestIsSharing(t *testing.T) {
+	assert := assert.New(t)
+
+	// Get the configuration from the config file
+	confMap, err := getConfMap(t, "sample-proxyfs-configuration/proxyfs.conf")
+	assert.Nil(err, "getConMap(sample-proxyfs-configuration/proxyfs.conf) should not fail")
+
+	var shared bool
+	shared, err = IsVolumeSharedSMB(confMap, "volume3")
+	assert.Nil(err, "IsVolumeSharedSMB(volume3) should not fail")
+	assert.False(shared, "volume3 is not shared via SMB")
+
+	shared, err = IsVolumeSharedNFS(confMap, "volume3")
+	assert.Nil(err, "IsVolumeSharedNFS(volume3) should not fail")
+	assert.True(shared, "volume3 is shared via NFS")
+
+	shared, err = IsVolumeSharedSMB(confMap, "vol-vg32-2")
+	assert.Nil(err, "IsVolumeSharedSMB(vol-vg32-2) should not fail")
+	assert.True(shared, "vol-vg32-2 is shared via SMB")
+
+	shared, err = IsVolumeGroupSharedSMB(confMap, "vg32-2")
+	assert.Nil(err, "IsVolumeSharedSMB(vg32-2) should not fail")
+	assert.True(shared, "vg32-2 is shared via SMB")
+
+	shared, err = IsVolumeGroupSharedNFS(confMap, "vg32-2")
+	assert.Nil(err, "IsVolumeSharedNFS(vg32-2) should not fail")
+	assert.False(shared, "vg32-2 is not shared via NFS")
+
+	shared, err = IsVolumeGroupSharedNFS(confMap, "VG1")
+	assert.Nil(err, "IsVolumeSharedNFS(VG1) should not fail")
+	assert.True(shared, "VG1 is shared via NFS")
+
+	shared, err = IsVolumeGroupSharedNFS(confMap, "bazbaz")
+	assert.NotNil(err, "volume group 'bazbaz' does not exist")
+
+	shared, err = IsVolumeSharedNFS(confMap, "bazbaz")
+	assert.NotNil(err, "volume 'bazbaz' does not exist")
+
+	shared, err = IsVolumeSharedSMB(confMap, "bambam")
+	assert.NotNil(err, "volume 'bambam' does not exist")
+
+	shared, err = IsVolumeGroupSharedSMB(confMap, "bambam")
+	assert.NotNil(err, "volume group 'bambam' does not exist")
 }
