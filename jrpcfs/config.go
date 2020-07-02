@@ -249,6 +249,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	retryRPCServerUp(jserver, globals.publicIPAddr, globals.retryRPCPort, globals.retryRPCTTLCompleted, globals.retryRPCAckTrim,
 		globals.retryRPCDeadlineIO, globals.retryRPCKeepAlivePeriod)
 
+	err = nil
 	return
 }
 
