@@ -525,11 +525,13 @@ func computeLivenessCheckAssignments(observingPeerNameList []string) (internalLi
 															err = json.Unmarshal(ringFilePayload, ringFilePayloadJSON)
 															if nil == err {
 																for _, ringFilePayloadJSONDev = range ringFilePayloadJSON.Devs {
-																	_, alreadyInSwiftReconEndpointIAddrSet = swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP]
-																	if !alreadyInSwiftReconEndpointIAddrSet {
-																		swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP] = struct{}{}
-																		swiftReconEndpoint = fmt.Sprintf("%s:%d", ringFilePayloadJSONDev.IP, ringFilePayloadJSONDev.Port)
-																		globals.swiftReconEndpointSet[swiftReconEndpoint] = struct{}{}
+																	if nil != ringFilePayloadJSONDev {
+																		_, alreadyInSwiftReconEndpointIAddrSet = swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP]
+																		if !alreadyInSwiftReconEndpointIAddrSet {
+																			swiftReconEndpointIPAddrSet[ringFilePayloadJSONDev.IP] = struct{}{}
+																			swiftReconEndpoint = fmt.Sprintf("%s:%d", ringFilePayloadJSONDev.IP, ringFilePayloadJSONDev.Port)
+																			globals.swiftReconEndpointSet[swiftReconEndpoint] = struct{}{}
+																		}
 																	}
 																}
 															} else {
