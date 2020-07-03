@@ -1,6 +1,6 @@
 # ProxyFS Release Notes
 
-## 1.16.2 (July 1, 2020)
+## 1.16.3 (July 2, 2020)
 
 ### Bug Fixes:
 
