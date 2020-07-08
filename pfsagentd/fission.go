@@ -344,39 +344,223 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 	return
 }
 
-func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fission.SetAttrIn) (setAttrOut *fission.SetAttrOut, errno syscall.Errno) {
+func setMode(nodeID uint64, mode uint32) (errno syscall.Errno) {
 	var (
-		aTimeNSec                uint32
-		aTimeSec                 uint64
-		cTimeNSec                uint32
-		cTimeSec                 uint64
-		chmodReply               *jrpcfs.Reply
-		chmodRequest             *jrpcfs.ChmodRequest
-		chownReply               *jrpcfs.Reply
-		chownRequest             *jrpcfs.ChownRequest
+		chmodReply   *jrpcfs.Reply
+		chmodRequest *jrpcfs.ChmodRequest
+		err          error
+	)
+
+	chmodRequest = &jrpcfs.ChmodRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(nodeID),
+		},
+		FileMode: mode & uint32(os.ModePerm),
+	}
+
+	chmodReply = &jrpcfs.Reply{}
+
+	err = globals.retryRPCClient.Send("RpcChmod", chmodRequest, chmodReply)
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
+	errno = 0
+	return
+}
+
+func setUIDAndOrGID(nodeID uint64, settingUID bool, uid uint32, settingGID bool, gid uint32) (errno syscall.Errno) {
+	var (
+		chownReply   *jrpcfs.Reply
+		chownRequest *jrpcfs.ChownRequest
+		err          error
+	)
+
+	chownRequest = &jrpcfs.ChownRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(nodeID),
+		},
+	}
+
+	if settingUID {
+		chownRequest.UserID = int32(uid)
+	} else {
+		chownRequest.UserID = -1
+	}
+
+	if settingGID {
+		chownRequest.GroupID = int32(gid)
+	} else {
+		chownRequest.GroupID = -1
+	}
+
+	chownReply = &jrpcfs.Reply{}
+
+	err = globals.retryRPCClient.Send("RpcChown", chownRequest, chownReply)
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
+	errno = 0
+	return
+}
+
+func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
+	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
 		chunkedPutContextLast    *chunkedPutContextStruct
 		err                      error
 		fileInode                *fileInodeStruct
-		getStatReply             *jrpcfs.StatStruct
-		getStatRequest           *jrpcfs.GetStatRequest
 		grantedLock              *fileInodeLockRequestStruct
-		mTimeNSec                uint32
-		mTimeSec                 uint64
 		ok                       bool
 		resizeReply              *jrpcfs.Reply
 		resizeRequest            *jrpcfs.ResizeRequest
-		setTimeReply             *jrpcfs.Reply
-		setTimeRequest           *jrpcfs.SetTimeRequest
-		settingAtime             bool
-		settingAtimeAndOrMtime   bool
-		settingGID               bool
-		settingMode              bool
-		settingMtime             bool
-		settingSize              bool
-		settingUID               bool
-		timeNow                  time.Time
+	)
+
+	fileInode = referenceFileInode(inode.InodeNumber(nodeID))
+
+	fileInode.doFlushIfNecessary()
+
+	grantedLock = fileInode.getExclusiveLock()
+
+	if fileInode.extentMapFileSize > size {
+		fileInode.extentMapFileSize = size
+	}
+
+	pruneExtentMap(fileInode.extentMap, size)
+
+	chunkedPutContextLast = nil
+
+	chunkedPutContextElement = fileInode.chunkedPutList.Front()
+
+	for nil != chunkedPutContextElement {
+		chunkedPutContext, ok = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
+		if !ok {
+			logFatalf("chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
+		}
+
+		chunkedPutContextLast = chunkedPutContext
+
+		if chunkedPutContext.fileSize > size {
+			chunkedPutContext.fileSize = size
+		}
+
+		pruneExtentMap(chunkedPutContext.extentMap, size)
+
+		chunkedPutContextElement = chunkedPutContextElement.Next()
+	}
+
+	if nil == chunkedPutContextLast {
+		if fileInode.extentMapFileSize < size {
+			fileInode.extentMapFileSize = size
+		}
+	} else {
+		if chunkedPutContext.fileSize < size {
+			chunkedPutContext.fileSize = size
+		}
+	}
+
+	resizeRequest = &jrpcfs.ResizeRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(nodeID),
+		},
+		NewSize: size,
+	}
+
+	resizeReply = &jrpcfs.Reply{}
+
+	err = globals.retryRPCClient.Send("RpcResize", resizeRequest, resizeReply)
+	if nil != err {
+		grantedLock.release()
+		fileInode.dereference()
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
+	grantedLock.release()
+
+	fileInode.dereference()
+
+	errno = 0
+	return
+}
+
+func setMTimeAndOrATime(nodeID uint64, settingMTime bool, settingMTimeNow bool, mTimeSec uint64, mTimeNSec uint32, settingATime bool, settingATimeNow bool, aTimeSec uint64, aTimeNSec uint32) (errno syscall.Errno) {
+	var (
+		err            error
+		setTimeReply   *jrpcfs.Reply
+		setTimeRequest *jrpcfs.SetTimeRequest
+		timeNow        time.Time
+	)
+
+	setTimeRequest = &jrpcfs.SetTimeRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(nodeID),
+		},
+		StatStruct: jrpcfs.StatStruct{
+			MTimeNs: uint64(0), // Updated below if settingMTime
+			ATimeNs: uint64(0), // Updated below if settingATime
+		},
+	}
+
+	timeNow = time.Now()
+
+	if settingMTime {
+		if settingMTimeNow {
+			setTimeRequest.MTimeNs = uint64(timeNow.UnixNano())
+		} else {
+			setTimeRequest.MTimeNs = unixTimeToNs(mTimeSec, mTimeNSec)
+		}
+	}
+	if settingATime {
+		if settingATimeNow {
+			setTimeRequest.ATimeNs = uint64(timeNow.UnixNano())
+		} else {
+			setTimeRequest.ATimeNs = unixTimeToNs(aTimeSec, aTimeNSec)
+		}
+	}
+
+	setTimeReply = &jrpcfs.Reply{}
+
+	err = globals.retryRPCClient.Send("RpcSetTime", setTimeRequest, setTimeReply)
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.EIO)
+		return
+	}
+
+	errno = 0
+	return
+}
+
+func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fission.SetAttrIn) (setAttrOut *fission.SetAttrOut, errno syscall.Errno) {
+	var (
+		aTimeNSec              uint32
+		aTimeSec               uint64
+		cTimeNSec              uint32
+		cTimeSec               uint64
+		err                    error
+		fileInode              *fileInodeStruct
+		getStatReply           *jrpcfs.StatStruct
+		getStatRequest         *jrpcfs.GetStatRequest
+		mTimeNSec              uint32
+		mTimeSec               uint64
+		ok                     bool
+		settingATime           bool
+		settingATimeNow        bool
+		settingGID             bool
+		settingMode            bool
+		settingMTime           bool
+		settingMTimeAndOrATime bool
+		settingMTimeNow        bool
+		settingSize            bool
+		settingUID             bool
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoSetAttr_calls, 1)
@@ -402,160 +586,41 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 	settingSize = (0 != (setAttrIn.Valid & fission.SetAttrInValidSize))
 
-	settingAtime = (0 != (setAttrIn.Valid & fission.SetAttrInValidATime)) || (0 != (setAttrIn.Valid & fission.SetAttrInValidATimeNow))
-	settingMtime = (0 != (setAttrIn.Valid & fission.SetAttrInValidMTime)) || (0 != (setAttrIn.Valid & fission.SetAttrInValidMTimeNow))
+	settingMTime = (0 != (setAttrIn.Valid & fission.SetAttrInValidMTime)) || (0 != (setAttrIn.Valid & fission.SetAttrInValidMTimeNow))
+	settingATime = (0 != (setAttrIn.Valid & fission.SetAttrInValidATime)) || (0 != (setAttrIn.Valid & fission.SetAttrInValidATimeNow))
 
-	settingAtimeAndOrMtime = settingAtime || settingMtime
+	settingMTimeNow = settingMTime && (0 != (setAttrIn.Valid & fission.SetAttrInValidMTimeNow))
+	settingATimeNow = settingATime && (0 != (setAttrIn.Valid & fission.SetAttrInValidATimeNow))
+
+	settingMTimeAndOrATime = settingATime || settingMTime
 
 	// TODO: Verify it is ok to accept but ignore fission.SetAttrInValidFH        in setAttrIn.Valid
 	// TODO: Verify it is ok to accept but ignore fission.SetAttrInValidLockOwner in setAttrIn.Valid
 
 	if settingMode {
-		chmodRequest = &jrpcfs.ChmodRequest{
-			InodeHandle: jrpcfs.InodeHandle{
-				MountID:     globals.mountID,
-				InodeNumber: int64(inHeader.NodeID),
-			},
-			FileMode: setAttrIn.Mode & uint32(os.ModePerm),
-		}
-
-		chmodReply = &jrpcfs.Reply{}
-
-		err = globals.retryRPCClient.Send("RpcChmod", chmodRequest, chmodReply)
-		if nil != err {
-			errno = convertErrToErrno(err, syscall.EIO)
+		errno = setMode(inHeader.NodeID, setAttrIn.Mode)
+		if 0 != errno {
 			return
 		}
 	}
 
 	if settingUID || settingGID {
-		chownRequest = &jrpcfs.ChownRequest{
-			InodeHandle: jrpcfs.InodeHandle{
-				MountID:     globals.mountID,
-				InodeNumber: int64(inHeader.NodeID),
-			},
-		}
-
-		if settingUID {
-			chownRequest.UserID = int32(setAttrIn.UID)
-		} else {
-			chownRequest.UserID = -1
-		}
-
-		if settingGID {
-			chownRequest.GroupID = int32(setAttrIn.GID)
-		} else {
-			chownRequest.GroupID = -1
-		}
-
-		chownReply = &jrpcfs.Reply{}
-
-		err = globals.retryRPCClient.Send("RpcChown", chownRequest, chownReply)
-		if nil != err {
-			errno = convertErrToErrno(err, syscall.EIO)
+		errno = setUIDAndOrGID(inHeader.NodeID, settingUID, setAttrIn.UID, settingGID, setAttrIn.GID)
+		if 0 != errno {
 			return
 		}
 	}
 
 	if settingSize {
-		fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
-
-		fileInode.doFlushIfNecessary()
-
-		grantedLock = fileInode.getExclusiveLock()
-
-		if fileInode.extentMapFileSize > setAttrIn.Size {
-			fileInode.extentMapFileSize = setAttrIn.Size
-		}
-
-		pruneExtentMap(fileInode.extentMap, setAttrIn.Size)
-
-		chunkedPutContextLast = nil
-
-		chunkedPutContextElement = fileInode.chunkedPutList.Front()
-
-		for nil != chunkedPutContextElement {
-			chunkedPutContext, ok = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
-			if !ok {
-				logFatalf("chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
-			}
-
-			chunkedPutContextLast = chunkedPutContext
-
-			if chunkedPutContext.fileSize > setAttrIn.Size {
-				chunkedPutContext.fileSize = setAttrIn.Size
-			}
-
-			pruneExtentMap(chunkedPutContext.extentMap, setAttrIn.Size)
-
-			chunkedPutContextElement = chunkedPutContextElement.Next()
-		}
-
-		if nil == chunkedPutContextLast {
-			if fileInode.extentMapFileSize < setAttrIn.Size {
-				fileInode.extentMapFileSize = setAttrIn.Size
-			}
-		} else {
-			if chunkedPutContext.fileSize < setAttrIn.Size {
-				chunkedPutContext.fileSize = setAttrIn.Size
-			}
-		}
-
-		resizeRequest = &jrpcfs.ResizeRequest{
-			InodeHandle: jrpcfs.InodeHandle{
-				MountID:     globals.mountID,
-				InodeNumber: int64(inHeader.NodeID),
-			},
-			NewSize: setAttrIn.Size,
-		}
-
-		resizeReply = &jrpcfs.Reply{}
-
-		err = globals.retryRPCClient.Send("RpcResize", resizeRequest, resizeReply)
-		if nil != err {
-			errno = convertErrToErrno(err, syscall.EIO)
+		errno = setSize(inHeader.NodeID, setAttrIn.Size)
+		if 0 != errno {
 			return
 		}
-
-		grantedLock.release()
-
-		fileInode.dereference()
 	}
 
-	if settingAtimeAndOrMtime {
-		setTimeRequest = &jrpcfs.SetTimeRequest{
-			InodeHandle: jrpcfs.InodeHandle{
-				MountID:     globals.mountID,
-				InodeNumber: int64(inHeader.NodeID),
-			},
-			StatStruct: jrpcfs.StatStruct{
-				MTimeNs: uint64(0), // Updated below if settingMtime
-				ATimeNs: uint64(0), // Updated below if settingAtime
-			},
-		}
-
-		timeNow = time.Now()
-
-		if settingMtime {
-			if 0 != (setAttrIn.Valid & fission.SetAttrInValidMTimeNow) {
-				setTimeRequest.MTimeNs = uint64(timeNow.UnixNano())
-			} else {
-				setTimeRequest.MTimeNs = unixTimeToNs(setAttrIn.MTimeSec, setAttrIn.MTimeNSec)
-			}
-		}
-		if settingAtime {
-			if 0 != (setAttrIn.Valid & fission.SetAttrInValidATimeNow) {
-				setTimeRequest.ATimeNs = uint64(timeNow.UnixNano())
-			} else {
-				setTimeRequest.ATimeNs = unixTimeToNs(setAttrIn.ATimeSec, setAttrIn.ATimeNSec)
-			}
-		}
-
-		setTimeReply = &jrpcfs.Reply{}
-
-		err = globals.retryRPCClient.Send("RpcSetTime", setTimeRequest, setTimeReply)
-		if nil != err {
-			errno = convertErrToErrno(err, syscall.EIO)
+	if settingMTimeAndOrATime {
+		errno = setMTimeAndOrATime(inHeader.NodeID, settingMTime, settingMTimeNow, setAttrIn.MTimeSec, setAttrIn.MTimeNSec, settingATime, settingATimeNow, setAttrIn.ATimeSec, setAttrIn.ATimeNSec)
+		if 0 != errno {
 			return
 		}
 	}
@@ -1055,6 +1120,13 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	}
 
 	globals.Unlock()
+
+	if 0 != (openIn.Flags & fission.FOpenRequestTRUNC) {
+		errno = setSize(inHeader.NodeID, 0)
+		if 0 != errno {
+			return
+		}
+	}
 
 	errno = 0
 	return

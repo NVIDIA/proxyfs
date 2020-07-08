@@ -1,5 +1,12 @@
 # ProxyFS Release Notes
 
+## 1.16.4 (July 7, 2020)
+
+### Bug Fixes:
+
+Opening a file with the O_TRUNC option in a PFSAgent-mounted file
+system would fail to truncate a pre-existing file.
+
 ## 1.16.3 (July 2, 2020)
 
 ### Bug Fixes:
