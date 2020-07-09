@@ -132,6 +132,18 @@ func (client *Client) sendToServer(crID requestID, ctx *reqCtx, queue bool) {
 	// connection and opening a new socket when only one is needed.
 	ctx.genNum = client.connection.genNum
 
+	// The connection state may have changed between when this goroutine
+	// was scheduled and when it grabbed the client lock.
+	//
+	// After we have queued the request, verify the state again before
+	// attempting to use the connection.  If we are not CONNECTED, return
+	// since we must already be in RETRANSMITTING. Since the request is
+	// on the queue, it will be retried automatically.
+	if client.connection.state != CONNECTED {
+		client.Unlock()
+		return
+	}
+
 	// Send header
 	client.connection.tlsConn.SetDeadline(time.Now().Add(client.deadlineIO))
 	err := binary.Write(client.connection.tlsConn, binary.BigEndian, ctx.ioreq.Hdr)
