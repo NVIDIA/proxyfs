@@ -59,39 +59,39 @@ func TestIsSharing(t *testing.T) {
 	assert.Nil(err, "getConMap(sample-proxyfs-configuration/proxyfs.conf) should not fail")
 
 	var shared bool
-	shared, err = IsVolumeSharedSMB(confMap, "volume3")
-	assert.Nil(err, "IsVolumeSharedSMB(volume3) should not fail")
+	shared, err = IsVolumeSharedViaSMB(confMap, "volume3")
+	assert.Nil(err, "IsVolumeSharedViaSMB(volume3) should not fail")
 	assert.False(shared, "volume3 is not shared via SMB")
 
-	shared, err = IsVolumeSharedNFS(confMap, "volume3")
-	assert.Nil(err, "IsVolumeSharedNFS(volume3) should not fail")
+	shared, err = IsVolumeSharedViaNFS(confMap, "volume3")
+	assert.Nil(err, "IsVolumeSharedViaNFS(volume3) should not fail")
 	assert.True(shared, "volume3 is shared via NFS")
 
-	shared, err = IsVolumeSharedSMB(confMap, "vol-vg32-2")
-	assert.Nil(err, "IsVolumeSharedSMB(vol-vg32-2) should not fail")
+	shared, err = IsVolumeSharedViaSMB(confMap, "vol-vg32-2")
+	assert.Nil(err, "IsVolumeSharedViaSMB(vol-vg32-2) should not fail")
 	assert.True(shared, "vol-vg32-2 is shared via SMB")
 
-	shared, err = IsVolumeGroupSharedSMB(confMap, "vg32-2")
-	assert.Nil(err, "IsVolumeSharedSMB(vg32-2) should not fail")
+	shared, err = IsVolumeGroupSharedViaSMB(confMap, "vg32-2")
+	assert.Nil(err, "IsVolumeSharedViaSMB(vg32-2) should not fail")
 	assert.True(shared, "vg32-2 is shared via SMB")
 
-	shared, err = IsVolumeGroupSharedNFS(confMap, "vg32-2")
-	assert.Nil(err, "IsVolumeSharedNFS(vg32-2) should not fail")
+	shared, err = IsVolumeGroupSharedViaNFS(confMap, "vg32-2")
+	assert.Nil(err, "IsVolumeSharedViaNFS(vg32-2) should not fail")
 	assert.False(shared, "vg32-2 is not shared via NFS")
 
-	shared, err = IsVolumeGroupSharedNFS(confMap, "VG1")
-	assert.Nil(err, "IsVolumeSharedNFS(VG1) should not fail")
+	shared, err = IsVolumeGroupSharedViaNFS(confMap, "VG1")
+	assert.Nil(err, "IsVolumeSharedViaNFS(VG1) should not fail")
 	assert.True(shared, "VG1 is shared via NFS")
 
-	shared, err = IsVolumeGroupSharedNFS(confMap, "bazbaz")
+	shared, err = IsVolumeGroupSharedViaNFS(confMap, "bazbaz")
 	assert.NotNil(err, "volume group 'bazbaz' does not exist")
 
-	shared, err = IsVolumeSharedNFS(confMap, "bazbaz")
+	shared, err = IsVolumeSharedViaNFS(confMap, "bazbaz")
 	assert.NotNil(err, "volume 'bazbaz' does not exist")
 
-	shared, err = IsVolumeSharedSMB(confMap, "bambam")
+	shared, err = IsVolumeSharedViaSMB(confMap, "bambam")
 	assert.NotNil(err, "volume 'bambam' does not exist")
 
-	shared, err = IsVolumeGroupSharedSMB(confMap, "bambam")
+	shared, err = IsVolumeGroupSharedViaSMB(confMap, "bambam")
 	assert.NotNil(err, "volume group 'bambam' does not exist")
 }

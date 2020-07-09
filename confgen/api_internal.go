@@ -716,6 +716,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		nfsExportClientMapSet         stringSet
 		ok                            bool
 		shareNameSet                  stringSet
+		shared                        bool
 		tcpPort                       int
 		virtualHostNameSet            stringSet
 		virtualIPAddrSet              stringSet
@@ -790,17 +791,16 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		var shared bool
-		shared, err = IsVolumeGroupSharedSMB(confMap, volumeGroupName)
+		shared, err = IsVolumeGroupSharedViaSMB(confMap, volumeGroupName)
 		if nil != err {
-			err = fmt.Errorf("IsVolumeGroupSharedSMB() failed for volume group '%s': %v",
+			err = fmt.Errorf("IsVolumeGroupSharedViaSMB() failed for volume group '%s': %v",
 				volumeGroupName, err)
 			return
 		}
 		if !shared {
-			shared, err = IsVolumeGroupSharedNFS(confMap, volumeGroupName)
+			shared, err = IsVolumeGroupSharedViaNFS(confMap, volumeGroupName)
 			if nil != err {
-				err = fmt.Errorf("IsVolumeGroupSharedNFS() failed for volume group '%s': %v",
+				err = fmt.Errorf("IsVolumeGroupSharedViaNFS() failed for volume group '%s': %v",
 					volumeGroupName, err)
 				return
 			}
@@ -952,6 +952,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localSMBVolumeGroupMa
 	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
 	err error) {
 	var (
+		shared          bool
 		volume          *Volume
 		volumeGroup     *VolumeGroup
 		volumeGroupList []string
@@ -986,8 +987,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localSMBVolumeGroupMa
 				localVolumeMap[volumeName] = volume
 			}
 
-			var shared bool
-			shared, err = IsVolumeGroupSharedSMB(confMap, volumeGroupName)
+			shared, err = IsVolumeGroupSharedViaSMB(confMap, volumeGroupName)
 			if nil != err {
 				return
 			}
@@ -1003,7 +1003,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localSMBVolumeGroupMa
 	return
 }
 
-func IsVolumeSharedSMB(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
+func IsVolumeSharedViaSMB(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
 
 	volumeSection := "Volume:" + volumeName
 	shareName, err := fetchStringSet(confMap, volumeSection, "SMBShareName", nil)
@@ -1018,7 +1018,7 @@ func IsVolumeSharedSMB(confMap conf.ConfMap, volumeName string) (shared bool, er
 
 }
 
-func IsVolumeSharedNFS(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
+func IsVolumeSharedViaNFS(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
 
 	volumeSection := "Volume:" + volumeName
 	clientList, err := fetchStringSet(confMap, volumeSection, "NFSExportClientMapList", nil)
@@ -1033,12 +1033,12 @@ func IsVolumeSharedNFS(confMap conf.ConfMap, volumeName string) (shared bool, er
 
 }
 
-// IsVolumeGroupSharedSMB Returns true if any volume in the volume group is
+// IsVolumeGroupSharedViaSMB Returns true if any volume in the volume group is
 // shared using SMB.  While we don't support having a volume be shared by both
 // SMB and NFS, it seems like two different volumes in a volume group could be,
 // so a volume group might be "shared" using both protocols.
 //
-func IsVolumeGroupSharedSMB(confMap conf.ConfMap, vgName string) (shared bool, err error) {
+func IsVolumeGroupSharedViaSMB(confMap conf.ConfMap, vgName string) (shared bool, err error) {
 
 	volumeGroupSection := "VolumeGroup:" + vgName
 	volumeList, err := confMap.FetchOptionValueStringSlice(volumeGroupSection, "VolumeList")
@@ -1047,7 +1047,7 @@ func IsVolumeGroupSharedSMB(confMap conf.ConfMap, vgName string) (shared bool, e
 	}
 
 	for _, volumeName := range volumeList {
-		shared, err = IsVolumeSharedSMB(confMap, volumeName)
+		shared, err = IsVolumeSharedViaSMB(confMap, volumeName)
 		if err != nil {
 			return
 		}
@@ -1059,12 +1059,12 @@ func IsVolumeGroupSharedSMB(confMap conf.ConfMap, vgName string) (shared bool, e
 	return
 }
 
-// IsVolumeGroupSharedNFS Returns true if any volume in the volume group is
+// IsVolumeGroupSharedViaNFS Returns true if any volume in the volume group is
 // shared using NFS.  While we don't support having a volume be shared by both
 // SMB and NFS, it seems like two different volumes in a volume group could be,
 // so a volume group might be "shared" using both protocols.
 //
-func IsVolumeGroupSharedNFS(confMap conf.ConfMap, vgName string) (shared bool, err error) {
+func IsVolumeGroupSharedViaNFS(confMap conf.ConfMap, vgName string) (shared bool, err error) {
 
 	volumeGroupSection := "VolumeGroup:" + vgName
 	volumeList, err := confMap.FetchOptionValueStringSlice(volumeGroupSection, "VolumeList")
@@ -1073,7 +1073,7 @@ func IsVolumeGroupSharedNFS(confMap conf.ConfMap, vgName string) (shared bool, e
 	}
 
 	for _, volumeName := range volumeList {
-		shared, err = IsVolumeSharedNFS(confMap, volumeName)
+		shared, err = IsVolumeSharedViaNFS(confMap, volumeName)
 		if err != nil {
 			return
 		}
