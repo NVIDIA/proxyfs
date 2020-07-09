@@ -152,7 +152,7 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 
 	err = globals.retryRPCClient.Send("RpcLookupPlus", lookupPlusRequest, lookupPlusReply)
 	if nil != err {
-		errno = convertErrToErrno(err, syscall.EIO)
+		errno = convertErrToErrno(err, syscall.ENOENT)
 		return
 	}
 
@@ -890,15 +890,32 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 
 func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fission.UnlinkIn) (errno syscall.Errno) {
 	var (
-		err           error
-		unlinkReply   *jrpcfs.Reply
-		unlinkRequest *jrpcfs.UnlinkRequest
+		err               error
+		lookupPlusReply   *jrpcfs.LookupPlusReply
+		lookupPlusRequest *jrpcfs.LookupPlusRequest
+		unlinkReply       *jrpcfs.Reply
+		unlinkRequest     *jrpcfs.UnlinkRequest
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoUnlink_calls, 1)
 
-	// TODO: Remove this once Lease Management makes this unnecessary
-	doFlushIfNecessary(inode.InodeNumber(inHeader.NodeID), unlinkIn.Name)
+	lookupPlusRequest = &jrpcfs.LookupPlusRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(inHeader.NodeID),
+		},
+		Basename: string(unlinkIn.Name[:]),
+	}
+
+	lookupPlusReply = &jrpcfs.LookupPlusReply{}
+
+	err = globals.retryRPCClient.Send("RpcLookupPlus", lookupPlusRequest, lookupPlusReply)
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.ENOENT)
+		return
+	}
+
+	doFlushIfNecessary(inode.InodeNumber(lookupPlusReply.InodeNumber), unlinkIn.Name)
 
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
