@@ -30,7 +30,7 @@ func (cb *MyClient) Interrupt(payload []byte) {
 
 // Test getting an upcallbasic Server creation and deletion
 func testUpCall(t *testing.T) {
-	var myUniqueClientID string = "client 1"
+	var myUniqueClientID string = "my upcall client 1"
 
 	assert := assert.New(t)
 	zero := 0
@@ -85,6 +85,11 @@ func testUpCall(t *testing.T) {
 		cb.cond.Wait()
 	}
 	cb.Unlock()
+
+	// Dump stats
+	/* DEBUG ONLY -
+	fmt.Printf("pfsagent dump stats: %s\n", bucketstats.SprintStats(bucketstats.StatFormatParsable1, "proxyfs.retryrpc", rrClnt.GetStatsGroupName()))
+	*/
 
 	// Stop the client before exiting
 	rrClnt.Close()
