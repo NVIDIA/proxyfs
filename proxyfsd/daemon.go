@@ -2,7 +2,6 @@ package proxyfsd
 
 import (
 	"fmt"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
@@ -10,8 +9,6 @@ import (
 	"sync"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/pkg/profile"
 
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/logger"
@@ -48,28 +45,6 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		return
 	}
 
-	// Start profiling using pkg/profile, if requested. Profiling stops when proxyfsd exits.
-	//
-	// With the settings used below, output goes to a generated directory in /tmp.
-	//  (example: /tmp/profile083387279/cpu.pprof)
-	//
-	// go tool pprof can then be used to analyze the file.
-	//
-	profileType, confErr := confMap.FetchOptionValueString("ProxyfsDebug", "ProfileType")
-	if confErr == nil {
-		switch profileType {
-		case "Block":
-			defer profile.Start(profile.BlockProfile).Stop()
-		case "CPU":
-			defer profile.Start(profile.CPUProfile).Stop()
-		case "Memory":
-			defer profile.Start(profile.MemProfile).Stop()
-		case "Mutex":
-			defer profile.Start(profile.MutexProfile).Stop()
-		}
-	}
-	// If not specified in conf map or type doesn't match one of the above, don't do profiling.
-
 	// Start up dæmon packages
 
 	err = transitions.Up(confMap)
@@ -89,18 +64,6 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		errChan <- err
 		wg.Done()
 	}()
-
-	// Optionally launch an embedded HTTP Server for Golang runtime access
-
-	debugServerPortAsUint16, err = confMap.FetchOptionValueUint16("ProxyfsDebug", "DebugServerPort")
-	if nil != err {
-		debugServerPortAsUint16 = 6060 // TODO: Eventually set it to zero
-	}
-	if uint16(0) != debugServerPortAsUint16 {
-		debugServerPortAsString = fmt.Sprintf("%d", debugServerPortAsUint16)
-		logger.Infof("proxyfsd.Daemon() starting debug HTTP Server on localhost:%s", debugServerPortAsString)
-		go http.ListenAndServe("localhost:"+debugServerPortAsString, nil)
-	}
 
 	// Arm signal handler used to indicate termination and wait on it
 	//
