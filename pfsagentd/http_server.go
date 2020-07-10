@@ -81,14 +81,6 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 	switch {
 	case "/config" == path:
 		serveGetOfConfig(responseWriter, request)
-	case "/debug/pprof/cmdline" == path:
-		pprof.Cmdline(responseWriter, request)
-	case "/debug/pprof/profile" == path:
-		pprof.Profile(responseWriter, request)
-	case "/debug/pprof/symbol" == path:
-		pprof.Symbol(responseWriter, request)
-	case "/debug/pprof/trace" == path:
-		pprof.Trace(responseWriter, request)
 	case strings.HasPrefix(path, "/debug/pprof"):
 		pprof.Index(responseWriter, request)
 	case "/metrics" == path:
