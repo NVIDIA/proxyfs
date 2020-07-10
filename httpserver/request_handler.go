@@ -157,8 +157,6 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		doGetOfMetrics(responseWriter, request)
 	case "/stats" == path:
 		doGetOfStats(responseWriter, request)
-	case "/debug/pprof" == path:
-		pprof.Index(responseWriter, request)
 	case "/debug/pprof/cmdline" == path:
 		pprof.Cmdline(responseWriter, request)
 	case "/debug/pprof/profile" == path:
@@ -167,6 +165,8 @@ func doGet(responseWriter http.ResponseWriter, request *http.Request) {
 		pprof.Symbol(responseWriter, request)
 	case "/debug/pprof/trace" == path:
 		pprof.Trace(responseWriter, request)
+	case strings.HasPrefix(request.URL.Path, "/debug/pprof"):
+		pprof.Index(responseWriter, request)
 	case "/open-iconic/font/css/open-iconic-bootstrap.min.css" == path:
 		responseWriter.Header().Set("Content-Type", openIconicBootstrapDotCSSContentType)
 		responseWriter.WriteHeader(http.StatusOK)
