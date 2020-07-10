@@ -27,11 +27,9 @@ import (
 // encountered before or after this point will be sent to errChan (and be non-nil of course).
 func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.WaitGroup, execArgs []string, signals ...os.Signal) {
 	var (
-		confMap                 conf.ConfMap
-		debugServerPortAsString string
-		debugServerPortAsUint16 uint16
-		err                     error
-		signalReceived          os.Signal
+		confMap        conf.ConfMap
+		err            error
+		signalReceived os.Signal
 	)
 
 	// Compute confMap
