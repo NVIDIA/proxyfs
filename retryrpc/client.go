@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/btree"
+	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/logger"
 )
 
@@ -18,6 +19,19 @@ const (
 	ConnectionRetryInitialDelay    = 100 * time.Millisecond
 	ConnectionRetryLimit           = 8
 )
+
+const (
+	// Prefix used for bucketstats of client
+	clientSideGroupPrefix = "ClientSide-"
+)
+
+// Useful stats for the client side
+type clientSideStatsInfo struct {
+	RetransmitsStarted bucketstats.Total // Number of retransmits attempted
+	SendCalled         bucketstats.Total // Number of times Send called
+	ReplyCalled        bucketstats.Total // Number of times receive Reply to RPC
+	UpcallCalled       bucketstats.Total // Number of times received an Upcall
+}
 
 // TODO - what if RPC was completed on Server1 and before response,
 // proxyfsd fails over to Server2?   Client will resend - not idempotent
@@ -38,6 +52,7 @@ func (client *Client) send(method string, rpcRequest interface{}, rpcReply inter
 		connectionRetryDelay time.Duration
 		crID                 requestID
 	)
+	client.stats.SendCalled.Add(1)
 
 	client.Lock()
 	if client.connection.state == INITIAL {
@@ -293,6 +308,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 			// can read the next response.
 			client.goroutineWG.Add(1)
 			go client.notifyReply(buf, callingGenNum)
+			client.stats.ReplyCalled.Add(1)
 
 		case Upcall:
 
@@ -302,6 +318,7 @@ func (client *Client) readReplies(callingGenNum uint64, tlsConn *tls.Conn) {
 				client.cb.(ClientCallbacks).Interrupt(buf)
 				client.goroutineWG.Done()
 			}(buf)
+			client.stats.UpcallCalled.Add(1)
 
 		default:
 			fmt.Printf("CLIENT - invalid msgType: %v\n", msgType)
@@ -338,6 +355,7 @@ func (client *Client) retransmit(genNum uint64) {
 	// socket - close the connection and start trying to reconnect.
 	_ = client.connection.tlsConn.Close()
 	client.connection.state = RETRANSMITTING
+	client.stats.RetransmitsStarted.Add(1)
 
 	connectionRetryCount = 0
 	connectionRetryDelay = ConnectionRetryInitialDelay
