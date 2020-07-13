@@ -1,13 +1,11 @@
 # ProxyFS Release Notes
 
-## 1.16.5 (July 13, 2020)
+## 1.16.6 (July 13, 2020)
 
 ### Bug Fixes:
 
 Fixed memory leak in PFSAgent where file stats not recently accessed
 were cached indefinitely.
-
-Fixed failure to flush in-flight write data for deleted files.
 
 Fixed race condition in retryrpc path (PFSAgent->ProxyFS) that could
 be exposed when connections need to be reestablished and requests
