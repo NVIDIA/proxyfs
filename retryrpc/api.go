@@ -301,6 +301,7 @@ type Client struct {
 	// trimmed
 	bt          *btree.BTree   // btree of requestID's acked
 	goroutineWG sync.WaitGroup // Used to track outstanding goroutines
+	stats       clientSideStatsInfo
 }
 
 // ClientCallbacks contains the methods required when supporting
@@ -351,6 +352,8 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 		return nil, err
 	}
 
+	bucketstats.Register("proxyfs.retryrpc", client.GetStatsGroupName(), &client.stats)
+
 	return client, err
 }
 
@@ -358,6 +361,12 @@ func NewClient(config *ClientConfig) (client *Client, err error) {
 func (client *Client) Send(method string, request interface{}, reply interface{}) (err error) {
 
 	return client.send(method, request, reply)
+}
+
+// GetStatsGroupName returns the bucketstats GroupName for this client
+func (client *Client) GetStatsGroupName() (s string) {
+
+	return clientSideGroupPrefix + client.myUniqueID
 }
 
 // Close gracefully shuts down the client
@@ -374,4 +383,6 @@ func (client *Client) Close() {
 
 	// Wait for the goroutines to return
 	client.goroutineWG.Wait()
+	bucketstats.UnRegister("proxyfs.retryrpc", client.GetStatsGroupName())
+
 }

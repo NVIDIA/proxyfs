@@ -78,24 +78,24 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 
 	path = strings.TrimRight(request.URL.Path, "/")
 
-	switch path {
-	case "/config":
+	switch {
+	case "/config" == path:
 		serveGetOfConfig(responseWriter, request)
-	case "/debug/pprof":
-		pprof.Index(responseWriter, request)
-	case "/debug/pprof/cmdline":
+	case "/debug/pprof/cmdline" == path:
 		pprof.Cmdline(responseWriter, request)
-	case "/debug/pprof/profile":
+	case "/debug/pprof/profile" == path:
 		pprof.Profile(responseWriter, request)
-	case "/debug/pprof/symbol":
+	case "/debug/pprof/symbol" == path:
 		pprof.Symbol(responseWriter, request)
-	case "/debug/pprof/trace":
+	case "/debug/pprof/trace" == path:
 		pprof.Trace(responseWriter, request)
-	case "/metrics":
+	case strings.HasPrefix(path, "/debug/pprof"):
+		pprof.Index(responseWriter, request)
+	case "/metrics" == path:
 		serveGetOfMetrics(responseWriter, request)
-	case "/stats":
+	case "/stats" == path:
 		serveGetOfStats(responseWriter, request)
-	case "/version":
+	case "/version" == path:
 		serveGetOfVersion(responseWriter, request)
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -278,7 +278,7 @@ func serveGetOfMetrics(responseWriter http.ResponseWriter, request *http.Request
 func serveGetOfStats(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/plain")
 	responseWriter.WriteHeader(http.StatusOK)
-	_, _ = responseWriter.Write([]byte(bucketstats.SprintStats(bucketstats.StatFormatParsable1, "PFSAgent", "")))
+	_, _ = responseWriter.Write([]byte(bucketstats.SprintStats(bucketstats.StatFormatParsable1, "*", "*")))
 }
 
 func insertInMetricsLLRB(metricsLLRB sortedmap.LLRBTree, metricKey string, metricValueAsUint64 uint64) {

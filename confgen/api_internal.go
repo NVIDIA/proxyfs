@@ -140,7 +140,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 		exportsFile                    *os.File
 		fuseSetupFile                  *os.File
 		initialConfMap                 conf.ConfMap
-		localVolumeGroupMap            volumeGroupMap
+		localSMBVolumeGroupMap         volumeGroupMap
 		localVolumeMap                 volumeMap
 		nfsClient                      *NFSClient
 		smbUsersSetupFile              *os.File
@@ -181,7 +181,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 
 	// Fetch pertinent data from Initial Config
 
-	_, localVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
+	_, localSMBVolumeGroupMap, localVolumeMap, _, _, err = fetchVolumeInfo(initialConfMap)
 	if nil != err {
 		return
 	}
@@ -269,7 +269,7 @@ func computeInitial(envMap EnvMap, confFilePath string, confOverrides []string, 
 	}
 
 	// Create per VG smb.conf files
-	err = createSMBConf(initialDirPath, localVolumeGroupMap)
+	err = createSMBConf(initialDirPath, localSMBVolumeGroupMap)
 	if nil != err {
 		// TODO - logging
 		return
@@ -486,6 +486,7 @@ func computeVolumeSetChange(oldConfMap conf.ConfMap, newConfMap conf.ConfMap) (t
 	_, _, newLocalVolumeMap, _, _, err = fetchVolumeInfo(newConfMap)
 	if nil != err {
 		err = fmt.Errorf("In newConfMap: %v", err)
+		return
 	}
 
 	toDeleteVolumeMap = make(volumeMap)
@@ -518,9 +519,15 @@ func fetchStringSet(confMap conf.ConfMap, section string, value string, valueSet
 	)
 
 	valueAsSlice, err = confMap.FetchOptionValueStringSlice(section, value)
-	if (nil != err) || (0 == len(valueAsSlice)) {
+	if err != nil {
+		return
+	}
+
+	if 0 == len(valueAsSlice) {
 		data = ""
-	} else if 1 == len(valueAsSlice) {
+		return
+	}
+	if 1 == len(valueAsSlice) {
 		data = valueAsSlice[0]
 
 		// valueSet nil means caller is not interested in the value being unique
@@ -709,6 +716,7 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 		nfsExportClientMapSet         stringSet
 		ok                            bool
 		shareNameSet                  stringSet
+		shared                        bool
 		tcpPort                       int
 		virtualHostNameSet            stringSet
 		virtualIPAddrSet              stringSet
@@ -775,25 +783,45 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 			return
 		}
 
-		// Fetch the virtual IP address for the group.  It must be be a valid
-		// (parsable) CIDR notation IP address.  Hold onto the netmask
-		// separtely. This code also has the effect of converting an IP address to
-		// canonical form (RFC-4291 or RFC-4632).
+		// Fetch the virtual IP address for the group.  If the volume group is
+		// shared via NFS or SMB then it must have a virtual IP, otherwise it
+		// should not.
 		virtualIPAddr, err = fetchStringSet(confMap, volumeGroupSection, "VirtualIPAddr", virtualIPAddrSet)
 		if nil != err {
 			return
 		}
-		volumeGroup.VirtualIPAddr, volumeGroup.VirtualIPMask, err = net.ParseCIDR(virtualIPAddr)
-		if nil != err {
-			err = fmt.Errorf("ParseCIDR() for config file variable [%s][%s] value '%s' failed: %v",
-				volumeGroupSection, "VirtualIPAddr", virtualIPAddr, err)
 
+		shared, err = IsVolumeGroupSharedViaSMB(confMap, volumeGroupName)
+		if nil != err {
+			err = fmt.Errorf("IsVolumeGroupSharedViaSMB() failed for volume group '%s': %v",
+				volumeGroupName, err)
 			return
 		}
+		if !shared {
+			shared, err = IsVolumeGroupSharedViaNFS(confMap, volumeGroupName)
+			if nil != err {
+				err = fmt.Errorf("IsVolumeGroupSharedViaNFS() failed for volume group '%s': %v",
+					volumeGroupName, err)
+				return
+			}
+		}
 
-		volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection, "VirtualHostname", virtualHostNameSet)
-		if nil != err {
-			return
+		// The virtual IP must be be a valid (parsable) CIDR notation IP address.
+		// Hold onto the netmask separtely. This code also has the effect of
+		// converting an IP address to canonical form (RFC-4291 or RFC-4632).
+		if shared {
+			volumeGroup.VirtualIPAddr, volumeGroup.VirtualIPMask, err = net.ParseCIDR(virtualIPAddr)
+			if nil != err {
+				err = fmt.Errorf("ParseCIDR() for config file variable [%s][%s] value '%s' failed: %v",
+					volumeGroupSection, "VirtualIPAddr", virtualIPAddr, err)
+				return
+			}
+
+			volumeGroup.VirtualHostName, err = fetchStringSet(confMap, volumeGroupSection,
+				"VirtualHostname", virtualHostNameSet)
+			if nil != err {
+				return
+			}
 		}
 
 		// We do not check for duplicates of PrimaryPeer
@@ -920,10 +948,11 @@ func populateVolumeGroup(confMap conf.ConfMap, globalVolumeGroupMap volumeGroupM
 	return
 }
 
-func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap volumeGroupMap,
+func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localSMBVolumeGroupMap volumeGroupMap,
 	localVolumeMap volumeMap, globalVolumeGroupMap volumeGroupMap, globalVolumeMap volumeMap,
 	err error) {
 	var (
+		shared          bool
 		volume          *Volume
 		volumeGroup     *VolumeGroup
 		volumeGroupList []string
@@ -943,7 +972,7 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		return
 	}
 
-	localVolumeGroupMap = make(volumeGroupMap)
+	localSMBVolumeGroupMap = make(volumeGroupMap)
 	localVolumeMap = make(volumeMap)
 	globalVolumeMap = make(volumeMap)
 
@@ -954,9 +983,16 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 
 	for volumeGroupName, volumeGroup = range globalVolumeGroupMap {
 		if whoAmI == volumeGroup.PrimaryPeer {
-			localVolumeGroupMap[volumeGroupName] = volumeGroup
 			for volumeName, volume = range volumeGroup.VolumeMap {
 				localVolumeMap[volumeName] = volume
+			}
+
+			shared, err = IsVolumeGroupSharedViaSMB(confMap, volumeGroupName)
+			if nil != err {
+				return
+			}
+			if shared {
+				localSMBVolumeGroupMap[volumeGroupName] = volumeGroup
 			}
 		}
 		for volumeName, volume = range volumeGroup.VolumeMap {
@@ -964,5 +1000,87 @@ func fetchVolumeInfo(confMap conf.ConfMap) (whoAmI string, localVolumeGroupMap v
 		}
 	}
 
+	return
+}
+
+func IsVolumeSharedViaSMB(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
+
+	volumeSection := "Volume:" + volumeName
+	shareName, err := fetchStringSet(confMap, volumeSection, "SMBShareName", nil)
+	if err != nil {
+		return
+	}
+
+	if shareName != "" {
+		shared = true
+	}
+	return
+
+}
+
+func IsVolumeSharedViaNFS(confMap conf.ConfMap, volumeName string) (shared bool, err error) {
+
+	volumeSection := "Volume:" + volumeName
+	clientList, err := fetchStringSet(confMap, volumeSection, "NFSExportClientMapList", nil)
+	if err != nil {
+		return
+	}
+
+	if clientList != "" {
+		shared = true
+	}
+	return
+
+}
+
+// IsVolumeGroupSharedViaSMB Returns true if any volume in the volume group is
+// shared using SMB.  While we don't support having a volume be shared by both
+// SMB and NFS, it seems like two different volumes in a volume group could be,
+// so a volume group might be "shared" using both protocols.
+//
+func IsVolumeGroupSharedViaSMB(confMap conf.ConfMap, vgName string) (shared bool, err error) {
+
+	volumeGroupSection := "VolumeGroup:" + vgName
+	volumeList, err := confMap.FetchOptionValueStringSlice(volumeGroupSection, "VolumeList")
+	if err != nil {
+		return
+	}
+
+	for _, volumeName := range volumeList {
+		shared, err = IsVolumeSharedViaSMB(confMap, volumeName)
+		if err != nil {
+			return
+		}
+
+		if shared {
+			return
+		}
+	}
+	return
+}
+
+// IsVolumeGroupSharedViaNFS Returns true if any volume in the volume group is
+// shared using NFS.  While we don't support having a volume be shared by both
+// SMB and NFS, it seems like two different volumes in a volume group could be,
+// so a volume group might be "shared" using both protocols.
+//
+func IsVolumeGroupSharedViaNFS(confMap conf.ConfMap, vgName string) (shared bool, err error) {
+
+	volumeGroupSection := "VolumeGroup:" + vgName
+	volumeList, err := confMap.FetchOptionValueStringSlice(volumeGroupSection, "VolumeList")
+	if err != nil {
+		return
+	}
+
+	for _, volumeName := range volumeList {
+		shared, err = IsVolumeSharedViaNFS(confMap, volumeName)
+		if err != nil {
+			return
+		}
+
+		if shared {
+			return
+		}
+	}
 	return
 }

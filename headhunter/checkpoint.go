@@ -523,6 +523,9 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *Checkpo
 		getResponse *etcd.GetResponse
 	)
 
+	logger.Infof("getEtcdCheckpointHeader: called for volume '%s' etcdkey '%s'",
+		volume.volumeName, volume.checkpointEtcdKeyName)
+
 	ctx, cancel = context.WithTimeout(context.Background(), globals.etcdOpTimeout)
 	getResponse, err = globals.etcdKV.Get(ctx, volume.checkpointEtcdKeyName)
 	cancel()
@@ -546,6 +549,8 @@ func (volume *volumeStruct) getEtcdCheckpointHeader() (checkpointHeader *Checkpo
 
 	checkpointHeaderEtcdRevision = getResponse.Kvs[0].ModRevision
 
+	logger.Infof("getEtcdCheckpointHeader: returning for volume '%s' etcdkey '%s' header %+v",
+		volume.volumeName, volume.checkpointEtcdKeyName, *checkpointHeader)
 	return
 }
 

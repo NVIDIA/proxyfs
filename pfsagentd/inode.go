@@ -184,16 +184,9 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 	cacheLimitToEnforce = int(globals.config.ExclusiveFileLimit) - globals.exclusiveLeaseFileInodeCacheLRU.Len()
 	cacheLimitToEnforce += int(globals.config.SharedFileLimit) - globals.sharedLeaseFileInodeCacheLRU.Len()
 
-	if 0 < cacheLimitToEnforce {
-		cacheLimitToEnforce = 0
-	}
-
 	for globals.unleasedFileInodeCacheLRU.Len() > cacheLimitToEnforce {
 		fileInodeCacheLRUElement = globals.unleasedFileInodeCacheLRU.Front()
 		fileInode = fileInodeCacheLRUElement.Value.(*fileInodeStruct)
-		if (0 < fileInode.references) || (fileInodeLeaseStateNone != fileInode.leaseState) {
-			break
-		}
 		globals.unleasedFileInodeCacheLRU.Remove(fileInodeCacheLRUElement)
 		delete(globals.fileInodeMap, fileInode.InodeNumber)
 	}

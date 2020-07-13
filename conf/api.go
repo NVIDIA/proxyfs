@@ -482,8 +482,12 @@ func (confMap ConfMap) FetchOptionValueString(sectionName string, optionName str
 		return
 	}
 
+	if 0 == len(optionValueSlice) {
+		err = fmt.Errorf("[%v]%v must have a value", sectionName, optionName)
+		return
+	}
 	if 1 != len(optionValueSlice) {
-		err = fmt.Errorf("[%v]%v must be single-valued", sectionName, optionName)
+		err = fmt.Errorf("[%v]%v must have a single value", sectionName, optionName)
 		return
 	}
 

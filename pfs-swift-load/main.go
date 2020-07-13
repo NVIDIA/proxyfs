@@ -774,9 +774,15 @@ func (worker *workerStruct) workerThreadLauncher() {
 							fileBlockIndex++
 						}
 						if nil == err {
-							err = file.Close()
-							if nil != err {
+							err = file.Sync()
+							if nil == err {
+								err = file.Close()
+								if nil != err {
+									abandonedIteration = true
+								}
+							} else {
 								abandonedIteration = true
+								_ = file.Close()
 							}
 						} else {
 							abandonedIteration = true
