@@ -516,16 +516,12 @@ func (fileInode *fileInodeStruct) populateExtentMap(fileOffset uint64, length ui
 
 	if nil == fileInode.extentMap {
 		// Create an empty ExtentMap... and perform initial population
-		// This counts as a reference, too
-
-		fileInode.reference()
 
 		fileInode.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, fileInode)
 
 		err = fileInode.populateExtentMapHelper(fileOffset)
 		if nil != err {
 			fileInode.extentMap = nil
-			fileInode.dereference()
 			return
 		}
 	}
@@ -567,7 +563,6 @@ Restart:
 			err = fileInode.populateExtentMapHelper(curFileOffset)
 			if nil != err {
 				fileInode.extentMap = nil
-				fileInode.dereference()
 				return
 			}
 			goto Restart
@@ -584,7 +579,6 @@ Restart:
 			err = fileInode.populateExtentMapHelper(curFileOffset)
 			if nil != err {
 				fileInode.extentMap = nil
-				fileInode.dereference()
 				return
 			}
 			goto Restart
@@ -597,7 +591,6 @@ Restart:
 			err = fileInode.populateExtentMapHelper(curExtent.fileOffset + curExtent.length)
 			if nil != err {
 				fileInode.extentMap = nil
-				fileInode.dereference()
 				return
 			}
 			goto Restart
@@ -769,9 +762,7 @@ func (fileInode *fileInodeStruct) updateExtentMap(newExtent *multiObjectExtentSt
 	)
 
 	if nil == fileInode.extentMap {
-		// Create an empty ExtentMap... This counts as a reference, too
-
-		fileInode.reference()
+		// Create an empty ExtentMap
 
 		fileInode.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, fileInode)
 	}
