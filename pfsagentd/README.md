@@ -54,6 +54,7 @@ SharedFileLimit:                                           1000
 ExclusiveFileLimit:                                         100
 DirtyFileLimit:                                              50
 DirtyLogSegmentLimit:                                        50
+ExtentMapEntryLimit:                                    1048576
 MaxFlushSize:                                          10485760
 MaxFlushTime:                                             200ms
 LogFilePath:                             /var/log/pfsagentd.log

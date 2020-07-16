@@ -47,6 +47,7 @@ type configStruct struct {
 	ExclusiveFileLimit           uint64
 	DirtyFileLimit               uint64
 	DirtyLogSegmentLimit         uint64
+	ExtentMapEntryLimit          uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
@@ -193,11 +194,12 @@ type fileInodeStruct struct {
 	//                                                     fileInodeLeaseStateSharedPromoting
 	//                                                     fileInodeLeaseStateExclusiveRequested
 	//                                                     fileInodeLeaseStateExclusiveGranted
-	extentMapFileSize         uint64             //        FileSize covered by .extentMap (.chunkedPutList may extend)
-	extentMap                 sortedmap.LLRBTree //    Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
-	chunkedPutList            *list.List         //    FIFO List of chunkedPutContextStruct's
-	flushInProgress           bool               //    Serializes (& singularizes) explicit Flush requests
-	chunkedPutFlushWaiterList *list.List         //    List of *sync.WaitGroup's for those awaiting an explicit Flush
+	extentMapFileSize            uint64             // FileSize covered by .extentMap (.chunkedPutList may extend)
+	extentMap                    sortedmap.LLRBTree // Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
+	extentMapLenWhenUnreferenced int                // Each time references drops to zero, update globals.extentMapEntriesCached
+	chunkedPutList               *list.List         // FIFO List of chunkedPutContextStruct's
+	flushInProgress              bool               // Serializes (& singularizes) explicit Flush requests
+	chunkedPutFlushWaiterList    *list.List         // List of *sync.WaitGroup's for those awaiting an explicit Flush
 	//                                                   Note: These waiters cannot be holding fileInodeStruct.Lock
 	dirtyListElement *list.Element //                  Element on globals.fileInodeDirtyList (or nil)
 }
@@ -362,6 +364,7 @@ type globalsStruct struct {
 	lastFH                          uint64               // Valid FH's start at 1
 	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
 	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
+	extentMapEntriesCached          int        // Running total of all fileInode.extentMapLenWhenUnreferenced values
 	metrics                         *metricsStruct
 	stats                           *statsStruct
 }
@@ -512,6 +515,11 @@ func initializeGlobals(confMap conf.ConfMap) {
 	}
 
 	globals.config.DirtyLogSegmentLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyLogSegmentLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.ExtentMapEntryLimit, err = confMap.FetchOptionValueUint64("Agent", "ExtentMapEntryLimit")
 	if nil != err {
 		logFatal(err)
 	}
@@ -701,6 +709,8 @@ func initializeGlobals(confMap conf.ConfMap) {
 	globals.logSegmentCacheMap = make(map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct)
 	globals.logSegmentCacheLRU = list.New()
 
+	globals.extentMapEntriesCached = 0
+
 	globals.metrics = &metricsStruct{}
 	globals.stats = &statsStruct{}
 
@@ -757,6 +767,7 @@ func uninitializeGlobals() {
 	globals.lastFH = 0
 	globals.logSegmentCacheMap = nil
 	globals.logSegmentCacheLRU = nil
+	globals.extentMapEntriesCached = 0
 	globals.metrics = nil
 	globals.stats = nil
 }
