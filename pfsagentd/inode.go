@@ -18,18 +18,13 @@ import (
 // and the globals.fileInodeMap must, therefore, never "forget" a fileInodeStruct
 // for which a reference is still available.
 //
-// References occur in three cases:
+// References occur in two cases:
 //
 //   A Shared or Exclusive Lock is being requested or held for a FileInode:
 //
 //     The lock requestor must first reference a FileInode before makeing
 //     the Shared or Exclusive Lock request. After releasing the Lock, they
 //     dereference it.
-//
-//   A FileInode's ExtentMap is being fetched or maintained:
-//
-//     In this case, a single reference is made to indicate that this instance
-//     is caching the FileInode's size and some or all of its ExtentMap.
 //
 //   A FileInode has one or more in-flight LogSegment PUTs underway:
 //
