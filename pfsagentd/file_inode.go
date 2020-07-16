@@ -409,7 +409,8 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 
 	err = globals.retryRPCClient.Send("RpcWrote", wroteRequest, wroteReply)
 	if nil != err {
-		logFatalf("*chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
+		// logFatalf("*chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
+		logWarnf("UNDO (i.e. convert to logFatalf) *chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
 	}
 
 	// Remove this chunkedPutContext from fileInode.chunkedPutList and mark as Done()
