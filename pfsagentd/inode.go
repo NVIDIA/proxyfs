@@ -18,18 +18,13 @@ import (
 // and the globals.fileInodeMap must, therefore, never "forget" a fileInodeStruct
 // for which a reference is still available.
 //
-// References occur in three cases:
+// References occur in two cases:
 //
 //   A Shared or Exclusive Lock is being requested or held for a FileInode:
 //
 //     The lock requestor must first reference a FileInode before makeing
 //     the Shared or Exclusive Lock request. After releasing the Lock, they
 //     dereference it.
-//
-//   A FileInode's ExtentMap is being fetched or maintained:
-//
-//     In this case, a single reference is made to indicate that this instance
-//     is caching the FileInode's size and some or all of its ExtentMap.
 //
 //   A FileInode has one or more in-flight LogSegment PUTs underway:
 //
@@ -59,19 +54,20 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 		fileInode.references++
 	} else {
 		fileInode = &fileInodeStruct{
-			InodeNumber:               inodeNumber,
-			cachedStat:                nil,
-			references:                1,
-			leaseState:                fileInodeLeaseStateNone,
-			sharedLockHolders:         list.New(),
-			exclusiveLockHolder:       nil,
-			lockWaiters:               list.New(),
-			extentMapFileSize:         0,
-			extentMap:                 nil,
-			chunkedPutList:            list.New(),
-			flushInProgress:           false,
-			chunkedPutFlushWaiterList: list.New(),
-			dirtyListElement:          nil,
+			InodeNumber:                  inodeNumber,
+			cachedStat:                   nil,
+			references:                   1,
+			leaseState:                   fileInodeLeaseStateNone,
+			sharedLockHolders:            list.New(),
+			exclusiveLockHolder:          nil,
+			lockWaiters:                  list.New(),
+			extentMapFileSize:            0,
+			extentMap:                    nil,
+			extentMapLenWhenUnreferenced: 0,
+			chunkedPutList:               list.New(),
+			flushInProgress:              false,
+			chunkedPutFlushWaiterList:    list.New(),
+			dirtyListElement:             nil,
 		}
 
 		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
@@ -105,6 +101,8 @@ func (fileInode *fileInodeStruct) reference() {
 func (fileInode *fileInodeStruct) dereference() {
 	var (
 		delayedLeaseRequestList *list.List
+		err                     error
+		extentMapLen            int
 	)
 
 	delayedLeaseRequestList = nil
@@ -114,6 +112,18 @@ func (fileInode *fileInodeStruct) dereference() {
 	fileInode.references--
 
 	if 0 == fileInode.references {
+		if nil == fileInode.extentMap {
+			globals.extentMapEntriesCached -= fileInode.extentMapLenWhenUnreferenced
+			fileInode.extentMapLenWhenUnreferenced = 0
+		} else {
+			extentMapLen, err = fileInode.extentMap.Len()
+			if nil != err {
+				logFatalf("*fileInodeStruct.dereference() call to fileInode.extentMap.Len() failed: %v", err)
+			}
+			globals.extentMapEntriesCached += extentMapLen - fileInode.extentMapLenWhenUnreferenced
+			fileInode.extentMapLenWhenUnreferenced = extentMapLen
+		}
+
 		delayedLeaseRequestList = honorInodeCacheLimits()
 	}
 
@@ -130,17 +140,17 @@ func (fileInode *fileInodeStruct) dereference() {
 //
 func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 	var (
-		cacheLimitToEnforce      int
-		delayedLeaseRequest      *fileInodeLeaseRequestStruct
-		fileInode                *fileInodeStruct
-		fileInodeCacheLRUElement *list.Element
+		delayedLeaseRequest          *fileInodeLeaseRequestStruct
+		fileInode                    *fileInodeStruct
+		fileInodeCacheLRUElement     *list.Element
+		fileInodeCacheLimitToEnforce int
 	)
 
 	delayedLeaseRequestList = list.New()
 
-	cacheLimitToEnforce = int(globals.config.ExclusiveFileLimit)
+	fileInodeCacheLimitToEnforce = int(globals.config.ExclusiveFileLimit)
 
-	for globals.exclusiveLeaseFileInodeCacheLRU.Len() > cacheLimitToEnforce {
+	for globals.exclusiveLeaseFileInodeCacheLRU.Len() > fileInodeCacheLimitToEnforce {
 		fileInodeCacheLRUElement = globals.exclusiveLeaseFileInodeCacheLRU.Front()
 		fileInode = fileInodeCacheLRUElement.Value.(*fileInodeStruct)
 		if (0 < fileInode.references) || (fileInodeLeaseStateExclusiveGranted != fileInode.leaseState) {
@@ -156,16 +166,16 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 		fileInode.cacheLRUElement = globals.sharedLeaseFileInodeCacheLRU.PushBack(fileInode)
 	}
 
-	cacheLimitToEnforce = int(globals.config.SharedFileLimit)
+	fileInodeCacheLimitToEnforce = int(globals.config.SharedFileLimit)
 
 	if globals.exclusiveLeaseFileInodeCacheLRU.Len() > int(globals.config.ExclusiveFileLimit) {
-		cacheLimitToEnforce -= globals.exclusiveLeaseFileInodeCacheLRU.Len() - int(globals.config.ExclusiveFileLimit)
-		if 0 > cacheLimitToEnforce {
-			cacheLimitToEnforce = 0
+		fileInodeCacheLimitToEnforce -= globals.exclusiveLeaseFileInodeCacheLRU.Len() - int(globals.config.ExclusiveFileLimit)
+		if 0 > fileInodeCacheLimitToEnforce {
+			fileInodeCacheLimitToEnforce = 0
 		}
 	}
 
-	for globals.sharedLeaseFileInodeCacheLRU.Len() > cacheLimitToEnforce {
+	for globals.sharedLeaseFileInodeCacheLRU.Len() > fileInodeCacheLimitToEnforce {
 		fileInodeCacheLRUElement = globals.sharedLeaseFileInodeCacheLRU.Front()
 		fileInode = fileInodeCacheLRUElement.Value.(*fileInodeStruct)
 		if (0 < fileInode.references) || (fileInodeLeaseStateSharedGranted != fileInode.leaseState) {
@@ -181,13 +191,14 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
 	}
 
-	cacheLimitToEnforce = int(globals.config.ExclusiveFileLimit) - globals.exclusiveLeaseFileInodeCacheLRU.Len()
-	cacheLimitToEnforce += int(globals.config.SharedFileLimit) - globals.sharedLeaseFileInodeCacheLRU.Len()
+	fileInodeCacheLimitToEnforce = int(globals.config.ExclusiveFileLimit) - globals.exclusiveLeaseFileInodeCacheLRU.Len()
+	fileInodeCacheLimitToEnforce += int(globals.config.SharedFileLimit) - globals.sharedLeaseFileInodeCacheLRU.Len()
 
-	for globals.unleasedFileInodeCacheLRU.Len() > cacheLimitToEnforce {
+	for (nil != globals.unleasedFileInodeCacheLRU.Front()) && ((globals.unleasedFileInodeCacheLRU.Len() > fileInodeCacheLimitToEnforce) || (globals.config.ExtentMapEntryLimit < uint64(globals.extentMapEntriesCached))) {
 		fileInodeCacheLRUElement = globals.unleasedFileInodeCacheLRU.Front()
 		fileInode = fileInodeCacheLRUElement.Value.(*fileInodeStruct)
 		globals.unleasedFileInodeCacheLRU.Remove(fileInodeCacheLRUElement)
+		globals.extentMapEntriesCached -= fileInode.extentMapLenWhenUnreferenced
 		delete(globals.fileInodeMap, fileInode.InodeNumber)
 	}
 

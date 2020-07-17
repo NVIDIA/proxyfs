@@ -1,5 +1,17 @@
 # ProxyFS Release Notes
 
+## 1.16.7 (July 16, 2020)
+
+### Bug Fixes:
+
+Avoid PFSAgent crashes when the lack of leases means it doesn't know
+that the underlying file inode has been removed when it is lazily
+flushing write data to it.
+
+Provide a cap on remaining unbounded memory growth due to caching of
+extent maps for files in PFSAgent. The new tunable that limits this
+memory consumption is [Agent]ExtentMapEntryLimit.
+
 ## 1.16.6 (July 13, 2020)
 
 ### Bug Fixes:
