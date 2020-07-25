@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/swiftstack/ProxyFS/conf"
 	"github.com/swiftstack/ProxyFS/utils"
 )
@@ -66,6 +68,8 @@ func TestAPI(t *testing.T) {
 }
 
 func testLogTargets(t *testing.T) {
+	assert := assert.New(t)
+
 	var targ LogTarget
 	targ.Init(10)
 
@@ -92,7 +96,9 @@ func testLogTargets(t *testing.T) {
 		t.Error("log target doesn't count correctly")
 	}
 
-	fields := ParseLogEntry(targ.LogBuf.LogEntries[0])
+	fields, err := ParseLogEntry(targ.LogBuf.LogEntries[0])
+	assert.Nil(err, "ParseLogEntry of '%s' should not fail", targ.LogBuf.LogEntries[0])
+
 	names := []string{
 		"time", "level", "msg", "goroutine", "package",
 	}
@@ -105,6 +111,8 @@ func testLogTargets(t *testing.T) {
 }
 
 func testParseLogEntry(t *testing.T) {
+	assert := assert.New(t)
+
 	var targ LogTarget
 	targ.Init(10)
 
@@ -115,12 +123,15 @@ func testParseLogEntry(t *testing.T) {
 	var (
 		fields map[string]string
 		names  []string
+		err    error
 	)
 
 	// test a trace log entry (logs as level=info
 	Tracef("%s %s", "Hello,", "World")
 
-	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	fields, err = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	assert.Nil(err, "ParseLogEntry of '%s' should not fail", targ.LogBuf.LogEntries[0])
+
 	names = []string{
 		"time", "level", "msg", "goroutine", "package",
 	}
@@ -144,10 +155,12 @@ func testParseLogEntry(t *testing.T) {
 	}
 
 	// test an error entry
-	err := fmt.Errorf("this is the error")
+	err = fmt.Errorf("this is the error")
 	ErrorfWithError(err, "we had an error!")
 
-	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	fields, err = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	assert.Nil(err, "ParseLogEntry of '%s' should not fail", targ.LogBuf.LogEntries[0])
+
 	names = []string{
 		"time", "level", "msg", "goroutine", "package", "error",
 	}
@@ -173,7 +186,9 @@ func testParseLogEntry(t *testing.T) {
 	msg_in := `When you put "something" in double quotes it means "something else"`
 	msg_out := `When you put \"something\" in double quotes it means \"something else\"`
 	Tracef(msg_in)
-	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	fields, err = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	assert.Nil(err, "ParseLogEntry of '%s' should not fail", targ.LogBuf.LogEntries[0])
+
 	if fields["msg"] != msg_out {
 		t.Errorf("'msg' field contains '%s' should be '%s' in entry '%s'",
 			fields["msg"], msg_out, targ.LogBuf.LogEntries[0])
@@ -185,7 +200,9 @@ func testParseLogEntry(t *testing.T) {
 	err = fmt.Errorf(errmsg_in)
 	ErrorfWithError(err, msg_in)
 
-	fields = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	fields, err = ParseLogEntry(targ.LogBuf.LogEntries[0])
+	assert.Nil(err, "ParseLogEntry of '%s' should not fail", targ.LogBuf.LogEntries[0])
+
 	if fields["msg"] != msg_out {
 		t.Errorf("'msg' field contains '%s' should be '%s' in entry '%s'",
 			fields["msg"], msg_out, targ.LogBuf.LogEntries[0])
