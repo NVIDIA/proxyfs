@@ -77,9 +77,10 @@ func (log LogTarget) write(p []byte) (n int, err error) {
 	return 0, nil
 }
 
-// Call to configure the logger.  This really should be done before using it,
-// but you can log things before calling.  However, they will not appear in
-// the logfile and will not be in the new text format.
+// openLogFile is called to open the log file and (re-) int the logger.  This
+// really should be done before using it, but you can log things before calling.
+// However, they will not appear in the logfile and will not be in the new text
+// format.
 //
 // Config variables that affect logging include:
 //     Logging.LogFilePath        string       if present, pathname to log file
@@ -88,8 +89,7 @@ func (log LogTarget) write(p []byte) (n int, err error) {
 //                                             also appear in packageTraceSettings)
 //     Logging.DebugLevelLogging  stringslice
 //
-
-func Up(confMap conf.ConfMap) (err error) {
+func openLogFile(confMap conf.ConfMap) (err error) {
 	log.SetFormatter(&log.TextFormatter{DisableColors: true, TimestampFormat: timeFormat})
 
 	// Fetch log file info, if provided
@@ -106,6 +106,7 @@ func Up(confMap conf.ConfMap) (err error) {
 	logToConsole, err := confMap.FetchOptionValueBool("Logging", "LogToConsole")
 	if err != nil {
 		logToConsole = false
+		err = nil
 	}
 
 	log.SetOutput(&logTargets)
@@ -130,23 +131,17 @@ func Up(confMap conf.ConfMap) (err error) {
 	debugConfSlice, _ := confMap.FetchOptionValueStringSlice("Logging", "DebugLevelLogging")
 	setDebugLoggingLevel(debugConfSlice)
 
-	return nil
-}
-
-func SignaledStart(confMap conf.ConfMap) (err error) {
-	err = nil
+	Infof("logger opened logfile (PID %d)", os.Getpid())
 	return
 }
 
-func SignaledFinish(confMap conf.ConfMap) (err error) {
-	err = Down(confMap)
-	if nil == err {
-		err = Up(confMap)
-	}
-	return
-}
+// closeLogFile closes the output log file as part of shutdown or as part of
+// rotating to a new log file.
+//
+func closeLogFile(confMap conf.ConfMap) (err error) {
 
-func Down(confMap conf.ConfMap) (err error) {
+	Infof("logger closing logfile (PID %d)", os.Getpid())
+
 	// We open and close our own logfile
 	if logFile != nil {
 		// Sync() flushes data cached in the kernel to disk, which is
@@ -156,6 +151,52 @@ func Down(confMap conf.ConfMap) (err error) {
 	}
 	logTargets.Clear()
 	err = nil
+	return
+}
+
+// Up opens the logfile.  This really should be done before using the logfile,
+// but you can log things before calling.  However, they will not appear in
+// the logfile and will not be in the new text format.
+//
+// Config variables that affect logging include:
+//     Logging.LogFilePath        string       if present, pathname to log file
+//     Logging.LogToConsole       bool         if present and true, log to console as well as file
+//     Logging.TraceLevelLogging  stringslice  list of packages where tracing is enabled (name must
+//                                             also appear in packageTraceSettings)
+//     Logging.DebugLevelLogging  stringslice
+//
+
+func Up(confMap conf.ConfMap) (err error) {
+
+	err = openLogFile(confMap)
+	if err != nil {
+		return
+	}
+
+	Infof("logger is starting up (PID %d)", os.Getpid())
+	return
+}
+
+func SignaledStart(confMap conf.ConfMap) (err error) {
+	err = nil
+	return
+}
+
+func SignaledFinish(confMap conf.ConfMap) (err error) {
+
+	Infof("logger is closing and reopening logfile (PID %d)", os.Getpid())
+	err = closeLogFile(confMap)
+	if nil == err {
+		err = openLogFile(confMap)
+	}
+	return
+}
+
+func Down(confMap conf.ConfMap) (err error) {
+
+	log.Infof("logger is shutting down (PID %d)", os.Getpid())
+
+	err = closeLogFile(confMap)
 	return
 }
 
@@ -170,18 +211,21 @@ func Down(confMap conf.ConfMap) (err error) {
 //
 // time="2017-07-27T02:09:32.259383Z" level=error msg="retry.RequestWithRetry(): swiftclient.testRetry.request(1) failed after 6 attempts in 0.054 sec with unretriable error" error="Simulate an unretriable error" function=RequestWithRetry goroutine=20 package=swiftclient
 //
-func parseLogEntry(entry string) (fields map[string]string) {
+func parseLogEntry(entry string) (fields map[string]string, err error) {
 	var (
 		matches []string
 	)
 
 	var fieldRE = regexp.MustCompile(
 		`^time="(?P<time>[-:0-9.ZTt_]+)" level=(?P<level>[a-zA-Z]+) msg="(?P<msg>([^"]|\\")+)" (error="(?P<error>([^"]|\\")+)" )?function=(?P<function>\w+) goroutine=(?P<goroutine>\d+) package=(?P<package>\w+)`)
+
 	matches = fieldRE.FindStringSubmatch(entry)
 	if matches == nil {
-		Warnf("log entry not matched by regular expression fieldRE: '%s'", entry)
-		return nil
+		fmt.Printf("parseLogEntry: log entry not matched by regular expression fieldRE: '%s'\n", entry)
+		err = fmt.Errorf("log entry not matched by regular expression fieldRE: '%s'", entry)
+		return
 	}
+
 	fields = make(map[string]string)
 	for idx, name := range fieldRE.SubexpNames() {
 		if name != "" && matches[idx] != "" {
@@ -189,7 +233,7 @@ func parseLogEntry(entry string) (fields map[string]string) {
 		}
 	}
 
-	return fields
+	return
 }
 
 // Parse the log entries, starting with the most recent, looking for a message
@@ -234,10 +278,11 @@ func parseLogForFunc(logcopy LogTarget, funcName string, logEntryRE *regexp.Rege
 			return
 		}
 
-		fields = ParseLogEntry(logEntry)
-		if fields == nil {
-			err = fmt.Errorf("parseLogForFunc(): log entry unparsable by ParseLogEntry(): '%s'",
-				logEntry)
+		fields, err = ParseLogEntry(logEntry)
+		if err != nil {
+			err = fmt.Errorf("parseLogForFunc(): log entry '%s' unparsable by ParseLogEntry(): %v",
+				logEntry, err)
+			return
 		}
 
 		if fields["msg"] == "" {
