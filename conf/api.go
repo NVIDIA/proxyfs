@@ -346,7 +346,7 @@ func (confMap ConfMap) UpdateFromFile(confFilePath string) (err error) {
 // To enable efficient comparisons, the elements of the ConfMap will be
 // sorted in the output (both by sectionName and by optionName).
 //
-func (confMap ConfMap) Dump() (buf string) {
+func (confMap ConfMap) Dump() (confMapString string) {
 	var (
 		confOption                ConfMapOption
 		confOptionName            string
@@ -360,7 +360,10 @@ func (confMap ConfMap) Dump() (buf string) {
 		confSectionNameSliceIndex int
 	)
 
-	buf = ""
+	// 1 Mibyte should be more than enough to hold the confMap so get the
+	// memory in 1 allocation
+	var buf strings.Builder
+	buf.Grow(1024 * 1024)
 
 	confSectionNameSlice = make([]string, 0, len(confMap))
 
@@ -374,10 +377,10 @@ func (confMap ConfMap) Dump() (buf string) {
 		confSection = confMap[confSectionName]
 
 		if 0 < confSectionNameSliceIndex {
-			buf += "\n"
+			buf.WriteString("\n")
 		}
 
-		buf += "[" + confSectionName + "]\n"
+		buf.WriteString("[" + confSectionName + "]\n")
 
 		confOptionNameSlice = make([]string, 0, len(confSection))
 		confOptionNameLenMax = 0
@@ -394,20 +397,22 @@ func (confMap ConfMap) Dump() (buf string) {
 		for _, confOptionName = range confOptionNameSlice {
 			confOption = confSection[confOptionName]
 
-			buf += confOptionName + ":" + strings.Repeat(" ", confOptionNameLenMax-len(confOptionName))
+			buf.WriteString(confOptionName + ":" +
+				strings.Repeat(" ", confOptionNameLenMax-len(confOptionName)))
 
 			for confOptionValueIndex, confOptionValue = range confOption {
 				if 0 == confOptionValueIndex {
-					buf += " " + confOptionValue
+					buf.WriteString(" " + confOptionValue)
 				} else {
-					buf += ", " + confOptionValue
+					buf.WriteString(", " + confOptionValue)
 				}
 			}
 
-			buf += "\n"
+			buf.WriteString("\n")
 		}
 	}
 
+	confMapString = buf.String()
 	return
 }
 
