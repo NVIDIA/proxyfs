@@ -866,7 +866,7 @@ func (log LogTarget) Write(p []byte) (n int, err error) {
 // "goroutine", and "package".  Not all fields are present in every message,
 // in which case the field name is not a key in the map.
 //
-func ParseLogEntry(entry string) map[string]string {
+func ParseLogEntry(entry string) (map[string]string, error) {
 	return parseLogEntry(entry)
 }
 

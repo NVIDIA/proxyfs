@@ -197,6 +197,17 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 	for (nil != globals.unleasedFileInodeCacheLRU.Front()) && ((globals.unleasedFileInodeCacheLRU.Len() > fileInodeCacheLimitToEnforce) || (globals.config.ExtentMapEntryLimit < uint64(globals.extentMapEntriesCached))) {
 		fileInodeCacheLRUElement = globals.unleasedFileInodeCacheLRU.Front()
 		fileInode = fileInodeCacheLRUElement.Value.(*fileInodeStruct)
+		if 0 != fileInode.references {
+			// TODO: While this shouldn't be the case, the current mock Lease/Lock solution may
+			//       result in a referenced file being on the globals.unleasedFileInodeCacheLRU
+			//       leading to a race condition where a new DoRead() comes in, can't find the
+			//       "dirty" fileInode, and go off and fetch a stale copy from ProxyFS. Meanwhile,
+			//       the reference by the ChunkedPUTContext for the "dirty" fileInode eventually
+			//       finishes leading to proper updating of ProxyFS. Hence, a restart of PFSAgent
+			//       or a subsequent fileInode cache flush for the referenced file will result in
+			//       reading the correct/up-to-date contents of the file.
+			break
+		}
 		globals.unleasedFileInodeCacheLRU.Remove(fileInodeCacheLRUElement)
 		globals.extentMapEntriesCached -= fileInode.extentMapLenWhenUnreferenced
 		delete(globals.fileInodeMap, fileInode.InodeNumber)

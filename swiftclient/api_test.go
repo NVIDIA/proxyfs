@@ -1192,10 +1192,11 @@ func parseRetryLogEntry(entry string) map[string]string {
 	var (
 		fields  = make(map[string]string)
 		matches []string
+		err     error
 	)
 
-	fields = logger.ParseLogEntry(entry)
-	if fields["msg"] == "" {
+	fields, err = logger.ParseLogEntry(entry)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "log entry not matched: '%s'\n", entry)
 	}
 
