@@ -1,5 +1,22 @@
 # ProxyFS Release Notes
 
+## 1.16.8 (July 28, 2020)
+
+### Bug Fixes:
+
+Prevent premature invalidation of dirty file inode caching in
+PFSAgent leading to subsequent incorrect (stale) read results.
+
+Correct reporting of file size when a non-empty file is first
+accessed by PFSAgent.
+
+### Features:
+
+Log rotation events are not logged.
+
+Memory fragmentation has been improved particularly in calls to
+dump a configuration (package conf's ConfMap).
+
 ## 1.16.7 (July 16, 2020)
 
 ### Bug Fixes:
