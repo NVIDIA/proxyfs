@@ -1,0 +1,9 @@
+#!/bin/bash
+set -e
+
+/usr/bin/unmount_and_stop_pfs
+echo "Resetting Swift drives..."
+rm -rf /srv/?/node/d?/*
+echo "Resetting Swift logs..."
+sudo find /var/log/swift -type f -exec truncate {} --size 0 \;
+/usr/bin/start_and_mount_pfs "$@"
