@@ -4,6 +4,7 @@ import (
 	"container/list"
 
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
 // References is a concept used to prevent two or more contexts from operating on
@@ -41,6 +42,9 @@ import (
 func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStruct) {
 	var (
 		delayedLeaseRequestList *list.List
+		err                     error
+		getStatReply            *jrpcfs.StatStruct
+		getStatRequest          *jrpcfs.GetStatRequest
 		ok                      bool
 	)
 
@@ -53,15 +57,30 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 	if ok {
 		fileInode.references++
 	} else {
+		getStatRequest = &jrpcfs.GetStatRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(inodeNumber),
+			},
+		}
+
+		getStatReply = &jrpcfs.StatStruct{}
+
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
+		if (nil != err) || (inode.PosixModeFile != (inode.InodeMode(getStatReply.FileMode) & inode.PosixModeType)) {
+			globals.Unlock()
+			fileInode = nil
+			return
+		}
+
 		fileInode = &fileInodeStruct{
 			InodeNumber:                  inodeNumber,
-			cachedStat:                   nil,
+			cachedStat:                   getStatReply,
 			references:                   1,
 			leaseState:                   fileInodeLeaseStateNone,
 			sharedLockHolders:            list.New(),
 			exclusiveLockHolder:          nil,
 			lockWaiters:                  list.New(),
-			extentMapFileSize:            0,
 			extentMap:                    nil,
 			extentMapLenWhenUnreferenced: 0,
 			chunkedPutList:               list.New(),
