@@ -50,9 +50,11 @@ func doFlushIfNecessary(dirInodeNumber inode.InodeNumber, name []byte) {
 
 	fileInode = referenceFileInode(inode.InodeNumber(lookupReply.InodeNumber))
 
-	fileInode.doFlushIfNecessary()
+	if nil != fileInode {
+		fileInode.doFlushIfNecessary()
 
-	fileInode.dereference()
+		fileInode.dereference()
+	}
 }
 
 func (fileInode *fileInodeStruct) doFlushIfNecessary() {
@@ -511,6 +513,7 @@ func (fileInode *fileInodeStruct) populateExtentMap(fileOffset uint64, length ui
 		curExtentAsValue sortedmap.Value
 		curExtentIndex   int
 		curFileOffset    uint64
+		exhausted        bool
 		ok               bool
 	)
 
@@ -519,25 +522,28 @@ func (fileInode *fileInodeStruct) populateExtentMap(fileOffset uint64, length ui
 
 		fileInode.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, fileInode)
 
-		err = fileInode.populateExtentMapHelper(fileOffset)
+		exhausted, err = fileInode.populateExtentMapHelper(fileOffset)
 		if nil != err {
 			fileInode.extentMap = nil
+			return
+		}
+		if exhausted {
 			return
 		}
 	}
 
 	// Handle cases where [fileOffset:fileOffset+length) references beyond FileSize
 
-	if fileOffset >= fileInode.extentMapFileSize {
+	if fileOffset >= fileInode.cachedStat.Size {
 		// The entire [fileOffset:fileOffset+length) lies beyond FileSize... so just return
 
 		err = nil
 		return
 	}
-	if (fileOffset + length) > fileInode.extentMapFileSize {
+	if (fileOffset + length) > fileInode.cachedStat.Size {
 		// Truncate length since ExtentMap doesn't contain any extent beyond FileSize
 
-		length = fileInode.extentMapFileSize - fileOffset
+		length = fileInode.cachedStat.Size - fileOffset
 	}
 
 Restart:
@@ -549,7 +555,7 @@ Restart:
 		logFatalf("populateExtentMap() couldn't fetch extent [Case 1]: %v", err)
 	}
 
-	// Note it is possible for curExtentIndex == -1 if no extents are at or preceed fileOffset
+	// Note it is possible for curExtentIndex == -1 if no extents are at or precede fileOffset
 
 	for curFileOffset < (fileOffset + length) {
 		_, curExtentAsValue, ok, err = fileInode.extentMap.GetByIndex(curExtentIndex)
@@ -558,11 +564,14 @@ Restart:
 		}
 
 		if !ok {
-			// No extent at curExtentIndex - so populate from here and restart
+			// No extent at curExtentIndex - so populate from here if possible and restart
 
-			err = fileInode.populateExtentMapHelper(curFileOffset)
+			exhausted, err = fileInode.populateExtentMapHelper(curFileOffset)
 			if nil != err {
 				fileInode.extentMap = nil
+				return
+			}
+			if exhausted {
 				return
 			}
 			goto Restart
@@ -574,11 +583,14 @@ Restart:
 		}
 
 		if curFileOffset < curExtent.fileOffset {
-			// Next extent starts after curFileOffset - so populate the hole and restart
+			// Next extent starts after curFileOffset - so populate the hole if possible and restart
 
-			err = fileInode.populateExtentMapHelper(curFileOffset)
+			exhausted, err = fileInode.populateExtentMapHelper(curFileOffset)
 			if nil != err {
 				fileInode.extentMap = nil
+				return
+			}
+			if exhausted {
 				return
 			}
 			goto Restart
@@ -586,11 +598,14 @@ Restart:
 
 		if curFileOffset >= (curExtent.fileOffset + curExtent.length) {
 			// Handle case where BisectLeft pointed at an extent before fileOffset
-			// and this extent ends before fileOffset - so populate from there and restart
+			// and this extent ends before fileOffset - so populate from there if possible and restart
 
-			err = fileInode.populateExtentMapHelper(curExtent.fileOffset + curExtent.length)
+			exhausted, err = fileInode.populateExtentMapHelper(curExtent.fileOffset + curExtent.length)
 			if nil != err {
 				fileInode.extentMap = nil
+				return
+			}
+			if exhausted {
 				return
 			}
 			goto Restart
@@ -608,7 +623,9 @@ Restart:
 // populateExtentMapHelper fetches an ExtentMapChunk anchored by fileOffset and inserts
 // it into fileInode.extentMap using updateExtentMap().
 //
-func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (err error) {
+// If returned exhausted is true, there are no more extentMapEntry's to populate
+//
+func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (exhausted bool, err error) {
 	var (
 		curExtent                  *multiObjectExtentStruct
 		curExtentAsValue           sortedmap.Value
@@ -637,6 +654,13 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 	if nil != err {
 		return
 	}
+
+	if 0 == len(fetchExtentMapChunkReply.ExtentMapEntry) {
+		exhausted = true
+		return
+	}
+
+	exhausted = false
 
 	curFileOffset = fetchExtentMapChunkReply.FileOffsetRangeStart
 
@@ -689,9 +713,7 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 		}
 	}
 
-	// Finally, we need to set FileSize and trim, as necessary, excess extents
-
-	fileInode.extentMapFileSize = fetchExtentMapChunkReply.FileSize
+	// Finally, we need to trim, as necessary, excess extents
 
 	extentMapLength, err = fileInode.extentMap.Len()
 	if nil != err {
@@ -718,16 +740,16 @@ func (fileInode *fileInodeStruct) populateExtentMapHelper(fileOffset uint64) (er
 			logFatalf("populateExtentMap() couldn't get last extent [Case 3]")
 		}
 
-		if (curExtent.fileOffset + curExtent.length) <= fileInode.extentMapFileSize {
+		if (curExtent.fileOffset + curExtent.length) <= fetchExtentMapChunkReply.FileSize {
 			// Last extent does not extend beyond FileSize... so we are done
 
 			return
 		}
 
-		if curExtent.fileOffset < fileInode.extentMapFileSize {
+		if curExtent.fileOffset < fetchExtentMapChunkReply.FileSize {
 			// Last extent crossed FileSize boundary... truncate it and we are done
 
-			curExtent.length = fileInode.extentMapFileSize - curExtent.fileOffset
+			curExtent.length = fileInode.cachedStat.Size - curExtent.fileOffset
 
 			return
 		}
@@ -900,8 +922,8 @@ func (fileInode *fileInodeStruct) updateExtentMap(newExtent *multiObjectExtentSt
 		logFatalf("updateExtentMap() couldn't insert newExtent [Case 2]")
 	}
 
-	if (newExtent.fileOffset + newExtent.length) > fileInode.extentMapFileSize {
-		fileInode.extentMapFileSize = newExtent.fileOffset + newExtent.length
+	if (newExtent.fileOffset + newExtent.length) > fileInode.cachedStat.Size {
+		fileInode.cachedStat.Size = newExtent.fileOffset + newExtent.length
 	}
 }
 
@@ -1207,7 +1229,7 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 		return
 	}
 
-	// inReadPlan was limited by incoming fileSize... can we extend it?
+	// inReadPlan was limited by incoming FileSize... can we extend it?
 
 	curFileOffset = fileOffset + outReadPlanSpan
 
@@ -1266,14 +1288,13 @@ func (chunkedPutContext *chunkedPutContextStruct) getReadPlanHelper(fileOffset u
 		}
 	}
 
-	// Now enter a loop until either outReadPlanSpan reaches length or we reach chunkedPutContext.fileSize
+	// Now enter a loop until either outReadPlanSpan reaches length or we reach FileSize
 	// Each loop iteration, postExtent either starts at or after curFileSize (requiring zero-fill)
-	// Note that the last chunkedPutContext.extentMap extent "ends" at chunkedPutContext.fileSize
 
 	for {
 		if 0 < postExtent.length {
 			if postExtent.fileOffset > curFileOffset {
-				// We must "zero-fill" to MIN(postExtent.fileOffset, chunkedPutContext.fileSize)
+				// We must "zero-fill" to MIN(postExtent.fileOffset, fileInode.cachedStat.Size)
 
 				if postExtent.fileOffset >= (fileOffset + length) {
 					// postExtent starts beyond fileOffset+length, so just append zero-fill step & return

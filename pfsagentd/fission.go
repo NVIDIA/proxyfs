@@ -83,39 +83,15 @@ func convertErrToErrno(err error, defaultErrno syscall.Errno) (errno syscall.Err
 }
 
 func fixAttrSizes(attr *fission.Attr) {
-	var (
-		chunkedPutContext        *chunkedPutContextStruct
-		chunkedPutContextElement *list.Element
-		fileInode                *fileInodeStruct
-		ok                       bool
-	)
-
 	if syscall.S_IFREG == (attr.Mode & syscall.S_IFMT) {
-		globals.Lock()
-		fileInode, ok = globals.fileInodeMap[inode.InodeNumber(attr.Ino)]
-		if ok {
-			if 0 == fileInode.chunkedPutList.Len() {
-				if 0 == fileInode.extentMapFileSize {
-					// Leave attr.Size as is... no reason to override it
-				} else {
-					attr.Size = fileInode.extentMapFileSize
-				}
-			} else {
-				chunkedPutContextElement = fileInode.chunkedPutList.Back()
-				chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
-				attr.Size = chunkedPutContext.fileSize
-			}
-		}
-		globals.Unlock()
-
 		attr.Blocks = attr.Size + (globals.config.AttrBlockSize - 1)
 		attr.Blocks /= globals.config.AttrBlockSize
+		attr.BlkSize = uint32(globals.config.AttrBlockSize)
 	} else {
 		attr.Size = 0
 		attr.Blocks = 0
+		attr.BlkSize = 0
 	}
-
-	attr.BlkSize = uint32(globals.config.AttrBlockSize)
 }
 
 func nsToUnixTime(ns uint64) (sec uint64, nsec uint32) {
@@ -174,8 +150,8 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 			AttrValidNSec:  globals.attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       uint64(lookupPlusReply.InodeNumber),
-				Size:      lookupPlusReply.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                    // fixAttrSizes() will compute this
+				Size:      lookupPlusReply.Size,
+				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
@@ -206,19 +182,17 @@ func (dummy *globalsStruct) DoForget(inHeader *fission.InHeader, forgetIn *fissi
 
 func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fission.GetAttrIn) (getAttrOut *fission.GetAttrOut, errno syscall.Errno) {
 	var (
-		aTimeNSec                uint32
-		aTimeSec                 uint64
-		cTimeNSec                uint32
-		cTimeSec                 uint64
-		chunkedPutContext        *chunkedPutContextStruct
-		chunkedPutContextElement *list.Element
-		err                      error
-		fileInode                *fileInodeStruct
-		getStatReply             *jrpcfs.StatStruct
-		getStatRequest           *jrpcfs.GetStatRequest
-		mTimeNSec                uint32
-		mTimeSec                 uint64
-		ok                       bool
+		aTimeNSec      uint32
+		aTimeSec       uint64
+		cTimeNSec      uint32
+		cTimeSec       uint64
+		err            error
+		fileInode      *fileInodeStruct
+		getStatReply   *jrpcfs.StatStruct
+		getStatRequest *jrpcfs.GetStatRequest
+		mTimeNSec      uint32
+		mTimeSec       uint64
+		ok             bool
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_calls, 1)
@@ -227,43 +201,6 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 
 	fileInode, ok = globals.fileInodeMap[inode.InodeNumber(inHeader.NodeID)]
 	if ok {
-		if nil == fileInode.cachedStat {
-			globals.Unlock()
-
-			_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_cache_misses, 1)
-
-			getStatRequest = &jrpcfs.GetStatRequest{
-				InodeHandle: jrpcfs.InodeHandle{
-					MountID:     globals.mountID,
-					InodeNumber: int64(inHeader.NodeID),
-				},
-			}
-
-			getStatReply = &jrpcfs.StatStruct{}
-
-			err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
-			if nil != err {
-				errno = convertErrToErrno(err, syscall.EIO)
-				return
-			}
-
-			globals.Lock()
-
-			if nil == fileInode.cachedStat {
-				fileInode.cachedStat = getStatReply
-			} else {
-				// It's ok to use the cachedStat somebody else set in the meantime
-			}
-		} else {
-			_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_cache_hits, 1)
-		}
-
-		if 0 < fileInode.chunkedPutList.Len() {
-			chunkedPutContextElement = fileInode.chunkedPutList.Back()
-			chunkedPutContext = chunkedPutContextElement.Value.(*chunkedPutContextStruct)
-			fileInode.cachedStat.Size = chunkedPutContext.fileSize
-		}
-
 		aTimeSec, aTimeNSec = nsToUnixTime(fileInode.cachedStat.ATimeNs)
 		mTimeSec, mTimeNSec = nsToUnixTime(fileInode.cachedStat.MTimeNs)
 		cTimeSec, cTimeNSec = nsToUnixTime(fileInode.cachedStat.CTimeNs)
@@ -274,8 +211,8 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 			Dummy:         0,
 			Attr: fission.Attr{
 				Ino:       inHeader.NodeID,
-				Size:      fileInode.cachedStat.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                         // fixAttrSizes() will compute this
+				Size:      fileInode.cachedStat.Size,
+				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
@@ -295,8 +232,6 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		globals.Unlock()
 	} else {
 		globals.Unlock()
-
-		_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_cache_misses, 1)
 
 		getStatRequest = &jrpcfs.GetStatRequest{
 			InodeHandle: jrpcfs.InodeHandle{
@@ -323,8 +258,8 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 			Dummy:         0,
 			Attr: fission.Attr{
 				Ino:       inHeader.NodeID,
-				Size:      getStatReply.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                 // fixAttrSizes() will compute this
+				Size:      getStatReply.Size,
+				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
@@ -417,7 +352,6 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
-		chunkedPutContextLast    *chunkedPutContextStruct
 		err                      error
 		fileInode                *fileInodeStruct
 		grantedLock              *fileInodeLockRequestStruct
@@ -427,18 +361,18 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 	)
 
 	fileInode = referenceFileInode(inode.InodeNumber(nodeID))
+	if nil == fileInode {
+		errno = syscall.ENOENT
+		return
+	}
 
 	fileInode.doFlushIfNecessary()
 
 	grantedLock = fileInode.getExclusiveLock()
 
-	if fileInode.extentMapFileSize > size {
-		fileInode.extentMapFileSize = size
-	}
+	fileInode.cachedStat.Size = size
 
 	pruneExtentMap(fileInode.extentMap, size)
-
-	chunkedPutContextLast = nil
 
 	chunkedPutContextElement = fileInode.chunkedPutList.Front()
 
@@ -448,25 +382,9 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 			logFatalf("chunkedPutContextElement.Value.(*chunkedPutContextStruct) returned !ok")
 		}
 
-		chunkedPutContextLast = chunkedPutContext
-
-		if chunkedPutContext.fileSize > size {
-			chunkedPutContext.fileSize = size
-		}
-
 		pruneExtentMap(chunkedPutContext.extentMap, size)
 
 		chunkedPutContextElement = chunkedPutContextElement.Next()
-	}
-
-	if nil == chunkedPutContextLast {
-		if fileInode.extentMapFileSize < size {
-			fileInode.extentMapFileSize = size
-		}
-	} else {
-		if chunkedPutContext.fileSize < size {
-			chunkedPutContext.fileSize = size
-		}
 	}
 
 	resizeRequest = &jrpcfs.ResizeRequest{
@@ -547,6 +465,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	var (
 		aTimeNSec              uint32
 		aTimeSec               uint64
+		cachedFileInodeCase    bool
 		cTimeNSec              uint32
 		cTimeSec               uint64
 		err                    error
@@ -555,7 +474,6 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		getStatRequest         *jrpcfs.GetStatRequest
 		mTimeNSec              uint32
 		mTimeSec               uint64
-		ok                     bool
 		settingATime           bool
 		settingATimeNow        bool
 		settingGID             bool
@@ -568,15 +486,6 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoSetAttr_calls, 1)
-
-	// Since we are modifying it, invalidate cached stat if present
-
-	globals.Lock()
-	fileInode, ok = globals.fileInodeMap[inode.InodeNumber(inHeader.NodeID)]
-	if ok {
-		fileInode.cachedStat = nil
-	}
-	globals.Unlock()
 
 	if setAttrIn.Valid != (setAttrIn.Valid & (fission.SetAttrInValidMode | fission.SetAttrInValidUID | fission.SetAttrInValidGID | fission.SetAttrInValidSize | fission.SetAttrInValidATime | fission.SetAttrInValidMTime | fission.SetAttrInValidFH | fission.SetAttrInValidATimeNow | fission.SetAttrInValidMTimeNow | fission.SetAttrInValidLockOwner)) {
 		errno = syscall.ENOSYS
@@ -598,8 +507,22 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 	settingMTimeAndOrATime = settingATime || settingMTime
 
-	// TODO: Verify it is ok to accept but ignore fission.SetAttrInValidFH        in setAttrIn.Valid
-	// TODO: Verify it is ok to accept but ignore fission.SetAttrInValidLockOwner in setAttrIn.Valid
+	// TODO: Verify we can accept but ignore fission.SetAttrInValidFH        in setAttrIn.Valid
+	// TODO: Verify we can accept but ignore fission.SetAttrInValidLockOwner in setAttrIn.Valid
+
+	// Check for cached FileInode case
+
+	globals.Lock()
+	fileInode, cachedFileInodeCase = globals.fileInodeMap[inode.InodeNumber(inHeader.NodeID)]
+	globals.Unlock()
+
+	if cachedFileInodeCase {
+		fileInode.reference()
+
+		fileInode.doFlushIfNecessary()
+	}
+
+	// Now perform requested setAttrIn.Mode operations
 
 	if settingMode {
 		errno = setMode(inHeader.NodeID, setAttrIn.Mode)
@@ -644,6 +567,12 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		return
 	}
 
+	if cachedFileInodeCase {
+		fileInode.cachedStat = getStatReply
+
+		fileInode.dereference()
+	}
+
 	aTimeSec, aTimeNSec = nsToUnixTime(getStatReply.ATimeNs)
 	mTimeSec, mTimeNSec = nsToUnixTime(getStatReply.MTimeNs)
 	cTimeSec, cTimeNSec = nsToUnixTime(getStatReply.CTimeNs)
@@ -654,8 +583,8 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		Dummy:         0,
 		Attr: fission.Attr{
 			Ino:       inHeader.NodeID,
-			Size:      getStatReply.Size, // fixAttrSizes() will correct this if necessary
-			Blocks:    0,                 // fixAttrSizes() will compute this
+			Size:      getStatReply.Size,
+			Blocks:    0, // fixAttrSizes() will compute this
 			ATimeSec:  aTimeSec,
 			MTimeSec:  mTimeSec,
 			CTimeSec:  cTimeSec,
@@ -1047,8 +976,8 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 			AttrValidNSec:  globals.attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       linkIn.OldNodeID,
-				Size:      getStatReply.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                 // fixAttrSizes() will compute this
+				Size:      getStatReply.Size,
+				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
@@ -1172,6 +1101,9 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	globals.Unlock()
 
 	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	if nil == fileInode {
+		logFatalf("DoRead(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, readIn.FH)
+	}
 	defer fileInode.dereference()
 
 	grantedLock = fileInode.getSharedLock()
@@ -1264,12 +1196,31 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
+		fhInodeNumber            uint64
 		fileInode                *fileInodeStruct
 		grantedLock              *fileInodeLockRequestStruct
+		ok                       bool
 		singleObjectExtent       *singleObjectExtentStruct
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_calls, 1)
+
+	globals.Lock()
+
+	fhInodeNumber, ok = globals.fhToInodeNumberMap[writeIn.FH]
+	if !ok {
+		logFatalf("DoWrite(NodeID=%v,FH=%v) called for unknown FH", inHeader.NodeID, writeIn.FH)
+	}
+	if fhInodeNumber != inHeader.NodeID {
+		logFatalf("DoWrite(NodeID=%v,FH=%v) called for FH associated with NodeID=%v", inHeader.NodeID, writeIn.FH, fhInodeNumber)
+	}
+
+	globals.Unlock()
+
+	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	if nil == fileInode {
+		logFatalf("DoWrite(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, writeIn.FH)
+	}
 
 	// Grab quota to start a fresh chunkedPutContext before calling fileInode.getExclusiveLock()
 	// since, in the pathologic case where only fileInode has any outstanding chunkedPutContext's,
@@ -1278,7 +1229,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	_ = <-globals.fileInodeDirtyLogSegmentChan
 
-	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	grantedLock = fileInode.getExclusiveLock()
 
 	if 0 == fileInode.chunkedPutList.Len() {
@@ -1287,7 +1237,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		_ = atomic.AddUint64(&globals.metrics.LogSegmentPUTs, 1)
 
 		chunkedPutContext = &chunkedPutContextStruct{
-			fileSize:       fileInode.extentMapFileSize,
 			buf:            make([]byte, 0),
 			fileInode:      fileInode,
 			state:          chunkedPutContextStateOpen,
@@ -1328,7 +1277,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 			_ = atomic.AddUint64(&globals.metrics.LogSegmentPUTs, 1)
 
 			chunkedPutContext = &chunkedPutContextStruct{
-				fileSize:       fileInode.extentMapFileSize,
 				buf:            make([]byte, 0),
 				fileInode:      fileInode,
 				state:          chunkedPutContextStateOpen,
@@ -1356,8 +1304,8 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	chunkedPutContext.mergeSingleObjectExtent(singleObjectExtent)
 
-	if (singleObjectExtent.fileOffset + singleObjectExtent.length) > chunkedPutContext.fileSize {
-		chunkedPutContext.fileSize = singleObjectExtent.fileOffset + singleObjectExtent.length
+	if (singleObjectExtent.fileOffset + singleObjectExtent.length) > fileInode.cachedStat.Size {
+		fileInode.cachedStat.Size = singleObjectExtent.fileOffset + singleObjectExtent.length
 	}
 
 	chunkedPutContext.buf = append(chunkedPutContext.buf, writeIn.Data...)
@@ -1498,7 +1446,12 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 	globals.Unlock()
 
 	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	if nil == fileInode {
+		logFatalf("DoFSync(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, fSyncIn.FH)
+	}
+
 	fileInode.doFlushIfNecessary()
+
 	fileInode.dereference()
 
 	errno = 0
@@ -1703,6 +1656,7 @@ func (dummy *globalsStruct) DoFlush(inHeader *fission.InHeader, flushIn *fission
 		fhInodeNumber uint64
 		ok            bool
 	)
+
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoFlush_calls, 1)
 
 	globals.Lock()
@@ -2087,8 +2041,8 @@ func (dummy *globalsStruct) DoCreate(inHeader *fission.InHeader, createIn *fissi
 			AttrValidNSec:  globals.attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       uint64(createReply.InodeNumber),
-				Size:      getStatReply.Size, // fixAttrSizes() will correct this if necessary
-				Blocks:    0,                 // fixAttrSizes() will compute this
+				Size:      getStatReply.Size,
+				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
 				CTimeSec:  cTimeSec,
@@ -2245,8 +2199,8 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 				AttrValidNSec:  globals.attrValidNSec,
 				Attr: fission.Attr{
 					Ino:       uint64(dirEntry.InodeNumber),
-					Size:      statStruct.Size, // fixAttrSizes() will correct this if necessary
-					Blocks:    0,               // fixAttrSizes() will compute this
+					Size:      statStruct.Size,
+					Blocks:    0, // fixAttrSizes() will compute this
 					ATimeSec:  aTimeSec,
 					MTimeSec:  mTimeSec,
 					CTimeSec:  cTimeSec,
