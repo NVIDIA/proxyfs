@@ -156,8 +156,8 @@ type globalsStruct struct {
 	swiftConfDir                   string
 	swiftReconChecksPerConfCheck   uint64
 	swiftReconChecksUntilConfCheck uint64
-	swiftConfFileMap               map[string]time.Time // Key == os.FileInfo.Name(); Value == os.FileInfo.ModTime()
-	swiftReconEndpointSet          map[string]struct{}  // Key == IPAddrPort of ReconEndpoint
+	swiftConfFileMap               map[string]time.Time //          Key == os.FileInfo.Name(); Value == os.FileInfo.ModTime()
+	swiftReconEndpointSet          map[string]struct{}  //          Key == IPAddrPort of ReconEndpoint
 	crc64ECMATable                 *crc64.Table
 	nextNonce                      uint64 //                        Randomly initialized... skips 0
 	recvMsgsDoneChan               chan struct{}
@@ -175,11 +175,11 @@ type globalsStruct struct {
 	stateMachineStopChan           chan struct{}
 	stateMachineDone               sync.WaitGroup
 	livenessCheckerControlChan     chan bool //                     Send true  to trigger livenessChecker() to recompute polling schedule
-	//                                                          Send false to trigger livenessChecker() to exit
+	//                                                              Send false to trigger livenessChecker() to exit
 	livenessCheckerWG          sync.WaitGroup
 	volumeToCheckList          []*volumeStruct
-	emptyVolumeGroupToCheckSet map[string]string   //           List (in "set" form) of VolumeGroups (by name) with no Volumes (Value == ServingPeer)
-	emptyServingPeerToCheckSet map[string]struct{} //           List (in "set" form) of ServingPeers (by name) with no VolumeGroups
+	emptyVolumeGroupToCheckSet map[string]string   //               List (in "set" form) of VolumeGroups (by name) with no Volumes (Value == ServingPeer)
+	emptyServingPeerToCheckSet map[string]struct{} //               List (in "set" form) of ServingPeers (by name) with no VolumeGroups
 	myObservingPeerReport      *internalObservingPeerReportStruct
 	livenessReport             *internalLivenessReportStruct
 	curRWMode                  inode.RWModeType
