@@ -360,10 +360,10 @@ func (confMap ConfMap) Dump() (confMapString string) {
 		confSectionNameSliceIndex int
 	)
 
-	// 1 Mibyte should be more than enough to hold the confMap so get the
+	// 2 Mibyte should be more than enough to hold the confMap so get the
 	// memory in 1 allocation
 	var buf strings.Builder
-	buf.Grow(1024 * 1024)
+	buf.Grow(2 * 1024 * 1024)
 
 	confSectionNameSlice = make([]string, 0, len(confMap))
 

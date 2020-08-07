@@ -147,6 +147,9 @@ func TestLocks(t *testing.T) {
 	}
 
 	testFileInode = referenceFileInode(inode.InodeNumber(lookupOut.NodeID))
+	if nil == testFileInode {
+		t.Fatalf("referenceFileInode(lookupOut.NodeID) should have succeeded")
+	}
 
 	testLocksChildExclusive3 = testFileInode.testLocksChildStructCreate(true)
 	testLocksChildExclusive4 = testFileInode.testLocksChildStructCreate(true)

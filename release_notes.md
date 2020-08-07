@@ -1,5 +1,20 @@
 # ProxyFS Release Notes
 
+## 1.16.9 (August 7, 2020)
+
+### Bug Fixes:
+
+With liveness checker enabled on multiple nodes, a race condition
+could be hit in the "doFollower()" logic of the RaFT-lite cluster
+formed among the ProxyFS instances resulting in a crash.
+
+PFSAgent had a variety of errors returning stale file sizes and,
+sometimes, content.
+
+### Notes:
+
+Picked up support for Swift 2.25.0.5 in test VMs/containers.
+
 ## 1.16.8 (July 28, 2020)
 
 ### Bug Fixes:

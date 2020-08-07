@@ -97,7 +97,7 @@ func openLogFile(confMap conf.ConfMap) (err error) {
 	if logFilePath != "" {
 		logFile, err = os.OpenFile(logFilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
-			log.Errorf("couldn't open log file: %v", err)
+			log.Errorf("couldn't open log file '%s': %v", logFilePath, err)
 			return err
 		}
 	}
@@ -131,7 +131,7 @@ func openLogFile(confMap conf.ConfMap) (err error) {
 	debugConfSlice, _ := confMap.FetchOptionValueStringSlice("Logging", "DebugLevelLogging")
 	setDebugLoggingLevel(debugConfSlice)
 
-	Infof("logger opened logfile (PID %d)", os.Getpid())
+	Infof("logger opened logfile '%s' (PID %d)", logFilePath, os.Getpid())
 	return
 }
 
@@ -184,10 +184,11 @@ func SignaledStart(confMap conf.ConfMap) (err error) {
 
 func SignaledFinish(confMap conf.ConfMap) (err error) {
 
-	Infof("logger is closing and reopening logfile (PID %d)", os.Getpid())
+	Infof("logger is closing logfile (PID %d)", os.Getpid())
 	err = closeLogFile(confMap)
 	if nil == err {
 		err = openLogFile(confMap)
+		Infof("logger opened logfile (PID %d)", os.Getpid())
 	}
 	return
 }

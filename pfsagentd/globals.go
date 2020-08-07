@@ -153,29 +153,27 @@ const (
 )
 
 type chunkedPutContextStruct struct {
-	sync.WaitGroup                    //      Used to await completion of performChunkedPut goroutine
-	containerName  string             //
-	objectName     string             //
-	extentMap      sortedmap.LLRBTree //      Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
-	fileSize       uint64             //      Last (most recent) chunkedPutContextStruct on fileInode.chunkedPutList may have
-	//                                          updated fileSize affecting reads while writing to read beyond fileInode.extentMapFileSize
-	buf                   []byte           //
-	chunkedPutListElement *list.Element    // FIFO Element of fileInodeStruct.chunkedPutList
-	fileInode             *fileInodeStruct //
-	state                 uint8            // One of chunkedPutContextState{Open|Closing|Closed}
-	pos                   int              // ObjectOffset just after last sent chunk
-	sendChan              chan struct{}    // Single element buffered chan to wake up *chunkedPutContextStruct.sendDaemon()
-	//                                          will be closed to indicate a flush is requested
-	wakeChan chan struct{} //                 Single element buffered chan to wake up *chunkedPutContextStruct.Read()
-	//                                          will be closed to indicate a flush is requested
-	inRead         bool //                    Set when in Read() as a hint to Close() to help Read() cleanly exit
-	flushRequested bool //                    Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
+	sync.WaitGroup                           // Used to await completion of performChunkedPut goroutine
+	containerName         string             //
+	objectName            string             //
+	extentMap             sortedmap.LLRBTree // Key == singleObjectExtentStruct.fileOffset; Value == *singleObjectExtentStruct
+	buf                   []byte             //
+	chunkedPutListElement *list.Element      // FIFO Element of fileInodeStruct.chunkedPutList
+	fileInode             *fileInodeStruct   //
+	state                 uint8              // One of chunkedPutContextState{Open|Closing|Closed}
+	pos                   int                // ObjectOffset just after last sent chunk
+	sendChan              chan struct{}      // Single element buffered chan to wake up *chunkedPutContextStruct.sendDaemon()
+	//                                            will be closed to indicate a flush is requested
+	wakeChan chan struct{} //                   Single element buffered chan to wake up *chunkedPutContextStruct.Read()
+	//                                            will be closed to indicate a flush is requested
+	inRead         bool //                      Set when in Read() as a hint to Close() to help Read() cleanly exit
+	flushRequested bool //                      Set to remember that a flush has been requested of *chunkedPutContextStruct.Read()
 }
 
 type fileInodeStruct struct {
 	sync.WaitGroup //                                  Used to await completion of all chunkedPutContext's
 	inode.InodeNumber
-	cachedStat          *jrpcfs.StatStruct
+	cachedStat          *jrpcfs.StatStruct //          Maintained valid/coherent with ProxyFS (possibly dirty until flushed)
 	references          uint64
 	leaseState          fileInodeLeaseStateType
 	sharedLockHolders   *list.List                  // Elements are fileInodeLockRequestStructs.holdersElement's
@@ -194,7 +192,6 @@ type fileInodeStruct struct {
 	//                                                     fileInodeLeaseStateSharedPromoting
 	//                                                     fileInodeLeaseStateExclusiveRequested
 	//                                                     fileInodeLeaseStateExclusiveGranted
-	extentMapFileSize            uint64             // FileSize covered by .extentMap (.chunkedPutList may extend)
 	extentMap                    sortedmap.LLRBTree // Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
 	extentMapLenWhenUnreferenced int                // Each time references drops to zero, update globals.extentMapEntriesCached
 	chunkedPutList               *list.List         // FIFO List of chunkedPutContextStruct's
@@ -286,9 +283,6 @@ type metricsStruct struct {
 	FUSE_DoReadDirPlus_calls uint64
 	FUSE_DoRename2_calls     uint64
 	FUSE_DoLSeek_calls       uint64
-
-	FUSE_DoGetAttr_cache_hits   uint64
-	FUSE_DoGetAttr_cache_misses uint64
 
 	FUSE_DoRead_bytes  uint64
 	FUSE_DoWrite_bytes uint64

@@ -58,7 +58,6 @@ func livenessChecker() {
 		entityToCheck                   *list.Element
 		err                             error
 		livenessCheckerControlChanValue bool
-		myObservingPeerReport           *internalObservingPeerReportStruct
 		reconEndpoint                   *internalReconEndpointReportStruct
 		servingPeer                     *internalServingPeerReportStruct
 		volume                          *internalVolumeReportStruct
@@ -67,11 +66,10 @@ func livenessChecker() {
 
 	for {
 		globals.Lock()
-		myObservingPeerReport = globals.myObservingPeerReport
-		globals.Unlock()
 
-		if nil == myObservingPeerReport {
+		if nil == globals.myObservingPeerReport {
 			// Just wait to be signaled to check again... or exit
+			globals.Unlock()
 			livenessCheckerControlChanValue = <-globals.livenessCheckerControlChan
 			if livenessCheckerControlChanValue {
 				// Just loop back and re-check globals.myObservingPeerReport
@@ -80,15 +78,16 @@ func livenessChecker() {
 				globals.livenessCheckerWG.Done()
 				return
 			}
-		} else { // nil != myObservingPeerReport
+		} else { // nil != globals.myObservingPeerReport
 			// Check to see if we are supposed to exit
 
 			select {
 			case livenessCheckerControlChanValue = <-globals.livenessCheckerControlChan:
 				if livenessCheckerControlChanValue {
-					// Just loop back and re-check globals.myObservingPeerReport
+					// Just fall into checkEntityList processing
 				} else {
 					// Exit
+					globals.Unlock()
 					globals.livenessCheckerWG.Done()
 					return
 				}
@@ -100,7 +99,7 @@ func livenessChecker() {
 
 			checkEntityList = list.New()
 
-			for _, servingPeer = range myObservingPeerReport.servingPeer {
+			for _, servingPeer = range globals.myObservingPeerReport.servingPeer {
 				_ = checkEntityList.PushBack(servingPeer)
 
 				for _, volumeGroup = range servingPeer.volumeGroup {
@@ -112,9 +111,11 @@ func livenessChecker() {
 				}
 			}
 
-			for _, reconEndpoint = range myObservingPeerReport.reconEndpoint {
+			for _, reconEndpoint = range globals.myObservingPeerReport.reconEndpoint {
 				_ = checkEntityList.PushBack(reconEndpoint)
 			}
+
+			globals.Unlock()
 
 			utils.RandomizeList(checkEntityList)
 

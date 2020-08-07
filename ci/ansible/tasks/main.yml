@@ -275,6 +275,14 @@
       group: root
       mode: '0755'
 
+  - name: Reset Swift script
+    copy:
+      src: usr/bin/resetswift
+      dest: /usr/bin/resetswift
+      owner: root
+      group: root
+      mode: '0755'
+
   - name: Install 3 versions of Golang (current, candidate, and latest)
     block:
 
