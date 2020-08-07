@@ -53,8 +53,9 @@ func adoptVolumeGroupReadCacheParameters(confMap conf.ConfMap) (err error) {
 
 			readCacheLineCount = readCacheTotalSize / volumeGroup.readCacheLineSize
 			if 0 == readCacheLineCount {
-				err = fmt.Errorf("[VolumeGroup:%s]ReadCacheWeight must result in at least one ReadCacheLineSize (%v) of memory", volumeGroup.name, volumeGroup.readCacheLineSize)
-				return
+				logger.Infof("Computed 0 ReadCacheLines for Volume Group %v; increasing to 1",
+					volumeGroup.name)
+				readCacheLineCount = 1
 			}
 
 			volumeGroup.Lock()
