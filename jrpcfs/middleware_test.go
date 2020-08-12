@@ -154,9 +154,9 @@ func testSetup() []func() {
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
-		"JSONRPCServer.MinLeaseDuration=250ms",
-		"JSONRPCServer.LeaseInterruptInterval=250ms",
-		"JSONRPCServer.LeaseInterruptLimit=20",
+		"JSONRPCServer.MinLeaseDuration=100ms",
+		"JSONRPCServer.LeaseInterruptInterval=100ms",
+		"JSONRPCServer.LeaseInterruptLimit=5",
 	}
 
 	tempDir, err = ioutil.TempDir("", "jrpcfs_test")

@@ -90,10 +90,8 @@ type mountStruct struct {
 	volume             *volumeStruct
 	mountIDAsByteArray MountIDAsByteArray
 	mountIDAsString    MountIDAsString
-	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // if present, there is an ongoing Lease Request for this inode.InodeNumber
-	//                                                                if == nil, *leaseRequestStruct not yet constructed
-	//                                                                if != nil, constructed in (*inodeLeaseStruct).handleOperation
-	//                                                           // if not present, no ongoing Lease request for this inode.InodeNumber
+	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
+	//                                                           // if not present, there is no ongoing Lease Request for this inode.InodeNumber
 }
 
 type volumeStruct struct {

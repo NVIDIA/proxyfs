@@ -1380,6 +1380,7 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 		volume:             volume,
 		mountIDAsByteArray: mountIDAsByteArray,
 		mountIDAsString:    mountIDAsString,
+		leaseRequestMap:    make(map[inode.InodeNumber]*leaseRequestStruct),
 	}
 
 	volume.mountMapByMountIDAsByteArray[mountIDAsByteArray] = mount
