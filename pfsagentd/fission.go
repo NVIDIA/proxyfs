@@ -517,7 +517,14 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	globals.Unlock()
 
 	if cachedFileInodeCase {
-		fileInode.reference()
+		// Calling referenceFileInode() here even though we "know" fileInode to avoid the
+		// sanity check otherwise valid where fileInode.references should not be zero.
+		//
+		// Note that, to avoid any race ambiguity, we will use the fileInode returned
+		// from referenceFileInode() moving forward on the off-chance the one we fetched
+		// from globals.fileInodeMap was removed just after the globals.Unlock() call.
+
+		fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 
 		fileInode.doFlushIfNecessary()
 	}
