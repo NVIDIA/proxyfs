@@ -43,11 +43,17 @@ type configStruct struct {
 	FetchExtentsBeforeFileOffset uint64
 	ReadCacheLineSize            uint64 // Aligned chunk of a LogSegment
 	ReadCacheLineCount           uint64
-	SharedFileLimit              uint64
-	ExclusiveFileLimit           uint64
-	DirtyFileLimit               uint64
-	DirtyLogSegmentLimit         uint64
+	SharedFileLimit              uint64 // TODO - obsolete this
+	ExclusiveFileLimit           uint64 // TODO - obsolete this
+	DirtyFileLimit               uint64 // TODO - obsolete this
+	LeaseRetryLimit              uint64
+	LeaseRetryDelay              time.Duration
+	LeaseRetryDelayVariance      uint8
+	LeaseRetryExpBackoff         float64
+	SharedLeaseLimit             uint64
+	ExclusiveLeaseLimit          uint64
 	ExtentMapEntryLimit          uint64
+	DirtyLogSegmentLimit         uint64
 	MaxFlushSize                 uint64
 	MaxFlushTime                 time.Duration
 	LogFilePath                  string // Unless starting with '/', relative to $CWD; == "" means disabled
@@ -87,8 +93,8 @@ const (
 	fileInodeLeaseStateNone fileInodeLeaseStateType = iota
 	fileInodeLeaseStateSharedRequested
 	fileInodeLeaseStateSharedGranted
-	fileInodeLeaseStateSharedReleasing
 	fileInodeLeaseStateSharedPromoting
+	fileInodeLeaseStateSharedReleasing
 	fileInodeLeaseStateExclusiveRequested
 	fileInodeLeaseStateExclusiveGranted
 	fileInodeLeaseStateExclusiveDemoting
@@ -171,34 +177,38 @@ type chunkedPutContextStruct struct {
 }
 
 type fileInodeStruct struct {
-	sync.WaitGroup //                                  Used to await completion of all chunkedPutContext's
 	inode.InodeNumber
-	cachedStat          *jrpcfs.StatStruct //          Maintained valid/coherent with ProxyFS (possibly dirty until flushed)
-	references          uint64
-	leaseState          fileInodeLeaseStateType
-	sharedLockHolders   *list.List                  // Elements are fileInodeLockRequestStructs.holdersElement's
-	exclusiveLockHolder *fileInodeLockRequestStruct // == nil if not exclusively held
-	lockWaiters         *list.List                  // Front() is oldest fileInodeLockRequestStruct.waitersElement
-	cacheLRUElement     *list.Element               // Element on one of globals.{unlocked|shared|exclusive}FileInodeCacheLRU
-	//                                                   On globals.unleasedFileInodeCacheLRU       if leaseState one of:
-	//                                                     fileInodeLeaseStateNone
-	//                                                     fileInodeLeaseStateSharedReleasing
-	//                                                     fileInodeLeaseStateExclusiveReleasing
-	//                                                   On globals.sharedLeaseFileInodeCacheLRU    if leaseState one of:
-	//                                                     fileInodeLeaseStateSharedRequested
-	//                                                     fileInodeLeaseStateSharedGranted
-	//                                                     fileInodeLeaseStateExclusiveDemoting
-	//                                                   On globals.exclusiveLeaseFileInodeCacheLRU if leaseState one of:
-	//                                                     fileInodeLeaseStateSharedPromoting
-	//                                                     fileInodeLeaseStateExclusiveRequested
-	//                                                     fileInodeLeaseStateExclusiveGranted
-	extentMap                    sortedmap.LLRBTree // Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
-	extentMapLenWhenUnreferenced int                // Each time references drops to zero, update globals.extentMapEntriesCached
-	chunkedPutList               *list.List         // FIFO List of chunkedPutContextStruct's
-	flushInProgress              bool               // Serializes (& singularizes) explicit Flush requests
-	chunkedPutFlushWaiterList    *list.List         // List of *sync.WaitGroup's for those awaiting an explicit Flush
-	//                                                   Note: These waiters cannot be holding fileInodeStruct.Lock
-	dirtyListElement *list.Element //                  Element on globals.fileInodeDirtyList (or nil)
+	cachedStat  *jrpcfs.StatStruct //                       Maintained valid/coherent with ProxyFS (possibly dirty until flushed)
+	lockWaiters *list.List         //                       List of chan struct{} lock waiters:
+	//                                                        If == nil, no lock requests
+	//                                                        If .Len() == 0, lock grant in progress or granted but no blocked lock requests
+	//                                                        If .Len() != 0, lock grant in progress or granted and other lock requests are waiting
+	references               uint64
+	leaseState               fileInodeLeaseStateType     // One of fileInodeLeaseState*
+	pendingLeaseInterrupt    *jrpcfs.RPCInterruptType    // If non-nil, either jrpcfs.RPCInterruptTypeDemote or jrpcfs.RPCInterruptTypeRelease
+	sharedLockHolders        *list.List                  // Elements are fileInodeLockRequestStructs.holdersElement's
+	exclusiveLockHolder      *fileInodeLockRequestStruct // == nil if not exclusively held
+	TODODeprecatelockWaiters *list.List                  // Front() is oldest fileInodeLockRequestStruct.waitersElement
+	leaseListElement         *list.Element               // Element on one of {unleased|shared|exclusive}FileInodeCacheLRU
+	//                                                      On globals.unleasedFileInodeCacheLRU       if leaseState one of:
+	//                                                        fileInodeLeaseStateNone
+	//                                                        fileInodeLeaseStateSharedReleasing
+	//                                                        fileInodeLeaseStateExclusiveReleasing
+	//                                                      On globals.sharedLeaseFileInodeCacheLRU    if leaseState one of:
+	//                                                        fileInodeLeaseStateSharedRequested
+	//                                                        fileInodeLeaseStateSharedGranted
+	//                                                        fileInodeLeaseStateExclusiveDemoting
+	//                                                      On globals.exclusiveLeaseFileInodeCacheLRU if leaseState one of:
+	//                                                        fileInodeLeaseStateSharedPromoting
+	//                                                        fileInodeLeaseStateExclusiveRequested
+	//                                                        fileInodeLeaseStateExclusiveGranted
+	extentMap                    sortedmap.LLRBTree //      Key == multiObjectExtentStruct.fileOffset; Value == *multiObjectExtentStruct
+	extentMapLenWhenUnreferenced int                //      Each time references drops to zero, update globals.extentMapEntriesCached
+	chunkedPutList               *list.List         //      FIFO List of chunkedPutContextStruct's
+	flushInProgress              bool               //      Serializes (& singularizes) explicit Flush requests
+	chunkedPutFlushWaiterList    *list.List         //      List of *sync.WaitGroup's for those awaiting an explicit Flush
+	//                                                        Note: These waiters cannot be holding fileInodeStruct.Lock
+	dirtyListElement *list.Element //                       Element on globals.fileInodeDirtyList (or nil)
 }
 
 type fhSetType map[uint64]struct{}
@@ -302,6 +312,16 @@ type metricsStruct struct {
 	LogSegmentPUTs        uint64
 	LogSegmentPUTReadHits uint64
 
+	LeaseRequests_Shared    uint64
+	LeaseRequests_Promote   uint64
+	LeaseRequests_Exclusive uint64
+	LeaseRequests_Demote    uint64
+	LeaseRequests_Release   uint64
+
+	LeaseInterrupts_Unmount uint64
+	LeaseInterrupts_Demote  uint64
+	LeaseInterrupts_Release uint64
+
 	HTTPRequests                         uint64
 	HTTPRequestSubmissionFailures        uint64
 	HTTPRequestResponseBodyCorruptions   uint64
@@ -318,49 +338,62 @@ type statsStruct struct {
 	LogSegmentGetUsec bucketstats.BucketLog2Round
 
 	LogSegmentPutBytes bucketstats.BucketLog2Round
+
+	LeaseRequests_Shared_Usec    bucketstats.BucketLog2Round
+	LeaseRequests_Promote_Usec   bucketstats.BucketLog2Round
+	LeaseRequests_Exclusive_Usec bucketstats.BucketLog2Round
+	LeaseRequests_Demote_Usec    bucketstats.BucketLog2Round
+	LeaseRequests_Release_Usec   bucketstats.BucketLog2Round
 }
 
 type globalsStruct struct {
 	sync.Mutex
-	config                          configStruct
-	logFile                         *os.File // == nil if configStruct.LogFilePath == ""
-	retryRPCPublicIPAddr            string
-	retryRPCPort                    uint16
-	retryRPCClient                  *retryrpc.Client
-	rootCAx509CertificatePEM        []byte
-	entryValidSec                   uint64
-	entryValidNSec                  uint32
-	attrValidSec                    uint64
-	attrValidNSec                   uint32
-	httpServer                      *http.Server
-	httpServerWG                    sync.WaitGroup
-	httpClient                      *http.Client
-	retryDelay                      []retryDelayElementStruct
-	authPlugInControl               *authPlugInControlStruct
-	swiftAuthWaitGroup              *sync.WaitGroup // Protected by sync.Mutex of globalsStruct
-	swiftAuthToken                  string          // Protected by swiftAuthWaitGroup
-	swiftStorageURL                 string          // Protected by swiftAuthWaitGroup
-	mountID                         jrpcfs.MountIDAsString
-	rootDirInodeNumber              uint64
-	fissionErrChan                  chan error
-	fissionVolume                   fission.Volume
-	fuseConn                        *fuse.Conn
-	jrpcLastID                      uint64
-	fileInodeMap                    map[inode.InodeNumber]*fileInodeStruct
-	fileInodeDirtyList              *list.List    // LRU of fileInode's with non-empty chunkedPutList
-	fileInodeDirtyLogSegmentChan    chan struct{} // Limits # of in-flight LogSegment Chunked PUTs
-	leaseRequestChan                chan *fileInodeLeaseRequestStruct
-	unleasedFileInodeCacheLRU       *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	sharedLeaseFileInodeCacheLRU    *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	exclusiveLeaseFileInodeCacheLRU *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement
-	fhToInodeNumberMap              map[uint64]uint64    // Key == FH; Value == InodeNumber
-	inodeNumberToFHMap              map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
-	lastFH                          uint64               // Valid FH's start at 1
-	logSegmentCacheMap              map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
-	logSegmentCacheLRU              *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
-	extentMapEntriesCached          int        // Running total of all fileInode.extentMapLenWhenUnreferenced values
-	metrics                         *metricsStruct
-	stats                           *statsStruct
+	config                            configStruct
+	logFile                           *os.File // == nil if configStruct.LogFilePath == ""
+	retryRPCPublicIPAddr              string
+	retryRPCPort                      uint16
+	retryRPCClient                    *retryrpc.Client
+	rootCAx509CertificatePEM          []byte
+	entryValidSec                     uint64
+	entryValidNSec                    uint32
+	attrValidSec                      uint64
+	attrValidNSec                     uint32
+	httpServer                        *http.Server
+	httpServerWG                      sync.WaitGroup
+	httpClient                        *http.Client
+	retryDelay                        []retryDelayElementStruct
+	authPlugInControl                 *authPlugInControlStruct
+	swiftAuthWaitGroup                *sync.WaitGroup // Protected by sync.Mutex of globalsStruct
+	swiftAuthToken                    string          // Protected by swiftAuthWaitGroup
+	swiftStorageURL                   string          // Protected by swiftAuthWaitGroup
+	mountID                           jrpcfs.MountIDAsString
+	rootDirInodeNumber                uint64
+	fissionErrChan                    chan error
+	fissionVolume                     fission.Volume
+	fuseConn                          *fuse.Conn
+	jrpcLastID                        uint64
+	fileInodeMap                      map[inode.InodeNumber]*fileInodeStruct
+	fileInodeDirtyList                *list.List    // LRU of fileInode's with non-empty chunkedPutList
+	fileInodeDirtyLogSegmentChan      chan struct{} // Limits # of in-flight LogSegment Chunked PUTs
+	leaseRequestChan                  chan *fileInodeLeaseRequestStruct
+	inFlightSharedLeaseRequestList    *list.List           // List of fileInodestruct.leaseListElement's with an in-flight LeaseRequestTypeShared
+	inFlightPromoteLeaseRequestList   *list.List           // List of fileInodestruct.leaseListElement's with an in-flight LeaseRequestTypePromote
+	inFlightExclusiveLeaseRequestList *list.List           // List of fileInodestruct.leaseListElement's with an in-flight LeaseRequestTypeExclusive
+	inFlightDemoteLeaseRequestList    *list.List           // List of fileInodestruct.leaseListElement's with an in-flight LeaseRequestTypeDemote
+	inFlightReleaseLeaseRequestList   *list.List           // List of fileInodestruct.leaseListElement's with an in-flight LeaseRequestTypeRelease
+	sharedLeaseLRU                    *list.List           // Front() is LRU'd fileInodeStruct.leaseListElement
+	exclusiveLeaseLRU                 *list.List           // Front() is LRU'd fileInodeStruct.leaseListElement
+	unleasedFileInodeCacheLRU         *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement - TODO: obsolete this
+	sharedLeaseFileInodeCacheLRU      *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement - TODO: obsolete this
+	exclusiveLeaseFileInodeCacheLRU   *list.List           // Front() is oldest fileInodeStruct.cacheLRUElement - TODO: obsolete this
+	fhToInodeNumberMap                map[uint64]uint64    // Key == FH; Value == InodeNumber
+	inodeNumberToFHMap                map[uint64]fhSetType // Key == InodeNumber; Value == set of FH's
+	lastFH                            uint64               // Valid FH's start at 1
+	logSegmentCacheMap                map[logSegmentCacheElementKeyStruct]*logSegmentCacheElementStruct
+	logSegmentCacheLRU                *list.List // Front() is oldest logSegmentCacheElementStruct.cacheLRUElement
+	extentMapEntriesCached            int        // Running total of all fileInode.extentMapLenWhenUnreferenced values
+	metrics                           *metricsStruct
+	stats                             *statsStruct
 }
 
 var globals globalsStruct
@@ -452,7 +485,7 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.config.SwiftRetryDelayVariance, err = confMap.FetchOptionValueUint8("Agent", "SwiftRetryDelayVariance")
 	if nil != err {
-		globals.config.SwiftRetryDelayVariance = 25 // TODO: Eventually, just logFatal(err)
+		logFatal(err)
 	}
 	if 0 == globals.config.SwiftRetryDelayVariance {
 		err = fmt.Errorf("[Agent]SwiftRetryDelayVariance must be > 0")
@@ -495,25 +528,63 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.config.SharedFileLimit, err = confMap.FetchOptionValueUint64("Agent", "SharedFileLimit")
 	if nil != err {
-		logFatal(err)
+		logFatal(err) // TODO - obsolete this
 	}
 
 	globals.config.ExclusiveFileLimit, err = confMap.FetchOptionValueUint64("Agent", "ExclusiveFileLimit")
 	if nil != err {
-		logFatal(err)
+		logFatal(err) // TODO - obsolete this
 	}
 
 	globals.config.DirtyFileLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyFileLimit")
 	if nil != err {
+		logFatal(err) // TODO - obsolete this
+	}
+
+	globals.config.LeaseRetryLimit, err = confMap.FetchOptionValueUint64("Agent", "LeaseRetryLimit")
+	if nil != err {
 		logFatal(err)
 	}
 
-	globals.config.DirtyLogSegmentLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyLogSegmentLimit")
+	globals.config.LeaseRetryDelay, err = confMap.FetchOptionValueDuration("Agent", "LeaseRetryDelay")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.LeaseRetryDelayVariance, err = confMap.FetchOptionValueUint8("Agent", "LeaseRetryDelayVariance")
+	if nil != err {
+		logFatal(err)
+	}
+	if 0 == globals.config.LeaseRetryDelayVariance {
+		err = fmt.Errorf("[Agent]LeaseRetryDelayVariance must be > 0")
+		logFatal(err)
+	}
+	if 100 < globals.config.LeaseRetryDelayVariance {
+		err = fmt.Errorf("[Agent]LeaseRetryDelayVariance (%v) must be <= 100", globals.config.LeaseRetryDelayVariance)
+		logFatal(err)
+	}
+
+	globals.config.LeaseRetryExpBackoff, err = confMap.FetchOptionValueFloat64("Agent", "LeaseRetryExpBackoff")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.SharedLeaseLimit, err = confMap.FetchOptionValueUint64("Agent", "SharedLeaseLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.ExclusiveLeaseLimit, err = confMap.FetchOptionValueUint64("Agent", "ExclusiveLeaseLimit")
 	if nil != err {
 		logFatal(err)
 	}
 
 	globals.config.ExtentMapEntryLimit, err = confMap.FetchOptionValueUint64("Agent", "ExtentMapEntryLimit")
+	if nil != err {
+		logFatal(err)
+	}
+
+	globals.config.DirtyLogSegmentLimit, err = confMap.FetchOptionValueUint64("Agent", "DirtyLogSegmentLimit")
 	if nil != err {
 		logFatal(err)
 	}
@@ -689,11 +760,20 @@ func initializeGlobals(confMap conf.ConfMap) {
 
 	globals.leaseRequestChan = make(chan *fileInodeLeaseRequestStruct)
 
-	go leaseDaemon()
+	globals.inFlightSharedLeaseRequestList = list.New()
+	globals.inFlightPromoteLeaseRequestList = list.New()
+	globals.inFlightExclusiveLeaseRequestList = list.New()
+	globals.inFlightDemoteLeaseRequestList = list.New()
+	globals.inFlightReleaseLeaseRequestList = list.New()
 
-	globals.unleasedFileInodeCacheLRU = list.New()
-	globals.sharedLeaseFileInodeCacheLRU = list.New()
-	globals.exclusiveLeaseFileInodeCacheLRU = list.New()
+	globals.sharedLeaseLRU = list.New()
+	globals.exclusiveLeaseLRU = list.New()
+
+	globals.unleasedFileInodeCacheLRU = list.New()       // TODO: Obsolete this
+	globals.sharedLeaseFileInodeCacheLRU = list.New()    // TODO: Obsolete this
+	globals.exclusiveLeaseFileInodeCacheLRU = list.New() // TODO: Obsolete this
+
+	go leaseDaemon()
 
 	globals.fhToInodeNumberMap = make(map[uint64]uint64)
 	globals.inodeNumberToFHMap = make(map[uint64]fhSetType)
@@ -753,9 +833,16 @@ func uninitializeGlobals() {
 	globals.fileInodeDirtyList = nil
 	globals.fileInodeDirtyLogSegmentChan = nil
 	globals.leaseRequestChan = nil
-	globals.unleasedFileInodeCacheLRU = nil
-	globals.sharedLeaseFileInodeCacheLRU = nil
-	globals.exclusiveLeaseFileInodeCacheLRU = nil
+	globals.inFlightSharedLeaseRequestList = nil
+	globals.inFlightPromoteLeaseRequestList = nil
+	globals.inFlightExclusiveLeaseRequestList = nil
+	globals.inFlightDemoteLeaseRequestList = nil
+	globals.inFlightReleaseLeaseRequestList = nil
+	globals.sharedLeaseLRU = nil
+	globals.exclusiveLeaseLRU = nil
+	globals.unleasedFileInodeCacheLRU = nil       // TODO: Obsolete this
+	globals.sharedLeaseFileInodeCacheLRU = nil    // TODO: Obsolete this
+	globals.exclusiveLeaseFileInodeCacheLRU = nil // TODO: Obsolete this
 	globals.fhToInodeNumberMap = nil
 	globals.inodeNumberToFHMap = nil
 	globals.lastFH = 0
