@@ -17,13 +17,17 @@ import (
 //
 func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 	var (
-		inodeLease            *inodeLeaseStruct
-		inodeNumber           inode.InodeNumber
-		leaseRequestOperation *leaseRequestOperationStruct
-		mount                 *mountStruct
-		ok                    bool
-		replyToReturn         *LeaseReply
-		volume                *volumeStruct
+		additionalEvictionsInitiated uint64
+		additionalEvictionsNeeded    uint64
+		inodeLease                   *inodeLeaseStruct
+		inodeLeaseFromLRU            *inodeLeaseStruct
+		inodeLeaseLRUElement         *list.Element
+		inodeNumber                  inode.InodeNumber
+		leaseRequestOperation        *leaseRequestOperationStruct
+		mount                        *mountStruct
+		ok                           bool
+		replyToReturn                *LeaseReply
+		volume                       *volumeStruct
 	)
 
 	enterGate()
@@ -71,6 +75,7 @@ func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 				volume:               volume,
 				InodeNumber:          inodeNumber,
 				leaseState:           inodeLeaseStateNone,
+				beingEvicted:         false,
 				requestChan:          make(chan *leaseRequestOperationStruct),
 				stopChan:             make(chan struct{}),
 				sharedHoldersList:    list.New(),
@@ -86,9 +91,26 @@ func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 			}
 
 			volume.inodeLeaseMap[inodeNumber] = inodeLease
+			inodeLease.lruElement = volume.inodeLeaseLRU.PushBack(inodeLease)
 
 			volume.leaseHandlerWG.Add(1)
 			go inodeLease.handler()
+
+			if uint64(volume.inodeLeaseLRU.Len()) >= volume.activeLeaseEvictHighLimit {
+				additionalEvictionsNeeded = (volume.activeLeaseEvictHighLimit - volume.activeLeaseEvictLowLimit) - volume.ongoingLeaseEvictions
+				additionalEvictionsInitiated = 0
+				inodeLeaseLRUElement = volume.inodeLeaseLRU.Front()
+				for (nil != inodeLeaseLRUElement) && (additionalEvictionsInitiated < additionalEvictionsNeeded) {
+					inodeLeaseFromLRU = inodeLeaseLRUElement.Value.(*inodeLeaseStruct)
+					if !inodeLeaseFromLRU.beingEvicted {
+						inodeLeaseFromLRU.beingEvicted = true
+						close(inodeLeaseFromLRU.stopChan)
+						additionalEvictionsInitiated++
+					}
+					inodeLeaseLRUElement = inodeLeaseLRUElement.Next()
+				}
+				volume.ongoingLeaseEvictions += additionalEvictionsInitiated
+			}
 		}
 	} else { // in.LeaseRequestType is one of LeaseRequestType{Promote|Demote|Release}
 		inodeLease, ok = volume.inodeLeaseMap[inodeNumber]
@@ -163,6 +185,8 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 
 	globals.volumesLock.Lock()
 	defer globals.volumesLock.Unlock()
+
+	inodeLease.volume.inodeLeaseLRU.MoveToBack(inodeLease.lruElement)
 
 	switch leaseRequestOperation.LeaseRequestType {
 	case LeaseRequestTypeShared:
@@ -1786,8 +1810,15 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 RequestChanDrained:
 
 	delete(inodeLease.volume.inodeLeaseMap, inodeLease.InodeNumber)
+	_ = inodeLease.volume.inodeLeaseLRU.Remove(inodeLease.lruElement)
+
+	if inodeLease.beingEvicted {
+		inodeLease.volume.ongoingLeaseEvictions--
+	}
 
 	inodeLease.volume.leaseHandlerWG.Done()
+
+	globals.volumesLock.Unlock()
 
 	runtime.Goexit()
 }
