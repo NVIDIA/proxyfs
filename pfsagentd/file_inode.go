@@ -415,13 +415,11 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 		logWarnf("TODO (i.e. convert to logFatalf) *chunkedPutContextStruct.complete() failed Server.RpcWrote: %v", err)
 	}
 
-	// Remove this chunkedPutContext from fileInode.chunkedPutList and mark as Done()
+	// Remove this chunkedPutContext from fileInode.chunkedPutList
 
 	_ = fileInode.chunkedPutList.Remove(chunkedPutContext.chunkedPutListElement)
 
 	fileInode.dereference()
-
-	chunkedPutContext.fileInode.Done()
 
 	// Finally, yield our chunkedPutContext quota
 

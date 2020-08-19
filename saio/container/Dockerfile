@@ -1,5 +1,12 @@
 FROM centos:7.4.1708
 
+ARG SwiftVersion=ss-release-2.25.0.7
+ARG GolangVersion=1.13.6
+ARG ProxyFS_Version=stable
+
+ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
+ENV GolangURL      "https://golang.org/dl/${GolangBasename}"
+
 RUN yum install -y yum-utils
 
 RUN yum-config-manager --disable CentOS-Base
@@ -87,7 +94,7 @@ RUN yum install -y https://rpmfind.net/linux/fedora/linux/releases/30/Everything
 WORKDIR ~swift
 RUN git clone https://github.com/swiftstack/swift.git
 WORKDIR swift
-RUN git checkout ss-release-2.25.0.7
+RUN git checkout $SwiftVersion
 RUN pip install wheel
 RUN python setup.py bdist_wheel
 RUN pip install --no-binary cryptography -r requirements.txt
@@ -138,18 +145,20 @@ RUN chmod 777 /var/log/proxyfsd
 RUN chmod 666 /var/log/proxyfsd/proxyfsd.log
 
 WORKDIR /opt/ProxyFS
-RUN wget -nv https://golang.org/dl/go1.13.6.linux-amd64.tar.gz
-RUN tar -C /usr/local -xzf go1.13.6.linux-amd64.tar.gz
+RUN wget -nv $GolangURL
+RUN tar -C /usr/local -xzf $GolangBasename
 
 ENV GOPATH /opt/ProxyFS/GOPATH
 ENV PATH   $PATH:/usr/local/go/bin:$GOPATH/bin
-RUN mkdir -p $GOPATH/src/github.com/swiftstack
-WORKDIR $GOPATH/src/github.com/swiftstack
-RUN git clone https://github.com/swiftstack/ProxyFS.git
 
 RUN yum install -y make fuse
 
+RUN mkdir -p $GOPATH/src/github.com/swiftstack
+WORKDIR $GOPATH/src/github.com/swiftstack
+RUN git clone https://github.com/swiftstack/ProxyFS.git
 WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
+RUN git checkout $ProxyFS_Version
+
 RUN make version pre-generate generate install
 
 WORKDIR /opt/ProxyFS
@@ -166,6 +175,14 @@ COPY proxyfs.conf .
 RUN chmod +x docker_startup.sh
 
 CMD /opt/ProxyFS/docker_startup.sh
+
+# To build this image:
+#
+#   docker build \
+#          [--build-arg SwiftVersion=<branch-name-or-tag-or-SHA]     \
+#          [--build-arg GolangVersion=<major#.minor#[.patch#]>]      \
+#          [--build-arg ProxyFS_Version=<branch-name-or-tag-or-SHA>] \
+#          [-t <repository>:<tag>]                                   .
 
 # To run a container for this image:
 #

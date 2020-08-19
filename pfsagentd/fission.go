@@ -195,6 +195,36 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		ok             bool
 	)
 
+	UNDOleaseRequestExclusive := &jrpcfs.LeaseRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(inHeader.NodeID),
+		},
+		LeaseRequestType: jrpcfs.LeaseRequestTypeExclusive,
+	}
+	// fmt.Printf("UNDO: Issuing UNDOleaseRequestExclusive: %#v\n", UNDOleaseRequestExclusive)
+	UNDOleaseReplyExclusive := &jrpcfs.LeaseReply{}
+	UNDOerrExclusive := globals.retryRPCClient.Send("RpcLease", UNDOleaseRequestExclusive, UNDOleaseReplyExclusive)
+	if nil != UNDOerrExclusive {
+		logFatalf("UNDO: retryRPCClient.Send(\"RpcLease\",UNDOleaseRequestExclusive,) failed: %v", UNDOerrExclusive)
+	}
+	// fmt.Printf("UNDO: ...UNDOleaseReplyExclusive: %#v\n", UNDOleaseReplyExclusive)
+
+	UNDOleaseRequestRelease := &jrpcfs.LeaseRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(inHeader.NodeID),
+		},
+		LeaseRequestType: jrpcfs.LeaseRequestTypeRelease,
+	}
+	// fmt.Printf("UNDO: Issuing UNDOleaseRequestRelease: %#v\n", UNDOleaseRequestRelease)
+	UNDOleaseReplyRelease := &jrpcfs.LeaseReply{}
+	UNDOerrRelease := globals.retryRPCClient.Send("RpcLease", UNDOleaseRequestRelease, UNDOleaseReplyRelease)
+	if nil != UNDOerrRelease {
+		logFatalf("UNDO: retryRPCClient.Send(\"RpcLease\",UNDOleaseRequestRelease,) failed: %v", UNDOerrRelease)
+	}
+	// fmt.Printf("UNDO: ...UNDOleaseReplyRelease: %#v\n", UNDOleaseReplyRelease)
+
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_calls, 1)
 
 	globals.Lock()
@@ -1264,7 +1294,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		fileInode.dirtyListElement = globals.fileInodeDirtyList.PushBack(fileInode)
 		globals.Unlock()
 
-		chunkedPutContext.fileInode.Add(1)
 		go chunkedPutContext.sendDaemon()
 	} else {
 		globals.Lock()
@@ -1298,7 +1327,6 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 			fileInode.reference()
 
-			chunkedPutContext.fileInode.Add(1)
 			go chunkedPutContext.sendDaemon()
 		}
 	}

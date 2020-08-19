@@ -76,11 +76,14 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 		fileInode = &fileInodeStruct{
 			InodeNumber:                  inodeNumber,
 			cachedStat:                   getStatReply,
+			lockWaiters:                  nil,
 			references:                   1,
 			leaseState:                   fileInodeLeaseStateNone,
+			pendingLeaseInterrupt:        nil,
 			sharedLockHolders:            list.New(),
 			exclusiveLockHolder:          nil,
-			lockWaiters:                  list.New(),
+			TODODeprecatelockWaiters:     list.New(),
+			leaseListElement:             nil,
 			extentMap:                    nil,
 			extentMapLenWhenUnreferenced: 0,
 			chunkedPutList:               list.New(),
@@ -89,7 +92,7 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 			dirtyListElement:             nil,
 		}
 
-		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
 
 		globals.fileInodeMap[inodeNumber] = fileInode
 
@@ -182,7 +185,7 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 		delayedLeaseRequest.delayedLeaseRequestListElement = delayedLeaseRequestList.PushBack(delayedLeaseRequest)
 		fileInode.leaseState = fileInodeLeaseStateExclusiveDemoting
 		globals.exclusiveLeaseFileInodeCacheLRU.Remove(fileInodeCacheLRUElement)
-		fileInode.cacheLRUElement = globals.sharedLeaseFileInodeCacheLRU.PushBack(fileInode)
+		fileInode.leaseListElement = globals.sharedLeaseFileInodeCacheLRU.PushBack(fileInode)
 	}
 
 	fileInodeCacheLimitToEnforce = int(globals.config.SharedFileLimit)
@@ -207,7 +210,7 @@ func honorInodeCacheLimits() (delayedLeaseRequestList *list.List) {
 		delayedLeaseRequest.delayedLeaseRequestListElement = delayedLeaseRequestList.PushBack(delayedLeaseRequest)
 		fileInode.leaseState = fileInodeLeaseStateSharedReleasing
 		globals.sharedLeaseFileInodeCacheLRU.Remove(fileInodeCacheLRUElement)
-		fileInode.cacheLRUElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
 	}
 
 	fileInodeCacheLimitToEnforce = int(globals.config.ExclusiveFileLimit) - globals.exclusiveLeaseFileInodeCacheLRU.Len()
@@ -310,10 +313,10 @@ func (fileInode *fileInodeStruct) getSharedLock() (grantedLock *fileInodeLockReq
 			continue
 		}
 
-		if (nil != fileInode.exclusiveLockHolder) || (0 != fileInode.lockWaiters.Len()) {
+		if (nil != fileInode.exclusiveLockHolder) || (0 != fileInode.TODODeprecatelockWaiters.Len()) {
 			// Need to block awaiting a release() on a conflicting held or prior pending LockRequest
 			grantedLock.Add(1)
-			grantedLock.waitersElement = fileInode.lockWaiters.PushBack(grantedLock)
+			grantedLock.waitersElement = fileInode.TODODeprecatelockWaiters.PushBack(grantedLock)
 			globals.Unlock()
 			grantedLock.Wait()
 			return
@@ -369,7 +372,7 @@ func (fileInode *fileInodeStruct) getExclusiveLock() (grantedLock *fileInodeLock
 		if (nil != fileInode.exclusiveLockHolder) || (0 != fileInode.sharedLockHolders.Len()) {
 			// Need to block awaiting a release() on a conflicting held LockRequest
 			grantedLock.Add(1)
-			grantedLock.waitersElement = fileInode.lockWaiters.PushBack(grantedLock)
+			grantedLock.waitersElement = fileInode.TODODeprecatelockWaiters.PushBack(grantedLock)
 			globals.Unlock()
 			grantedLock.Wait()
 			return
@@ -402,7 +405,7 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 
 		fileInode.exclusiveLockHolder = nil
 
-		nextLockElement = fileInode.lockWaiters.Front()
+		nextLockElement = fileInode.TODODeprecatelockWaiters.Front()
 
 		if nil != nextLockElement {
 			nextLock = nextLockElement.Value.(*fileInodeLockRequestStruct)
@@ -410,21 +413,21 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 			if nextLock.exclusive {
 				// Grant nextLock as ExclusiveLock
 
-				_ = fileInode.lockWaiters.Remove(nextLock.waitersElement)
+				_ = fileInode.TODODeprecatelockWaiters.Remove(nextLock.waitersElement)
 				nextLock.waitersElement = nil
 				fileInode.exclusiveLockHolder = nextLock
 				nextLock.Done()
 			} else {
 				// Grant nextLock, and any subsequent Lock's SharedLock
-				//   until an ExclusiveLock Request is encountered (or no more lockWaiters)
+				//   until an ExclusiveLock Request is encountered (or no more TODODeprecatelockWaiters)
 
 				for {
-					_ = fileInode.lockWaiters.Remove(nextLock.waitersElement)
+					_ = fileInode.TODODeprecatelockWaiters.Remove(nextLock.waitersElement)
 					nextLock.waitersElement = nil
 					nextLock.holdersElement = fileInode.sharedLockHolders.PushBack(nextLock)
 					nextLock.Done()
 
-					nextLockElement = fileInode.lockWaiters.Front()
+					nextLockElement = fileInode.TODODeprecatelockWaiters.Front()
 					if nil == nextLockElement {
 						break
 					}
@@ -450,7 +453,7 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 		return
 	}
 
-	nextLockElement = fileInode.lockWaiters.Front()
+	nextLockElement = fileInode.TODODeprecatelockWaiters.Front()
 
 	if nil == nextLockElement {
 		globals.Unlock()
@@ -462,7 +465,7 @@ func (grantedLock *fileInodeLockRequestStruct) release() {
 	// Since a subsequent SharedLock Request would have been immediately granted,
 	//   we know this is an ExclusiveLock Request... so just grant it
 
-	_ = fileInode.lockWaiters.Remove(nextLock.waitersElement)
+	_ = fileInode.TODODeprecatelockWaiters.Remove(nextLock.waitersElement)
 	nextLock.waitersElement = nil
 	fileInode.exclusiveLockHolder = nextLock
 
