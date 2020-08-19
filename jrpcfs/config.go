@@ -63,7 +63,9 @@ const (
 type inodeLeaseStruct struct {
 	volume *volumeStruct
 	inode.InodeNumber
-	leaseState inodeLeaseStateType
+	lruElement   *list.Element // link into volumeStruct.inodeLeaseLRU
+	beingEvicted bool
+	leaseState   inodeLeaseStateType
 
 	requestChan chan *leaseRequestOperationStruct
 	stopChan    chan struct{} // closing this chan will trigger *inodeLeaseStruct.handler() to:
@@ -101,6 +103,10 @@ type volumeStruct struct {
 	mountMapByMountIDAsByteArray    map[MountIDAsByteArray]*mountStruct     // key == mountStruct.mountIDAsByteArray
 	mountMapByMountIDAsString       map[MountIDAsString]*mountStruct        // key == mountStruct.mountIDAsString
 	inodeLeaseMap                   map[inode.InodeNumber]*inodeLeaseStruct // key == inodeLeaseStruct.InodeNumber
+	inodeLeaseLRU                   *list.List                              // .Front() is the LRU inodeLeaseStruct.listElement
+	ongoingLeaseEvictions           uint64                                  // tracks the number of inodeLeaseStruct evictions currently ongoing
+	activeLeaseEvictLowLimit        uint64                                  // number if inodeLeaseStruct's desired after evictions
+	activeLeaseEvictHighLimit       uint64                                  // trigger on inodeLease{Map|LRU}.Len() for evicting inodeLeaseStructs
 	leaseHandlerWG                  sync.WaitGroup                          // .Add(1) each inodeLease insertion into inodeLeaseMap
 	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap
 }
@@ -313,6 +319,19 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		mountMapByMountIDAsByteArray:    make(map[MountIDAsByteArray]*mountStruct),
 		mountMapByMountIDAsString:       make(map[MountIDAsString]*mountStruct),
 		inodeLeaseMap:                   make(map[inode.InodeNumber]*inodeLeaseStruct),
+		inodeLeaseLRU:                   list.New(),
+		ongoingLeaseEvictions:           0,
+	}
+
+	volume.activeLeaseEvictLowLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictLowLimit")
+	if nil != err {
+		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictLowLimit from config file - defaulting to 5000")
+		volume.activeLeaseEvictLowLimit = 5000
+	}
+	volume.activeLeaseEvictHighLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictHighLimit")
+	if nil != err {
+		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictHighLimit from config file - defaulting to 5010")
+		volume.activeLeaseEvictHighLimit = 5010
 	}
 
 	globals.volumeMap[volumeName] = volume

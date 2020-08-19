@@ -191,6 +191,8 @@ func testSetup(t *testing.T) {
 		"Volume:CommonVolume.MaxBytesInodeCache=100000",
 		"Volume:CommonVolume.InodeCacheEvictInterval=1s",
 		"Volume:CommonVolume.AutoFormat=true",
+		"Volume:CommonVolume.ActiveLeaseEvictLowLimit=5000",
+		"Volume:CommonVolume.ActiveLeaseEvictHighLimit=5010",
 
 		"NFSClientMap:CommonVolumeNFSClient0.ClientPattern=*",
 		"NFSClientMap:CommonVolumeNFSClient0.AccessMode=rw",
