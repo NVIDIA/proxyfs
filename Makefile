@@ -41,6 +41,7 @@ gobinsubdirs = \
 	pfs-stress \
 	pfs-swift-load \
 	pfsagentd \
+	pfsagentd/pfsagentd-init \
 	pfsagentd/pfsagentd-swift-auth-plugin \
 	pfsagentConfig \
 	pfsagentConfig/pfsagentConfig \
@@ -182,6 +183,7 @@ install:
 
 pfsagent-install:
 	$(MAKE) --no-print-directory -C pfsagentd install
+	$(MAKE) --no-print-directory -C pfsagentd/pfsagentd-init install
 	$(MAKE) --no-print-directory -C pfsagentd/pfsagentd-swift-auth-plugin install
 
 pre-generate:
