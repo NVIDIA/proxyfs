@@ -39,7 +39,7 @@ FUSEUnMountRetryDelay:                                    100ms
 FUSEUnMountRetryCap:                                        100
 PlugInPath:                         pfsagentd-swift-auth-plugin
 PlugInEnvName:                                    SwiftAuthBlob
-PlugInEnvValue: {"AuthURL":"http://localhost:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"}
+PlugInEnvValue: {"AuthURL":"http://172.28.128.2:8080/auth/v1.0"\u002C"AuthUser":"test:tester"\u002C"AuthKey":"testing"\u002C"Account":"AUTH_test"}
 SwiftTimeout:                                               10m
 SwiftRetryLimit:                                             10
 SwiftRetryDelay:                                             1s

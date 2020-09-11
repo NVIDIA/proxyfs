@@ -215,11 +215,6 @@ do
     chown swift:swift /srv/$node/node/sdb$drive
 done
 
-# Create Swift temporary file dir
-
-mkdir -p /var/run/swift
-chown -R swift:swift /var/run/swift
-
 # [Setup Swift] Common Post-Device Setup (Add /var boot-time provisioning to /etc/rc.d/rc.local)
 
 echo "mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4" >> /etc/rc.d/rc.local
