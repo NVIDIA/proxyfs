@@ -436,7 +436,6 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	var (
 		aTimeNSec              uint32
 		aTimeSec               uint64
-		cachedFileInodeCase    bool
 		cTimeNSec              uint32
 		cTimeSec               uint64
 		err                    error
@@ -481,30 +480,16 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	// TODO: Verify we can accept but ignore fission.SetAttrInValidFH        in setAttrIn.Valid
 	// TODO: Verify we can accept but ignore fission.SetAttrInValidLockOwner in setAttrIn.Valid
 
-	// Check for cached FileInode case
-
-	globals.Lock()
-	fileInode, cachedFileInodeCase = globals.fileInodeMap[inode.InodeNumber(inHeader.NodeID)]
-	globals.Unlock()
-
-	if cachedFileInodeCase {
-		// Calling referenceFileInode() here even though we "know" fileInode to avoid the
-		// sanity check otherwise valid where fileInode.references should not be zero.
-		//
-		// Note that, to avoid any race ambiguity, we will use the fileInode returned
-		// from referenceFileInode() moving forward on the off-chance the one we fetched
-		// from globals.fileInodeMap was removed just after the globals.Unlock() call.
-
-		fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
-
-		fileInode.doFlushIfNecessary()
-	}
-
 	// Now perform requested setAttrIn.Mode operations
+
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
+
+	fileInode.doFlushIfNecessary()
 
 	if settingMode {
 		errno = setMode(inHeader.NodeID, setAttrIn.Mode)
 		if 0 != errno {
+			fileInode.unlock(true)
 			return
 		}
 	}
@@ -512,6 +497,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	if settingUID || settingGID {
 		errno = setUIDAndOrGID(inHeader.NodeID, settingUID, setAttrIn.UID, settingGID, setAttrIn.GID)
 		if 0 != errno {
+			fileInode.unlock(true)
 			return
 		}
 	}
@@ -519,6 +505,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	if settingSize {
 		errno = setSize(inHeader.NodeID, setAttrIn.Size)
 		if 0 != errno {
+			fileInode.unlock(true)
 			return
 		}
 	}
@@ -526,6 +513,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	if settingMTimeAndOrATime {
 		errno = setMTimeAndOrATime(inHeader.NodeID, settingMTime, settingMTimeNow, setAttrIn.MTimeSec, setAttrIn.MTimeNSec, settingATime, settingATimeNow, setAttrIn.ATimeSec, setAttrIn.ATimeNSec)
 		if 0 != errno {
+			fileInode.unlock(true)
 			return
 		}
 	}
@@ -541,19 +529,16 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 
 	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
 
-	if cachedFileInodeCase {
-		fileInode.cachedStat = getStatReply
+	fileInode.cachedStat = getStatReply
 
-		fileInode.dereference()
-	}
-
-	aTimeSec, aTimeNSec = nsToUnixTime(getStatReply.ATimeNs)
-	mTimeSec, mTimeNSec = nsToUnixTime(getStatReply.MTimeNs)
-	cTimeSec, cTimeNSec = nsToUnixTime(getStatReply.CTimeNs)
+	aTimeSec, aTimeNSec = nsToUnixTime(fileInode.cachedStat.ATimeNs)
+	mTimeSec, mTimeNSec = nsToUnixTime(fileInode.cachedStat.MTimeNs)
+	cTimeSec, cTimeNSec = nsToUnixTime(fileInode.cachedStat.CTimeNs)
 
 	setAttrOut = &fission.SetAttrOut{
 		AttrValidSec:  globals.attrValidSec,
@@ -561,7 +546,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 		Dummy:         0,
 		Attr: fission.Attr{
 			Ino:       inHeader.NodeID,
-			Size:      getStatReply.Size,
+			Size:      fileInode.cachedStat.Size,
 			Blocks:    0, // fixAttrSizes() will compute this
 			ATimeSec:  aTimeSec,
 			MTimeSec:  mTimeSec,
@@ -569,15 +554,17 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 			ATimeNSec: aTimeNSec,
 			MTimeNSec: mTimeNSec,
 			CTimeNSec: cTimeNSec,
-			Mode:      getStatReply.FileMode,
-			NLink:     uint32(getStatReply.NumLinks),
-			UID:       getStatReply.UserID,
-			GID:       getStatReply.GroupID,
+			Mode:      fileInode.cachedStat.FileMode,
+			NLink:     uint32(fileInode.cachedStat.NumLinks),
+			UID:       fileInode.cachedStat.UserID,
+			GID:       fileInode.cachedStat.GroupID,
 			RDev:      0,
 			BlkSize:   0, // fixAttrSizes() will set this
 			Padding:   0,
 		},
 	}
+
+	fileInode.unlock(false)
 
 	fixAttrSizes(&setAttrOut.Attr)
 
@@ -898,6 +885,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 		cTimeNSec      uint32
 		cTimeSec       uint64
 		err            error
+		fileInode      *fileInodeStruct
 		getStatReply   *jrpcfs.StatStruct
 		getStatRequest *jrpcfs.GetStatRequest
 		linkReply      *jrpcfs.Reply
@@ -907,6 +895,10 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoLink_calls, 1)
+
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
+
+	fileInode.doFlushIfNecessary()
 
 	linkRequest = &jrpcfs.LinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -921,6 +913,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 	err = globals.retryRPCClient.Send("RpcLink", linkRequest, linkReply)
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
@@ -936,13 +929,16 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
 
-	aTimeSec, aTimeNSec = nsToUnixTime(getStatReply.ATimeNs)
-	mTimeSec, mTimeNSec = nsToUnixTime(getStatReply.MTimeNs)
-	cTimeSec, cTimeNSec = nsToUnixTime(getStatReply.CTimeNs)
+	fileInode.cachedStat = getStatReply
+
+	aTimeSec, aTimeNSec = nsToUnixTime(fileInode.cachedStat.ATimeNs)
+	mTimeSec, mTimeNSec = nsToUnixTime(fileInode.cachedStat.MTimeNs)
+	cTimeSec, cTimeNSec = nsToUnixTime(fileInode.cachedStat.CTimeNs)
 
 	linkOut = &fission.LinkOut{
 		EntryOut: fission.EntryOut{
@@ -954,7 +950,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 			AttrValidNSec:  globals.attrValidNSec,
 			Attr: fission.Attr{
 				Ino:       linkIn.OldNodeID,
-				Size:      getStatReply.Size,
+				Size:      fileInode.cachedStat.Size,
 				Blocks:    0, // fixAttrSizes() will compute this
 				ATimeSec:  aTimeSec,
 				MTimeSec:  mTimeSec,
@@ -962,16 +958,18 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 				ATimeNSec: aTimeNSec,
 				MTimeNSec: mTimeNSec,
 				CTimeNSec: cTimeNSec,
-				Mode:      getStatReply.FileMode,
-				NLink:     uint32(getStatReply.NumLinks),
-				UID:       getStatReply.UserID,
-				GID:       getStatReply.GroupID,
+				Mode:      fileInode.cachedStat.FileMode,
+				NLink:     uint32(fileInode.cachedStat.NumLinks),
+				UID:       fileInode.cachedStat.UserID,
+				GID:       fileInode.cachedStat.GroupID,
 				RDev:      0,
 				BlkSize:   0, // fixAttrSizes() will set this
 				Padding:   0,
 			},
 		},
 	}
+
+	fileInode.unlock(false)
 
 	fixAttrSizes(&linkOut.EntryOut.Attr)
 
@@ -983,6 +981,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	var (
 		err            error
 		fhSet          fhSetType
+		fileInode      *fileInodeStruct
 		getStatReply   *jrpcfs.StatStruct
 		getStatRequest *jrpcfs.GetStatRequest
 		ok             bool
@@ -990,22 +989,35 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoOpen_calls, 1)
 
-	getStatRequest = &jrpcfs.GetStatRequest{
-		InodeHandle: jrpcfs.InodeHandle{
-			MountID:     globals.mountID,
-			InodeNumber: int64(inHeader.NodeID),
-		},
+	if 0 != (openIn.Flags & fission.FOpenRequestTRUNC) {
+		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
+		fileInode.doFlushIfNecessary()
+	} else {
+		fileInode = lockInodeWithSharedLease(inode.InodeNumber(inHeader.NodeID))
 	}
 
-	getStatReply = &jrpcfs.StatStruct{}
+	if nil == fileInode.cachedStat {
+		getStatRequest = &jrpcfs.GetStatRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(inHeader.NodeID),
+			},
+		}
 
-	err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
-	if nil != err {
-		errno = convertErrToErrno(err, syscall.EIO)
-		return
+		getStatReply = &jrpcfs.StatStruct{}
+
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
+		if nil != err {
+			fileInode.unlock(true)
+			errno = convertErrToErrno(err, syscall.EIO)
+			return
+		}
+
+		fileInode.cachedStat = getStatReply
 	}
 
-	if syscall.S_IFREG != (getStatReply.FileMode & syscall.S_IFMT) {
+	if syscall.S_IFREG != (fileInode.cachedStat.FileMode & syscall.S_IFMT) {
+		fileInode.unlock(true)
 		errno = syscall.EINVAL
 		return
 	}
@@ -1034,9 +1046,12 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	if 0 != (openIn.Flags & fission.FOpenRequestTRUNC) {
 		errno = setSize(inHeader.NodeID, 0)
 		if 0 != errno {
+			fileInode.unlock(true)
 			return
 		}
 	}
+
+	fileInode.unlock(false)
 
 	errno = 0
 	return
