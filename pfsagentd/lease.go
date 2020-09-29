@@ -222,6 +222,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 
 			fileInode.lockWaiters = list.New()
 
+			globals.Unlock()
+
 			return
 		}
 
@@ -249,6 +251,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 			// We already have an Exclusive Lease and we are also the first in line to use it
 
 			fileInode.lockWaiters = list.New()
+
+			globals.Unlock()
 
 			return
 		}
@@ -452,6 +456,8 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 
 			fileInode.lockWaiters = list.New()
 
+			globals.Unlock()
+
 			return
 		}
 
@@ -479,6 +485,8 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 			// We already have an Exclusive Lease and we are also the first in line to use it
 
 			fileInode.lockWaiters = list.New()
+
+			globals.Unlock()
 
 			return
 		}
