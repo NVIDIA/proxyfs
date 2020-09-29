@@ -192,49 +192,13 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 		getStatRequest *jrpcfs.GetStatRequest
 		mTimeNSec      uint32
 		mTimeSec       uint64
-		ok             bool
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoGetAttr_calls, 1)
 
-	// fileInode = lockInodeWithSharedLease()
+	fileInode = lockInodeWithSharedLease(inode.InodeNumber(inHeader.NodeID))
 
-	globals.Lock()
-
-	fileInode, ok = globals.fileInodeMap[inode.InodeNumber(inHeader.NodeID)]
-	if ok {
-		aTimeSec, aTimeNSec = nsToUnixTime(fileInode.cachedStat.ATimeNs)
-		mTimeSec, mTimeNSec = nsToUnixTime(fileInode.cachedStat.MTimeNs)
-		cTimeSec, cTimeNSec = nsToUnixTime(fileInode.cachedStat.CTimeNs)
-
-		getAttrOut = &fission.GetAttrOut{
-			AttrValidSec:  globals.attrValidSec,
-			AttrValidNSec: globals.attrValidNSec,
-			Dummy:         0,
-			Attr: fission.Attr{
-				Ino:       inHeader.NodeID,
-				Size:      fileInode.cachedStat.Size,
-				Blocks:    0, // fixAttrSizes() will compute this
-				ATimeSec:  aTimeSec,
-				MTimeSec:  mTimeSec,
-				CTimeSec:  cTimeSec,
-				ATimeNSec: aTimeNSec,
-				MTimeNSec: mTimeNSec,
-				CTimeNSec: cTimeNSec,
-				Mode:      fileInode.cachedStat.FileMode,
-				NLink:     uint32(fileInode.cachedStat.NumLinks),
-				UID:       fileInode.cachedStat.UserID,
-				GID:       fileInode.cachedStat.GroupID,
-				RDev:      0,
-				BlkSize:   0, // fixAttrSizes() will set this
-				Padding:   0,
-			},
-		}
-
-		globals.Unlock()
-	} else {
-		globals.Unlock()
-
+	if nil == fileInode.cachedStat {
 		getStatRequest = &jrpcfs.GetStatRequest{
 			InodeHandle: jrpcfs.InodeHandle{
 				MountID:     globals.mountID,
@@ -246,38 +210,43 @@ func (dummy *globalsStruct) DoGetAttr(inHeader *fission.InHeader, getAttrIn *fis
 
 		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
 		if nil != err {
+			fileInode.unlock(true)
 			errno = convertErrToErrno(err, syscall.EIO)
 			return
 		}
 
-		aTimeSec, aTimeNSec = nsToUnixTime(getStatReply.ATimeNs)
-		mTimeSec, mTimeNSec = nsToUnixTime(getStatReply.MTimeNs)
-		cTimeSec, cTimeNSec = nsToUnixTime(getStatReply.CTimeNs)
-
-		getAttrOut = &fission.GetAttrOut{
-			AttrValidSec:  globals.attrValidSec,
-			AttrValidNSec: globals.attrValidNSec,
-			Dummy:         0,
-			Attr: fission.Attr{
-				Ino:       inHeader.NodeID,
-				Size:      getStatReply.Size,
-				Blocks:    0, // fixAttrSizes() will compute this
-				ATimeSec:  aTimeSec,
-				MTimeSec:  mTimeSec,
-				CTimeSec:  cTimeSec,
-				ATimeNSec: aTimeNSec,
-				MTimeNSec: mTimeNSec,
-				CTimeNSec: cTimeNSec,
-				Mode:      getStatReply.FileMode,
-				NLink:     uint32(getStatReply.NumLinks),
-				UID:       getStatReply.UserID,
-				GID:       getStatReply.GroupID,
-				RDev:      0,
-				BlkSize:   0, // fixAttrSizes() will set this
-				Padding:   0,
-			},
-		}
+		fileInode.cachedStat = getStatReply
 	}
+
+	aTimeSec, aTimeNSec = nsToUnixTime(fileInode.cachedStat.ATimeNs)
+	mTimeSec, mTimeNSec = nsToUnixTime(fileInode.cachedStat.MTimeNs)
+	cTimeSec, cTimeNSec = nsToUnixTime(fileInode.cachedStat.CTimeNs)
+
+	getAttrOut = &fission.GetAttrOut{
+		AttrValidSec:  globals.attrValidSec,
+		AttrValidNSec: globals.attrValidNSec,
+		Dummy:         0,
+		Attr: fission.Attr{
+			Ino:       inHeader.NodeID,
+			Size:      fileInode.cachedStat.Size,
+			Blocks:    0, // fixAttrSizes() will compute this
+			ATimeSec:  aTimeSec,
+			MTimeSec:  mTimeSec,
+			CTimeSec:  cTimeSec,
+			ATimeNSec: aTimeNSec,
+			MTimeNSec: mTimeNSec,
+			CTimeNSec: cTimeNSec,
+			Mode:      fileInode.cachedStat.FileMode,
+			NLink:     uint32(fileInode.cachedStat.NumLinks),
+			UID:       fileInode.cachedStat.UserID,
+			GID:       fileInode.cachedStat.GroupID,
+			RDev:      0,
+			BlkSize:   0, // fixAttrSizes() will set this
+			Padding:   0,
+		},
+	}
+
+	fileInode.unlock(false)
 
 	fixAttrSizes(&getAttrOut.Attr)
 
