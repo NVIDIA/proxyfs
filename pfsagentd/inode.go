@@ -93,7 +93,6 @@ func referenceFileInode(inodeNumber inode.InodeNumber) (fileInode *fileInodeStru
 		}
 
 		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
-
 		globals.fileInodeMap[inodeNumber] = fileInode
 
 		delayedLeaseRequestList = honorInodeCacheLimits()

@@ -150,6 +150,7 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 		}
 
 		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		globals.fileInodeMap[inodeNumber] = fileInode
 	}
 
 	switch fileInode.leaseState {
@@ -383,6 +384,7 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 		}
 
 		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		globals.fileInodeMap[inodeNumber] = fileInode
 	}
 
 	switch fileInode.leaseState {
@@ -680,18 +682,28 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 	return
 }
 
-func (fileInode *fileInodeStruct) unlock() {
+func (fileInode *fileInodeStruct) unlock(forceRelease bool) {
 	var (
-		err                    error
-		leaseReply             *jrpcfs.LeaseReply
-		leaseRequest           *jrpcfs.LeaseRequest
-		leaseRequestEndTime    time.Time
-		leaseRequestStartTime  time.Time
-		lockWaitersListElement *list.Element
-		waitChan               chan struct{}
+		err                           error
+		forcedRPCInterruptTypeRelease jrpcfs.RPCInterruptType
+		leaseReply                    *jrpcfs.LeaseReply
+		leaseRequest                  *jrpcfs.LeaseRequest
+		leaseRequestEndTime           time.Time
+		leaseRequestStartTime         time.Time
+		lockWaitersListElement        *list.Element
+		waitChan                      chan struct{}
 	)
 
 	globals.Lock()
+
+	if forceRelease {
+		// The unlock() call was likely made for a non-existing Inode
+		// in which case we might as well clear out both the current
+		// Lease as well as the fileInodeStruct (if not being referenced)
+
+		forcedRPCInterruptTypeRelease = jrpcfs.RPCInterruptTypeRelease
+		fileInode.pendingLeaseInterrupt = &forcedRPCInterruptTypeRelease
+	}
 
 	for nil != fileInode.pendingLeaseInterrupt {
 		switch *fileInode.pendingLeaseInterrupt {
@@ -825,7 +837,17 @@ func (fileInode *fileInodeStruct) unlock() {
 	if 0 == fileInode.lockWaiters.Len() {
 		// Nobody was waiting for the fileInode lock
 
-		fileInode.lockWaiters = nil
+		if fileInodeLeaseStateNone == fileInode.leaseState {
+			// And there is no held Lease... so just destroy it
+
+			delete(globals.fileInodeMap, fileInode.InodeNumber)
+			_ = globals.unleasedFileInodeCacheLRU.Remove(fileInode.leaseListElement)
+		} else {
+			// We should keep holding the Lease we have... but indicate the lock is available
+
+			fileInode.lockWaiters = nil
+		}
+
 		globals.Unlock()
 		return
 	}
