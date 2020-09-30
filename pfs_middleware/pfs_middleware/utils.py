@@ -109,35 +109,41 @@ class JsonRpcClient(object):
 
         # XXX TODO keep sockets around in a pool or something?
         sock = socket.socket(addr_family, sock_type, sock_proto)
-        with eventlet.Timeout(timeout):
-            sock.connect(addr)
-            with contextlib.closing(sock):
-                sock.send(serialized_req)
-                # This is JSON-RPC over TCP: we write a JSON document to
-                # the socket, then read a JSON document back. The only
-                # way we know when we're done is when what we've read is
-                # valid JSON.
-                #
-                # Of course, Python's builtin JSON can't consume just
-                # one document from a file, so for now, we'll use the
-                # fact that the sender is sending one JSON object per
-                # line and just call readline(). At some point, we
-                # should replace this with a real incremental JSON
-                # parser like ijson.
-                sock_filelike = sock.makefile("r")
-                with contextlib.closing(sock_filelike):
-                    line = sock_filelike.readline()
-                    try:
-                        response = json.loads(line)
-                    except ValueError as err:
-                        raise ValueError(
-                            "Error decoding JSON: %s (tried to decode %r)"
-                            % (err, line))
+        try:
+            with eventlet.Timeout(timeout):
+                sock.connect(addr)
+                with contextlib.closing(sock):
+                    sock.send(serialized_req)
+                    # This is JSON-RPC over TCP: we write a JSON document to
+                    # the socket, then read a JSON document back. The only
+                    # way we know when we're done is when what we've read is
+                    # valid JSON.
+                    #
+                    # Of course, Python's builtin JSON can't consume just
+                    # one document from a file, so for now, we'll use the
+                    # fact that the sender is sending one JSON object per
+                    # line and just call readline(). At some point, we
+                    # should replace this with a real incremental JSON
+                    # parser like ijson.
+                    sock_filelike = sock.makefile("r")
+                    with contextlib.closing(sock_filelike):
+                        line = sock_filelike.readline()
+                        try:
+                            response = json.loads(line)
+                        except ValueError as err:
+                            raise ValueError(
+                                "Error decoding JSON: %s (tried to decode %r)"
+                                % (err, line))
 
-                errstr = response.get("error")
-                if errstr and raise_on_rpc_error:
-                    errno = extract_errno(errstr)
-                    raise RpcError(errno, "Error in %s: %s" % (
-                        rpc_request.get("method", "<unknown method>"),
-                        errstr))
-                return response
+                    errstr = response.get("error")
+                    if errstr and raise_on_rpc_error:
+                        errno = extract_errno(errstr)
+                        raise RpcError(errno, "Error in %s: %s" % (
+                            rpc_request.get("method", "<unknown method>"),
+                            errstr))
+                    return response
+        except eventlet.Timeout as exc:
+            raise RpcTimeout(
+                "Timeout (%.6fs) communicating with %s:%d, calling %s"
+                % (exc, addr[0], addr[1],
+                   rpc_request.get("method", "<unknown method>")))
