@@ -22,7 +22,6 @@ access to ProxyFS volumes. It doesn't have any user-visible functionality on
 its own, but it is required for the other middlewares to work.
 """
 
-import eventlet
 import socket
 import time
 
@@ -98,11 +97,6 @@ class BimodalChecker(object):
                     continue
                 else:
                     raise
-            except eventlet.Timeout:
-                errstr = "Timeout ({0:.6f}s) calling {1}".format(
-                    self.proxyfsd_rpc_timeout,
-                    rpc_request.get("method", "<unknown method>"))
-                raise utils.RpcTimeout(errstr)
 
             errstr = result.get("error")
             if errstr:
