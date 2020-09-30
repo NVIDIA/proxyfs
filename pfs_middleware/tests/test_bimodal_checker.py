@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import errno
-import eventlet
 import mock
 import os
 import socket
@@ -307,7 +306,7 @@ class TestRetry(unittest.TestCase):
             ('Server.RpcIsAccountBimodal', ({'AccountName': 'AUTH_test'},))))
 
     def test_no_retry_timeout(self):
-        err = eventlet.Timeout(None)  # don't really time anything out
+        err = utils.RpcTimeout()
         self.fake_rpc.add_call_error(err)
 
         req = swob.Request.blank(
