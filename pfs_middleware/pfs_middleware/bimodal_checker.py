@@ -23,6 +23,7 @@ its own, but it is required for the other middlewares to work.
 """
 
 import eventlet
+import random
 import socket
 import time
 
@@ -51,7 +52,7 @@ class BimodalChecker(object):
                           in conf.get('proxyfsd_host', '127.0.0.1').split(',')]
         self.proxyfsd_port = int(conf.get('proxyfsd_port', '12345'))
 
-        self.proxyfsd_addrinfos = []
+        self.proxyfsd_addrinfos = set()
         for host in proxyfsd_hosts:
             try:
                 # If hostname resolution fails, we'll cause the proxy to
@@ -63,7 +64,7 @@ class BimodalChecker(object):
                 addrinfo = socket.getaddrinfo(
                     host, self.proxyfsd_port,
                     socket.AF_UNSPEC, socket.SOCK_STREAM)[0]
-                self.proxyfsd_addrinfos.append(addrinfo)
+                self.proxyfsd_addrinfos.add(addrinfo)
             except socket.gaierror:
                 self.logger.error("Error resolving hostname %r", host)
                 raise
@@ -74,7 +75,8 @@ class BimodalChecker(object):
             'bimodal_recheck_interval', '60.0'))
 
     def _rpc_call(self, addrinfos, rpc_request):
-        addrinfos = set(addrinfos)
+        addrinfos = list(addrinfos)
+        random.shuffle(addrinfos)
 
         # We can get fast errors or slow errors here; we retry across all
         # hosts on fast errors, but immediately raise a slow error. HTTP
