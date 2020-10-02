@@ -337,10 +337,6 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 		return
 	}
 
-	fileInode.doFlushIfNecessary()
-
-	grantedLock = fileInode.getExclusiveLock()
-
 	fileInode.cachedStat.Size = size
 
 	pruneExtentMap(fileInode.extentMap, size)
@@ -375,8 +371,6 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
-
-	grantedLock.release()
 
 	fileInode.dereference()
 
