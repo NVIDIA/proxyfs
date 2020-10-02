@@ -13,7 +13,7 @@ do
         sudo umount /srv/$node/node/sdb$drive
     fi
     sudo truncate -s 0 /srv/swift-disk-$drive
-    sudo truncate -s 1GB /srv/swift-disk-$drive
+    sudo truncate -s 2GB /srv/swift-disk-$drive
     sudo mkfs.xfs -f /srv/swift-disk-$drive
     sudo mount /srv/$node/node/sdb$drive
     sudo chown swift:swift /srv/$node/node/sdb$drive

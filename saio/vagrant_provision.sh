@@ -207,7 +207,7 @@ do
     node=${x:0:1}
     drive=${x:1:1}
     truncate -s 0 /srv/swift-disk-$drive
-    truncate -s 1GB /srv/swift-disk-$drive
+    truncate -s 2GB /srv/swift-disk-$drive
     mkfs.xfs -f /srv/swift-disk-$drive
     mkdir -p /srv/$node/node/sdb$drive
     echo "/srv/swift-disk-$drive /srv/$node/node/sdb$drive xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0" >> /etc/fstab
