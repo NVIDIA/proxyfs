@@ -65,7 +65,7 @@ yum -y install wget git nfs-utils vim lsof
 
 # Install Golang
 
-yum -y --disableexcludes=all install gcc
+yum -y --disableexcludes=all install glibc-commmon gcc
 cd /tmp
 TARFILE_NAME=go1.13.6.linux-amd64.tar.gz
 wget -q https://dl.google.com/go/$TARFILE_NAME
@@ -185,8 +185,33 @@ yum -y install \
 
 pip install --upgrade setuptools
 
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-1.6.0-3.fc30.x86_64.rpm
-yum -y install https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.6.0-3.fc30.x86_64.rpm
+# Build liberasure.so from source
+
+cd ~swift
+git clone https://github.com/openstack/liberasurecode.git
+cd liberasurecode
+yum install -y gcc make autoconf automake libtool
+./autogen.sh
+./configure
+make
+make install
+
+# Install it where Python/PyECLib will see it
+
+echo "/usr/local/lib" > /etc/ld.so.conf.d/liberasurecode.conf
+ldconfig
+# Alternatively, we could simply have done
+#   ln -s /usr/local/lib/liberasurecode.so.1 /lib64/liberasurecode.so.1
+
+# Install PyECLib from source
+
+cd ~swift
+git clone https://github.com/openstack/pyeclib.git
+cd pyeclib
+pip install -e .
+pip install -r test-requirements.txt
+
+# Install python-swiftclient from source & setup ENVs for its use
 
 cd ~swift
 git clone -b master --single-branch --depth 1 https://github.com/openstack/python-swiftclient.git
@@ -196,6 +221,8 @@ python setup.py develop
 echo "export ST_AUTH=http://localhost:8080/auth/v1.0" >> ~vagrant/.bash_profile
 echo "export ST_USER=test:tester" >> ~vagrant/.bash_profile
 echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
+
+# Now we can actually install Swift from source
 
 cd ~swift
 git clone https://github.com/swiftstack/swift.git

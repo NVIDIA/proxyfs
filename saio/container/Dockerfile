@@ -39,7 +39,7 @@ RUN yum clean all
 RUN yum install -y wget
 RUN yum install -y git
 
-RUN yum install -y --disableexcludes=all gcc
+RUN yum install -y --disableexcludes=all glibc-common gcc
 
 RUN useradd --user-group --groups wheel swift
 RUN chmod 755 ~swift
@@ -88,8 +88,22 @@ RUN yum install -y python-pip
 RUN pip install --upgrade pip
 RUN pip install --upgrade setuptools
 
-RUN yum install -y https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-1.6.0-3.fc30.x86_64.rpm
-RUN yum install -y https://rpmfind.net/linux/fedora/linux/releases/30/Everything/x86_64/os/Packages/l/liberasurecode-devel-1.6.0-3.fc30.x86_64.rpm
+WORKDIR ~swift
+RUN git clone https://github.com/openstack/liberasurecode.git
+WORKDIR liberasurecode
+RUN yum install -y gcc make autoconf automake libtool
+RUN ./autogen.sh
+RUN ./configure
+RUN make
+RUN make install
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/liberasurecode.conf
+RUN ldconfig
+
+WORKDIR ~swift
+RUN git clone https://github.com/openstack/pyeclib.git
+WORKDIR pyeclib
+RUN pip install -e .
+RUN pip install -r test-requirements.txt
 
 WORKDIR ~swift
 RUN git clone https://github.com/swiftstack/swift.git
