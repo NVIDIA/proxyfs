@@ -463,13 +463,13 @@ func (confMap ConfMap) FetchOptionValueStringSlice(sectionName string, optionNam
 
 	section, ok := confMap[sectionName]
 	if !ok {
-		err = fmt.Errorf("[%v] missing", sectionName)
+		err = fmt.Errorf("Section '[%v]' is missing", sectionName)
 		return
 	}
 
 	option, ok := section[optionName]
 	if !ok {
-		err = fmt.Errorf("[%v]%v missing", sectionName, optionName)
+		err = fmt.Errorf("Option '[%v]%v' is missing", sectionName, optionName)
 		return
 	}
 
