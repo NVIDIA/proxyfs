@@ -984,7 +984,7 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 	startIndexAsU64 = startIndexAsBigInt.Uint64()
 
 	if 100 == thisStopPercentage {
-		stopIndexAsU64 = uint64(0)
+		stopIndexAsU64 = uint64(bPlusTreeLenAsInt)
 	} else {
 		stopIndexAsBigInt = big.NewInt(int64(thisStopPercentage))
 		_ = stopIndexAsBigInt.Mul(stopIndexAsBigInt, bPlusTreeLenAsBigInt)
