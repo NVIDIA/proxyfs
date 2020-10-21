@@ -66,14 +66,15 @@ type JobStatusJSONPackedStruct struct {
 
 type volumeStruct struct {
 	trackedlock.Mutex
-	name                   string
-	fsVolumeHandle         fs.VolumeHandle
-	inodeVolumeHandle      inode.VolumeHandle
-	headhunterVolumeHandle headhunter.VolumeHandle
-	fsckActiveJob          *jobStruct
-	fsckJobs               sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
-	scrubActiveJob         *jobStruct
-	scrubJobs              sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	name                       string
+	fsVolumeHandle             fs.VolumeHandle
+	inodeVolumeHandle          inode.VolumeHandle
+	headhunterVolumeHandle     headhunter.VolumeHandle
+	fsckActiveJob              *jobStruct
+	fsckJobs                   sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	scrubActiveJob             *jobStruct
+	scrubJobs                  sortedmap.LLRBTree // Key == jobStruct.id, Value == *jobStruct
+	activeDefragInodeNumberSet map[inode.InodeNumber]struct{}
 }
 
 type globalsStruct struct {
@@ -170,11 +171,12 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	)
 
 	volume = &volumeStruct{
-		name:           volumeName,
-		fsckActiveJob:  nil,
-		fsckJobs:       sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
-		scrubActiveJob: nil,
-		scrubJobs:      sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+		name:                       volumeName,
+		fsckActiveJob:              nil,
+		fsckJobs:                   sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+		scrubActiveJob:             nil,
+		scrubJobs:                  sortedmap.NewLLRBTree(sortedmap.CompareUint64, nil),
+		activeDefragInodeNumberSet: make(map[inode.InodeNumber]struct{}),
 	}
 
 	volume.fsVolumeHandle, err = fs.FetchVolumeHandleByVolumeName(volume.name)
