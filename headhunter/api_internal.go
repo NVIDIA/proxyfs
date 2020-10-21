@@ -895,32 +895,35 @@ func (volume *volumeStruct) FetchLayoutReport(treeType BPlusTreeType, validate b
 	return
 }
 
-func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStartPercentage uint8, thisStopPercentage uint8) (nextStartPercentage uint8, err error) {
+func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStartPercentage float64, thisStopPercentage float64) (err error) {
 	var (
-		bPlusTree                   sortedmap.BPlusTree
-		bPlusTreeLenAsInt           int
-		bPlusTreeLenAsBigInt        *big.Int
-		nextItemIndexToTouch        uint64
-		nextStartPercentageAsBigInt *big.Int
-		oneHundedAsBigInt           *big.Int
-		startIndexAsBigInt          *big.Int
-		startIndexAsU64             uint64
-		stopIndexAsBigInt           *big.Int
-		stopIndexAsU64              uint64
-		thisItemIndexToTouch        uint64
-		treeWrapper                 *bPlusTreeWrapperStruct
+		bPlusTree              sortedmap.BPlusTree
+		bPlusTreeLenAsInt      int
+		bPlusTreeLenAsBigFloat *big.Float
+		nextItemIndexToTouch   uint64
+		oneHundredAsBigFloat   *big.Float
+		startIndexAsBigFloat   *big.Float
+		startIndexAsU64        uint64
+		stopIndexAsBigFloat    *big.Float
+		stopIndexAsU64         uint64
+		thisItemIndexToTouch   uint64
+		treeWrapper            *bPlusTreeWrapperStruct
 	)
 
+	if 0 > thisStartPercentage {
+		err = fmt.Errorf("thisStartPercentage (%v) must be >= 0", thisStartPercentage)
+		return
+	}
 	if 100 <= thisStartPercentage {
-		err = fmt.Errorf("thisStartPercentage (%d) must be < 100", thisStartPercentage)
+		err = fmt.Errorf("thisStartPercentage (%v) must be < 100", thisStartPercentage)
 		return
 	}
 	if 100 < thisStopPercentage {
-		err = fmt.Errorf("thisStopPercentage (%d) must be <= 100", thisStopPercentage)
+		err = fmt.Errorf("thisStopPercentage (%v) must be <= 100", thisStopPercentage)
 		return
 	}
 	if thisStartPercentage >= thisStopPercentage {
-		err = fmt.Errorf("thisStartPercentage (%d) must be < thisStopPercentage (%d)", thisStartPercentage, thisStopPercentage)
+		err = fmt.Errorf("thisStartPercentage (%v) must be < thisStopPercentage (%v)", thisStartPercentage, thisStopPercentage)
 	}
 
 	volume.Lock()
@@ -947,7 +950,6 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 	if nil == treeWrapper {
 		// Just return... apparently there is no B+Tree for this treeType [Case 1]
 		volume.Unlock()
-		nextStartPercentage = 0
 		err = nil
 		return
 	}
@@ -957,7 +959,6 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 	if nil == bPlusTree {
 		// Just return... apparently there is no B+Tree for this treeType [Case 2]
 		volume.Unlock()
-		nextStartPercentage = 0
 		err = nil
 		return
 	}
@@ -970,26 +971,31 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 
 	if 0 == bPlusTreeLenAsInt {
 		volume.Unlock()
-		nextStartPercentage = 0
 		err = nil
 		return
 	}
 
-	bPlusTreeLenAsBigInt = big.NewInt(int64(bPlusTreeLenAsInt))
-	oneHundedAsBigInt = big.NewInt(int64(100))
+	bPlusTreeLenAsBigFloat = big.NewFloat(100)
+	_ = bPlusTreeLenAsBigFloat.SetInt64(int64(bPlusTreeLenAsInt))
 
-	startIndexAsBigInt = big.NewInt(int64(thisStartPercentage))
-	_ = startIndexAsBigInt.Mul(startIndexAsBigInt, bPlusTreeLenAsBigInt)
-	_ = startIndexAsBigInt.Div(startIndexAsBigInt, oneHundedAsBigInt)
-	startIndexAsU64 = startIndexAsBigInt.Uint64()
+	oneHundredAsBigFloat = big.NewFloat(100)
+
+	if 0 == thisStartPercentage {
+		startIndexAsU64 = 0
+	} else {
+		startIndexAsBigFloat = big.NewFloat(thisStartPercentage)
+		_ = startIndexAsBigFloat.Mul(startIndexAsBigFloat, bPlusTreeLenAsBigFloat)
+		_ = startIndexAsBigFloat.Quo(startIndexAsBigFloat, oneHundredAsBigFloat)
+		startIndexAsU64, _ = startIndexAsBigFloat.Uint64()
+	}
 
 	if 100 == thisStopPercentage {
 		stopIndexAsU64 = uint64(bPlusTreeLenAsInt)
 	} else {
-		stopIndexAsBigInt = big.NewInt(int64(thisStopPercentage))
-		_ = stopIndexAsBigInt.Mul(stopIndexAsBigInt, bPlusTreeLenAsBigInt)
-		_ = stopIndexAsBigInt.Div(stopIndexAsBigInt, oneHundedAsBigInt)
-		stopIndexAsU64 = stopIndexAsBigInt.Uint64()
+		stopIndexAsBigFloat = big.NewFloat(thisStopPercentage)
+		_ = stopIndexAsBigFloat.Mul(stopIndexAsBigFloat, bPlusTreeLenAsBigFloat)
+		_ = stopIndexAsBigFloat.Quo(stopIndexAsBigFloat, oneHundredAsBigFloat)
+		stopIndexAsU64, _ = stopIndexAsBigFloat.Uint64()
 	}
 
 	thisItemIndexToTouch = startIndexAsU64
@@ -1003,7 +1009,6 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 	for nextItemIndexToTouch < stopIndexAsU64 {
 		if 0 == nextItemIndexToTouch {
 			volume.Unlock()
-			nextStartPercentage = 0
 			err = nil
 			return
 		}
@@ -1018,11 +1023,6 @@ func (volume *volumeStruct) DefragmentMetadata(treeType BPlusTreeType, thisStart
 	}
 
 	volume.Unlock()
-
-	nextStartPercentageAsBigInt = big.NewInt(int64(nextItemIndexToTouch))
-	_ = nextStartPercentageAsBigInt.Mul(nextStartPercentageAsBigInt, oneHundedAsBigInt)
-	_ = nextStartPercentageAsBigInt.Div(nextStartPercentageAsBigInt, bPlusTreeLenAsBigInt)
-	nextStartPercentage = uint8(nextStartPercentageAsBigInt.Uint64())
 
 	err = nil
 	return
