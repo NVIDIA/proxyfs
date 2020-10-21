@@ -924,6 +924,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
+
 	return
 }
 
@@ -1009,10 +1010,11 @@ func doMetaDefrag(responseWriter http.ResponseWriter, request *http.Request, req
 
 func doDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
-		dirEntryInodeNumber inode.InodeNumber
-		dirInodeNumber      inode.InodeNumber
-		err                 error
-		pathPartIndex       int
+		alreadyInActiveDefragInodeNumberSet bool
+		dirEntryInodeNumber                 inode.InodeNumber
+		dirInodeNumber                      inode.InodeNumber
+		err                                 error
+		pathPartIndex                       int
 	)
 
 	if 3 > requestState.numPathParts {
@@ -1033,6 +1035,16 @@ func doDefrag(responseWriter http.ResponseWriter, request *http.Request, request
 		}
 	}
 
+	_, alreadyInActiveDefragInodeNumberSet = requestState.volume.activeDefragInodeNumberSet[dirEntryInodeNumber]
+	if alreadyInActiveDefragInodeNumberSet {
+		responseWriter.WriteHeader(http.StatusConflict)
+		return
+	}
+
+	requestState.volume.activeDefragInodeNumberSet[dirEntryInodeNumber] = struct{}{}
+
+	globals.Unlock()
+
 	err = requestState.volume.fsVolumeHandle.DefragmentFile(inode.InodeRootUserID, inode.InodeGroupID(0), nil, dirEntryInodeNumber)
 
 	if nil == err {
@@ -1040,6 +1052,10 @@ func doDefrag(responseWriter http.ResponseWriter, request *http.Request, request
 	} else {
 		responseWriter.WriteHeader(http.StatusConflict)
 	}
+
+	globals.Lock()
+
+	delete(requestState.volume.activeDefragInodeNumberSet, dirEntryInodeNumber)
 }
 
 func doExtentMap(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
