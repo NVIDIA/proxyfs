@@ -929,14 +929,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doMetaDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
-		bPlusTreeType          string
-		bPlusTreeTypeSlice     []string
-		err                    error
-		percentRangeSplit      []string
-		percentRangeStartAsInt int
-		percentRangeStartAsU8  uint8
-		percentRangeStopAsInt  int
-		percentRangeStopAsU8   uint8
+		bPlusTreeType              string
+		bPlusTreeTypeSlice         []string
+		err                        error
+		percentRangeSplit          []string
+		percentRangeStartAsFloat64 float64
+		percentRangeStopAsFloat64  float64
 	)
 
 	if 3 == requestState.numPathParts {
@@ -955,47 +953,45 @@ func doMetaDefrag(responseWriter http.ResponseWriter, request *http.Request, req
 		return
 	}
 
-	percentRangeStartAsInt, err = strconv.Atoi(percentRangeSplit[0])
-	if (nil != err) || (0 > percentRangeStartAsInt) || (99 < percentRangeStartAsInt) {
-		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
-		return
-	}
-	percentRangeStopAsInt, err = strconv.Atoi(percentRangeSplit[1])
-	if (nil != err) || (percentRangeStartAsInt >= percentRangeStopAsInt) || (100 < percentRangeStopAsInt) {
+	percentRangeStartAsFloat64, err = strconv.ParseFloat(percentRangeSplit[0], 64)
+	if (nil != err) || (0 > percentRangeStartAsFloat64) || (100 <= percentRangeStartAsFloat64) {
 		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
 
-	percentRangeStartAsU8 = uint8(percentRangeStartAsInt)
-	percentRangeStopAsU8 = uint8(percentRangeStopAsInt)
+	percentRangeStopAsFloat64, err = strconv.ParseFloat(percentRangeSplit[1], 64)
+	if (nil != err) || (percentRangeStartAsFloat64 >= percentRangeStopAsFloat64) || (100 < percentRangeStopAsFloat64) {
+		responseWriter.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
 
 	for _, bPlusTreeType = range bPlusTreeTypeSlice {
 		switch bPlusTreeType {
 		case "InodeRecBPlusTree":
-			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+			err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
 				headhunter.InodeRecBPlusTree,
-				percentRangeStartAsU8,
-				percentRangeStopAsU8)
+				percentRangeStartAsFloat64,
+				percentRangeStopAsFloat64)
 		case "LogSegmentRecBPlusTree":
-			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+			err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
 				headhunter.LogSegmentRecBPlusTree,
-				percentRangeStartAsU8,
-				percentRangeStopAsU8)
+				percentRangeStartAsFloat64,
+				percentRangeStopAsFloat64)
 		case "BPlusTreeObjectBPlusTree":
-			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+			err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
 				headhunter.BPlusTreeObjectBPlusTree,
-				percentRangeStartAsU8,
-				percentRangeStopAsU8)
+				percentRangeStartAsFloat64,
+				percentRangeStopAsFloat64)
 		case "CreatedObjectsBPlusTree":
-			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+			err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
 				headhunter.CreatedObjectsBPlusTree,
-				percentRangeStartAsU8,
-				percentRangeStopAsU8)
+				percentRangeStartAsFloat64,
+				percentRangeStopAsFloat64)
 		case "DeletedObjectsBPlusTree":
-			_, err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
+			err = requestState.volume.headhunterVolumeHandle.DefragmentMetadata(
 				headhunter.DeletedObjectsBPlusTree,
-				percentRangeStartAsU8,
-				percentRangeStopAsU8)
+				percentRangeStartAsFloat64,
+				percentRangeStopAsFloat64)
 		default:
 			responseWriter.WriteHeader(http.StatusNotFound)
 			return
