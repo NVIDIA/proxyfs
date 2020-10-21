@@ -1,5 +1,33 @@
 # ProxyFS Release Notes
 
+## 1.17.0 (October 21, 2020)
+
+### Bug Fixes:
+
+Resolved lack of randomness in pfs_middleware when selecting ProxyFS instance to
+query to learn which ProxyFS instance is currently serving a Volume. If the first
+ProxyFS instance selected just happens to be unreachable, a 503 status could be
+returned by Swift Proxy to the HTTP Client. No amount of retries would previously
+select a different ProxyFS instance. Now, the list is uniquely randomized on each
+retry.
+
+Resolved metadata defragmentation RESTful API (/meta-defrag) implementation's
+inability to defragment the last 1% of metadata.
+
+### Features:
+
+Added support for building Docker Image for SAIO.
+
+Added support for inserting PFSAgent instances into a Docker Image.
+
+Enabled use of fractional percentage ranges in metadata defragmentation RESTful
+API (/meta-defrag?range=...-...). Since Volume metadata changes are frozen during
+a defragmentation operation, this is useful when the total amount of metadata is
+very large.
+
+Enabled multiple file defragmentation RESTful API (/defrag/\<filepath\>) invocations
+to proceed in parallel. Previously only one such would execute at a time.
+
 ## 1.16.9 (August 7, 2020)
 
 ### Bug Fixes:
