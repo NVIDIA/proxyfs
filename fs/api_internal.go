@@ -1478,7 +1478,7 @@ Restart:
 	// Invoke package inode to actually perform the Coalesce operation
 
 	destFileInodeNumber = dirEntryInodeNumber
-	ctime, mtime, numWrites, _, err = vS.inodeVolumeHandle.Coalesce(
+	ctime, mtime, numWrites, coalesceSize, err = vS.inodeVolumeHandle.Coalesce(
 		destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
 
 	// We can now release all the WriteLocks we are currently holding
