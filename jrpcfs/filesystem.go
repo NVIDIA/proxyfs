@@ -1345,6 +1345,21 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 
 	globals.volumesLock.Lock()
 
+	volumeName = volumeHandle.VolumeName()
+
+	volume, ok = globals.volumeMap[volumeName]
+	if !ok {
+		globals.volumesLock.Unlock()
+		err = fmt.Errorf("performMount(volumeHandle.VolumeName==\"%s\") cannot be found in globals.volumeMap", volumeName)
+		return
+	}
+
+	if !volume.acceptingMountsAndLeaseRequests {
+		globals.volumesLock.Unlock()
+		err = fmt.Errorf("performMount(volumeHandle.VolumeName==\"%s\") called for dismounting volume", volumeName)
+		return
+	}
+
 	keepTrying = true
 	for keepTrying {
 		randByteSlice = utils.FetchRandomByteSlice(len(mountIDAsByteArray))
@@ -1361,19 +1376,11 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 
 	mountIDAsString = MountIDAsString(base64.StdEncoding.EncodeToString(mountIDAsByteArray[:]))
 
-	volumeName = volumeHandle.VolumeName()
-
-	volume, ok = globals.volumeMap[volumeName]
-	if !ok {
-		globals.volumesLock.Unlock()
-		err = fmt.Errorf("performMount(volumeHandle.VolumeName==\"%s\") cannot be found in globals.volumeMap", volumeName)
-		return
-	}
-
 	mount = &mountStruct{
 		volume:             volume,
 		mountIDAsByteArray: mountIDAsByteArray,
 		mountIDAsString:    mountIDAsString,
+		leaseRequestMap:    make(map[inode.InodeNumber]*leaseRequestStruct),
 	}
 
 	volume.mountMapByMountIDAsByteArray[mountIDAsByteArray] = mount
@@ -1405,6 +1412,7 @@ func (s *Server) RpcMountByAccountName(in *MountByAccountNameRequest, reply *Mou
 			reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 		}
 	}
+
 	return
 }
 
@@ -1426,6 +1434,7 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 			reply.RootCAx509CertificatePEM = globals.rootCAx509CertificatePEM
 		}
 	}
+
 	return
 }
 

@@ -40,7 +40,8 @@ type leaseRequestStruct struct {
 	mount        *mountStruct
 	inodeLease   *inodeLeaseStruct
 	requestState leaseRequestStateType
-	listElement  *list.Element // used when on one of inodeList.*List's
+	replyChan    chan *LeaseReply // copied from leaseRequestOperationStruct.replyChan for LeaseRequestType == LeaseRequestType{Shared|Promote|Exclusive}
+	listElement  *list.Element    // used when on one of inodeList.*List's
 }
 
 type inodeLeaseStateType uint32
@@ -49,21 +50,28 @@ const (
 	inodeLeaseStateNone inodeLeaseStateType = iota
 	inodeLeaseStateSharedGrantedRecently
 	inodeLeaseStateSharedGrantedLongAgo
+	inodeLeaseStateSharedPromoting
 	inodeLeaseStateSharedReleasing
 	inodeLeaseStateSharedExpired
 	inodeLeaseStateExclusiveGrantedRecently
 	inodeLeaseStateExclusiveGrantedLongAgo
-	inodeLeaseStateExclusiveReleasing
 	inodeLeaseStateExclusiveDemoting
+	inodeLeaseStateExclusiveReleasing
 	inodeLeaseStateExclusiveExpired
 )
 
 type inodeLeaseStruct struct {
-	volume      *volumeStruct
-	inodeNumber inode.InodeNumber
-	leaseState  inodeLeaseStateType
+	volume *volumeStruct
+	inode.InodeNumber
+	lruElement   *list.Element // link into volumeStruct.inodeLeaseLRU
+	beingEvicted bool
+	leaseState   inodeLeaseStateType
 
-	requestChan chan *leaseRequestOperationStruct // if closed, this is an order to revoke/reject all leaseRequestStruct's in *Holder* & requestedList
+	requestChan chan *leaseRequestOperationStruct
+	stopChan    chan struct{} // closing this chan will trigger *inodeLeaseStruct.handler() to:
+	//                             revoke/reject all leaseRequestStruct's in *Holder* & requestedList
+	//                             issue volume.leaseHandlerWG.Done()
+	//                             and exit
 
 	sharedHoldersList    *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestStateSharedGranted
 	promotingHolder      *leaseRequestStruct // leaseRequest.requestState == leaseRequestStateSharedPromoting
@@ -72,25 +80,35 @@ type inodeLeaseStruct struct {
 	releasingHoldersList *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Releasing
 	requestedList        *list.List          // each list.Element.Value.(*leaseRequestStruct).requestState == leaseRequestState{Shared|Exclusive}Requested
 
-	lastGrantTime time.Time // records the time at which the last exclusive or shared holder was set/added-to exclusiveHolder/sharedHoldersList
+	lastGrantTime     time.Time // records the time at which the last exclusive or shared holder was set/added-to exclusiveHolder/sharedHoldersList
+	lastInterruptTime time.Time // records the time at which the last Interrupt was sent
+	interruptsSent    uint32
+
+	longAgoTimer   *time.Timer // if .C != nil, timing when to state transition from {Shared|Exclusive}LeaseGrantedRecently to {Shared|Exclusive}LeaseGrantedLogAgo
+	interruptTimer *time.Timer // if .C != nil, timing when to issue next Interrupt... or expire a Lease
 }
 
 type mountStruct struct {
 	volume             *volumeStruct
 	mountIDAsByteArray MountIDAsByteArray
 	mountIDAsString    MountIDAsString
-	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // key == leaseRequestStruct.inodeLease.inodeNumber
+	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
+	//                                                           // if not present, there is no ongoing Lease Request for this inode.InodeNumber
 }
 
 type volumeStruct struct {
-	volumeName                   string
-	volumeHandle                 fs.VolumeHandle
-	acceptingMounts              bool
-	mountMapByMountIDAsByteArray map[MountIDAsByteArray]*mountStruct     // key == mountStruct.mountIDAsByteArray
-	mountMapByMountIDAsString    map[MountIDAsString]*mountStruct        // key == mountStruct.mountIDAsString
-	inodeLeaseMap                map[inode.InodeNumber]*inodeLeaseStruct // key == inodeLeaseStruct.inodeNumber
-	leaseHandlerWG               sync.WaitGroup                          // .Add(1) each inodeLease insertion into inodeLeaseMap
-	//                                                                      .Done() each inodeLease after it is removed from inodeLeaseMap
+	volumeName                      string
+	volumeHandle                    fs.VolumeHandle
+	acceptingMountsAndLeaseRequests bool
+	mountMapByMountIDAsByteArray    map[MountIDAsByteArray]*mountStruct     // key == mountStruct.mountIDAsByteArray
+	mountMapByMountIDAsString       map[MountIDAsString]*mountStruct        // key == mountStruct.mountIDAsString
+	inodeLeaseMap                   map[inode.InodeNumber]*inodeLeaseStruct // key == inodeLeaseStruct.InodeNumber
+	inodeLeaseLRU                   *list.List                              // .Front() is the LRU inodeLeaseStruct.listElement
+	ongoingLeaseEvictions           uint64                                  // tracks the number of inodeLeaseStruct evictions currently ongoing
+	activeLeaseEvictLowLimit        uint64                                  // number if inodeLeaseStruct's desired after evictions
+	activeLeaseEvictHighLimit       uint64                                  // trigger on inodeLease{Map|LRU}.Len() for evicting inodeLeaseStructs
+	leaseHandlerWG                  sync.WaitGroup                          // .Add(1) each inodeLease insertion into inodeLeaseMap
+	//                                                                         .Done() each inodeLease after it is removed from inodeLeaseMap
 }
 
 type globalsStruct struct {
@@ -295,12 +313,25 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	}
 
 	volume = &volumeStruct{
-		volumeName:                   volumeName,
-		volumeHandle:                 volumeHandle,
-		acceptingMounts:              true,
-		mountMapByMountIDAsByteArray: make(map[MountIDAsByteArray]*mountStruct),
-		mountMapByMountIDAsString:    make(map[MountIDAsString]*mountStruct),
-		inodeLeaseMap:                make(map[inode.InodeNumber]*inodeLeaseStruct),
+		volumeName:                      volumeName,
+		volumeHandle:                    volumeHandle,
+		acceptingMountsAndLeaseRequests: true,
+		mountMapByMountIDAsByteArray:    make(map[MountIDAsByteArray]*mountStruct),
+		mountMapByMountIDAsString:       make(map[MountIDAsString]*mountStruct),
+		inodeLeaseMap:                   make(map[inode.InodeNumber]*inodeLeaseStruct),
+		inodeLeaseLRU:                   list.New(),
+		ongoingLeaseEvictions:           0,
+	}
+
+	volume.activeLeaseEvictLowLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictLowLimit")
+	if nil != err {
+		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictLowLimit from config file - defaulting to 5000")
+		volume.activeLeaseEvictLowLimit = 5000
+	}
+	volume.activeLeaseEvictHighLimit, err = confMap.FetchOptionValueUint64("Volume:"+volumeName, "ActiveLeaseEvictHighLimit")
+	if nil != err {
+		logger.Infof("failed to get Volume:" + volumeName + ".ActiveLeaseEvictHighLimit from config file - defaulting to 5010")
+		volume.activeLeaseEvictHighLimit = 5010
 	}
 
 	globals.volumeMap[volumeName] = volume
@@ -328,7 +359,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 		return
 	}
 
-	volume.acceptingMounts = false
+	volume.acceptingMountsAndLeaseRequests = false
 
 	// TODO: Lease Management changes - somehow while *not* holding volumesLock.Lock():
 	//         Prevent new lease requests

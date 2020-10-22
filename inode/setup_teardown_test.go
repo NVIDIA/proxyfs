@@ -86,6 +86,8 @@ func testSetup(t *testing.T, starvationMode bool) {
 		"Volume:TestVolume.MaxDirFileNodesPerMetadataNode=16",
 		"Volume:TestVolume.MaxBytesInodeCache=100000",
 		"Volume:TestVolume.InodeCacheEvictInterval=1s",
+		"Volume:TestVolume.ActiveLeaseEvictLowLimit=5000",
+		"Volume:TestVolume.ActiveLeaseEvictHighLimit=5010",
 		"VolumeGroup:TestVolumeGroup.VolumeList=TestVolume",
 		"VolumeGroup:TestVolumeGroup.VirtualIPAddr=",
 		"VolumeGroup:TestVolumeGroup.PrimaryPeer=Peer0",

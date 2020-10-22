@@ -177,6 +177,8 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | SMBStrictSync                            | Yes          |                    | Yes                      | Yes                          |
 |                                           | SMBAuditLogging                          | Yes          |                    | Yes                      | Yes                          |
 |                                           | SMBEncryptionRequired                    | Yes          |                    | Yes                      | Yes                          |
+|                                           | ActiveLeaseEvictLowLimit                 | No           | 5000               | Yes                      | Yes for newly served volume  |
+|                                           | ActiveLeaseEvictHighLimit                | No           | 5010               | Yes                      | Yes for newly served volume  |
 | NFSClientMap:<i>MapName</i>               | ClientPattern                            | Yes          |                    | Yes                      | Yes                          |
 |                                           | AccessMode                               | Yes          |                    | Yes                      | Yes                          |
 |                                           | RootSquash                               | Yes          |                    | Yes                      | Yes                          |

@@ -288,6 +288,11 @@ func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroup
 	if nil != err {
 		return
 	}
+	if volumeGroup.readCacheWeight <= 0 {
+		logger.Warnf("Section '%s' for VolumeGroup '%s' ReadCacheWeight %d is <= 0; changing to 1",
+			volumeGroupSectionName, volumeGroupName, volumeGroup.readCacheWeight)
+		volumeGroup.readCacheWeight = 1
+	}
 
 	globals.Lock()
 

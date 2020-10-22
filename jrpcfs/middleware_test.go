@@ -114,6 +114,8 @@ func testSetup() []func() {
 		"Volume:SomeVolume.MaxDirFileNodesPerMetadataNode=16",
 		"Volume:SomeVolume.MaxBytesInodeCache=100000",
 		"Volume:SomeVolume.InodeCacheEvictInterval=1s",
+		"Volume:SomeVolume.ActiveLeaseEvictLowLimit=2",
+		"Volume:SomeVolume.ActiveLeaseEvictHighLimit=4",
 		"Volume:SomeVolume2.FSID=2",
 		"Volume:SomeVolume2.AccountName=" + testAccountName2,
 		"Volume:SomeVolume2.AutoFormat=true",
@@ -133,6 +135,8 @@ func testSetup() []func() {
 		"Volume:SomeVolume2.MaxDirFileNodesPerMetadataNode=16",
 		"Volume:SomeVolume2.MaxBytesInodeCache=100000",
 		"Volume:SomeVolume2.InodeCacheEvictInterval=1s",
+		"Volume:SomeVolume2.ActiveLeaseEvictLowLimit=5000",
+		"Volume:SomeVolume2.ActiveLeaseEvictHighLimit=5010",
 		"VolumeGroup:JrpcfsTestVolumeGroup.VolumeList=SomeVolume,SomeVolume2",
 		"VolumeGroup:JrpcfsTestVolumeGroup.VirtualIPAddr=",
 		"VolumeGroup:JrpcfsTestVolumeGroup.PrimaryPeer=Peer0",
@@ -154,9 +158,9 @@ func testSetup() []func() {
 		"JSONRPCServer.RetryRPCTTLCompleted=10s",
 		"JSONRPCServer.RetryRPCAckTrim=10ms",
 		"JSONRPCServer.DataPathLogging=false",
-		"JSONRPCServer.MinLeaseDuration=250ms",
-		"JSONRPCServer.LeaseInterruptInterval=250ms",
-		"JSONRPCServer.LeaseInterruptLimit=20",
+		"JSONRPCServer.MinLeaseDuration=100ms",
+		"JSONRPCServer.LeaseInterruptInterval=100ms",
+		"JSONRPCServer.LeaseInterruptLimit=5",
 	}
 
 	tempDir, err = ioutil.TempDir("", "jrpcfs_test")

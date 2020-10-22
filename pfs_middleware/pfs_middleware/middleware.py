@@ -1040,11 +1040,8 @@ class PfsMiddleware(object):
             payload['params'][0]['AccountName'] = ctx.account_name
             response = client.call(payload, self.proxyfsd_rpc_timeout,
                                    raise_on_rpc_error=False)
-        except eventlet.Timeout:
-            self.logger.debug(
-                "Timeout (%.6fs) communicating with %s, calling %s",
-                self.proxyfsd_rpc_timeout, ctx.proxyfsd_addrinfo,
-                payloads[0]['method'])
+        except utils.RpcTimeout as err:
+            self.logger.debug(str(err))
             return swob.HTTPBadGateway(request=req)
         except socket.error as err:
             self.logger.debug("Error communicating with %r: %s.",
@@ -2179,11 +2176,6 @@ class PfsMiddleware(object):
                     continue
                 else:
                     raise
-            except eventlet.Timeout:
-                errstr = "Timeout ({0:.6f}s) calling {1}".format(
-                    self.proxyfsd_rpc_timeout,
-                    rpc_request.get("method", "<unknown method>"))
-                raise utils.RpcTimeout(errstr)
 
             errstr = result.get("error")
             if errstr:
