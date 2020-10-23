@@ -296,7 +296,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.26.0.1
+git checkout ss-release-2.26.0.3
 pip install wheel
 python setup.py bdist_wheel
 pip install --no-binary cryptography -r requirements.txt
