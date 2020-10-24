@@ -31,6 +31,7 @@ func TestConfig(t *testing.T) {
 	testConfUpdateStrings = []string{
 		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"VolumeGroup:TestVolumeGroup.ReadCacheWeight=0",
+		"VolumeGroup:TestVolumeGroup.ReadCacheLineSize=0",
 	}
 
 	err = testConfMap.UpdateFromStrings(testConfUpdateStrings)

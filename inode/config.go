@@ -283,6 +283,11 @@ func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroup
 	if nil != err {
 		return
 	}
+	if volumeGroup.readCacheLineSize < 4096 {
+		logger.Warnf("Section '%s' for VolumeGroup '%s' ReadCacheWeight %d is < 4096; changing to 4096",
+			volumeGroupSectionName, volumeGroupName, volumeGroup.readCacheLineSize)
+		volumeGroup.readCacheLineSize = 4096
+	}
 
 	volumeGroup.readCacheWeight, err = confMap.FetchOptionValueUint64(volumeGroupSectionName, "ReadCacheWeight")
 	if nil != err {
