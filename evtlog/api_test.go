@@ -26,6 +26,8 @@ func TestAPI(t *testing.T) {
 		retrievedRecordForFormatTestPatternS016XS         string
 		retrievedRecordForFormatTestPatternSS             string
 		retrievedRecordForFormatTestPatternSS03D          string
+		retrievedRecordForFormatTestPatternSS016X1X       string
+		retrievedRecordForFormatTestPatternSS016X1X1X     string
 		retrievedRecordForFormatTestPatternSSS            string
 		retrievedRecordForFormatTestPatternSSS03D         string
 		retrievedRecordForFormatTestPatternSSS016X03D     string
@@ -80,6 +82,8 @@ func TestAPI(t *testing.T) {
 	Record(FormatTestPatternS016XS, "arg0", uint64(1), "arg..2")
 	Record(FormatTestPatternSS, "arg0", "arg.1")
 	Record(FormatTestPatternSS03D, "arg0", "arg.1", uint32(2))
+	Record(FormatTestPatternSS016X1X, "arg0", "arg.1", uint64(2), uint32(3))
+	Record(FormatTestPatternSS016X1X1X, "arg0", "arg.1", uint64(2), uint32(3), uint32(4))
 	Record(FormatTestPatternSSS, "arg0", "arg.1", "arg..2")
 	Record(FormatTestPatternSSS03D, "arg0", "arg.1", "arg..2", uint32(3))
 	Record(FormatTestPatternSSS016X03D, "arg0", "arg.1", "arg..2", uint64(3), uint32(4))
@@ -98,6 +102,8 @@ func TestAPI(t *testing.T) {
 	retrievedRecordForFormatTestPatternS016XS, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSS, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSS03D, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSS016X1X, _ = Retrieve()
+	retrievedRecordForFormatTestPatternSS016X1X1X, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSSS, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSSS03D, _ = Retrieve()
 	retrievedRecordForFormatTestPatternSSS016X03D, _ = Retrieve()
@@ -141,6 +147,12 @@ func TestAPI(t *testing.T) {
 	}
 	if "Test for patternSS03D arg0:arg0 arg1:arg.1 arg2:002" != retrievedRecordForFormatTestPatternSS03D[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternSS03D failed")
+	}
+	if "Test for patternSS016X1X arg0:arg0 arg1:arg.1 arg2:0000000000000002 arg3:3" != retrievedRecordForFormatTestPatternSS016X1X[25:] {
+		t.Fatalf("Retrieval of patternSS016X1X failed")
+	}
+	if "Test for patternSS016X1X1X arg0:arg0 arg1:arg.1 arg2:0000000000000002 arg3:3 arg4:4" != retrievedRecordForFormatTestPatternSS016X1X1X[25:] {
+		t.Fatalf("Retrieval of patternSS016X1X1X failed")
 	}
 	if "Test for patternSSS arg0:arg0 arg1:arg.1 arg2:arg..2" != retrievedRecordForFormatTestPatternSSS[25:] {
 		t.Fatalf("Retrieval of FormatTestPatternSSS failed")

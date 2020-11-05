@@ -112,6 +112,7 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 		cTimeNSec         uint32
 		cTimeSec          uint64
 		err               error
+		fileInode         *fileInodeStruct
 		lookupPlusReply   *jrpcfs.LookupPlusReply
 		lookupPlusRequest *jrpcfs.LookupPlusRequest
 		mTimeNSec         uint32
@@ -134,6 +135,44 @@ func (dummy *globalsStruct) DoLookup(inHeader *fission.InHeader, lookupIn *fissi
 	if nil != err {
 		errno = convertErrToErrno(err, syscall.ENOENT)
 		return
+	}
+
+	fileInode = lockInodeIfExclusiveLeaseGranted(inode.InodeNumber(lookupPlusReply.InodeNumber))
+	if nil != fileInode {
+		if nil == fileInode.cachedStat {
+			// Might as well cache the Stat portion of lookupPlusReply in fileInode.cachedStat
+			//
+			// Note: This is a convenient, and unlikely, optimization that won't be done in
+			//       the SharedLease case... but that is also an unlikely case.
+
+			fileInode.cachedStat = &jrpcfs.StatStruct{
+				CTimeNs:         lookupPlusReply.CTimeNs,
+				CRTimeNs:        lookupPlusReply.CRTimeNs,
+				MTimeNs:         lookupPlusReply.MTimeNs,
+				ATimeNs:         lookupPlusReply.ATimeNs,
+				Size:            lookupPlusReply.Size,
+				NumLinks:        lookupPlusReply.NumLinks,
+				StatInodeNumber: lookupPlusReply.StatInodeNumber,
+				FileMode:        lookupPlusReply.FileMode,
+				UserID:          lookupPlusReply.UserID,
+				GroupID:         lookupPlusReply.GroupID,
+			}
+		} else {
+			// Update lookupPlusReply from fileInode.cachedStat
+
+			lookupPlusReply.CTimeNs = fileInode.cachedStat.CTimeNs
+			lookupPlusReply.CRTimeNs = fileInode.cachedStat.CRTimeNs
+			lookupPlusReply.MTimeNs = fileInode.cachedStat.MTimeNs
+			lookupPlusReply.ATimeNs = fileInode.cachedStat.ATimeNs
+			lookupPlusReply.Size = fileInode.cachedStat.Size
+			lookupPlusReply.NumLinks = fileInode.cachedStat.NumLinks
+			lookupPlusReply.StatInodeNumber = fileInode.cachedStat.StatInodeNumber
+			lookupPlusReply.FileMode = fileInode.cachedStat.FileMode
+			lookupPlusReply.UserID = fileInode.cachedStat.UserID
+			lookupPlusReply.GroupID = fileInode.cachedStat.GroupID
+		}
+
+		fileInode.unlock(false)
 	}
 
 	aTimeSec, aTimeNSec = nsToUnixTime(lookupPlusReply.ATimeNs)
@@ -319,23 +358,15 @@ func setUIDAndOrGID(nodeID uint64, settingUID bool, uid uint32, settingGID bool,
 	return
 }
 
-func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
+func (fileInode *fileInodeStruct) setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
 		err                      error
-		fileInode                *fileInodeStruct
-		grantedLock              *fileInodeLockRequestStruct
 		ok                       bool
 		resizeReply              *jrpcfs.Reply
 		resizeRequest            *jrpcfs.ResizeRequest
 	)
-
-	fileInode = referenceFileInode(inode.InodeNumber(nodeID))
-	if nil == fileInode {
-		errno = syscall.ENOENT
-		return
-	}
 
 	fileInode.cachedStat.Size = size
 
@@ -366,13 +397,9 @@ func setSize(nodeID uint64, size uint64) (errno syscall.Errno) {
 
 	err = globals.retryRPCClient.Send("RpcResize", resizeRequest, resizeReply)
 	if nil != err {
-		grantedLock.release()
-		fileInode.dereference()
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
-
-	fileInode.dereference()
 
 	errno = 0
 	return
@@ -497,7 +524,7 @@ func (dummy *globalsStruct) DoSetAttr(inHeader *fission.InHeader, setAttrIn *fis
 	}
 
 	if settingSize {
-		errno = setSize(inHeader.NodeID, setAttrIn.Size)
+		errno = fileInode.setSize(inHeader.NodeID, setAttrIn.Size)
 		if 0 != errno {
 			fileInode.unlock(true)
 			return
@@ -783,13 +810,45 @@ func (dummy *globalsStruct) DoMkDir(inHeader *fission.InHeader, mkDirIn *fission
 func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fission.UnlinkIn) (errno syscall.Errno) {
 	var (
 		err           error
+		fileInode     *fileInodeStruct
+		lookupReply   *jrpcfs.InodeReply
+		lookupRequest *jrpcfs.LookupRequest
 		unlinkReply   *jrpcfs.Reply
 		unlinkRequest *jrpcfs.UnlinkRequest
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoUnlink_calls, 1)
 
-	doFlushIfNecessary(inode.InodeNumber(inHeader.NodeID), unlinkIn.Name)
+	lookupRequest = &jrpcfs.LookupRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(inHeader.NodeID),
+		},
+		Basename: string(unlinkIn.Name[:]),
+	}
+
+	lookupReply = &jrpcfs.InodeReply{}
+
+	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+	if nil != err {
+		errno = convertErrToErrno(err, syscall.ENOENT)
+		return
+	}
+
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(lookupReply.InodeNumber))
+
+	// Make sure potentially file inode didn't move before we were able to ExclusiveLease it
+
+	lookupReply = &jrpcfs.InodeReply{}
+
+	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+	if (nil != err) || (fileInode.InodeNumber != inode.InodeNumber(lookupReply.InodeNumber)) {
+		fileInode.unlock(true)
+		errno = convertErrToErrno(err, syscall.ENOENT)
+		return
+	}
+
+	fileInode.doFlushIfNecessary()
 
 	unlinkRequest = &jrpcfs.UnlinkRequest{
 		InodeHandle: jrpcfs.InodeHandle{
@@ -803,9 +862,12 @@ func (dummy *globalsStruct) DoUnlink(inHeader *fission.InHeader, unlinkIn *fissi
 
 	err = globals.retryRPCClient.Send("RpcUnlink", unlinkRequest, unlinkReply)
 	if nil != err {
+		fileInode.unlock(true)
 		errno = convertErrToErrno(err, syscall.EIO)
 		return
 	}
+
+	fileInode.unlock(false)
 
 	errno = 0
 	return
@@ -842,17 +904,48 @@ func (dummy *globalsStruct) DoRmDir(inHeader *fission.InHeader, rmDirIn *fission
 
 func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fission.RenameIn) (errno syscall.Errno) {
 	var (
-		err           error
-		renameReply   *jrpcfs.Reply
-		renameRequest *jrpcfs.RenameRequest
+		destroyReply   *jrpcfs.Reply
+		destroyRequest *jrpcfs.DestroyRequest
+		err            error
+		fileInode      *fileInodeStruct
+		lookupReply    *jrpcfs.InodeReply
+		lookupRequest  *jrpcfs.LookupRequest
+		moveReply      *jrpcfs.MoveReply
+		moveRequest    *jrpcfs.MoveRequest
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename_calls, 1)
 
-	// TODO: Remove this once Lease Management makes this unnecessary
-	doFlushIfNecessary(inode.InodeNumber(renameIn.NewDir), renameIn.NewName)
+	lookupRequest = &jrpcfs.LookupRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(renameIn.NewDir),
+		},
+		Basename: string(renameIn.NewName[:]),
+	}
 
-	renameRequest = &jrpcfs.RenameRequest{
+	lookupReply = &jrpcfs.InodeReply{}
+
+	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+	if nil == err {
+		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(lookupReply.InodeNumber))
+
+		// Make sure potentially file inode didn't move before we were able to ExclusiveLease it
+
+		lookupReply = &jrpcfs.InodeReply{}
+
+		err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+		if (nil != err) || (fileInode.InodeNumber != inode.InodeNumber(lookupReply.InodeNumber)) {
+			fileInode.unlock(true)
+			fileInode = nil
+		} else {
+			fileInode.doFlushIfNecessary()
+		}
+	} else {
+		fileInode = nil
+	}
+
+	moveRequest = &jrpcfs.MoveRequest{
 		MountID:           globals.mountID,
 		SrcDirInodeNumber: int64(inHeader.NodeID),
 		SrcBasename:       string(renameIn.OldName[:]),
@@ -860,15 +953,41 @@ func (dummy *globalsStruct) DoRename(inHeader *fission.InHeader, renameIn *fissi
 		DstBasename:       string(renameIn.NewName[:]),
 	}
 
-	renameReply = &jrpcfs.Reply{}
+	moveReply = &jrpcfs.MoveReply{}
 
-	err = globals.retryRPCClient.Send("RpcRename", renameRequest, renameReply)
-	if nil != err {
+	err = globals.retryRPCClient.Send("RpcMove", moveRequest, moveReply)
+	if nil == err {
+		errno = 0
+	} else {
 		errno = convertErrToErrno(err, syscall.EIO)
-		return
 	}
 
-	errno = 0
+	if nil != fileInode {
+		fileInode.unlock(false)
+	}
+
+	if 0 != moveReply.ToDestroyInodeNumber {
+		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(moveReply.ToDestroyInodeNumber))
+
+		fileInode.doFlushIfNecessary()
+
+		destroyRequest = &jrpcfs.DestroyRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: moveReply.ToDestroyInodeNumber,
+			},
+		}
+
+		destroyReply = &jrpcfs.Reply{}
+
+		err = globals.retryRPCClient.Send("RpcDestroy", destroyRequest, destroyReply)
+		if nil != err {
+			logWarnf("RpcDestroy(InodeHandle: %#v) failed: err", err)
+		}
+
+		fileInode.unlock(false)
+	}
+
 	return
 }
 
@@ -890,7 +1009,7 @@ func (dummy *globalsStruct) DoLink(inHeader *fission.InHeader, linkIn *fission.L
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoLink_calls, 1)
 
-	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(linkIn.OldNodeID))
 
 	fileInode.doFlushIfNecessary()
 
@@ -1038,7 +1157,7 @@ func (dummy *globalsStruct) DoOpen(inHeader *fission.InHeader, openIn *fission.O
 	globals.Unlock()
 
 	if 0 != (openIn.Flags & fission.FOpenRequestTRUNC) {
-		errno = setSize(inHeader.NodeID, 0)
+		errno = fileInode.setSize(inHeader.NodeID, 0)
 		if 0 != errno {
 			fileInode.unlock(true)
 			return
@@ -1057,7 +1176,8 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 		err                                       error
 		fhInodeNumber                             uint64
 		fileInode                                 *fileInodeStruct
-		grantedLock                               *fileInodeLockRequestStruct
+		getStatReply                              *jrpcfs.StatStruct
+		getStatRequest                            *jrpcfs.GetStatRequest
 		logSegmentCacheElement                    *logSegmentCacheElementStruct
 		logSegmentCacheElementBufEndingPosition   uint64
 		logSegmentCacheElementBufRemainingLen     uint64
@@ -1075,6 +1195,28 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRead_calls, 1)
 	globals.stats.FUSEDoReadBytes.Add(uint64(readIn.Size))
 
+	fileInode = lockInodeWithSharedLease(inode.InodeNumber(inHeader.NodeID))
+
+	if nil == fileInode.cachedStat {
+		getStatRequest = &jrpcfs.GetStatRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: int64(inHeader.NodeID),
+			},
+		}
+
+		getStatReply = &jrpcfs.StatStruct{}
+
+		err = globals.retryRPCClient.Send("RpcGetStat", getStatRequest, getStatReply)
+		if nil != err {
+			fileInode.unlock(true)
+			errno = convertErrToErrno(err, syscall.EIO)
+			return
+		}
+
+		fileInode.cachedStat = getStatReply
+	}
+
 	globals.Lock()
 
 	fhInodeNumber, ok = globals.fhToInodeNumberMap[readIn.FH]
@@ -1087,14 +1229,14 @@ func (dummy *globalsStruct) DoRead(inHeader *fission.InHeader, readIn *fission.R
 
 	globals.Unlock()
 
-	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoRead(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, readIn.FH)
 	}
-	defer fileInode.dereference()
+	// defer fileInode.dereference()
 
-	grantedLock = fileInode.getSharedLock()
-	defer grantedLock.release()
+	// grantedLock = fileInode.getSharedLock()
+	// defer grantedLock.release()
 
 	err = fileInode.populateExtentMap(uint64(readIn.Offset), uint64(readIn.Size))
 	if nil != err {
@@ -1185,12 +1327,13 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		chunkedPutContextElement *list.Element
 		fhInodeNumber            uint64
 		fileInode                *fileInodeStruct
-		grantedLock              *fileInodeLockRequestStruct
 		ok                       bool
 		singleObjectExtent       *singleObjectExtentStruct
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoWrite_calls, 1)
+
+	fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(inHeader.NodeID))
 
 	globals.Lock()
 
@@ -1204,7 +1347,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	globals.Unlock()
 
-	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoWrite(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, writeIn.FH)
 	}
@@ -1216,7 +1359,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 
 	_ = <-globals.fileInodeDirtyLogSegmentChan
 
-	grantedLock = fileInode.getExclusiveLock()
+	// grantedLock = fileInode.getExclusiveLock()
 
 	if 0 == fileInode.chunkedPutList.Len() {
 		// No chunkedPutContext is present (so none can be open), so open one
@@ -1236,7 +1379,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		chunkedPutContext.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
 		chunkedPutContext.chunkedPutListElement = fileInode.chunkedPutList.PushBack(chunkedPutContext)
 
-		fileInode.reference()
+		// fileInode.reference()
 
 		pruneFileInodeDirtyListIfNecessary()
 
@@ -1275,7 +1418,7 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 			chunkedPutContext.extentMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, chunkedPutContext)
 			chunkedPutContext.chunkedPutListElement = fileInode.chunkedPutList.PushBack(chunkedPutContext)
 
-			fileInode.reference()
+			// fileInode.reference()
 
 			go chunkedPutContext.sendDaemon()
 		}
@@ -1308,9 +1451,11 @@ func (dummy *globalsStruct) DoWrite(inHeader *fission.InHeader, writeIn *fission
 		close(chunkedPutContext.sendChan)
 	}
 
-	grantedLock.release()
+	// grantedLock.release()
 
-	fileInode.dereference()
+	// fileInode.dereference()
+
+	fileInode.unlock(false)
 
 	writeOut = &fission.WriteOut{
 		Size:    uint32(len(writeIn.Data)),
@@ -1430,14 +1575,14 @@ func (dummy *globalsStruct) DoFSync(inHeader *fission.InHeader, fSyncIn *fission
 
 	globals.Unlock()
 
-	fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
+	// fileInode = referenceFileInode(inode.InodeNumber(inHeader.NodeID))
 	if nil == fileInode {
 		logFatalf("DoFSync(NodeID=%v,FH=%v) called for non-FileInode", inHeader.NodeID, fSyncIn.FH)
 	}
 
 	fileInode.doFlushIfNecessary()
 
-	fileInode.dereference()
+	// fileInode.dereference()
 
 	errno = 0
 	return
@@ -2225,17 +2370,48 @@ func (dummy *globalsStruct) DoReadDirPlus(inHeader *fission.InHeader, readDirPlu
 
 func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fission.Rename2In) (errno syscall.Errno) {
 	var (
-		err           error
-		renameReply   *jrpcfs.Reply
-		renameRequest *jrpcfs.RenameRequest
+		destroyReply   *jrpcfs.Reply
+		destroyRequest *jrpcfs.DestroyRequest
+		err            error
+		fileInode      *fileInodeStruct
+		lookupReply    *jrpcfs.InodeReply
+		lookupRequest  *jrpcfs.LookupRequest
+		moveReply      *jrpcfs.MoveReply
+		moveRequest    *jrpcfs.MoveRequest
 	)
 
 	_ = atomic.AddUint64(&globals.metrics.FUSE_DoRename2_calls, 1)
 
-	// TODO: Remove this once Lease Management makes this unnecessary
-	doFlushIfNecessary(inode.InodeNumber(rename2In.NewDir), rename2In.NewName)
+	lookupRequest = &jrpcfs.LookupRequest{
+		InodeHandle: jrpcfs.InodeHandle{
+			MountID:     globals.mountID,
+			InodeNumber: int64(rename2In.NewDir),
+		},
+		Basename: string(rename2In.NewName[:]),
+	}
 
-	renameRequest = &jrpcfs.RenameRequest{
+	lookupReply = &jrpcfs.InodeReply{}
+
+	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+	if nil == err {
+		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(lookupReply.InodeNumber))
+
+		// Make sure potentially file inode didn't move before we were able to ExclusiveLease it
+
+		lookupReply = &jrpcfs.InodeReply{}
+
+		err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
+		if (nil != err) || (fileInode.InodeNumber != inode.InodeNumber(lookupReply.InodeNumber)) {
+			fileInode.unlock(true)
+			fileInode = nil
+		} else {
+			fileInode.doFlushIfNecessary()
+		}
+	} else {
+		fileInode = nil
+	}
+
+	moveRequest = &jrpcfs.MoveRequest{
 		MountID:           globals.mountID,
 		SrcDirInodeNumber: int64(inHeader.NodeID),
 		SrcBasename:       string(rename2In.OldName[:]),
@@ -2243,15 +2419,41 @@ func (dummy *globalsStruct) DoRename2(inHeader *fission.InHeader, rename2In *fis
 		DstBasename:       string(rename2In.NewName[:]),
 	}
 
-	renameReply = &jrpcfs.Reply{}
+	moveReply = &jrpcfs.MoveReply{}
 
-	err = globals.retryRPCClient.Send("RpcRename", renameRequest, renameReply)
-	if nil != err {
+	err = globals.retryRPCClient.Send("RpcMove", moveRequest, moveReply)
+	if nil == err {
+		errno = 0
+	} else {
 		errno = convertErrToErrno(err, syscall.EIO)
-		return
 	}
 
-	errno = 0
+	if nil != fileInode {
+		fileInode.unlock(false)
+	}
+
+	if 0 != moveReply.ToDestroyInodeNumber {
+		fileInode = lockInodeWithExclusiveLease(inode.InodeNumber(moveReply.ToDestroyInodeNumber))
+
+		fileInode.doFlushIfNecessary()
+
+		destroyRequest = &jrpcfs.DestroyRequest{
+			InodeHandle: jrpcfs.InodeHandle{
+				MountID:     globals.mountID,
+				InodeNumber: moveReply.ToDestroyInodeNumber,
+			},
+		}
+
+		destroyReply = &jrpcfs.Reply{}
+
+		err = globals.retryRPCClient.Send("RpcDestroy", destroyRequest, destroyReply)
+		if nil != err {
+			logWarnf("RpcDestroy(InodeHandle: %#v) failed: err", err)
+		}
+
+		fileInode.unlock(false)
+	}
+
 	return
 }
 

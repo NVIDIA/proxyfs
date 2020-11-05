@@ -452,8 +452,8 @@ func ioHandle(conn net.Conn) {
 
 		// Write response
 		err = putResponse(conn, ctx)
-		// XXX TODO: Enable if we want to see this event specifically.
-		//           Otherwise this will show up under "remaining time".
+		// TODO: Enable if we want to see this event specifically.
+		//       Otherwise this will show up under "remaining time".
 		//profiler.AddEventNow("after rpc send response")
 		if err != nil {
 			decRunningWorkers()
@@ -464,7 +464,7 @@ func ioHandle(conn net.Conn) {
 		profiler.Close()
 		SaveProfiler(qserver, ctx.op, profiler)
 
-		// XXX TODO: no sync.Pool for now, just alloc on the stack
+		// TODO: No sync.Pool for now, just alloc on the stack
 		// Return context struct to pool
 		//		ioContextPool.Put(ctx)
 

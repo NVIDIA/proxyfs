@@ -65,6 +65,7 @@ type globalsStruct struct {
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
+	DestroyUsec        bucketstats.BucketLog2Round
 	FlushUsec          bucketstats.BucketLog2Round
 	FlockGetUsec       bucketstats.BucketLog2Round
 	FlockLockUsec      bucketstats.BucketLog2Round
@@ -80,6 +81,7 @@ type globalsStruct struct {
 	LookupUsec         bucketstats.BucketLog2Round
 	LookupPathUsec     bucketstats.BucketLog2Round
 	MkdirUsec          bucketstats.BucketLog2Round
+	MoveUsec           bucketstats.BucketLog2Round
 	RemoveXAttrUsec    bucketstats.BucketLog2Round
 	RenameUsec         bucketstats.BucketLog2Round
 	ReadUsec           bucketstats.BucketLog2Round
@@ -104,6 +106,7 @@ type globalsStruct struct {
 
 	CreateErrors              bucketstats.Total
 	DefragmentFileErrors      bucketstats.Total
+	DestroyErrors             bucketstats.Total
 	FetchExtentMapChunkErrors bucketstats.Total
 	FlushErrors               bucketstats.Total
 	FlockOtherErrors          bucketstats.Total
@@ -121,6 +124,7 @@ type globalsStruct struct {
 	LookupErrors              bucketstats.Total
 	LookupPathErrors          bucketstats.Total
 	MkdirErrors               bucketstats.Total
+	MoveErrors                bucketstats.Total
 	RemoveXAttrErrors         bucketstats.Total
 	RenameErrors              bucketstats.Total
 	ReadErrors                bucketstats.Total

@@ -17,59 +17,18 @@ import (
 	"github.com/swiftstack/ProxyFS/jrpcfs"
 )
 
-// doFlushIfNecessary (the non-receiver form) is currently necessary due to the lack
-// of Lease Management whereby an implicitly deleted fileInode (due to a DoUnlink()
-// or DoRename/DoRename2() call or equivalent somewhere) would revoke such Lease
-// causing any in-flight LogSegment PUTs to be flushed first. In the meantime, this
-// func will do the flush if necessary based on what *this* PFSAgent instance is
-// doing.
-//
-func doFlushIfNecessary(dirInodeNumber inode.InodeNumber, name []byte) {
-	var (
-		err           error
-		fileInode     *fileInodeStruct
-		lookupReply   *jrpcfs.InodeReply
-		lookupRequest *jrpcfs.LookupRequest
-	)
-
-	lookupRequest = &jrpcfs.LookupRequest{
-		InodeHandle: jrpcfs.InodeHandle{
-			MountID:     globals.mountID,
-			InodeNumber: int64(dirInodeNumber),
-		},
-		Basename: string(name[:]),
-	}
-
-	lookupReply = &jrpcfs.InodeReply{}
-
-	err = globals.retryRPCClient.Send("RpcLookup", lookupRequest, lookupReply)
-	if nil != err {
-		// Assume the fileInode simply did not exist, so just return
-		return
-	}
-
-	fileInode = referenceFileInode(inode.InodeNumber(lookupReply.InodeNumber))
-
-	if nil != fileInode {
-		fileInode.doFlushIfNecessary()
-
-		fileInode.dereference()
-	}
-}
-
 func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 	var (
 		chunkedPutContext        *chunkedPutContextStruct
 		chunkedPutContextElement *list.Element
 		flushWG                  sync.WaitGroup
-		grantedLock              *fileInodeLockRequestStruct
 	)
 
-	grantedLock = fileInode.getExclusiveLock()
+	// grantedLock = fileInode.getExclusiveLock()
 
 	if 0 == fileInode.chunkedPutList.Len() {
 		// No Chunked PUTs in flight... so we can just exit
-		grantedLock.release()
+		// grantedLock.release()
 		return
 	}
 
@@ -99,7 +58,7 @@ func (fileInode *fileInodeStruct) doFlushIfNecessary() {
 		}
 	}
 
-	grantedLock.release()
+	// grantedLock.release()
 
 	// Finally, wait for the flush to complete
 
@@ -169,7 +128,6 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 		expirationTime            time.Time
 		fileInode                 *fileInodeStruct
 		flushWaiterListElement    *list.Element
-		grantedLock               *fileInodeLockRequestStruct
 		nextChunkedPutContext     *chunkedPutContextStruct
 		nextChunkedPutListElement *list.Element
 		sendChanOpenOrNonEmpty    bool
@@ -195,9 +153,9 @@ func (chunkedPutContext *chunkedPutContextStruct) sendDaemon() {
 		case <-time.After(expirationDelay):
 			// MaxFlushTime-triggered flush requested
 
-			grantedLock = fileInode.getExclusiveLock()
+			// grantedLock = fileInode.getExclusiveLock()
 			chunkedPutContext.state = chunkedPutContextStateClosing
-			grantedLock.release()
+			// grantedLock.release()
 
 			goto PerformFlush
 		case _, sendChanOpenOrNonEmpty = <-chunkedPutContext.sendChan:
@@ -225,7 +183,7 @@ PerformFlush:
 
 	// Chunked PUT is complete
 
-	grantedLock = fileInode.getExclusiveLock()
+	// grantedLock = fileInode.getExclusiveLock()
 
 	chunkedPutContext.state = chunkedPutContextStateClosed
 
@@ -292,7 +250,7 @@ EscapeSendChanDrain:
 		globals.Unlock()
 	}
 
-	grantedLock.release()
+	// grantedLock.release()
 }
 
 func (chunkedPutContext *chunkedPutContextStruct) performChunkedPut() {
@@ -380,6 +338,7 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 		FileOffset:    make([]uint64, extentMapLen),
 		ObjectOffset:  make([]uint64, extentMapLen),
 		Length:        make([]uint64, extentMapLen),
+		WroteTimeNs:   uint64(time.Now().UnixNano()),
 	}
 
 	for curExtentIndex = 0; curExtentIndex < extentMapLen; curExtentIndex++ {
@@ -419,7 +378,7 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 
 	_ = fileInode.chunkedPutList.Remove(chunkedPutContext.chunkedPutListElement)
 
-	fileInode.dereference()
+	// fileInode.dereference()
 
 	// Finally, yield our chunkedPutContext quota
 
@@ -428,13 +387,12 @@ func (chunkedPutContext *chunkedPutContextStruct) complete() {
 
 func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err error) {
 	var (
-		grantedLock            *fileInodeLockRequestStruct
 		wakeChanOpenOrNonEmpty bool
 	)
 
 	_, wakeChanOpenOrNonEmpty = <-chunkedPutContext.wakeChan
 
-	grantedLock = chunkedPutContext.fileInode.getExclusiveLock()
+	// grantedLock = chunkedPutContext.fileInode.getExclusiveLock()
 
 	n = len(chunkedPutContext.buf) - chunkedPutContext.pos
 
@@ -453,13 +411,13 @@ func (chunkedPutContext *chunkedPutContextStruct) Read(p []byte) (n int, err err
 
 		chunkedPutContext.pos += n
 
-		grantedLock.release()
+		// grantedLock.release()
 
 		err = nil
 		return
 	}
 
-	grantedLock.release()
+	// grantedLock.release()
 
 	// At this point, n == 0... do we need to send EOF?
 
@@ -1507,11 +1465,6 @@ func fetchLogSegmentCacheLine(containerName string, objectName string, offset ui
 
 		delete(globals.logSegmentCacheMap, logSegmentCacheElementKey)
 		globals.logSegmentCacheLRU.Remove(logSegmentCacheElement.cacheLRUElement)
-
-		// While the above accounting has correctly reported the cache fetch failure,
-		// we cannot continue from this point and must abruptly fail
-
-		logFatalf("unable to complete GET http.Request (,%s,)", url)
 	}
 
 	globals.Unlock()

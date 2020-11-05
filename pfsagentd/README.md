@@ -58,6 +58,7 @@ SharedLeaseLimit:                                          1000
 ExclusiveLeaseLimit:                                        100
 ExtentMapEntryLimit:                                    1048576
 DirtyLogSegmentLimit:                                        50
+DirtyFileLimit:                                              50 # TODO - obsolete this
 MaxFlushSize:                                          10485760
 MaxFlushTime:                                             200ms
 LogFilePath:                             /var/log/pfsagentd.log

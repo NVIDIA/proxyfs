@@ -15,6 +15,8 @@ const (
 	FormatTestPatternS016XS
 	FormatTestPatternSS
 	FormatTestPatternSS03D
+	FormatTestPatternSS016X1X
+	FormatTestPatternSS016X1X1X
 	FormatTestPatternSSS
 	FormatTestPatternSSS03D
 	FormatTestPatternSSS016X03D
@@ -60,6 +62,9 @@ const (
 	FormatFlushInodesErrorOnInode
 	FormatFlushInodesErrorOnHeadhunterPut
 	FormatFlushInodesExit
+	FormatLeaseRequest
+	FormatLeaseReply
+	FormatLeaseInterrupt
 	//
 	formatTypeCount // Used to quickly check upper limit of FormatType values
 )
@@ -78,6 +83,8 @@ const (
 	patternS016XS                            // <timestamp> + "...%s...%016X...%s..."
 	patternSS                                // <timestamp> + "...%s...%s..."
 	patternSS03D                             // <timestamp> + "...%s...%s...%03d..."
+	patternSS016X1X                          // <timestamp> + "...%s...%s...%016X...%1X..."
+	patternSS016X1X1X                        // <timestamp> + "...%s...%s...%016X...%1X...%1X..."
 	patternSSS                               // <timestamp> + "...%s...%s...%s..."
 	patternSSS03D                            // <timestamp> + "...%s...%s...%s...%03d..."
 	patternSSS016X03D                        // <timestamp> + "...%s...%s...%s...%016X...%03d..."
@@ -138,6 +145,14 @@ var (
 		eventType{ // FormatTestPatternSS03D
 			patternType:  patternSS03D,
 			formatString: "%s Test for patternSS03D arg0:%s arg1:%s arg2:%03d",
+		},
+		eventType{ // FormatTestPatternSS016X1X
+			patternType:  patternSS016X1X,
+			formatString: "%s Test for patternSS016X1X arg0:%s arg1:%s arg2:%016X arg3:%1X",
+		},
+		eventType{ // FormatTestPatternSS016X1X1X
+			patternType:  patternSS016X1X1X,
+			formatString: "%s Test for patternSS016X1X1X arg0:%s arg1:%s arg2:%016X arg3:%1X arg4:%1X",
 		},
 		eventType{ // FormatTestPatternSSS
 			patternType:  patternSSS,
@@ -318,6 +333,18 @@ var (
 		eventType{ // FormatFlushInodesExit
 			patternType:  patternS016Xslice,
 			formatString: "%s inode.flushInodes() exited for Volume '%s' Inode#'s [0x%016X]",
+		},
+		eventType{ // FormatLeaseRequest
+			patternType:  patternSS016X1X,
+			formatString: "%s jrpcfs.RpcLease() entered for Volume '%s' MountID '%s' Inode# 0x%016X RequestType %1X",
+		},
+		eventType{ // FormatLeaseReply
+			patternType:  patternSS016X1X1X,
+			formatString: "%s jrpcfs.RpcLease() exited for Volume '%s' MountID '%s' Inode# 0x%016X RequestType %1X ReplyType %1X",
+		},
+		eventType{ // FormatLeaseInterrupt
+			patternType:  patternSS016X1X,
+			formatString: "%s jrpcfs.RpcLease() entered for Volume '%s' MountID '%s' Inode# 0x%016X InterruptType %1X",
 		},
 	}
 )
