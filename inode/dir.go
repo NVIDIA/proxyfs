@@ -249,13 +249,20 @@ func (vS *volumeStruct) Link(dirInodeNumber InodeNumber, basename string, target
 }
 
 // Manipulate a directory to remove an an entry. Like Unlink(), but without any inode loading or flushing.
-func unlinkInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeStruct, basename string) (err error) {
-	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
+func unlinkInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeStruct, basename string) (toDestroyInodeNumber InodeNumber) {
+	var (
+		dirMapping sortedmap.BPlusTree
+		err        error
+		ok         bool
+		updateTime time.Time
+	)
+
+	dirMapping = dirInode.payload.(sortedmap.BPlusTree)
 
 	dirInode.dirty = true
 	untargetInode.dirty = true
 
-	ok, err := dirMapping.DeleteByKey(basename)
+	ok, err = dirMapping.DeleteByKey(basename)
 	if nil != err {
 		panic(err)
 	}
@@ -279,9 +286,21 @@ func unlinkInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeS
 		}
 
 		dirInode.LinkCount--
+
+		if 1 == untargetInode.LinkCount {
+			toDestroyInodeNumber = untargetInode.InodeNumber
+		} else {
+			toDestroyInodeNumber = InodeNumber(0)
+		}
+	} else {
+		if 0 == untargetInode.LinkCount {
+			toDestroyInodeNumber = untargetInode.InodeNumber
+		} else {
+			toDestroyInodeNumber = InodeNumber(0)
+		}
 	}
 
-	updateTime := time.Now()
+	updateTime = time.Now()
 
 	dirInode.AttrChangeTime = updateTime
 	dirInode.ModificationTime = updateTime
@@ -292,12 +311,19 @@ func unlinkInMemory(dirInode *inMemoryInodeStruct, untargetInode *inMemoryInodeS
 }
 
 // Remove-only version of unlinkInMemory()
-func unlinkInMemoryRemoveOnly(dirInode *inMemoryInodeStruct, basename string) (err error) {
-	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
+func unlinkInMemoryRemoveOnly(dirInode *inMemoryInodeStruct, basename string) {
+	var (
+		dirMapping sortedmap.BPlusTree
+		err        error
+		ok         bool
+		updateTime time.Time
+	)
+
+	dirMapping = dirInode.payload.(sortedmap.BPlusTree)
 
 	dirInode.dirty = true
 
-	ok, err := dirMapping.DeleteByKey(basename)
+	ok, err = dirMapping.DeleteByKey(basename)
 	if nil != err {
 		panic(err)
 	}
@@ -306,15 +332,13 @@ func unlinkInMemoryRemoveOnly(dirInode *inMemoryInodeStruct, basename string) (e
 		panic(err)
 	}
 
-	updateTime := time.Now()
+	updateTime = time.Now()
 
 	dirInode.AttrChangeTime = updateTime
 	dirInode.ModificationTime = updateTime
-
-	return
 }
 
-func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (err error) {
+func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (toDestroyInodeNumber InodeNumber, err error) {
 	var (
 		dirInode            *inMemoryInodeStruct
 		flushInodeList      []*inMemoryInodeStruct
@@ -343,31 +367,29 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 
 	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
 	if nil != err {
-		return err
+		return
 	}
 
 	untargetInodeNumber, err = vS.lookup(dirInodeNumber, basename)
 	if nil != err {
 		err = blunder.AddError(err, blunder.NotFoundError)
-		return err
+		return
 	}
 
 	if removeOnly {
-		err = unlinkInMemoryRemoveOnly(dirInode, basename)
-		if err != nil {
-			return err
-		}
+		unlinkInMemoryRemoveOnly(dirInode, basename)
+
+		toDestroyInodeNumber = InodeNumber(0)
 
 		flushInodeList = []*inMemoryInodeStruct{dirInode}
 	} else {
-
 		untargetInode, ok, err = vS.fetchInode(untargetInodeNumber)
 		if nil != err {
 			// the inode is locked so this should never happen (unless the inode
 			// was evicted from the cache and it was corrupt when re-read from disk)
 			// (err includes volume name and inode number)
 			logger.ErrorfWithError(err, "%s: fetch of target inode failed", utils.GetFnName())
-			return err
+			return
 		}
 		if !ok {
 			// this should never happen (see above)
@@ -375,7 +397,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 				utils.GetFnName(), untargetInode.InodeNumber, vS.volumeName)
 			err = blunder.AddError(err, blunder.NotFoundError)
 			logger.ErrorWithError(err)
-			return err
+			return
 		}
 
 		// Pre-flush untargetInode so that no time-based (implicit) flushes will occur during this transaction
@@ -385,10 +407,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 			panic(err)
 		}
 
-		err = unlinkInMemory(dirInode, untargetInode, basename)
-		if err != nil {
-			return err
-		}
+		toDestroyInodeNumber = unlinkInMemory(dirInode, untargetInode, basename)
 
 		flushInodeList = []*inMemoryInodeStruct{dirInode, untargetInode}
 	}
@@ -396,14 +415,14 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 	err = vS.flushInodes(flushInodeList)
 	if err != nil {
 		logger.ErrorWithError(err)
-		return err
+		return
 	}
 
 	stats.IncrementOperations(&stats.DirUnlinkSuccessOps)
 	return
 }
 
-func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error) {
+func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (toDestroyInodeNumber InodeNumber, err error) {
 	err = enforceRWMode(false)
 	if nil != err {
 		return
@@ -475,7 +494,7 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		// was evicted from the cache and it was corrupt when re-read from disk)
 		// (err includes volume name and inode number)
 		logger.ErrorfWithError(err, "%s: fetch of src inode failed", utils.GetFnName())
-		return err
+		return
 	}
 	if !ok {
 		// this should never happen (see above)
@@ -483,7 +502,7 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 			utils.GetFnName(), srcInode.InodeNumber, vS.volumeName)
 		err = blunder.AddError(err, blunder.NotDirError)
 		logger.ErrorWithError(err)
-		return err
+		return
 	}
 
 	var dstInodeNumber InodeNumber
@@ -631,13 +650,17 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 		panic(err)
 	}
 
-	// And, if we decremented dstInode.LinkCount to zero, destroy dstInode as well
+	// Finally, if we decremented dstInode.LinkCount to zero, indicate dstInode should be destroyed as well
 
 	if (nil != dstInode) && (0 == dstInode.LinkCount) {
-		err = vS.Destroy(dstInode.InodeNumber)
+		toDestroyInodeNumber = dstInode.InodeNumber
+	} else {
+		toDestroyInodeNumber = InodeNumber(0)
 	}
 
 	stats.IncrementOperations(&stats.DirRenameSuccessOps)
+
+	err = nil
 	return
 }
 

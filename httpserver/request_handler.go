@@ -20,6 +20,7 @@ import (
 	"github.com/swiftstack/ProxyFS/halter"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/inode"
+	"github.com/swiftstack/ProxyFS/jrpcfs"
 	"github.com/swiftstack/ProxyFS/liveness"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/stats"
@@ -749,6 +750,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume/<volume-name>/extent-map
 		// Form: /volume/<volume-name>/fsck-job
 		// Form: /volume/<volume-name>/layout-report
+		// Form: /volume/<volume-name>/lease-report
 		// Form: /volume/<volume-name>/meta-defrag
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
@@ -910,6 +912,9 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	case "layout-report":
 		doLayoutReport(responseWriter, request, requestState)
+
+	case "lease-report":
+		doLeaseReport(responseWriter, request, requestState)
 
 	case "meta-defrag":
 		doMetaDefrag(responseWriter, request, requestState)
@@ -1532,6 +1537,40 @@ func doLayoutReport(responseWriter http.ResponseWriter, request *http.Request, r
 		}
 
 		_, _ = responseWriter.Write([]byte(layoutReportBottom))
+	}
+}
+
+func doLeaseReport(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		err                   error
+		leaseReport           []*jrpcfs.LeaseReportElementStruct
+		leaseReportJSON       bytes.Buffer
+		leaseReportJSONPacked []byte
+	)
+
+	leaseReport, err = jrpcfs.FetchLeaseReport(requestState.volume.name)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	leaseReportJSONPacked, err = json.Marshal(leaseReport)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: Need to align this logic and cleanly format page... but for now...
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	if requestState.formatResponseCompactly {
+		_, _ = responseWriter.Write(leaseReportJSONPacked)
+	} else {
+		json.Indent(&leaseReportJSON, leaseReportJSONPacked, "", "\t")
+		_, _ = responseWriter.Write(leaseReportJSON.Bytes())
+		_, _ = responseWriter.Write([]byte("\n"))
 	}
 }
 

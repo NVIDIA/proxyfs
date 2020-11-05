@@ -89,17 +89,19 @@ type inodeLeaseStruct struct {
 }
 
 type mountStruct struct {
-	volume             *volumeStruct
-	mountIDAsByteArray MountIDAsByteArray
-	mountIDAsString    MountIDAsString
-	leaseRequestMap    map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
-	//                                                           // if not present, there is no ongoing Lease Request for this inode.InodeNumber
+	volume                 *volumeStruct
+	mountIDAsByteArray     MountIDAsByteArray
+	mountIDAsString        MountIDAsString
+	acceptingLeaseRequests bool                                      // also an indicator (when false) that mount is being unmounted
+	leaseRequestMap        map[inode.InodeNumber]*leaseRequestStruct // if     present, there is an ongoing Lease Request for this inode.InodeNumber
+	//                                                                  if not present, there is no ongoing Lease Request for this inode.InodeNumber
 }
 
 type volumeStruct struct {
 	volumeName                      string
 	volumeHandle                    fs.VolumeHandle
 	acceptingMountsAndLeaseRequests bool
+	delayedUnmountList              *list.List
 	mountMapByMountIDAsByteArray    map[MountIDAsByteArray]*mountStruct     // key == mountStruct.mountIDAsByteArray
 	mountMapByMountIDAsString       map[MountIDAsString]*mountStruct        // key == mountStruct.mountIDAsString
 	inodeLeaseMap                   map[inode.InodeNumber]*inodeLeaseStruct // key == inodeLeaseStruct.InodeNumber
@@ -316,6 +318,7 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 		volumeName:                      volumeName,
 		volumeHandle:                    volumeHandle,
 		acceptingMountsAndLeaseRequests: true,
+		delayedUnmountList:              list.New(),
 		mountMapByMountIDAsByteArray:    make(map[MountIDAsByteArray]*mountStruct),
 		mountMapByMountIDAsString:       make(map[MountIDAsString]*mountStruct),
 		inodeLeaseMap:                   make(map[inode.InodeNumber]*inodeLeaseStruct),
