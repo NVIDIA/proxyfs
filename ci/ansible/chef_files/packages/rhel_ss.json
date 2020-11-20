@@ -5,7 +5,7 @@
   "samba_deps": [
     ["gcc", "4.8.5-44.el7"],
     ["gcc-c++", "4.8.5-44.el7"],
-    ["python-devel", "2.7.5-89.el7"],
+    ["python-devel", "2.7.5-90.el7"],
     ["gnutls-devel", "3.3.29-9.el7_6"],
     ["libacl-devel", "2.2.51-15.el7"],
     ["openldap-devel", "2.4.44-22.el7"],
