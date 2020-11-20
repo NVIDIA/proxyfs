@@ -284,7 +284,7 @@ func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroup
 		return
 	}
 	if volumeGroup.readCacheLineSize < 4096 {
-		logger.Warnf("Section '%s' for VolumeGroup '%s' ReadCacheWeight %d is < 4096; changing to 4096",
+		logger.Warnf("Section '%s' for VolumeGroup '%s' ReadCacheLineSize %d is < 4096; changing to 4096",
 			volumeGroupSectionName, volumeGroupName, volumeGroup.readCacheLineSize)
 		volumeGroup.readCacheLineSize = 4096
 	}
