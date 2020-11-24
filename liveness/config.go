@@ -376,7 +376,7 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	}
 
 	// don't set globals.enabled = true until it's actually started
-	logger.Infof("Liveness checker enabled")
+	logger.Infof("Liveness checker will be enabled")
 
 	// Fetch cluster parameters
 
