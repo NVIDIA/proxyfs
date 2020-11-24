@@ -650,13 +650,14 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.served = true
 	volume.volumeGroup.numServed++
 
+	// temporary value until we can look across all volume groups to compute it
+	volume.volumeGroup.readCacheLineCount = 1
+
 	volume.volumeGroup.Unlock()
 
 	globals.Unlock()
 
-	err = adoptVolumeGroupReadCacheParameters(confMap)
-
-	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
+	return
 }
 
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
@@ -697,9 +698,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	volume.volumeGroup.Unlock()
 	globals.Unlock()
 
-	err = adoptVolumeGroupReadCacheParameters(confMap)
-
-	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
+	return
 }
 
 func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
@@ -729,6 +728,14 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		swiftReconReadOnlyErrno string
 		volume                  *volumeStruct
 	)
+
+	// now that the information for all volume groups is available, compute
+	// the read cache size per volume group
+	err = adoptVolumeGroupReadCacheParameters(confMap)
+	if err != nil {
+		// fatal
+		return
+	}
 
 	swiftReconNoWriteErrno, err = confMap.FetchOptionValueString("SwiftClient", "SwiftReconNoWriteErrno")
 	if nil == err {
