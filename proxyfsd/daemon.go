@@ -60,6 +60,18 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		go http.ListenAndServe("localhost:"+debugServerPortAsString, nil)
 	}
 
+	// Arm signal handler used to catch signals
+	//
+	// Note: signalChan must be buffered to avoid race with window between
+	// arming handler and blocking on the chan read when signals might
+	// otherwise be lost.  No signals will be processed until
+	// transitions.Up() finishes, but an incoming SIGHUP will not cause the
+	// process to immediately exit.
+	signalChan := make(chan os.Signal, 16)
+
+	// if signals is empty it means "catch all signals" it is possible to catch
+	signal.Notify(signalChan, signals...)
+
 	// Start up dæmon packages
 
 	err = transitions.Up(confMap)
@@ -80,17 +92,7 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 		wg.Done()
 	}()
 
-	// Arm signal handler used to indicate termination and wait on it
-	//
-	// Note: signalled chan must be buffered to avoid race with window between
-	// arming handler and blocking on the chan read
-
-	signalChan := make(chan os.Signal, 8)
-
-	// if signals is empty it means "catch all signals" its possible to catch
-	signal.Notify(signalChan, signals...)
-
-	// indicate signal handlers have been armed successfully
+	// indicate transitions finished and signal handlers have been armed successfully
 	errChan <- nil
 
 	// Await a signal - reloading confFile each SIGHUP - exiting otherwise
