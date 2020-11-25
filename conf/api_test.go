@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 )
 
 const errnoEACCES = int(13)
@@ -565,84 +563,4 @@ func TestDump(t *testing.T) {
 	if !reflect.DeepEqual(confMap6, confMap7) {
 		t.Fatalf("DumpConfMapToFile() failed to reproduce \"%v\" into \"%v\"", tempFile6Name, tempFile7Name)
 	}
-}
-
-// test SetOptionIfMissing and SetSectionIfMissing
-func TestIfMissing(t *testing.T) {
-
-	assert := assert.New(t)
-
-	// create an empty confMap and populate it with one option (in one section)
-	confMap := MakeConfMap()
-
-	testSectionName0 := "TestSection0"
-	testSectionName1 := "TestSection1e"
-	testOptionName0 := "Test_-_Option0"
-	testOptionName1 := "Test_-_Option1"
-	testOptionString0 := "OptionValue0"
-	missingOptionString0 := "DefaultString0"
-	missingOptionString1 := "DefaultString1"
-
-	confStringToSection0Option0 := testSectionName0 + "." + testOptionName0 + " = " + testOptionString0
-
-	// populate testSectionName0.testOptionName0
-	err := confMap.UpdateFromString(confStringToSection0Option0)
-	assert.NoError(err, "UpdateFromString() should not fail with a valid option string")
-
-	// verify option was set
-	optionString, err := confMap.FetchOptionValueString(testSectionName0, testOptionName0)
-	assert.NoError(err, "FetchOptionValueString() cannot fail a valid request")
-	assert.Equal(testOptionString0, optionString, "FetchOptionValueString should return the option that was set")
-
-	missingOptionValue0 := ConfMapOption{missingOptionString0}
-	missingOptionValue1 := ConfMapOption{missingOptionString1}
-
-	// a new ConfMapOption should not overwrite the existing one
-	confMap.SetOptionIfMissing(testSectionName0, testOptionName0, missingOptionValue0)
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName0)
-	assert.NoError(err, "FetchOptionalValueString should not fail since the option exists")
-	assert.Equal(testOptionString0, optionString, "SetOptionIfMissing should not change existing optionValue")
-
-	// but a new ConfMapOption should replace a missing one
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName1)
-	assert.Error(err, "FetchOptionalValueString should fail since '%s' has not been set", testOptionName1)
-
-	confMap.SetOptionIfMissing(testSectionName0, testOptionName1, missingOptionValue1)
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName1)
-	assert.NoError(err, "FetchOptionalValueString should not fail since missing value was set")
-	assert.Equal(missingOptionString1, optionString, "SetOptionIfMissing should have set missing value")
-
-	// repeat a similar set of tests for sections
-	//
-	// verify option still exists
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName0)
-	assert.NoError(err, "FetchOptionValueString() cannot fail a valid request")
-
-	// a new ConfMapSection should not overwrite an existing one
-	missingSection0 := ConfMapSection{
-		testOptionName0: ConfMapOption{missingOptionString0},
-		testOptionName1: ConfMapOption{missingOptionString1},
-	}
-	confMap.SetSectionIfMissing(testSectionName0, missingSection0)
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName0)
-	assert.NoError(err, "FetchOptionalValueString should not fail since the option exists")
-	assert.Equal(testOptionString0, optionString, "SetOptionIfMissing should not change existing optionValue")
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName0, testOptionName1)
-	assert.NoError(err, "second option should have been added")
-	assert.Equal(missingOptionString1, optionString, "SetOptionIfMissing should not change existing optionValue")
-
-	// but a new ConfMapSection should replace a missing one
-	confMap.SetSectionIfMissing(testSectionName1, missingSection0)
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName1, testOptionName0)
-	assert.NoError(err, "FetchOptionalValueString should not fail since section was added")
-	assert.Equal(missingOptionString0, optionString, "missing Option should have been set")
-
-	optionString, err = confMap.FetchOptionValueString(testSectionName1, testOptionName1)
-	assert.NoError(err, "FetchOptionalValueString should not fail since section was added")
-	assert.Equal(missingOptionString1, optionString, "missing Option should have been set")
 }
