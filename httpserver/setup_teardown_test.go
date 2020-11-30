@@ -56,6 +56,7 @@ func testSetup(t *testing.T) {
 		"Cluster.HeartBeatMissLimit=3",
 		"Cluster.MessageQueueDepthPerPeer=4",
 		"Cluster.MaxRequestDuration=1s",
+		"Cluster.LivenessCheckerEnable=true",
 		"Cluster.LivenessCheckRedundancy=2",
 		"FSGlobals.VolumeGroupList=",
 		"FSGlobals.CheckpointHeaderConsensusAttempts=5",

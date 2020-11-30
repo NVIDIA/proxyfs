@@ -72,6 +72,7 @@ func TestDaemon(t *testing.T) {
 		"Cluster.HeartBeatMissLimit=3",
 		"Cluster.MessageQueueDepthPerPeer=4",
 		"Cluster.MaxRequestDuration=1s",
+		"Cluster.LivenessCheckerEnabled=true",
 		"Cluster.LivenessCheckRedundancy=2",
 
 		"HTTPServer.TCPPort=53461",
