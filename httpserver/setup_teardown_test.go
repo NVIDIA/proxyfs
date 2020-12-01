@@ -90,6 +90,7 @@ func testSetup(t *testing.T) {
 		"RamSwiftInfo.MaxObjectNameLength=1024",
 		"RamSwiftInfo.AccountListingLimit=10000",
 		"RamSwiftInfo.ContainerListingLimit=10000",
+
 		"HTTPServer.TCPPort=53461",
 	}
 

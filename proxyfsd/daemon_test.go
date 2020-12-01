@@ -75,6 +75,8 @@ func TestDaemon(t *testing.T) {
 		"Cluster.LivenessCheckerEnabled=true",
 		"Cluster.LivenessCheckRedundancy=2",
 
+		"ProxyfsDebug.DebugServerPort=6058",
+
 		"HTTPServer.TCPPort=53461",
 
 		"SwiftClient.NoAuthIPAddr=127.0.0.1",

@@ -51,10 +51,8 @@ func Daemon(confFile string, confStrings []string, errChan chan error, wg *sync.
 	// available if transitions.Up() hangs (the embedded http server will
 	// return http.StatusServiceUnavailable (503) during the transition.
 	debugServerPortAsUint16, err := confMap.FetchOptionValueUint16("ProxyfsDebug", "DebugServerPort")
-	if nil != err {
-		debugServerPortAsUint16 = 6058 // TODO: Eventually set it to zero
-	}
-	if uint16(0) != debugServerPortAsUint16 {
+	if nil != err && debugServerPortAsUint16 != 0 {
+
 		debugServerPortAsString := fmt.Sprintf("%d", debugServerPortAsUint16)
 		logger.Infof("proxyfsd.Daemon() starting debug HTTP Server on localhost:%s", debugServerPortAsString)
 		go http.ListenAndServe("localhost:"+debugServerPortAsString, nil)
