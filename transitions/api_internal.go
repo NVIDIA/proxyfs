@@ -684,7 +684,7 @@ func computeConfMapDelta(confMap conf.ConfMap) (newConfMapDelta *confMapDeltaStr
 		toStartServingVolumeList: make(map[string]*volumeStruct),
 	}
 
-	// Injest confMap
+	// Ingest confMap
 
 	whoAmI, err = confMap.FetchOptionValueString("Cluster", "WhoAmI")
 	if nil != err {
