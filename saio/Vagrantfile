@@ -14,6 +14,7 @@
 #     will collide in the contents of the $GOPATH/bin (only executables, not libraries)
 
 Vagrant.configure(2) do |config|
+  config.ssh.forward_agent = true
   config.vm.box = "centos-74-minimal-20171228"
   config.vm.box_url = "https://o.swiftstack.org/v1/AUTH_misc/vagrant_boxes/centos-74-minimal-20171228.box"
   config.vm.define "saiopfs" do |saiopfs|
