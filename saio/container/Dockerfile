@@ -111,7 +111,7 @@ WORKDIR /home/swift/swift
 RUN git checkout $SwiftVersion
 RUN pip install wheel
 RUN python setup.py bdist_wheel
-RUN pip install --no-binary cryptography -r requirements.txt
+RUN pip install --constraint py2-constraints.txt bandit==1.6.2 -r requirements.txt
 RUN python setup.py develop
 RUN pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
 RUN pip install -r test-requirements.txt
