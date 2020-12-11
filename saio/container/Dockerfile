@@ -111,11 +111,14 @@ WORKDIR /home/swift/swift
 RUN git checkout $SwiftVersion
 RUN pip install wheel
 RUN python setup.py bdist_wheel
-RUN yum remove python-greenlet
-RUN pip install --constraint py2-constraints.txt bandit==1.6.2 -r requirements.txt
+RUN yum remove -y python-greenlet
+RUN pip install --constraint py2-constraints.txt -r requirements.txt
 RUN python setup.py develop
+# The following avoid dependency on pip-installed pyOpenSSL being newer than required
 RUN pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
-RUN pip install -r test-requirements.txt
+# This is a temporary fix while bandit gets added to py2-constraints.txt
+RUN pip install bandit==1.6.2
+RUN pip install --constraint py2-constraints.txt -r test-requirements.txt
 
 # TODO: May need to do something about:
 #   systemctl enable memcached.service
