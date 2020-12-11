@@ -299,7 +299,7 @@ cd swift
 git checkout ss-release-2.26.0.5
 pip install wheel
 python setup.py bdist_wheel
-pip install --no-binary cryptography -r requirements.txt
+pip install --constraint py2-constraints.txt bandit==1.6.2 -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
 pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
