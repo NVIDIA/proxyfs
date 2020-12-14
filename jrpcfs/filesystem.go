@@ -1445,7 +1445,7 @@ func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 		leaseReleaseStartWG    sync.WaitGroup
 		mount                  *mountStruct
 		ok                     bool
-		volume                 *volumeStruct
+		// volume                 *volumeStruct
 	)
 
 	enterGate()
@@ -1463,9 +1463,9 @@ func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 	leaseReleaseStartWG.Add(1)
 	mount.armReleaseOfAllLeasesWhileLocked(&leaseReleaseStartWG, &leaseReleaseFinishedWG)
 
-	volume = mount.volume
-
 	logger.Warnf("jrpcfs.RpcUnmount(mount.mountIDAsString=%s) is being ignored...", mount.mountIDAsString)
+
+	// volume = mount.volume
 
 	// delete(volume.mountMapByMountIDAsByteArray, mount.mountIDAsByteArray)
 	// delete(volume.mountMapByMountIDAsString, mount.mountIDAsString)
