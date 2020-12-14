@@ -1138,24 +1138,17 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 		return
 	}
 
-	// Now truncate destInode & "append" each Element's extents to destInode (creating duplicate references to LogSegments for now)
+	// Now "append" each Element's extents to destInode (creating duplicate references to LogSegments for now)
 
 	destInodeExtentMap = destInode.payload.(sortedmap.BPlusTree)
 
 	destInode.dirty = true
 
-	err = setSizeInMemory(destInode, 0)
-	if nil != err {
-		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to truncate destInodeNumber 0x%016X: %v", destInodeNumber, err)
-		return
-	}
-
-	destInodeOffsetBeforeElementAppend = 0
-	destInode.NumWrites = 0
+	destInodeOffsetBeforeElementAppend = fileLen(destInodeExtentMap)
 
 	for _, element = range elements {
 		elementInode = inodeMap[element.ElementInodeNumber]
-		destInode.NumWrites += 1
+		destInode.NumWrites++
 		elementInodeExtentMap = elementInode.payload.(sortedmap.BPlusTree)
 		elementInodeExtentMapLen, err = elementInodeExtentMap.Len()
 		for elementInodeExtentMapIndex = 0; elementInodeExtentMapIndex < elementInodeExtentMapLen; elementInodeExtentMapIndex++ {

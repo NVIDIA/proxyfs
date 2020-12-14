@@ -48,6 +48,7 @@ func TestAPI(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"EventLog.Enabled=true",
 		"EventLog.BufferKey=9876",     // Don't conflict with a running instance
 		"EventLog.BufferLength=65536", // 64KiB

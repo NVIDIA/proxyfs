@@ -37,6 +37,7 @@ func TestViaNoAuthClient(t *testing.T) {
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
+			"FSGlobals.CoalesceElementChunkSize=16",
 			"Peer:Peer0.ReadCacheQuotaFraction=0.20",
 			"RamSwiftInfo.MaxAccountNameLength=256",
 			"RamSwiftInfo.MaxContainerNameLength=256",

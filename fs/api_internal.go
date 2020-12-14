@@ -1381,19 +1381,20 @@ func (vS *volumeStruct) MiddlewareCoalesce(destPath string, metaData []byte, ele
 	ino uint64, numWrites uint64, attrChangeTime uint64, modificationTime uint64, err error) {
 
 	var (
-		coalesceElementList      []*inode.CoalesceElement
-		coalesceElementListIndex int
-		coalesceSize             uint64
-		ctime                    time.Time
-		mtime                    time.Time
-		destFileInodeNumber      inode.InodeNumber
-		dirEntryBasename         string
-		dirEntryInodeNumber      inode.InodeNumber
-		dirInodeNumber           inode.InodeNumber
-		elementPath              string
-		heldLocks                *heldLocksStruct
-		retryRequired            bool
-		tryLockBackoffContext    *tryLockBackoffContextStruct
+		coalesceElementList          []*inode.CoalesceElement
+		coalesceSize                 uint64
+		ctime                        time.Time
+		destFileInodeNumber          inode.InodeNumber
+		dirEntryBasename             string
+		dirEntryInodeNumber          inode.InodeNumber
+		dirInodeNumber               inode.InodeNumber
+		elementPathIndex             int
+		elementPathIndexAtChunkEnd   int
+		elementPathIndexAtChunkStart int
+		heldLocks                    *heldLocksStruct
+		mtime                        time.Time
+		retryRequired                bool
+		tryLockBackoffContext        *tryLockBackoffContextStruct
 	)
 
 	startTime := time.Now()
@@ -1408,54 +1409,17 @@ func (vS *volumeStruct) MiddlewareCoalesce(destPath string, metaData []byte, ele
 	vS.jobRWMutex.RLock()
 	defer vS.jobRWMutex.RUnlock()
 
-	// Retry until done or failure (starting with ZERO backoff)
+	// First create the destination file if necessary and ensure that it is empty
 
 	tryLockBackoffContext = &tryLockBackoffContextStruct{}
 
-Restart:
-
-	// Perform backoff and update for each restart (starting with ZERO backoff of course)
+RestartDestinationFileCreation:
 
 	tryLockBackoffContext.backoff()
 
-	// Construct fresh heldLocks for this restart
-
 	heldLocks = newHeldLocks()
 
-	// Assemble WriteLock on each FileInode and their containing DirInode in elementPaths
-
-	coalesceElementList = make([]*inode.CoalesceElement, len(elementPaths))
-
-	for coalesceElementListIndex, elementPath = range elementPaths {
-		dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, _, retryRequired, err =
-			vS.resolvePath(
-				inode.RootDirInodeNumber,
-				elementPath,
-				heldLocks,
-				resolvePathFollowDirSymlinks|
-					resolvePathRequireExclusiveLockOnDirEntryInode|
-					resolvePathRequireExclusiveLockOnDirInode)
-
-		if nil != err {
-			heldLocks.free()
-			return
-		}
-
-		if retryRequired {
-			heldLocks.free()
-			goto Restart
-		}
-
-		// Record dirInode & dirEntryInode (fileInode) in elementList
-
-		coalesceElementList[coalesceElementListIndex] = &inode.CoalesceElement{
-			ContainingDirectoryInodeNumber: dirInodeNumber,
-			ElementInodeNumber:             dirEntryInodeNumber,
-			ElementName:                    dirEntryBasename,
-		}
-	}
-
-	_, dirEntryInodeNumber, _, _, retryRequired, err =
+	_, destFileInodeNumber, _, _, retryRequired, err =
 		vS.resolvePath(
 			inode.RootDirInodeNumber,
 			destPath,
@@ -1472,18 +1436,94 @@ Restart:
 
 	if retryRequired {
 		heldLocks.free()
-		goto Restart
+		goto RestartDestinationFileCreation
 	}
 
-	// Invoke package inode to actually perform the Coalesce operation
-
-	destFileInodeNumber = dirEntryInodeNumber
-	ctime, mtime, numWrites, coalesceSize, err = vS.inodeVolumeHandle.Coalesce(
-		destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
-
-	// We can now release all the WriteLocks we are currently holding
+	vS.inodeVolumeHandle.SetSize(destFileInodeNumber, 0)
 
 	heldLocks.free()
+
+	// Now setup for looping through elementPaths with fresh locks
+	// every globals.coalesceElementChunkSize elements holding an
+	// Exclusive Lock on each FileInode and their containing DirInode
+
+	elementPathIndexAtChunkStart = 0
+
+	for elementPathIndexAtChunkStart < len(elementPaths) {
+		elementPathIndexAtChunkEnd = elementPathIndexAtChunkStart + int(globals.coalesceElementChunkSize)
+		if elementPathIndexAtChunkEnd > len(elementPaths) {
+			elementPathIndexAtChunkEnd = len(elementPaths)
+		}
+
+		// Coalesce elementPaths[elementPathIndexAtChunkStart:elementPathIndexAtChunkEnd)
+
+		tryLockBackoffContext = &tryLockBackoffContextStruct{}
+
+	RestartCoalesceChunk:
+
+		tryLockBackoffContext.backoff()
+
+		heldLocks = newHeldLocks()
+
+		coalesceElementList = make([]*inode.CoalesceElement, 0, (elementPathIndexAtChunkEnd - elementPathIndexAtChunkStart))
+
+		for elementPathIndex = elementPathIndexAtChunkStart; elementPathIndex < elementPathIndexAtChunkEnd; elementPathIndex++ {
+			dirInodeNumber, dirEntryInodeNumber, dirEntryBasename, _, retryRequired, err =
+				vS.resolvePath(
+					inode.RootDirInodeNumber,
+					elementPaths[elementPathIndex],
+					heldLocks,
+					resolvePathFollowDirSymlinks|
+						resolvePathRequireExclusiveLockOnDirEntryInode|
+						resolvePathRequireExclusiveLockOnDirInode)
+
+			if nil != err {
+				heldLocks.free()
+				return
+			}
+
+			if retryRequired {
+				heldLocks.free()
+				goto RestartCoalesceChunk
+			}
+
+			coalesceElementList = append(coalesceElementList, &inode.CoalesceElement{
+				ContainingDirectoryInodeNumber: dirInodeNumber,
+				ElementInodeNumber:             dirEntryInodeNumber,
+				ElementName:                    dirEntryBasename,
+			})
+		}
+
+		_, destFileInodeNumber, _, _, retryRequired, err =
+			vS.resolvePath(
+				inode.RootDirInodeNumber,
+				destPath,
+				heldLocks,
+				resolvePathFollowDirEntrySymlinks|
+					resolvePathFollowDirSymlinks|
+					resolvePathRequireExclusiveLockOnDirEntryInode)
+
+		if nil != err {
+			heldLocks.free()
+			return
+		}
+
+		if retryRequired {
+			heldLocks.free()
+			goto RestartCoalesceChunk
+		}
+
+		ctime, mtime, numWrites, coalesceSize, err = vS.inodeVolumeHandle.Coalesce(
+			destFileInodeNumber, MiddlewareStream, metaData, coalesceElementList)
+
+		heldLocks.free()
+
+		if nil != err {
+			return
+		}
+
+		elementPathIndexAtChunkStart = elementPathIndexAtChunkEnd
+	}
 
 	// Regardless of err return, fill in other return values
 
