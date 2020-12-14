@@ -110,6 +110,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | TryLockBackoffMax                        | No           | 50ms               | Yes                      | No                           |
 |                                           | TryLockSerializationThreshhold           | No           | 5                  | Yes                      | No                           |
 |                                           | SymlinkMax                               | No           | 32                 | Yes                      | No                           |
+|                                           | CoalesceElementChunkSize                 | No           | 16                 | Yes                      | No                           |
 |                                           | InodeRecCacheEvictLowLimit               | Yes          |                    | Yes                      | No                           |
 |                                           | InodeRecCacheEvictHighLimit              | Yes          |                    | Yes                      | No                           |
 |                                           | LogSegmentRecCacheEvictLowLimit          | Yes          |                    | Yes                      | No                           |

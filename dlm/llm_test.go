@@ -96,6 +96,7 @@ func testSetup() (err error) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfMapStrings)

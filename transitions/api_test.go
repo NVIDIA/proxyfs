@@ -49,6 +49,7 @@ var testConfStrings = []string{
 	"FSGlobals.TryLockBackoffMax=50ms",
 	"FSGlobals.TryLockSerializationThreshhold=5",
 	"FSGlobals.SymlinkMax=32",
+	"FSGlobals.CoalesceElementChunkSize=16",
 	"Cluster.Peers=Peer0,Peer1,Peer2,Peer3",
 	"Cluster.WhoAmI=Peer0",
 	"Transitions.AutoVolumeGroupPrefix=V_",

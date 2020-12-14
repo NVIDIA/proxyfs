@@ -87,6 +87,7 @@ func TestAPI(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"FSGlobals.EtcdEnabled=false",
 
 		"Logging.LogFilePath=/dev/null",

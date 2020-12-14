@@ -79,6 +79,7 @@ func TestStatsAPIviaUDP(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"Stats.IPAddr=localhost",
 		"Stats.UDPPort=" + portString,
 		"Stats.BufferLength=1000",
