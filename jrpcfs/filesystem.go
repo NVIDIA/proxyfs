@@ -1465,11 +1465,13 @@ func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 
 	volume = mount.volume
 
-	delete(volume.mountMapByMountIDAsByteArray, mount.mountIDAsByteArray)
-	delete(volume.mountMapByMountIDAsString, mount.mountIDAsString)
+	logger.Warnf("jrpcfs.RpcUnmount(mount.mountIDAsString=%s) is being ignored...", mount.mountIDAsString)
 
-	delete(globals.mountMapByMountIDAsByteArray, mount.mountIDAsByteArray)
-	delete(globals.mountMapByMountIDAsString, mount.mountIDAsString)
+	// delete(volume.mountMapByMountIDAsByteArray, mount.mountIDAsByteArray)
+	// delete(volume.mountMapByMountIDAsString, mount.mountIDAsString)
+
+	// delete(globals.mountMapByMountIDAsByteArray, mount.mountIDAsByteArray)
+	// delete(globals.mountMapByMountIDAsString, mount.mountIDAsString)
 
 	globals.volumesLock.Unlock()
 
