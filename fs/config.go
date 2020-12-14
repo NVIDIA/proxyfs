@@ -57,6 +57,7 @@ type globalsStruct struct {
 	tryLockBackoffMax              time.Duration
 	tryLockSerializationThreshhold uint64
 	symlinkMax                     uint16
+	coalesceElementChunkSize       uint16
 
 	volumeMap map[string]*volumeStruct // key == volumeStruct.volumeName
 
@@ -207,6 +208,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.symlinkMax, err = confMap.FetchOptionValueUint16("FSGlobals", "SymlinkMax")
 	if nil != err {
 		globals.symlinkMax = 32 // TODO: Eventually, just return
+	}
+	globals.coalesceElementChunkSize, err = confMap.FetchOptionValueUint16("FSGlobbals", "CoalesceElementChunkSize")
+	if nil != err {
+		globals.coalesceElementChunkSize = 16 // TODO: Eventually, just return
 	}
 
 	globals.volumeMap = make(map[string]*volumeStruct)

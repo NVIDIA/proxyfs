@@ -34,6 +34,7 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
+			"FSGlobals.CoalesceElementChunkSize=16",
 			"EventLog.Enabled=true",
 			"EventLog.BufferKey=1234",
 			"EventLog.BufferLength=65536", //64KiB
@@ -57,6 +58,7 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
+			"FSGlobals.CoalesceElementChunkSize=16",
 			"EventLog.Enabled=false",
 		}
 	}
