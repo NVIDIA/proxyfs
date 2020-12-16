@@ -209,7 +209,7 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	if nil != err {
 		globals.symlinkMax = 32 // TODO: Eventually, just return
 	}
-	globals.coalesceElementChunkSize, err = confMap.FetchOptionValueUint16("FSGlobbals", "CoalesceElementChunkSize")
+	globals.coalesceElementChunkSize, err = confMap.FetchOptionValueUint16("FSGlobals", "CoalesceElementChunkSize")
 	if nil != err {
 		globals.coalesceElementChunkSize = 16 // TODO: Eventually, just return
 	}
