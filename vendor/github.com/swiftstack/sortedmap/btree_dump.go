@@ -1,6 +1,10 @@
 package sortedmap
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/swiftstack/cstruct"
+)
 
 func (tree *btreeTreeStruct) Dump() (err error) {
 	tree.Lock()
@@ -160,6 +164,167 @@ func (tree *btreeTreeStruct) dumpNode(node *btreeNodeStruct, indent string) (err
 	}
 
 	err = nil
+
+	return
+}
+
+func (tree *btreeTreeStruct) DumpRaw() (lines []string) {
+	lines = make([]string, 0)
+
+	lines = append(lines, fmt.Sprintf("B+Tree @ %p has Root Node @ %p", tree, tree.root))
+	lines = append(lines, fmt.Sprintf("  .minKeysPerNode = %v", tree.minKeysPerNode))
+	lines = append(lines, fmt.Sprintf("  .maxKeysPerNode = %v", tree.maxKeysPerNode))
+
+	lines = append(lines, tree.dumpRawNode(tree.root, "")...)
+
+	return
+}
+
+func (tree *btreeTreeStruct) dumpRawNode(node *btreeNodeStruct, indent string) (lines []string) {
+	var (
+		bytesConsumed         uint64
+		childNode             *btreeNodeStruct
+		err                   error
+		i                     uint64
+		key                   Key
+		keyAsString           string
+		nodeByteSlice         []byte
+		numKeysStruct         onDiskUint64Struct
+		onDiskNode            onDiskNodeStruct
+		onDiskReferenceToNode onDiskReferenceToNodeStruct
+		remainingPayload      []byte
+		value                 Value
+		valueAsString         string
+	)
+
+	lines = make([]string, 0)
+
+	lines = append(lines, fmt.Sprintf("%sNode @ %p", indent, node))
+	lines = append(lines, fmt.Sprintf("%s  .objectNumber   = %016X", indent, node.objectNumber))
+	lines = append(lines, fmt.Sprintf("%s  .objectOffset   = %016X", indent, node.objectOffset))
+	lines = append(lines, fmt.Sprintf("%s  .objectLength   = %016X", indent, node.objectLength))
+
+	nodeByteSlice, err = tree.BPlusTreeCallbacks.GetNode(node.objectNumber, node.objectOffset, node.objectLength)
+	if nil != err {
+		lines = append(lines, fmt.Sprintf("%s  UNABLE TO READ onDiskNode: %v", indent, err))
+		return
+	}
+
+	_, err = cstruct.Unpack(nodeByteSlice, &onDiskNode, OnDiskByteOrder)
+	if nil != err {
+		lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK onDiskNode: %v", indent, err))
+		return
+	}
+
+	lines = append(lines, fmt.Sprintf("%s  .items          = %016X", indent, onDiskNode.Items))
+	lines = append(lines, fmt.Sprintf("%s  .root           = %v", indent, onDiskNode.Root))
+	lines = append(lines, fmt.Sprintf("%s  .leaf           = %v", indent, onDiskNode.Leaf))
+
+	if onDiskNode.Root {
+		bytesConsumed, err = cstruct.Unpack(onDiskNode.Payload, &numKeysStruct, OnDiskByteOrder)
+		if nil != err {
+			lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK numKeysStruct (maxKeysPerNode): %v", indent, err))
+			return
+		}
+		remainingPayload = onDiskNode.Payload[bytesConsumed:]
+
+		lines = append(lines, fmt.Sprintf("%s  .maxKeysPerNode = %v", indent, numKeysStruct.U64))
+	} else {
+		remainingPayload = onDiskNode.Payload
+	}
+
+	bytesConsumed, err = cstruct.Unpack(remainingPayload, &numKeysStruct, OnDiskByteOrder)
+	if nil != err {
+		lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK numKeysStruct (# Keys): %v", indent, err))
+		return
+	}
+	remainingPayload = remainingPayload[bytesConsumed:]
+
+	if onDiskNode.Leaf {
+		for i = uint64(0); i < numKeysStruct.U64; i++ {
+			key, bytesConsumed, err = tree.BPlusTreeCallbacks.UnpackKey(remainingPayload)
+			if nil != err {
+				lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK key[%v]: %v", indent, i, err))
+				return
+			}
+			remainingPayload = remainingPayload[bytesConsumed:]
+
+			keyAsString, err = tree.DumpKey(key)
+			if nil == err {
+				lines = append(lines, fmt.Sprintf("%s  .key  [%016X] = %v", indent, i, keyAsString))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  .key  [%016X] UNKNOWN", indent, i))
+			}
+
+			value, bytesConsumed, err = tree.BPlusTreeCallbacks.UnpackValue(remainingPayload)
+			if nil != err {
+				lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK value[%v]: %v", indent, i, err))
+				return
+			}
+			remainingPayload = remainingPayload[bytesConsumed:]
+
+			valueAsString, err = tree.DumpValue(value)
+			if nil == err {
+				lines = append(lines, fmt.Sprintf("%s  .value[%016X] = %v", indent, i, valueAsString))
+			} else {
+				lines = append(lines, fmt.Sprintf("%s  .value[%016X] UNKNOWN", indent, i))
+			}
+		}
+	} else {
+		if uint64(0) < numKeysStruct.U64 {
+			bytesConsumed, err = cstruct.Unpack(remainingPayload, &onDiskReferenceToNode, OnDiskByteOrder)
+			if nil != err {
+				lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK value[%v]: %v", indent, i, err))
+				return
+			}
+			remainingPayload = remainingPayload[bytesConsumed:]
+
+			childNode = &btreeNodeStruct{
+				objectNumber: onDiskReferenceToNode.ObjectNumber,
+				objectOffset: onDiskReferenceToNode.ObjectOffset,
+				objectLength: onDiskReferenceToNode.ObjectLength,
+			}
+
+			lines = append(lines, tree.dumpRawNode(childNode, indent+"  ")...)
+
+			for i = uint64(1); i < numKeysStruct.U64; i++ {
+				key, bytesConsumed, err = tree.BPlusTreeCallbacks.UnpackKey(remainingPayload)
+				if nil != err {
+					lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK key[%v]: %v", indent, i, err))
+					return
+				}
+				remainingPayload = remainingPayload[bytesConsumed:]
+
+				keyAsString, err = tree.DumpKey(key)
+				if nil == err {
+					lines = append(lines, fmt.Sprintf("%s  .key  [%016X] = %v", indent, i, keyAsString))
+				} else {
+					lines = append(lines, fmt.Sprintf("%s  .key  [%016X] UNKNOWN", indent, i))
+				}
+
+				bytesConsumed, err = cstruct.Unpack(remainingPayload, &onDiskReferenceToNode, OnDiskByteOrder)
+				if nil != err {
+					lines = append(lines, fmt.Sprintf("%s  UNABLE TO UNPACK value[%v]: %v", indent, i, err))
+					return
+				}
+				remainingPayload = remainingPayload[bytesConsumed:]
+
+				childNode = &btreeNodeStruct{
+					objectNumber: onDiskReferenceToNode.ObjectNumber,
+					objectOffset: onDiskReferenceToNode.ObjectOffset,
+					objectLength: onDiskReferenceToNode.ObjectLength,
+				}
+
+				lines = append(lines, fmt.Sprintf("%s  .value[%016X] @ %p", indent, i, childNode))
+
+				lines = append(lines, tree.dumpRawNode(childNode, indent+"  ")...)
+			}
+		}
+	}
+
+	if 0 != len(remainingPayload) {
+		lines = append(lines, fmt.Sprintf("%s  LEN(remainingPayload) == %v (should have been zero)", indent))
+	}
 
 	return
 }

@@ -1046,6 +1046,16 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 		return
 	}
 
+	defer func() {
+		if nil != err {
+			logger.Errorf("Calling dirMapping.DumpRaw() due to error reading DirInode %016X: %v", dirInodeNumber, err)
+			dumpRawLines := dirMapping.DumpRaw()
+			for _, dumpRawLine := range dumpRawLines {
+				logger.Errorf("%s", dumpRawLine)
+			}
+		}
+	}()
+
 	dirMappingLen, err = dirMapping.Len()
 	if nil != err {
 		err = blunder.AddError(err, blunder.IOError)
