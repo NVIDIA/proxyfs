@@ -23,6 +23,7 @@ type BPlusTree interface {
 	TouchItem(thisItemIndexToTouch uint64) (nextItemIndexToTouch uint64, err error)
 	Prune() (err error)
 	Discard() (err error)
+	DumpRaw() (lines []string)
 }
 
 // BPlusTreeCallbacks specifies the interface to a set of callbacks provided by the client
