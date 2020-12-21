@@ -353,6 +353,41 @@ func (volume *volumeStruct) IndexedInodeNumber(index uint64) (inodeNumber uint64
 	return
 }
 
+func (volume *volumeStruct) NextInodeNumber(lastInodeNumber uint64) (nextInodeNumber uint64, ok bool, err error) {
+
+	startTime := time.Now()
+	defer func() {
+		globals.NextInodeNumberUsec.Add(uint64(time.Since(startTime) / time.Microsecond))
+		if err != nil {
+			globals.NextInodeNumberErrors.Add(1)
+		}
+	}()
+
+	if uint64(0xFFFFFFFFFFFFFFFF) == lastInodeNumber {
+		ok = false
+		return
+	}
+
+	volume.Lock()
+	index, _, err := volume.liveView.inodeRecWrapper.bPlusTree.BisectRight(lastInodeNumber + 1)
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	key, _, ok, err := volume.liveView.inodeRecWrapper.bPlusTree.GetByIndex(int(index))
+	if nil != err {
+		volume.Unlock()
+		return
+	}
+	volume.Unlock()
+
+	if ok {
+		nextInodeNumber = key.(uint64)
+	}
+
+	return
+}
+
 func (volume *volumeStruct) GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error) {
 
 	startTime := time.Now()

@@ -221,6 +221,7 @@ type globalsStruct struct {
 	PutInodeRecsBytes                  bucketstats.BucketLog2Round
 	DeleteInodeRecUsec                 bucketstats.BucketLog2Round
 	IndexedInodeNumberUsec             bucketstats.BucketLog2Round
+	NextInodeNumberUsec                bucketstats.BucketLog2Round
 	GetLogSegmentRecUsec               bucketstats.BucketLog2Round
 	PutLogSegmentRecUsec               bucketstats.BucketLog2Round
 	DeleteLogSegmentRecUsec            bucketstats.BucketLog2Round
@@ -275,6 +276,7 @@ type globalsStruct struct {
 	PutInodeRecsErrors                 bucketstats.Total
 	DeleteInodeRecErrors               bucketstats.Total
 	IndexedInodeNumberErrors           bucketstats.Total
+	NextInodeNumberErrors              bucketstats.Total
 	GetLogSegmentRecErrors             bucketstats.Total
 	PutLogSegmentRecErrors             bucketstats.Total
 	DeleteLogSegmentRecErrors          bucketstats.Total
