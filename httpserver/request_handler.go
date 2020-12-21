@@ -963,8 +963,6 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	return
 }
 
-// fs.	Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error)
-
 func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		err                 error
@@ -1001,9 +999,63 @@ func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, r
 }
 
 func doFindSubDirInodes(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
-	fmt.Printf("TODO: doFindSubDirInodes() called with requestState.startNonce == 0x%016X\n", requestState.startNonce)
+	var (
+		dirInodeNumber          inode.InodeNumber
+		dirInodeNumberAsUint64  uint64
+		err                     error
+		lastInodeNumberAsUint64 uint64
+		nextInodeNumberAsUint64 uint64
+		ok                      bool
+		subDirInodeNumber       inode.InodeNumber
+		subDirInodeNumbers      []inode.InodeNumber
+		subDirParentInodeNumber inode.InodeNumber
+	)
+
+	if 4 != requestState.numPathParts {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	dirInodeNumberAsUint64, err = strconv.ParseUint(requestState.pathSplit[4], 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	dirInodeNumber = inode.InodeNumber(dirInodeNumberAsUint64)
+
 	globals.Unlock()
-	responseWriter.WriteHeader(http.StatusNotFound)
+
+	subDirInodeNumbers = make([]inode.InodeNumber, 0)
+
+	lastInodeNumberAsUint64 = requestState.startNonce
+
+	for {
+		nextInodeNumberAsUint64, ok, err = requestState.volume.headhunterVolumeHandle.NextInodeNumber(lastInodeNumberAsUint64)
+		if nil != err {
+			logger.FatalfWithError(err, "Unexpected failure walking Inode Table")
+		}
+
+		if !ok {
+			break
+		}
+
+		subDirInodeNumber = inode.InodeNumber(nextInodeNumberAsUint64)
+
+		subDirParentInodeNumber, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, subDirInodeNumber, "..")
+		if (nil == err) && (subDirParentInodeNumber == dirInodeNumber) {
+			subDirInodeNumbers = append(subDirInodeNumbers, subDirInodeNumber)
+		}
+
+		lastInodeNumberAsUint64 = nextInodeNumberAsUint64
+	}
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	for _, subDirInodeNumber = range subDirInodeNumbers {
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("%016X\n", subDirInodeNumber)))
+	}
+
 	globals.Lock()
 }
 

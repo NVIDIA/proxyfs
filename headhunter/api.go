@@ -48,6 +48,7 @@ type VolumeHandle interface {
 	PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error)
 	DeleteInodeRec(inodeNumber uint64) (err error)
 	IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error)
+	NextInodeNumber(lastInodeNumber uint64) (nextInodeNumber uint64, ok bool, err error)
 	GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error)
 	PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error)
 	DeleteLogSegmentRec(logSegmentNumber uint64) (err error)
