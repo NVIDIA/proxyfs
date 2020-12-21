@@ -29,6 +29,17 @@ import (
 
 type httpRequestHandler struct{}
 
+type requestStateStruct struct {
+	pathSplit               []string
+	numPathParts            int
+	formatResponseAsJSON    bool
+	formatResponseCompactly bool
+	performValidation       bool
+	percentRange            string
+	startNonce              uint64
+	volume                  *volumeStruct
+}
+
 func serveHTTP() {
 	_ = http.Serve(globals.netListener, httpRequestHandler{})
 	globals.wg.Done()
@@ -44,6 +55,8 @@ func (h httpRequestHandler) ServeHTTP(responseWriter http.ResponseWriter, reques
 			doGet(responseWriter, request)
 		case http.MethodPost:
 			doPost(responseWriter, request)
+		case http.MethodPut:
+			doPut(responseWriter, request)
 		default:
 			responseWriter.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -692,16 +705,6 @@ func doGetOfTrigger(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
-type requestStateStruct struct {
-	pathSplit               []string
-	numPathParts            int
-	formatResponseAsJSON    bool
-	formatResponseCompactly bool
-	performValidation       bool
-	percentRange            string
-	volume                  *volumeStruct
-}
-
 func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	var (
 		acceptHeader            string
@@ -715,6 +718,8 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		percentRange            string
 		performValidation       bool
 		requestState            *requestStateStruct
+		startNonceAsString      string
+		startNonceAsUint64      uint64
 		volumeAsValue           sortedmap.Value
 		volumeList              []string
 		volumeListIndex         int
@@ -755,12 +760,14 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case 4:
 		// Form: /volume/<volume-name>/defrag/<basename>
 		// Form: /volume/<volume-name>/extent-map/<basename>
+		// Form: /volume/<volume-name>/find-subdir-inodes/<DirInodeNumberAs16HexDigits>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/meta-defrag/<BPlusTreeType>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
 	default:
 		// Form: /volume/<volume-name>/defrag/<dir>/.../<basename>
 		// Form: /volume/<volume-name>/extent-map/<dir>/.../<basename>
+		// Form: /volume/<volume-name>/find-dir-inode/<dir>/.../<basename>
 	}
 
 	acceptHeader = request.Header.Get("Accept")
@@ -814,6 +821,22 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		}
 	} else {
 		percentRange = "0-100"
+	}
+
+	paramList, ok = request.URL.Query()["start"]
+	if ok {
+		if 0 == len(paramList) {
+			startNonceAsUint64 = uint64(0)
+		} else {
+			startNonceAsString = paramList[0]
+			startNonceAsUint64, err = strconv.ParseUint(startNonceAsString, 16, 64)
+			if nil != err {
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		startNonceAsUint64 = uint64(0)
 	}
 
 	if 1 == numPathParts {
@@ -890,6 +913,7 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		formatResponseCompactly: formatResponseCompactly,
 		performValidation:       performValidation,
 		percentRange:            percentRange,
+		startNonce:              startNonceAsUint64,
 		volume:                  volumeAsValue.(*volumeStruct),
 	}
 
@@ -901,6 +925,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	switch pathSplit[3] {
 	case "defrag":
 		doDefrag(responseWriter, request, requestState)
+
+	case "find-dir-inode":
+		doFindDirInode(responseWriter, request, requestState)
+
+	case "find-subdir-inodes":
+		doFindSubDirInodes(responseWriter, request, requestState)
 
 	case "extent-map":
 		doExtentMap(responseWriter, request, requestState)
@@ -926,6 +956,50 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	return
+}
+
+// fs.	Lookup(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string) (inodeNumber inode.InodeNumber, err error)
+
+func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		err                 error
+		inodeNumberToReturn inode.InodeNumber
+		pathSplitIndex      int
+		pathSplitIndexMax   int
+	)
+
+	if 3 > requestState.numPathParts {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if "" == requestState.pathSplit[len(requestState.pathSplit)-1] {
+		pathSplitIndexMax = len(requestState.pathSplit) - 2
+	} else {
+		pathSplitIndexMax = len(requestState.pathSplit) - 1
+	}
+
+	inodeNumberToReturn = inode.RootDirInodeNumber
+
+	for pathSplitIndex = 4; pathSplitIndex <= pathSplitIndexMax; pathSplitIndex++ {
+		inodeNumberToReturn, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumberToReturn, requestState.pathSplit[pathSplitIndex])
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("%016X\n", inodeNumberToReturn)))
+}
+
+func doFindSubDirInodes(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	fmt.Printf("TODO: doFindSubDirInodes() called with requestState.startNonce == 0x%016X\n", requestState.startNonce)
+	globals.Unlock()
+	responseWriter.WriteHeader(http.StatusNotFound)
+	globals.Lock()
 }
 
 func doMetaDefrag(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
@@ -2059,4 +2133,79 @@ func markJobsCompletedIfNoLongerActiveWhileLocked(volume *volumeStruct) {
 		volume.scrubActiveJob.endTime = time.Now()
 		volume.scrubActiveJob = nil
 	}
+}
+
+func doPut(responseWriter http.ResponseWriter, request *http.Request) {
+	switch {
+	case strings.HasPrefix(request.URL.Path, "/volume"):
+		doPutOfVolume(responseWriter, request)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func doPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		err           error
+		numPathParts  int
+		ok            bool
+		pathSplit     []string
+		requestState  *requestStateStruct
+		volumeAsValue sortedmap.Value
+		volumeName    string
+	)
+
+	pathSplit = strings.Split(request.URL.Path, "/") // leading  "/" places "" in pathSplit[0]
+	//                                                  pathSplit[1] should be "volume" based on how we got here
+	//                                                  trailing "/" places "" in pathSplit[len(pathSplit)-1]
+
+	numPathParts = len(pathSplit) - 1
+	if "" == pathSplit[numPathParts] {
+		numPathParts--
+	}
+
+	if "volume" != pathSplit[1] {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	switch numPathParts {
+	case 4:
+		// Form: /volume/<volume-name>/replace-dir-entries/<DirInodeNumberAs16HexDigits>
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	volumeName = pathSplit[2]
+
+	volumeAsValue, ok, err = globals.volumeLLRB.GetByKey(volumeName)
+	if nil != err {
+		logger.Fatalf("HTTP Server Logic Error: %v", err)
+	}
+	if !ok {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	requestState = &requestStateStruct{
+		pathSplit:    pathSplit,
+		numPathParts: numPathParts,
+		volume:       volumeAsValue.(*volumeStruct),
+	}
+
+	switch pathSplit[3] {
+	case "replace-dir-entries":
+		doReplaceDirEntries(responseWriter, request, requestState)
+	default:
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	responseWriter.WriteHeader(http.StatusNoContent)
+}
+
+func doReplaceDirEntries(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	fmt.Printf("TODO: doReplaceDirEntries() called for volume: %s\n", requestState.volume.name)
+	responseWriter.WriteHeader(http.StatusNotFound)
 }
