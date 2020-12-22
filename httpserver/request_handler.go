@@ -966,10 +966,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
-		err                 error
-		inodeNumberToReturn inode.InodeNumber
-		pathSplitIndex      int
-		pathSplitIndexMax   int
+		parentDirEntryBasename string
+		dirInodeNumber         inode.InodeNumber
+		err                    error
+		parentDirInodeNumber   inode.InodeNumber
+		pathSplitIndex         int
+		pathSplitIndexMax      int
 	)
 
 	if 3 > requestState.numPathParts {
@@ -983,10 +985,15 @@ func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, r
 		pathSplitIndexMax = len(requestState.pathSplit) - 1
 	}
 
-	inodeNumberToReturn = inode.RootDirInodeNumber
+	parentDirInodeNumber = inode.RootDirInodeNumber
+	parentDirEntryBasename = "."
+	dirInodeNumber = inode.RootDirInodeNumber
 
 	for pathSplitIndex = 4; pathSplitIndex <= pathSplitIndexMax; pathSplitIndex++ {
-		inodeNumberToReturn, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inodeNumberToReturn, requestState.pathSplit[pathSplitIndex])
+		parentDirInodeNumber = dirInodeNumber
+		parentDirEntryBasename = requestState.pathSplit[pathSplitIndex]
+
+		dirInodeNumber, err = requestState.volume.fsVolumeHandle.Lookup(inode.InodeRootUserID, inode.InodeGroupID(0), nil, parentDirInodeNumber, parentDirEntryBasename)
 		if nil != err {
 			responseWriter.WriteHeader(http.StatusNotFound)
 			return
@@ -996,7 +1003,7 @@ func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, r
 	responseWriter.Header().Set("Content-Type", "text/plain")
 	responseWriter.WriteHeader(http.StatusOK)
 
-	_, _ = responseWriter.Write([]byte(fmt.Sprintf("%016X\n", inodeNumberToReturn)))
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("(%016X) %s => %016X\n", parentDirInodeNumber, parentDirEntryBasename, dirInodeNumber)))
 }
 
 func doFindSubDirInodes(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
@@ -2262,8 +2269,8 @@ func doPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	switch numPathParts {
-	case 4:
-		// Form: /volume/<volume-name>/replace-dir-entries/<DirInodeNumberAs16HexDigits>
+	case 3:
+		// Form: /volume/<volume-name>/replace-dir-entries
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
@@ -2281,9 +2288,7 @@ func doPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	requestState = &requestStateStruct{
-		pathSplit:    pathSplit,
-		numPathParts: numPathParts,
-		volume:       volumeAsValue.(*volumeStruct),
+		volume: volumeAsValue.(*volumeStruct),
 	}
 
 	switch pathSplit[3] {
@@ -2295,37 +2300,42 @@ func doPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 }
 
+// doReplaceDirEntries expects the instructions for how to replace a DirInode's directory entries
+// to be passed entirely in request.Body in the following form:
+//
+//   (<parentDirInodeNumber>) <parentDirEntryBasename> => <dirInodeNumber>
+//   <dirEntryInodeNumber A>
+//   <dirEntryInodeNumber B>
+//   ...
+//   <dirEntryInodeNumber Z>
+//
+// where each InodeNumber is a 16 Hex Digit string. The list should not include "." nor "..". If
+// successful, the DirInode's directory entries will be replaced by:
+//
+//   "."                                             => <dirInodeNumber>
+//   ".."                                            => <parentDirInodeNumber>
+//   <dirEntryInodeNumber A as 16 Hex Digits string> => <dirEntryInodeNumber A>
+//   <dirEntryInodeNumber B as 16 Hex Digits string> => <dirEntryInodeNumber B>
+//   ...
+//   <dirEntryInodeNumber Z as 16 Hex Digits string> => <dirEntryInodeNumber Z>
+//
+// In addition, the LinkCount for the DirInode will be properly set to 2 + the number of
+// dirEntryInodeNumber's that refer to subdirectories.
+//
 func doReplaceDirEntries(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
 	var (
 		dirEntryInodeNumber             inode.InodeNumber
-		dirEntryInodeNumberAsString     string
-		dirEntryInodeNumberAsUint64     uint64
-		dirEntryInodeNumbersAsByteSlice []byte
 		dirEntryInodeNumbers            []inode.InodeNumber
 		dirInodeNumber                  inode.InodeNumber
-		dirInodeNumberAsUint64          uint64
 		err                             error
+		inodeNumberAsUint64             uint64
+		maxNumberOfDirEntryInodeNumbers int
+		parentDirEntryBasename          string
+		parentDirInodeNumber            inode.InodeNumber
+		requestBody                     []byte
 	)
 
-	if 4 != requestState.numPathParts {
-		_, _ = ioutil.ReadAll(request.Body)
-		_ = request.Body.Close()
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	dirInodeNumberAsUint64, err = strconv.ParseUint(requestState.pathSplit[4], 16, 64)
-	if nil != err {
-		_, _ = ioutil.ReadAll(request.Body)
-		_ = request.Body.Close()
-		responseWriter.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	dirInodeNumber = inode.InodeNumber(dirInodeNumberAsUint64)
-
-	dirEntryInodeNumbers = make([]inode.InodeNumber, 0)
-
-	dirEntryInodeNumbersAsByteSlice, err = ioutil.ReadAll(request.Body)
+	requestBody, err = ioutil.ReadAll(request.Body)
 	if nil != err {
 		_ = request.Body.Close()
 		responseWriter.WriteHeader(http.StatusBadRequest)
@@ -2338,27 +2348,69 @@ func doReplaceDirEntries(responseWriter http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	if 0 != (len(dirEntryInodeNumbersAsByteSlice) % 16) {
+	// Parse parentDirInodeNumber first since it is in a fixed location
+
+	if (24 > len(requestBody)) || ('(' != requestBody[0]) || (')' != requestBody[17]) || (' ' != requestBody[18]) {
 		responseWriter.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	for 0 < len(dirEntryInodeNumbersAsByteSlice) {
-		dirEntryInodeNumberAsString = string(dirEntryInodeNumbersAsByteSlice[:16])
-		dirEntryInodeNumbersAsByteSlice = dirEntryInodeNumbersAsByteSlice[16:]
+	inodeNumberAsUint64, err = strconv.ParseUint(string(requestBody[1:17]), 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
-		dirEntryInodeNumberAsUint64, err = strconv.ParseUint(dirEntryInodeNumberAsString, 16, 64)
-		if nil != err {
-			_ = request.Body.Close()
+	parentDirInodeNumber = inode.InodeNumber(inodeNumberAsUint64)
+
+	requestBody = requestBody[19:]
+
+	// Parse backwards reading dirEntryInodeNumbers until hitting one preceeded by " => "
+
+	maxNumberOfDirEntryInodeNumbers = (len(requestBody) + 15) / 16
+	dirEntryInodeNumbers = make([]inode.InodeNumber, 0, maxNumberOfDirEntryInodeNumbers)
+
+	for {
+		if 21 > len(requestBody) {
 			responseWriter.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		dirEntryInodeNumber = inode.InodeNumber(dirEntryInodeNumberAsUint64)
 
+		if " => " == string(requestBody[len(requestBody)-20:len(requestBody)-16]) {
+			break
+		}
+
+		inodeNumberAsUint64, err = strconv.ParseUint(string(requestBody[len(requestBody)-16:]), 16, 64)
+		if nil != err {
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		dirEntryInodeNumber = inode.InodeNumber(inodeNumberAsUint64)
 		dirEntryInodeNumbers = append(dirEntryInodeNumbers, dirEntryInodeNumber)
+
+		requestBody = requestBody[:len(requestBody)-16]
 	}
 
-	err = requestState.volume.inodeVolumeHandle.ReplaceDirEntries(dirInodeNumber, dirEntryInodeNumbers)
+	// Parse dirInodeNumber
+
+	inodeNumberAsUint64, err = strconv.ParseUint(string(requestBody[len(requestBody)-16:]), 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	dirInodeNumber = inode.InodeNumber(inodeNumberAsUint64)
+
+	requestBody = requestBody[:len(requestBody)-20]
+
+	// What remains is parentDirEntryBasename
+
+	parentDirEntryBasename = string(requestBody[:])
+
+	// Now we can finally proceed
+
+	err = requestState.volume.inodeVolumeHandle.ReplaceDirEntries(parentDirInodeNumber, parentDirEntryBasename, dirInodeNumber, dirEntryInodeNumbers)
 	if nil == err {
 		responseWriter.WriteHeader(http.StatusCreated)
 	} else {
