@@ -1191,3 +1191,30 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	err = nil
 	return
 }
+
+func (vS *volumeStruct) ReplaceDirEntries(dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error) {
+	var (
+		dirEntryInodeNumber       InodeNumber
+		dirEntryInodeNumbersIndex int
+		snapShotIDType            headhunter.SnapShotIDType
+	)
+
+	fmt.Printf("TODO: inode.ReplaceDirEntries() called for volume: %s\n", vS.volumeName)
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("ReplaceDirEntries(dirInodeNumber==0x%016X,) not allowed for snapShotIDType == %v", dirInodeNumber, snapShotIDType)
+		return
+	}
+
+	for dirEntryInodeNumbersIndex, dirEntryInodeNumber = range dirEntryInodeNumbers {
+		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirEntryInodeNumber))
+		if headhunter.SnapShotIDTypeLive != snapShotIDType {
+			err = fmt.Errorf("ReplaceDirEntries(,dirEntryInodeNumbers[%v]==0x%016X) not allowed for snapShotIDType == %v", dirEntryInodeNumbersIndex, dirEntryInodeNumbers, snapShotIDType)
+			return
+		}
+	}
+
+	err = nil
+	return
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/http/pprof"
@@ -2253,11 +2254,75 @@ func doPutOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		responseWriter.WriteHeader(http.StatusNotFound)
 		return
 	}
-
-	responseWriter.WriteHeader(http.StatusNoContent)
 }
 
 func doReplaceDirEntries(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
-	fmt.Printf("TODO: doReplaceDirEntries() called for volume: %s\n", requestState.volume.name)
-	responseWriter.WriteHeader(http.StatusNotFound)
+	var (
+		dirEntryInodeNumber             inode.InodeNumber
+		dirEntryInodeNumberAsString     string
+		dirEntryInodeNumberAsUint64     uint64
+		dirEntryInodeNumbersAsByteSlice []byte
+		dirEntryInodeNumbers            []inode.InodeNumber
+		dirInodeNumber                  inode.InodeNumber
+		dirInodeNumberAsUint64          uint64
+		err                             error
+	)
+
+	if 4 != requestState.numPathParts {
+		_, _ = ioutil.ReadAll(request.Body)
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	dirInodeNumberAsUint64, err = strconv.ParseUint(requestState.pathSplit[4], 16, 64)
+	if nil != err {
+		_, _ = ioutil.ReadAll(request.Body)
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	dirInodeNumber = inode.InodeNumber(dirInodeNumberAsUint64)
+
+	dirEntryInodeNumbers = make([]inode.InodeNumber, 0)
+
+	dirEntryInodeNumbersAsByteSlice, err = ioutil.ReadAll(request.Body)
+	if nil != err {
+		_ = request.Body.Close()
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = request.Body.Close()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if 0 != (len(dirEntryInodeNumbersAsByteSlice) % 16) {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for 0 < len(dirEntryInodeNumbersAsByteSlice) {
+		dirEntryInodeNumberAsString = string(dirEntryInodeNumbersAsByteSlice[:16])
+		dirEntryInodeNumbersAsByteSlice = dirEntryInodeNumbersAsByteSlice[16:]
+
+		dirEntryInodeNumberAsUint64, err = strconv.ParseUint(dirEntryInodeNumberAsString, 16, 64)
+		if nil != err {
+			_ = request.Body.Close()
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		dirEntryInodeNumber = inode.InodeNumber(dirEntryInodeNumberAsUint64)
+
+		dirEntryInodeNumbers = append(dirEntryInodeNumbers, dirEntryInodeNumber)
+	}
+
+	err = requestState.volume.inodeVolumeHandle.ReplaceDirEntries(dirInodeNumber, dirEntryInodeNumbers)
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
 }
