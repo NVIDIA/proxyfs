@@ -370,7 +370,7 @@ func (vS *volumeStruct) Unlink(dirInodeNumber InodeNumber, basename string, remo
 		return
 	}
 
-	untargetInodeNumber, err = vS.lookup(dirInodeNumber, basename)
+	untargetInodeNumber, err = vS.lookupByDirInodeNumber(dirInodeNumber, basename)
 	if nil != err {
 		err = blunder.AddError(err, blunder.NotFoundError)
 		return
@@ -664,7 +664,39 @@ func (vS *volumeStruct) Move(srcDirInodeNumber InodeNumber, srcBasename string, 
 	return
 }
 
-func (vS *volumeStruct) lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
+func (vS *volumeStruct) lookupByDirInode(dirInode *inMemoryInodeStruct, basename string) (targetInodeNumber InodeNumber, err error) {
+	var (
+		dirInodeSnapShotID uint64
+		dirMapping         sortedmap.BPlusTree
+		ok                 bool
+		value              sortedmap.Value
+	)
+
+	_, dirInodeSnapShotID, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInode.InodeNumber))
+
+	dirMapping = dirInode.payload.(sortedmap.BPlusTree)
+	value, ok, err = dirMapping.GetByKey(basename)
+	if nil != err {
+		panic(err)
+	}
+	if !ok {
+		err = fmt.Errorf("unable to find basename %v in dirInode @ %p", basename, dirInode)
+		// There are cases where failing to find an inode is not an error.
+		// Not logging any errors here; let the caller decide if this is log-worthy
+		err = blunder.AddError(err, blunder.NotFoundError)
+		return
+	}
+	targetInodeNumber, ok = value.(InodeNumber)
+	if !ok {
+		err = fmt.Errorf("dirMapping for basename %v in dirInode @ %p not an InodeNumber", basename, dirInode)
+		panic(err)
+	}
+	targetInodeNumber = InodeNumber(vS.headhunterVolumeHandle.SnapShotIDAndNonceEncode(dirInodeSnapShotID, uint64(targetInodeNumber)))
+
+	return
+}
+
+func (vS *volumeStruct) lookupByDirInodeNumber(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
 	var (
 		dirInode               *inMemoryInodeStruct
 		dirInodeNonce          uint64
@@ -755,7 +787,7 @@ func (vS *volumeStruct) lookup(dirInodeNumber InodeNumber, basename string) (tar
 func (vS *volumeStruct) Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error) {
 	stats.IncrementOperations(&stats.DirLookupOps)
 
-	targetInodeNumber, err = vS.lookup(dirInodeNumber, basename)
+	targetInodeNumber, err = vS.lookupByDirInodeNumber(dirInodeNumber, basename)
 
 	return
 }
@@ -1205,28 +1237,81 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	return
 }
 
-func (vS *volumeStruct) ReplaceDirEntries(dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error) {
+func (vS *volumeStruct) ReplaceDirEntries(parentDirInodeNumber InodeNumber, parentDirEntryBasename string, dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error) {
 	var (
 		dirEntryInodeNumber       InodeNumber
-		dirEntryInodeNumbersIndex int
+		dirEntryIndex             int
+		dirEntryInode             *inMemoryInodeStruct
+		dirEntryInodes            []*inMemoryInodeStruct
+		dirInode                  *inMemoryInodeStruct
+		dirLinkCount              uint64
+		ok                        bool
+		parentDirEntryInodeNumber InodeNumber
+		parentDirInode            *inMemoryInodeStruct
 		snapShotIDType            headhunter.SnapShotIDType
 	)
 
 	fmt.Printf("TODO: inode.ReplaceDirEntries() called for volume: %s\n", vS.volumeName)
 
-	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(parentDirInodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
-		err = fmt.Errorf("ReplaceDirEntries(dirInodeNumber==0x%016X,) not allowed for snapShotIDType == %v", dirInodeNumber, snapShotIDType)
+		err = fmt.Errorf("ReplaceDirEntries(parentDirInodeNumber==0x%016X,,) not allowed for snapShotIDType == %v", parentDirInodeNumber, snapShotIDType)
 		return
 	}
 
-	for dirEntryInodeNumbersIndex, dirEntryInodeNumber = range dirEntryInodeNumbers {
+	parentDirInode, err = vS.fetchInodeType(parentDirInodeNumber, DirType)
+	if nil != err {
+		err = fmt.Errorf("ReplaceDirEntries() cannot find parentDirInodeNumber==0x%016X: %v", parentDirInodeNumber, err)
+		return
+	}
+
+	parentDirEntryInodeNumber, err = vS.lookupByDirInode(parentDirInode, parentDirEntryBasename)
+	if nil != err {
+		err = fmt.Errorf("ReplaceDirEntries() lookup in parentDirInodeNumber==0x%016X at basename=\"%s\" failed: %v", parentDirInodeNumber, parentDirEntryBasename, err)
+		return
+	}
+	if parentDirEntryInodeNumber != dirInodeNumber {
+		err = fmt.Errorf("ReplaceDirEntries() lookup in parentDirInodeNumber==0x%016X at basename=\"%s\" returned unexpected parentDirEntryInodeNumber (0x%016X)... expected dirInodeNumber (0x%016X)", parentDirInodeNumber, parentDirEntryBasename, parentDirEntryInodeNumber, dirInodeNumber)
+		return
+	}
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("ReplaceDirEntries(,dirInodeNumber==0x%016X,) not allowed for snapShotIDType == %v", dirInodeNumber, snapShotIDType)
+		return
+	}
+
+	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
+	if nil != err {
+		err = fmt.Errorf("ReplaceDirEntries() cannot find dirInodeNumber==0x%016X: %v", dirInodeNumber, err)
+		return
+	}
+
+	dirEntryInodes = make([]*inMemoryInodeStruct, len(dirEntryInodeNumbers))
+
+	for dirEntryIndex, dirEntryInodeNumber = range dirEntryInodeNumbers {
 		snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirEntryInodeNumber))
 		if headhunter.SnapShotIDTypeLive != snapShotIDType {
-			err = fmt.Errorf("ReplaceDirEntries(,dirEntryInodeNumbers[%v]==0x%016X) not allowed for snapShotIDType == %v", dirEntryInodeNumbersIndex, dirEntryInodeNumbers, snapShotIDType)
+			err = fmt.Errorf("ReplaceDirEntries(,,dirEntryInodeNumbers[%v]==0x%016X) not allowed for snapShotIDType == %v", dirEntryIndex, dirEntryInodeNumber, snapShotIDType)
+			return
+		}
+
+		dirEntryInodes[dirEntryIndex], ok, err = vS.fetchInode(dirEntryInodeNumber)
+		if (nil != err) || !ok {
+			err = fmt.Errorf("ReplaceDirEntries() cannot find dirEntryInodeNumbers[%v]==0x%016X: %v", dirEntryIndex, dirInodeNumber, err)
 			return
 		}
 	}
+
+	dirLinkCount = 2
+
+	for _, dirEntryInode = range dirEntryInodes {
+		if DirType == dirEntryInode.InodeType {
+			dirLinkCount++
+		}
+	}
+
+	fmt.Printf("UNDO dirLinkCount=%v dirInode.onDiskInodeV1Struct.LinkCount=%v\n", dirLinkCount, dirInode.onDiskInodeV1Struct.LinkCount)
 
 	err = nil
 	return

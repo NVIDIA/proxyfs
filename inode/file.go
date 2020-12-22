@@ -1123,7 +1123,7 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 			return
 		}
 
-		dirEntryInodeNumber, err = vS.lookup(element.ContainingDirectoryInodeNumber, element.ElementName)
+		dirEntryInodeNumber, err = vS.lookupByDirInodeNumber(element.ContainingDirectoryInodeNumber, element.ElementName)
 		if nil != err {
 			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() called for ElementName %s not found in ContainingDir 0x%016X: %v", element.ElementName, element.ContainingDirectoryInodeNumber, err)
 			return
