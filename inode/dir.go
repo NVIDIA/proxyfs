@@ -141,7 +141,6 @@ func linkInMemory(dirInode *inMemoryInodeStruct, targetInode *inMemoryInodeStruc
 
 // Insert-only version of linkInMemory()
 func linkInMemoryInsertOnly(dirInode *inMemoryInodeStruct, basename string, targetInodeNumber InodeNumber) (err error) {
-	// TODO
 	dirInode.dirty = true
 
 	dirMapping := dirInode.payload.(sortedmap.BPlusTree)
@@ -1239,19 +1238,19 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 
 func (vS *volumeStruct) ReplaceDirEntries(parentDirInodeNumber InodeNumber, parentDirEntryBasename string, dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error) {
 	var (
+		dirEntryBasename          string
 		dirEntryInodeNumber       InodeNumber
 		dirEntryIndex             int
 		dirEntryInode             *inMemoryInodeStruct
 		dirEntryInodes            []*inMemoryInodeStruct
 		dirInode                  *inMemoryInodeStruct
 		dirLinkCount              uint64
+		dirMapping                sortedmap.BPlusTree
 		ok                        bool
 		parentDirEntryInodeNumber InodeNumber
 		parentDirInode            *inMemoryInodeStruct
 		snapShotIDType            headhunter.SnapShotIDType
 	)
-
-	fmt.Printf("TODO: inode.ReplaceDirEntries() called for volume: %s\n", vS.volumeName)
 
 	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(parentDirInodeNumber))
 	if headhunter.SnapShotIDTypeLive != snapShotIDType {
@@ -1303,16 +1302,39 @@ func (vS *volumeStruct) ReplaceDirEntries(parentDirInodeNumber InodeNumber, pare
 		}
 	}
 
+	dirMapping = sortedmap.NewBPlusTree(vS.maxEntriesPerDirNode, sortedmap.CompareString, &dirInodeCallbacks{treeNodeLoadable{inode: dirInode}}, globals.dirEntryCache)
+
+	ok, err = dirMapping.Put(".", dirInodeNumber)
+	if (nil != err) || !ok {
+		panic(err)
+	}
+
+	ok, err = dirMapping.Put("..", parentDirInodeNumber)
+	if (nil != err) || !ok {
+		panic(err)
+	}
+
 	dirLinkCount = 2
 
 	for _, dirEntryInode = range dirEntryInodes {
+		dirEntryBasename = fmt.Sprintf("%016X", dirEntryInode.InodeNumber)
+
+		ok, err = dirMapping.Put(dirEntryBasename, dirEntryInode.InodeNumber)
+		if (nil != err) || !ok {
+			panic(err)
+		}
+
 		if DirType == dirEntryInode.InodeType {
 			dirLinkCount++
 		}
 	}
 
-	fmt.Printf("UNDO dirLinkCount=%v dirInode.onDiskInodeV1Struct.LinkCount=%v\n", dirLinkCount, dirInode.onDiskInodeV1Struct.LinkCount)
+	dirInode.payload = dirMapping
+	dirInode.onDiskInodeV1Struct.LinkCount = dirLinkCount
 
-	err = nil
+	dirInode.dirty = true
+
+	err = vS.flushInode(dirInode)
+
 	return
 }
