@@ -178,6 +178,48 @@ func enforceRWMode(enforceNoWriteMode bool) (err error) {
 	return
 }
 
+func (vS *volumeStruct) FetchOnDiskInode(inodeNumber InodeNumber) (corruptionDetected CorruptionDetected, version Version, onDiskInode []byte, err error) {
+	var (
+		bytesConsumedByCorruptionDetected uint64
+		bytesConsumedByVersion            uint64
+		inodeRec                          []byte
+		ok                                bool
+	)
+
+	corruptionDetected = CorruptionDetected(false)
+	version = Version(0)
+	onDiskInode = make([]byte, 0)
+
+	inodeRec, ok, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
+	if nil != err {
+		err = fmt.Errorf("headhunter.GetInodeRec() failed: %v", err)
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("headhunter.GetInodeRec() returned !ok")
+		return
+	}
+
+	bytesConsumedByCorruptionDetected, err = cstruct.Unpack(inodeRec, &corruptionDetected, cstruct.LittleEndian)
+	if nil != err {
+		err = fmt.Errorf("cstruct.Unpack(,&corruptionDetected,) failed: %v", err)
+		return
+	}
+	if corruptionDetected {
+		return
+	}
+
+	bytesConsumedByVersion, err = cstruct.Unpack(inodeRec[bytesConsumedByCorruptionDetected:], &version, cstruct.LittleEndian)
+	if nil != err {
+		err = fmt.Errorf("cstruct.Unpack(,&version,) failed: %v", err)
+		return
+	}
+
+	onDiskInode = inodeRec[bytesConsumedByCorruptionDetected+bytesConsumedByVersion:]
+
+	return
+}
+
 func (vS *volumeStruct) fetchOnDiskInode(inodeNumber InodeNumber) (inMemoryInode *inMemoryInodeStruct, ok bool, err error) {
 	var (
 		bytesConsumedByCorruptionDetected uint64
