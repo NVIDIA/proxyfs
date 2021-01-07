@@ -3464,19 +3464,18 @@ Restart:
 		}
 
 		statEntries[dirEntryIndex], err = vS.getstatHelperWhileLocked(dirEntries[dirEntryIndex].InodeNumber)
-		if nil != err {
-			internalErr = inodeLock.Unlock()
-			if nil != internalErr {
-				logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
-			}
-			return
-		}
-
-		dirEntries[dirEntryIndex].Type = inode.InodeType(statEntries[dirEntryIndex][StatFType])
 
 		internalErr = inodeLock.Unlock()
 		if nil != internalErr {
 			logger.Fatalf("Failure unlocking a held LockID %s: %v", inodeLock.LockID, internalErr)
+		}
+
+		if nil == err {
+			dirEntries[dirEntryIndex].Type = inode.InodeType(statEntries[dirEntryIndex][StatFType])
+		} else {
+			logger.ErrorfWithError(err, "fs.readdirHelper(,,,inodeNumber:0x%016X,,...) couldn't `stat` %s:0x%016X... defaulting .Type to inode.DirType", inodeNumber, dirEntries[dirEntryIndex].Basename, dirEntries[dirEntryIndex].InodeNumber)
+			dirEntries[dirEntryIndex].Type = inode.DirType
+			err = nil
 		}
 	}
 

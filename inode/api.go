@@ -209,6 +209,7 @@ type VolumeHandle interface {
 	GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error)
 	PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error)
 	DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error)
+	FetchOnDiskInode(inodeNumber InodeNumber) (corruptionDetected CorruptionDetected, version Version, onDiskInode []byte, err error)
 	FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error)
 	FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
 	Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error)

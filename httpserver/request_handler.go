@@ -761,6 +761,8 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case 4:
 		// Form: /volume/<volume-name>/defrag/<basename>
 		// Form: /volume/<volume-name>/extent-map/<basename>
+		// Form: /volume/<volume-name>/fetch-ondisk-inode/<InodeNumberAs16HexDigits>
+		// Form: /volume/<volume-name>/fetch-ondisk-metadata-object/<ObjectNumberAs16HexDigits>
 		// Form: /volume/<volume-name>/find-subdir-inodes/<DirInodeNumberAs16HexDigits>
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/meta-defrag/<BPlusTreeType>
@@ -927,6 +929,12 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	case "defrag":
 		doDefrag(responseWriter, request, requestState)
 
+	case "fetch-ondisk-inode":
+		doFetchOnDiskInode(responseWriter, request, requestState)
+
+	case "fetch-ondisk-metadata-object":
+		doFetchOnDiskMetaDataObject(responseWriter, request, requestState)
+
 	case "find-dir-inode":
 		doFindDirInode(responseWriter, request, requestState)
 
@@ -957,6 +965,101 @@ func doGetOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	}
 
 	return
+}
+
+func doFetchOnDiskInode(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		corruptionDetected  inode.CorruptionDetected
+		err                 error
+		inodeNumber         inode.InodeNumber
+		inodeNumberAsUint64 uint64
+		onDiskInode         []byte
+		version             inode.Version
+	)
+
+	if 4 != requestState.numPathParts {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	inodeNumberAsUint64, err = strconv.ParseUint(requestState.pathSplit[4], 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+	inodeNumber = inode.InodeNumber(inodeNumberAsUint64)
+
+	corruptionDetected, version, onDiskInode, err = requestState.volume.inodeVolumeHandle.FetchOnDiskInode(inodeNumber)
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusOK)
+	} else {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("               err: %v\n", err)))
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("\n")))
+	}
+
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("corruptionDetected: %v\n", corruptionDetected)))
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("           version: %v\n", version)))
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("\n")))
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf("       onDiskInode: %s\n", string(onDiskInode[:]))))
+}
+
+func doFetchOnDiskMetaDataObject(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
+	var (
+		bytesThisLine        uint64
+		err                  error
+		objectOffset         uint64
+		objectNumber         uint64
+		onDiskMetaDataObject []byte
+	)
+
+	if 4 != requestState.numPathParts {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	objectNumber, err = strconv.ParseUint(requestState.pathSplit[4], 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	onDiskMetaDataObject, err = requestState.volume.headhunterVolumeHandle.GetBPlusTreeObject(objectNumber)
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusOK)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("len(onDiskMetaDataObject): 0x%08X\n", len(onDiskMetaDataObject))))
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("\n")))
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("onDiskMetaDataObject:\n")))
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("\n")))
+
+		objectOffset = 0
+
+		for objectOffset < uint64(len(onDiskMetaDataObject)) {
+			_, _ = responseWriter.Write([]byte(fmt.Sprintf("%08X: ", objectOffset)))
+
+			bytesThisLine = 0
+
+			for (bytesThisLine < 16) && (objectOffset < uint64(len(onDiskMetaDataObject))) {
+				_, _ = responseWriter.Write([]byte(fmt.Sprintf(" %02X", onDiskMetaDataObject[objectOffset])))
+				bytesThisLine++
+				objectOffset++
+			}
+
+			_, _ = responseWriter.Write([]byte(fmt.Sprintf("\n")))
+		}
+	} else {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("%v\n", err)))
+	}
 }
 
 func doFindDirInode(responseWriter http.ResponseWriter, request *http.Request, requestState *requestStateStruct) {
