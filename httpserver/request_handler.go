@@ -1995,6 +1995,9 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 		// Form: /volume/<volume-name>/fsck-job
 		// Form: /volume/<volume-name>/scrub-job
 		// Form: /volume/<volume-name>/snapshot
+		// Form: /volume/<volume-name>/patch-dir-inode
+		// Form: /volume/<volume-name>/patch-file-inode
+		// Form: /volume/<volume-name>/patch-symlink-inode
 	case 4:
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
@@ -2026,6 +2029,27 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			return
 		}
 		doPostOfSnapShot(responseWriter, request, volume)
+		return
+	case "patch-dir-inode":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfPatchDirInode(responseWriter, request, volume)
+		return
+	case "patch-file-inode":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfPatchFileInode(responseWriter, request, volume)
+		return
+	case "patch-symlink-inode":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfPatchSymlinkInode(responseWriter, request, volume)
 		return
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -2208,6 +2232,178 @@ func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request,
 		responseWriter.WriteHeader(http.StatusCreated)
 	} else {
 		responseWriter.WriteHeader(http.StatusConflict)
+	}
+}
+
+func doPostOfPatchDirInode(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	var (
+		err                       error
+		inodeNumberAsString       string
+		inodeNumberAsUint64       uint64
+		parentInodeNumberAsString string
+		parentInodeNumberAsUint64 uint64
+	)
+
+	err = request.ParseForm()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	inodeNumberAsString = request.Form.Get("inodeNumber")
+	if "" == inodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	parentInodeNumberAsString = request.Form.Get("inodeNumber")
+	if "" == parentInodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	parentInodeNumberAsUint64, err = strconv.ParseUint(parentInodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = volume.inodeVolumeHandle.PatchInode(
+		inode.InodeNumber(inodeNumberAsUint64),
+		inode.DirType,
+		uint64(2),
+		inode.PosixModePerm,
+		inode.InodeRootUserID,
+		inode.InodeGroupID(0),
+		inode.InodeNumber(parentInodeNumberAsUint64),
+		"")
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("err: %v\n", err)))
+	}
+}
+
+func doPostOfPatchFileInode(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	var (
+		err                 error
+		inodeNumberAsString string
+		inodeNumberAsUint64 uint64
+		linkCountAsString   string
+		linkCountAsUint64   uint64
+	)
+
+	err = request.ParseForm()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	inodeNumberAsString = request.Form.Get("inodeNumber")
+	if "" == inodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	linkCountAsString = request.Form.Get("linkCount")
+	if "" == linkCountAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	linkCountAsUint64, err = strconv.ParseUint(linkCountAsString, 10, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = volume.inodeVolumeHandle.PatchInode(
+		inode.InodeNumber(inodeNumberAsUint64),
+		inode.FileType,
+		linkCountAsUint64,
+		inode.PosixModePerm,
+		inode.InodeRootUserID,
+		inode.InodeGroupID(0),
+		inode.InodeNumber(0),
+		"")
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("err: %v\n", err)))
+	}
+}
+
+func doPostOfPatchSymlinkInode(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	var (
+		err                 error
+		inodeNumberAsString string
+		inodeNumberAsUint64 uint64
+		linkCountAsString   string
+		linkCountAsUint64   uint64
+		symlinkTarget       string
+	)
+
+	err = request.ParseForm()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	inodeNumberAsString = request.Form.Get("inodeNumber")
+	if "" == inodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	inodeNumberAsUint64, err = strconv.ParseUint(inodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	linkCountAsString = request.Form.Get("linkCount")
+	if "" == linkCountAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	linkCountAsUint64, err = strconv.ParseUint(linkCountAsString, 10, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	symlinkTarget = request.Form.Get("symlinkTarget")
+	if "" == symlinkTarget {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = volume.inodeVolumeHandle.PatchInode(
+		inode.InodeNumber(inodeNumberAsUint64),
+		inode.SymlinkType,
+		linkCountAsUint64,
+		inode.PosixModePerm,
+		inode.InodeRootUserID,
+		inode.InodeGroupID(0),
+		inode.InodeNumber(0),
+		symlinkTarget)
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusInternalServerError)
+
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("err: %v\n", err)))
 	}
 }
 
