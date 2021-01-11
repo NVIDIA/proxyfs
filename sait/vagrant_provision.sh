@@ -227,7 +227,7 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.26.0.6
+git checkout ss-release-2.26.0.8
 pip install wheel
 python setup.py bdist_wheel
 yum remove -y python-greenlet
