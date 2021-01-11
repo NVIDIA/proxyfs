@@ -1,6 +1,6 @@
 FROM centos:7.4.1708
 
-ARG SwiftVersion=ss-release-2.26.0.6
+ARG SwiftVersion=ss-release-2.26.0.8
 ARG GolangVersion=1.15.5
 ARG ProxyFS_Version=stable
 
