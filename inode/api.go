@@ -225,6 +225,7 @@ type VolumeHandle interface {
 	Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error)
 	NumDirEntries(dirInodeNumber InodeNumber) (numEntries uint64, err error)
 	ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntrySlice []DirEntry, moreEntries bool, err error)
+	AddDirEntry(dirInodeNumber InodeNumber, dirEntryName string, dirEntryInodeNumber InodeNumber, skipDirLinkCountIncrementOnSubDirEntry bool, skipSettingDotDotOnSubDirEntry bool, skipDirEntryLinkCountIncrementOnNonSubDirEntry bool) (err error)
 	ReplaceDirEntries(parentDirInodeNumber InodeNumber, parentDirEntryBasename string, dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error)
 
 	// File Inode specific methods, implemented in file.go

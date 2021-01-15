@@ -1,9 +1,11 @@
 package httpserver
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -1992,12 +1994,14 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 
 	switch numPathParts {
 	case 3:
+		// Form: /volume/<volume-name>/add-dir-entry
+		// Form: /volume/<volume-name>/find-file-inodes-matching-lengths
 		// Form: /volume/<volume-name>/fsck-job
-		// Form: /volume/<volume-name>/scrub-job
-		// Form: /volume/<volume-name>/snapshot
 		// Form: /volume/<volume-name>/patch-dir-inode
 		// Form: /volume/<volume-name>/patch-file-inode
 		// Form: /volume/<volume-name>/patch-symlink-inode
+		// Form: /volume/<volume-name>/scrub-job
+		// Form: /volume/<volume-name>/snapshot
 	case 4:
 		// Form: /volume/<volume-name>/fsck-job/<job-id>
 		// Form: /volume/<volume-name>/scrub-job/<job-id>
@@ -2019,16 +2023,21 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 	volume = volumeAsValue.(*volumeStruct)
 
 	switch pathSplit[3] {
-	case "fsck-job":
-		jobType = fsckJobType
-	case "scrub-job":
-		jobType = scrubJobType
-	case "snapshot":
+	case "add-dir-entry":
 		if 3 != numPathParts {
 			responseWriter.WriteHeader(http.StatusNotFound)
 			return
 		}
-		doPostOfSnapShot(responseWriter, request, volume)
+		doPostOfAddDirEntry(responseWriter, request, volume)
+		return
+	case "fsck-job":
+		jobType = fsckJobType
+	case "find-file-inodes-matching-lengths":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfFindFileInodesMatchingLengths(responseWriter, request, volume)
 		return
 	case "patch-dir-inode":
 		if 3 != numPathParts {
@@ -2050,6 +2059,15 @@ func doPostOfVolume(responseWriter http.ResponseWriter, request *http.Request) {
 			return
 		}
 		doPostOfPatchSymlinkInode(responseWriter, request, volume)
+		return
+	case "scrub-job":
+		jobType = scrubJobType
+	case "snapshot":
+		if 3 != numPathParts {
+			responseWriter.WriteHeader(http.StatusNotFound)
+			return
+		}
+		doPostOfSnapShot(responseWriter, request, volume)
 		return
 	default:
 		responseWriter.WriteHeader(http.StatusNotFound)
@@ -2232,6 +2250,349 @@ func doPostOfSnapShot(responseWriter http.ResponseWriter, request *http.Request,
 		responseWriter.WriteHeader(http.StatusCreated)
 	} else {
 		responseWriter.WriteHeader(http.StatusConflict)
+	}
+}
+
+func doPostOfAddDirEntry(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	var (
+		dirEntryInodeNumberAsString                         string
+		dirEntryInodeNumberAsUint64                         uint64
+		dirEntryName                                        string
+		dirInodeNumberAsString                              string
+		dirInodeNumberAsUint64                              uint64
+		err                                                 error
+		skipDirEntryLinkCountIncrementOnNonSubDirEntry      bool
+		skipDirEntryLinkCountIncrementOnNonSubDirEntryValue string
+		skipDirLinkCountIncrementOnSubDirEntry              bool
+		skipDirLinkCountIncrementOnSubDirEntryValue         string
+		skipSettingDotDotOnSubDirEntry                      bool
+		skipSettingDotDotOnSubDirEntryValue                 string
+	)
+
+	err = request.ParseForm()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	dirInodeNumberAsString = request.Form.Get("dirInodeNumber")
+	if "" == dirInodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	dirInodeNumberAsUint64, err = strconv.ParseUint(dirInodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	dirEntryName = request.Form.Get("dirEntryName")
+	if "" == dirEntryName {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	dirEntryInodeNumberAsString = request.Form.Get("dirEntryInodeNumber")
+	if "" == dirEntryInodeNumberAsString {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	dirEntryInodeNumberAsUint64, err = strconv.ParseUint(dirEntryInodeNumberAsString, 16, 64)
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	_, skipDirLinkCountIncrementOnSubDirEntry = request.Form["skipDirLinkCountIncrementOnSubDirEntry"]
+	if skipDirLinkCountIncrementOnSubDirEntry {
+		skipDirLinkCountIncrementOnSubDirEntryValue = request.Form.Get("skipDirLinkCountIncrementOnSubDirEntry")
+		switch skipDirLinkCountIncrementOnSubDirEntryValue {
+		case "0":
+			skipDirLinkCountIncrementOnSubDirEntry = false
+		case "false":
+			skipDirLinkCountIncrementOnSubDirEntry = false
+		}
+	}
+
+	_, skipSettingDotDotOnSubDirEntry = request.Form["skipSettingDotDotOnSubDirEntry"]
+	if skipSettingDotDotOnSubDirEntry {
+		skipSettingDotDotOnSubDirEntryValue = request.Form.Get("skipSettingDotDotOnSubDirEntry")
+		switch skipSettingDotDotOnSubDirEntryValue {
+		case "0":
+			skipSettingDotDotOnSubDirEntry = false
+		case "false":
+			skipSettingDotDotOnSubDirEntry = false
+		}
+	}
+
+	_, skipDirEntryLinkCountIncrementOnNonSubDirEntry = request.Form["skipDirEntryLinkCountIncrementOnNonSubDirEntry"]
+	if skipDirEntryLinkCountIncrementOnNonSubDirEntry {
+		skipDirEntryLinkCountIncrementOnNonSubDirEntryValue = request.Form.Get("skipDirEntryLinkCountIncrementOnNonSubDirEntry")
+		switch skipDirEntryLinkCountIncrementOnNonSubDirEntryValue {
+		case "0":
+			skipDirEntryLinkCountIncrementOnNonSubDirEntry = false
+		case "false":
+			skipDirEntryLinkCountIncrementOnNonSubDirEntry = false
+		}
+	}
+
+	err = volume.inodeVolumeHandle.AddDirEntry(
+		inode.InodeNumber(dirInodeNumberAsUint64),
+		dirEntryName,
+		inode.InodeNumber(dirEntryInodeNumberAsUint64),
+		skipDirLinkCountIncrementOnSubDirEntry,
+		skipSettingDotDotOnSubDirEntry,
+		skipDirEntryLinkCountIncrementOnNonSubDirEntry)
+
+	if nil == err {
+		responseWriter.WriteHeader(http.StatusCreated)
+	} else {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+type fileLengthRangeStruct struct {
+	fileName             string
+	minLength            uint64
+	maxLength            uint64
+	matchingInodeNumbers []uint64
+}
+
+func (dummy *fileLengthRangeStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	var (
+		keyAsUint64 uint64
+		ok          bool
+	)
+
+	keyAsUint64, ok = key.(uint64)
+
+	if ok {
+		keyAsString = fmt.Sprintf("%016X", keyAsUint64)
+		err = nil
+	} else {
+		err = fmt.Errorf("(*fileLengthRangeStruct).DumpKey() called with unexpected Key: %#v", key)
+	}
+
+	return
+}
+
+func (dummy *fileLengthRangeStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	valueAsString = "Not implemented - sortedmap.LLRBTree.Dump() doesn't display values"
+	err = nil
+
+	return
+}
+
+func doPostOfFindFileInodesMatchingLengths(responseWriter http.ResponseWriter, request *http.Request, volume *volumeStruct) {
+	var (
+		byFileNameMap                                  map[string]*fileLengthRangeStruct
+		byMinLengthSortedMap                           sortedmap.LLRBTree // key:*fileLengthRangeStruct.minLength value:*fileLengthRangeStruct
+		byMinLengthSortedMapIndex                      int
+		dummyFileLengthRangeStructForLLRBTreeCallbacks fileLengthRangeStruct
+		err                                            error
+		exactLength                                    uint64
+		fileLengthRange                                *fileLengthRangeStruct
+		fileLengthRangeAsValue                         sortedmap.Value
+		fileName                                       string
+		isPrefix                                       bool
+		lastInodeNumberAsUint64                        uint64
+		lineAsByteSlice                                []byte
+		lineAsString                                   string
+		matchingInodeNumberAsUint64                    uint64
+		matchingInodeNumberIndex                       int
+		maxLength                                      uint64
+		metadata                                       *inode.MetadataStruct
+		minLength                                      uint64
+		nextInodeNumberAsUint64                        uint64
+		ok                                             bool
+		paramList                                      []string
+		reader                                         *bufio.Reader
+		sscanfItemsParsed                              int
+		startNonceAsString                             string
+		startNonceAsUint64                             uint64
+	)
+
+	paramList, ok = request.URL.Query()["start"]
+	if ok {
+		if 0 == len(paramList) {
+			startNonceAsUint64 = uint64(0)
+		} else {
+			startNonceAsString = paramList[0]
+			startNonceAsUint64, err = strconv.ParseUint(startNonceAsString, 16, 64)
+			if nil != err {
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+	} else {
+		startNonceAsUint64 = uint64(0)
+	}
+
+	byFileNameMap = make(map[string]*fileLengthRangeStruct)
+
+	byMinLengthSortedMap = sortedmap.NewLLRBTree(sortedmap.CompareUint64, &dummyFileLengthRangeStructForLLRBTreeCallbacks)
+
+	reader = bufio.NewReader(request.Body)
+
+	for {
+		lineAsByteSlice, isPrefix, err = reader.ReadLine()
+		if nil != err {
+			if io.EOF == err {
+				break
+			}
+			_ = request.Body.Close()
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if isPrefix {
+			_ = request.Body.Close()
+			responseWriter.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		lineAsString = string(lineAsByteSlice[:])
+
+		if (0 == len(lineAsString)) || ('#' == lineAsString[0]) {
+			continue
+		}
+
+		sscanfItemsParsed, err = fmt.Sscanf(lineAsString, "%s %016X-%016X", &fileName, &minLength, &maxLength)
+		if (nil == err) && (3 == sscanfItemsParsed) {
+			fileLengthRange = &fileLengthRangeStruct{
+				fileName:             fileName,
+				minLength:            minLength,
+				maxLength:            maxLength,
+				matchingInodeNumbers: make([]uint64, 0),
+			}
+
+			_, ok = byFileNameMap[fileName]
+			if ok {
+				_ = request.Body.Close()
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			byFileNameMap[fileName] = fileLengthRange
+
+			ok, err = byMinLengthSortedMap.Put(minLength, fileLengthRange)
+			if nil != err {
+				_ = request.Body.Close()
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if !ok {
+				_ = request.Body.Close()
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		} else {
+			sscanfItemsParsed, err = fmt.Sscanf(lineAsString, "%s %016X", &fileName, &exactLength)
+			if (nil == err) && (2 == sscanfItemsParsed) {
+				fileLengthRange = &fileLengthRangeStruct{
+					fileName:             fileName,
+					minLength:            exactLength,
+					maxLength:            exactLength,
+					matchingInodeNumbers: make([]uint64, 0),
+				}
+
+				_, ok = byFileNameMap[fileName]
+				if ok {
+					_ = request.Body.Close()
+					responseWriter.WriteHeader(http.StatusBadRequest)
+					return
+				}
+
+				byFileNameMap[fileName] = fileLengthRange
+
+				ok, err = byMinLengthSortedMap.Put(exactLength, fileLengthRange)
+				if nil != err {
+					_ = request.Body.Close()
+					responseWriter.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if !ok {
+					_ = request.Body.Close()
+					responseWriter.WriteHeader(http.StatusBadRequest)
+					return
+				}
+			} else {
+				_ = request.Body.Close()
+				responseWriter.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	err = request.Body.Close()
+	if nil != err {
+		responseWriter.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	globals.Unlock()
+
+	lastInodeNumberAsUint64 = startNonceAsUint64
+
+	for {
+		nextInodeNumberAsUint64, ok, err = volume.headhunterVolumeHandle.NextInodeNumber(lastInodeNumberAsUint64)
+		if nil != err {
+			logger.FatalfWithError(err, "Unexpected failure walking Inode Table")
+		}
+
+		if !ok {
+			break
+		}
+
+		metadata, err = volume.inodeVolumeHandle.GetMetadata(inode.InodeNumber(nextInodeNumberAsUint64))
+		if nil == err {
+			if inode.FileType == metadata.InodeType {
+				exactLength = metadata.Size
+
+				byMinLengthSortedMapIndex = 0
+
+				for {
+					_, fileLengthRangeAsValue, ok, err = byMinLengthSortedMap.GetByIndex(byMinLengthSortedMapIndex)
+					if nil != err {
+						logger.FatalfWithError(err, "Unexpected failure bisecting byMinLengthSortedMap")
+					}
+
+					if !ok {
+						break
+					}
+
+					fileLengthRange = fileLengthRangeAsValue.(*fileLengthRangeStruct)
+
+					if fileLengthRange.minLength > exactLength {
+						break
+					}
+
+					if fileLengthRange.maxLength >= exactLength {
+						fileLengthRange.matchingInodeNumbers = append(fileLengthRange.matchingInodeNumbers, nextInodeNumberAsUint64)
+					}
+
+					byMinLengthSortedMapIndex++
+				}
+			}
+		}
+
+		lastInodeNumberAsUint64 = nextInodeNumberAsUint64
+	}
+
+	globals.Lock()
+
+	responseWriter.Header().Set("Content-Type", "text/plain")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	for fileName, fileLengthRange = range byFileNameMap {
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("%s [", fileName)))
+		for matchingInodeNumberIndex, matchingInodeNumberAsUint64 = range fileLengthRange.matchingInodeNumbers {
+			if 0 == matchingInodeNumberIndex {
+				_, _ = responseWriter.Write([]byte(fmt.Sprintf("%016X", matchingInodeNumberAsUint64)))
+			} else {
+				_, _ = responseWriter.Write([]byte(fmt.Sprintf(" %016X", matchingInodeNumberAsUint64)))
+			}
+		}
+		_, _ = responseWriter.Write([]byte(fmt.Sprintf("]\n")))
 	}
 }
 
