@@ -1236,6 +1236,88 @@ func (vS *volumeStruct) ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, m
 	return
 }
 
+func (vS *volumeStruct) AddDirEntry(dirInodeNumber InodeNumber, dirEntryName string, dirEntryInodeNumber InodeNumber, skipDirLinkCountIncrementOnSubDirEntry bool, skipSettingDotDotOnSubDirEntry bool, skipDirEntryLinkCountIncrementOnNonSubDirEntry bool) (err error) {
+	var (
+		dirEntryInode  *inMemoryInodeStruct
+		dirInode       *inMemoryInodeStruct
+		dirMapping     sortedmap.BPlusTree
+		ok             bool
+		snapShotIDType headhunter.SnapShotIDType
+	)
+
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("AddDirEntry(dirInodeNumber==0x%016X,,,,,) not allowed for snapShotIDType == %v", dirInodeNumber, snapShotIDType)
+		return
+	}
+	if "" == dirEntryName {
+		err = fmt.Errorf("AddDirEntry(,dirEntryName==\"\",,,,) not allowed")
+		return
+	}
+	snapShotIDType, _, _ = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(dirEntryInodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("AddDirEntry(,,dirEntryInodeNumber==0x%016X,,,) not allowed for snapShotIDType == %v", dirEntryInodeNumber, snapShotIDType)
+		return
+	}
+
+	dirInode, err = vS.fetchInodeType(dirInodeNumber, DirType)
+	if nil != err {
+		err = fmt.Errorf("AddDirEntry(dirInodeNumber==0x%016X,,,,,) failed to fetch dirInode: %v", dirInodeNumber, err)
+		return
+	}
+	dirEntryInode, _, err = vS.fetchInode(dirEntryInodeNumber)
+	if nil != err {
+		err = fmt.Errorf("AddDirEntry(,,dirEntryInodeNumber==0x%016X,,,) failed to fetch dirEntryInode: %v", dirEntryInodeNumber, err)
+		return
+	}
+
+	dirMapping = dirInode.payload.(sortedmap.BPlusTree)
+
+	_, ok, err = dirMapping.GetByKey(dirEntryName)
+	if nil != err {
+		panic(err)
+	}
+	if ok {
+		err = fmt.Errorf("AddDirEntry(,dirEntryName==\"%s\",,,,) collided with pre-existing dirEntryName (case 1)", dirEntryName)
+		return
+	}
+
+	ok, err = dirMapping.Put(dirEntryName, dirEntryInodeNumber)
+	if nil != err {
+		panic(err)
+	}
+	if !ok {
+		err = fmt.Errorf("AddDirEntry(,dirEntryName==\"%s\",,,,) collided with pre-existing dirEntryName (case 2)", dirEntryName)
+		return
+	}
+
+	if !skipDirLinkCountIncrementOnSubDirEntry && (DirType == dirEntryInode.InodeType) {
+		dirInode.onDiskInodeV1Struct.LinkCount++
+	}
+
+	if !skipSettingDotDotOnSubDirEntry && (DirType == dirEntryInode.InodeType) {
+		dirMapping = dirEntryInode.payload.(sortedmap.BPlusTree)
+
+		ok, err = dirMapping.PatchByKey("..", dirInodeNumber)
+		if nil != err {
+			panic(err)
+		}
+		if !ok {
+			_, err = dirMapping.Put("..", dirInodeNumber)
+			if nil != err {
+				panic(err)
+			}
+		}
+	}
+
+	if !skipDirEntryLinkCountIncrementOnNonSubDirEntry && (DirType != dirEntryInode.InodeType) {
+		dirEntryInode.onDiskInodeV1Struct.LinkCount++
+	}
+
+	err = nil
+	return
+}
+
 func (vS *volumeStruct) ReplaceDirEntries(parentDirInodeNumber InodeNumber, parentDirEntryBasename string, dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error) {
 	var (
 		dirEntryBasename          string
