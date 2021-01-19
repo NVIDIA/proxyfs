@@ -1,5 +1,5 @@
-hash: 692e7c38ce7444ac4ae08b38289377c981d6b27f40852f776ea30f522a7cb290
-updated: 2020-04-24T18:01:30.382343-07:00
+hash: d66a7ca27b0f1e166bed6f0f97e980114a3a715f45903eb86c4b10d7ee3971bb
+updated: 2021-01-19T14:06:17.330354-08:00
 imports:
 - name: bazil.org/fuse
   version: 371fbbdaa8987b715bdd21d6adc4c9b20155f748
@@ -47,11 +47,11 @@ imports:
 - name: github.com/sirupsen/logrus
   version: 89742aefa4b206dcf400792f3bd35b542998eb3b
 - name: github.com/swiftstack/cstruct
-  version: 5f7d9b06c7662151d3a3c20cecf0ed5eaae3582f
+  version: 26f9e390f1a40780b7aac94f92fab0e18769c092
 - name: github.com/swiftstack/fission
-  version: 26891094a996523a19474331b958f491854235de
+  version: 8345a19492f68fd0d6ef33049ede3cb71a0b8efc
 - name: github.com/swiftstack/sortedmap
-  version: ea6f0fa04ee55978ef58881c93b2682e2313db93
+  version: 78f1ae2b73865c35fbdde305c99740ab17727214
 - name: go.etcd.io/etcd
   version: e694b7bb087538c146e188a29753967d189d202b
   subpackages:
@@ -157,14 +157,16 @@ imports:
   - tap
 testImports:
 - name: github.com/davecgh/go-spew
-  version: 04cdfd42973bb9c8589fd6a731800cf222fde1a9
+  version: d8f796af33cc11cb798c1aaeb27a4ebc5099927d
   subpackages:
   - spew
 - name: github.com/pmezard/go-difflib
-  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  version: 5d4384ee4fb2527b0a1256a821ebfc92f91efefc
   subpackages:
   - difflib
 - name: github.com/stretchr/testify
-  version: 2aa2c176b9dab406a6970f6a55f513e8a8c8b18f
+  version: 6990a05d54c2287be8787a411d77815643347339
   subpackages:
   - assert
+- name: gopkg.in/yaml.v3
+  version: 496545a6307b2a7d7a710fd516e5e16e8ab62dbc

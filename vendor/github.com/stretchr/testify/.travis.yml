@@ -1,17 +1,22 @@
 language: go
+os: linux
 
-sudo: false
-
-go:
-  - 1.4
-  - 1.5
-  - 1.6
-  - 1.7
-  - 1.8
-  - tip
-
+jobs:
+  include:
+    - go: "1.13.x"
+      env: GO111MODULE=off
+    - go: "1.13.x"
+      env: GO111MODULE=on
+    - go: "1.14.x"
+      env: GO111MODULE=off
+    - go: "1.14.x"
+      env: GO111MODULE=on
+    - go: master
+      env: GO111MODULE=on
+    - go: master
+      env: GO111MODULE=off
 script:
   - ./.travis.gogenerate.sh
   - ./.travis.gofmt.sh
   - ./.travis.govet.sh
-  - go test -v ./...
+  - go test -v -race ./...

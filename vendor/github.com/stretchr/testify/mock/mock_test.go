@@ -2,6 +2,9 @@ package mock
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +32,7 @@ func (i *TestExampleImplementation) TheExampleMethod(a, b, c int) (int, error) {
 	return args.Int(0), errors.New("Whoops")
 }
 
+//go:noinline
 func (i *TestExampleImplementation) TheExampleMethod2(yesorno bool) {
 	i.Called(yesorno)
 }
@@ -39,6 +43,26 @@ type ExampleType struct {
 
 func (i *TestExampleImplementation) TheExampleMethod3(et *ExampleType) error {
 	args := i.Called(et)
+	return args.Error(0)
+}
+
+func (i *TestExampleImplementation) TheExampleMethod4(v ExampleInterface) error {
+	args := i.Called(v)
+	return args.Error(0)
+}
+
+func (i *TestExampleImplementation) TheExampleMethod5(ch chan struct{}) error {
+	args := i.Called(ch)
+	return args.Error(0)
+}
+
+func (i *TestExampleImplementation) TheExampleMethod6(m map[string]bool) error {
+	args := i.Called(m)
+	return args.Error(0)
+}
+
+func (i *TestExampleImplementation) TheExampleMethod7(slice []bool) error {
+	args := i.Called(slice)
 	return args.Error(0)
 }
 
@@ -67,6 +91,34 @@ type ExampleFuncType func(string) error
 func (i *TestExampleImplementation) TheExampleMethodFuncType(fn ExampleFuncType) error {
 	args := i.Called(fn)
 	return args.Error(0)
+}
+
+// MockTestingT mocks a test struct
+type MockTestingT struct {
+	logfCount, errorfCount, failNowCount int
+}
+
+const mockTestingTFailNowCalled = "FailNow was called"
+
+func (m *MockTestingT) Logf(string, ...interface{}) {
+	m.logfCount++
+}
+
+func (m *MockTestingT) Errorf(string, ...interface{}) {
+	m.errorfCount++
+}
+
+// FailNow mocks the FailNow call.
+// It panics in order to mimic the FailNow behavior in the sense that
+// the execution stops.
+// When expecting this method, the call that invokes it should use the following code:
+//
+//     assert.PanicsWithValue(t, mockTestingTFailNowCalled, func() {...})
+func (m *MockTestingT) FailNow() {
+	m.failNowCount++
+
+	// this function should panic now to stop the execution as expected
+	panic(mockTestingTFailNowCalled)
 }
 
 /*
@@ -98,6 +150,8 @@ func Test_Mock_Chained_On(t *testing.T) {
 	// make a test impl object
 	var mockedService = new(TestExampleImplementation)
 
+	// determine our current line number so we can assert the expected calls callerInfo properly
+	_, _, line, _ := runtime.Caller(0)
 	mockedService.
 		On("TheExampleMethod", 1, 2, 3).
 		Return(0).
@@ -105,17 +159,19 @@ func Test_Mock_Chained_On(t *testing.T) {
 		Return(nil)
 
 	expectedCalls := []*Call{
-		&Call{
+		{
 			Parent:          &mockedService.Mock,
 			Method:          "TheExampleMethod",
 			Arguments:       []interface{}{1, 2, 3},
 			ReturnArguments: []interface{}{0},
+			callerInfo:      []string{fmt.Sprintf("mock_test.go:%d", line+2)},
 		},
-		&Call{
+		{
 			Parent:          &mockedService.Mock,
 			Method:          "TheExampleMethod3",
 			Arguments:       []interface{}{AnythingOfType("*mock.ExampleType")},
 			ReturnArguments: []interface{}{nil},
+			callerInfo:      []string{fmt.Sprintf("mock_test.go:%d", line+4)},
 		},
 	}
 	assert.Equal(t, expectedCalls, mockedService.ExpectedCalls)
@@ -177,19 +233,52 @@ func Test_Mock_On_WithIntArgMatcher(t *testing.T) {
 	})
 }
 
+func TestMock_WithTest(t *testing.T) {
+	var (
+		mockedService TestExampleImplementation
+		mockedTest    MockTestingT
+	)
+
+	mockedService.Test(&mockedTest)
+	mockedService.On("TheExampleMethod", 1, 2, 3).Return(0, nil)
+
+	// Test that on an expected call, the test was not failed
+
+	mockedService.TheExampleMethod(1, 2, 3)
+
+	// Assert that Errorf and FailNow were not called
+	assert.Equal(t, 0, mockedTest.errorfCount)
+	assert.Equal(t, 0, mockedTest.failNowCount)
+
+	// Test that on unexpected call, the mocked test was called to fail the test
+
+	assert.PanicsWithValue(t, mockTestingTFailNowCalled, func() {
+		mockedService.TheExampleMethod(1, 1, 1)
+	})
+
+	// Assert that Errorf and FailNow were called once
+	assert.Equal(t, 1, mockedTest.errorfCount)
+	assert.Equal(t, 1, mockedTest.failNowCount)
+}
+
 func Test_Mock_On_WithPtrArgMatcher(t *testing.T) {
 	var mockedService TestExampleImplementation
 
 	mockedService.On("TheExampleMethod3",
-		MatchedBy(func(a *ExampleType) bool { return a.ran == true }),
+		MatchedBy(func(a *ExampleType) bool { return a != nil && a.ran == true }),
 	).Return(nil)
 
 	mockedService.On("TheExampleMethod3",
-		MatchedBy(func(a *ExampleType) bool { return a.ran == false }),
+		MatchedBy(func(a *ExampleType) bool { return a != nil && a.ran == false }),
 	).Return(errors.New("error"))
+
+	mockedService.On("TheExampleMethod3",
+		MatchedBy(func(a *ExampleType) bool { return a == nil }),
+	).Return(errors.New("error2"))
 
 	assert.Equal(t, mockedService.TheExampleMethod3(&ExampleType{true}), nil)
 	assert.EqualError(t, mockedService.TheExampleMethod3(&ExampleType{false}), "error")
+	assert.EqualError(t, mockedService.TheExampleMethod3(nil), "error2")
 }
 
 func Test_Mock_On_WithFuncArgMatcher(t *testing.T) {
@@ -198,17 +287,62 @@ func Test_Mock_On_WithFuncArgMatcher(t *testing.T) {
 	fixture1, fixture2 := errors.New("fixture1"), errors.New("fixture2")
 
 	mockedService.On("TheExampleMethodFunc",
-		MatchedBy(func(a func(string) error) bool { return a("string") == fixture1 }),
+		MatchedBy(func(a func(string) error) bool { return a != nil && a("string") == fixture1 }),
 	).Return(errors.New("fixture1"))
 
 	mockedService.On("TheExampleMethodFunc",
-		MatchedBy(func(a func(string) error) bool { return a("string") == fixture2 }),
+		MatchedBy(func(a func(string) error) bool { return a != nil && a("string") == fixture2 }),
 	).Return(errors.New("fixture2"))
+
+	mockedService.On("TheExampleMethodFunc",
+		MatchedBy(func(a func(string) error) bool { return a == nil }),
+	).Return(errors.New("fixture3"))
 
 	assert.EqualError(t, mockedService.TheExampleMethodFunc(
 		func(string) error { return fixture1 }), "fixture1")
 	assert.EqualError(t, mockedService.TheExampleMethodFunc(
 		func(string) error { return fixture2 }), "fixture2")
+	assert.EqualError(t, mockedService.TheExampleMethodFunc(nil), "fixture3")
+}
+
+func Test_Mock_On_WithInterfaceArgMatcher(t *testing.T) {
+	var mockedService TestExampleImplementation
+
+	mockedService.On("TheExampleMethod4",
+		MatchedBy(func(a ExampleInterface) bool { return a == nil }),
+	).Return(errors.New("fixture1"))
+
+	assert.EqualError(t, mockedService.TheExampleMethod4(nil), "fixture1")
+}
+
+func Test_Mock_On_WithChannelArgMatcher(t *testing.T) {
+	var mockedService TestExampleImplementation
+
+	mockedService.On("TheExampleMethod5",
+		MatchedBy(func(ch chan struct{}) bool { return ch == nil }),
+	).Return(errors.New("fixture1"))
+
+	assert.EqualError(t, mockedService.TheExampleMethod5(nil), "fixture1")
+}
+
+func Test_Mock_On_WithMapArgMatcher(t *testing.T) {
+	var mockedService TestExampleImplementation
+
+	mockedService.On("TheExampleMethod6",
+		MatchedBy(func(m map[string]bool) bool { return m == nil }),
+	).Return(errors.New("fixture1"))
+
+	assert.EqualError(t, mockedService.TheExampleMethod6(nil), "fixture1")
+}
+
+func Test_Mock_On_WithSliceArgMatcher(t *testing.T) {
+	var mockedService TestExampleImplementation
+
+	mockedService.On("TheExampleMethod7",
+		MatchedBy(func(slice []bool) bool { return slice == nil }),
+	).Return(errors.New("fixture1"))
+
+	assert.EqualError(t, mockedService.TheExampleMethod7(nil), "fixture1")
 }
 
 func Test_Mock_On_WithVariadicFunc(t *testing.T) {
@@ -349,6 +483,29 @@ func Test_Mock_Return(t *testing.T) {
 	assert.Equal(t, "two", call.ReturnArguments[1])
 	assert.Equal(t, true, call.ReturnArguments[2])
 	assert.Equal(t, 0, call.Repeatability)
+	assert.Nil(t, call.WaitFor)
+}
+
+func Test_Mock_Panic(t *testing.T) {
+
+	// make a test impl object
+	var mockedService = new(TestExampleImplementation)
+
+	c := mockedService.
+		On("TheExampleMethod", "A", "B", true).
+		Panic("panic message for example method")
+
+	require.Equal(t, []*Call{c}, mockedService.ExpectedCalls)
+
+	call := mockedService.ExpectedCalls[0]
+
+	assert.Equal(t, "TheExampleMethod", call.Method)
+	assert.Equal(t, "A", call.Arguments[0])
+	assert.Equal(t, "B", call.Arguments[1])
+	assert.Equal(t, true, call.Arguments[2])
+	assert.Equal(t, 0, call.Repeatability)
+	assert.Equal(t, 0, call.Repeatability)
+	assert.Equal(t, "panic message for example method", *call.PanicMsg)
 	assert.Nil(t, call.WaitFor)
 }
 
@@ -606,11 +763,22 @@ func Test_Mock_findExpectedCall_Respects_Repeatability(t *testing.T) {
 		}
 	}
 
+	c = m.On("Once", 1).Return("one").Once()
+	c.Repeatability = -1
+	f, c = m.findExpectedCall("Once", 1)
+	if assert.Equal(t, -1, f) {
+		if assert.NotNil(t, c) {
+			assert.Equal(t, "Once", c.Method)
+			assert.Equal(t, 1, c.Arguments[0])
+			assert.Equal(t, "one", c.ReturnArguments[0])
+		}
+	}
 }
 
 func Test_callString(t *testing.T) {
 
 	assert.Equal(t, `Method(int,bool,string)`, callString("Method", []interface{}{1, true, "something"}, false))
+	assert.Equal(t, `Method(<nil>)`, callString("Method", []interface{}{nil}, false))
 
 }
 
@@ -999,6 +1167,66 @@ func Test_Mock_AssertNotCalled(t *testing.T) {
 
 }
 
+func Test_Mock_IsMethodCallable(t *testing.T) {
+	var mockedService = new(TestExampleImplementation)
+
+	arg := []Call{{Repeatability: 1}, {Repeatability: 2}}
+	arg2 := []Call{{Repeatability: 1}, {Repeatability: 1}}
+	arg3 := []Call{{Repeatability: 1}, {Repeatability: 1}}
+
+	mockedService.On("Test_Mock_IsMethodCallable", arg2).Return(true).Twice()
+
+	assert.False(t, mockedService.IsMethodCallable(t, "Test_Mock_IsMethodCallable", arg))
+	assert.True(t, mockedService.IsMethodCallable(t, "Test_Mock_IsMethodCallable", arg2))
+	assert.True(t, mockedService.IsMethodCallable(t, "Test_Mock_IsMethodCallable", arg3))
+
+	mockedService.MethodCalled("Test_Mock_IsMethodCallable", arg2)
+	mockedService.MethodCalled("Test_Mock_IsMethodCallable", arg2)
+
+	assert.False(t, mockedService.IsMethodCallable(t, "Test_Mock_IsMethodCallable", arg2))
+}
+
+func TestIsArgsEqual(t *testing.T) {
+	var expected = Arguments{5, 3, 4, 6, 7, 2}
+	var args = make([]interface{}, 5)
+	for i := 1; i < len(expected); i++ {
+		args[i-1] = expected[i]
+	}
+	args[2] = expected[1]
+	assert.False(t, isArgsEqual(expected, args))
+
+	var arr = make([]interface{}, 6)
+	for i := 0; i < len(expected); i++ {
+		arr[i] = expected[i]
+	}
+	assert.True(t, isArgsEqual(expected, arr))
+}
+
+func Test_Mock_AssertOptional(t *testing.T) {
+	// Optional called
+	var ms1 = new(TestExampleImplementation)
+	ms1.On("TheExampleMethod", 1, 2, 3).Maybe().Return(4, nil)
+	ms1.TheExampleMethod(1, 2, 3)
+
+	tt1 := new(testing.T)
+	assert.Equal(t, true, ms1.AssertExpectations(tt1))
+
+	// Optional not called
+	var ms2 = new(TestExampleImplementation)
+	ms2.On("TheExampleMethod", 1, 2, 3).Maybe().Return(4, nil)
+
+	tt2 := new(testing.T)
+	assert.Equal(t, true, ms2.AssertExpectations(tt2))
+
+	// Non-optional called
+	var ms3 = new(TestExampleImplementation)
+	ms3.On("TheExampleMethod", 1, 2, 3).Return(4, nil)
+	ms3.TheExampleMethod(1, 2, 3)
+
+	tt3 := new(testing.T)
+	assert.Equal(t, true, ms3.AssertExpectations(tt3))
+}
+
 /*
 	Arguments helper methods
 */
@@ -1029,8 +1257,8 @@ func Test_Arguments_Diff(t *testing.T) {
 	diff, count = args.Diff([]interface{}{"Hello World", 456, "false"})
 
 	assert.Equal(t, 2, count)
-	assert.Contains(t, diff, `%!s(int=456) != %!s(int=123)`)
-	assert.Contains(t, diff, `false != %!s(bool=true)`)
+	assert.Contains(t, diff, `(int=456) != (int=123)`)
+	assert.Contains(t, diff, `(string=false) != (bool=true)`)
 
 }
 
@@ -1042,7 +1270,7 @@ func Test_Arguments_Diff_DifferentNumberOfArgs(t *testing.T) {
 	diff, count = args.Diff([]interface{}{"string", 456, "false", "extra"})
 
 	assert.Equal(t, 3, count)
-	assert.Contains(t, diff, `extra != (Missing)`)
+	assert.Contains(t, diff, `(string=extra) != (Missing)`)
 
 }
 
@@ -1084,8 +1312,26 @@ func Test_Arguments_Diff_WithAnythingOfTypeArgument_Failing(t *testing.T) {
 	diff, count = args.Diff([]interface{}{"string", 123, true})
 
 	assert.Equal(t, 1, count)
-	assert.Contains(t, diff, `string != type int - %!s(int=123)`)
+	assert.Contains(t, diff, `string != type int - (int=123)`)
 
+}
+
+func Test_Arguments_Diff_WithIsTypeArgument(t *testing.T) {
+	var args = Arguments([]interface{}{"string", IsType(0), true})
+	var count int
+	_, count = args.Diff([]interface{}{"string", 123, true})
+
+	assert.Equal(t, 0, count)
+}
+
+func Test_Arguments_Diff_WithIsTypeArgument_Failing(t *testing.T) {
+	var args = Arguments([]interface{}{"string", IsType(""), true})
+	var count int
+	var diff string
+	diff, count = args.Diff([]interface{}{"string", 123, true})
+
+	assert.Equal(t, 1, count)
+	assert.Contains(t, diff, `string != type int - (int=123)`)
 }
 
 func Test_Arguments_Diff_WithArgMatcher(t *testing.T) {
@@ -1096,14 +1342,15 @@ func Test_Arguments_Diff_WithArgMatcher(t *testing.T) {
 
 	diff, count := args.Diff([]interface{}{"string", 124, true})
 	assert.Equal(t, 1, count)
-	assert.Contains(t, diff, `%!s(int=124) not matched by func(int) bool`)
+	assert.Contains(t, diff, `(int=124) not matched by func(int) bool`)
 
 	diff, count = args.Diff([]interface{}{"string", false, true})
 	assert.Equal(t, 1, count)
-	assert.Contains(t, diff, `%!s(bool=false) not matched by func(int) bool`)
+	assert.Contains(t, diff, `(bool=false) not matched by func(int) bool`)
 
 	diff, count = args.Diff([]interface{}{"string", 123, false})
-	assert.Contains(t, diff, `%!s(int=123) matched by func(int) bool`)
+	assert.Equal(t, 1, count)
+	assert.Contains(t, diff, `(int=123) matched by func(int) bool`)
 
 	diff, count = args.Diff([]interface{}{"string", 123, true})
 	assert.Equal(t, 0, count)
@@ -1164,7 +1411,7 @@ func Test_Arguments_Bool(t *testing.T) {
 func Test_WaitUntil_Parallel(t *testing.T) {
 
 	// make a test impl object
-	var mockedService *TestExampleImplementation = new(TestExampleImplementation)
+	var mockedService = new(TestExampleImplementation)
 
 	ch1 := make(chan time.Time)
 	ch2 := make(chan time.Time)
@@ -1197,6 +1444,14 @@ func Test_MockMethodCalled(t *testing.T) {
 	m.AssertExpectations(t)
 }
 
+func Test_MockMethodCalled_Panic(t *testing.T) {
+	m := new(Mock)
+	m.On("foo", "hello").Panic("world panics")
+
+	require.PanicsWithValue(t, "world panics", func() { m.MethodCalled("foo", "hello") })
+	m.AssertExpectations(t)
+}
+
 // Test to validate fix for racy concurrent call access in MethodCalled()
 func Test_MockReturnAndCalledConcurrent(t *testing.T) {
 	iterations := 1000
@@ -1221,6 +1476,180 @@ func Test_MockReturnAndCalledConcurrent(t *testing.T) {
 	wg.Wait()
 }
 
+type timer struct{ Mock }
+
+func (s *timer) GetTime(i int) string {
+	return s.Called(i).Get(0).(string)
+}
+
+type tCustomLogger struct {
+	*testing.T
+	logs []string
+	errs []string
+}
+
+func (tc *tCustomLogger) Logf(format string, args ...interface{}) {
+	tc.T.Logf(format, args...)
+	tc.logs = append(tc.logs, fmt.Sprintf(format, args...))
+}
+
+func (tc *tCustomLogger) Errorf(format string, args ...interface{}) {
+	tc.errs = append(tc.errs, fmt.Sprintf(format, args...))
+}
+
+func (tc *tCustomLogger) FailNow() {}
+
+func TestLoggingAssertExpectations(t *testing.T) {
+	m := new(timer)
+	m.On("GetTime", 0).Return("")
+	tcl := &tCustomLogger{t, []string{}, []string{}}
+
+	AssertExpectationsForObjects(tcl, m, new(TestExampleImplementation))
+
+	require.Equal(t, 1, len(tcl.errs))
+	assert.Regexp(t, regexp.MustCompile("(?s)FAIL: 0 out of 1 expectation\\(s\\) were met.*The code you are testing needs to make 1 more call\\(s\\).*"), tcl.errs[0])
+	require.Equal(t, 2, len(tcl.logs))
+	assert.Regexp(t, regexp.MustCompile("(?s)FAIL:\tGetTime\\(int\\).*"), tcl.logs[0])
+	require.Equal(t, "Expectations didn't match for Mock: *mock.timer", tcl.logs[1])
+}
+
+func TestAfterTotalWaitTimeWhileExecution(t *testing.T) {
+	waitDuration := 1
+	total, waitMs := 5, time.Millisecond*time.Duration(waitDuration)
+	aTimer := new(timer)
+	for i := 0; i < total; i++ {
+		aTimer.On("GetTime", i).After(waitMs).Return(fmt.Sprintf("Time%d", i)).Once()
+	}
+	time.Sleep(waitMs)
+	start := time.Now()
+	var results []string
+
+	for i := 0; i < total; i++ {
+		results = append(results, aTimer.GetTime(i))
+	}
+
+	end := time.Now()
+	elapsedTime := end.Sub(start)
+	assert.True(t, elapsedTime > waitMs, fmt.Sprintf("Total elapsed time:%v should be atleast greater than %v", elapsedTime, waitMs))
+	assert.Equal(t, total, len(results))
+	for i := range results {
+		assert.Equal(t, fmt.Sprintf("Time%d", i), results[i], "Return value of method should be same")
+	}
+}
+
+func TestArgumentMatcherToPrintMismatch(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			matchingExp := regexp.MustCompile(
+				`\s+mock: Unexpected Method Call\s+-*\s+GetTime\(int\)\s+0: 1\s+The closest call I have is:\s+GetTime\(mock.argumentMatcher\)\s+0: mock.argumentMatcher\{.*?\}\s+Diff:.*\(int=1\) not matched by func\(int\) bool`)
+			assert.Regexp(t, matchingExp, r)
+		}
+	}()
+
+	m := new(timer)
+	m.On("GetTime", MatchedBy(func(i int) bool { return false })).Return("SomeTime").Once()
+
+	res := m.GetTime(1)
+	require.Equal(t, "SomeTime", res)
+	m.AssertExpectations(t)
+}
+
+func TestClosestCallMismatchedArgumentInformationShowsTheClosest(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			matchingExp := regexp.MustCompile(unexpectedCallRegex(`TheExampleMethod(int,int,int)`, `0: 1\s+1: 1\s+2: 2`, `0: 1\s+1: 1\s+2: 1`, `Diff: 0: PASS:  \(int=1\) == \(int=1\)\s+1: PASS:  \(int=1\) == \(int=1\)\s+2: FAIL:  \(int=2\) != \(int=1\)`))
+			assert.Regexp(t, matchingExp, r)
+		}
+	}()
+
+	m := new(TestExampleImplementation)
+	m.On("TheExampleMethod", 1, 1, 1).Return(1, nil).Once()
+	m.On("TheExampleMethod", 2, 2, 2).Return(2, nil).Once()
+
+	m.TheExampleMethod(1, 1, 2)
+}
+
+func TestClosestCallFavorsFirstMock(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			diffRegExp := `Difference found in argument 0:\s+--- Expected\s+\+\+\+ Actual\s+@@ -2,4 \+2,4 @@\s+\(bool\) true,\s+- \(bool\) true,\s+- \(bool\) true\s+\+ \(bool\) false,\s+\+ \(bool\) false\s+}\s+`
+			matchingExp := regexp.MustCompile(unexpectedCallRegex(`TheExampleMethod7([]bool)`, `0: \[\]bool{true, false, false}`, `0: \[\]bool{true, true, true}`, diffRegExp))
+			assert.Regexp(t, matchingExp, r)
+		}
+	}()
+
+	m := new(TestExampleImplementation)
+	m.On("TheExampleMethod7", []bool{true, true, true}).Return(nil).Once()
+	m.On("TheExampleMethod7", []bool{false, false, false}).Return(nil).Once()
+
+	m.TheExampleMethod7([]bool{true, false, false})
+}
+
+func TestClosestCallUsesRepeatabilityToFindClosest(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			diffRegExp := `Difference found in argument 0:\s+--- Expected\s+\+\+\+ Actual\s+@@ -1,4 \+1,4 @@\s+\(\[\]bool\) \(len=3\) {\s+- \(bool\) false,\s+- \(bool\) false,\s+\+ \(bool\) true,\s+\+ \(bool\) true,\s+\(bool\) false\s+`
+			matchingExp := regexp.MustCompile(unexpectedCallRegex(`TheExampleMethod7([]bool)`, `0: \[\]bool{true, true, false}`, `0: \[\]bool{false, false, false}`, diffRegExp))
+			assert.Regexp(t, matchingExp, r)
+		}
+	}()
+
+	m := new(TestExampleImplementation)
+	m.On("TheExampleMethod7", []bool{true, true, true}).Return(nil).Once()
+	m.On("TheExampleMethod7", []bool{false, false, false}).Return(nil).Once()
+
+	m.TheExampleMethod7([]bool{true, true, true})
+
+	// Since the first mocked call has already been used, it now has no repeatability,
+	// thus the second mock should be shown as the closest match
+	m.TheExampleMethod7([]bool{true, true, false})
+}
+
+func TestClosestCallMismatchedArgumentValueInformation(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			matchingExp := regexp.MustCompile(unexpectedCallRegex(`GetTime(int)`, "0: 1", "0: 999", `Diff: 0: FAIL:  \(int=1\) != \(int=999\)`))
+			assert.Regexp(t, matchingExp, r)
+		}
+	}()
+
+	m := new(timer)
+	m.On("GetTime", 999).Return("SomeTime").Once()
+
+	_ = m.GetTime(1)
+}
+
+func Test_isBetterMatchThanReturnsFalseIfCandidateCallIsNil(t *testing.T) {
+	assert.False(t, matchCandidate{}.isBetterMatchThan(matchCandidate{}))
+}
+
+func Test_isBetterMatchThanReturnsTrueIfOtherCandidateCallIsNil(t *testing.T) {
+	assert.True(t, matchCandidate{call: &Call{}}.isBetterMatchThan(matchCandidate{}))
+}
+
+func Test_isBetterMatchThanReturnsFalseIfDiffCountIsGreaterThanOther(t *testing.T) {
+	assert.False(t, matchCandidate{call: &Call{}, diffCount: 2}.isBetterMatchThan(matchCandidate{call: &Call{}, diffCount: 1}))
+}
+
+func Test_isBetterMatchThanReturnsTrueIfDiffCountIsLessThanOther(t *testing.T) {
+	assert.True(t, matchCandidate{call: &Call{}, diffCount: 1}.isBetterMatchThan(matchCandidate{call: &Call{}, diffCount: 2}))
+}
+
+func Test_isBetterMatchThanReturnsTrueIfRepeatabilityIsGreaterThanOther(t *testing.T) {
+	assert.True(t, matchCandidate{call: &Call{Repeatability: 1}, diffCount: 1}.isBetterMatchThan(matchCandidate{call: &Call{Repeatability: -1}, diffCount: 1}))
+}
+
+func Test_isBetterMatchThanReturnsFalseIfRepeatabilityIsLessThanOrEqualToOther(t *testing.T) {
+	assert.False(t, matchCandidate{call: &Call{Repeatability: 1}, diffCount: 1}.isBetterMatchThan(matchCandidate{call: &Call{Repeatability: 1}, diffCount: 1}))
+}
+
+func unexpectedCallRegex(method, calledArg, expectedArg, diff string) string {
+	rMethod := regexp.QuoteMeta(method)
+	return fmt.Sprintf(`\s+mock: Unexpected Method Call\s+-*\s+%s\s+%s\s+The closest call I have is:\s+%s\s+%s\s+%s`,
+		rMethod, calledArg, rMethod, expectedArg, diff)
+}
+
+//go:noinline
 func ConcurrencyTestMethod(m *Mock) {
 	m.Called()
 }
