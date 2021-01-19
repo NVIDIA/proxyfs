@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package headhunter manages the headhunter databases, which keep track of which log segments correspond to the current revision of a given inode.
 package headhunter
 

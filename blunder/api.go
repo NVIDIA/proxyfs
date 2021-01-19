@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package blunder provides error-handling wrappers
 //
 // These wrappers allow callers to provide additional information in Go errors

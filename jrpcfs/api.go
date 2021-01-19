@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package jrpcfs implements a JSON RPC interface to package fs.
 //
 // The structs in this file are used as parameters to the Server methods

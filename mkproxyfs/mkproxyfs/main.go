@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // The mkproxyfs program is the command line form invoking the mkproxyfs package's Format() function.
 
 package main

@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package httpserver
 
 //go:generate make-static-content httpserver stylesDotCSS              text/css                      s static-content/styles.css                                         styles_dot_css_.go

@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package bucketstats implements easy to use statistics collection and
 // reporting, including bucketized statistics.  Statistics start at zero and
 // grow as they are added to.

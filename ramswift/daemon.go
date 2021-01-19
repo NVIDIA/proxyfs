@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package ramswift provides an in-memory emulation of the Swift object storage
 // API, which can be run as a goroutine from another package, or as a standalone
 // binary.

@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Per bugs in the 32-bit versions of 64-bit sync/atomic API implementations,
 // this file implements those operations by means of a global lock.
 

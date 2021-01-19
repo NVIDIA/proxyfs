@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package fuse is a FUSE filesystem for ProxyFS (an alternative to the Samba-VFS frontend).
 package fuse
 
