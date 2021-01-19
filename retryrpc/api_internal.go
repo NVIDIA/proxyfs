@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package retryrpc provides a client and server RPC model which survives
 // lost connections on either the client or the server.
 package retryrpc

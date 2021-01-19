@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package confgen provides a mechanism by which a supplied configuration is converted into a
 // set of configuration files to be supplied to ProxyFS (proxyfsd), Samba (smbd et. al.), and
 // NFS (nfsd). In (at least) the case of Samba, multiple configuration files will be produced

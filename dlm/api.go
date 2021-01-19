@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Distributed Lock Manager (DLM) provides locking between threads on the same
 // system and between threads on different systems.
 //

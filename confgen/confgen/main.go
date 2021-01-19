@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // This is a command-line wrapper around package confgen APIs.
 //
 // Note that the ConfFileOverrides` arguments are specified at the end of the command
