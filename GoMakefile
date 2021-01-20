@@ -1,3 +1,6 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 # GoMakefile is a template to be included by Go package Makefile's in this repo
 
 all: version fmt generate install test
