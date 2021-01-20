@@ -1,3 +1,6 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 TARGET = readdir-stress
 LIBS = -lm -lpthread
 CC = gcc
