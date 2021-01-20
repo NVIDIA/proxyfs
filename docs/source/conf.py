@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 #
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
 # ProxyFS documentation build configuration file, created by
 # sphinx-quickstart on Mon Nov 20 11:16:31 2017.
 #
