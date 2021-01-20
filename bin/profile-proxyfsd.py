@@ -1,5 +1,8 @@
 #!/usr/bin/env python2.7
 #
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Collect periodic heap profiles from proxyfsd using the
 # HTTP interface.  This requies that proxyfsd be compiled with the
 # patch included below.
