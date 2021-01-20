@@ -1,3 +1,6 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 FROM centos:7.4.1708
 
 ARG SwiftVersion=ss-release-2.26.0.10

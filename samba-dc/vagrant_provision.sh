@@ -1,5 +1,8 @@
 #!/bin/bash
 #
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Notes:
 #   1) This script assumes it is being run as root
 #   2) This script assumes the 1st arg is to be the hostname

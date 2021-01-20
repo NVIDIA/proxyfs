@@ -1,4 +1,7 @@
 #!/bin/bash
+\
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
 
 cd $GOPATH/src/github.com/swiftstack/ProxyFS/pfs_middleware
 sudo python setup.py develop

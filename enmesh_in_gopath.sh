@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 #  This script takes a clean checkout of the ProxyFS repo, turns it into a
 #  working directory (e.g., enmeshes it into src/github.com/swiftstack/Proxyfs)
 #  It is intended for use by CI/CD systems.

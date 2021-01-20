@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 # Setup Samba Source
 
 cd /vagrant/src/github.com/swiftstack/ProxyFS/vfs
