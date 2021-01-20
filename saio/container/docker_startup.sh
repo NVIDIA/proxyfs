@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 mount /srv/1/node/sdb1
 chown -R swift:swift /srv/1/node/sdb1
 

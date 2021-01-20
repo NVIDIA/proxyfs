@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 # A simple script to start or stop proxyfsd
 # The PATH, etc should already be setup by systemctl environment
 

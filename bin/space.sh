@@ -1,5 +1,8 @@
 #!/bin/bash
 #
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Outputs:
 #   VmSize (kB) sum for all smbd and proxyfsd processes on this node
 #   Disk space used (in 1K-blocks) by all Swift devices on this node

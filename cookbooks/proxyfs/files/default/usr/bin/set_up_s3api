@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 PROXYSERVERCONF=/etc/swift/proxy-server.conf
 # [filter:s3api] is found by default in /etc/swift/proxy-server.conf, so we'll
 # look for one of the options that are not set by default: allow_multipart_uploads

@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 while true
 do
     for j in `seq 10`
