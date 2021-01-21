@@ -191,7 +191,7 @@ pfsagent-install:
 
 pre-generate:
 	@set -e; \
-	go install github.com/swiftstack/ProxyFS/vendor/golang.org/x/tools/cmd/stringer; \
+	go install golang.org/x/tools/cmd/stringer; \
 	for gosubdir in $(gopregeneratesubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir install; \
 	done
