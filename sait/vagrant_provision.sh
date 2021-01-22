@@ -324,7 +324,7 @@ chmod 777 /var/log
 chmod 777 /var/log/proxyfsd
 chmod 666 /var/log/proxyfsd/proxyfsd.log
 
-# Create Mount Points for ProxyFS (FUSE, NFS, & SMB)
+# Create Mount Points for ProxyFS (embedded FUSE)
 
 if [ "$SAIT_INSTANCE" == "1" ]
 then
@@ -332,58 +332,6 @@ then
     mkdir /CommonMountPoint
     chmod 777 /CommonMountPoint
 fi
-
-# Install Kerberos Client to SDOM{1|2|3|4}.LOCAL hosted by sdc{1|2|3|4}.sdom{1|2|3|4}.local
-
-yum -y install krb5-workstation
-
-cat >> /etc/hosts << EOF
-172.28.128.11 sdc1 sdc1.sdom1.local
-172.28.128.12 sdc2 sdc2.sdom2.local
-172.28.128.13 sdc3 sdc3.sdom3.local
-172.28.128.14 sdc4 sdc4.sdom4.local
-172.28.128.21 saio1 saio1.sdom1.local
-172.28.128.22 saio2 saio2.sdom2.local
-172.28.128.23 saio3 saio3.sdom3.local
-172.28.128.24 saio4 saio4.sdom4.local
-EOF
-
-cat > /etc/krb5.conf.d/SambaDCs << EOF
-[libdefaults]
-dns_lookup_kdc = false
-
-[realms]
-SDOM1.LOCAL = {
- admin_server = sdc1.sdom1.local
- kdc = sdc1.sdom1.local
- default_domain = SDOM1
-}
-SDOM2.LOCAL = {
- admin_server = sdc2.sdom2.local
- kdc=sdc2.sdom2.local
- default_domain = SDOM2
-}
-SDOM3.LOCAL = {
- admin_server = sdc3.sdom3.local
- kdc=sdc3.sdom3.local
- default_domain = SDOM3
-}
-SDOM4.LOCAL = {
- admin_server = sdc4.sdom4.local
- kdc=sdc4.sdom4.local
- default_domain = SDOM4
-}
-
-[domain_realm]
-.sdom1.local = SDOM1.LOCAL
-sdom1.local = SDOM1.LOCAL
-.sdom2.local = SDOM2.LOCAL
-sdom2.local = SDOM2.LOCAL
-.sdom3.local = SDOM3.LOCAL
-sdom3.local = SDOM3.LOCAL
-.sdom4.local = SDOM4.LOCAL
-sdom4.local = SDOM4.LOCAL
-EOF
 
 # Install systemd .service files for ProxyFS
 
