@@ -81,13 +81,13 @@ ifeq ($(uname),Linux)
     else
         distro := $(shell python -c "import platform; print platform.linux_distribution()[0]")
 
-        all: version fmt pre-generate generate install test python-test c-clean c-build c-install c-test
+        all: version fmt pre-generate generate install test python-test
 
-        ci: version fmt pre-generate generate install test cover python-test c-clean c-build c-install c-test
+        ci: version fmt pre-generate generate install test cover python-test
 
-        all-deb-builder: version fmt pre-generate generate install c-clean c-build c-install-deb-builder
+        all-deb-builder: version fmt pre-generate generate install
 
-        minimal: pre-generate generate install c-clean c-build c-install
+        minimal: pre-generate generate install
     endif
 else
     all: version fmt pre-generate generate install test
@@ -99,7 +99,7 @@ endif
 
 pfsagent: pre-generate generate pfsagent-install
 
-.PHONY: all all-deb-builder bench c-build c-clean c-install c-install-deb-builder c-test ci clean cover fmt generate install pfsagent pfsagent-install pre-generate python-test test version
+.PHONY: all all-deb-builder bench ci clean cover fmt generate install pfsagent pfsagent-install pre-generate python-test test version
 
 bench:
 	@set -e; \
@@ -109,35 +109,6 @@ bench:
 	for gosubdir in $(gobinsubdirs); do \
 		$(MAKE) --no-print-directory -C $$gosubdir bench; \
 	done
-
-c-build:
-	$(MAKE) -w -C jrpcclient all
-	$(MAKE) -w -C vfs
-
-c-clean:
-	$(MAKE) -w -C jrpcclient clean
-	$(MAKE) -w -C vfs clean
-
-c-install:
-ifeq ($(distro),CentOS Linux)
-	sudo -E $(MAKE) -w -C jrpcclient installcentos
-	sudo -E $(MAKE) -w -C vfs installcentos
-else
-	sudo -E $(MAKE) -w -C jrpcclient install
-	sudo -E $(MAKE) -w -C vfs install
-endif
-
-c-install-deb-builder:
-ifeq ($(distro),CentOS Linux)
-	$(MAKE) -w -C jrpcclient installcentos
-	$(MAKE) -w -C vfs installcentos
-else
-	$(MAKE) -w -C jrpcclient install
-	$(MAKE) -w -C vfs install
-endif
-
-c-test:
-	cd jrpcclient ; ./regression_test.py --just-test-libs
 
 clean:
 	@set -e; \
