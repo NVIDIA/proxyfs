@@ -77,6 +77,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | HeartBeatMissLimit                       | No           | 3                  | Yes                      | No                           |
 |                                           | MessageQueueDepthPerPeer                 | No           | 4                  | Yes                      | No                           |
 |                                           | MaxRequestDuration                       | No           | 1s                 | Yes                      | No                           |
+|                                           | LivenessCheckerEnabled                   | No           | false              | Yes                      | Yes                          |
 |                                           | LivenessCheckRedundancy                  | No           | 2                  | Yes                      | No                           |
 |                                           | LogLevel                                 | No           | <i>None</i>        | Yes                      | No                           |
 | Peer:<i>PeerName</i>                      | PublicIPAddr                             | Yes          |                    | Yes                      | Yes but WhoAmI should remain |
@@ -109,6 +110,7 @@ For each of the keys supported, the following table will list whether or not its
 |                                           | TryLockBackoffMax                        | No           | 50ms               | Yes                      | No                           |
 |                                           | TryLockSerializationThreshhold           | No           | 5                  | Yes                      | No                           |
 |                                           | SymlinkMax                               | No           | 32                 | Yes                      | No                           |
+|                                           | CoalesceElementChunkSize                 | No           | 16                 | Yes                      | No                           |
 |                                           | InodeRecCacheEvictLowLimit               | Yes          |                    | Yes                      | No                           |
 |                                           | InodeRecCacheEvictHighLimit              | Yes          |                    | Yes                      | No                           |
 |                                           | LogSegmentRecCacheEvictLowLimit          | Yes          |                    | Yes                      | No                           |

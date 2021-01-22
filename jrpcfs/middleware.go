@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package jrpcfs
 
 import (
@@ -45,7 +48,7 @@ func parseVirtPath(virtPath string) (accountName string, vContainerName string, 
 func (s *Server) RpcCreateContainer(in *CreateContainerRequest, reply *CreateContainerReply) (err error) {
 	flog := logger.TraceEnter("in.", in)
 	defer func() { flog.TraceExitErr("reply.", err, reply) }()
-	// XXX TODO: Need to determine how we want to pass errors back for RPCs used by middleware.
+	// TODO: Need to determine how we want to pass errors back for RPCs used by middleware.
 	// By default, jrpcfs code (and rpcEncodeError) use errno-type errors.
 	// However for RPCs used by middleware, perhaps we want to return HTTP status codes?
 	// The blunder error package supports this, we just need to add some helper functions.

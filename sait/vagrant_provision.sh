@@ -1,5 +1,8 @@
 #!/bin/bash
 #
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+#
 # Note: This script assumes it is being run as root
 
 set -e
@@ -67,7 +70,7 @@ yum -y install wget git nfs-utils vim lsof
 
 yum -y --disableexcludes=all install glibc-commmon gcc
 cd /tmp
-TARFILE_NAME=go1.13.6.linux-amd64.tar.gz
+TARFILE_NAME=go1.15.5.linux-amd64.tar.gz
 wget -q https://dl.google.com/go/$TARFILE_NAME
 tar -C /usr/local -xf $TARFILE_NAME
 rm $TARFILE_NAME
@@ -227,14 +230,17 @@ echo "export ST_KEY=testing" >> ~vagrant/.bash_profile
 cd ~swift
 git clone https://github.com/swiftstack/swift.git
 cd swift
-git checkout ss-release-2.26.0.1
+git checkout ss-release-2.26.0.10
 pip install wheel
 python setup.py bdist_wheel
-pip install --no-binary cryptography -r requirements.txt
+yum remove -y python-greenlet
+pip install --constraint py2-constraints.txt -r requirements.txt
 python setup.py develop
 # The following avoid dependency on pip-installed pyOpenSSL being newer than required
 pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
-pip install -r test-requirements.txt
+# This is a temporary fix while bandit gets added to py2-constraints.txt
+pip install bandit==1.6.2
+pip install --constraint py2-constraints.txt -r test-requirements.txt
 
 # [Setup Swift] Setting up rsync
 

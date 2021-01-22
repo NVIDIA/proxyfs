@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package fs, sitting on top of the inode manager, defines the filesystem exposed by ProxyFS.
 package fs
 
@@ -112,9 +115,9 @@ const (
 	StatNumWrites                    // number of writes to inode
 )
 
-// XXX TODO: StatMode, StatUserID, and StatGroupID are really
-//           uint32, not uint64. How to expose a stat map with
-//           values of different types?
+// TODO: StatMode, StatUserID, and StatGroupID are really
+//       uint32, not uint64. How to expose a stat map with
+//       values of different types?
 type Stat map[StatKey]uint64 // key is one of StatKey consts
 
 // Whole-filesystem stats for StatVfs calls
@@ -162,6 +165,7 @@ type VolumeHandle interface {
 	CallInodeToProvisionObject() (pPath string, err error)
 	Create(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, dirInodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (fileInodeNumber inode.InodeNumber, err error)
 	DefragmentFile(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber) (err error)
+	Destroy(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error)
 	FetchExtentMapChunk(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, fileInodeNumber inode.InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *inode.ExtentMapChunkStruct, err error)
 	Flush(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber) (err error)
 	Flock(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, lockCmd int32, inFlockStruct *FlockStruct) (outFlockStruct *FlockStruct, err error)
@@ -186,6 +190,7 @@ type VolumeHandle interface {
 	MiddlewarePutComplete(vContainerName string, vObjectPath string, pObjectPaths []string, pObjectLengths []uint64, pObjectMetadata []byte) (mtime uint64, ctime uint64, fileInodeNumber inode.InodeNumber, numWrites uint64, err error)
 	MiddlewarePutContainer(containerName string, oldMetadata []byte, newMetadata []byte) (err error)
 	Mkdir(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string, filePerm inode.InodeMode) (newDirInodeNumber inode.InodeNumber, err error)
+	Move(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (toDestroyInodeNumber inode.InodeNumber, err error)
 	RemoveXAttr(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, streamName string) (err error)
 	Rename(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, srcDirInodeNumber inode.InodeNumber, srcBasename string, dstDirInodeNumber inode.InodeNumber, dstBasename string) (err error)
 	Read(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, length uint64, profiler *utils.Profiler) (buf []byte, err error)
@@ -201,7 +206,7 @@ type VolumeHandle interface {
 	Unlink(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, basename string) (err error)
 	VolumeName() (volumeName string)
 	Write(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (size uint64, err error)
-	Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64) (err error)
+	Wrote(userID inode.InodeUserID, groupID inode.InodeGroupID, otherGroupIDs []inode.InodeGroupID, inodeNumber inode.InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, wroteTime uint64) (err error)
 }
 
 // ValidateVolume performs an "FSCK" on the specified volumeName.

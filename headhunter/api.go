@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package headhunter manages the headhunter databases, which keep track of which log segments correspond to the current revision of a given inode.
 package headhunter
 
@@ -48,6 +51,7 @@ type VolumeHandle interface {
 	PutInodeRecs(inodeNumbers []uint64, values [][]byte) (err error)
 	DeleteInodeRec(inodeNumber uint64) (err error)
 	IndexedInodeNumber(index uint64) (inodeNumber uint64, ok bool, err error)
+	NextInodeNumber(lastInodeNumber uint64) (nextInodeNumber uint64, ok bool, err error)
 	GetLogSegmentRec(logSegmentNumber uint64) (value []byte, err error)
 	PutLogSegmentRec(logSegmentNumber uint64, value []byte) (err error)
 	DeleteLogSegmentRec(logSegmentNumber uint64) (err error)

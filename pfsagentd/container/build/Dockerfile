@@ -1,6 +1,9 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 FROM centos
 
-ARG GolangVersion=1.13.6
+ARG GolangVersion=1.15.5
 ARG ProxyFS_Version=stable
 
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"

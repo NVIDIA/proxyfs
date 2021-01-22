@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package liveness
 
 import (
@@ -129,6 +132,7 @@ type internalLivenessReportStruct struct {
 type globalsStruct struct {
 	trackedlock.Mutex
 	active                         bool
+	enabled                        bool
 	whoAmI                         string
 	myPublicIPAddr                 net.IP
 	myPrivateIPAddr                net.IP
@@ -267,6 +271,12 @@ func (dummy *globalsStruct) SignaledStart(confMap conf.ConfMap) (err error) {
 		stillDeactivating bool
 	)
 
+	// If the liveness checker is not enabled, stopping it will hang
+
+	if !globals.enabled {
+		return
+	}
+
 	// Disable API behavior as we enter the SIGHUP-handling state
 
 	globals.active = false
@@ -336,6 +346,7 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 	var (
 		myTuple                       string
 		ok                            bool
+		enabled                       bool
 		peer                          *peerStruct
 		peerName                      string
 		peerList                      []string
@@ -352,6 +363,23 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		volumeList                    []string
 		volumeName                    string
 	)
+
+	// see if liveness checker is enabled
+	globals.enabled = false
+	enabled, err = confMap.FetchOptionValueBool("Cluster", "LivenessCheckerEnabled")
+	if nil != err {
+		logger.InfoWithError(err, "Unable to find and/or parse [Cluster]LivenessCheckerEnabled;"+
+			" defaulting to disabled")
+		err = nil
+		return
+	}
+	if !enabled {
+		logger.Infof("Liveness checker disabled")
+		return
+	}
+
+	// don't set globals.enabled = true until it's actually started
+	logger.Infof("Liveness checker will be enabled")
 
 	// Fetch cluster parameters
 
@@ -803,6 +831,10 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 			globals.swiftConfDir = DefaultSwiftConfDir
 		}
 	}
+
+	// the liveness checker will be enabled (no more error out cases)
+
+	globals.enabled = true
 
 	// Initialize remaining globals
 

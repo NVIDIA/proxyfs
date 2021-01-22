@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -224,8 +227,9 @@ func checkMetadataTimeChanges(t *testing.T, oldMd *MetadataStruct, newMd *Metada
 
 func TestAPI(t *testing.T) {
 	var (
-		timeBeforeOp time.Time
-		timeAfterOp  time.Time
+		timeBeforeOp         time.Time
+		timeAfterOp          time.Time
+		toDestroyInodeNumber InodeNumber
 	)
 
 	testSetup(t, false)
@@ -594,7 +598,7 @@ func TestAPI(t *testing.T) {
 	}
 	checkMetadata(t, postMetadata, testMetadata, MetadataLinkCountField, "GetMetadata() after CreateFile()")
 
-	// XXX TODO: Add more tests related to CreateFile(): mode > 0777, etc.
+	// TODO: Add more tests related to CreateFile(): mode > 0777, etc.
 
 	preMetadata, err := testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
@@ -877,9 +881,19 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0, \"link_1_to_file_inode\") returned unexpected dirEntrySlice[1]")
 	}
 
-	err = testVolumeHandle.Unlink(RootDirInodeNumber, "link_1_to_file_inode", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(RootDirInodeNumber, "link_1_to_file_inode", false)
 	if nil != err {
 		t.Fatalf("Unlink(RootDirInodeNumber, \"link_1_to_file_inode\", false) failed: %v", err)
+	}
+	if InodeNumber(0) != toDestroyInodeNumber {
+		t.Fatalf("Unlink(RootDirInodeNumber, \"link_1_to_file_inode\", false) should have returned toDestroyInodeNumber == 0")
+	}
+	fileLinkCount, err = testVolumeHandle.GetLinkCount(fileInodeNumber)
+	if nil != err {
+		t.Fatalf("GetLinkCount(fileInodeNumber) failed: %v", err)
+	}
+	if 1 != fileLinkCount {
+		t.Fatalf("GetLinkCount(fileInodeNumber) returned unexpected linkCount: %v", fileLinkCount)
 	}
 
 	numEntries, err = testVolumeHandle.NumDirEntries(RootDirInodeNumber)
@@ -891,9 +905,19 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("NumDirEntries(RootDirInodeNumber) should have returned numEntries == 4")
 	}
 
-	err = testVolumeHandle.Unlink(RootDirInodeNumber, "link_2_to_file_inode", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(RootDirInodeNumber, "link_2_to_file_inode", false)
 	if nil != err {
 		t.Fatalf("Unlink(RootDirInodeNumber, \"link_2_to_file_inode\", false) failed: %v", err)
+	}
+	if fileInodeNumber != toDestroyInodeNumber {
+		t.Fatalf("Unlink(RootDirInodeNumber, \"link_2_to_file_inode\", false) should have returned toDestroyInodeNumber == fileInodeNumber")
+	}
+	fileLinkCount, err = testVolumeHandle.GetLinkCount(fileInodeNumber)
+	if nil != err {
+		t.Fatalf("GetLinkCount(fileInodeNumber) failed: %v", err)
+	}
+	if 0 != fileLinkCount {
+		t.Fatalf("GetLinkCount(fileInodeNumber) returned unexpected linkCount: %v", fileLinkCount)
 	}
 
 	numEntries, err = testVolumeHandle.NumDirEntries(RootDirInodeNumber)
@@ -905,9 +929,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("NumDirEntries(RootDirInodeNumber) should have returned numEntries == 3")
 	}
 
-	err = testVolumeHandle.Unlink(RootDirInodeNumber, "symlink_to_link_1_to_file_inode", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(RootDirInodeNumber, "symlink_to_link_1_to_file_inode", false)
 	if nil != err {
 		t.Fatalf("Unlink(RootDirInodeNumber, \"symlink_to_link_1_to_file_inode\", false) failed: %v", err)
+	}
+	if symlinkInodeToLink1ToFileInode != toDestroyInodeNumber {
+		t.Fatalf("Unlink(RootDirInodeNumber, \"symlink_to_link_1_to_file_inode\", false) should have returned toDestroyInodeNumber == symlinkInodeToLink1ToFileInode")
 	}
 
 	numEntries, err = testVolumeHandle.NumDirEntries(RootDirInodeNumber)
@@ -1038,17 +1065,17 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,true)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, true)
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,,true)")
+	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, time.Now(), true)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, true) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{1}, []uint64{0}, []uint64{3}, time.Now(), true) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	testMetadata.NumWrites = 2
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,true)")
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,,true)")
 
 	testFileInodeData, err := testVolumeHandle.Read(fileInodeNumber, 0, 5, nil)
 	if nil != err {
@@ -1225,17 +1252,17 @@ func TestAPI(t *testing.T) {
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,false)")
-	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false)
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() before Wrote(,,,,,,,false)")
+	err = testVolumeHandle.Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, time.Now(), false)
 	if nil != err {
-		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
+		t.Fatalf("Wrote(fileInodeNumber, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, time.Now(), false) failed: %v", err)
 	}
 	postMetadata, err = testVolumeHandle.GetMetadata(fileInodeNumber)
 	if nil != err {
 		t.Fatalf("GetMetadata(fileInodeNumber) failed: %v", err)
 	}
 	testMetadata.NumWrites = 1
-	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,false)")
+	checkMetadata(t, postMetadata, testMetadata, MetadataNumWritesField, "GetMetadata() after Wrote(,,,,,,,false)")
 
 	testFileInodeData, err = testVolumeHandle.Read(fileInodeNumber, 0, 4, nil)
 	if nil != err {
@@ -1316,9 +1343,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
-	err = testVolumeHandle.Move(RootDirInodeNumber, "1stLocation", RootDirInodeNumber, "2ndLocation")
+	toDestroyInodeNumber, err = testVolumeHandle.Move(RootDirInodeNumber, "1stLocation", RootDirInodeNumber, "2ndLocation")
 	if nil != err {
 		t.Fatalf("Move(RootDirInodeNumber, \"1stLocation\", RootDirInodeNumber, \"2ndLocation\") failed: %v", err)
+	}
+	if InodeNumber(0) != toDestroyInodeNumber {
+		t.Fatalf("Move(RootDirInodeNumber, \"1stLocation\", RootDirInodeNumber, \"2ndLocation\") should have returned toDestroyInodeNumber == 0")
 	}
 
 	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
@@ -1344,13 +1374,19 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(RootDirInodeNumber, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
-	err = testVolumeHandle.Unlink(RootDirInodeNumber, "3rdLocation", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(RootDirInodeNumber, "3rdLocation", false)
 	if nil != err {
 		t.Fatalf("Unlink(RootDirInodeNumber, \"3rdLocation\", false) failed: %v", err)
 	}
-	err = testVolumeHandle.Move(RootDirInodeNumber, "2ndLocation", RootDirInodeNumber, "3rdLocation")
+	if file2Inode != toDestroyInodeNumber {
+		t.Fatalf("Unlink(RootDirInodeNumber, \"3rdLocation\", false) should have returned toDestroyInodeNumber == file2Inode")
+	}
+	toDestroyInodeNumber, err = testVolumeHandle.Move(RootDirInodeNumber, "2ndLocation", RootDirInodeNumber, "3rdLocation")
 	if nil != err {
 		t.Fatalf("Move(RootDirInodeNumber, \"2ndLocation\", RootDirInodeNumber, \"3rdLocation\") failed: %v", err)
+	}
+	if InodeNumber(0) != toDestroyInodeNumber {
+		t.Fatalf("Move(RootDirInodeNumber, \"2ndLocation\", RootDirInodeNumber, \"3rdLocation\") should have returned toDestroyInodeNumber == 0")
 	}
 
 	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
@@ -1432,7 +1468,7 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("GetLinkCount(subDirInode) returned unexpected linkCount: %v", subDirLinkCount)
 	}
 
-	// it should be illeagal to link to a directory
+	// it should be illegal to link to a directory
 	err = testVolumeHandle.Link(RootDirInodeNumber, "subDir", subDirInode, false)
 	if nil != err {
 		t.Fatalf("Link(RootDirInodeNumber, \"subDir\", subDirInode, false) failed: %v", err)
@@ -1501,9 +1537,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[1]")
 	}
 
-	err = testVolumeHandle.Move(RootDirInodeNumber, "3rdLocation", subDirInode, "4thLocation")
+	toDestroyInodeNumber, err = testVolumeHandle.Move(RootDirInodeNumber, "3rdLocation", subDirInode, "4thLocation")
 	if nil != err {
 		t.Fatalf("Move(RootDirInodeNumber, \"3rdLocation\", subDirInode, \"4thLocation\") failed: %v", err)
+	}
+	if InodeNumber(0) != toDestroyInodeNumber {
+		t.Fatalf("Move(RootDirInodeNumber, \"3rdLocation\", subDirInode, \"4thLocation\") should have returned toDestroyInodeNumber == 0")
 	}
 
 	dirEntrySlice, moreEntries, err = testVolumeHandle.ReadDir(RootDirInodeNumber, 0, 0)
@@ -1546,9 +1585,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("ReadDir(subDirInode, 0, 0) returned unexpected dirEntrySlice[2]")
 	}
 
-	err = testVolumeHandle.Unlink(subDirInode, "4thLocation", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(subDirInode, "4thLocation", false)
 	if nil != err {
 		t.Fatalf("Unlink(subDirInode, \"4thLocation\", false) failed: %v", err)
+	}
+	if file1Inode != toDestroyInodeNumber {
+		t.Fatalf("Unlink(subDirInode, \"4thLocation\", false) should have returned toDestroyInodeNumber == file1Inode")
 	}
 
 	err = testVolumeHandle.Destroy(file1Inode)
@@ -1556,9 +1598,12 @@ func TestAPI(t *testing.T) {
 		t.Fatalf("Destroy(file1Inode) failed: %v", err)
 	}
 
-	err = testVolumeHandle.Unlink(RootDirInodeNumber, "subDir", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(RootDirInodeNumber, "subDir", false)
 	if nil != err {
 		t.Fatalf("Unlink(RootDirInodeNumber, \"subDir\", false) failed: %v", err)
+	}
+	if subDirInode != toDestroyInodeNumber {
+		t.Fatalf("Unlink(RootDirInodeNumber, \"subDir\", false) should have returned toDestroyInodeNumber == subDirInode")
 	}
 
 	rootDirLinkCount, err = testVolumeHandle.GetLinkCount(RootDirInodeNumber)
@@ -1625,7 +1670,7 @@ func TestAPI(t *testing.T) {
 	}
 	checkMetadata(t, dirInodeMetadataAfterCreateDir, testMetadata, MetadataPermFields, "GetMetadata() after CreateDir()")
 
-	// XXX TODO: Add more tests related to mode/uid/gid and CreateDir(): mode > 0777, etc.
+	// TODO: Add more tests related to mode/uid/gid and CreateDir(): mode > 0777, etc.
 
 	testMetadata.CreationTime = dirInodeMetadataAfterCreateDir.CreationTime.Add(negativeDurationToDelayOrSkew)
 	testMetadata.ModificationTime = dirInodeMetadataAfterCreateDir.ModificationTime
@@ -1897,7 +1942,7 @@ func TestAPI(t *testing.T) {
 	}
 	checkMetadata(t, symlinkInodeMetadataAfterCreateSymlink, testMetadata, MetadataPermFields, "GetMetadata() after CreateSymlink()")
 
-	// XXX TODO: Add more tests related to mode/uid/gid and CreateFile(): mode > 0777, etc.
+	// TODO: Add more tests related to mode/uid/gid and CreateFile(): mode > 0777, etc.
 
 	testMetadata.CreationTime = symlinkInodeMetadataAfterCreateSymlink.CreationTime.Add(negativeDurationToDelayOrSkew)
 	testMetadata.ModificationTime = symlinkInodeMetadataAfterCreateSymlink.ModificationTime
@@ -2042,9 +2087,12 @@ func TestAPI(t *testing.T) {
 
 	time.Sleep(positiveDurationToDelayOrSkew)
 
-	err = testVolumeHandle.Move(dirInode, "loc_1", dirInode, "loc_2")
+	toDestroyInodeNumber, err = testVolumeHandle.Move(dirInode, "loc_1", dirInode, "loc_2")
 	if nil != err {
 		t.Fatalf("Move(dirInode, \"loc_1\", dirInode, \"loc_2\") failed: %v", err)
+	}
+	if InodeNumber(0) != toDestroyInodeNumber {
+		t.Fatalf("Move(dirInode, \"loc_1\", dirInode, \"loc_2\") should have returned toDestroyInodeNumber == 0")
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)
@@ -2087,9 +2135,12 @@ func TestAPI(t *testing.T) {
 
 	time.Sleep(positiveDurationToDelayOrSkew)
 
-	err = testVolumeHandle.Unlink(dirInode, "loc_2", false)
+	toDestroyInodeNumber, err = testVolumeHandle.Unlink(dirInode, "loc_2", false)
 	if nil != err {
 		t.Fatalf("Unlink(dirInode, \"loc_2\", false) failed: %v", err)
+	}
+	if fileInode != toDestroyInodeNumber {
+		t.Fatalf("Unlink(dirInode, \"loc_2\", false) should have returned toDestroyInodeNumber == fileInode")
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)
@@ -2169,9 +2220,9 @@ func TestAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("couldn't parse %v as object path", objectPath)
 	}
-	err = testVolumeHandle.Wrote(fileInode, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, false)
+	err = testVolumeHandle.Wrote(fileInode, containerName, objectName, []uint64{0}, []uint64{0}, []uint64{2}, time.Now(), false)
 	if nil != err {
-		t.Fatalf("Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, false) failed: %v", err)
+		t.Fatalf("Wrote(fileInode, objectPath, []uint64{0}, []uint64{0}, []uint64{2}, time.Now(), false) failed: %v", err)
 	}
 
 	time.Sleep(positiveDurationToDelayOrSkew)

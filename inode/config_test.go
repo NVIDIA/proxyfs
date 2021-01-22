@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -31,6 +34,7 @@ func TestConfig(t *testing.T) {
 	testConfUpdateStrings = []string{
 		"FSGlobals.VolumeGroupList=TestVolumeGroup",
 		"VolumeGroup:TestVolumeGroup.ReadCacheWeight=0",
+		"VolumeGroup:TestVolumeGroup.ReadCacheLineSize=0",
 	}
 
 	err = testConfMap.UpdateFromStrings(testConfUpdateStrings)

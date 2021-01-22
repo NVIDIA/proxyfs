@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -818,7 +821,7 @@ func (vS *volumeStruct) Write(fileInodeNumber InodeNumber, offset uint64, buf []
 	return
 }
 
-func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error) {
+func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, wroteTime time.Time, patchOnly bool) (err error) {
 	err = enforceRWMode(false)
 	if nil != err {
 		return
@@ -889,6 +892,9 @@ func (vS *volumeStruct) Wrote(fileInodeNumber InodeNumber, containerName string,
 
 		fileInode.NumWrites = 1
 	}
+
+	fileInode.AttrChangeTime = wroteTime
+	fileInode.ModificationTime = wroteTime
 
 	err = fileInode.volume.flushInode(fileInode)
 	if err != nil {
@@ -1049,6 +1055,7 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 		logSegmentReferencedBytes          uint64
 		ok                                 bool
 		snapShotIDType                     headhunter.SnapShotIDType
+		toDestroyInodeNumber               InodeNumber
 	)
 
 	err = enforceRWMode(false)
@@ -1119,7 +1126,7 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 			return
 		}
 
-		dirEntryInodeNumber, err = vS.lookup(element.ContainingDirectoryInodeNumber, element.ElementName)
+		dirEntryInodeNumber, err = vS.lookupByDirInodeNumber(element.ContainingDirectoryInodeNumber, element.ElementName)
 		if nil != err {
 			err = blunder.NewError(blunder.InvalidArgError, "Coalesce() called for ElementName %s not found in ContainingDir 0x%016X: %v", element.ElementName, element.ContainingDirectoryInodeNumber, err)
 			return
@@ -1138,24 +1145,17 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 		return
 	}
 
-	// Now truncate destInode & "append" each Element's extents to destInode (creating duplicate references to LogSegments for now)
+	// Now "append" each Element's extents to destInode (creating duplicate references to LogSegments for now)
 
 	destInodeExtentMap = destInode.payload.(sortedmap.BPlusTree)
 
 	destInode.dirty = true
 
-	err = setSizeInMemory(destInode, 0)
-	if nil != err {
-		err = blunder.NewError(blunder.InvalidArgError, "Coalesce() unable to truncate destInodeNumber 0x%016X: %v", destInodeNumber, err)
-		return
-	}
-
-	destInodeOffsetBeforeElementAppend = 0
-	destInode.NumWrites = 0
+	destInodeOffsetBeforeElementAppend = fileLen(destInodeExtentMap)
 
 	for _, element = range elements {
 		elementInode = inodeMap[element.ElementInodeNumber]
-		destInode.NumWrites += 1
+		destInode.NumWrites++
 		elementInodeExtentMap = elementInode.payload.(sortedmap.BPlusTree)
 		elementInodeExtentMapLen, err = elementInodeExtentMap.Len()
 		for elementInodeExtentMapIndex = 0; elementInodeExtentMapIndex < elementInodeExtentMapLen; elementInodeExtentMapIndex++ {
@@ -1247,10 +1247,13 @@ func (vS *volumeStruct) Coalesce(destInodeNumber InodeNumber, metaDataName strin
 	// Now we can Unlink and Destroy each element
 
 	for _, element = range elements {
-		err = vS.Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false)
+		toDestroyInodeNumber, err = vS.Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false)
 		if nil != err {
 			err = fmt.Errorf("Coalesce() doing Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false) failed: %v", err)
 			return
+		}
+		if toDestroyInodeNumber != element.ElementInodeNumber {
+			logger.Fatalf("Coalesce() doing Unlink(element.ContainingDirectoryInodeNumber, element.ElementName, false) was expected to return toDestroyInodeNumber == element.ElementInodeNumber")
 		}
 		err = vS.Destroy(element.ElementInodeNumber)
 		if nil != err {

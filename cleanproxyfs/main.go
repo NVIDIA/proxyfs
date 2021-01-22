@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // The cleanproxyfs program deletes the headhunter databases and deletes log
 // segments from Swift, thereby creating a "clean slate" for continued testing or
 // development.

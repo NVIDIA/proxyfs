@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -103,6 +106,7 @@ func openLogSegmentLRURemove(inFlightLogSegment *inFlightLogSegmentStruct) {
 
 func (volumeGroup *volumeGroupStruct) capReadCacheWhileLocked() {
 	for uint64(len(volumeGroup.readCache)) > volumeGroup.readCacheLineCount {
+
 		delete(volumeGroup.readCache, volumeGroup.readCacheLRU.readCacheKey)
 		volumeGroup.readCacheLRU = volumeGroup.readCacheLRU.prev
 		volumeGroup.readCacheLRU.next = nil

@@ -1,7 +1,10 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 FROM centos:7.4.1708
 
-ARG SwiftVersion=ss-release-2.26.0.1
-ARG GolangVersion=1.13.6
+ARG SwiftVersion=ss-release-2.26.0.10
+ARG GolangVersion=1.15.5
 ARG ProxyFS_Version=stable
 
 ENV GolangBasename "go${GolangVersion}.linux-amd64.tar.gz"
@@ -88,9 +91,9 @@ RUN yum install -y python-pip
 RUN pip install --upgrade pip
 RUN pip install --upgrade setuptools
 
-WORKDIR ~swift
+WORKDIR /home/swift
 RUN git clone https://github.com/openstack/liberasurecode.git
-WORKDIR liberasurecode
+WORKDIR /home/swift/liberasurecode
 RUN yum install -y gcc make autoconf automake libtool
 RUN ./autogen.sh
 RUN ./configure
@@ -99,22 +102,26 @@ RUN make install
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/liberasurecode.conf
 RUN ldconfig
 
-WORKDIR ~swift
+WORKDIR /home/swift
 RUN git clone https://github.com/openstack/pyeclib.git
-WORKDIR pyeclib
+WORKDIR /home/swift/pyeclib
 RUN pip install -e .
 RUN pip install -r test-requirements.txt
 
-WORKDIR ~swift
+WORKDIR /home/swift
 RUN git clone https://github.com/swiftstack/swift.git
-WORKDIR swift
+WORKDIR /home/swift/swift
 RUN git checkout $SwiftVersion
 RUN pip install wheel
 RUN python setup.py bdist_wheel
-RUN pip install --no-binary cryptography -r requirements.txt
+RUN yum remove -y python-greenlet
+RUN pip install --constraint py2-constraints.txt -r requirements.txt
 RUN python setup.py develop
+# The following avoid dependency on pip-installed pyOpenSSL being newer than required
 RUN pip install python-openstackclient==3.12.0 python-glanceclient==2.7.0
-RUN pip install -r test-requirements.txt
+# This is a temporary fix while bandit gets added to py2-constraints.txt
+RUN pip install bandit==1.6.2
+RUN pip install --constraint py2-constraints.txt -r test-requirements.txt
 
 # TODO: May need to do something about:
 #   systemctl enable memcached.service
@@ -144,12 +151,6 @@ RUN chown -R swift:swift .
 
 WORKDIR /opt/ProxyFS
 
-COPY pfs_middleware  pfs_middleware
-COPY meta_middleware meta_middleware
-
-RUN cd pfs_middleware  && python setup.py develop
-RUN cd meta_middleware && python setup.py develop
-
 RUN rm -rf /var/log/proxyfsd
 RUN mkdir -p /var/log/proxyfsd
 RUN touch /var/log/proxyfsd/proxyfsd.log
@@ -158,7 +159,6 @@ RUN chmod 777 /var/log
 RUN chmod 777 /var/log/proxyfsd
 RUN chmod 666 /var/log/proxyfsd/proxyfsd.log
 
-WORKDIR /opt/ProxyFS
 RUN wget -nv $GolangURL
 RUN tar -C /usr/local -xzf $GolangBasename
 
@@ -172,6 +172,9 @@ WORKDIR $GOPATH/src/github.com/swiftstack
 RUN git clone https://github.com/swiftstack/ProxyFS.git
 WORKDIR $GOPATH/src/github.com/swiftstack/ProxyFS
 RUN git checkout $ProxyFS_Version
+
+RUN cd pfs_middleware  && python setup.py develop
+RUN cd meta_middleware && python setup.py develop
 
 RUN make version pre-generate generate install
 
@@ -200,4 +203,4 @@ CMD /opt/ProxyFS/docker_startup.sh
 
 # To run a container for this image:
 #
-#   docker run -it --rm --device /dev/fuse --device /dev/loop0 --cap-add SYS_ADMIN -p 15346:15346 saio-pfs
+#   docker run -d --rm --device /dev/fuse --device /dev/loop0 --cap-add SYS_ADMIN -p 15346:15346 saio-pfs

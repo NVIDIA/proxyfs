@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -96,9 +99,6 @@ func testSetup(t *testing.T) {
 		"Agent.FetchExtentsBeforeFileOffset=0",
 		"Agent.ReadCacheLineSize=1048576",
 		"Agent.ReadCacheLineCount=1000",
-		"Agent.SharedFileLimit=1000",   // TODO - obsolete this
-		"Agent.ExclusiveFileLimit=100", // TODO - obsolete this
-		"Agent.DirtyFileLimit=50",      // TODO - obsolete this
 		"Agent.LeaseRetryLimit=10",
 		"Agent.LeaseRetryDelay=10ms",
 		"Agent.LeaseRetryDelayVariance=25",
@@ -107,6 +107,7 @@ func testSetup(t *testing.T) {
 		"Agent.ExclusiveLeaseLimit=100",
 		"Agent.ExtentMapEntryLimit=1048576",
 		"Agent.DirtyLogSegmentLimit=50",
+		"Agent.DirtyFileLimit=50", // TODO - obsolete this
 		"Agent.MaxFlushSize=10485760",
 		"Agent.MaxFlushTime=10s",
 		"Agent.LogFilePath=",
@@ -221,6 +222,7 @@ func testSetup(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",

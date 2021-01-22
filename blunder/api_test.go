@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package blunder
 
 import (
@@ -36,6 +39,7 @@ func testSetup(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 	}
 
 	testConfMap, err = conf.MakeConfMapFromStrings(testConfStrings)

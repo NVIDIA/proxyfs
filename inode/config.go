@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -282,6 +285,11 @@ func (dummy *globalsStruct) VolumeGroupCreated(confMap conf.ConfMap, volumeGroup
 	volumeGroup.readCacheLineSize, err = confMap.FetchOptionValueUint64(volumeGroupSectionName, "ReadCacheLineSize")
 	if nil != err {
 		return
+	}
+	if volumeGroup.readCacheLineSize < 4096 {
+		logger.Warnf("Section '%s' for VolumeGroup '%s' ReadCacheLineSize %d is < 4096; changing to 4096",
+			volumeGroupSectionName, volumeGroupName, volumeGroup.readCacheLineSize)
+		volumeGroup.readCacheLineSize = 4096
 	}
 
 	volumeGroup.readCacheWeight, err = confMap.FetchOptionValueUint64(volumeGroupSectionName, "ReadCacheWeight")
@@ -645,13 +653,14 @@ func (dummy *globalsStruct) ServeVolume(confMap conf.ConfMap, volumeName string)
 	volume.served = true
 	volume.volumeGroup.numServed++
 
+	// temporary value until we can look across all volume groups to compute it
+	volume.volumeGroup.readCacheLineCount = 1
+
 	volume.volumeGroup.Unlock()
 
 	globals.Unlock()
 
-	err = adoptVolumeGroupReadCacheParameters(confMap)
-
-	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
+	return
 }
 
 func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName string) (err error) {
@@ -692,9 +701,7 @@ func (dummy *globalsStruct) UnserveVolume(confMap conf.ConfMap, volumeName strin
 	volume.volumeGroup.Unlock()
 	globals.Unlock()
 
-	err = adoptVolumeGroupReadCacheParameters(confMap)
-
-	return // err from call to adoptVolumeGroupReadCacheParameters() is fine to return here
+	return
 }
 
 func (dummy *globalsStruct) VolumeToBeUnserved(confMap conf.ConfMap, volumeName string) (err error) {
@@ -724,6 +731,14 @@ func (dummy *globalsStruct) SignaledFinish(confMap conf.ConfMap) (err error) {
 		swiftReconReadOnlyErrno string
 		volume                  *volumeStruct
 	)
+
+	// now that the information for all volume groups is available, compute
+	// the read cache size per volume group
+	err = adoptVolumeGroupReadCacheParameters(confMap)
+	if err != nil {
+		// fatal
+		return
+	}
 
 	swiftReconNoWriteErrno, err = confMap.FetchOptionValueString("SwiftClient", "SwiftReconNoWriteErrno")
 	if nil == err {

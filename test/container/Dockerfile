@@ -1,3 +1,6 @@
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 FROM centos:7.4.1708
 
 # Yum install. Trying to do as much as possible at once.
@@ -62,8 +65,8 @@ RUN rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 
 # goveralls needs a more recent version of git than what comes with CentOS 7
 RUN yum -y remove git*
-RUN yum -y install  https://centos7.iuscommunity.org/ius-release.rpm
-RUN yum -y install  git2u-all
+RUN yum -y install https://packages.endpoint.com/rhel/7/os/x86_64/endpoint-repo-1.8-1.x86_64.rpm
+RUN yum -y install git
 RUN git --version
 
 RUN yum -y --disableexcludes=all install gcc
@@ -105,7 +108,7 @@ RUN pip install --upgrade pip
 RUN pip install requests tox==3.5.3
 
 # Install Golang
-ENV GOLANG_TARFILE_NAME=go1.13.6.linux-amd64.tar.gz
+ENV GOLANG_TARFILE_NAME=go1.15.5.linux-amd64.tar.gz
 RUN cd /tmp && wget -q https://dl.google.com/go/${GOLANG_TARFILE_NAME}
 RUN tar -C /usr/local -xf /tmp/${GOLANG_TARFILE_NAME}
 RUN rm -rf /tmp/${GOLANG_TARFILE_NAME}

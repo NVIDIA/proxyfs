@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package jrpcfs implements a JSON RPC interface to package fs.
 //
 // The structs in this file are used as parameters to the Server methods
@@ -502,6 +505,30 @@ type RenamePathRequest struct {
 	DstFullpath string
 }
 
+// MoveRequest is the request object for RpcMove.
+//
+// Note the similarity with RenameRequest except that implicit Destroy of an Inode
+// when a replacement DirEntry reduces the prior DirEntry's Inode LinkCount to zero
+// is not performed... instead leaving it up to the client to do so.
+//
+type MoveRequest struct {
+	MountID           MountIDAsString
+	SrcDirInodeNumber int64
+	SrcBasename       string
+	DstDirInodeNumber int64
+	DstBasename       string
+}
+
+// MoveReply is the reply object for RpcMove.
+type MoveReply struct {
+	ToDestroyInodeNumber int64
+}
+
+// DestroyRequest is teh request object for RpcDestroy.
+type DestroyRequest struct {
+	InodeHandle
+}
+
 // Reply is a generic response object used when no values need to be returned.
 // This response object is used by a number of the methods.
 type Reply struct {
@@ -844,6 +871,7 @@ type WroteRequest struct {
 	FileOffset    []uint64
 	ObjectOffset  []uint64
 	Length        []uint64
+	WroteTimeNs   uint64 // New value for File's Stat.CTimeNs & Stat.MTimeNs
 }
 
 type WroteReply struct {
@@ -968,4 +996,27 @@ const (
 type RPCInterrupt struct {
 	RPCInterruptType       // One of RPCInterruptType*
 	InodeNumber      int64 // if RPCInterruptType == RPCInterruptTypeUnmount, InodeNumber == 0 (ignored)
+}
+
+// LeaseReportElementStruct describes the state of a particular Lease. Any SharedLease holders or
+// a singular ExclusiveLease holder will be reported (if any) as well as a list of any clients
+// awaiting Shared or Exclusive Leases.
+//
+type LeaseReportElementStruct struct {
+	InodeNumber          string
+	SharedHoldersList    []MountIDAsString
+	PromotingHolder      MountIDAsString
+	ExclusiveHolder      MountIDAsString
+	DemotingHolder       MountIDAsString
+	ReleasingHoldersList []MountIDAsString
+	RequestedList        []string // Time-ordered (i.e. 1st element is next to receive Lease)
+	//                                 SharedLease    waiters will be of the form "S[<MountIDAsString>]"
+	//                                 ExclusiveLease waiters will be of the form "E[<MountIDAsString>]"
+}
+
+// FetchLeaseReport returns a JSON-marshalable dump of the state of Leases for the specified Volume.
+//
+func FetchLeaseReport(volumeName string) (leaseReport []*LeaseReportElementStruct, err error) {
+	leaseReport, err = fetchLeaseReport(volumeName)
+	return
 }

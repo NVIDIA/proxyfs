@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package jrpcfs
 
 import (
@@ -21,7 +24,7 @@ const (
 	testRpcLeaseMultiFirstInodeNumber     int64 = 1
 	testRpcLeaseMultiNumInstances         int   = 5
 	testRpcLeaseSingleInodeNumber         int64 = 1
-	testRpcLeaseSingleNumInstances        int   = 100 // Must be >= 4
+	testRpcLeaseSingleNumInstances        int   = 101 // Must be >= 4
 	testRpcLeaseTimeFormatASDF                  = time.StampMilli
 	testRpcLeaseTimeFormat                      = "15:04:05.000"
 )
@@ -34,12 +37,13 @@ var (
 )
 
 type testRpcLeaseClientStruct struct {
-	instance    int
-	inodeNumber int64
-	chIn        chan LeaseRequestType // close it to terminate testRpcLeaseClient instance
-	chOut       chan interface{}      // either a LeaseReplyType or an RPCInterruptType
-	wg          *sync.WaitGroup       // signaled when testRpcLeaseClient instance exits
-	t           *testing.T
+	instance         int
+	inodeNumber      int64
+	chIn             chan LeaseRequestType // close it to terminate testRpcLeaseClient instance
+	chOut            chan interface{}      // either a LeaseReplyType or an RPCInterruptType
+	alreadyUnmounted bool                  // if true, no RpcUnmount will be issued
+	wg               *sync.WaitGroup       // signaled when testRpcLeaseClient instance exits
+	t                *testing.T
 }
 
 func TestRpcLease(t *testing.T) {
@@ -57,12 +61,13 @@ func TestRpcLease(t *testing.T) {
 
 	for instance = 0; instance < testRpcLeaseSingleNumInstances; instance++ {
 		testRpcLeaseClient[instance] = &testRpcLeaseClientStruct{
-			instance:    instance,
-			inodeNumber: testRpcLeaseSingleInodeNumber,
-			chIn:        make(chan LeaseRequestType),
-			chOut:       make(chan interface{}),
-			wg:          &wg,
-			t:           t,
+			instance:         instance,
+			inodeNumber:      testRpcLeaseSingleInodeNumber,
+			chIn:             make(chan LeaseRequestType),
+			chOut:            make(chan interface{}),
+			alreadyUnmounted: false,
+			wg:               &wg,
+			t:                t,
 		}
 
 		go testRpcLeaseClient[instance].instanceGoroutine()
@@ -223,47 +228,49 @@ func TestRpcLease(t *testing.T) {
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
 
+	testRpcLeaseClient[0].alreadyUnmounted = true
+
 	testRpcLeaseLogTestCase("2 Shared, 2 Promotions (leading to one Release)", true)
 
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeShared)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeDemote)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeDemoted)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeShared)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeShared)
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypePromote)
-	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeDemote)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeDemoted)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeShared)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyType(LeaseReplyTypeShared)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypePromote)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeDenied, RPCInterruptTypeRelease)
+	testRpcLeaseClient[2].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypePromote)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeDenied, RPCInterruptTypeRelease)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypePromoted)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypePromoted)
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeRelease)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
 
-	testRpcLeaseLogTestCase(fmt.Sprintf("%v Shares (first one to be Demoted)", testRpcLeaseSingleNumInstances), false)
+	testRpcLeaseLogTestCase(fmt.Sprintf("%v Shares (first one to be Demoted)", testRpcLeaseSingleNumInstances-1), false)
 
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeShared)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeShared)
-	testRpcLeaseClient[0].validateChOutValueIsRPCInterruptType(RPCInterruptTypeDemote)
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeDemote)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeDemoted, RPCInterruptTypeDemote)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeShared)
-	for instance = 2; instance < testRpcLeaseSingleNumInstances; instance++ {
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeShared)
+	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeDemote)
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeDemote)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeDemoted, RPCInterruptTypeDemote)
+	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyType(LeaseReplyTypeShared)
+	for instance = 3; instance < testRpcLeaseSingleNumInstances; instance++ {
 		testRpcLeaseClient[instance].sendLeaseRequest(LeaseRequestTypeShared)
 		testRpcLeaseClient[instance].validateChOutValueIsLeaseReplyType(LeaseReplyTypeShared)
 	}
-	for instance = 0; instance < testRpcLeaseSingleNumInstances; instance++ {
+	for instance = 1; instance < testRpcLeaseSingleNumInstances; instance++ {
 		testRpcLeaseClient[instance].sendLeaseRequest(LeaseRequestTypeRelease)
 		testRpcLeaseClient[instance].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
 	}
 
-	testRpcLeaseLogTestCase(fmt.Sprintf("%v Exclusives", testRpcLeaseSingleNumInstances), false)
+	testRpcLeaseLogTestCase(fmt.Sprintf("%v Exclusives", testRpcLeaseSingleNumInstances-1), false)
 
-	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeExclusive)
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
-	for instance = 1; instance < testRpcLeaseSingleNumInstances; instance++ {
+	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+	for instance = 2; instance < testRpcLeaseSingleNumInstances; instance++ {
 		testRpcLeaseClient[instance].sendLeaseRequest(LeaseRequestTypeExclusive)
 		testRpcLeaseClient[(instance - 1)].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 		testRpcLeaseClient[(instance - 1)].sendLeaseRequest(LeaseRequestTypeRelease)
@@ -289,12 +296,13 @@ func TestRpcLease(t *testing.T) {
 
 	for instance = 0; instance < testRpcLeaseMultiNumInstances; instance++ {
 		testRpcLeaseClient[instance] = &testRpcLeaseClientStruct{
-			instance:    instance,
-			inodeNumber: (testRpcLeaseMultiFirstInodeNumber + int64(instance)),
-			chIn:        make(chan LeaseRequestType),
-			chOut:       make(chan interface{}),
-			wg:          &wg,
-			t:           t,
+			instance:         instance,
+			inodeNumber:      (testRpcLeaseMultiFirstInodeNumber + int64(instance)),
+			chIn:             make(chan LeaseRequestType),
+			chOut:            make(chan interface{}),
+			alreadyUnmounted: false,
+			wg:               &wg,
+			t:                t,
 		}
 
 		go testRpcLeaseClient[instance].instanceGoroutine()
@@ -307,26 +315,32 @@ func TestRpcLease(t *testing.T) {
 	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeExclusive)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeExclusive)
 	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeExclusive)
-	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
-	testRpcLeaseClient[4].sendLeaseRequest(LeaseRequestTypeExclusive)
 
 	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
 	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
-	testRpcLeaseClient[3].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
-	testRpcLeaseClient[4].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+
+	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeExclusive)
 
 	testRpcLeaseClient[0].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 	testRpcLeaseClient[1].validateChOutValueIsRPCInterruptType(RPCInterruptTypeRelease)
 
 	testRpcLeaseClient[0].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[1].sendLeaseRequest(LeaseRequestTypeRelease)
+
+	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
+	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
+
+	testRpcLeaseClient[3].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+
+	testRpcLeaseClient[4].sendLeaseRequest(LeaseRequestTypeExclusive)
+
+	testRpcLeaseClient[4].validateChOutValueIsLeaseReplyType(LeaseReplyTypeExclusive)
+
 	testRpcLeaseClient[2].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[3].sendLeaseRequest(LeaseRequestTypeRelease)
 	testRpcLeaseClient[4].sendLeaseRequest(LeaseRequestTypeRelease)
 
-	testRpcLeaseClient[0].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
-	testRpcLeaseClient[1].validateChOutValueIsLeaseReplyTypeIgnoringRPCInterruptType(LeaseReplyTypeReleased, RPCInterruptTypeRelease)
 	testRpcLeaseClient[2].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
 	testRpcLeaseClient[3].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
 	testRpcLeaseClient[4].validateChOutValueIsLeaseReplyType(LeaseReplyTypeReleased)
@@ -431,8 +445,14 @@ func (testRpcLeaseClient *testRpcLeaseClientStruct) instanceGoroutine() {
 			unmountReply = &Reply{}
 
 			err = server.RpcUnmount(unmountRequest, unmountReply)
-			if nil != err {
-				testRpcLeaseClient.Fatalf("server.RpcUnmount(MountID=\"%s\",) failed: %v", unmountRequest.MountID, err)
+			if testRpcLeaseClient.alreadyUnmounted {
+				if nil == err {
+					testRpcLeaseClient.Fatalf("server.RpcUnmount(MountID=\"%s\",) should have failed", unmountRequest.MountID)
+				}
+			} else {
+				if nil != err {
+					testRpcLeaseClient.Fatalf("server.RpcUnmount(MountID=\"%s\",) failed: %v", unmountRequest.MountID, err)
+				}
 			}
 
 			testRpcLeaseClient.wg.Done()

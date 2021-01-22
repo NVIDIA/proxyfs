@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -41,11 +44,8 @@ func adoptVolumeGroupReadCacheParameters(confMap conf.ConfMap) (err error) {
 
 	readCacheMemSize = uint64(float64(totalMemSize) * readCacheQuotaFraction / platform.GoHeapAllocationMultiplier)
 
-	logger.Infof("Adopting ReadCache Parameters...")
-	logger.Infof("...ReadCacheQuotaFraction(%v) of memSize(0x%016X) totals 0x%016X",
-		readCacheQuotaFraction,
-		totalMemSize,
-		readCacheMemSize)
+	logger.Infof("Adopting ReadCache Parameters: ReadCacheQuotaFraction(%v) of memSize(0x%016X) totals 0x%016X",
+		readCacheQuotaFraction, totalMemSize, readCacheMemSize)
 
 	for _, volumeGroup = range globals.volumeGroupMap {
 		if 0 < volumeGroup.numServed {
@@ -63,11 +63,10 @@ func adoptVolumeGroupReadCacheParameters(confMap conf.ConfMap) (err error) {
 			volumeGroup.capReadCacheWhileLocked()
 			volumeGroup.Unlock()
 
-			logger.Infof("...0x%08X cache lines (each of size 0x%08X) totalling 0x%016X for Volume Group %v",
-				volumeGroup.readCacheLineCount,
-				volumeGroup.readCacheLineSize,
-				volumeGroup.readCacheLineCount*volumeGroup.readCacheLineSize,
-				volumeGroup.name)
+			logger.Infof("Volume Group %s: %d cache lines (each of size 0x%08X) totalling 0x%016X",
+				volumeGroup.name,
+				volumeGroup.readCacheLineCount, volumeGroup.readCacheLineSize,
+				volumeGroup.readCacheLineCount*volumeGroup.readCacheLineSize)
 		}
 	}
 

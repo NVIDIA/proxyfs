@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -131,25 +134,21 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 	fileInode, ok = globals.fileInodeMap[inodeNumber]
 	if !ok {
 		fileInode = &fileInodeStruct{
-			InodeNumber:                  inodeNumber,
-			cachedStat:                   nil,
-			lockWaiters:                  nil,
-			references:                   1,
-			leaseState:                   fileInodeLeaseStateNone,
-			pendingLeaseInterrupt:        nil,
-			sharedLockHolders:            list.New(),
-			exclusiveLockHolder:          nil,
-			TODODeprecatelockWaiters:     list.New(),
-			leaseListElement:             nil,
-			extentMap:                    nil,
-			extentMapLenWhenUnreferenced: 0,
-			chunkedPutList:               list.New(),
-			flushInProgress:              false,
-			chunkedPutFlushWaiterList:    list.New(),
-			dirtyListElement:             nil,
+			InodeNumber:               inodeNumber,
+			cachedStat:                nil,
+			lockWaiters:               nil,
+			leaseState:                fileInodeLeaseStateNone,
+			pendingLeaseInterrupt:     nil,
+			leaseListElement:          nil,
+			extentMap:                 nil,
+			chunkedPutList:            list.New(),
+			flushInProgress:           false,
+			chunkedPutFlushWaiterList: list.New(),
+			dirtyListElement:          nil,
 		}
 
 		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		globals.fileInodeMap[inodeNumber] = fileInode
 	}
 
 	switch fileInode.leaseState {
@@ -221,6 +220,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 
 			fileInode.lockWaiters = list.New()
 
+			globals.Unlock()
+
 			return
 		}
 
@@ -248,6 +249,8 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 			// We already have an Exclusive Lease and we are also the first in line to use it
 
 			fileInode.lockWaiters = list.New()
+
+			globals.Unlock()
 
 			return
 		}
@@ -348,6 +351,120 @@ func lockInodeWithSharedLease(inodeNumber inode.InodeNumber) (fileInode *fileIno
 	return
 }
 
+// lockInodeIfExclusiveLeaseGranted is similar to lockInodeWithExclusiveLease() except that
+// if an ExclusiveLease is not Granted, it will return nil. Note that callers may also be
+// assured any inode state is not cached and dirty in the non-Granted cases. As such, if
+// an ExclusiveLease is either being Demoted or Released, lockInodeIfExclusiveLeaseGranted()
+// will block until the the Demote or Release has been completed.
+//
+func lockInodeIfExclusiveLeaseGranted(inodeNumber inode.InodeNumber) (fileInode *fileInodeStruct) {
+	var (
+		keepLock bool
+		ok       bool
+		waitChan chan struct{}
+	)
+
+	globals.Lock()
+
+	fileInode, ok = globals.fileInodeMap[inodeNumber]
+	if !ok {
+		globals.Unlock()
+		fileInode = nil
+		return
+	}
+
+	switch fileInode.leaseState {
+	case fileInodeLeaseStateNone:
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateSharedRequested:
+		globals.sharedLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateSharedGranted:
+		globals.sharedLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateSharedPromoting:
+		globals.exclusiveLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateSharedReleasing:
+		globals.unleasedFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateExclusiveRequested:
+		globals.exclusiveLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		globals.Unlock()
+		fileInode = nil
+		return
+	case fileInodeLeaseStateExclusiveGranted:
+		globals.exclusiveLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		keepLock = true
+	case fileInodeLeaseStateExclusiveDemoting:
+		globals.sharedLeaseFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		keepLock = false
+	case fileInodeLeaseStateExclusiveReleasing:
+		globals.unleasedFileInodeCacheLRU.MoveToBack(fileInode.leaseListElement)
+		keepLock = false
+	default:
+		logFatalf("lockInodeIfExclusiveLeaseGranted() found unknown fileInode.leaseState [case 1]: %v", fileInode.leaseState)
+	}
+
+	if nil == fileInode.lockWaiters {
+		fileInode.lockWaiters = list.New()
+	} else {
+		waitChan = make(chan struct{})
+		_ = fileInode.lockWaiters.PushBack(waitChan)
+		globals.Unlock()
+		_ = <-waitChan
+		globals.Lock()
+	}
+
+	if keepLock {
+		// Time to check fileInode.leaseState again [(*fileInodeStruct).unlock() may have changed fileInode.leaseState)
+
+		switch fileInode.leaseState {
+		case fileInodeLeaseStateNone:
+			globals.Unlock()
+			fileInode.unlock(false)
+			fileInode = nil
+		case fileInodeLeaseStateSharedRequested:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateSharedRequested")
+		case fileInodeLeaseStateSharedGranted:
+			globals.Unlock()
+			fileInode.unlock(false)
+			fileInode = nil
+		case fileInodeLeaseStateSharedPromoting:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateSharedPromoting")
+		case fileInodeLeaseStateSharedReleasing:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateSharedReleasing")
+		case fileInodeLeaseStateExclusiveRequested:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateExclusiveRequested")
+		case fileInodeLeaseStateExclusiveGranted:
+			// Now that we have an Exclusive Lease, we are also the first in line to use it - so we can grant the Lock
+			globals.Unlock()
+		case fileInodeLeaseStateExclusiveDemoting:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateExclusiveDemoting")
+		case fileInodeLeaseStateExclusiveReleasing:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unexpected fileInode.leaseState: fileInodeLeaseStateExclusiveReleasing")
+		default:
+			logFatalf("lockInodeIfExclusiveLeaseGranted() found unknown fileInode.leaseState [case 2]: %v", fileInode.leaseState)
+		}
+	} else {
+		globals.Unlock()
+		fileInode.unlock(false)
+		fileInode = nil
+	}
+
+	return
+}
+
 func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *fileInodeStruct) {
 	var (
 		err                   error
@@ -364,25 +481,21 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 	fileInode, ok = globals.fileInodeMap[inodeNumber]
 	if !ok {
 		fileInode = &fileInodeStruct{
-			InodeNumber:                  inodeNumber,
-			cachedStat:                   nil,
-			lockWaiters:                  nil,
-			references:                   1,
-			leaseState:                   fileInodeLeaseStateNone,
-			pendingLeaseInterrupt:        nil,
-			sharedLockHolders:            list.New(),
-			exclusiveLockHolder:          nil,
-			TODODeprecatelockWaiters:     list.New(),
-			leaseListElement:             nil,
-			extentMap:                    nil,
-			extentMapLenWhenUnreferenced: 0,
-			chunkedPutList:               list.New(),
-			flushInProgress:              false,
-			chunkedPutFlushWaiterList:    list.New(),
-			dirtyListElement:             nil,
+			InodeNumber:               inodeNumber,
+			cachedStat:                nil,
+			lockWaiters:               nil,
+			leaseState:                fileInodeLeaseStateNone,
+			pendingLeaseInterrupt:     nil,
+			leaseListElement:          nil,
+			extentMap:                 nil,
+			chunkedPutList:            list.New(),
+			flushInProgress:           false,
+			chunkedPutFlushWaiterList: list.New(),
+			dirtyListElement:          nil,
 		}
 
 		fileInode.leaseListElement = globals.unleasedFileInodeCacheLRU.PushBack(fileInode)
+		globals.fileInodeMap[inodeNumber] = fileInode
 	}
 
 	switch fileInode.leaseState {
@@ -450,6 +563,8 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 
 			fileInode.lockWaiters = list.New()
 
+			globals.Unlock()
+
 			return
 		}
 
@@ -477,6 +592,8 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 			// We already have an Exclusive Lease and we are also the first in line to use it
 
 			fileInode.lockWaiters = list.New()
+
+			globals.Unlock()
 
 			return
 		}
@@ -680,18 +797,28 @@ func lockInodeWithExclusiveLease(inodeNumber inode.InodeNumber) (fileInode *file
 	return
 }
 
-func (fileInode *fileInodeStruct) unlock() {
+func (fileInode *fileInodeStruct) unlock(forceRelease bool) {
 	var (
-		err                    error
-		leaseReply             *jrpcfs.LeaseReply
-		leaseRequest           *jrpcfs.LeaseRequest
-		leaseRequestEndTime    time.Time
-		leaseRequestStartTime  time.Time
-		lockWaitersListElement *list.Element
-		waitChan               chan struct{}
+		err                           error
+		forcedRPCInterruptTypeRelease jrpcfs.RPCInterruptType
+		leaseReply                    *jrpcfs.LeaseReply
+		leaseRequest                  *jrpcfs.LeaseRequest
+		leaseRequestEndTime           time.Time
+		leaseRequestStartTime         time.Time
+		lockWaitersListElement        *list.Element
+		waitChan                      chan struct{}
 	)
 
 	globals.Lock()
+
+	if forceRelease {
+		// The unlock() call was likely made for a non-existing Inode
+		// in which case we might as well clear out both the current
+		// Lease as well as the fileInodeStruct (if not being referenced)
+
+		forcedRPCInterruptTypeRelease = jrpcfs.RPCInterruptTypeRelease
+		fileInode.pendingLeaseInterrupt = &forcedRPCInterruptTypeRelease
+	}
 
 	for nil != fileInode.pendingLeaseInterrupt {
 		switch *fileInode.pendingLeaseInterrupt {
@@ -825,7 +952,17 @@ func (fileInode *fileInodeStruct) unlock() {
 	if 0 == fileInode.lockWaiters.Len() {
 		// Nobody was waiting for the fileInode lock
 
-		fileInode.lockWaiters = nil
+		if fileInodeLeaseStateNone == fileInode.leaseState {
+			// And there is no held Lease... so just destroy it
+
+			delete(globals.fileInodeMap, fileInode.InodeNumber)
+			_ = globals.unleasedFileInodeCacheLRU.Remove(fileInode.leaseListElement)
+		} else {
+			// We should keep holding the Lease we have... but indicate the lock is available
+
+			fileInode.lockWaiters = nil
+		}
+
 		globals.Unlock()
 		return
 	}

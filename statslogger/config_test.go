@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package statslogger
 
 /*
@@ -83,6 +86,7 @@ func TestAPI(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"FSGlobals.EtcdEnabled=false",
 
 		"RamSwiftInfo.MaxAccountNameLength=256",

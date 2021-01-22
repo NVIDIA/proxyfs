@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package evtlog
 
 import (
@@ -34,6 +37,7 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
+			"FSGlobals.CoalesceElementChunkSize=16",
 			"EventLog.Enabled=true",
 			"EventLog.BufferKey=1234",
 			"EventLog.BufferLength=65536", //64KiB
@@ -57,6 +61,7 @@ func benchmarkSetup(b *testing.B, enable bool) {
 			"FSGlobals.TryLockBackoffMax=50ms",
 			"FSGlobals.TryLockSerializationThreshhold=5",
 			"FSGlobals.SymlinkMax=32",
+			"FSGlobals.CoalesceElementChunkSize=16",
 			"EventLog.Enabled=false",
 		}
 	}

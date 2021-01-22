@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -174,6 +177,48 @@ func enforceRWMode(enforceNoWriteMode bool) (err error) {
 	} else {
 		err = nil
 	}
+
+	return
+}
+
+func (vS *volumeStruct) FetchOnDiskInode(inodeNumber InodeNumber) (corruptionDetected CorruptionDetected, version Version, onDiskInode []byte, err error) {
+	var (
+		bytesConsumedByCorruptionDetected uint64
+		bytesConsumedByVersion            uint64
+		inodeRec                          []byte
+		ok                                bool
+	)
+
+	corruptionDetected = CorruptionDetected(false)
+	version = Version(0)
+	onDiskInode = make([]byte, 0)
+
+	inodeRec, ok, err = vS.headhunterVolumeHandle.GetInodeRec(uint64(inodeNumber))
+	if nil != err {
+		err = fmt.Errorf("headhunter.GetInodeRec() failed: %v", err)
+		return
+	}
+	if !ok {
+		err = fmt.Errorf("headhunter.GetInodeRec() returned !ok")
+		return
+	}
+
+	bytesConsumedByCorruptionDetected, err = cstruct.Unpack(inodeRec, &corruptionDetected, cstruct.LittleEndian)
+	if nil != err {
+		err = fmt.Errorf("cstruct.Unpack(,&corruptionDetected,) failed: %v", err)
+		return
+	}
+	if corruptionDetected {
+		return
+	}
+
+	bytesConsumedByVersion, err = cstruct.Unpack(inodeRec[bytesConsumedByCorruptionDetected:], &version, cstruct.LittleEndian)
+	if nil != err {
+		err = fmt.Errorf("cstruct.Unpack(,&version,) failed: %v", err)
+		return
+	}
+
+	onDiskInode = inodeRec[bytesConsumedByCorruptionDetected+bytesConsumedByVersion:]
 
 	return
 }
@@ -625,6 +670,186 @@ func (vS *volumeStruct) makeInMemoryInode(inodeType InodeType, fileMode InodeMod
 	inodeNumberAsUint64 := vS.headhunterVolumeHandle.FetchNonce()
 
 	inMemoryInode = vS.makeInMemoryInodeWithThisInodeNumber(inodeType, fileMode, userID, groupID, InodeNumber(inodeNumberAsUint64), false)
+
+	return
+}
+
+func (vS *volumeStruct) PatchInode(inodeNumber InodeNumber, inodeType InodeType, linkCount uint64, mode InodeMode, userID InodeUserID, groupID InodeGroupID, parentInodeNumber InodeNumber, symlinkTarget string) (err error) {
+	var (
+		callerID                              dlm.CallerID
+		inode                                 *inMemoryInodeStruct
+		inodeNumberDecodedAsInodeNumber       InodeNumber
+		inodeNumberDecodedAsUint64            uint64
+		inodeRWLock                           *dlm.RWLockStruct
+		modeAdornedWithInodeType              InodeMode
+		ok                                    bool
+		parentInodeNumberDecodedAsInodeNumber InodeNumber
+		parentInodeNumberDecodedAsUint64      uint64
+		payload                               sortedmap.BPlusTree
+		snapShotIDType                        headhunter.SnapShotIDType
+	)
+
+	snapShotIDType, _, inodeNumberDecodedAsUint64 = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+	if headhunter.SnapShotIDTypeLive != snapShotIDType {
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) must provide a non-SnapShot inodeNumber", inodeNumber)
+		return
+	}
+	inodeNumberDecodedAsInodeNumber = InodeNumber(inodeNumberDecodedAsUint64)
+
+	switch inodeType {
+	case DirType:
+		if 2 != linkCount {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,linkCount==%v,,,,,) must set linkCount to 2", inodeNumber, linkCount)
+			return
+		}
+		if InodeNumber(0) == parentInodeNumber {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,parentInodeNumber==0,) must provide a non-zero parentInodeNumber", inodeNumber)
+			return
+		}
+		if (RootDirInodeNumber == inodeNumber) && (RootDirInodeNumber != parentInodeNumber) {
+			err = fmt.Errorf("PatchInode(inodeNumber==RootDirInodeNumber,inodeType==DirType,,,,,parentInodeNumber==0x%016X,) must provide RootDirInode's parent as also RootDirInodeNumber", parentInodeNumber)
+			return
+		}
+		snapShotIDType, _, parentInodeNumberDecodedAsUint64 = vS.headhunterVolumeHandle.SnapShotU64Decode(uint64(inodeNumber))
+		if headhunter.SnapShotIDTypeLive != snapShotIDType {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,parentInodeNumber==0x%016X,) must provide a non-SnapShot parentInodeNumber", inodeNumber, parentInodeNumber)
+			return
+		}
+		parentInodeNumberDecodedAsInodeNumber = InodeNumber(parentInodeNumberDecodedAsUint64)
+	case FileType:
+		if 0 == linkCount {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==FileType,linkCount==0,,,,,) must provide a non-zero linkCount", inodeNumber)
+			return
+		}
+	case SymlinkType:
+		if 0 == linkCount {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==SymlinkType,linkCount==0,,,,,) must provide a non-zero linkCount", inodeNumber)
+			return
+		}
+		if "" == symlinkTarget {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==SymlinkType,,,,,,symlinkTarget==\"\") must provide a non-empty symlinkTarget", inodeNumber)
+			return
+		}
+	default:
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==%v,,,,,,) must provide a inodeType of DirType(%v), FileType(%v), or SymlinkType(%v)", inodeNumber, inodeType, DirType, FileType, SymlinkType)
+		return
+	}
+
+	modeAdornedWithInodeType, err = determineMode(mode, inodeType)
+	if nil != err {
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==%v,,mode==0o%011o,,,,) failed: %v", inodeNumber, inodeType, mode, err)
+		return
+	}
+
+	vS.Lock()
+
+	callerID = dlm.GenerateCallerID()
+	inodeRWLock, _ = vS.InitInodeLock(inodeNumber, callerID)
+	err = inodeRWLock.TryWriteLock()
+	if nil != err {
+		vS.Unlock()
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) couldn't create a *dlm.RWLockStruct: %v", inodeNumber, err)
+		return
+	}
+
+	inode, ok, err = vS.inodeCacheFetchWhileLocked(inodeNumber)
+	if nil != err {
+		_ = inodeRWLock.Unlock()
+		vS.Unlock()
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) couldn't search inodeCache for pre-existing inode: %v", inodeNumber, err)
+		return
+	}
+	if ok {
+		if inode.dirty {
+			_ = inodeRWLock.Unlock()
+			vS.Unlock()
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) of dirty Inode is not allowed", inodeNumber)
+			return
+		}
+		ok, err = vS.inodeCacheDropWhileLocked(inode)
+		if nil != err {
+			_ = inodeRWLock.Unlock()
+			vS.Unlock()
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) drop of pre-existing inode from inodeCache failed: %v", inodeNumber, err)
+			return
+		}
+		if !ok {
+			_ = inodeRWLock.Unlock()
+			vS.Unlock()
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) drop of pre-existing inode from inodeCache returned !ok", inodeNumber)
+			return
+		}
+	}
+
+	inode = vS.makeInMemoryInodeWithThisInodeNumber(inodeType, modeAdornedWithInodeType, userID, groupID, inodeNumberDecodedAsInodeNumber, true)
+
+	inode.dirty = true
+
+	inode.onDiskInodeV1Struct.LinkCount = linkCount
+
+	switch inodeType {
+	case DirType:
+		payload = sortedmap.NewBPlusTree(
+			vS.maxEntriesPerDirNode,
+			sortedmap.CompareString,
+			&dirInodeCallbacks{treeNodeLoadable{inode: inode}},
+			globals.dirEntryCache)
+
+		ok, err = payload.Put(".", inodeNumberDecodedAsInodeNumber)
+		if nil != err {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,,) failed to insert \".\" dirEntry: %v", inodeNumber, err)
+			panic(err)
+		}
+		if !ok {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,,) insert \".\" dirEntry got a !ok", inodeNumber)
+			panic(err)
+		}
+
+		ok, err = payload.Put("..", parentInodeNumberDecodedAsInodeNumber)
+		if nil != err {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,parentInodeNumber==0x%016X,) failed to insert \"..\" dirEntry: %v", inodeNumber, parentInodeNumber, err)
+			panic(err)
+		}
+		if !ok {
+			err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,parentInodeNumber==0x%016X,) insert \"..\" dirEntry got a !ok", inodeNumber, parentInodeNumber)
+			panic(err)
+		}
+
+		inode.payload = payload
+		inode.onDiskInodeV1Struct.SymlinkTarget = ""
+	case FileType:
+		payload = sortedmap.NewBPlusTree(
+			vS.maxExtentsPerFileNode,
+			sortedmap.CompareUint64,
+			&fileInodeCallbacks{treeNodeLoadable{inode: inode}},
+			globals.fileExtentMapCache)
+
+		inode.payload = payload
+		inode.onDiskInodeV1Struct.SymlinkTarget = ""
+	case SymlinkType:
+		inode.payload = nil
+		inode.onDiskInodeV1Struct.SymlinkTarget = symlinkTarget
+	}
+
+	ok, err = vS.inodeCacheInsertWhileLocked(inode)
+	if nil != err {
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,,) failed to insert inode in inodeCache: %v", inodeNumber, err)
+		panic(err)
+	}
+	if !ok {
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,inodeType==DirType,,,,,,) insert of inode in inodeCache got a !ok", inodeNumber)
+		panic(err)
+	}
+
+	_ = inodeRWLock.Unlock()
+
+	vS.Unlock()
+
+	err = vS.flushInode(inode)
+	if nil != err {
+		err = fmt.Errorf("PatchInode(inodeNumber==0x%016X,,,,,,,) failed to flush: %v", inodeNumber, err)
+		panic(err)
+	}
 
 	return
 }
@@ -1623,7 +1848,6 @@ func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode,
 		fileMode |= PosixModeDir
 	case FileType:
 		fileMode |= PosixModeFile
-		break
 	case SymlinkType:
 		fileMode |= PosixModeSymlink
 	default:
@@ -1633,7 +1857,6 @@ func determineMode(filePerm InodeMode, inodeType InodeType) (fileMode InodeMode,
 	}
 
 	err = nil
-
 	return
 }
 

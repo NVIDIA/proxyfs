@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package fs
 
 import (
@@ -402,7 +405,7 @@ forLabel:
 		vVS.Lock()
 
 		if ("." == prevReturnedAsString) && (inodeNumber != dirInodeNumber) {
-			err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), ".", true)
+			_, err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), ".", true)
 			if nil != err {
 				vVS.jobLogErrWhileLocked("Got inode.Unlink(0x%016X,\".\",true) failure: %v", dirInodeNumber, err)
 				vVS.Unlock()
@@ -419,7 +422,7 @@ forLabel:
 
 			inodeNumber = dirInodeNumber
 		} else if (".." == prevReturnedAsString) && (inodeNumber != parentDirInodeNumber) {
-			err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), "..", true)
+			_, err = vVS.inodeVolumeHandle.Unlink(inode.InodeNumber(dirInodeNumber), "..", true)
 			if nil != err {
 				vVS.jobLogErrWhileLocked("Got inode.Unlink(0x%016X,\"..\",true) failure: %v", dirInodeNumber, err)
 				vVS.Unlock()
@@ -612,6 +615,7 @@ func (vVS *validateVolumeStruct) validateVolume() {
 		objectIndex                     uint64
 		objectNumber                    uint64
 		ok                              bool
+		toDestroyInodeNumber            inode.InodeNumber
 		validObjectNameRE               = regexp.MustCompile("\\A[0-9a-fA-F]+\\z")
 		value                           sortedmap.Value
 	)
@@ -1022,16 +1026,18 @@ func (vVS *validateVolumeStruct) validateVolume() {
 	if moreEntries {
 		vVS.jobLogInfo("Preserving non-empty /%v/", lostAndFoundDirName)
 	} else {
-		err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false)
+		toDestroyInodeNumber, err = vVS.inodeVolumeHandle.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false)
 		if nil != err {
 			vVS.jobLogErr("Got inode.Unlink(inode.RootDirInodeNumber, lostAndFoundDirName, false) failure: %v", err)
 			return
 		}
 
-		err = vVS.inodeVolumeHandle.Destroy(vVS.lostAndFoundDirInodeNumber)
-		if nil != err {
-			vVS.jobLogErr("Got inode.Destroy(vVS.lostAndFoundDirInodeNumber) failure: %v", err)
-			return
+		if inode.InodeNumber(0) != toDestroyInodeNumber {
+			err = vVS.inodeVolumeHandle.Destroy(toDestroyInodeNumber)
+			if nil != err {
+				vVS.jobLogErr("Got inode.Destroy(toDestroyInodeNumber) failure: %v", err)
+				return
+			}
 		}
 
 		vVS.jobLogInfo("Removed empty /%v/", lostAndFoundDirName)

@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package jrpcfs
 
 import (
@@ -63,6 +66,7 @@ func testSetup() []func() {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=8",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",

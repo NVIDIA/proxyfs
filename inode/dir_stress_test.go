@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package inode
 
 import (
@@ -79,12 +82,13 @@ func testDirStress(t *testing.T, starvationMode bool) {
 
 func testDirStressThread(threadIndex uint64) {
 	var (
-		basename        string
-		err             error
-		fileInodeNumber InodeNumber
-		iteration       uint64
-		linkIndex       uint64
-		volumeHandle    VolumeHandle
+		basename             string
+		err                  error
+		fileInodeNumber      InodeNumber
+		iteration            uint64
+		linkIndex            uint64
+		toDestroyInodeNumber InodeNumber
+		volumeHandle         VolumeHandle
 	)
 
 	defer testDirStressGlobals.waitGroup.Done()
@@ -121,9 +125,15 @@ func testDirStressThread(threadIndex uint64) {
 			time.Sleep(testDirStressDelayBetweenLinkAndUnlink)
 
 			testDirStressGlobals.Lock()
-			err = volumeHandle.Unlink(RootDirInodeNumber, basename, false)
+			toDestroyInodeNumber, err = volumeHandle.Unlink(RootDirInodeNumber, basename, false)
 			if nil != err {
 				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Unlink(RootDirInodeNumber, \"%s\", false) failed: %v", basename, err)
+				testDirStressGlobals.Unlock()
+				return
+			}
+			// Note that the originally created fileInode is not in any Directory, so unlinking the only dirEntry to it drops LinkCount to zero
+			if fileInodeNumber != toDestroyInodeNumber {
+				testDirStressGlobals.err[threadIndex] = fmt.Errorf("volumeHandle.Unlink(RootDirInodeNumber, \"%s\", false) should have returned toDestroyInodeNumber == fileInodeNumber", basename)
 				testDirStressGlobals.Unlock()
 				return
 			}

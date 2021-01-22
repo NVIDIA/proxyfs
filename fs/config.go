@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package fs
 
 import (
@@ -57,6 +60,7 @@ type globalsStruct struct {
 	tryLockBackoffMax              time.Duration
 	tryLockSerializationThreshhold uint64
 	symlinkMax                     uint16
+	coalesceElementChunkSize       uint16
 
 	volumeMap map[string]*volumeStruct // key == volumeStruct.volumeName
 
@@ -65,6 +69,7 @@ type globalsStruct struct {
 
 	AccessUsec         bucketstats.BucketLog2Round
 	CreateUsec         bucketstats.BucketLog2Round
+	DestroyUsec        bucketstats.BucketLog2Round
 	FlushUsec          bucketstats.BucketLog2Round
 	FlockGetUsec       bucketstats.BucketLog2Round
 	FlockLockUsec      bucketstats.BucketLog2Round
@@ -80,6 +85,7 @@ type globalsStruct struct {
 	LookupUsec         bucketstats.BucketLog2Round
 	LookupPathUsec     bucketstats.BucketLog2Round
 	MkdirUsec          bucketstats.BucketLog2Round
+	MoveUsec           bucketstats.BucketLog2Round
 	RemoveXAttrUsec    bucketstats.BucketLog2Round
 	RenameUsec         bucketstats.BucketLog2Round
 	ReadUsec           bucketstats.BucketLog2Round
@@ -104,6 +110,7 @@ type globalsStruct struct {
 
 	CreateErrors              bucketstats.Total
 	DefragmentFileErrors      bucketstats.Total
+	DestroyErrors             bucketstats.Total
 	FetchExtentMapChunkErrors bucketstats.Total
 	FlushErrors               bucketstats.Total
 	FlockOtherErrors          bucketstats.Total
@@ -121,6 +128,7 @@ type globalsStruct struct {
 	LookupErrors              bucketstats.Total
 	LookupPathErrors          bucketstats.Total
 	MkdirErrors               bucketstats.Total
+	MoveErrors                bucketstats.Total
 	RemoveXAttrErrors         bucketstats.Total
 	RenameErrors              bucketstats.Total
 	ReadErrors                bucketstats.Total
@@ -203,6 +211,10 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 	globals.symlinkMax, err = confMap.FetchOptionValueUint16("FSGlobals", "SymlinkMax")
 	if nil != err {
 		globals.symlinkMax = 32 // TODO: Eventually, just return
+	}
+	globals.coalesceElementChunkSize, err = confMap.FetchOptionValueUint16("FSGlobals", "CoalesceElementChunkSize")
+	if nil != err {
+		globals.coalesceElementChunkSize = 16 // TODO: Eventually, just return
 	}
 
 	globals.volumeMap = make(map[string]*volumeStruct)

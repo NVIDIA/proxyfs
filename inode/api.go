@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // Package inode provides inode-management functionality for ProxyFS.
 package inode
 
@@ -209,6 +212,8 @@ type VolumeHandle interface {
 	GetStream(inodeNumber InodeNumber, inodeStreamName string) (buf []byte, err error)
 	PutStream(inodeNumber InodeNumber, inodeStreamName string, buf []byte) (err error)
 	DeleteStream(inodeNumber InodeNumber, inodeStreamName string) (err error)
+	FetchOnDiskInode(inodeNumber InodeNumber) (corruptionDetected CorruptionDetected, version Version, onDiskInode []byte, err error)
+	PatchInode(inodeNumber InodeNumber, inodeType InodeType, linkCount uint64, mode InodeMode, userID InodeUserID, groupID InodeGroupID, parentInodeNumber InodeNumber, symlinkTarget string) (err error)
 	FetchLayoutReport(inodeNumber InodeNumber) (layoutReport sortedmap.LayoutReport, err error)
 	FetchFragmentationReport(inodeNumber InodeNumber) (fragmentationReport FragmentationReport, err error)
 	Optimize(inodeNumber InodeNumber, maxDuration time.Duration) (err error)
@@ -218,11 +223,13 @@ type VolumeHandle interface {
 
 	CreateDir(filePerm InodeMode, userID InodeUserID, groupID InodeGroupID) (dirInodeNumber InodeNumber, err error)
 	Link(dirInodeNumber InodeNumber, basename string, targetInodeNumber InodeNumber, insertOnly bool) (err error)
-	Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (err error)
-	Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (err error)
+	Unlink(dirInodeNumber InodeNumber, basename string, removeOnly bool) (toDestroyInodeNumber InodeNumber, err error)
+	Move(srcDirInodeNumber InodeNumber, srcBasename string, dstDirInodeNumber InodeNumber, dstBasename string) (toDestroyInodeNumber InodeNumber, err error)
 	Lookup(dirInodeNumber InodeNumber, basename string) (targetInodeNumber InodeNumber, err error)
 	NumDirEntries(dirInodeNumber InodeNumber) (numEntries uint64, err error)
 	ReadDir(dirInodeNumber InodeNumber, maxEntries uint64, maxBufSize uint64, prevReturned ...interface{}) (dirEntrySlice []DirEntry, moreEntries bool, err error)
+	AddDirEntry(dirInodeNumber InodeNumber, dirEntryName string, dirEntryInodeNumber InodeNumber, skipDirLinkCountIncrementOnSubDirEntry bool, skipSettingDotDotOnSubDirEntry bool, skipDirEntryLinkCountIncrementOnNonSubDirEntry bool) (err error)
+	ReplaceDirEntries(parentDirInodeNumber InodeNumber, parentDirEntryBasename string, dirInodeNumber InodeNumber, dirEntryInodeNumbers []InodeNumber) (err error)
 
 	// File Inode specific methods, implemented in file.go
 
@@ -232,7 +239,7 @@ type VolumeHandle interface {
 	FetchExtentMapChunk(fileInodeNumber InodeNumber, fileOffset uint64, maxEntriesFromFileOffset int64, maxEntriesBeforeFileOffset int64) (extentMapChunk *ExtentMapChunkStruct, err error)
 	Write(fileInodeNumber InodeNumber, offset uint64, buf []byte, profiler *utils.Profiler) (err error)
 	ProvisionObject() (objectPath string, err error)
-	Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, patchOnly bool) (err error)
+	Wrote(fileInodeNumber InodeNumber, containerName string, objectName string, fileOffset []uint64, objectOffset []uint64, length []uint64, wroteTime time.Time, patchOnly bool) (err error)
 	SetSize(fileInodeNumber InodeNumber, Size uint64) (err error)
 	Flush(fileInodeNumber InodeNumber, andPurge bool) (err error)
 	Coalesce(destInodeNumber InodeNumber, metaDataName string, metaData []byte, elements []*CoalesceElement) (attrChangeTime time.Time, modificationTime time.Time, numWrites uint64, fileSize uint64, err error)

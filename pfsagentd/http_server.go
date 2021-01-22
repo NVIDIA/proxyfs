@@ -1,7 +1,11 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +24,19 @@ import (
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/version"
 )
+
+type leaseReportStruct struct {
+	MountID            string
+	None               []string // inode.InodeNumber in 16-digit Hex (no leading "0x")
+	SharedRequested    []string
+	SharedGranted      []string
+	SharedPromoting    []string
+	SharedReleasing    []string
+	ExclusiveRequested []string
+	ExclusiveGranted   []string
+	ExclusiveDemoting  []string
+	ExclusiveReleasing []string
+}
 
 func serveHTTP() {
 	var (
@@ -79,6 +96,8 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 	path = strings.TrimRight(request.URL.Path, "/")
 
 	switch {
+	case "" == path:
+		serveGetOfIndexDotHTML(responseWriter, request)
 	case "/config" == path:
 		serveGetOfConfig(responseWriter, request)
 	case "/debug/pprof/cmdline" == path:
@@ -91,6 +110,10 @@ func serveGet(responseWriter http.ResponseWriter, request *http.Request) {
 		pprof.Trace(responseWriter, request)
 	case strings.HasPrefix(path, "/debug/pprof"):
 		pprof.Index(responseWriter, request)
+	case "index.html" == path:
+		serveGetOfIndexDotHTML(responseWriter, request)
+	case "/leases" == path:
+		serveGetOfLeases(responseWriter, request)
 	case "/metrics" == path:
 		serveGetOfMetrics(responseWriter, request)
 	case "/stats" == path:
@@ -132,6 +155,108 @@ func serveGetOfConfig(responseWriter http.ResponseWriter, request *http.Request)
 	} else {
 		json.Indent(&confMapJSON, confMapJSONPacked, "", "\t")
 		_, _ = responseWriter.Write(confMapJSON.Bytes())
+		_, _ = responseWriter.Write([]byte("\n"))
+	}
+}
+
+func serveGetOfIndexDotHTML(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/html")
+	responseWriter.WriteHeader(http.StatusOK)
+	_, _ = responseWriter.Write([]byte(fmt.Sprintf(indexDotHTMLTemplate, net.JoinHostPort(globals.config.HTTPServerIPAddr, strconv.Itoa(int(globals.config.HTTPServerTCPPort))))))
+}
+
+func serveGetOfLeases(responseWriter http.ResponseWriter, request *http.Request) {
+	var (
+		fileInode             *fileInodeStruct
+		leaseListElement      *list.Element
+		leaseReport           *leaseReportStruct
+		leaseReportJSON       bytes.Buffer
+		leaseReportJSONPacked []byte
+		ok                    bool
+		paramList             []string
+		sendPackedLeaseReport bool
+	)
+
+	leaseReport = &leaseReportStruct{
+		MountID:            fmt.Sprintf("%s", globals.mountID),
+		None:               make([]string, 0),
+		SharedRequested:    make([]string, 0),
+		SharedGranted:      make([]string, 0),
+		SharedPromoting:    make([]string, 0),
+		SharedReleasing:    make([]string, 0),
+		ExclusiveRequested: make([]string, 0),
+		ExclusiveGranted:   make([]string, 0),
+		ExclusiveDemoting:  make([]string, 0),
+		ExclusiveReleasing: make([]string, 0),
+	}
+
+	globals.Lock()
+
+	for leaseListElement = globals.unleasedFileInodeCacheLRU.Front(); leaseListElement != nil; leaseListElement = leaseListElement.Next() {
+		fileInode = leaseListElement.Value.(*fileInodeStruct)
+		switch fileInode.leaseState {
+		case fileInodeLeaseStateNone:
+			leaseReport.None = append(leaseReport.None, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateSharedReleasing:
+			leaseReport.SharedReleasing = append(leaseReport.SharedReleasing, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateExclusiveReleasing:
+			leaseReport.ExclusiveReleasing = append(leaseReport.ExclusiveReleasing, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		default:
+			logFatalf("serveGetOfLeases() found unexpected fileInode.leaseState %v on globals.unleasedFileInodeCacheLRU", fileInode.leaseState)
+		}
+	}
+
+	for leaseListElement = globals.sharedLeaseFileInodeCacheLRU.Front(); leaseListElement != nil; leaseListElement = leaseListElement.Next() {
+		fileInode = leaseListElement.Value.(*fileInodeStruct)
+		switch fileInode.leaseState {
+		case fileInodeLeaseStateSharedRequested:
+			leaseReport.SharedRequested = append(leaseReport.SharedRequested, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateSharedGranted:
+			leaseReport.SharedGranted = append(leaseReport.SharedGranted, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateExclusiveDemoting:
+			leaseReport.ExclusiveDemoting = append(leaseReport.ExclusiveDemoting, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		default:
+			logFatalf("serveGetOfLeases() found unexpected fileInode.leaseState %v on globals.sharedLeaseFileInodeCacheLRU", fileInode.leaseState)
+		}
+	}
+
+	for leaseListElement = globals.exclusiveLeaseFileInodeCacheLRU.Front(); leaseListElement != nil; leaseListElement = leaseListElement.Next() {
+		fileInode = leaseListElement.Value.(*fileInodeStruct)
+		switch fileInode.leaseState {
+		case fileInodeLeaseStateSharedPromoting:
+			leaseReport.SharedPromoting = append(leaseReport.SharedPromoting, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateExclusiveRequested:
+			leaseReport.ExclusiveRequested = append(leaseReport.ExclusiveRequested, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		case fileInodeLeaseStateExclusiveGranted:
+			leaseReport.ExclusiveGranted = append(leaseReport.ExclusiveGranted, fmt.Sprintf("%016X", fileInode.InodeNumber))
+		default:
+			logFatalf("serveGetOfLeases() found unexpected fileInode.leaseState %v on globals.exclusiveLeaseFileInodeCacheLRU", fileInode.leaseState)
+		}
+	}
+
+	globals.Unlock()
+
+	paramList, ok = request.URL.Query()["compact"]
+	if ok {
+		if 0 == len(paramList) {
+			sendPackedLeaseReport = false
+		} else {
+			sendPackedLeaseReport = !((paramList[0] == "") || (paramList[0] == "0") || (paramList[0] == "false"))
+		}
+	} else {
+		sendPackedLeaseReport = false
+	}
+
+	leaseReportJSONPacked, _ = json.Marshal(leaseReport)
+
+	responseWriter.Header().Set("Content-Type", "application/json")
+	responseWriter.WriteHeader(http.StatusOK)
+
+	if sendPackedLeaseReport {
+		_, _ = responseWriter.Write(leaseReportJSONPacked)
+	} else {
+		json.Indent(&leaseReportJSON, leaseReportJSONPacked, "", "\t")
+		_, _ = responseWriter.Write(leaseReportJSON.Bytes())
 		_, _ = responseWriter.Write([]byte("\n"))
 	}
 }

@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // JSON RPC Server on top of FS package.
 package jrpcfs
 
@@ -183,7 +186,7 @@ func AllocOpProfiles() (theOpProfiles map[OpType]opProfiles) {
 
 	// Cheater range check on opTypeStrs versus number of OpTypes
 	if len(opTypeStrs) != int(InvalidOp)+1 {
-		// XXX TODO: Find a way to make this a compile-time check instead
+		// TODO: Find a way to make this a compile-time check instead
 		panic("len(opTypeStrs) != int(InvalidOp)+1!")
 	}
 
@@ -372,7 +375,7 @@ func SaveProfiler(s *Server, op OpType, profiler *utils.Profiler) {
 	}
 }
 
-// XXX TODO: create conf setting for this?
+// TODO: create conf setting for this?
 var dumpStatsProfilesToLog bool = true
 
 func DumpProfileMap(profilerMap *opProfiles) {
@@ -441,11 +444,11 @@ func DumpAndFreeStats(s *Server) {
 	s.opStatsLock.Lock()
 	profiler.AddEventNow("after lock")
 
-	// XXX TODO: Is it faster to copy/free and then dump later,
-	//           or just to dump/free and return?
+	// TODO: Is it faster to copy/free and then dump later,
+	//       or just to dump/free and return?
 
-	// XXX TODO: do the makes outside the lock, just make it max size
-	//           could make things faster in here...
+	// TODO: do the makes outside the lock, just make it max size
+	//       could make things faster in here...
 
 	// Copy profiles to a local map
 	savedOpProfiles := make(map[OpType]opProfiles, len(s.allProfiles))
@@ -475,7 +478,7 @@ func DumpAndFreeStats(s *Server) {
 	profiler.AddEventNow("after unlock")
 
 	// Mark ourselves as done since we're not accessing the common data structure any more.
-	// XXX TODO: Is this a race condition waiting to happen?
+	// TODO: Is this a race condition waiting to happen?
 	s.dumpLock.Lock()
 	s.dumpRunning = false
 	s.dumpLock.Unlock()
@@ -493,8 +496,8 @@ func DumpAndFreeStats(s *Server) {
 
 	// Save my own profiling
 	profiler.Close()
-	// XXX TODO: Disabled dumping of this data; it's for debug only
-	//profiler.Dump() // XXX TODO: There isn't a dump to string for this one yet
+	// TODO: Disabled dumping of this data; it's for debug only
+	// profiler.Dump() // TODO: There isn't a dump to string for this one yet
 }
 
 // RESPONSE ERROR FORMATTING
@@ -581,11 +584,11 @@ func DumpAndFreeStats(s *Server) {
 // More specifically, we are passing:
 //   errno: <errno int>
 //
-// XXX TODO: The format of how this information will be conveyed over JSON RPC has not
-//           been determined; this is just an experimental implementation.
+// TODO: The format of how this information will be conveyed over JSON RPC has not
+//       been determined; this is just an experimental implementation.
 //
-// XXX TODO: We should probably encode in JSON instead, since that is the way everything else
-//           we send is being encoded.
+// TODO: We should probably encode in JSON instead, since that is the way everything else
+//       we send is being encoded.
 //
 // NOTE: e needs to be pointer to error so that we can modify it
 //
@@ -842,7 +845,7 @@ func (s *Server) RpcWrote(in *WroteRequest, reply *WroteReply) (err error) {
 
 	volumeHandle, err := lookupVolumeHandleByMountIDAsString(in.MountID)
 	if nil == err {
-		err = volumeHandle.Wrote(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.ContainerName, in.ObjectName, in.FileOffset, in.ObjectOffset, in.Length)
+		err = volumeHandle.Wrote(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), in.ContainerName, in.ObjectName, in.FileOffset, in.ObjectOffset, in.Length, in.WroteTimeNs)
 	}
 
 	return
@@ -1377,10 +1380,11 @@ func performMount(volumeHandle fs.VolumeHandle) (mountIDAsByteArray MountIDAsByt
 	mountIDAsString = MountIDAsString(base64.StdEncoding.EncodeToString(mountIDAsByteArray[:]))
 
 	mount = &mountStruct{
-		volume:             volume,
-		mountIDAsByteArray: mountIDAsByteArray,
-		mountIDAsString:    mountIDAsString,
-		leaseRequestMap:    make(map[inode.InodeNumber]*leaseRequestStruct),
+		volume:                 volume,
+		mountIDAsByteArray:     mountIDAsByteArray,
+		mountIDAsString:        mountIDAsString,
+		acceptingLeaseRequests: true,
+		leaseRequestMap:        make(map[inode.InodeNumber]*leaseRequestStruct),
 	}
 
 	volume.mountMapByMountIDAsByteArray[mountIDAsByteArray] = mount
@@ -1440,9 +1444,11 @@ func (s *Server) RpcMountByVolumeName(in *MountByVolumeNameRequest, reply *Mount
 
 func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 	var (
-		mount  *mountStruct
-		ok     bool
-		volume *volumeStruct
+		leaseReleaseFinishedWG sync.WaitGroup
+		leaseReleaseStartWG    sync.WaitGroup
+		mount                  *mountStruct
+		ok                     bool
+		volume                 *volumeStruct
 	)
 
 	enterGate()
@@ -1457,7 +1463,8 @@ func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 		return
 	}
 
-	// TODO: Lease Management must implicitly release all leases held
+	leaseReleaseStartWG.Add(1)
+	mount.armReleaseOfAllLeasesWhileLocked(&leaseReleaseStartWG, &leaseReleaseFinishedWG)
 
 	volume = mount.volume
 
@@ -1468,6 +1475,9 @@ func (s *Server) RpcUnmount(in *UnmountRequest, reply *Reply) (err error) {
 	delete(globals.mountMapByMountIDAsString, mount.mountIDAsString)
 
 	globals.volumesLock.Unlock()
+
+	leaseReleaseStartWG.Done()
+	leaseReleaseFinishedWG.Wait()
 
 	err = nil
 	return
@@ -1759,6 +1769,45 @@ func (s *Server) RpcRenamePath(in *RenamePathRequest, reply *Reply) (err error) 
 	return
 }
 
+func (s *Server) RpcMove(in *MoveRequest, reply *MoveReply) (err error) {
+	var (
+		toDestroyInodeNumber inode.InodeNumber
+	)
+
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	volumeHandle, err := lookupVolumeHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+
+	toDestroyInodeNumber, err = volumeHandle.Move(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.SrcDirInodeNumber), in.SrcBasename, inode.InodeNumber(in.DstDirInodeNumber), in.DstBasename)
+	reply.ToDestroyInodeNumber = int64(toDestroyInodeNumber)
+	return
+}
+
+func (s *Server) RpcDestroy(in *DestroyRequest, reply *Reply) (err error) {
+	enterGate()
+	defer leaveGate()
+
+	flog := logger.TraceEnter("in.", in)
+	defer func() { flog.TraceExitErr("reply.", err, reply) }()
+	defer func() { rpcEncodeError(&err) }() // Encode error for return by RPC
+
+	volumeHandle, err := lookupVolumeHandleByMountIDAsString(in.MountID)
+	if nil != err {
+		return
+	}
+
+	err = volumeHandle.Destroy(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber))
+	return
+}
+
 func (s *Server) RpcResize(in *ResizeRequest, reply *Reply) (err error) {
 	enterGate()
 	defer leaveGate()
@@ -1840,7 +1889,7 @@ func (s *Server) RpcSetstat(in *SetstatRequest, reply *Reply) (err error) {
 	stat[fs.StatATime] = in.ATimeNs
 	stat[fs.StatSize] = in.Size
 	stat[fs.StatNLink] = in.NumLinks
-	// XXX TODO: add in mode/userid/groupid?
+	// TODO: add in mode/userid/groupid?
 	err = volumeHandle.Setstat(inode.InodeRootUserID, inode.InodeGroupID(0), nil, inode.InodeNumber(in.InodeNumber), stat)
 	return
 }

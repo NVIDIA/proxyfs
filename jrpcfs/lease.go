@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package jrpcfs
 
 import (
@@ -5,11 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/swiftstack/ProxyFS/blunder"
+	"github.com/swiftstack/ProxyFS/evtlog"
 	"github.com/swiftstack/ProxyFS/inode"
 	"github.com/swiftstack/ProxyFS/logger"
+	"github.com/swiftstack/sortedmap"
 )
 
 // RpcLease is called to either request a Shared|Exclusive Lease or to
@@ -17,17 +23,21 @@ import (
 //
 func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 	var (
-		additionalEvictionsInitiated uint64
-		additionalEvictionsNeeded    uint64
-		inodeLease                   *inodeLeaseStruct
-		inodeLeaseFromLRU            *inodeLeaseStruct
-		inodeLeaseLRUElement         *list.Element
-		inodeNumber                  inode.InodeNumber
-		leaseRequestOperation        *leaseRequestOperationStruct
-		mount                        *mountStruct
-		ok                           bool
-		replyToReturn                *LeaseReply
-		volume                       *volumeStruct
+		additionalEvictionsInitiated         uint64
+		additionalEvictionsNeeded            uint64
+		delayedUnmount                       *mountStruct
+		delayedUnmountLeaseReleaseFinishedWG sync.WaitGroup
+		delayedUnmountLeaseReleaseStartWG    sync.WaitGroup
+		delayedUnmountListElement            *list.Element
+		inodeLease                           *inodeLeaseStruct
+		inodeLeaseFromLRU                    *inodeLeaseStruct
+		inodeLeaseLRUElement                 *list.Element
+		inodeNumber                          inode.InodeNumber
+		leaseRequestOperation                *leaseRequestOperationStruct
+		mount                                *mountStruct
+		ok                                   bool
+		replyToReturn                        *LeaseReply
+		volume                               *volumeStruct
 	)
 
 	enterGate()
@@ -61,8 +71,13 @@ func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 
 	volume = mount.volume
 
+	evtlog.Record(evtlog.FormatLeaseRequest, volume.volumeName, string(in.InodeHandle.MountID), uint64(inode.InodeNumber(in.InodeHandle.InodeNumber)), uint32(in.LeaseRequestType))
+	defer func() {
+		evtlog.Record(evtlog.FormatLeaseReply, volume.volumeName, string(in.InodeHandle.MountID), uint64(inode.InodeNumber(in.InodeHandle.InodeNumber)), uint32(in.LeaseRequestType), uint32(reply.LeaseReplyType))
+	}()
+
 	if (in.LeaseRequestType == LeaseRequestTypeShared) || (in.LeaseRequestType == LeaseRequestTypeExclusive) {
-		if !volume.acceptingMountsAndLeaseRequests {
+		if !volume.acceptingMountsAndLeaseRequests || !mount.acceptingLeaseRequests {
 			globals.volumesLock.Unlock()
 			reply.LeaseReplyType = LeaseReplyTypeDenied
 			err = fmt.Errorf("LeaseRequestType %v not allowed while dismounting Volume", in.LeaseRequestType)
@@ -140,6 +155,32 @@ func (s *Server) RpcLease(in *LeaseRequest, reply *LeaseReply) (err error) {
 
 	replyToReturn = <-leaseRequestOperation.replyChan
 	reply.LeaseReplyType = replyToReturn.LeaseReplyType
+
+	globals.volumesLock.Lock()
+
+	delayedUnmountLeaseReleaseStartWG.Add(1)
+
+	delayedUnmountListElement = volume.delayedUnmountList.Front()
+
+	for nil != delayedUnmountListElement {
+		delayedUnmount = delayedUnmountListElement.Value.(*mountStruct)
+		_ = volume.delayedUnmountList.Remove(delayedUnmountListElement)
+
+		delayedUnmount.armReleaseOfAllLeasesWhileLocked(&delayedUnmountLeaseReleaseStartWG, &delayedUnmountLeaseReleaseFinishedWG)
+
+		delete(volume.mountMapByMountIDAsByteArray, delayedUnmount.mountIDAsByteArray)
+		delete(volume.mountMapByMountIDAsString, delayedUnmount.mountIDAsString)
+
+		delete(globals.mountMapByMountIDAsByteArray, delayedUnmount.mountIDAsByteArray)
+		delete(globals.mountMapByMountIDAsString, delayedUnmount.mountIDAsString)
+
+		delayedUnmountListElement = volume.delayedUnmountList.Front()
+	}
+
+	globals.volumesLock.Unlock()
+
+	delayedUnmountLeaseReleaseStartWG.Done()
+	delayedUnmountLeaseReleaseFinishedWG.Wait()
 
 	err = nil
 	return
@@ -256,6 +297,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 				if nil != err {
 					logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 				}
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 				globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
 				inodeLease.lastInterruptTime = time.Now()
 				inodeLease.interruptsSent = 1
@@ -332,6 +374,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 							_ = inodeLease.sharedHoldersList.Remove(leaseRequestElement)
 							leaseRequest.listElement = inodeLease.releasingHoldersList.PushBack(leaseRequest)
 							leaseRequest.requestState = leaseRequestStateSharedReleasing
+							evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 							globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 						}
 						inodeLease.lastInterruptTime = time.Now()
@@ -414,6 +457,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 					if nil != err {
 						logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 					}
+					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(sharedHolderLeaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 					globals.retryrpcSvr.SendCallback(string(sharedHolderLeaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 				}
 				inodeLease.lastInterruptTime = time.Now()
@@ -440,6 +484,7 @@ func (inodeLease *inodeLeaseStruct) handleOperation(leaseRequestOperation *lease
 				if nil != err {
 					logger.Fatalf("(*inodeLeaseStruct).handleOperation() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
 				}
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.exclusiveHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 				globals.retryrpcSvr.SendCallback(string(inodeLease.exclusiveHolder.mount.mountIDAsString), rpcInterruptBuf)
 				inodeLease.exclusiveHolder = nil
 				inodeLease.lastInterruptTime = time.Now()
@@ -1018,6 +1063,8 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 					logger.Fatalf("(*inodeLeaseStruct).handleLongAgoTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 				}
 
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 				leaseRequestElement = inodeLease.sharedHoldersList.Front()
@@ -1052,6 +1099,8 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 					logger.Fatalf("(*inodeLeaseStruct).handleLongAgoTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 2]", rpcInterrupt, err)
 				}
 
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 				globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
 			case leaseRequestStateExclusiveRequested:
 				inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
@@ -1068,6 +1117,8 @@ func (inodeLease *inodeLeaseStruct) handleLongAgoTimerPop() {
 				if nil != err {
 					logger.Fatalf("(*inodeLeaseStruct).handleLongAgoTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 				}
+
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.exclusiveHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
 				globals.retryrpcSvr.SendCallback(string(inodeLease.exclusiveHolder.mount.mountIDAsString), rpcInterruptBuf)
 
@@ -1115,6 +1166,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
 
+				if leaseRequest.mount.acceptingLeaseRequests {
+					leaseRequest.mount.acceptingLeaseRequests = false
+					_ = leaseRequest.mount.volume.delayedUnmountList.PushBack(leaseRequest.mount)
+				}
+
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 				leaseRequest.listElement = nil
 
@@ -1145,6 +1201,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 				leaseRequest = leaseRequestElement.Value.(*leaseRequestStruct)
 
 				delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
+
+				if leaseRequest.mount.acceptingLeaseRequests {
+					leaseRequest.mount.acceptingLeaseRequests = false
+					_ = leaseRequest.mount.volume.delayedUnmountList.PushBack(leaseRequest.mount)
+				}
 
 				inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 				leaseRequest.listElement = nil
@@ -1187,6 +1248,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 
 			delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
 
+			if leaseRequest.mount.acceptingLeaseRequests {
+				leaseRequest.mount.acceptingLeaseRequests = false
+				_ = leaseRequest.mount.volume.delayedUnmountList.PushBack(leaseRequest.mount)
+			}
+
 			inodeLease.releasingHoldersList.Remove(leaseRequestElement)
 			leaseRequest.listElement = nil
 
@@ -1225,6 +1291,11 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 			}
 
 			delete(inodeLease.demotingHolder.mount.leaseRequestMap, inodeLease.InodeNumber)
+
+			if inodeLease.demotingHolder.mount.acceptingLeaseRequests {
+				inodeLease.demotingHolder.mount.acceptingLeaseRequests = false
+				_ = inodeLease.demotingHolder.mount.volume.delayedUnmountList.PushBack(inodeLease.demotingHolder.mount)
+			}
 
 			inodeLease.demotingHolder = nil
 
@@ -1293,6 +1364,8 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 					logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 				}
 
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 				leaseRequestElement = leaseRequestElement.Next()
@@ -1314,6 +1387,8 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 				if nil != err {
 					logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 				}
+
+				evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
 				globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
@@ -1337,6 +1412,8 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 				logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 2]", rpcInterrupt, err)
 			}
 
+			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 			globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 		case inodeLeaseStateExclusiveDemoting:
 			if nil == inodeLease.demotingHolder {
@@ -1352,6 +1429,8 @@ func (inodeLease *inodeLeaseStruct) handleInterruptTimerPop() {
 			if nil != err {
 				logger.Fatalf("(*inodeLeaseStruct).handleInterruptTimerPop() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 			}
+
+			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(inodeLease.demotingHolder.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
 			globals.retryrpcSvr.SendCallback(string(inodeLease.demotingHolder.mount.mountIDAsString), rpcInterruptBuf)
 		default:
@@ -1423,6 +1502,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 			logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 1]", rpcInterrupt, err)
 		}
 
+		evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 		globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 		inodeLease.leaseState = inodeLeaseStateSharedReleasing
@@ -1476,6 +1557,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 				logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 2]", rpcInterrupt, err)
 			}
 
+			evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 			globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 		}
 
@@ -1502,6 +1585,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 		if nil != err {
 			logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 3]", rpcInterrupt, err)
 		}
+
+		evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
 		globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
@@ -1570,6 +1655,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 									logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 4]", rpcInterrupt, err)
 								}
 
+								evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 								globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 								inodeLease.leaseState = inodeLeaseStateExclusiveReleasing
@@ -1614,6 +1701,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					case inodeLeaseStateSharedReleasing:
 						if leaseRequestStateSharedReleasing == leaseRequest.requestState {
 							leaseRequest.requestState = leaseRequestStateNone
+							delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
 							inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
 							leaseRequest.listElement = nil
 
@@ -1643,6 +1731,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					case inodeLeaseStateExclusiveDemoting:
 						if leaseRequestStateExclusiveDemoting == leaseRequest.requestState {
 							leaseRequest.requestState = leaseRequestStateNone
+							delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
 							inodeLease.demotingHolder = nil
 
 							leaseReply = &LeaseReply{
@@ -1669,6 +1758,7 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					case inodeLeaseStateExclusiveReleasing:
 						if leaseRequestStateExclusiveReleasing == leaseRequest.requestState {
 							leaseRequest.requestState = leaseRequestStateNone
+							delete(leaseRequest.mount.leaseRequestMap, inodeLease.InodeNumber)
 							inodeLease.releasingHoldersList.Remove(leaseRequest.listElement)
 							leaseRequest.listElement = nil
 
@@ -1750,6 +1840,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 							logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 5]", rpcInterrupt, err)
 						}
 
+						evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 						globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 						leaseRequestElement = leaseRequestElement.Next()
@@ -1789,6 +1881,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 						logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 6]", rpcInterrupt, err)
 					}
 
+					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
+
 					globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
 					inodeLease.lastInterruptTime = time.Now()
@@ -1825,6 +1919,8 @@ func (inodeLease *inodeLeaseStruct) handleStopChanClose() {
 					if nil != err {
 						logger.Fatalf("(*inodeLeaseStruct).handleStopChanClose() unable to json.Marshal(rpcInterrupt: %#v): %v [case 7]", rpcInterrupt, err)
 					}
+
+					evtlog.Record(evtlog.FormatLeaseInterrupt, inodeLease.volume.volumeName, string(leaseRequest.mount.mountIDAsString), uint64(rpcInterrupt.InodeNumber), uint32(rpcInterrupt.RPCInterruptType))
 
 					globals.retryrpcSvr.SendCallback(string(leaseRequest.mount.mountIDAsString), rpcInterruptBuf)
 
@@ -1867,4 +1963,159 @@ RequestChanDrained:
 	globals.volumesLock.Unlock()
 
 	runtime.Goexit()
+}
+
+// armReleaseOfAllLeasesWhileLocked is called to schedule releasing of all held leases
+// for a specific mountStruct. It is called while globals.volumesLock is locked. The
+// leaseReleaseStartWG is assumed to be a sync.WaitGroup with a count of 1 such that
+// the actual releasing of each lease will occur once leaseReleaseStartWG is signaled
+// by calling Done() once. The caller would presumably do this after having released
+// globals.volumesLock and then await completion by calling leaseReleaseFinishedWG.Wait().
+//
+func (mount *mountStruct) armReleaseOfAllLeasesWhileLocked(leaseReleaseStartWG *sync.WaitGroup, leaseReleaseFinishedWG *sync.WaitGroup) {
+	var (
+		leaseRequest          *leaseRequestStruct
+		leaseRequestOperation *leaseRequestOperationStruct
+	)
+
+	for _, leaseRequest = range mount.leaseRequestMap {
+		if nil != leaseRequest.inodeLease {
+			leaseRequestOperation = &leaseRequestOperationStruct{
+				mount:            mount,
+				inodeLease:       leaseRequest.inodeLease,
+				LeaseRequestType: LeaseRequestTypeRelease,
+				replyChan:        make(chan *LeaseReply),
+			}
+
+			leaseReleaseFinishedWG.Add(1)
+
+			go func(leaseRequestOperation *leaseRequestOperationStruct) {
+				leaseReleaseStartWG.Wait()
+				leaseRequestOperation.inodeLease.requestChan <- leaseRequestOperation
+				_ = <-leaseRequestOperation.replyChan
+				leaseReleaseFinishedWG.Done()
+			}(leaseRequestOperation)
+		}
+	}
+}
+
+func fetchLeaseReport(volumeName string) (leaseReport []*LeaseReportElementStruct, err error) {
+	var (
+		annotatedMountID           string
+		inodeLease                 *inodeLeaseStruct
+		leaseReportElement         *LeaseReportElementStruct
+		leaseReportLLRBTree        sortedmap.LLRBTree
+		leaseReportLLRBTreeElement sortedmap.Value
+		leaseReportLLRBTreeIndex   int
+		leaseReportLLRBTreeLen     int
+		leaseRequest               *leaseRequestStruct
+		leaseRequestListElement    *list.Element
+		ok                         bool
+		volume                     *volumeStruct
+	)
+
+	enterGate()
+	defer leaveGate()
+
+	globals.volumesLock.Lock()
+	defer globals.volumesLock.Unlock()
+
+	volume, ok = globals.volumeMap[volumeName]
+	if !ok {
+		err = fmt.Errorf("fetchLeaseReport(volumeName: \"%s\") could not find Volume", volumeName)
+		return
+	}
+
+	// leaseReport = make([]*LeaseReportElementStruct, 0)
+
+	leaseReportLLRBTree = sortedmap.NewLLRBTree(sortedmap.CompareUint64, &globals)
+
+	for _, inodeLease = range volume.inodeLeaseMap {
+		leaseReportElement = &LeaseReportElementStruct{
+			InodeNumber:          fmt.Sprintf("%016X", inodeLease.InodeNumber),
+			SharedHoldersList:    make([]MountIDAsString, 0),
+			PromotingHolder:      MountIDAsString(""),
+			ExclusiveHolder:      MountIDAsString(""),
+			DemotingHolder:       MountIDAsString(""),
+			ReleasingHoldersList: make([]MountIDAsString, 0),
+			RequestedList:        make([]string, 0),
+		}
+
+		for leaseRequestListElement = inodeLease.sharedHoldersList.Front(); leaseRequestListElement != nil; leaseRequestListElement = leaseRequestListElement.Next() {
+			leaseRequest = leaseRequestListElement.Value.(*leaseRequestStruct)
+			leaseReportElement.SharedHoldersList = append(leaseReportElement.SharedHoldersList, leaseRequest.mount.mountIDAsString)
+		}
+
+		if nil != inodeLease.promotingHolder {
+			leaseReportElement.PromotingHolder = inodeLease.promotingHolder.mount.mountIDAsString
+		}
+
+		if nil != inodeLease.exclusiveHolder {
+			leaseReportElement.ExclusiveHolder = inodeLease.exclusiveHolder.mount.mountIDAsString
+		}
+
+		if nil != inodeLease.demotingHolder {
+			leaseReportElement.DemotingHolder = inodeLease.demotingHolder.mount.mountIDAsString
+		}
+
+		for leaseRequestListElement = inodeLease.releasingHoldersList.Front(); leaseRequestListElement != nil; leaseRequestListElement = leaseRequestListElement.Next() {
+			leaseRequest = leaseRequestListElement.Value.(*leaseRequestStruct)
+			leaseReportElement.ReleasingHoldersList = append(leaseReportElement.ReleasingHoldersList, leaseRequest.mount.mountIDAsString)
+		}
+
+		for leaseRequestListElement = inodeLease.requestedList.Front(); leaseRequestListElement != nil; leaseRequestListElement = leaseRequestListElement.Next() {
+			leaseRequest = leaseRequestListElement.Value.(*leaseRequestStruct)
+			switch leaseRequest.requestState {
+			case leaseRequestStateSharedRequested:
+				annotatedMountID = fmt.Sprintf("S(%s)", leaseRequest.mount.mountIDAsString)
+			case leaseRequestStateExclusiveRequested:
+				annotatedMountID = fmt.Sprintf("E(%s)", leaseRequest.mount.mountIDAsString)
+			default:
+				logger.Fatalf("leaseRequest.requestState (%v) unexpected", leaseRequest.requestState)
+			}
+			leaseReportElement.RequestedList = append(leaseReportElement.RequestedList, annotatedMountID)
+		}
+
+		ok, err = leaseReportLLRBTree.Put(uint64(inodeLease.InodeNumber), leaseReportElement)
+		if nil != err {
+			logger.Fatalf("leaseReportLLRBTree.Put(0x%016X,) failed: %v", uint64(inodeLease.InodeNumber), err)
+		}
+		if !ok {
+			logger.Fatalf("leaseReportLLRBTree.Put(0x%016X,) returned !ok", uint64(inodeLease.InodeNumber))
+		}
+	}
+
+	leaseReportLLRBTreeLen, err = leaseReportLLRBTree.Len()
+	if nil != err {
+		logger.Fatalf("leaseReportLLRBTree.Len() failed: %v", err)
+	}
+
+	leaseReport = make([]*LeaseReportElementStruct, 0, leaseReportLLRBTreeLen)
+
+	for leaseReportLLRBTreeIndex = 0; leaseReportLLRBTreeIndex < leaseReportLLRBTreeLen; leaseReportLLRBTreeIndex++ {
+		_, leaseReportLLRBTreeElement, ok, err = leaseReportLLRBTree.GetByIndex(leaseReportLLRBTreeIndex)
+		if nil != err {
+			logger.Fatalf("leaseReportLLRBTree.GetByIndex() failed: %v", err)
+		}
+		if !ok {
+			logger.Fatalf("leaseReportLLRBTree.GetByIndex() returned !ok")
+		}
+
+		leaseReportElement = leaseReportLLRBTreeElement.(*LeaseReportElementStruct)
+
+		leaseReport = append(leaseReport, leaseReportElement)
+	}
+
+	err = nil
+	return
+}
+
+func (dummy *globalsStruct) DumpKey(key sortedmap.Key) (keyAsString string, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
+}
+
+func (dummy *globalsStruct) DumpValue(value sortedmap.Value) (valueAsString string, err error) {
+	err = fmt.Errorf("Not implemented")
+	return
 }

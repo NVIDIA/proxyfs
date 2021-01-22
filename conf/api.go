@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package conf
 
 import (
@@ -416,7 +419,8 @@ func (confMap ConfMap) Dump() (confMapString string) {
 	return
 }
 
-// VerifyOptionIsMissing returns an error if [sectionName]optionName exists
+// VerifyOptionIsMissing returns an error if [sectionName]optionName does not
+// exist.
 func (confMap ConfMap) VerifyOptionIsMissing(sectionName string, optionName string) (err error) {
 	section, ok := confMap[sectionName]
 	if !ok {
@@ -434,7 +438,8 @@ func (confMap ConfMap) VerifyOptionIsMissing(sectionName string, optionName stri
 	return
 }
 
-// VerifyOptionValueIsEmpty returns an error if [sectionName]optionName's value is not empty
+// VerifyOptionValueIsEmpty returns an error if [sectionName]optionName's value
+// is not empty or if the option does not exist.
 func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName string) (err error) {
 	section, ok := confMap[sectionName]
 	if !ok {
@@ -455,6 +460,41 @@ func (confMap ConfMap) VerifyOptionValueIsEmpty(sectionName string, optionName s
 	}
 
 	return
+}
+
+// SetOptionIfMissing sets the value of the option to optionVal if and only if
+// the option is not already specified.  The section is created if it doesn't
+// already exist.
+//
+// This is useful to apply "default" options after the confmap has been loaded.
+func (confMap ConfMap) SetOptionIfMissing(sectionName string, optionName string, optionVal ConfMapOption) {
+
+	section, ok := confMap[sectionName]
+	if !ok {
+		section := make(ConfMapSection)
+		confMap[sectionName] = section
+	}
+
+	_, ok = section[optionName]
+	if ok {
+		return
+	}
+	confMap[sectionName][optionName] = optionVal
+}
+
+// SetSectionIfMissing sets the section value to the valued passed in if and
+// only if the sectionName is not already specified.  The section is created if
+// it doesn't already exist.
+//
+// This is useful to apply "default" sections after the confmap has been loaded.
+func (confMap ConfMap) SetSectionIfMissing(sectionName string, sectionVal ConfMapSection) {
+
+	_, ok := confMap[sectionName]
+	if ok {
+		return
+	}
+
+	confMap[sectionName] = sectionVal
 }
 
 // FetchOptionValueStringSlice returns [sectionName]optionName's string values as a []string

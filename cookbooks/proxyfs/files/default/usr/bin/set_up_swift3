@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copyright (c) 2015-2021, NVIDIA CORPORATION.
+# SPDX-License-Identifier: Apache-2.0
+
 PROXYSERVERCONF=/etc/swift/proxy-server.conf
 grep "\[filter\:swift3\]" $PROXYSERVERCONF > /dev/null 2>&1
 if [ $? -eq 0 ]; then

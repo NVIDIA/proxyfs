@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 package proxyfsd
 
 import (
@@ -72,7 +75,10 @@ func TestDaemon(t *testing.T) {
 		"Cluster.HeartBeatMissLimit=3",
 		"Cluster.MessageQueueDepthPerPeer=4",
 		"Cluster.MaxRequestDuration=1s",
+		"Cluster.LivenessCheckerEnabled=true",
 		"Cluster.LivenessCheckRedundancy=2",
+
+		"ProxyfsDebug.DebugServerPort=6058",
 
 		"HTTPServer.TCPPort=53461",
 
@@ -139,6 +145,7 @@ func TestDaemon(t *testing.T) {
 		"FSGlobals.TryLockBackoffMax=50ms",
 		"FSGlobals.TryLockSerializationThreshhold=5",
 		"FSGlobals.SymlinkMax=32",
+		"FSGlobals.CoalesceElementChunkSize=16",
 		"FSGlobals.InodeRecCacheEvictLowLimit=10000",
 		"FSGlobals.InodeRecCacheEvictHighLimit=10010",
 		"FSGlobals.LogSegmentRecCacheEvictLowLimit=10000",

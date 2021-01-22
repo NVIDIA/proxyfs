@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 // The proxyfsd program is the main ProxyFS dæmon and is named accordingly.
 package main
 
