@@ -22,6 +22,7 @@ import (
 	"github.com/swiftstack/sortedmap"
 
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/etcdclient"
 	"github.com/swiftstack/ProxyFS/headhunter"
 )
 
@@ -376,11 +377,8 @@ func setup() {
 			log.Fatal(err)
 		}
 
-		globals.etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        globals.etcdEndpoints,
-			AutoSyncInterval: globals.etcdAutoSyncInterval,
-			DialTimeout:      globals.etcdDialTimeout,
-		})
+		globals.etcdClient, err = etcdclient.New(globals.etcdEndpoints,
+			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			log.Fatalf("unable to create etcdClient: %v\n", err)
 		}

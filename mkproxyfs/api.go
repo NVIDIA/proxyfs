@@ -15,6 +15,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/blunder"
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/etcdclient"
 	"github.com/swiftstack/ProxyFS/headhunter"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
@@ -132,12 +133,8 @@ func Format(mode Mode, volumeNameToFormat string, confFile string, confStrings [
 		}
 
 		// Initialize etcd Client & KV objects
-
-		etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        etcdEndpoints,
-			AutoSyncInterval: etcdAutoSyncInterval,
-			DialTimeout:      etcdDialTimeout,
-		})
+		etcdClient, err = etcdclient.New(etcdEndpoints,
+			etcdAutoSyncInterval, etcdDialTimeout)
 		if nil != err {
 			return
 		}

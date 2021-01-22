@@ -18,6 +18,7 @@ import (
 
 	"github.com/swiftstack/ProxyFS/bucketstats"
 	"github.com/swiftstack/ProxyFS/conf"
+	"github.com/swiftstack/ProxyFS/etcdclient"
 	"github.com/swiftstack/ProxyFS/logger"
 	"github.com/swiftstack/ProxyFS/swiftclient"
 	"github.com/swiftstack/ProxyFS/trackedlock"
@@ -469,11 +470,8 @@ func (dummy *globalsStruct) Up(confMap conf.ConfMap) (err error) {
 
 		// Initialize etcd Client & KV objects
 
-		globals.etcdClient, err = etcd.New(etcd.Config{
-			Endpoints:        globals.etcdEndpoints,
-			AutoSyncInterval: globals.etcdAutoSyncInterval,
-			DialTimeout:      globals.etcdDialTimeout,
-		})
+		globals.etcdClient, err = etcdclient.New(globals.etcdEndpoints,
+			globals.etcdAutoSyncInterval, globals.etcdDialTimeout)
 		if nil != err {
 			return
 		}
